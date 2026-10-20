@@ -1,0 +1,103 @@
+schema = 1
+
+[vectors]
+kind        = "link.framing"
+id          = "link.framing"
+spec        = ["ref/07 §3.2"]
+hosts       = ["linux", "mcu"]
+description = "Joker Link L1 on streams: CRC-32C, original COBS, the encoded stream frame and the receiver's ordered checks"
+
+[[vector]]
+id      = "crc32c_check"
+op      = "crc32c"
+spec    = ["ref/07 §3.2"]
+input   = "313233343536373839"
+crc     = 0xE3069283
+residue = 0xB798B438
+
+[[vector]]
+id     = "crc32c_samples_frame"
+op     = "crc32c"
+spec   = ["ref/07 §3.2"]
+input  = "000012102c039201ffffffffa2011a0012ebc0028383001904b1f5840119036df418fa851828191400f95e72190708190301"
+crc    = 0x3C5F95E8
+
+[[vector]]
+id      = "cobs_zero_bytes"
+op      = "cobs"
+spec    = ["ref/07 §3.2"]
+decoded = "11220033"
+encoded = "0311220233"
+
+[[vector]]
+id      = "cobs_single_zero"
+op      = "cobs"
+spec    = ["ref/07 §3.2"]
+decoded = "00"
+encoded = "0101"
+
+[[vector]]
+id      = "cobs_full_block_without_implicit_zero"
+op      = "cobs"
+spec    = ["ref/07 §3.2"]
+decoded = "01"
+repeat  = 254
+encoded_prefix = "ff01"
+encoded_length = 256
+encoded_suffix = "0101"
+
+[[vector]]
+id    = "stream_frame_plaintext_samples"
+op    = "stream_encode"
+spec  = ["ref/07 §3.2", "ref/07 §6.9"]
+addr  = 0
+frame = "0012102c039201ffffffffa2011a0012ebc0028383001904b1f5840119036df418fa851828191400f95e72190708190301"
+wire  = "01010e12102c039201ffffffffa2011a0712ebc0028383121904b1f5840119036df418fa85182819140ef95e72190708190301e8955f3c00"
+
+[[vector]]
+id    = "stream_frame_session_ping"
+op    = "stream_encode"
+spec  = ["ref/07 §3.2", "ref/07 §4.8"]
+addr  = 0
+frame = "200100000005000000cb540e42306a12411a73f39b4ef279b462157881d6414ed6f70d1d3e25e1beb160"
+wire  = "0103200101010205010126cb540e42306a12411a73f39b4ef279b462157881d6414ed6f70d1d3e25e1beb160694fb2dc00"
+
+[[vector]]
+id     = "receiver_accepts_samples"
+op     = "stream_decode"
+spec   = ["ref/07 §3.2"]
+own_addr = 0
+wire   = "01010e12102c039201ffffffffa2011a0712ebc0028383121904b1f5840119036df418fa85182819140ef95e72190708190301e8955f3c00"
+result = "accept"
+addr   = 0
+frame  = "0012102c039201ffffffffa2011a0012ebc0028383001904b1f5840119036df418fa851828191400f95e72190708190301"
+
+[[vector]]
+id     = "receiver_rejects_bad_crc"
+op     = "stream_decode"
+spec   = ["ref/07 §3.2"]
+own_addr = 0
+wire   = "01010e12102d039201ffffffffa2011a0712ebc0028383121904b1f5840119036df418fa85182819140ef95e72190708190301e8955f3c00"
+result = "discard"
+counter = "crc"
+code   = "J-E2001"
+
+[[vector]]
+id     = "receiver_rejects_short_frame"
+op     = "stream_decode"
+spec   = ["ref/07 §3.2"]
+own_addr = 0
+wire   = "01010401020300"
+result = "discard"
+counter = "framing"
+code   = "J-E2003"
+
+[[vector]]
+id     = "receiver_ignores_empty_frames"
+op     = "stream_decode"
+spec   = ["ref/07 §3.2"]
+own_addr = 0
+wire   = "000001010e12102c039201ffffffffa2011a0712ebc0028383121904b1f5840119036df418fa85182819140ef95e72190708190301e8955f3c00"
+result = "accept"
+addr   = 0
+frame  = "0012102c039201ffffffffa2011a0012ebc0028383001904b1f5840119036df418fa851828191400f95e72190708190301"
