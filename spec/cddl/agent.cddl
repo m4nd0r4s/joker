@@ -1,0 +1,839 @@
+; spec/cddl/agent.cddl — protocolo do agente, agent/1 (docs/ref/10-protocolo-do-agente.md)
+;
+; Forma dupla. Cada chave escreve-se ("nome" / n):
+;   - CBOR (MQTT, CoAP, documentos assinados): só a chave inteira n e as formas binárias
+;     (tempo em ns, duração em ns, digest em 32 B, ULID em 16 B, enums numéricos);
+;   - JSON (HTTPS): só a chave de texto "nome" e as formas de texto
+;     (RFC 3339, literal de duração, "sha256:<hex>", ULID em Crockford base32, enums por nome).
+;   Misturar as duas formas na mesma mensagem é um erro (status bad_request).
+; Os valores dos enums estão nas tabelas da ref/10, §2.2; aqui aparecem como `enum`.
+; Chaves 1–99: v1. Chaves 100–119: reservadas para a v2 (sites). Chaves negativas (CBOR)
+; e chaves de texto começadas por "x_" (JSON): extensões privadas, ignoradas.
+; Nenhuma chave se reutiliza depois de removida (ref/00, §1).
+
+; ------------------------------------------------------------------ raiz
+
+agent-message = desired-state / command / trust-bundle / floor-statement /
+                enroll-request / enroll-reply / renew-request / renew-proof / renew-reply /
+                hello / hello-reply / poll-reply / report / report-ack /
+                event-batch / event-ack / status-reply / status-message /
+                registry-token-request / registry-token / enroll-nonce /
+                blob-request / blob-chunk / tunnel-frame
+
+; ------------------------------------------------------------------ tipos comuns
+
+time      = int / tdate                 ; CBOR: s64 ns UTC desde 1970; JSON: RFC 3339 com Z
+duration  = uint / tstr                 ; CBOR: ns; JSON: literal de duração (ref/00, §3.1)
+digest    = bstr .size 32 / tstr        ; JSON: "sha256:" + 64 hex minúsculos
+ulid      = bstr .size 16 / tstr        ; JSON: 26 caracteres Crockford base32
+kid       = bstr .size 16 / tstr        ; 16 primeiros bytes do SHA-256 da chave pública; JSON: hex
+name      = tstr                        ; rótulo DNS (ref/00, §5): nó, org, Deck, site
+path      = tstr                        ; caminho do documento 02, §9
+semver    = tstr
+seq       = uint                        ; sempre < 2^53 (cabe num número JSON)
+bytes     = bstr / tstr                 ; JSON: base64 (RFC 4648, §4)
+enum      = uint / tstr                 ; CBOR: valor; JSON: nome snake_case
+cose      = bstr / tstr                 ; COSE_Sign1 (RFC 9052), CBOR; em JSON, base64
+code      = tstr                        ; J-code do registo (ref/00, §8)
+pct       = float / uint                ; 0–100
+extension = ( * (nint / tstr) => any )  ; nint em CBOR; em JSON só chaves "x_..."
+
+; ------------------------------------------------------------------ estado (resposta genérica)
+
+status-reply = {
+  ("status" / 1) => enum,               ; agent-status
+  ? ("code" / 2) => code,
+  ? ("detail" / 3) => tstr,
+  ? ("retry_after" / 4) => duration,
+  extension
+}
+
+; ------------------------------------------------------------------ confiança
+
+trust-bundle = {
+  ("v" / 1) => 1,
+  ("org" / 2) => name,
+  ("version" / 3) => seq,
+  ("issued" / 4) => time,
+  ? ("authority" / 5) => name,          ; deck_id; ausente = nó sem Deck
+  ("keys" / 6) => [+ trust-key],
+  ? ("deck_urls" / 7) => [+ tstr],
+  ? ("deck_tls" / 8) => [+ digest],     ; SHA-256 do SPKI aceite no TLS do Deck e do broker
+  ? ("mqtt" / 9) => [+ tstr],           ; URLs mqtts:// do broker
+  ? ("coap" / 10) => [+ tstr],          ; URLs coaps:// (perfil micro)
+  ? ("scope" / 11) => [+ tstr],         ; nós ou sites a que o bundle se aplica ("*" = todos)
+  ? ("min_mode" / 12) => enum,          ; mode: dev 0, prod 1
+  extension
+}
+
+trust-key = {
+  ("kid" / 1) => kid,
+  ("alg" / 2) => -8,                    ; COSE EdDSA: as chaves da organização são Ed25519 (D7, ADR 0025)
+  ("key" / 3) => bytes,                 ; chave pública crua, 32 B
+  ("roles" / 4) => [+ enum],            ; trust-role: root 0, deck 1, runtime 2, apps 3, config 4, profiles 5,
+                                        ; boards 6, classes 7, firmware 8, models 9 (1.1), drivers 10, secrets 11
+  ? ("not_after" / 5) => time,
+  ? ("deck" / 6) => name,               ; obrigatório para o papel deck
+  extension
+}
+
+floor-statement = {
+  ("v" / 1) => 1,
+  ("role" / 2) => enum,                 ; trust-role do tipo de artefacto
+  ("seq" / 3) => seq,
+  ("issued" / 4) => time,
+  ? ("min_version" / 5) => semver,
+  ? ("revoked" / 6) => [* digest],
+  ? ("scope" / 7) => tstr,              ; placa, arquitetura ou "*"
+  ? ("min_counter" / 8) => uint,        ; contador de segurança do firmware de MCU (MCUboot)
+  extension
+}
+
+; ------------------------------------------------------------------ enrolamento e certificados
+
+enroll-request = {
+  ("token" / 1) => tstr,
+  ("node" / 2) => name,
+  ("csr" / 3) => bytes,                 ; PKCS#10 DER; SAN URI urn:joker:kem:x25519:<base64url> (ref/02 §3.2.3)
+  ("hw" / 4) => digest,
+  ("key_storage" / 5) => enum,          ; tpm 0, secure_element 1, file 2
+  ("kind" / 6) => enum,                 ; node-kind: linux 0, micro 1
+  ? ("board" / 7) => tstr,
+  ? ("runtime" / 8) => semver,
+  ? ("attestation" / 9) => attestation,
+  extension
+}
+
+attestation = {                         ; opcional na 1.0; o Deck pode exigi-lo na 1.3
+  ("kind" / 1) => enum,                 ; tpm2 0
+  ("ek_cert" / 2) => bytes,
+  ("ak" / 3) => bytes,
+  ("quote" / 4) => bytes,
+  ("nonce" / 5) => bytes,
+  extension
+}
+
+enroll-reply = {
+  ("cert" / 1) => [+ bytes],            ; cadeia X.509 DER, folha primeiro
+  ("trust" / 2) => cose,                ; trust-bundle assinado pela raiz da organização
+  ? ("deck" / 3) => name,
+  ? ("settings" / 4) => agent-settings,
+  ("anchors" / 5) => [+ trust-key],     ; chaves root: trust.anchors do node.toml (ref/02)
+  extension
+}
+
+enroll-nonce = {
+  ("nonce" / 1) => bytes,              ; 32 B, válido 5 min
+  extension
+}
+
+renew-request = {
+  ("csr" / 1) => bytes,                 ; chave de identidade nova; a mesma chave KEM no SAN
+  ("proof" / 2) => cose,                ; COSE_Sign1 da chave antiga sobre renew-proof
+  ("hw" / 3) => digest,
+  extension
+}
+
+renew-proof = {
+  ("node" / 1) => name,
+  ("csr" / 2) => digest,                ; SHA-256 do CSR DER
+  ("ts" / 3) => time,
+  ("nonce" / 4) => ulid,
+}
+
+renew-reply = {
+  ("cert" / 1) => [+ bytes],
+  ? ("trust" / 2) => [+ cose],          ; cadeia de bundles desde a versão do nó
+  extension
+}
+
+; ------------------------------------------------------------------ hello
+
+hello = {
+  ("v" / 1) => 1,
+  ("node" / 2) => name,
+  ("org" / 3) => name,
+  ("proto" / 4) => [major: uint, minor: uint],
+  ("runtime" / 5) => semver,
+  ("boot" / 6) => ulid,
+  ("uptime" / 7) => duration,
+  ("hw" / 8) => digest,
+  ("key_storage" / 9) => enum,
+  ("time" / 10) => time,
+  ("clock" / 11) => enum,               ; clock_quality (ref/00, §6)
+  ("desired_seq" / 12) => seq,          ; último estado desejado aceite (0 = nenhum)
+  ("report_seq" / 13) => seq,
+  ("event_seq" / 14) => seq,            ; último evento emitido
+  ("trust_version" / 15) => seq,
+  ? ("capabilities" / 16) => [* enum],  ; capability
+  ? ("kind" / 17) => enum,              ; node-kind
+  extension
+}
+
+hello-reply = {
+  ("proto_minor" / 1) => uint,
+  ("deck" / 2) => name,
+  ("time" / 3) => time,
+  ("event_ack" / 4) => seq,
+  ("need_full" / 5) => bool,
+  ? ("settings" / 6) => agent-settings,
+  ? ("trust" / 7) => [+ cose],          ; bundles mais novos, por ordem de versão
+  ? ("status" / 8) => enum,             ; agent-status (quarentena, revogado)
+  ? ("code" / 9) => code,
+  extension
+}
+
+agent-settings = {                      ; o nó limita cada valor às suas margens (ref/10, §2.9)
+  ? ("poll_wait" / 1) => duration,
+  ? ("poll_interval" / 2) => duration,
+  ? ("report_min_interval" / 3) => duration,
+  ? ("full_interval" / 4) => duration,
+  ? ("heartbeat" / 5) => duration,
+  ? ("event_batch" / 6) => uint,
+  ? ("drain_rate" / 7) => uint,         ; eventos/s ao esvaziar a fila
+  extension
+}
+
+; ------------------------------------------------------------------ estado desejado
+
+desired-state = {
+  ("v" / 1) => 1,
+  ("node" / 2) => name,
+  ("org" / 3) => name,
+  ("deck" / 4) => name,
+  ("seq" / 5) => seq,
+  ("issued" / 6) => time,
+  ? ("expires" / 7) => time,
+  ? ("runtime" / 8) => runtime-target,
+  ? ("generation" / 9) => generation-target,
+  ("artifacts" / 10) => [* artifact],
+  ? ("sources" / 11) => [+ source],
+  ? ("confirm" / 12) => confirm-policy,
+  ? ("rollout" / 13) => rollout-info,
+  ? ("schedule" / 14) => schedule,
+  ? ("mcus" / 15) => [* mcu-target],
+  ? ("trust" / 16) => [+ cose],
+  ? ("floors" / 17) => [+ cose],
+  ? ("settings" / 18) => agent-settings,
+  ? ("override_local" / 19) => bool,
+  ? ("crit" / 20) => [+ uint],
+  ? ("note" / 21) => tstr,
+  ? ("secrets" / 22) => bytes,         ; secret-bundle (joker.secrets.v1, spec/cddl/secrets.cddl) deste nó
+  ; 23: reservado (modelos, 1.1)
+  ; 100–119: reservado (v2, sites)
+  extension
+}
+
+runtime-target = {
+  ("version" / 1) => semver,
+  ("artifact" / 2) => digest,
+  ? ("allow_downgrade" / 3) => bool,
+  ? ("health_window" / 4) => duration,
+  extension
+}
+
+generation-target = {
+  ("hash" / 1) => digest,               ; SHA-256 do generation-descriptor (o hash da geração)
+  ("config" / 2) => digest,             ; digest do artefacto joker.config.v1+cbor (COSE_Sign1 do descritor, papel config)
+  ? ("label" / 3) => tstr,
+  ? ("source" / 4) => git-ref,
+  extension
+}
+
+; o descritor de uma geração (ref/10 §2.6.2); payload do artefacto joker.config.v1+cbor.
+; Só existe em CBOR determinístico (é o que se assina e o que tem hash).
+generation-descriptor = {
+  1 => 1,                               ; v
+  2 => enum,                            ; node-kind: linux 0, micro 1
+  3 => { * tstr => any },               ; manifesto efetivo (omissões materializadas, sem x_*; ref/01 §8.3)
+  4 => bstr .size 32,                   ; digest canónico do joker.lock (ref/02 §2.1)
+  5 => [* bstr .size 32],               ; hashes dos contratos das classes, por ordem de bytes
+  6 => [* gen-artifact],                ; por ordem de name
+  7 => enum,                            ; mode: dev 0, prod 1
+}
+
+gen-artifact = {
+  1 => tstr,                            ; name, como o manifesto o refere
+  2 => tstr,                            ; media type, forma curta (ref/00 §7.1)
+  3 => bstr .size 32,                   ; digest
+}
+
+git-ref = {
+  ("repo" / 1) => tstr,
+  ("commit" / 2) => tstr,
+  ? ("path" / 3) => tstr,
+  extension
+}
+
+artifact = {
+  ("digest" / 1) => digest,
+  ("media_type" / 2) => tstr,
+  ("size" / 3) => uint,
+  ? ("ref" / 4) => tstr,                ; referência OCI legível (registry.example.com/apps/x:3.2.0)
+  ? ("signatures" / 5) => [+ digest],   ; manifestos de assinatura, para registos sem referrers
+  extension
+}
+
+source = {
+  ("url" / 1) => tstr,
+  ? ("kind" / 2) => enum,               ; source-kind: oci 0, deck 1, mirror 2
+  ? ("auth" / 3) => enum,               ; source-auth: mtls 0, token 1, none 2
+  extension
+}
+
+confirm-policy = {
+  ? ("mode" / 1) => enum,               ; confirm-mode: auto 0, deck 1, manual 2
+  ? ("window" / 2) => duration,
+  ? ("require_uplink" / 3) => bool,
+  ? ("stable_for" / 4) => duration,
+  ? ("alarm_severity" / 5) => enum,     ; severity (ref/00, §6)
+  extension
+}
+
+rollout-info = {
+  ("id" / 1) => ulid,
+  ? ("wave" / 2) => uint,
+  ? ("cohort" / 3) => tstr,
+  extension
+}
+
+schedule = {
+  ? ("not_before" / 1) => time,
+  ? ("windows" / 2) => [+ window],
+  ? ("jitter" / 3) => duration,
+  ? ("fetch_deadline" / 4) => duration,
+  extension
+}
+
+window = {
+  ("days" / 1) => [+ uint],             ; ISO 8601: 1 = segunda … 7 = domingo
+  ("start" / 2) => tstr,                ; "HH:MM", 24 h
+  ("length" / 3) => duration,
+  ? ("tz" / 4) => tstr,                 ; IANA; omissão "UTC"; o perfil micro só aceita "UTC"
+  extension
+}
+
+mcu-target = {
+  ("device" / 1) => path,               ; dispositivo do manifesto com driver joker-link
+  ? ("firmware" / 2) => mcu-firmware,
+  ? ("generation" / 3) => mcu-generation,
+  ? ("confirm" / 4) => confirm-policy,
+  ? ("order" / 5) => uint,
+  extension
+}
+
+mcu-firmware = {
+  ("version" / 1) => semver,
+  ("artifact" / 2) => digest,
+  ? ("allow_downgrade" / 3) => bool,
+  extension
+}
+
+mcu-generation = {
+  ("hash" / 1) => digest,
+  ("artifact" / 2) => digest,
+  extension
+}
+
+; ------------------------------------------------------------------ comandos (Deck → nó)
+
+command = {
+  ("id" / 1) => ulid,
+  ("node" / 2) => name,
+  ("deck" / 3) => name,
+  ("ts" / 4) => time,
+  ("kind" / 5) => enum,                 ; command-kind
+  ? ("args" / 6) => command-args,
+  ? ("expires" / 7) => time,
+  extension
+}
+
+command-args = confirm-args / upload-args / renew-args / session-open-args / session-close-args
+
+confirm-args = {                        ; confirm (0) e reject (1)
+  ("seq" / 1) => seq,
+  ("phase" / 2) => enum,                ; phase
+  ("hash" / 3) => digest,               ; digest da runtime, hash da geração ou do blob do MCU
+  ? ("device" / 4) => path,             ; fase mcu
+  extension
+}
+
+renew-args = {
+  ? ("reason" / 1) => tstr,
+  extension
+}
+
+upload-args = {
+  ("upload" / 1) => ulid,
+  ("what" / 2) => enum,                 ; upload-kind: decisions 0, logs 1, trace 2, events 3
+  ? ("from" / 3) => time,
+  ? ("to" / 4) => time,
+  ? ("filter" / 5) => tstr,             ; seletor de caminhos (documento 02, §9)
+  ? ("max_bytes" / 6) => uint,
+  extension
+}
+
+session-open-args = {                   ; agent/1.3
+  ("id" / 1) => ulid,
+  ("user" / 2) => user-claim,
+  ("role" / 3) => enum,                 ; role pedido (ref/00, §6)
+  ("reason" / 4) => tstr,
+  ("ttl" / 5) => duration,
+  ? ("tunnel" / 6) => tstr,             ; URL wss:// do túnel
+  extension
+}
+
+user-claim = {
+  ("id" / 1) => tstr,
+  ? ("name" / 2) => tstr,
+  ? ("groups" / 3) => [* tstr],
+  ? ("mfa" / 4) => bool,
+  extension
+}
+
+session-close-args = {
+  ("id" / 1) => ulid,
+  ? ("reason" / 2) => tstr,
+  extension
+}
+
+tunnel-frame = [
+  stream: uint,
+  kind: uint,                           ; open 0, data 1, close 2, reset 3, credit 4, ping 5
+  ? payload: bstr / uint,
+]
+
+; ------------------------------------------------------------------ long-poll (HTTPS)
+
+poll-reply = {
+  ("time" / 1) => time,
+  ? ("desired" / 2) => cose,
+  ? ("commands" / 3) => [+ cose],
+  ? ("cursor" / 4) => tstr,
+  ? ("event_ack" / 5) => seq,
+  ? ("need_full" / 6) => bool,
+  ? ("backoff" / 7) => duration,
+  extension
+}
+
+; ------------------------------------------------------------------ estado reportado
+
+report = {
+  ("v" / 1) => 1,
+  ("node" / 2) => name,
+  ("seq" / 3) => seq,
+  ? ("base" / 4) => seq,                ; presente = delta (merge patch, RFC 7386) sobre o relatório base
+  ("time" / 5) => time,
+  ("clock" / 6) => enum,
+  ("body" / 7) => report-body,
+  extension
+}
+
+report-ack = {
+  ("ack" / 1) => seq,
+  ? ("need_full" / 2) => bool,
+  extension
+}
+
+; num delta, qualquer valor pode ser null (apaga a entrada), e os mapas fundem-se.
+report-body = {
+  ? ("node" / 1) => node-info / null,
+  ? ("runtime" / 2) => runtime-info / null,
+  ? ("generation" / 3) => generation-info / null,
+  ? ("desired" / 4) => desired-info / null,
+  ? ("drift" / 5) => { * tstr => drift-entry / null } / null,
+  ? ("health" / 6) => health-summary / null,
+  ? ("groups" / 7) => { * tstr => group-info / null } / null,
+  ? ("devices" / 8) => { * tstr => device-info / null } / null,
+  ? ("instances" / 9) => { * tstr => instance-info / null } / null,
+  ? ("apps" / 10) => { * tstr => app-info / null } / null,
+  ? ("alarms" / 11) => { * tstr => alarm-info / null } / null,
+  ? ("trips" / 12) => { * tstr => trip-info / null } / null,
+  ? ("overrides" / 13) => { * tstr => override-info / null } / null,
+  ? ("resources" / 14) => resources / null,
+  ? ("mcus" / 15) => { * tstr => mcu-info / null } / null,
+  ? ("identity" / 16) => identity-info / null,
+  ? ("agent" / 17) => agent-info / null,
+  ? ("truncated" / 18) => [+ uint] / null,
+  ; 19: reservado (intenções pendentes, 1.1/1.3)
+  ; 20: reservado (modelos, sombra, 1.1)
+  ? ("secrets" / 21) => { * tstr => secret-info / null } / null,
+  ? ("drivers" / 22) => { * tstr => driver-info / null } / null,
+  ; 100–119: reservado (v2)
+  extension
+}
+
+node-info = {
+  ? ("board" / 1) => tstr,
+  ? ("arch" / 2) => tstr,
+  ? ("os" / 3) => tstr,
+  ? ("mode" / 4) => enum,               ; dev 0, prod 1
+  ? ("site" / 5) => name,
+  ? ("tz" / 6) => tstr,
+  ? ("kind" / 7) => enum,               ; node-kind
+  ? ("boot" / 8) => ulid,
+  ? ("booted" / 9) => time,
+  extension
+}
+
+runtime-info = {
+  ? ("version" / 1) => semver,
+  ? ("slot" / 2) => enum,               ; a 0, b 1
+  ? ("previous" / 3) => semver,
+  ? ("state" / 4) => enum,              ; generation_state da fase runtime (ref/00, §6)
+  ? ("proto_minor" / 5) => uint,
+  ? ("worlds" / 6) => [+ tstr],         ; mundos WIT aceites (joker:runtime@1.0.0, …)
+  extension
+}
+
+generation-info = {
+  ? ("confirmed" / 1) => gen-ref,
+  ? ("running" / 2) => gen-ref,
+  ? ("state" / 3) => enum,              ; generation_state da geração em execução
+  ? ("previous" / 4) => gen-ref,
+  ? ("origin" / 5) => enum,             ; gen-origin: agent 0, local 1, import 2, session 3,
+                                        ; shadow 4, rollback 5, boot 6
+  ? ("confirm_by" / 6) => time,
+  extension
+}
+
+gen-ref = {
+  ("gen" / 1) => uint,
+  ("hash" / 2) => digest,
+  ? ("at" / 3) => time,
+  ? ("by" / 4) => tstr,                 ; principal (user:…, deck:<deck_id>/user:<id>, agent)
+  ? ("label" / 5) => tstr,
+  extension
+}
+
+desired-info = {
+  ("seq" / 1) => seq,
+  ("state" / 2) => enum,                ; apply-state
+  ? ("phase" / 3) => enum,              ; phase
+  ? ("wait" / 4) => enum,               ; wait-reason
+  ? ("code" / 5) => code,
+  ? ("causes" / 6) => [+ code],
+  ? ("fetched" / 7) => [done: uint, total: uint],        ; bytes
+  ? ("next" / 8) => time,               ; próxima tentativa ou abertura de janela
+  ? ("rollout" / 9) => ulid,
+  extension
+}
+
+drift-entry = {
+  ("code" / 1) => code,
+  ("since" / 2) => time,
+  ? ("detail" / 3) => tstr,
+  extension
+}
+
+health-summary = {
+  ("overall" / 1) => enum,              ; health
+  ? ("codes" / 2) => [+ code],
+  extension
+}
+
+group-info = {
+  ("state" / 1) => enum,                ; group-state
+  ? ("period" / 2) => duration,
+  ? ("jitter_p999" / 3) => duration,
+  ? ("overruns" / 4) => uint,
+  extension
+}
+
+device-info = {
+  ("link" / 1) => enum,                 ; link-state (ref/00 §6): connecting 0 … stopped 5
+  ? ("since" / 2) => time,
+  ? ("driver" / 3) => tstr,
+  ? ("firmware" / 4) => tstr,
+  extension
+}
+
+instance-info = {
+  ("health" / 1) => enum,               ; instance-health
+  ? ("class" / 2) => tstr,
+  ? ("failed" / 3) => [+ tstr],         ; membros em falha
+  extension
+}
+
+app-info = {
+  ("state" / 1) => enum,                ; app-state
+  ? ("version" / 2) => semver,
+  ? ("digest" / 3) => digest,
+  ? ("restarts" / 4) => uint,
+  extension
+}
+
+alarm-info = {
+  ("state" / 1) => enum,                ; alarm_state (ref/00, §6)
+  ("severity" / 2) => enum,             ; severity
+  ("since" / 3) => time,
+  ? ("shelved_until" / 4) => time,
+  ? ("message" / 5) => tstr,
+  extension
+}
+
+trip-info = {
+  ("since" / 1) => time,
+  ? ("cause" / 2) => tstr,
+  extension
+}
+
+override-info = {
+  ("level" / 1) => tstr,                ; "manual:3"
+  ("by" / 2) => tstr,
+  ("until" / 3) => time,
+  ? ("reason" / 4) => tstr,
+  extension
+}
+
+resources = {
+  ? ("cpu" / 1) => pct,
+  ? ("mem_used" / 2) => uint,
+  ? ("mem_total" / 3) => uint,
+  ? ("disk_free" / 4) => uint,
+  ? ("disk_total" / 5) => uint,
+  ? ("wear" / 6) => pct,
+  ? ("temp" / 7) => float,              ; °C
+  ? ("throttled" / 8) => bool,
+  ? ("store_lag" / 9) => duration,
+  ? ("heap_free" / 10) => uint,         ; perfil micro
+  ? ("heap_min" / 11) => uint,          ; perfil micro
+  ? ("rssi" / 12) => int,               ; dBm, perfil micro
+  ? ("boot_count" / 13) => uint,
+  ? ("reset_reason" / 14) => tstr,
+  ? ("uplinks" / 15) => { * tstr => uplink-info / null },
+  extension
+}
+
+uplink-info = {
+  ? ("lag" / 1) => duration,
+  ? ("budget_used" / 2) => pct,
+  extension
+}
+
+mcu-info = {
+  ("link" / 1) => enum,                 ; link-state
+  ? ("board" / 2) => tstr,
+  ? ("firmware" / 3) => semver,
+  ? ("firmware_digest" / 4) => digest,
+  ? ("generation" / 5) => digest,
+  ? ("state" / 6) => enum,              ; generation_state
+  ? ("abi" / 7) => tstr,                ; "1.0"
+  ? ("link_version" / 8) => tstr,       ; "1.0"
+  ? ("boot_count" / 9) => uint,
+  ? ("reset_reason" / 10) => tstr,
+  ? ("counter" / 11) => uint,           ; contador de segurança do firmware (security_version)
+  ? ("descriptor" / 12) => digest,      ; SHA-256 do firmware.jkfw
+  ? ("gen_seq" / 13) => uint,
+  ? ("session_mode" / 14) => enum,      ; session_mode (ref/00 §6)
+  ? ("confirm_left" / 15) => duration,  ; tempo que falta na janela de confirmação
+  ? ("params" / 16) => [* tstr],        ; parâmetros alterados localmente (deriva)
+  ? ("drivers" / 17) => digest,         ; resumo dos descritores dos drivers (ref/07 §6.4, chave 15)
+  extension
+}
+
+secret-info = {
+  ("rev" / 1) => uint,
+  ? ("ok" / 2) => bool,                  ; decifrado e verificado
+  extension
+}
+
+driver-info = {
+  ("version" / 1) => semver,
+  ? ("tier" / 2) => tstr,                ; "N", "W", "X"
+  ? ("descriptor" / 3) => digest,
+  extension
+}
+
+identity-info = {
+  ? ("serial" / 1) => bytes,
+  ? ("not_after" / 2) => time,
+  ? ("key_storage" / 3) => enum,
+  ? ("trust_version" / 4) => seq,
+  ? ("floors" / 5) => { * tstr => seq },  ; papel → seq do piso aplicado
+  extension
+}
+
+agent-info = {
+  ? ("transport" / 1) => enum,          ; transport: https 0, mqtt 1, coap 2
+  ? ("queue" / 2) => uint,              ; eventos por confirmar
+  ? ("queue_bytes" / 3) => uint,
+  ? ("dropped" / 4) => uint,            ; desde o enrolamento
+  ? ("oldest" / 5) => time,             ; evento mais antigo por confirmar
+  ? ("paused_until" / 6) => time,
+  ? ("hold" / 7) => bool,               ; alterações locais em espera
+  extension
+}
+
+; ------------------------------------------------------------------ eventos
+
+event-batch = {
+  ("node" / 1) => name,
+  ("events" / 2) => [+ event],
+  extension
+}
+
+event-ack = {
+  ("ack" / 1) => seq,
+  extension
+}
+
+event = {
+  ("seq" / 1) => seq,
+  ("id" / 2) => ulid,
+  ("ts" / 3) => time,
+  ("clock" / 4) => enum,
+  ("boot" / 5) => ulid,
+  ("mono" / 6) => uint,                 ; ns desde o arranque (par de ts, ref/00, §3)
+  ("type" / 7) => enum,                 ; event-type
+  ("body" / 8) => event-body,
+  extension
+}
+
+event-body = alarm-event / decision-event / apply-event / trip-event / security-event /
+             session-event / gap-event / clock-event / command-result-event / cert-event /
+             agent-event
+
+alarm-event = {
+  ("name" / 1) => tstr,
+  ("from" / 2) => enum,                 ; alarm_state
+  ("to" / 3) => enum,
+  ("severity" / 4) => enum,
+  ? ("message" / 5) => tstr,
+  ? ("by" / 6) => tstr,                 ; quem reconheceu ou arquivou
+  ? ("shelved_until" / 7) => time,
+  extension
+}
+
+decision-event = {
+  ("output" / 1) => path,
+  ("writer" / 2) => tstr,               ; app:…, user:… (user:deck:<deck_id>/user:<id> em sessões), bridge:…
+  ("outcome" / 3) => enum,              ; resultado de escrita (ref/00, §4.4)
+  ? ("reason" / 4) => enum,             ; motivo de rejected (ref/00, §4.4)
+  ? ("level" / 5) => tstr,
+  ? ("value" / 6) => any,
+  ? ("applied" / 7) => any,
+  ? ("ttl" / 8) => duration,
+  ? ("why" / 9) => tstr,                ; --reason do operador
+  ? ("session" / 10) => ulid,
+  ? ("count" / 11) => uint,             ; decisões iguais agregadas
+  ? ("tick" / 12) => uint,
+  extension
+}
+
+apply-event = {
+  ("seq" / 1) => seq,
+  ("state" / 2) => enum,                ; apply-state
+  ? ("phase" / 3) => enum,
+  ? ("gen" / 4) => gen-ref,
+  ? ("device" / 5) => path,
+  ? ("code" / 6) => code,
+  ? ("causes" / 7) => [+ code],
+  ? ("rollout" / 8) => ulid,
+  extension
+}
+
+trip-event = {
+  ("output" / 1) => path,
+  ("action" / 2) => enum,               ; trip-action: tripped 0, reset 1
+  ? ("cause" / 3) => tstr,
+  ? ("by" / 4) => tstr,
+  extension
+}
+
+security-event = {
+  ("kind" / 1) => enum,                 ; security-kind
+  ("code" / 2) => code,
+  ? ("detail" / 3) => tstr,
+  ? ("kid" / 4) => kid,
+  ? ("seq" / 5) => seq,
+  extension
+}
+
+session-event = {
+  ("id" / 1) => ulid,
+  ("action" / 2) => enum,               ; session-action
+  ("user" / 3) => tstr,
+  ? ("role" / 4) => enum,
+  ? ("code" / 5) => code,
+  ? ("requests" / 6) => uint,
+  ? ("writes" / 7) => uint,
+  extension
+}
+
+gap-event = {
+  ("ranges" / 1) => [+ [from: seq, to: seq]],
+  ("counts" / 2) => { * enum => uint },  ; event-type → quantos se perderam
+  extension
+}
+
+clock-event = {
+  ("boot" / 1) => ulid,
+  ("mono" / 2) => uint,
+  ("utc" / 3) => time,
+  ("quality" / 4) => enum,
+  ? ("source" / 5) => tstr,             ; ntp, ptp, gnss, deck
+  extension
+}
+
+command-result-event = {
+  ("id" / 1) => ulid,
+  ("status" / 2) => enum,               ; agent-status
+  ? ("code" / 3) => code,
+  extension
+}
+
+cert-event = {
+  ("action" / 1) => enum,               ; cert-action: renewed 0, expiring 1, expired 2, revoked 3
+  ? ("not_after" / 2) => time,
+  ? ("serial" / 3) => bytes,
+  extension
+}
+
+agent-event = {
+  ("action" / 1) => enum,               ; agent-action: paused 0, resumed 1, hold 2, imported 3, offline 4, online 5
+  ? ("by" / 2) => tstr,
+  ? ("until" / 3) => time,
+  ? ("detail" / 4) => tstr,
+  extension
+}
+
+; ------------------------------------------------------------------ artefactos por MQTT (perfil micro)
+
+blob-request = {
+  ("digest" / 1) => digest,
+  ("offset" / 2) => uint,
+  ("length" / 3) => uint,
+  extension
+}
+
+blob-chunk = {
+  ("digest" / 1) => digest,
+  ("offset" / 2) => uint,
+  ("data" / 3) => bstr,
+  ? ("total" / 4) => uint,
+  extension
+}
+
+; ------------------------------------------------------------------ token do registo
+
+registry-token-request = {
+  ("scope" / 1) => [+ tstr],            ; "repository:<nome>:pull"
+  extension
+}
+
+; ------------------------------------------------------------------ estado da ligação MQTT (tópico status, retido; também a will)
+
+status-message = {
+  ("online" / 1) => bool,
+  ("boot" / 2) => ulid,
+  ("time" / 3) => time,
+  extension
+}
+
+registry-token = {
+  ("token" / 1) => tstr,
+  ("expires" / 2) => time,
+  ("scope" / 3) => [+ tstr],
+  extension
+}

@@ -1,0 +1,465 @@
+; jdp.cddl — Joker Driver Protocol (tier X), version 1, and the shared driver structures.
+;
+; Normative reference: docs/ref/06-drivers.md (§2 common model, §5 JDP). Representation rules:
+; docs/ref/00-convencoes.md (§7: CBOR with integer keys; deterministic CBOR where hashed).
+;
+; This file defines:
+;   1. the control messages exchanged on the JDP control socket (one CBOR data item per
+;      SOCK_SEQPACKET datagram, at most 65536 bytes);
+;   2. the shared structures, also used as:
+;        - the `joker:driver-meta` custom section of tier W components (`descriptor`);
+;        - the plan cached in the generation and in the Joker Micro blob (`read-plan`);
+;   3. the schema language drivers use to declare their configuration keys;
+;   4. the per-device configuration item of the Joker Micro generation blob (section 5).
+; The binary layout of the data-plane rings (memfd) is NOT CBOR and is specified in ref/06 §5.5.
+;
+; Mapping rule (ref/06 §5.3.2): each record below mirrors the WIT record of the same name in
+; wit/joker-driver.wit; the integer key of a field is its 0-based position in the WIT record.
+; A WIT `option` that is `none` is an absent key. A WIT `variant` is `[case, payload]` (or `[case]`
+; without payload), where `case` is the 0-based case index. A WIT `enum` is its case index.
+; `list<u8>` is a byte string. Readers ignore unknown keys and map unknown enum values as ref/00 §1
+; says; writers never reuse a removed key.
+
+; ---------------------------------------------------------------------------------------------
+; 1. Control messages
+; ---------------------------------------------------------------------------------------------
+
+jdp-message = hello / welcome
+            / plan-req / plan-res
+            / rings-req / rings-res
+            / open-req / open-res
+            / connect-req / connect-res
+            / disconnect-req / disconnect-res
+            / close-req / close-res
+            / read-addr-req / read-addr-res
+            / write-addr-req / write-addr-res
+            / invoke-req / invoke-res / progress / cancel
+            / scan-req / scan-hit-msg / scan-res
+            / health-req / health-res
+            / log-msg / bye / error-msg
+            / stream-open / stream-res / stream-close
+
+; Header keys shared by every message.
+;   0 t     message type (below)
+;   1 id    request id, chosen by the requester, unique among its pending requests (u32);
+;           a response carries the id of its request; notifications have no id
+;   2 inst  driver instance (u16), chosen by jokerd at `open`
+;   3 st    status, only in responses
+;   4 code  J-code from the registry (ref/00 §8), optional, only with st != ok
+;   5 msg   human text, optional, English
+;   6..15   reserved for the header; bodies use keys >= 16
+
+msg-type = &(
+  hello: 1, welcome: 2,
+  plan: 3, plan-res: 4,
+  rings: 5, rings-res: 6,
+  open: 7, open-res: 8,
+  connect: 9, connect-res: 10,
+  disconnect: 11, disconnect-res: 12,
+  close: 13, close-res: 14,
+  read-addr: 15, read-addr-res: 16,
+  write-addr: 17, write-addr-res: 18,
+  invoke: 19, invoke-res: 20, progress: 21, cancel: 22,
+  scan: 23, scan-hit: 24, scan-res: 25,
+  health: 26, health-res: 27,
+  log: 28, bye: 29, error: 30,
+  ; 31..39 reserved for 1.x; 40..42 streams (1.1, ref/06 §5.6)
+  stream-open: 40, stream-res: 41, stream-close: 42,
+)
+
+status = &(
+  ok: 0,
+  error: 1,          ; see `code`
+  unsupported: 2,    ; message type or feature not implemented by the receiver
+  invalid: 3,        ; malformed or out-of-range request
+  timeout: 4,        ; the receiver gave up before completing
+  busy: 5,           ; another request of the same kind is pending for this instance
+  denied: 6,         ; authentication or permission
+  version: 7,        ; no common JDP version
+)
+
+req-hdr = ( 1 => uint .size 4 )
+res-hdr = ( 1 => uint .size 4, 3 => status, ? 4 => jcode, ? 5 => tstr )
+inst = ( 2 => uint .size 2 )
+
+jcode = tstr .regexp "J[0-9]{4}|J-E[0-9]{4}"
+
+; ---- handshake (§5.4) -------------------------------------------------------------------------
+
+; driver → jokerd, first datagram after connecting. Anything else first: J0863, connection closed.
+hello = {
+  0 => 1,
+  req-hdr,
+  16 => [ min: uint, max: uint ],   ; JDP versions supported (1 in v1)
+  17 => descriptor,
+  18 => bstr .size 32,              ; launch token (JDP_TOKEN_FILE)
+  19 => uint,                       ; pid of the driver process
+  ? 20 => tstr,                     ; SDK and version ("libjdp 1.0.2", "joker-jdp 1.0.2")
+}
+
+; jokerd → driver. st = version → the driver exits with code 3.
+welcome = {
+  0 => 2,
+  res-hdr,
+  ? 16 => uint,                     ; chosen JDP version
+  ? 17 => tstr,                     ; node name
+  ? 18 => uint,                     ; generation number (ref/00 §5)
+  ? 19 => limits,
+}
+
+limits = {
+  0 => uint,                        ; max control datagram, bytes (65536)
+  1 => uint,                        ; max raw value, bytes (256)
+  2 => uint,                        ; max log messages per second (100)
+  3 => uint,                        ; health interval, ns (5 s)
+  4 => uint,                        ; health reply timeout, ns (2 s)
+  5 => uint,                        ; max instances per process (64)
+}
+
+; ---- planning (pure) --------------------------------------------------------------------------
+
+plan-req = { 0 => 3, req-hdr, 16 => plan-request }
+plan-res = { 0 => 4, res-hdr, ? 16 => read-plan, ? 17 => [* diagnostic] }   ; 17: errors when st = error
+
+; ---- data plane setup (§5.5) ------------------------------------------------------------------
+
+; jokerd → driver, carries 4 descriptors by SCM_RIGHTS, in this order:
+;   memfd A (driver-writable), memfd B (read-only for the driver),
+;   eventfd `up` (driver → jokerd), eventfd `down` (jokerd → driver).
+rings-req = {
+  0 => 5,
+  req-hdr,
+  16 => uint,                       ; entry size, bytes (64)
+  17 => uint,                       ; up ring capacity, entries (power of two)
+  18 => uint,                       ; down ring capacity, entries (power of two)
+  19 => uint,                       ; size of memfd A, bytes
+  20 => uint,                       ; size of memfd B, bytes
+}
+rings-res = { 0 => 6, res-hdr }
+
+; ---- instance life cycle ----------------------------------------------------------------------
+
+open-req = {
+  0 => 7,
+  req-hdr,
+  inst,
+  16 => plan-request,
+  17 => read-plan,
+  18 => link-spec,
+}
+open-res = { 0 => 8, res-hdr, inst }
+
+; For tier X the transport is not a handle: jokerd tells the driver what the manifest gives it,
+; and the systemd sandbox (ref/06 §5.2) restricts the process to it.
+link-spec = [0]                               ; none
+          / [1, tstr, serial-params]          ; serial: device path
+          / [2, tstr]                         ; tcp: "host:port"
+          / [3, tstr, [* tstr]]               ; udp: "host:port", allowed networks (CIDR)
+          / [4, tstr, [* uint]]               ; i2c: device path, allowed addresses
+          / [5, tstr]                         ; spi: device path
+          / [6, tstr, [* can-filter]]         ; can: interface
+          / [7, [* tstr]]                     ; paths: device nodes granted (V4L2, vendor devices)
+
+serial-params = {
+  0 => uint,                        ; baud
+  1 => uint,                        ; data bits
+  2 => uint,                        ; parity: 0 none, 1 even, 2 odd
+  3 => uint,                        ; stop bits
+  4 => uint,                        ; turnaround, ns
+}
+
+can-filter = { 0 => uint, 1 => uint, 2 => bool }   ; id, mask, extended
+
+connect-req = { 0 => 9, req-hdr, inst, 16 => uint }            ; 16: deadline, monotonic ns
+connect-res = { 0 => 10, res-hdr, inst, ? 16 => [* connect-info] }
+
+disconnect-req = { 0 => 11, req-hdr, inst, 16 => uint }
+disconnect-res = { 0 => 12, res-hdr, inst }
+
+close-req = { 0 => 13, req-hdr, inst }
+close-res = { 0 => 14, res-hdr, inst }
+
+; ---- raw access by address (steps, connect, relinquish, fallback) -------------------------------
+
+read-addr-req  = { 0 => 15, req-hdr, inst, 16 => addr-read, 17 => uint }        ; 17: deadline
+read-addr-res  = { 0 => 16, res-hdr, inst, ? 16 => raw-value, ? 17 => batch-failure }
+write-addr-req = { 0 => 17, req-hdr, inst, 16 => addr-write, 17 => uint }
+write-addr-res = { 0 => 18, res-hdr, inst, ? 17 => batch-failure }
+
+; ---- native actions ---------------------------------------------------------------------------
+
+invoke-req = { 0 => 19, req-hdr, inst, 16 => action-call, 17 => uint }           ; 17: deadline
+invoke-res = { 0 => 20, res-hdr, inst, ? 16 => bstr, ? 17 => action-failure }    ; 16: result (CBOR)
+progress   = { 0 => 21, inst, 16 => uint, 17 => uint .le 1000, ? 18 => tstr }    ; call, permille
+cancel     = { 0 => 22, inst, 16 => uint }                                        ; call
+
+; ---- scan (jk discover) -----------------------------------------------------------------------
+
+scan-req     = { 0 => 23, req-hdr, 16 => scan-request, 17 => link-spec, 18 => uint }
+scan-hit-msg = { 0 => 24, 16 => uint, 17 => scan-hit }                            ; 16: id of the scan
+scan-res     = { 0 => 25, res-hdr }
+
+; ---- health, logs, termination ----------------------------------------------------------------
+
+health-req = { 0 => 26, req-hdr }
+health-res = { 0 => 27, res-hdr, 16 => [* [uint .size 2, health-report]] }       ; per instance
+
+log-msg = {
+  0 => 28,
+  ? 2 => uint .size 2,
+  16 => log-level,
+  17 => tstr .size (0..1024),
+  ? 18 => [* [tstr, tstr]],         ; fields, at most 16
+}
+log-level = &(trace: 0, debug: 1, info: 2, warn: 3, error: 4)
+
+bye = { 0 => 29, 16 => bye-reason, ? 5 => tstr }
+bye-reason = &(shutdown: 0, generation: 1, restart: 2, protocol: 3, fatal: 4)
+
+; Unsolicited protocol-level error (e.g. a response to an unknown id). Never answered.
+error-msg = { 0 => 30, 4 => jcode, ? 5 => tstr, ? 16 => uint }                    ; 16: offending id
+
+; ---- streams (reserved for 1.1, M4; ref/06 §5.6) ------------------------------------------------
+
+; driver → jokerd, with SCM_RIGHTS: n buffer fds (memfd or dmabuf), then 1 memfd with the frame
+; rings, then 2 eventfds (frames, releases).
+stream-open = {
+  0 => 40,
+  req-hdr,
+  inst,
+  16 => uint,                       ; point (the stream signal)
+  17 => uint,                       ; number of buffers
+  18 => uint,                       ; bytes per buffer
+  19 => tstr,                       ; pixel/sample format ("NV12", "GREY", "S16LE")
+  20 => [ width: uint, height: uint ],
+  21 => bool,                       ; true: dmabuf, false: memfd
+}
+stream-res   = { 0 => 41, res-hdr, inst }
+stream-close = { 0 => 42, inst, 16 => uint }
+
+; ---------------------------------------------------------------------------------------------
+; 2. Shared structures (mirror wit/joker-driver.wit `types`; key = field position)
+; ---------------------------------------------------------------------------------------------
+
+quality-code = &(good: 0, uncertain: 1, bad: 2)
+raw-kind     = &(none: 0, boolean: 1, int: 2, uint: 3, float: 4, regs: 5, bytes: 6, text: 7)
+
+raw-value = [0]
+          / [1, bool]
+          / [2, int .size 8]
+          / [3, uint .size 8]
+          / [4, float64]
+          / [5, [* uint .size 2]]
+          / [6, bstr .size (0..256)]
+          / [7, tstr .size (0..256)]
+
+raw-status = { 0 => quality-code, 1 => uint .size 1 }
+
+raw-sample = {
+  0 => uint .size 4,                ; point
+  1 => raw-value,
+  2 => raw-status,
+  ? 3 => int .size 8,               ; ts-src, UTC ns
+  ? 4 => uint .size 8,              ; ts-hw, monotonic ns
+}
+
+; What a driver may report. The full `link_state` of ref/00 §6 adds drift: 4 and stopped: 5,
+; which only the core sets (ref/06 §2.12).
+link-state = &(connecting: 0, up: 1, degraded: 2, down: 3)
+direction  = &(input: 0, output: 1, param: 2)
+read-class = &(cycle: 0, telemetry: 1, diagnostic: 2)
+poll       = [0, uint] / [1] / [2]                  ; period(ns) / on-demand / push
+
+point-spec = {
+  0 => uint .size 4,                ; id
+  1 => uint .size 2,                ; device
+  2 => tstr,                        ; path
+  3 => direction,
+  4 => raw-kind,                    ; expect
+  5 => uint .size 2,                ; width
+  6 => tstr,                        ; type-name
+  7 => bstr,                        ; addr (deterministic CBOR)
+  8 => poll,
+  9 => read-class,
+  ? 10 => uint .size 4,             ; coherent
+  11 => uint,                       ; debounce-ns
+  12 => bool,                       ; timed
+}
+
+action-spec = {
+  0 => uint .size 4, 1 => uint .size 2, 2 => tstr,
+  3 => bstr,                        ; native (deterministic CBOR)
+  4 => uint,                        ; timeout-ns
+  5 => bool,                        ; long
+}
+
+bus-kind = &(none: 0, ethernet: 1, serial: 2, can: 3, ethercat: 4, i2c: 5, spi: 6)
+bus-spec = { 0 => tstr, 1 => bus-kind, 2 => bstr }
+
+device-spec = {
+  0 => uint .size 2,                ; index
+  1 => tstr,                        ; name
+  2 => bstr,                        ; config
+  3 => bstr,                        ; profile-config
+  4 => bstr,                        ; quirks
+  ? 5 => bstr,                      ; discovered
+  6 => uint,                        ; timeout-ns
+}
+
+plan-request = {
+  ? 0 => bus-spec,
+  1 => [* device-spec],
+  2 => [* point-spec],
+  3 => [* action-spec],
+}
+
+batch-kind = &(poll: 0, on-demand: 1, push: 2)
+
+batch-spec = {
+  0 => uint .size 4, 1 => uint .size 2, 2 => batch-kind,
+  3 => [* uint .size 4],            ; points, ascending
+  4 => uint,                        ; period-ns
+  5 => uint,                        ; cost-ns
+  6 => bstr,                        ; private
+}
+
+diagnostic = { 0 => jcode, ? 1 => uint .size 4, 2 => tstr }
+
+read-plan = {
+  0 => [* batch-spec],
+  1 => uint,                        ; write-cost-ns
+  2 => bstr,                        ; private
+  3 => [* diagnostic],              ; warnings
+}
+
+batch-failure = [0]                 ; timeout
+              / [1, tstr]           ; comm-failure
+              / [2, tstr]           ; device-fault
+              / [3]                 ; not-connected
+              / [4, tstr]           ; config-error
+
+write-kind   = &(set: 0, keepalive: 1, force-safe: 2, relinquish: 3, resync: 4)
+write-status = &(ok: 0, timeout: 1, comm-failure: 2, device-rejected: 3, not-connected: 4,
+                 unsupported: 5, late: 6, skipped: 7)
+
+addr-read  = { 0 => uint .size 2, 1 => bstr, 2 => raw-kind, 3 => uint .size 2, 4 => tstr }
+addr-write = { 0 => uint .size 2, 1 => bstr, 2 => raw-value, 3 => tstr }
+
+action-call = { 0 => uint .size 8, 1 => uint .size 4, 2 => bstr }
+
+error = { 0 => jcode, 1 => tstr }
+action-failure = [0]                ; timeout
+               / [1, error]         ; device
+               / [2, error]         ; invalid
+               / [3]                ; not-connected
+               / [4]                ; unsupported
+               / [5]                ; cancelled
+
+device-info = {
+  ? 0 => tstr, ? 1 => tstr, ? 2 => tstr, ? 3 => tstr, ? 4 => tstr,   ; vendor model serial firmware hw
+  ? 5 => bstr .size 32,             ; cert
+  6 => bstr,                        ; extra (deterministic CBOR map)
+}
+
+connect-info = { 0 => uint .size 2, 1 => device-info, ? 2 => bstr }  ; device, info, discovered
+
+scan-request = { 0 => tstr, 1 => bstr }
+scan-hit     = { 0 => tstr, 1 => bstr, 2 => device-info, ? 3 => tstr }
+
+health-report = { 0 => link-state, 1 => tstr, 2 => [* [tstr, uint]] }
+
+; ---------------------------------------------------------------------------------------------
+; 3. Descriptor (tier N: compiled in; tier W: custom section `joker:driver-meta`; tier X: `hello`)
+; ---------------------------------------------------------------------------------------------
+
+descriptor = {
+  0 => driver-name,
+  1 => semver,
+  2 => tier,
+  3 => [+ tstr],                    ; protocol families served (ref/03 §2.2.2: "modbus", "x:acme-bms")
+  4 => [+ bus-kind],                ; transports accepted (none = no transport)
+  5 => instance-mode,
+  6 => [* capability],
+  7 => schema,                      ; driver-specific keys of [devices.<d>]
+  8 => schema,                      ; point address keys (profile signals, manifest signals)
+  9 => schema,                      ; profile quirks
+  10 => schema,                     ; `native` table of profile actions
+  ? 11 => resources,                ; tier W and X
+  ? 12 => tstr,                     ; SDK
+  ? 13 => tstr,                     ; "joker:driver@0.1.0" (W) or "jdp/1" (X); "joker-hal@x.y" (N)
+  ? 14 => bool,                     ; no_std capable (Joker Micro), tier N only
+  ? 15 => tstr,                     ; SPDX license
+  ? 16 => tstr .size (0..1024),     ; description
+  ? 17 => schema,                   ; driver fields of [discovered.<d>] in joker.lock (ref/02 §2.1.11)
+}
+
+; SHA-256 of the deterministic CBOR of `descriptor`. Pinned in joker.lock ([drivers.<n>] descriptor,
+; ref/02 §2.1.8), key of the plan cache, and carried by the Joker Micro blob (ref/06 §3.7).
+descriptor-digest = bstr .size 32
+
+driver-name = tstr .regexp "[a-z][a-z0-9-]{0,31}"
+semver      = tstr .regexp "[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?"
+tier          = &(n: 0, w: 1, x: 2)
+instance-mode = &(device: 0, bus: 1)
+
+capability = "write" / "push" / "raw-access" / "native-actions" / "discover" / "scan"
+           / "coherent" / "atomic-request" / "timed-write" / "relinquish" / "debounce"
+           / "hw-timestamps" / "rt-cycle"
+           / "block-read" / "streams"          ; reserved 1.1
+           / tstr                              ; unknown names are ignored (ref/00 §1)
+
+resources = {
+  ? 0 => uint,                      ; memory, bytes (W: linear memory max; X: cgroup MemoryMax)
+  ? 1 => uint,                      ; X: CPU quota, permille of one CPU
+  ? 2 => uint,                      ; X: max tasks (threads)
+}
+
+; ---------------------------------------------------------------------------------------------
+; 4. Schema language for driver keys (ref/06 §2.3.1)
+; ---------------------------------------------------------------------------------------------
+
+schema = { * key-name => field }
+key-name = tstr .regexp "[a-z][a-z0-9_]{0,31}"
+
+field = {
+  0 => field-type,
+  ? 1 => bool,                      ; required (false)
+  ? 2 => any,                       ; default (in the TOML-to-CBOR mapping of ref/06 §2.4.3)
+  ? 3 => [any, any],                ; range [min, max] for int, uint, float, quantity, duration
+  ? 4 => [+ tstr],                  ; values for `choice`
+  ? 5 => field,                     ; element of `list`, value of `map`
+  ? 6 => tstr,                      ; unit (dimension) for `quantity`
+  ? 7 => tstr,                      ; one-line description, English
+  ? 8 => schema,                    ; fields of `table`
+  ? 9 => uint,                      ; max length (string bytes, list elements)
+  ? 10 => tstr,                     ; `since` version of the driver (for error messages)
+}
+
+field-type = &(
+  string: 0, int: 1, uint: 2, float: 3, bool: 4,
+  duration: 5, quantity: 6, choice: 7, list: 8, table: 9, map: 10,
+  address: 11,                      ; host:port or IP
+  path: 12,                         ; absolute file path
+  secret: 13,                       ; `secret:<name>` reference (ref/00 §9); the driver gets the value at open
+  any: 14,                          ; opaque; the driver's plan validates
+)
+
+; ---------------------------------------------------------------------------------------------
+; 5. Joker Micro: configuration of one device in the generation blob (ref/06 §3.7)
+; ---------------------------------------------------------------------------------------------
+
+; The item a `DEVICES` record points to in the `BLOBS` section of a .jkgen blob (ref/08 §2.13.3).
+; Deterministic CBOR. The plan was computed on the host by `jk build --target mcu:…`; the firmware
+; refuses it if `0` is not the digest of its own driver's descriptor (J0885).
+micro-device-config = {
+  0 => descriptor-digest,           ; descriptor the plan was made with
+  1 => device-spec,                 ; config, profile-config, quirks, discovered, timeout-ns
+  2 => [* micro-point],             ; in point id order
+  3 => read-plan,
+  ? 4 => bus-spec,
+}
+
+micro-point = {
+  0 => point-spec,
+  1 => uint .size 4,                ; SignalId of the point in the MCU generation
+}

@@ -1,0 +1,532 @@
+/// joker:driver — the world of tier W drivers (drivers compiled to WebAssembly components).
+///
+/// Normative reference: docs/ref/06-drivers.md (§4). Representation rules: docs/ref/00-convencoes.md.
+/// The same contract exists for tier N (Rust trait, ref/06 §3) and tier X (JDP, ref/06 §5): the
+/// records below have the same fields, in the same order, as the Rust types and the CDDL of
+/// spec/cddl/jdp.cddl.
+///
+/// Versioning (ref/00 §1, ADR 0022): this package always has the SAME version as the
+/// `joker:runtime` package it imports. 0.1.0 until the 1.0; `joker:driver@1.0.0` with
+/// `joker:runtime@1.0.0` at the 1.0. Minor versions only add (functions, record-free variants at the
+/// end, interfaces). Items reserved for a later minor carry `@unstable(feature = <name>)`: a
+/// component that uses them is refused in `prod` (J0860).
+///
+/// Stability (ref/06 §4): in 1.0 and 1.1 the whole world is `@unstable(feature = driver-world)`
+/// and only in-tree drivers (the project catalog, built from crates/joker-drivers/) use it in
+/// `prod`; an out-of-tree tier W component is J0860 in `prod`. It becomes stable
+/// (`@since(version = 1.2.0)`) and open to third parties in 1.2.
+///
+/// Instantiation (ref/06 §4.4): one component instance (one wasmtime Store) per driver instance,
+/// i.e. per device, or per bus for drivers with `instance = bus`. `plan` also runs in a separate,
+/// pure instance (plan mode) where every import except `log` traps.
+///
+/// Errors: every failure the host acts upon has a closed enum or variant; `error { code, message }`
+/// (ref/00 §8) carries a J-code from docs/ref/06 §7 or docs/ref/03 §2.9. Free strings are only ever
+/// for humans (`detail`).
+package joker:driver@0.1.0;
+
+/// Shared types.
+interface types {
+    use joker:runtime/types@0.1.0.{quality-code, error};
+
+    /// Dense point index inside the driver instance (0..n), ordered by canonical path.
+    type point = u32;
+    /// Batch index inside the plan (0..n).
+    type batch = u32;
+    /// Device index inside the driver instance (always 0 for `instance = device`).
+    type device = u16;
+    /// Absolute monotonic instant in ns (CLOCK_MONOTONIC of the node, ref/00 §3).
+    type mono-ns = u64;
+
+    /// Raw form of a value. Case order = numeric code used by JDP (ref/06 §2.7).
+    enum raw-kind { none, boolean, int, uint, float, regs, bytes, text }
+
+    /// A raw value, before the acquisition stage (decode, scale, unit, quality: ref/06 §3.6).
+    /// `regs`: 16-bit words in protocol order (the core applies word/byte order).
+    variant raw-value {
+        none,
+        boolean(bool),
+        int(s64),
+        uint(u64),
+        float(f64),
+        regs(list<u16>),
+        bytes(list<u8>),
+        text(string),
+    }
+
+    /// Quality reported by the driver for one sample. `reason` is the numeric code of ref/00 §4.3
+    /// (240–255 are private to the driver). Allowed pairs: ref/06 §2.8.
+    record raw-status {
+        code: quality-code,
+        reason: u8,
+    }
+
+    record raw-sample {
+        point: point,
+        value: raw-value,
+        status: raw-status,
+        /// UTC ns from the remote device.
+        ts-src: option<s64>,
+        /// Monotonic ns of a local hardware capture.
+        ts-hw: option<mono-ns>,
+    }
+
+    /// Link state reported by the driver: the first four values of `link_state` (ref/00 §6).
+    /// `drift` (4) and `stopped` (5) exist only in the core (ref/06 §2.12).
+    enum link-state { connecting, up, degraded, down }
+
+    enum direction { input, output, param }
+
+    /// Scheduling class of a point (doc 05 §5): the bus scheduler serves cycle before telemetry
+    /// before diagnostic.
+    enum read-class { cycle, telemetry, diagnostic }
+
+    variant poll {
+        /// Periodic, period in ns.
+        period(u64),
+        /// `poll = "on_demand"`: read at connect, after each write and on request.
+        on-demand,
+        /// Delivered by the device (subscription, frames, edges).
+        push,
+    }
+
+    /// One point, as the core compiled it from the profile and the manifest (ref/06 §2.5).
+    record point-spec {
+        id: point,
+        device: device,
+        /// Path relative to the device (`l1.v`). For logs and diagnostics only.
+        path: string,
+        direction: direction,
+        /// Raw form the core expects for this point.
+        expect: raw-kind,
+        /// Width: registers for `regs`, maximum bytes for `bytes` and `text`, bits for `uint`
+        /// fields of CAN frames; 0 when not applicable.
+        width: u16,
+        /// Profile `type`, verbatim (`f32`, `bits16`, `string`…).
+        type-name: string,
+        /// Deterministic CBOR of the address keys (the driver's address schema).
+        addr: list<u8>,
+        poll: poll,
+        class: read-class,
+        /// Coherence group (doc 05 §4); points with the same id must be in the same batch.
+        coherent: option<u32>,
+        /// Debounce requested for a `bool` point, ns (0 = none). Only with the `debounce` capability.
+        debounce-ns: u64,
+        /// Output with timed writes (`timed = true`, doc 02 §7.2).
+        timed: bool,
+    }
+
+    /// Action implemented natively by the driver (profile `[actions.<a>] native = {…}`).
+    /// Step actions are executed by the core with `read-addr`/`write-addr` and never reach here.
+    record action-spec {
+        id: u32,
+        device: device,
+        name: string,
+        /// Deterministic CBOR of the `native` table.
+        native: list<u8>,
+        timeout-ns: u64,
+        long: bool,
+    }
+
+    enum bus-kind { none, ethernet, serial, can, ethercat, i2c, spi }
+
+    record bus-spec {
+        name: string,
+        kind: bus-kind,
+        /// Deterministic CBOR of the `[buses.<b>]` table (ref/01 §5.6).
+        params: list<u8>,
+    }
+
+    record device-spec {
+        index: device,
+        /// Device name in the manifest.
+        name: string,
+        /// Deterministic CBOR of the driver-specific keys of `[devices.<d>]` (descriptor schema).
+        config: list<u8>,
+        /// Deterministic CBOR of the profile `config` values (ref/03 §2.2.10), after validation.
+        profile-config: list<u8>,
+        /// Deterministic CBOR of the profile `quirks`.
+        quirks: list<u8>,
+        /// Deterministic CBOR of the discovered map fixed in `joker.lock` (`[discovered.<d>]`), if any.
+        discovered: option<list<u8>>,
+        /// Request timeout (`timeout` of the device), ns.
+        timeout-ns: u64,
+    }
+
+    record plan-request {
+        bus: option<bus-spec>,
+        devices: list<device-spec>,
+        points: list<point-spec>,
+        actions: list<action-spec>,
+    }
+
+    enum batch-kind { poll, on-demand, push }
+
+    record batch-spec {
+        id: batch,
+        device: device,
+        kind: batch-kind,
+        /// Points delivered by this batch, ascending, no duplicates.
+        points: list<point>,
+        /// Period for `poll` batches, ns; 0 otherwise.
+        period-ns: u64,
+        /// Estimated bus occupancy of one execution, ns (doc 05 §5, J0370).
+        cost-ns: u64,
+        /// Opaque to the core; handed back unchanged at `open`.
+        private: list<u8>,
+    }
+
+    record diagnostic {
+        /// J-code (ref/03 §2.9 for profile errors, ref/06 §7 for driver errors).
+        code: string,
+        point: option<point>,
+        message: string,
+    }
+
+    record read-plan {
+        batches: list<batch-spec>,
+        /// Estimated bus occupancy of one single-point write, ns.
+        write-cost-ns: u64,
+        /// Opaque, plan-level.
+        private: list<u8>,
+        /// Warnings (never errors).
+        warnings: list<diagnostic>,
+    }
+
+    /// Why a whole batch failed. The core turns it into the quality of every point of the batch.
+    variant batch-failure {
+        /// No answer before the deadline → bad(comm_failure), counts towards `degraded`.
+        timeout,
+        /// Transport error → bad(comm_failure).
+        comm-failure(string),
+        /// The device answered with an error (Modbus exception, OPC UA Bad_*) → bad(device_fault).
+        device-fault(string),
+        /// No session with the device → bad(comm_failure) and link `down`.
+        not-connected,
+        /// The request itself is wrong (address rejected as illegal) → bad(config_error).
+        config-error(string),
+    }
+
+    /// Origin of a committed write (ref/06 §2.9).
+    enum write-kind {
+        /// Value applied by the envelope.
+        set,
+        /// Renewal of the same value for the device's communication watchdog (doc 01 §8).
+        keepalive,
+        /// Safe value sent by the supervisor's `force_safe` bit (doc 01 §3.4).
+        force-safe,
+        /// `safe = "relinquish"` with native relinquish (the value is `none`).
+        relinquish,
+        /// Resend of the applied value after (re)connection.
+        resync,
+    }
+
+    record atomic-ref {
+        /// Atomic group id inside the instance.
+        group: u32,
+        /// Position in the declared order, 0-based.
+        index: u16,
+        count: u16,
+    }
+
+    record committed-write {
+        /// Monotonic per driver instance; identifies the ack.
+        seq: u64,
+        point: point,
+        value: raw-value,
+        kind: write-kind,
+        /// Timed write (`timed-write` capability): apply at this instant.
+        at: option<mono-ns>,
+        atomic: option<atomic-ref>,
+    }
+
+    /// Case order = numeric code used by JDP.
+    enum write-status {
+        ok,
+        timeout,
+        comm-failure,
+        device-rejected,
+        not-connected,
+        unsupported,
+        /// Timed write that could not be applied by `at` + tolerance.
+        late,
+        /// Not attempted because an earlier write of the same atomic group failed.
+        skipped,
+    }
+
+    record write-ack {
+        seq: u64,
+        status: write-status,
+        /// Monotonic ns of the actuation, when the hardware reports it.
+        ts-hw: option<mono-ns>,
+        detail: string,
+    }
+
+    /// Raw access by address, used by the core's step executor (ref/06 §2.10).
+    record addr-read {
+        device: device,
+        addr: list<u8>,
+        expect: raw-kind,
+        width: u16,
+        type-name: string,
+    }
+
+    record addr-write {
+        device: device,
+        addr: list<u8>,
+        value: raw-value,
+        type-name: string,
+    }
+
+    record action-call {
+        /// Unique per invocation; used by `host.progress` and `host.cancelled`.
+        call: u64,
+        action: u32,
+        /// Deterministic CBOR record, already validated against the action's `args`.
+        args: list<u8>,
+    }
+
+    variant action-failure {
+        timeout,
+        device(error),
+        invalid(error),
+        not-connected,
+        unsupported,
+        cancelled,
+    }
+
+    record device-info {
+        vendor: option<string>,
+        model: option<string>,
+        serial: option<string>,
+        firmware: option<string>,
+        hw-revision: option<string>,
+        /// SHA-256 of the server certificate seen (OPC UA, TLS), 32 bytes.
+        cert: option<list<u8>>,
+        /// Deterministic CBOR map with driver-specific identity fields.
+        extra: list<u8>,
+    }
+
+    record connect-info {
+        device: device,
+        info: device-info,
+        /// Deterministic CBOR of the discovered map, when the device has `discover = true`.
+        discovered: option<list<u8>>,
+    }
+
+    record scan-request {
+        /// `jk discover` URI (`modbus-tcp://192.168.10.0/24`).
+        uri: string,
+        /// Deterministic CBOR of the options (`--unit 1..10` → `{ "unit": [1, 10] }`).
+        options: list<u8>,
+    }
+
+    record scan-hit {
+        /// Address in the manifest syntax of this driver (`192.168.10.20:502`).
+        address: string,
+        /// Deterministic CBOR of the device keys to paste in the manifest (`{ "unit_id": 1 }`).
+        config: list<u8>,
+        info: device-info,
+        /// Profile reference suggested by the driver, if it recognises the device.
+        profile: option<string>,
+    }
+
+    record health-report {
+        link: link-state,
+        detail: string,
+        /// Driver-specific counters (`snake_case` names), exported as `joker.driver.*` metrics.
+        counters: list<tuple<string, u64>>,
+    }
+}
+
+/// Host services. Every call is attributed to the calling instance (one Store per instance).
+interface host {
+    use types.{raw-sample, link-state};
+    use joker:runtime/types@0.1.0.{instant};
+
+    /// Runtime clock (ADR 0007): monotonic, UTC and clock quality.
+    now: func() -> instant;
+    /// Sleeps until the monotonic instant (step waits, protocol timers).
+    sleep-until: async func(at: u64);
+    /// Deadline of the export call currently running, absolute monotonic ns.
+    deadline: func() -> u64;
+    /// Reports a link state change. The effective state is the worst of this and the core's (§2.12).
+    report-link: func(state: link-state, detail: string);
+    /// Progress of a long action (permille 0–1000).
+    progress: func(call: u64, permille: u16, message: string);
+    /// True if the core cancelled the action `call` (the driver should stop and return `cancelled`).
+    cancelled: func(call: u64) -> bool;
+}
+
+/// Transports. The driver never opens a transport: it receives, at `open`, exactly the one the
+/// manifest gives it (`bus`, `address`). Every error is an `io-error` with a closed kind.
+interface transport {
+    enum io-error-kind {
+        timeout,
+        closed,
+        refused,
+        unreachable,
+        /// Argument outside what this handle allows (I²C address, UDP peer, size).
+        denied,
+        invalid,
+        busy,
+        unsupported,
+        other,
+    }
+
+    record io-error {
+        kind: io-error-kind,
+        detail: string,
+    }
+
+    record serial-info {
+        baud: u32,
+        data-bits: u8,
+        /// 0 none, 1 even, 2 odd.
+        parity: u8,
+        stop-bits: u8,
+        /// Minimum silence between requests enforced by the host, ns.
+        turnaround-ns: u64,
+    }
+
+    /// A serial line (RS-232/RS-485). Shared by every device of the bus; the bus scheduler of the
+    /// host guarantees that only one instance uses it at a time, and enforces `turnaround`.
+    resource serial-port {
+        info: func() -> serial-info;
+        write: async func(data: list<u8>) -> result<_, io-error>;
+        /// Returns as soon as at least one byte is available (up to `max`), or `timeout` at `deadline`.
+        read: async func(max: u32, deadline: u64) -> result<list<u8>, io-error>;
+        /// Reads one frame: waits for the first byte until `deadline`, then returns everything received
+        /// until a silence of `idle-ns` (Modbus RTU: 3.5 characters).
+        read-frame: async func(max: u32, deadline: u64, idle-ns: u64) -> result<list<u8>, io-error>;
+        /// Discards unread input.
+        discard-input: func();
+    }
+
+    /// A TCP peer fixed by the manifest (`address`). Reconnection is allowed; other peers are not.
+    resource tcp-endpoint {
+        address: func() -> string;
+        connect: async func(deadline: u64) -> result<tcp-stream, io-error>;
+    }
+
+    resource tcp-stream {
+        send: async func(data: list<u8>) -> result<_, io-error>;
+        /// Up to `max` bytes as soon as some are available; `closed` when the peer closed.
+        recv: async func(max: u32, deadline: u64) -> result<list<u8>, io-error>;
+        shutdown: func();
+    }
+
+    record datagram {
+        sender: string,
+        data: list<u8>,
+    }
+
+    /// A UDP socket bound by the host. `send` goes to the manifest `address`; `send-to` only to
+    /// peers inside the networks the manifest allows (`network`, broadcast included).
+    resource udp-socket {
+        send: async func(data: list<u8>) -> result<_, io-error>;
+        send-to: async func(peer: string, data: list<u8>) -> result<_, io-error>;
+        recv: async func(max: u32, deadline: u64) -> result<datagram, io-error>;
+    }
+
+    /// An I²C bus restricted to the addresses of the devices of this instance (`denied` otherwise).
+    resource i2c-bus {
+        transfer: async func(addr: u16, write: list<u8>, read-len: u32) -> result<list<u8>, io-error>;
+    }
+
+    /// A SPI device (`/dev/spidevB.C`), mode and speed from the manifest.
+    resource spi-device {
+        transfer: async func(tx: list<u8>) -> result<list<u8>, io-error>;
+    }
+
+    record can-frame {
+        id: u32,
+        extended: bool,
+        fd: bool,
+        data: list<u8>,
+    }
+
+    record can-filter {
+        id: u32,
+        mask: u32,
+        extended: bool,
+    }
+
+    /// A CAN interface. The host applies the filters; the driver cannot see other frames.
+    resource can-socket {
+        set-filters: func(filters: list<can-filter>) -> result<_, io-error>;
+        send: async func(frame: can-frame) -> result<_, io-error>;
+        recv: async func(deadline: u64) -> result<can-frame, io-error>;
+    }
+
+    /// The transport handed to the driver at `open` (and at `scan`).
+    /// The cases `i2c`, `spi` and `can` are only produced by a host that implements the feature
+    /// `w-i2c-spi-can` (1.2); before that, a driver that needs them is refused at `jk check` (J0873).
+    variant link {
+        none,
+        serial(serial-port),
+        tcp(tcp-endpoint),
+        udp(udp-socket),
+        i2c(i2c-bus),
+        spi(spi-device),
+        can(can-socket),
+    }
+}
+
+/// Exported by the driver. Calls to one instance are never concurrent, except that a pending `read`
+/// of a `push` batch may be cancelled by the host to run `write`, `read-addr`, `write-addr` or
+/// `invoke` (ref/06 §2.14): push reads must be cancel-safe.
+interface guest {
+    use joker:runtime/types@0.1.0.{error};
+    use types.{
+        plan-request, read-plan, diagnostic, batch, raw-sample, batch-failure, committed-write, write-ack,
+        addr-read, addr-write, raw-value, action-call, action-failure, connect-info, scan-request,
+        scan-hit, health-report,
+    };
+    use transport.{link};
+
+    /// Pure: no import except `log` (the others trap in plan mode). Same request → same plan
+    /// (the host compares the deterministic CBOR of two runs in `jk driver test`, J0857).
+    plan: func(req: plan-request) -> result<read-plan, list<diagnostic>>;
+
+    /// Creates the instance state from the request and the plan computed for it. No I/O.
+    open: func(req: plan-request, plan: read-plan, link: link) -> result<_, error>;
+
+    /// Opens the session with every device of the instance. Runs discovery for devices with
+    /// `discover = true` (read-only). Called again by the core after each `disconnect`.
+    connect: async func() -> result<list<connect-info>, error>;
+
+    /// One execution of a batch. One sample per point of the batch, no other points.
+    /// For a `push` batch: returns as soon as at least one sample is available, or `ok([])` at the
+    /// deadline; may be cancelled.
+    read: async func(b: batch) -> result<list<raw-sample>, batch-failure>;
+
+    /// Applies committed writes in the given order. Exactly one ack per write, same order.
+    write: async func(writes: list<committed-write>) -> list<write-ack>;
+
+    /// Raw read by address (steps of actions, `[connect]`, fallback registers).
+    read-addr: async func(req: addr-read) -> result<raw-value, batch-failure>;
+
+    /// Raw write by address (steps of actions, `[connect]`, `[relinquish]`, fallback configuration).
+    write-addr: async func(req: addr-write) -> result<_, batch-failure>;
+
+    /// Native action. Returns the deterministic CBOR of the result record.
+    invoke: async func(call: action-call) -> result<list<u8>, action-failure>;
+
+    /// Network scan for `jk discover`, read-only, in a separate instance with its own link.
+    scan: async func(req: scan-request, link: link) -> result<list<scan-hit>, error>;
+
+    /// Cheap, synchronous, no I/O.
+    health: func() -> health-report;
+
+    /// Closes the sessions. Must succeed; the host drops the instance after it (or at the deadline).
+    disconnect: async func();
+}
+
+@unstable(feature = driver-world)
+world driver {
+    import joker:runtime/log@0.1.0;
+    import host;
+    import transport;
+    export guest;
+}

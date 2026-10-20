@@ -1,0 +1,540 @@
+/// joker:runtime — the world of Joker apps.
+///
+/// Normative reference: docs/ref/04-wit-e-sdk-rust.md. Representation rules: docs/ref/00-convencoes.md.
+/// Semantics (arbiter, envelope, quality): docs/16-semantica-do-nucleo.md.
+///
+/// Versioning (ADR 0022, ref/04 §2.9):
+/// - items without a gate exist since the first version of the package;
+/// - items added in a minor carry `@since(version = x.y.z)`;
+/// - items reserved for a later minor carry `@unstable(feature = <name>)` and are NOT part of the
+///   stable world: a component that imports them is refused in `prod` (J-E0003) and is not covered by
+///   the golden rule of the 1.x series.
+///
+/// Growable enums (quality-reason, reject-reason, write-outcome) only grow at the end. The host
+/// projects a value unknown to the app's world version onto the projection declared for it
+/// (ref/04 §2.8); an app never receives a case that its world does not declare.
+package joker:runtime@0.1.0;
+
+/// Shared types. Numeric codes of every enum are in ref/00 §4.3, §4.4 and §6.
+interface types {
+    /// Dense, app-local port handle: index into `init-context.ports`.
+    type port = u32;
+    /// Dense, app-local class-instance handle: index into `init-context.instances`.
+    type instance = u32;
+    /// Method index: position in the device's `methods` list in `joker:meta`.
+    type method = u16;
+    /// Arbiter level, 1 (highest) to 16 (ref/00 §5).
+    type level = u8;
+
+    /// Closed forever.
+    enum quality-code { good, uncertain, bad }
+
+    /// Case order = numeric code of ref/00 §4.3 (none = 0 … deadline = 19).
+    enum quality-reason {
+        none,
+        overridden,
+        local-override,
+        stale,
+        not-confirmed,
+        substituted,
+        out-of-distribution,
+        sensor-cal,
+        clock-unsynced,
+        initial,
+        frozen,
+        partial-write,
+        comm-failure,
+        device-fault,
+        out-of-range,
+        config-error,
+        not-connected,
+        nan,
+        tripped,
+        deadline,
+    }
+
+    record quality {
+        code: quality-code,
+        reason: quality-reason,
+    }
+
+    /// Values are always in the unit declared by the app port (the binding converts).
+    /// enum and bits travel as `uint`; f32 is promoted to `float`; app records, event payloads and
+    /// action arguments travel as `blob` (deterministic CBOR, ref/04 §4.10).
+    variant value {
+        boolean(bool),
+        int(s64),
+        uint(u64),
+        float(f64),
+        text(string),
+        blob(list<u8>),
+    }
+
+    record sample {
+        value: value,
+        quality: quality,
+        /// UTC ns from the remote device, when the protocol provides it.
+        ts-src: option<s64>,
+        /// Monotonic ns of a local hardware capture (GPIO edge, V4L2, EtherCAT DC).
+        ts-hw: option<u64>,
+        /// Monotonic ns of reception by the runtime.
+        ts-acq: u64,
+        /// Per-signal counter, extended to 64 bits by the host.
+        seq: u64,
+    }
+
+    enum clock-quality { synced, holdover, unsynced }
+
+    record instant {
+        mono-ns: u64,
+        utc-ns: s64,
+        clock: clock-quality,
+    }
+
+    /// clamped_range (code 2) and clamped_rate (code 3) of ref/00 §4.4.
+    enum clamp-kind { range, rate }
+
+    record clamp {
+        by: clamp-kind,
+        /// The value actually applied.
+        applied: value,
+    }
+
+    /// Case order = ref/00 §4.4 code minus 1 (wrong-type = 1 … budget = 8).
+    enum reject-reason {
+        wrong-type,
+        interlock,
+        quality,
+        range,
+        atomic-group,
+        not-owner,
+        clock-unsynced,
+        budget,
+    }
+
+    /// `none` (code 0, no proposal) is expressed as `option::none` where an outcome is optional.
+    variant write-outcome {
+        accepted,
+        clamped(clamp),
+        suppressed,
+        /// The active level that won (1–16).
+        overridden(level),
+        deferred,
+        shadowed,
+        rejected(reject-reason),
+        tripped,
+    }
+
+    /// The single error shape (ref/00 §8). `code` is a registry code ("J-E0303"); `message` is
+    /// human-readable English and is never parsed.
+    record error {
+        code: string,
+        message: string,
+    }
+
+    record change {
+        port: port,
+        sample: sample,
+    }
+
+    record event-delivery {
+        port: port,
+        /// Deterministic CBOR of the event record (schema in joker:meta or in the class contract).
+        payload: list<u8>,
+        /// Per-consumer sequence number of the event.
+        seq: u64,
+        at: instant,
+        /// Events dropped for this consumer (full queue) since the previous delivery.
+        lost: u32,
+    }
+
+    /// Outcome of one write produced by the expansion of a class method.
+    record member-outcome {
+        port: port,
+        outcome: write-outcome,
+    }
+}
+
+/// Imported by the CYCLE instance. Synchronous, allocation-free on the host, never blocks.
+/// Every SDK, Rust and tier 2 alike, uses the packed path (`guest.on-cycle` image and proposal
+/// buffer, ref/04 §3; ref/05 A11); these functions exist only for dynamic access and for values
+/// that do not fit in a `u64` (arena values, full timestamps).
+/// In the async instance every function here traps with J-E0902.
+interface cycle-io {
+    use types.{port, instance, method, sample, value, write-outcome, instant};
+
+    /// Sample from the latch snapshot of the current tick (outputs: the applied value).
+    read: func(p: port) -> sample;
+    /// Append a write proposal (ref/04 §3.4 ordering rule).
+    write: func(p: port, v: value);
+    /// Release this writer's level on the output now (arbiter rule 3, doc 01 §6).
+    relinquish: func(p: port);
+    /// Latest value this app proposed for `p` in the current tick from the cycle domain.
+    pending: func(p: port) -> option<value>;
+    /// Outcome of this writer's proposal in the owner group's latest commit; none if it had none.
+    last-outcome: func(p: port) -> option<write-outcome>;
+    /// Current parameter value.
+    param: func(p: port) -> value;
+    /// Append a class method record (doc 17 §4.1). `args` is deterministic CBOR.
+    call: func(inst: instance, m: method, args: list<u8>);
+    /// Set an app-published signal: a `#[publish]` port, the boolean condition of an app alarm
+    /// (alarm id `app.<app>.<name>`, ref/04 §4.2), a cycle-owned `Internal<T>` (CBOR `blob`), or a
+    /// `state` member of an implemented class.
+    publish: func(p: port, v: value);
+    /// Add to an app counter (`Counter`).
+    counter-add: func(p: port, delta: u64);
+    /// Emit an event (deterministic CBOR payload). Full consumer queues drop and count.
+    emit: func(p: port, payload: list<u8>);
+    /// Record in the trace that the value read from `p` was substituted (`get_or`, doc 16 §3.1).
+    note-substituted: func(p: port);
+    /// Non-blocking send on a mailbox towards the async instance; false if full (loss counted).
+    mailbox-send: func(p: port, msg: list<u8>) -> bool;
+    /// Non-blocking receive on a mailbox from the async instance.
+    mailbox-recv: func(p: port) -> option<list<u8>>;
+    /// Instant of the latch of the current tick.
+    now: func() -> instant;
+    /// Effective period of the group, ns.
+    dt-ns: func() -> u64;
+    /// Deterministic pseudo-random number (ref/04 §2.7).
+    random-u64: func() -> u64;
+
+    /// Scheduled write (M6, v1.1).
+    @unstable(feature = scheduled-writes)
+    write-at: func(p: port, v: value, at-mono-ns: u64);
+}
+
+/// Imported by the ASYNC instance (WASI 0.3 async). In the cycle instance every function here traps
+/// with J-E0901.
+interface async-io {
+    use types.{port, instance, method, sample, value, write-outcome, instant, error, change, event-delivery, member-outcome};
+
+    /// Current slot value (no latch; two reads may differ).
+    read: func(p: port) -> sample;
+    /// Coherent read of several slots (same seqlock epoch, doc 02 §6.4). At most 256 ports.
+    snapshot: func(ps: list<port>) -> result<list<sample>, error>;
+    /// Fire-and-forget proposal to the owner group's inbox (outcome `deferred` until the commit).
+    set: func(p: port, v: value);
+    /// Proposal awaited until the owner group's commit. Err only when it was not proposed at all.
+    write: async func(p: port, v: value) -> result<write-outcome, error>;
+    relinquish: func(p: port);
+    last-outcome: func(p: port) -> option<write-outcome>;
+    param: func(p: port) -> value;
+    /// Class method call; resolves after the commit with the outcomes of the expanded writes.
+    call: async func(inst: instance, m: method, args: list<u8>) -> result<list<member-outcome>, error>;
+    /// Action invocation (M19). `idempotency-key`: printable ASCII, 1–64 B (ref/00 §5).
+    /// Errors: J-E0301…J-E0313 (ref/04 §7); their HTTP counterparts are in ref/04 §7.1.
+    invoke: async func(p: port, args: list<u8>, idempotency-key: string) -> result<list<u8>, error>;
+    /// Long action (`@long`): returns at once with a handle.
+    start-action: func(p: port, args: list<u8>, idempotency-key: string) -> result<action-call, error>;
+    publish: func(p: port, v: value);
+    counter-add: func(p: port, delta: u64);
+    emit: func(p: port, payload: list<u8>);
+    note-substituted: func(p: port);
+    /// Changes of the given ports (every new seq). At most 256 ports per subscription.
+    subscribe: func(ps: list<port>) -> result<stream<change>, error>;
+    /// Events of an event-input port (a consumer queue of its own).
+    events: func(p: port) -> result<stream<event-delivery>, error>;
+    mailbox-send: func(p: port, msg: list<u8>) -> bool;
+    mailbox-recv: func(p: port) -> option<list<u8>>;
+    /// Waits for the next mailbox message.
+    mailbox-next: async func(p: port) -> list<u8>;
+    /// Historian query (doc 01 §12). At most 10 000 points per call. With an aggregate, one sample
+    /// per bucket, whose quality is the dominant quality of the bucket (doc 01 §12).
+    history: async func(q: history-query) -> result<list<sample>, error>;
+    now: func() -> instant;
+    sleep-until: async func(mono-ns: u64);
+    random-u64: func() -> u64;
+    /// Progress of an action this app is serving in `on-action` (virtual instances).
+    report-progress: func(request: u64, fraction: option<f32>, message: string);
+    /// True once the caller cancelled the action this app is serving.
+    is-cancelled: func(request: u64) -> bool;
+
+    enum aggregate { raw, mean, min, max, first, last, count }
+
+    record history-query {
+        port: port,
+        from-utc-ns: s64,
+        to-utc-ns: s64,
+        /// 0 with `raw`; otherwise the bucket width.
+        step-ns: u64,
+        agg: aggregate,
+    }
+
+    record action-progress {
+        fraction: option<f32>,
+        message: string,
+    }
+
+    resource action-call {
+        progress: func() -> stream<action-progress>;
+        cancel: func();
+        finish: async func() -> result<list<u8>, error>;
+    }
+
+    /// Scheduled write (M6, v1.1).
+    @unstable(feature = scheduled-writes)
+    write-at: async func(p: port, v: value, at-mono-ns: u64) -> result<write-outcome, error>;
+
+    /// Proposal-only writers and intents (M18, v1.1). Returns the intent ULID. The intent expires
+    /// `ttl-ns` after its creation if nobody decides it (ref/09 §5.9).
+    @unstable(feature = intents)
+    propose: async func(p: port, v: value, reason: string, ttl-ns: u64) -> result<string, error>;
+}
+
+/// Small transactional key-value store (doc 01 §9.1). Async instance only; in the cycle instance it
+/// traps with J-E0901.
+interface kv {
+    use types.{error};
+
+    get: func(key: string) -> result<option<list<u8>>, error>;
+    set: async func(key: string, value: list<u8>) -> result<_, error>;
+    delete: async func(key: string) -> result<_, error>;
+    keys: func(prefix: string) -> result<list<string>, error>;
+    /// All operations or none.
+    commit: async func(ops: list<op>) -> result<_, error>;
+
+    variant op {
+        set(tuple<string, list<u8>>),
+        delete(string),
+    }
+}
+
+/// Secrets granted to the app in the manifest (doc 01 §17). Async instance only.
+interface secrets {
+    use types.{error};
+
+    reveal: func(name: string) -> result<list<u8>, error>;
+}
+
+/// Logging. Also imported by `joker:driver` (same version, ref/00 §1). Self-contained on purpose.
+/// Never blocks: a full ring drops and counts.
+interface log {
+    enum level { trace, debug, info, warn, error }
+
+    log: func(lvl: level, msg: string, fields: list<tuple<string, string>>);
+    enabled: func(lvl: level) -> bool;
+}
+
+/// Exported by the app. The same component is instantiated twice (doc 01 §5): the cycle instance
+/// receives `init`, `on-cycle`, `on-params`, `export-state`, `migrate`; the async instance receives
+/// `init`, `run-task`, `on-action`, `on-params`, `export-state`, `migrate`.
+interface guest {
+    use types.{port, value, instant, error, change, event-delivery};
+
+    enum instance-kind { cycle, task }
+
+    enum port-origin {
+        /// A port declared in the app (index into joker:meta ports).
+        declared,
+        /// A member of a device (index into joker:meta devices).
+        device-member,
+        /// A command of the implemented class (`io.cmd`, the class `out` members).
+        command,
+        /// A state member of the implemented class (`io.state`, the class `in`/`param` members).
+        state,
+        /// An event of the implemented class.
+        class-event,
+    }
+
+    record port-binding {
+        origin: port-origin,
+        /// Index of the declaration in joker:meta (port, device or implements entry).
+        decl: u32,
+        /// Element index for `many` ports and `Many<T>` devices; 0 otherwise.
+        elem: u32,
+        /// Member index in the device/implements member list; 0 for declared ports.
+        member: u32,
+        /// Resolved signal path, or the instance name for device members.
+        name: string,
+        /// False for an unbound optional port or an unmapped optional member.
+        bound: bool,
+        /// Index in the sample section of the cycle image, when the port has a sample.
+        slot: option<u32>,
+        /// Index in the outcome section of the cycle image, for outputs.
+        outcome: option<u32>,
+    }
+
+    record instance-binding {
+        /// Index into joker:meta devices.
+        device: u32,
+        elem: u32,
+        name: string,
+        /// Exact class version of the instance ("1.2.0").
+        class-version: string,
+        capabilities: list<string>,
+    }
+
+    record task-binding {
+        /// Index into joker:meta tasks.
+        task: u32,
+        group: string,
+        period-ns: u64,
+    }
+
+    enum run-mode { normal, shadow, replay, test }
+
+    record init-context {
+        kind: instance-kind,
+        mode: run-mode,
+        app: string,
+        app-version: string,
+        node: string,
+        /// World actually served to this component, after any adapter ("joker:runtime@0.1.0").
+        served-world: string,
+        generation: u64,
+        /// sha256 of the generation (32 B).
+        generation-hash: list<u8>,
+        seed: u64,
+        ports: list<port-binding>,
+        instances: list<instance-binding>,
+        tasks: list<task-binding>,
+        /// Name of the virtual instance this app instance implements, if any.
+        implements: option<string>,
+        /// Cycle ABI version chosen by the host (ref/04 §3.1).
+        cycle-abi: u8,
+        image-len: u32,
+        proposal-capacity: u32,
+    }
+
+    record param-change {
+        port: port,
+        value: value,
+    }
+
+    /// The host calls `run-task` once per firing. A trigger that fires while the task is running
+    /// stays pending (one; changes coalesce into the latest, ref/04 §4.3.2).
+    variant trigger {
+        startup,
+        /// `every` or `at` (cron): the instant the trigger fired.
+        timer(instant),
+        /// `on = "<port>"`.
+        change(change),
+        /// `on_event = "<port>"`.
+        event(event-delivery),
+    }
+
+    record action-request {
+        /// Unique per request; used by report-progress and is-cancelled.
+        request: u64,
+        /// Index into the `members` list (key 4) of the implements entry in joker:meta.
+        action: u32,
+        args: list<u8>,
+        idempotency-key: string,
+        /// Writer id of the caller ("user:ops", "app:station").
+        caller: string,
+        deadline-mono-ns: u64,
+    }
+
+    record cycle-result {
+        /// Packed proposal buffer (ref/04 §3.3). Kept even when `error` is set.
+        proposals: list<u8>,
+        /// Err returned by the task: ends the task for this tick without discarding proposals.
+        /// A tier-2 SDK reports an uncaught exception as `J-E0816` with empty `proposals`: the host
+        /// treats it like a trap (drops the app's proposals of the tick, counts for the crashloop)
+        /// without recreating the instance (ref/04 §2.6.1).
+        error: option<error>,
+    }
+
+    init: func(cx: init-context) -> result<_, error>;
+    on-params: func(changes: list<param-change>) -> result<_, error>;
+    on-cycle: func(task: u32, image: list<u8>) -> cycle-result;
+    run-task: async func(task: u32, why: trigger) -> result<_, error>;
+    on-action: async func(req: action-request) -> result<list<u8>, error>;
+    export-state: func() -> result<list<u8>, error>;
+    migrate: func(previous: list<u8>, from-version: string) -> result<_, error>;
+}
+
+/// Machine learning (v1.1, doc 06). Reserved: the shape may still change before it is stabilized.
+@unstable(feature = ml)
+interface ml {
+    @unstable(feature = ml)
+    use types.{port, quality, error};
+
+    @unstable(feature = ml)
+    enum dtype { float32, float16, bfloat16, int8, uint8, int32, int64, boolean }
+
+    @unstable(feature = ml)
+    resource tensor {
+        constructor(dt: dtype, shape: list<u32>, data: list<u8>);
+        dtype: func() -> dtype;
+        shape: func() -> list<u32>;
+        data: func() -> list<u8>;
+    }
+
+    @unstable(feature = ml)
+    record inference {
+        outputs: list<tensor>,
+        /// good, or uncertain(out-of-distribution).
+        quality: quality,
+        backend: string,
+        latency-us: u32,
+    }
+
+    @unstable(feature = ml)
+    infer: async func(model: port, inputs: list<tensor>) -> result<inference, error>;
+}
+
+/// Streams of large frames (M4, v1.1). Reserved.
+@unstable(feature = streams)
+interface frames {
+    @unstable(feature = streams)
+    use types.{port, error};
+
+    @unstable(feature = streams)
+    record frame-meta {
+        seq: u64,
+        ts-hw: option<u64>,
+        width: u32,
+        height: u32,
+        format: string,
+    }
+
+    @unstable(feature = streams)
+    resource frame {
+        meta: func() -> frame-meta;
+        view: func(x: u32, y: u32, w: u32, h: u32, format: string) -> result<list<u8>, error>;
+    }
+
+    @unstable(feature = streams)
+    next: async func(p: port) -> result<frame, error>;
+}
+
+/// Block signals (M7, v1.1). Reserved.
+@unstable(feature = blocks)
+interface blocks {
+    @unstable(feature = blocks)
+    use types.{port, quality, error};
+
+    @unstable(feature = blocks)
+    record block {
+        t0-mono-ns: u64,
+        period-ns: u64,
+        /// Samples as little-endian f32 (4 B each).
+        samples: list<u8>,
+        quality: quality,
+        seq: u64,
+        /// Blocks lost for this consumer since the previous one.
+        lost: u32,
+    }
+
+    @unstable(feature = blocks)
+    next: async func(p: port) -> result<block, error>;
+}
+
+/// The world of apps. Plan B for tier-2 SDKs (D15, ref/04 §2.11): if WASI 0.3 async is not ready in
+/// ComponentizeJS or componentize-py, a sibling world `app-blocking` (name reserved) serves the async
+/// instance with the same functions without `async`, on a dedicated thread of the `app` pool.
+world app {
+    import cycle-io;
+    import async-io;
+    import kv;
+    import secrets;
+    import log;
+    @unstable(feature = ml)
+    import ml;
+    @unstable(feature = streams)
+    import frames;
+    @unstable(feature = blocks)
+    import blocks;
+    export guest;
+}

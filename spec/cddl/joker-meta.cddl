@@ -1,0 +1,356 @@
+; joker:meta — the metadata custom section of a Joker app component.
+; Normative reference: docs/ref/04-wit-e-sdk-rust.md, §5. Representation: docs/ref/00-convencoes.md.
+;
+; Encoding: deterministic CBOR (RFC 8949 §4.2.1), integer map keys (ref/00 §7).
+; Readers ignore unknown keys (ref/00 §1, regra 2); writers never reuse a removed key (ref/00 §1, regra 4).
+;
+; Where it lives (ref/04 §5.1):
+;   - Wasm: custom section named "joker:meta" at component level (written by `jk build`), or, in a
+;     component produced by plain `cargo build`, in the embedded core module;
+;   - native backends (Joker Micro, `kind = "native"`): ELF section ".joker_meta".
+; Content: a CBOR sequence (RFC 8742) of `meta-fragment` items, one per SDK macro expansion.
+; Readers merge the fragments into one `joker-meta` (ref/04 §5.3). `jk build` rewrites the section
+; with a single `joker-meta` item, which is then the canonical form (hashed, shown by `jk inspect`).
+
+; ---------------------------------------------------------------------------------------------
+; Fragments (as emitted by the macros)
+
+meta-fragment = app-fragment / task-fragment / schema-fragment
+
+app-fragment = {
+  0: 0,                         ; fragment kind: app (exactly one per component)
+  1: joker-meta,                ; with key 7 (tasks) and key 11 (schemas) empty
+}
+
+task-fragment = {
+  0: 1,                         ; fragment kind: task (#[cycle], #[task], #[on_action])
+  1: task,
+}
+
+schema-fragment = {
+  0: 2,                         ; fragment kind: schema (#[derive(Record)], Event, Enum, Class-generated)
+  1: schema,
+}
+
+; ---------------------------------------------------------------------------------------------
+; The merged metadata
+
+joker-meta = {
+  0: 1,                         ; meta format version
+  1: app-name,
+  2: semver,                    ; app version
+  3: world-ref,                 ; WIT world the component was built against
+  4: sdk-info,
+  5: uint,                      ; cycle ABI version (image and proposal buffer, ref/04 §3); 1 in v1
+  6: [* port],                  ; order as the SDK writes it (Rust: field order; tier 2: by name,
+                                ; ref/05 §15.1); index = port handle base (ref/04 §2.6.2)
+  7: [* task],                  ; merged form: sorted by name (bytewise); index = task id
+  8: [* device],                ; declaration order
+  ? 9: implements,              ; #[joker::implements]
+  10: [* feature],              ; unstable features used; empty in a stable app
+  11: [* schema],               ; merged form: sorted by name, deduplicated
+  ? 12: clock-requirement,      ; #[joker::app(requires_clock = …)]
+  ? 13: [+ secret-decl],        ; #[joker::app(secrets = […], optional_secrets = […])]
+  ? 14: state-info,             ; #[joker::state(persist)]
+  ? 15: has-on-params,          ; default false
+  ? 16: limits,
+  ? 17: doc,                    ; first paragraph of the app struct doc comment
+}
+
+app-name = tstr .regexp "[a-z][a-z0-9_]{0,31}"     ; P5; names starting with "joker" are reserved
+semver = tstr                                      ; SemVer 2.0 ("1.4.2")
+world-ref = tstr .regexp "joker:runtime@[0-9]+\\.[0-9]+\\.[0-9]+"
+ident = tstr .regexp "[a-z][a-z0-9_]{0,31}"
+secret-name = ident
+secret-decl = {
+  0: secret-name,               ; local name, bound in [apps.<app>.secrets] (ref/02 §2.4.7)
+  ? 1: optional,                ; default false
+}
+capability = ident
+task-name = ident
+action-name = ident
+port-name = ident
+member-name = ident
+method-name = ident
+field-name = ident
+feature = "ml" / "streams" / "blocks" / "scheduled-writes" / "intents"
+
+sdk-info = {
+  0: "rust" / "typescript" / "python",   ; lang
+  1: semver,                    ; SDK version
+  2: backend,
+  ? 3: tier,                    ; default 1 (Rust); tier-2 SDKs write 2 (ref/05 §3)
+  ? 4: tstr,                    ; engine: "starlingmonkey <version>", "cpython <version>" (tier 2)
+  ? 5: tstr,                    ; SDK package: "joker-sdk", "@joker/sdk", "joker_sdk"
+}
+
+tier = 1 / 2
+
+backend = 0 / 1 / 2             ; wasm 0 (feature backend-wasm); native-linux 1, native-micro 2
+                                ; (feature backend-native, ref/04 §4.1, ref/08 §2.11.5)
+
+clock-requirement = 0 / 1       ; synced 0 (Synced only), synced-or-holdover 1
+
+state-info = {
+  0: uint,                      ; state schema version (#[joker::state(version = N)], default 1)
+  1: bool,                      ; persist across hot-swap (export-state / migrate)
+}
+
+limits = {                      ; suggestions; [apps.<app>] resources.* in the manifest wins
+  ? 0: proposal-capacity,       ; proposal buffer capacity, bytes (default 16384)
+  ? 1: cycle-memory-max,        ; cycle instance memory.max, bytes (default by tier, ref/05 §19)
+  ? 2: async-memory-max,        ; async instance memory.max, bytes (default by tier, ref/05 §19)
+}
+
+; ---------------------------------------------------------------------------------------------
+; Ports
+
+port = {
+  0: port-name,                 ; struct field name
+  1: port-kind,
+  ? 2: signal-type,             ; for signal-like kinds; absent for action, mailbox, model, stream, block
+  ? 3: unit,                    ; catalogue of doc 16 §5; absent = no unit (bool, enum, bits, text)
+  ? 4: quantity,
+  ? 5: optional,                ; may stay unbound (default false)
+  ? 6: many,                    ; #[input(many)] / #[output(many)]
+  ? 7: range,                   ; params
+  ? 8: scalar,                  ; param default
+  ? 9: schema-name,             ; enum, record (internal, mailbox), event record
+  ? 10: doc,
+  ? 11: domain,                 ; internal: writer domain (default async)
+  ? 12: mailbox-info,
+  ? 13: action-info,
+  ? 14: alarm-info,
+  ? 15: bits-width,             ; bits<N>: N (1..64)
+  ? 16: max-len,                ; string/bytes: maximum length in bytes (<= 64)
+  ? 17: model-info,             ; unstable: ml
+  ? 18: group-hint,             ; #[output(group = "…")]: owner group requested
+}
+
+port-kind = 0 / 1 / 2 / 3 / 4 / 5 / 6 / 7 / 8 / 9 / 10 / 11 / 12 / 13
+; input 0, output 1, param 2, internal 3, published 4, counter 5, event-in 6, event-out 7,
+; action 8, mailbox 9, alarm 10, model 11 (unstable ml), stream 12 (unstable streams),
+; block 13 (unstable blocks)
+
+signal-type = 0 / 1 / 2 / 3 / 4 / 5 / 6 / 7 / 8 / 9
+; ref/00 §6: bool 0, i64 1, u64 2, f64 3, f32 4, enum 5, bits 6, string 7, bytes 8; record 9 (Internal<T>)
+
+unit = tstr                     ; "kW", "°C", "m3/h", "1", "%"
+quantity = "active_power" / "reactive_power" / "apparent_power" / "energy" / "reactive_energy" /
+           "temperature" / "temperature_difference"
+schema-name = tstr
+group-hint = ident
+
+many = {
+  0: uint,                      ; minimum number of elements
+  1: uint,                      ; maximum number of elements
+}
+
+range = {
+  ? 0: range-min,               ; inclusive
+  ? 1: range-max,               ; inclusive
+}
+
+; number = int / float  (RFC 8610 prelude)
+scalar = bool / int / float / tstr
+
+domain = 0 / 1                  ; cycle 0, async 1
+
+mailbox-info = {
+  0: 0 / 1,                     ; direction: to-cycle 0, to-async 1
+  1: uint,                      ; capacity N (1..64)
+}
+
+action-info = {
+  ? 0: args-schema,             ; argument record; absent = ()
+  ? 1: result-schema,           ; result record; absent = ()
+  ? 2: long-action,             ; ActionHandle; default false
+}
+
+alarm-info = {
+  0: severity,
+  1: tstr,                      ; message template, "{signal}" placeholders (doc 02 §11)
+  ? 2: delay-on,
+  ? 3: delay-off,
+}
+
+severity = 0 / 1 / 2 / 3        ; low 0, medium 1, high 2, critical 3 (ref/00 §6)
+
+model-info = {
+  0: tstr,                      ; input signature, "f32[1,96,4]"
+  1: tstr,                      ; output signature
+}
+
+duration-ns = uint
+period-ns = duration-ns
+wcet-ns = duration-ns
+jitter-ns = duration-ns
+delay-on = duration-ns
+delay-off = duration-ns
+
+doc = tstr
+optional = bool
+atomic = bool
+long-action = bool
+custom-init = bool
+is-event = bool
+has-on-params = bool
+args-schema = schema-name
+result-schema = schema-name
+range-min = number
+range-max = number
+bits-width = uint
+max-len = uint
+capacity = uint
+proposal-capacity = uint
+cycle-memory-max = uint
+async-memory-max = uint
+
+; ---------------------------------------------------------------------------------------------
+; Tasks
+
+task = {
+  0: task-name,                 ; the fn name
+  1: task-kind,
+  ? 2: period-ns,               ; cycle: requested period
+  ? 3: wcet-ns,                 ; cycle: declared WCET
+  ? 4: optional,                ; cycle: disabled by `overrun = "degrade"`
+  ? 5: custom-init,             ; cycle: state initializer given (init = …)
+  ? 6: trigger,                 ; async
+  ? 7: action-name,             ; on_action: action member name
+  ? 8: doc,
+}
+
+task-kind = 0 / 1 / 2           ; cycle 0, async 1, action handler 2
+
+trigger = every / on-change / on-event / at-cron / startup
+
+every = {
+  0: 0,
+  1: period-ns,
+  ? 2: jitter-ns,
+}
+
+on-change = {
+  0: 1,
+  1: [+ ident],                 ; port names (or "<device>.<member>")
+}
+
+on-event = {
+  0: 2,
+  1: ident,                     ; event-in port name, or "<device>.<event>"
+}
+
+at-cron = {
+  0: 3,
+  1: tstr,                      ; 6-field cron, UTC ("0 */15 * * * *")
+}
+
+startup = {
+  0: 4,
+}
+
+; ---------------------------------------------------------------------------------------------
+; Devices (class handles) and implementations
+
+device = {
+  0: port-name,                 ; struct field name
+  1: class-ref,
+  ? 2: bstr .size 32,           ; contract hash (sha256); absent for local classes
+  ? 3: semver,                  ; exact class version the handle was generated from
+  ? 4: many,                    ; Many<T, MIN, MAX>
+  ? 5: [+ capability],          ; requires
+  6: [* member],                ; order = member index used by the handle code
+  7: [* class-method],          ; order = method id (types.method)
+  ? 8: optional,                ; optional device (Option<T>)
+  ? 9: doc,
+}
+
+class-ref = tstr                ; "std/pump@1", "acme/water/station@2", or "local:Zone"
+
+member = {
+  0: member-name,
+  1: member-kind,
+  ? 2: signal-type,
+  ? 3: unit,
+  ? 4: capability,              ; the capability that contains it
+  ? 5: optional,                ; @optional
+  ? 6: args-schema,             ; enum, event record, or action argument record
+  ? 7: result-schema,           ; action result record
+  ? 8: long-action,             ; @long
+  ? 9: quantity,
+  ; member-kind 6 (class member, doc 17 §8; ref/04 §4.8.6):
+  ? 10: class-ref,              ; class of the member ("std/button@1")
+  ? 11: bstr .size 32,          ; its contract hash
+  ? 12: many,                   ; collection bounds [min..max]; absent = fixed member
+  ? 13: [+ capability],         ; @requires
+  ? 14: [* member],             ; the member class's own members, same order rules (the tree)
+  ? 15: [* class-method],       ; the member class's methods (method ids for METHOD records)
+}
+
+member-kind = 0 / 1 / 2 / 3 / 4 / 5 / 6
+; in 0, out 1, param 2, query 3, event 4, action 5, class member 6 (keys 10-15)
+
+class-method = {
+  0: method-name,
+  ? 1: args-schema,             ; absent = no arguments
+  ? 2: atomic,
+  ? 3: capability,
+}
+
+implements = {
+  0: class-ref,
+  1: bstr .size 32,             ; contract hash
+  2: semver,                    ; class version implemented
+  3: [* capability],            ; capabilities offered
+  4: [* member],                ; out members -> io.cmd; in/param -> io.state; events; actions
+}
+
+; ---------------------------------------------------------------------------------------------
+; Schemas (records, events, enums)
+
+schema = record-schema / enum-schema
+
+record-schema = {
+  0: 0,
+  1: schema-name,
+  2: [* field],                 ; position in this list (from 0) = CBOR key of the field (D2, ref/04 §4.10)
+  ? 3: max-len,                 ; maximum encoded length in bytes (Internal: <= 64)
+  ? 4: is-event,
+}
+
+field = {
+  0: field-name,
+  1: field-type,
+  ? 2: unit,
+  ? 3: capacity,                ; string bytes (<= 1024) or list elements (<= 64)
+  ? 4: schema-name,             ; record, enum, or list element schema
+  ? 5: optional,                ; Option<T>
+  ? 6: quantity,
+}
+
+field-type = signal-type / 10 / 11 / 12 / 13 / 14 / 15
+; signal types 0..8, record 9, list 10, instant 11, quality 12, mono-ns 13, utc-ns 14, duration-ns 15
+
+enum-schema = {
+  0: 1,
+  1: schema-name,
+  2: [+ variant],
+}
+
+variant = [
+  name: ident,
+  value: uint,
+]
+
+; ---------------------------------------------------------------------------------------------
+; Persistent state blob (export-state / migrate, ref/04 §4.12)
+
+joker-state = {
+  0: 1,                         ; blob format version
+  1: semver,                    ; app version that exported it
+  2: uint,                      ; state schema version (state-info key 0)
+  3: 0 / 1,                     ; instance kind: cycle 0, async 1
+  4: { * ident => bstr },       ; per task name: CBOR of the task state (PerInstance fields are
+                                ; maps instance name -> state, ref/04 §4.12)
+}

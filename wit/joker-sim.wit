@@ -1,0 +1,16 @@
+/// joker:sim — Wasm plants for the `sim` driver.
+///
+/// Normative reference: docs/ref/03-perfis-placas-sim.md, §2.4.10 (keys of `[plant]`, errors J0832,
+/// J0837). This file is the machine-readable copy kept in `wit/` (ref/04 §2.10); if the two differ,
+/// ref/03 wins and this file is the bug.
+///
+/// A plant has no imports (no clock, no randomness, no I/O): it is deterministic by construction.
+package joker:sim@0.1.0;
+
+world plant {
+    /// Called once, with the [plant] config table encoded as deterministic CBOR.
+    export init: func(config: list<u8>, seed: u64) -> result<_, string>;
+    /// Advances the plant by dt-ns of virtual time. Values follow the order of
+    /// [plant] inputs and outputs; bool is 0.0 or 1.0, enum is the variant value.
+    export step: func(dt-ns: u64, inputs: list<f64>) -> result<list<f64>, string>;
+}

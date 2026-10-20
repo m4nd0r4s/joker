@@ -1,0 +1,223 @@
+; joker-micro.cddl -- CBOR structures of the Joker Micro (ref/08).
+;
+; Normative reference: docs/ref/08-joker-micro-abi.md, sections 2.10,
+; 2.13 and 2.14. The Joker Link messages are NOT here (ref/07,
+; joker-link.cddl): this file only has what the generation blob, the
+; firmware descriptor, the persistence records and the C ABI carry.
+;
+; All encodings are deterministic CBOR (RFC 8949 section 4.2.1), integer
+; keys, as fixed by ref/00 section 7. Readers ignore unknown keys.
+
+; ---------------------------------------------------------------------------
+; 1. Signature of a generation blob and of a firmware image (ref/08 2.13.5)
+;    One form only: the OTA manifest of the Joker Link (ref/07 section 9.1,
+;    joker-link.cddl "ota-manifest"). In a .jkgen it is the trailer at
+;    trailer_off = image_len; a firmware image carries it next to the image.
+; ---------------------------------------------------------------------------
+
+generation-trailer = #6.18(ota-sign1)
+firmware-trailer   = #6.18(ota-sign1)
+
+ota-sign1 = [
+  protected:   bstr .cbor ota-protected,
+  unprotected: {},
+  payload:     bstr .cbor ota-manifest,
+  signature:   bstr .size 64            ; Ed25519 (RFC 8032)
+]
+
+ota-protected = {
+  1 => -8,                               ; alg: EdDSA
+  4 => bstr .size 16                     ; kid: first 16 bytes of SHA-256(public key) (ref/02 2.5)
+}
+
+; Same keys as joker-link.cddl (ref/07 9.1); the verifier checks the ones
+; marked "=" against the blob header or the firmware descriptor.
+ota-manifest = {
+  1 => 1 / 2,                            ; ota_kind: generation 1, firmware 2 (ref/00 section 6)
+  2 => tstr,                             ; target (firmware family / board)
+  3 => tstr,                             ; version: SemVer (firmware) or gen_seq in decimal
+  4 => uint,                             ; image length (= image_len)
+  5 => bstr .size 32,                    ; SHA-256 of the image [0, image_len)
+  6 => uint,                             ; security_version (firmware anti-rollback counter; 0 in a generation)
+  ? 7 => uint,                           ; gen_seq (= header)
+  ? 8 => bstr .size 32,                  ; source_hash (= header): the generation hash (ref/10 2.6.2)
+  ? 9 => bstr .size 32,                  ; capabilities hash of the target firmware (section 2 below)
+  ? 10 => int,                           ; created, UTC us
+  ? 11 => [uint, uint],                  ; minimum Joker Link version
+  ? 12 => bstr .size 8,                  ; board-id (= header)
+  ? 13 => uint,                          ; blob format (= header)
+  ? 14 => node-name,                     ; node binding (JK_E_GEN_NODE if different)
+  ? 15 => bstr .size 32,                 ; registry_hash (= header)
+  * uint => any                          ; future keys, ignored
+}
+
+node-name = tstr .regexp "[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?"
+
+; ---------------------------------------------------------------------------
+; 2. Firmware descriptor (ref/08 section 2.14)
+;    file firmware.jkfw, and section .joker.fw inside the firmware
+; ---------------------------------------------------------------------------
+
+firmware-descriptor = {
+  1 => tstr,                             ; runtime version (SemVer)
+  2 => uint,                             ; JK ABI version, packed major<<16 | minor
+  3 => tstr,                             ; board name (board profile)
+  4 => bstr .size 8,                     ; board-id
+  5 => uint,                             ; highest blob format understood
+  6 => uint,                             ; highest expression ISA understood
+  7 => { + capacity-id => uint },        ; maximum capacities (ref/08 section 2.13.3)
+  8 => [* app-entry],                    ; statically linked apps
+  9 => [* driver-entry],                 ; drivers compiled in
+  10 => [* link-transport],              ; link transports compiled in
+  11 => [* tstr],                        ; cargo features of joker-micro
+  12 => bstr .size 8,                    ; iface-hash (lib/crate mode); 8 zero bytes in firmware mode
+  13 => { + tstr => uint },              ; stack budget per context, bytes
+  14 => [* area-entry],                  ; flash areas (firmware mode); [] in lib/crate mode
+  15 => fpu,
+  16 => uint,                            ; ms between reset and the first tick, measured (0 = not measured)
+  ? 17 => uint,                          ; security_version of this firmware (anti-rollback counter)
+  ? 18 => tstr,                          ; core version "<maj>.<min>" (lock [mcu.<d>] core; J0796)
+  * uint => any
+}
+
+; capabilities hash (HELLO firmware.5, OTA manifest key 9) = SHA-256 of the
+; deterministic CBOR of key 7; descriptor digest (HELLO firmware.9) = SHA-256
+; of the whole descriptor CBOR.
+
+capacity-id = 1..41                    ; 41 = radio_heap_bytes (ESP32 with Wi-Fi, ref/08 section 2.15.2)
+
+app-entry = [
+  name:      tstr,
+  version:   tstr,                       ; SemVer of the app
+  meta-hash: bstr .size 8                ; first 8 bytes of SHA-256(app meta CBOR)
+]
+
+driver-entry = [
+  name:  tstr,                           ; e.g. "modbus-rtu", "gpio", "extern"
+  major: uint,
+  ? descriptor: bstr .size 32            ; SHA-256 of the driver descriptor (ref/06 2.3); absent for extern
+]
+
+link-transport = "uart" / "rs485" / "can" / "usb_cdc" / "udp" / "tcp"
+
+area-entry = [
+  area:   area-id,
+  offset: uint,                          ; absolute flash offset
+  size:   uint
+]
+
+area-id = &(
+  persist:    0,
+  gen-a:      1,
+  gen-b:      2,
+  fw-staging: 3,
+  identity:   4
+)
+
+; none: no FPU; sp: single precision; sp+dcp: single precision plus a
+; double-precision coprocessor (RP2350 DCP); dp: single and double.
+; Same enum as the "fpu" key of board profiles (ref/03 2.3).
+fpu = "none" / "sp" / "sp+dcp" / "dp"
+
+; ---------------------------------------------------------------------------
+; 3. Values in CBOR (method arguments, action arguments and results,
+;    event payloads) -- ref/00 section 4.1
+; ---------------------------------------------------------------------------
+
+; Records use integer keys = position of the field (or argument) in the
+; schema, from 0 (D2, ref/00 4.1, ref/04 4.10). Names only in text interfaces.
+; jk_call_method_cbor: the argument record of the method.
+method-args = record
+
+arg-value = bool / int / float / tstr / bstr / record / arg-list
+
+record = { * uint => arg-value }         ; key = field position in the .jkc (or joker:meta)
+arg-list = [* arg-value]                 ; list<T, N>, N <= 64
+
+; action results: the record declared in the .jkc, or null for "()".
+action-result = record / arg-value / null
+
+; ---------------------------------------------------------------------------
+; 4. Persistence record values (ref/08 section 2.10)
+; ---------------------------------------------------------------------------
+
+; kind 1: generation state (singleton)
+gen-state = {
+  1 => uint,                             ; active area (1 = GEN_A, 2 = GEN_B)
+  2 => uint,                             ; confirmed gen-seq (anti-rollback floor)
+  3 => gen-phase,                        ; a boot while "confirming" counts as a failure
+  ? 6 => bstr .size 32                   ; image-hash of the active generation
+}
+
+gen-phase = &(confirmed: 0, pending: 1, confirming: 2, rolled-back: 3)
+
+; kind 2: trip; key = path-hash (8 bytes)
+trip-state = {
+  1 => bool,                             ; tripped
+  2 => int,                              ; UTC us of the trip (or 0 if unsynced)
+  ? 3 => uint                            ; reject/outcome detail
+}
+
+; kind 3: alarm; key = path-hash of "alarm.<name>"
+alarm-persist = {
+  1 => uint,                             ; alarm_state (ref/00 section 6)
+  ? 2 => int,                            ; shelved until, UTC us
+  ? 3 => uint                            ; user id of the last ack/shelve
+}
+
+; kind 4: parameter override; key = path-hash of "<app>.<param>"
+param-persist = {
+  1 => arg-value,
+  2 => bstr .size 8                      ; hash of the declaration (type, unit, range)
+}
+
+; kind 5: kv of an app; key = path-hash(app) || key bytes; value = raw bytes
+; kind 6: actuation budget; key = path-hash of the output
+budget-persist = {
+  1 => uint,                             ; count in the current window
+  2 => int                               ; window start, UTC us
+}
+
+; kind 16: node name (IDENTITY area)
+identity-node = node-name
+
+; kind 17: link key (IDENTITY area); key = path-hash of the link name
+identity-link-key = {
+  1 => bstr .size 8,                     ; key id (ref/07 4.2)
+  2 => bstr .size 32                     ; K_link
+}
+
+; kind 18: trust bundle (IDENTITY area): the COSE_Sign1 trust-bundle of
+; ref/10 2.4.3, micro profile (<= 2 KiB, <= 8 keys), as received
+identity-trust = bstr .size (1..2048)
+
+; kind 19: KEM key for secrets (IDENTITY area, autonomous MCUs; ref/02 2.4)
+identity-kem = {
+  ? 1 => bstr .size 32,                  ; X25519 private key; absent when a secure element holds it
+  2 => bstr .size 32                     ; X25519 public key (the one in the MCU certificate SAN)
+}
+
+; ---------------------------------------------------------------------------
+; 5. Blob sections carried as CBOR (ref/08 2.13.3)
+; ---------------------------------------------------------------------------
+
+; DEVICES config (in BLOBS): the "micro-device-config" of jdp.cddl
+; (ref/06 3.7): descriptor digest (key 0), device-spec with the driver's
+; "config" schema (ref/06 2.3), point-specs referring to MCU SignalIds, the
+; read plan and the bus. Kept here only as an opaque placeholder.
+device-config = { * (uint / tstr) => any }   ; = micro-device-config (jdp.cddl)
+
+; CATALOG (0x0021): the Joker Link catalog bytes, exactly as sent by CATALOG
+; (joker-link.cddl "catalog"); SECRETS (0x0022): a secret-bundle
+; (secrets.cddl); TRUST (0x0023): a chain of COSE trust bundles.
+trust-chain = [+ bstr]
+
+; NET (0x0024): Wi-Fi configuration of an M2 MCU, from [net.wifi]
+; (ref/01 5.22; ref/08 2.13.3, 2.17). The password is never here: key 4 is
+; the NAME of the secret, whose sealed entry travels in SECRETS (0x0022).
+micro-net = {
+  1 => tstr .size (1..32),               ; ssid (UTF-8, <= 32 bytes)
+  2 => tstr .regexp "[A-Z]{2}",          ; country, ISO 3166-1 alpha-2
+  3 => tstr .size (1..63),               ; hostname (one DNS label)
+  ? 4 => tstr .size (1..64)              ; password secret name; absent = open network
+}
