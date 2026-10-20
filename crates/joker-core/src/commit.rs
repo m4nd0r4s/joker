@@ -9,11 +9,12 @@ use crate::envelope::{Applied, Context, Effective, Verdict, check_output, evalua
 use crate::image::{Intent, ProcessImage, Proposal, WriterId};
 use crate::outcome::{Outcome, RejectReason};
 use crate::output::{
-    Band, Bound, ClockRequirement, ConfigError, Level, OutputConfig, WriterConfig, WriterKind,
+    AtomicGroup, Band, Bound, ClockRequirement, ConfigError, Level, OnRate, OutputConfig,
+    WriterConfig, WriterKind,
 };
 use crate::quality::Quality;
 use crate::quality::{QualityCode, QualityReason};
-use crate::registry::{Direction, Registry, SignalId};
+use crate::registry::{Direction, GroupId, Registry, SignalId};
 use crate::slot::Slot;
 use crate::value::NO_TS_SRC;
 use crate::value::Sample;
@@ -194,7 +195,12 @@ pub enum CommitError {
     AlreadyStarted,
     /// The state arena is missing or smaller than [`Outputs::state_words`].
     StateArenaTooSmall,
+    /// An atomic group without members.
+    AtomicTooSmall,
 }
+
+/// Most members an atomic group may have.
+pub const MAX_ATOMIC_MEMBERS: usize = 16;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 struct Track {
@@ -214,8 +220,16 @@ pub struct OutputState {
     arena_offset: usize,
     bad_since: Option<u64>,
     last_actuation: Option<u64>,
+    pending: Option<Pending>,
     output_track: Option<Track>,
     write_tracks: [Option<Track>; Level::COUNT],
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+struct Pending {
+    verdict: Verdict,
+    reset: bool,
+    ring: usize,
 }
 
 impl OutputState {
@@ -230,6 +244,7 @@ impl OutputState {
         arena_offset: 0,
         bad_since: None,
         last_actuation: None,
+        pending: None,
         output_track: None,
         write_tracks: [None; Level::COUNT],
     };
@@ -264,6 +279,7 @@ pub struct OutputsStorage<'a> {
 pub struct Outputs<'a> {
     writers: &'a [WriterConfig],
     remote: &'a [RemoteWriter],
+    atomic: &'a [AtomicGroup<'a>],
     arena: &'a mut [u64],
     state_words: usize,
     configs: &'a [OutputConfig<'a>],
@@ -316,6 +332,7 @@ impl<'a> Outputs<'a> {
         Ok(Self {
             writers,
             remote: &[],
+            atomic: &[],
             arena: &mut [],
             state_words,
             configs,
@@ -339,6 +356,158 @@ impl<'a> Outputs<'a> {
         arena.fill(0);
         self.arena = arena;
         Ok(())
+    }
+
+    /// Sets the atomic groups (M20, ref/01 §5.16): at least two members,
+    /// each an output of this generation (`NotAnOutput`), in one group only
+    /// (`J0270`), all with the same owner group (`J0272`), an `order` that is
+    /// empty or a permutation of the members (`J0273`), and a commit register
+    /// that is neither a member nor an output with an envelope (`J0274`).
+    pub fn set_atomic_groups(&mut self, groups: &'a [AtomicGroup<'a>]) -> Result<(), CommitError> {
+        let err = |code, output| {
+            CommitError::Config(ConfigError {
+                code,
+                output: Some(output),
+                writer: None,
+            })
+        };
+        for (g, atomic) in groups.iter().enumerate() {
+            let Some(&first) = atomic.outputs.first() else {
+                return Err(CommitError::AtomicTooSmall);
+            };
+            if atomic.outputs.len() < 2 || atomic.outputs.len() > MAX_ATOMIC_MEMBERS {
+                return Err(CommitError::AtomicTooSmall);
+            }
+            let owner = self
+                .find(first)
+                .map(|o| self.configs[o].group)
+                .ok_or(CommitError::NotAnOutput(first))?;
+            for (i, &member) in atomic.outputs.iter().enumerate() {
+                let o = self.find(member).ok_or(CommitError::NotAnOutput(member))?;
+                if self.configs[o].group != owner {
+                    return Err(err("J0272", member));
+                }
+                let repeated = atomic.outputs[..i].contains(&member)
+                    || groups[..g]
+                        .iter()
+                        .any(|other| other.outputs.contains(&member));
+                if repeated {
+                    return Err(err("J0270", member));
+                }
+            }
+            let permutation = atomic.order.len() == atomic.outputs.len()
+                && atomic.order.iter().all(|m| atomic.outputs.contains(m))
+                && atomic
+                    .order
+                    .iter()
+                    .enumerate()
+                    .all(|(i, m)| !atomic.order[..i].contains(m));
+            if !atomic.order.is_empty() && !permutation {
+                return Err(err("J0273", first));
+            }
+            if let Some((signal, _)) = atomic.commit
+                && (atomic.outputs.contains(&signal) || self.find(signal).is_some())
+            {
+                return Err(err("J0274", signal));
+            }
+        }
+        self.atomic = groups;
+        Ok(())
+    }
+
+    /// Step 7 for one atomic group owned by `group` (ADR 0039). Returns
+    /// whether any member applies a new value.
+    fn apply_atomic(&mut self, atomic: &AtomicGroup<'_>, group: GroupId) -> bool {
+        let mut members = [0usize; MAX_ATOMIC_MEMBERS];
+        let mut n = 0;
+        for &member in atomic.outputs {
+            match self.find(member) {
+                Some(o) if self.configs[o].group == group && n < MAX_ATOMIC_MEMBERS => {
+                    members[n] = o;
+                    n += 1;
+                }
+                _ => return false,
+            }
+        }
+        let members = &members[..n];
+        let failed = members.iter().any(|&o| {
+            self.states[o].pending.is_some_and(|p| {
+                matches!(
+                    p.verdict.outcome,
+                    Some(Outcome::Rejected(_)) | Some(Outcome::Tripped)
+                )
+            })
+        });
+        if failed {
+            for &o in members {
+                let last = self.states[o].last;
+                if let Some(p) = self.states[o].pending.as_mut()
+                    && matches!(
+                        p.verdict.outcome,
+                        Some(
+                            Outcome::Accepted
+                                | Outcome::ClampedRange
+                                | Outcome::ClampedRate
+                                | Outcome::Suppressed
+                        )
+                    )
+                {
+                    p.verdict.applied = last;
+                    p.verdict.outcome = Some(Outcome::Rejected(RejectReason::AtomicGroup));
+                }
+            }
+        } else if atomic.on_rate == OnRate::Proportional {
+            self.scale_atomic(members);
+        }
+        members.iter().any(|&o| {
+            self.states[o]
+                .pending
+                .is_some_and(|p| p.verdict.applied != self.states[o].last)
+        })
+    }
+
+    /// The proportional rate of ADR 0039 §4.
+    fn scale_atomic(&mut self, members: &[usize]) {
+        let mut steps: [Option<(f64, f64, f64)>; MAX_ATOMIC_MEMBERS] = [None; MAX_ATOMIC_MEMBERS];
+        for (slot, &o) in steps.iter_mut().zip(members) {
+            let state = &self.states[o];
+            let ty = self.configs[o].ty;
+            *slot = (|| {
+                let p = state.pending?;
+                let Applied::Value(last) = state.last else {
+                    return None;
+                };
+                let Applied::Value(applied) = p.verdict.applied else {
+                    return None;
+                };
+                let last = ty.bits_to_f64(last)?;
+                let requested = ty.bits_to_f64(p.verdict.requested?)? - last;
+                let allowed = ty.bits_to_f64(applied)? - last;
+                Some((last, requested, allowed))
+            })();
+        }
+        let fraction = steps
+            .iter()
+            .flatten()
+            .filter(|(_, requested, _)| *requested != 0.0)
+            .map(|(_, requested, allowed)| allowed / requested)
+            .fold(1.0f64, f64::min);
+        if fraction >= 1.0 {
+            return;
+        }
+        for (step, &o) in steps.iter().zip(members) {
+            let ty = self.configs[o].ty;
+            if let Some((last, requested, _)) = *step
+                && requested != 0.0
+                && let Some(bits) = ty.f64_to_bits(last + fraction * requested)
+                && let Some(p) = self.states[o].pending.as_mut()
+            {
+                p.verdict.applied = Applied::Value(bits);
+                if p.verdict.outcome != Some(Outcome::ClampedRange) {
+                    p.verdict.outcome = Some(Outcome::ClampedRate);
+                }
+            }
+        }
     }
 
     /// Sets the remote writers of an MCU's outputs (docs/16 A12), indexed by
@@ -584,9 +753,6 @@ impl<'a> Outputs<'a> {
             if config.group != group {
                 continue;
             }
-            let slot = slots
-                .get(config.signal.index())
-                .ok_or(CommitError::MissingSlot(config.signal))?;
             let state = &mut self.states[o];
             let words = config.state_words();
             let arena = &mut self.arena[state.arena_offset..state.arena_offset + words];
@@ -636,15 +802,51 @@ impl<'a> Outputs<'a> {
                     requires_clock: writer_clock(writers, entry.writer),
                 },
             };
-            let Verdict {
-                applied,
-                outcome: envelope_outcome,
-                tripped,
-            } = evaluate_in(&config, state.last, state.tripped, effective, &ctx);
+            state.pending = Some(Pending {
+                verdict: evaluate_in(&config, state.last, state.tripped, effective, &ctx),
+                reset,
+                ring: state.arena_offset + facts.words,
+            });
+        }
+        let atomic_groups = self.atomic;
+        for atomic in atomic_groups {
+            if self.apply_atomic(atomic, group)
+                && let Some((signal, value)) = atomic.commit
+            {
+                slots
+                    .get(signal.index())
+                    .ok_or(CommitError::MissingSlot(signal))?
+                    .write(value, Quality::GOOD, NO_TS_SRC, now);
+            }
+        }
+        for o in 0..self.configs.len() {
+            let config = self.configs[o];
+            if config.group != group {
+                continue;
+            }
+            let slot = slots
+                .get(config.signal.index())
+                .ok_or(CommitError::MissingSlot(config.signal))?;
+            let state = &mut self.states[o];
+            let Some(Pending {
+                verdict:
+                    Verdict {
+                        applied,
+                        outcome: envelope_outcome,
+                        tripped,
+                        ..
+                    },
+                reset,
+                ring,
+            }) = state.pending.take()
+            else {
+                continue;
+            };
+            let active = state.arbiter.active();
             if applied != state.last {
                 state.last_actuation = Some(now);
                 if let Some(b) = config.max_actuations {
-                    record_actuation(&mut arena[facts.words..], b.count as usize, now);
+                    record_actuation(&mut self.arena[ring..], b.count as usize, now);
                 }
             }
             let level = active.map(|(l, _)| l);

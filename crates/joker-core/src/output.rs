@@ -276,6 +276,28 @@ pub struct Budget {
     pub window_ns: u64,
 }
 
+/// How an atomic group applies the rate step (ref/01 §5.16).
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum OnRate {
+    /// Each member keeps its own rate step.
+    Independent,
+    /// Every member is scaled to the smallest fraction (ADR 0039 §4).
+    Proportional,
+}
+
+/// An atomic group of outputs (M20, docs/02 §7.3, ref/01 §5.16).
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct AtomicGroup<'a> {
+    /// The members, at least two.
+    pub outputs: &'a [SignalId],
+    /// Bus order for the driver; a permutation of `outputs`.
+    pub order: &'a [SignalId],
+    /// Rate behaviour.
+    pub on_rate: OnRate,
+    /// Commit register and its value, written after the group's writes.
+    pub commit: Option<(SignalId, u64)>,
+}
+
 /// The envelope and arbiter settings of one output (ref/01 §5.10).
 #[derive(Copy, Clone, Debug)]
 pub struct OutputConfig<'a> {

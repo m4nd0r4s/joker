@@ -65,6 +65,9 @@ pub struct Verdict {
     pub outcome: Option<Outcome>,
     /// The output entered a trip in this tick.
     pub tripped: bool,
+    /// The value after the range step and before the rate step, when the
+    /// value reached the commit; used by proportional atomic groups.
+    pub requested: Option<u64>,
 }
 
 /// The facts of one tick that the envelope needs besides the output's
@@ -153,6 +156,7 @@ pub fn evaluate_in(
                 applied: to_safe(output, last, dt_ns),
                 outcome: None,
                 tripped: false,
+                requested: None,
             };
         }
         Effective::Writer {
@@ -164,6 +168,7 @@ pub fn evaluate_in(
         applied: to_safe(output, last, dt_ns),
         outcome: Some(outcome),
         tripped,
+        requested: None,
     };
     let refuse = |reason| match output.on_interlock {
         OnInterlock::Safe => safe_with(Outcome::Rejected(reason), false),
@@ -171,12 +176,14 @@ pub fn evaluate_in(
             applied: last,
             outcome: Some(Outcome::Rejected(reason)),
             tripped: false,
+            requested: None,
         },
     };
     let hold = |outcome| Verdict {
         applied: last,
         outcome: Some(outcome),
         tripped: false,
+        requested: None,
     };
     if in_trip {
         return safe_with(Outcome::Tripped, false);
@@ -205,6 +212,7 @@ pub fn evaluate_in(
             OnRange::Trip => return safe_with(Outcome::Tripped, true),
         }
     }
+    let requested = bits;
     if let Some(rate) = output.rate
         && let Some(limited) = limit_rate(output.ty, last, bits, rate, dt_ns)
     {
@@ -235,6 +243,7 @@ pub fn evaluate_in(
         applied: Applied::Value(bits),
         outcome: Some(outcome.unwrap_or(Outcome::Accepted)),
         tripped: false,
+        requested: Some(requested),
     }
 }
 
