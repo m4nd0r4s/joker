@@ -1,30 +1,30 @@
-# ADR 0022 — Política de versões: minors temáticas, compatibilidade total na 1.x, LTS no fim da série
+# ADR 0022 — Versioning policy: themed minors, full compatibility in 1.x, LTS at the end of the series
 
-**Estado:** aceite (plano v1 → v2) · **Data:** 2026-09
+**Status:** accepted (v1 → v2 plan) · **Date:** 2026-09
 
-## Contexto
+## Context
 
-Depois da 1.0 há mais trabalho do que cabe numa versão (documento 21): ML, Structured Text, protocolos, segurança, Studio, Wasm em MCUs, Deck em escala, redundância. Os clientes industriais põem um nó em campo e não querem voltar a mexer nele durante anos. É preciso decidir o que pode mudar, quando, e durante quanto tempo uma versão é suportada.
+After 1.0 there is more work than fits in one version (document 21): ML, Structured Text, protocols, security, Studio, Wasm on MCUs, the Deck at scale, redundancy. Industrial customers put a node in the field and do not want to touch it again for years. It is necessary to decide what may change, when, and for how long a version is supported.
 
-## Decisão
+## Decision
 
-1. **Regra de ouro da 1.x:** uma instalação 1.0 que funciona continua a funcionar, igual, em todas as 1.x. Nenhuma minor quebra apps (`joker:runtime@1.y`), manifestos, locks, classes `std/`, o Joker Link, o protocolo do agente, nem muda um resultado de conformidade existente (documento 16). A única exceção é uma correção de segurança, com ADR própria e migração automática.
-2. **Minors temáticas**, uma a cada ~3–4 meses: um tema por versão, no máximo três funcionalidades de cabeça, portas de saída como nas fases da v1. O que não passa as portas passa à versão seguinte.
-3. **Os drivers e as classes novas podem sair em qualquer minor**, fora do tema, porque são pontos de extensão e não tocam no núcleo.
-4. **Suporte:** cada minor recebe correções até seis meses depois da seguinte; a 1.0 é suportada 12 meses; a **última minor da série 1 é LTS**, com 3 anos de correções de segurança e de defeitos críticos.
-5. **O Deck e o Hub têm versões próprias.** A compatibilidade com os nós faz-se pela versão do protocolo do agente, e um Deck suporta nós das três últimas minors e da LTS.
-6. **Uma major (v2)** só acontece quando uma mudança necessária não cabe na regra de ouro (caminhos qualificados por nó, árbitro distribuído, mundo WIT novo). Tem sempre `jk migrate`, a 2.0 lê a última 1.x, e as apps do mundo 1 correm por adaptador durante toda a série 2.
+1. **Golden rule of 1.x:** a 1.0 installation that works keeps working, the same way, in every 1.x. No minor breaks apps (`joker:runtime@1.y`), manifests, locks, `std/` classes, Joker Link, the agent protocol, nor changes an existing conformance result (document 16). The only exception is a security fix, with its own ADR and automatic migration.
+2. **Themed minors**, one every ~3–4 months: one theme per version, at most three headline features, exit gates as in the v1 phases. What does not pass the gates moves to the next version.
+3. **New drivers and classes may ship in any minor**, outside the theme, because they are extension points and do not touch the core.
+4. **Support:** each minor receives fixes until six months after the next one; 1.0 is supported for 12 months; the **last minor of series 1 is LTS**, with 3 years of security fixes and critical defect fixes.
+5. **The Deck and the Hub have their own versions.** Compatibility with nodes is through the agent protocol version, and a Deck supports nodes of the last three minors and of the LTS.
+6. **A major (v2)** only happens when a necessary change does not fit the golden rule (per-node qualified paths, distributed arbiter, new WIT world). It always has `jk migrate`, 2.0 reads the last 1.x, and world 1 apps run through an adapter for the whole of series 2.
 
-## Razões
+## Reasons
 
-- A confiança dos clientes industriais vem da previsibilidade, e não da velocidade.
-- Os temas e o limite de funcionalidades evitam minors inchadas e atrasadas.
-- A separação entre núcleo e pontos de extensão permite responder a pilotos sem quebrar a cadência.
-- A LTS dá uma versão para "instalar e esquecer", sem obrigar a manter todas as minors.
+- The trust of industrial customers comes from predictability, not from speed.
+- Themes and the feature limit avoid bloated and late minors.
+- The separation between core and extension points makes it possible to respond to pilots without breaking the cadence.
+- The LTS gives an "install and forget" version, without forcing every minor to be maintained.
 
-## Consequências
+## Consequences
 
-- O `jk check` e a CI têm um conjunto de conformidade por versão, que nunca perde casos.
-- Cada funcionalidade de cabeça precisa de uma ADR antes de entrar numa minor.
-- O documento 21 é atualizado no fim de cada versão.
-- A série 2 tem de manter os adaptadores do mundo 1, o que é custo de manutenção aceite.
+- `jk check` and the CI have a conformance set per version, which never loses cases.
+- Each headline feature needs an ADR before entering a minor.
+- Document 21 is updated at the end of each version.
+- Series 2 must keep the world 1 adapters, which is an accepted maintenance cost.
