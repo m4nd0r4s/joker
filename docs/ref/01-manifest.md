@@ -1251,13 +1251,13 @@ hostname = "esp-bancada"
 
 ---
 
-## 6. Reservado para a 1.1
+## 6. Reserved for 1.1
 
-As chaves desta secção **já existem no esquema da 1.0** (documento 11, "Preparado para ML"; ADR 0019): o `jk` 1.0 valida a forma delas, e usá-las com uma runtime 1.0 é `J0290` ("reservado para a 1.1; esta runtime é a 1.0"). Assim, um manifesto escrito para a 1.1 é rejeitado com uma mensagem clara, e a 1.1 é uma mudança minor: só acrescenta chaves opcionais às que estão aqui.
+The keys of this section **already exist in the 1.0 schema** (document 11, "Prepared for ML"; ADR 0019): `jk` 1.0 validates their form, and using them with a 1.0 runtime is `J0290` ("reserved for 1.1; this runtime is 1.0"). So a manifest written for 1.1 is rejected with a clear message, and 1.1 is a minor change: it only adds optional keys to those that are here.
 
-A semântica é a do documento 06.
+The semantics are those of document 06.
 
-### 6.1 `[models.<modelo>]`
+### 6.1 `[models.<model>]`
 
 ```toml
 [models.load_forecast]
@@ -1269,38 +1269,38 @@ isolation = "thread"
 warmup    = 3
 ```
 
-| Chave | Tipo | Obr. | Omissão | Validação |
+| Key | Type | Req. | Default | Validation |
 |---|---|---|---|---|
-| `source` | `Ficheiro` `.jkm`, `Ref` `oci://…` ou `"training:<trabalho>"` | sim | — | `J0157` |
-| `digest` | `"sha256:…"` | não | fixado no lock | |
-| `backend` | `Lista<string>` (ordenada): `"burn:cpu"`, `"burn:vulkan"`, `"burn:cuda"`, `"burn:metal"`, `"ort:cpu"`, `"ort:tensorrt"`, `"tract"`, `"hailo"`, `"tensorrt"` | sim | — | cadeia de fallback; nenhum disponível na placa `J0501` |
-| `resources` | classe de recursos | não | `"ml"` | `rt` `J0145` |
-| `deadline` | `Duração` | sim | — | |
-| `isolation` | `"thread"` \| `"process"` | não | `"thread"` | |
-| `warmup` | `Inteiro` | não | `1` | |
-| `max_inflight` | `Inteiro` | não | 1 em NPU/GPU; nº de CPUs `ml` em CPU | |
-| `batch` | `{ max = Inteiro, wait = Duração }` | não | — (sem micro-batching) | |
-| `fallback_after` | `Inteiro` | não | `5` | falhas ou deadlines seguidos antes de passar ao backend seguinte |
+| `source` | `File` `.jkm`, `Ref` `oci://…` or `"training:<job>"` | yes | — | `J0157` |
+| `digest` | `"sha256:…"` | no | pinned in the lock | |
+| `backend` | `List<string>` (ordered): `"burn:cpu"`, `"burn:vulkan"`, `"burn:cuda"`, `"burn:metal"`, `"ort:cpu"`, `"ort:tensorrt"`, `"tract"`, `"hailo"`, `"tensorrt"` | yes | — | fallback chain; none available on the board `J0501` |
+| `resources` | resource class | no | `"ml"` | `rt` `J0145` |
+| `deadline` | `Duration` | yes | — | |
+| `isolation` | `"thread"` \| `"process"` | no | `"thread"` | |
+| `warmup` | `Integer` | no | `1` | |
+| `max_inflight` | `Integer` | no | 1 on NPU/GPU; number of `ml` CPUs on CPU | |
+| `batch` | `{ max = Integer, wait = Duration }` | no | — (no micro-batching) | |
+| `fallback_after` | `Integer` | no | `5` | consecutive failures or deadlines before moving to the next backend |
 
-`[models.<m>.shadow]` (M16, modelos):
+`[models.<m>.shadow]` (M16, models):
 
-| Chave | Tipo | Obr. | Omissão | Validação |
+| Key | Type | Req. | Default | Validation |
 |---|---|---|---|---|
-| `candidate` | `Ficheiro` ou `Ref` | cond. | — | obrigatória sem `auto` |
-| `auto` | `Bool` | não | `false` | cada candidato de `[training]` entra em sombra sozinho |
-| `until` | `{ duration, frames }` | sim | — | pelo menos um |
-| `promote_if` | `Lista<string>` (gramática KPI, 06 §10.1) | sim | — | |
-| `kpi` | string (gramática KPI) | não | — | despromoção depois de promovido |
-| `on_regress` | `"demote"` \| `"keep"` | não | `"demote"` | |
-| `record_disagreements` | `Bool` | não | `false` | guarda os frames em desacordo, com retenção curta |
+| `candidate` | `File` or `Ref` | cond. | — | required without `auto` |
+| `auto` | `Bool` | no | `false` | each candidate from `[training]` enters shadow on its own |
+| `until` | `{ duration, frames }` | yes | — | at least one |
+| `promote_if` | `List<string>` (KPI grammar, 06 §10.1) | yes | — | |
+| `kpi` | string (KPI grammar) | no | — | demotion after being promoted |
+| `on_regress` | `"demote"` \| `"keep"` | no | `"demote"` | |
+| `record_disagreements` | `Bool` | no | `false` | stores the frames in disagreement, with short retention |
 
-### 6.2 `[streams."<caminho>"]`
+### 6.2 `[streams."<path>"]`
 
-| Chave | Tipo | Obr. | Omissão | Validação |
+| Key | Type | Req. | Default | Validation |
 |---|---|---|---|---|
-| `pool` | `Inteiro` (buffers) | sim | — | a memória entra no `J0380` |
-| `mode` | `"latest"` ou `"queue(<n>)"` | não | `"latest"` | |
-| `record` | `Bool` | não | `false` | os streams não se gravam por omissão (documento 12, §10) |
+| `pool` | `Integer` (buffers) | yes | — | the memory counts in `J0380` |
+| `mode` | `"latest"` or `"queue(<n>)"` | no | `"latest"` | |
+| `record` | `Bool` | no | `false` | streams are not recorded by default (document 12, §10) |
 
 ### 6.3 `[pipelines.<pipeline>]`
 
@@ -1318,16 +1318,16 @@ to       = "vision.detections"
 deadline = "120ms"
 ```
 
-| Chave | Tipo | Obr. | Omissão | Validação |
+| Key | Type | Req. | Default | Validation |
 |---|---|---|---|---|
-| `from` | `Caminho` de stream, sinal em bloco ou evento, ou `Lista<Caminho>` | sim | — | |
-| `steps` | `Lista<Passo>` (ordenada) | sim | — | formatos incompatíveis entre passos `J0510` |
-| `to` | `Caminho` | sim | — | cria o caminho (16, P4); único no site (`J0174`) |
-| `deadline` | `Duração` | não | — | saída `Bad(Deadline)` quando excedido |
+| `from` | `Path` of a stream, block signal or event, or `List<Path>` | yes | — | |
+| `steps` | `List<Step>` (ordered) | yes | — | incompatible formats between steps `J0510` |
+| `to` | `Path` | yes | — | creates the path (16, P4); unique in the site (`J0174`) |
+| `deadline` | `Duration` | no | — | output `Bad(Deadline)` when exceeded |
 
-**Passos** (`op` e as chaves de cada um, documento 06, §5):
+**Steps** (`op` and the keys of each, document 06, §5):
 
-| `op` | Chaves |
+| `op` | Keys |
 |---|---|
 | `crop` | `roi = [x, y, w, h]` |
 | `resize` | `size = [w, h]`, `keep_aspect` (`false`), `method` (`"bilinear"` \| `"area"`) |
@@ -1341,9 +1341,9 @@ deadline = "120ms"
 | `fft` | `n`, `window` (`"hann"`, `"hamming"`, `"rect"`) |
 | `bands` | `edges_hz = [f, …]` |
 | `stats` | `fields = ["rms", "peak", "crest", "kurtosis", …]` |
-| `resample` | `rate` (`Quantidade<Hz>`) |
-| `append` | `signals = [Caminho, …]` |
-| `model` | `name` (`Nome` de `[models]`) |
+| `resample` | `rate` (`Quantity<Hz>`) |
+| `append` | `signals = [Path, …]` |
+| `model` | `name` (`Name` from `[models]`) |
 | `nms` | `iou`, `score`, `max` |
 | `decode_boxes` | `anchors` |
 | `argmax` | — |
@@ -1354,86 +1354,86 @@ deadline = "120ms"
 | `to_signal` | `field` |
 | `every` | `n` |
 | `when` | `expr` (`Expr<bool>`) |
-| `correlate` | `with` (`Caminho`), `window` (`Duração`) |
+| `correlate` | `with` (`Path`), `window` (`Duration`) |
 
-### 6.4 `[training.<trabalho>]`
+### 6.4 `[training.<job>]`
 
-| Chave | Tipo | Obr. | Omissão | Validação |
+| Key | Type | Req. | Default | Validation |
 |---|---|---|---|---|
-| `arch` | string (catálogo, `"joker.ae@1"`) | sim | — | |
-| `from` | `Ficheiro` `.jkm` | não | — | pesos iniciais |
-| `hyper` | `Tabela` (hiperparâmetros da arquitetura) | não | os da arquitetura | |
-| `data.signals` | `Lista<Caminho \| Ref pipe:>` | sim | — | |
-| `data.window` | `Duração` | sim | — | |
-| `data.where` | `Expr<bool>` | não | — | filtro sobre o historian |
-| `schedule` | string `"after: <duração>[ of data]; then: <daily\|weekly\|every <duração>>"` | sim | — | |
-| `resources` | classe | não | `"ml"` | |
-| `priority` | `"idle"` \| `"normal"` | não | `"idle"` | |
-| `budget` | `{ max_time = Duração, max_memory = Tamanho }` | não | — | |
-| `checkpoint` | `Duração` | não | `"10m"` | |
-| `validate` | `{ holdout = Percentagem, metric, max, threshold }` | sim | — | `threshold` é um percentil (`"p99.9"`) guardado no `.jkm` |
-| `output` | `"candidate"` | não | `"candidate"` | nunca produção direta (M16) |
+| `arch` | string (catalog, `"joker.ae@1"`) | yes | — | |
+| `from` | `File` `.jkm` | no | — | initial weights |
+| `hyper` | `Table` (hyperparameters of the architecture) | no | those of the architecture | |
+| `data.signals` | `List<Path \| Ref pipe:>` | yes | — | |
+| `data.window` | `Duration` | yes | — | |
+| `data.where` | `Expr<bool>` | no | — | filter over the historian |
+| `schedule` | string `"after: <duration>[ of data]; then: <daily\|weekly\|every <duration>>"` | yes | — | |
+| `resources` | class | no | `"ml"` | |
+| `priority` | `"idle"` \| `"normal"` | no | `"idle"` | |
+| `budget` | `{ max_time = Duration, max_memory = Size }` | no | — | |
+| `checkpoint` | `Duration` | no | `"10m"` | |
+| `validate` | `{ holdout = Percentage, metric, max, threshold }` | yes | — | `threshold` is a percentile (`"p99.9"`) stored in the `.jkm` |
+| `output` | `"candidate"` | no | `"candidate"` | never direct production (M16) |
 
-### 6.5 Outras chaves reservadas
+### 6.5 Other reserved keys
 
-| Chave | Onde está descrita | O que falta para a 1.1 |
+| Key | Where it is described | What is missing for 1.1 |
 |---|---|---|
-| `apps.*.fallback = { controller = "app:<a>", when = "<KPI>" }` | 06 §7 | `when` na gramática KPI, avaliado em `bg`; o resultado passa ao árbitro no tick seguinte (as janelas de 30 min do documento 08, R6, só cabem aí) |
+| `apps.*.fallback = { controller = "app:<a>", when = "<KPI>" }` | 06 §7 | `when` in the KPI grammar, evaluated in `bg`; the result passes to the arbiter on the next tick (the 30 min windows of document 08, R6, only fit there) |
 | `apps.*.writer.kind = "proposal"` | §5.12 | M18 |
 | `outputs.*.schedule_depth`, `timed`, `on_late`, `late_margin` | §5.10 | M6 |
 | `devices.*.signals.*.kind = "block"`, `block` | §5.8.1 | M7 |
 | `telemetry.record.*.blocks`, `trigger`, `pre`, `post` | §5.17.1 | M7 |
-| `resources.ml.accel` | §5.4 | aceleradores |
-| `bind = "model:<m>"`, `"pipe:<p>"` | §5.12.1 | portas de modelo e de pipeline |
-| `security.trust.models` | §5.19 | artefactos `joker.model.v1+jkm` |
-| drivers `v4l2`, `libcamera`, `spi-adc` | anexo A | 1.1 (documento 21, §3) |
+| `resources.ml.accel` | §5.4 | accelerators |
+| `bind = "model:<m>"`, `"pipe:<p>"` | §5.12.1 | model and pipeline ports |
+| `security.trust.models` | §5.19 | `joker.model.v1+jkm` artifacts |
+| drivers `v4l2`, `libcamera`, `spi-adc` | appendix A | 1.1 (document 21, §3) |
 
 ---
 
 ## 7. Overlays (`extends`)
 
-### 7.1 Ordem de resolução
+### 7.1 Resolution order
 
 ```
 jk check --manifest sites/lisboa-01/joker.toml
    │
-   1. ler o ficheiro de topo
-   2. resolver `extends`, recursivamente, em profundidade e da esquerda para a direita
-   3. linearizar: pós-ordem, cada ficheiro uma só vez (na primeira posição em que aparece)
-   4. fundir as camadas por essa ordem, e o ficheiro de topo por último
-   5. aplicar as diretivas (`append`, `unset`) e verificar o "só apertar" camada a camada
-   6. retirar `extends`; o resultado é o manifesto efetivo (§8)
+   1. read the top-level file
+   2. resolve `extends`, recursively, depth-first and from left to right
+   3. linearize: post-order, each file only once (in the first position where it appears)
+   4. merge the layers in that order, and the top-level file last
+   5. apply the directives (`append`, `unset`) and check "only tighten" layer by layer
+   6. remove `extends`; the result is the effective manifest (§8)
 ```
 
-**Exemplo.** O site `S` estende `[A, B]`; `A` estende `[T]`; `B` estende `[T, P]`.
+**Example.** The site `S` extends `[A, B]`; `A` extends `[T]`; `B` extends `[T, P]`.
 
 ```
 S ─ extends ─▶ A ─ extends ─▶ T
           └──▶ B ─ extends ─▶ T, P
-linearização (pós-ordem, sem repetições):  T, A, P, B, S
+linearization (post-order, no repetitions):  T, A, P, B, S
 ```
 
-`T` entra uma só vez, antes de `A`. Um `append` de `T` não é aplicado duas vezes, e um diamante não é um erro.
+`T` enters only once, before `A`. An `append` from `T` is not applied twice, and a diamond is not an error.
 
-- **Caminhos em `extends`** são relativos ao ficheiro que os declara (é a decisão da "base dos caminhos de `extends`", documento 16, §10). Só ficheiros locais: `oci://` e URLs são `J0160`.
-- Um ficheiro que aparece na sua própria cadeia é `J0161`. Mais de 8 níveis ou 32 ficheiros é `J0162`.
-- Cada camada é TOML válido por si (`J0146`) e é validada por si quanto a chaves desconhecidas (`J0140`); as chaves obrigatórias e as referências só são validadas no manifesto efetivo.
+- **Paths in `extends`** are relative to the file that declares them (this is the decision on the "base of `extends` paths", document 16, §10). Only local files: `oci://` and URLs are `J0160`.
+- A file that appears in its own chain is `J0161`. More than 8 levels or 32 files is `J0162`.
+- Each layer is valid TOML on its own (`J0146`) and is validated on its own for unknown keys (`J0140`); required keys and references are only validated in the effective manifest.
 
-### 7.2 Regras de fusão
+### 7.2 Merge rules
 
-| O que há na camada anterior | O que há na camada nova | Resultado |
+| What is in the previous layer | What is in the new layer | Result |
 |---|---|---|
-| tabela | tabela | fusão recursiva, chave a chave |
-| escalar | escalar | o novo substitui |
-| lista | lista | a nova **substitui** |
-| lista | `{ append = [ … ] }` | a anterior mais os novos elementos, no fim (§7.3) |
-| qualquer valor | `{ unset = true }` | a chave desaparece |
-| nada | `{ append = [ … ] }` | a lista `[ … ]` |
-| nada | `{ unset = true }` | nada, com o aviso `J0163` |
-| tabela | escalar, ou o contrário | `J0165` |
+| table | table | recursive merge, key by key |
+| scalar | scalar | the new one replaces |
+| list | list | the new one **replaces** |
+| list | `{ append = [ … ] }` | the previous one plus the new elements, at the end (§7.3) |
+| any value | `{ unset = true }` | the key disappears |
+| nothing | `{ append = [ … ] }` | the list `[ … ]` |
+| nothing | `{ unset = true }` | nothing, with the warning `J0163` |
+| table | scalar, or the reverse | `J0165` |
 
-- **As diretivas reconhecem-se pelo esquema.** `{ append = … }` só é diretiva numa chave cujo tipo é lista; `{ unset = true }` é diretiva em qualquer chave, porque nenhuma tabela do esquema tem uma chave `unset`. `append` em chave que não é lista, uma tabela com `append` e outras chaves, ou `unset` com um valor que não seja `true`, são `J0164`.
-- **Retirar uma secção inteira** faz-se com uma chave pontuada na raiz do overlay, antes dos cabeçalhos de tabela:
+- **Directives are recognized by the schema.** `{ append = … }` is only a directive in a key whose type is a list; `{ unset = true }` is a directive in any key, because no table of the schema has an `unset` key. `append` in a key that is not a list, a table with `append` and other keys, or `unset` with a value other than `true`, are `J0164`.
+- **Removing a whole section** is done with a dotted key at the root of the overlay, before the table headers:
 
 ```toml
 # joker.rpi.toml
@@ -1447,463 +1447,463 @@ address = 0x48
 profile = "ti/ads1115@1"
 ```
 
-### 7.3 `append` em listas e conjuntos
+### 7.3 `append` in lists and sets
 
-- Num **conjunto** (`requires_good`, `alias`, `capabilities`, `net.allow`, `actions.trip`…), os elementos já presentes não se repetem.
-- Numa **lista ordenada** (`backend`, `order`, `steps`, `extends`), um elemento repetido é `J0164`: numa cadeia de fallback ou numa ordem de tarefas, um duplicado é quase sempre um erro.
+- In a **set** (`requires_good`, `alias`, `capabilities`, `net.allow`, `actions.trip`…), elements already present are not repeated.
+- In an **ordered list** (`backend`, `order`, `steps`, `extends`), a repeated element is `J0164`: in a fallback chain or in a task order, a duplicate is almost always an error.
 
 ```toml
 [outputs."pcs.p_set"]
 requires_good = { append = ["bms.soh"] }
 ```
 
-### 7.4 Os envelopes só apertam
+### 7.4 Envelopes only tighten
 
-Um overlay pode tornar o envelope de uma saída **mais restritivo**. Para o tornar menos restritivo, precisa de `widen` com uma justificação, que o `jk lock` copia para `[accepted] widen."<saída>.<chave>"` (documento 03, §14). Sem `widen`, é `J0220`.
+An overlay may make the envelope of an output **more restrictive**. To make it less restrictive, it needs `widen` with a justification, which `jk lock` copies to `[accepted] widen."<output>.<key>"` (document 03, §14). Without `widen`, it is `J0220`.
 
-**Comparação.** Cada camada compara-se com o valor **acumulado** das camadas anteriores, já com as unidades convertidas (`"125000 W"` é igual a `"125 kW"`). A saída identifica-se pela chave literal de `[outputs]` (§7.6).
+**Comparison.** Each layer is compared with the **accumulated** value of the previous layers, with the units already converted (`"125000 W"` is equal to `"125 kW"`). The output is identified by the literal key of `[outputs]` (§7.6).
 
-| Chave | Aperta quando | Alarga (precisa de `widen`) quando |
+| Key | Tightens when | Widens (needs `widen`) when |
 |---|---|---|
-| `range` | o novo intervalo está contido no anterior (limites constantes); ou passa a existir | contém valores fora do anterior; é retirada; um dos limites é uma expressão e mudou |
-| `rate`, `safe_ramp` | o novo valor é menor; ou passa a existir | é maior; é retirada |
-| `deadband` | — | — (não é limite: é livre) |
-| `min_interval` | é maior; ou passa a existir | é menor; é retirada |
-| `max_actuations` | menos atuações na mesma janela (comparadas por hora); ou passa a existir | mais; é retirada |
-| `interlock` | a nova expressão é `(<anterior>) && <termo>`, textualmente; ou passa a existir | qualquer outra mudança; é retirada |
+| `range` | the new interval is contained in the previous one (constant limits); or it starts to exist | it contains values outside the previous one; it is removed; one of the limits is an expression and changed |
+| `rate`, `safe_ramp` | the new value is smaller; or it starts to exist | it is larger; it is removed |
+| `deadband` | — | — (it is not a limit: it is free) |
+| `min_interval` | it is larger; or it starts to exist | it is smaller; it is removed |
+| `max_actuations` | fewer actuations in the same window (compared per hour); or it starts to exist | more; it is removed |
+| `interlock` | the new expression is `(<previous>) && <term>`, textually; or it starts to exist | any other change; it is removed |
 | `permit_uncertain` | `true` → `false` | `false` → `true` |
-| `requires_good` | o novo conjunto contém o anterior | falta algum elemento do anterior |
-| `grace` | é menor | é maior |
-| `max_lease`, `max_manual` | é menor | é maior; é retirada (volta à omissão maior) |
-| `on_range` | `clamp` → `reject` → `trip` (neste sentido) | no sentido contrário |
+| `requires_good` | the new set contains the previous one | some element of the previous one is missing |
+| `grace` | it is smaller | it is larger |
+| `max_lease`, `max_manual` | it is smaller | it is larger; it is removed (goes back to the larger default) |
+| `on_range` | `clamp` → `reject` → `trip` (in this direction) | in the opposite direction |
 | `on_interlock` | `hold` → `safe` | `safe` → `hold` |
-| `verify` | passa a existir; `tolerance` ou `within` menores | é retirada; `tolerance` ou `within` maiores |
-| `reset_when` | é retirada (passa a exigir `jk reset`) | passa a existir ou muda |
-| `safe`, `safer` | — | **qualquer mudança**: o lado seguro é uma decisão, e não uma ordem |
-| `accept_missing_fallback` | — | — (**nunca é um `widen`**: a própria chave é a justificação, e exige a entrada `[accepted] accept_missing_fallback."<saída>"` no lock, venha do manifesto de base ou de um overlay; `ref/02` §2.1.14. Um `widen` que a nomeie é `J0167`) |
-| `keepalive`, `group`, `pulse`, `remote_levels`, `schedule_depth`, `timed`, `on_late`, `late_margin` | — | — (livres; validados pelas outras regras) |
+| `verify` | it starts to exist; smaller `tolerance` or `within` | it is removed; larger `tolerance` or `within` |
+| `reset_when` | it is removed (it starts to require `jk reset`) | it starts to exist or changes |
+| `safe`, `safer` | — | **any change**: the safe side is a decision, and not an order |
+| `accept_missing_fallback` | — | — (**never a `widen`**: the key itself is the justification, and it requires the entry `[accepted] accept_missing_fallback."<output>"` in the lock, whether it comes from the base manifest or from an overlay; `ref/02` §2.1.14. A `widen` that names it is `J0167`) |
+| `keepalive`, `group`, `pulse`, `remote_levels`, `schedule_depth`, `timed`, `on_late`, `late_margin` | — | — (free; validated by the other rules) |
 
-- A **primeira** camada que declara uma saída não é comparada com nada: é a origem do envelope.
-- **Um envelope que passa para o MCU não alarga nada.** Quando uma camada troca o dispositivo de uma saída por um `joker-link` (a parte 9 da trilha: o LED passa a ser governado pelo Joker Micro), o envelope dessa saída deixa de poder estar no manifesto Linux (`J0234`) e passa para o `[outputs]` do manifesto do MCU. Retirá-lo do manifesto Linux **não** é um alargamento e não pede `widen`: o envelope continua a existir, só que no nó que governa a saída, e é o `jk check` do MCU que o valida (e que compara as suas camadas entre si, se as tiver). O `jk check` do nó Linux confirma que a saída é mesmo de um `joker-link` (com a chave `micro`, anexo A, também que o manifesto do MCU declara o envelope; sem ela, só com `--node`); se não for, a remoção é a da última coluna da tabela e exige `widen`.
-- Retirar uma chave com `unset` conta como a mudança da última coluna. Não é possível alargar em duas camadas (retirar numa, voltar a pôr noutra) sem `widen`: a remoção já o exige.
-- `widen` escreve-se na tabela da saída, na camada que alarga:
+- The **first** layer that declares an output is not compared with anything: it is the origin of the envelope.
+- **An envelope that moves to the MCU widens nothing.** When a layer swaps the device of an output for a `joker-link` (part 9 of the track: the LED becomes governed by Joker Micro), the envelope of that output can no longer be in the Linux manifest (`J0234`) and moves to the `[outputs]` of the MCU manifest. Removing it from the Linux manifest is **not** a widening and does not ask for `widen`: the envelope still exists, only in the node that governs the output, and it is the `jk check` of the MCU that validates it (and that compares its layers with each other, if it has any). The `jk check` of the Linux node confirms that the output really belongs to a `joker-link` (with the `micro` key, appendix A, also that the MCU manifest declares the envelope; without it, only with `--node`); if it does not, the removal is the one of the last column of the table and requires `widen`.
+- Removing a key with `unset` counts as the change of the last column. It is not possible to widen in two layers (remove in one, put it back in another) without `widen`: the removal already requires it.
+- `widen` is written in the table of the output, in the layer that widens:
 
 ```toml
 [outputs."pcs.p_set"]
 range = ["-150 kW", "150 kW"]
-widen = { range = "PCS novo com 150 kW nominal; aprovado por DL em 2026-09-18" }
+widen = { range = "New PCS with 150 kW rated power; approved by DL on 2026-09-18" }
 ```
 
-A forma curta `widen = "<justificação>"` cobre todas as chaves que essa camada alarga nessa saída. A justificação tem pelo menos 10 caracteres (`J0166`). Um `widen` numa camada que não alarga nada é `J0167` (aviso). Em `prod`, um alargamento sem a entrada correspondente no lock (ou com texto diferente) é `J0168`. O `widen` não passa para o manifesto efetivo: fica no lock.
+The short form `widen = "<justification>"` covers all the keys that this layer widens in this output. The justification has at least 10 characters (`J0166`). A `widen` in a layer that widens nothing is `J0167` (warning). In `prod`, a widening without the corresponding entry in the lock (or with different text) is `J0168`. `widen` does not pass into the effective manifest: it stays in the lock.
 
-### 7.5 Caminhos de ficheiros
+### 7.5 File paths
 
-Os valores do tipo `Ficheiro` (`model`, `path`, `eds`, `config`, `trust.*`, `profile` de pontes, `exec`) são relativos ao **ficheiro que os declara**, e não ao ficheiro de topo. No manifesto efetivo, ficam reescritos relativamente à pasta do ficheiro de topo (a raiz do projeto). Um ficheiro que não existe é `J0160`.
+Values of type `File` (`model`, `path`, `eds`, `config`, `trust.*`, `profile` of bridges, `exec`) are relative to the **file that declares them**, and not to the top-level file. In the effective manifest, they are rewritten relative to the directory of the top-level file (the project root). A file that does not exist is `J0160`.
 
-### 7.6 Chaves literais e seletores
+### 7.6 Literal keys and selectors
 
-A fusão faz-se pela **chave literal**: `[outputs."inv*.w_max_lim_pct"]` num template e `[outputs."inv2.w_max_lim_pct"]` num site são duas entradas diferentes, e depois da expansão dos seletores a saída `inv2.w_max_lim_pct` tem dois envelopes (`J0215`). Para ajustar só o `inv2`, o site retira a entrada do template e declara as que quer (estresse, caso 3).
+Merging is done by **literal key**: `[outputs."inv*.w_max_lim_pct"]` in a template and `[outputs."inv2.w_max_lim_pct"]` in a site are two different entries, and after the expansion of the selectors the output `inv2.w_max_lim_pct` has two envelopes (`J0215`). To adjust only `inv2`, the site removes the template entry and declares the ones it wants (stress, case 3).
 
-### 7.7 Nomes das camadas e escolha do manifesto de entrada
+### 7.7 Layer names and choice of the input manifest
 
-**Nomes** (ADR 0026). Uma camada de manifesto chama-se `joker.toml` ou `joker.<variante>.toml`, em **qualquer** pasta: `joker.sim.toml` e `joker.lab.toml` na raiz, `templates/joker.bess-v2.toml`, `sites/lisboa-01/joker.verao.toml`, `micro/esp/joker.toml`. `<variante>` segue a gramática dos nomes de placa (`[a-z0-9]+ ("-" [a-z0-9]+)*`, ≤ 32 caracteres; ref/00 §2); fora dela, `J0150`. O conteúdo de uma camada só tem secções do manifesto (§4) e nenhuma tabela de identificação de outro tipo (`[profile]`, `[board]`, `[scenario]`, `[suite]`, …); um `joker.*.toml` que seja outra coisa é `J0803` (ref/03 §2.1.6).
+**Names** (ADR 0026). A manifest layer is named `joker.toml` or `joker.<variant>.toml`, in **any** directory: `joker.sim.toml` and `joker.lab.toml` at the root, `templates/joker.bess-v2.toml`, `sites/lisboa-01/joker.verao.toml`, `micro/esp/joker.toml`. `<variant>` follows the grammar of board names (`[a-z0-9]+ ("-" [a-z0-9]+)*`, ≤ 32 characters; ref/00 §2); outside it, `J0150`. The content of a layer has only manifest sections (§4) and no identification table of another type (`[profile]`, `[board]`, `[scenario]`, `[suite]`, …); a `joker.*.toml` that is something else is `J0803` (ref/03 §2.1.6).
 
-- **Em `extends`**, só se aceitam ficheiros com um destes nomes; outro nome é `J0803` (a referência pede uma camada de manifesto). É o que deixa ler a cadeia de overlays numa listagem (`ls joker.*`).
-- **Como manifesto de entrada**, um ficheiro com outro nome só se aceita por `--manifest` (ou `JK_MANIFEST`), com o aviso `J0169`; o `jk migrate` propõe o nome novo.
+- **In `extends`**, only files with one of these names are accepted; another name is `J0803` (the reference asks for a manifest layer). This is what lets the overlay chain be read in a listing (`ls joker.*`).
+- **As input manifest**, a file with another name is only accepted through `--manifest` (or `JK_MANIFEST`), with the warning `J0169`; `jk migrate` proposes the new name.
 
-**Escolha do manifesto de entrada** (a mesma em todos os comandos da `jk`, documento 07, princípio 5):
+**Choice of the input manifest** (the same in all `jk` commands, document 07, principle 5):
 
-| Forma | Manifesto de entrada | Lock (ref/02 §2.1.1) |
+| Form | Input manifest | Lock (ref/02 §2.1.1) |
 |---|---|---|
-| nenhuma | `joker.toml` (ou `defaults.manifest` / `defaults.env` do `.joker/config.toml`, ref/02 §2.3.2) | `joker.lock` |
-| `--env <variante>` ou `JK_ENV=<variante>` | `joker.<variante>.toml` na pasta atual | `joker.<variante>.lock` |
-| `--manifest <ficheiro>` ou `JK_MANIFEST=<ficheiro>` | o ficheiro dado | o mesmo nome com `.lock` no lugar de `.toml`, na mesma pasta |
+| none | `joker.toml` (or `defaults.manifest` / `defaults.env` of `.joker/config.toml`, ref/02 §2.3.2) | `joker.lock` |
+| `--env <variant>` or `JK_ENV=<variant>` | `joker.<variant>.toml` in the current directory | `joker.<variant>.lock` |
+| `--manifest <file>` or `JK_MANIFEST=<file>` | the given file | the same name with `.lock` in place of `.toml`, in the same directory |
 
-- `--env lab` é exatamente `--manifest joker.lab.toml`. Para um overlay noutra pasta, `--manifest sites/lisboa-01/joker.verao.toml` (ou `cd sites/lisboa-01` e `--env verao`).
-- **Precedência:** opção > variável `JK_*` > `.joker/config.toml` > omissão (a de ref/02 §2.3.3). `--env` e `--manifest` são a mesma escolha: uma opção de qualquer das duas ganha a qualquer das variáveis, e uma variável de qualquer das duas ganha à configuração do projeto. As duas opções juntas, ou as duas variáveis juntas, são um erro de utilização (código de saída 1, documento 07, §8), e não uma regra de precedência que alguém tenha de adivinhar.
-- `--env <variante>` para um ficheiro que não existe é `J0160`, com a lista dos `joker.*.toml` da pasta.
-- `--lock <ficheiro>` (ou `JK_LOCK`) substitui só o lock, com qualquer das formas.
+- `--env lab` is exactly `--manifest joker.lab.toml`. For an overlay in another directory, `--manifest sites/lisboa-01/joker.verao.toml` (or `cd sites/lisboa-01` and `--env verao`).
+- **Precedence:** option > `JK_*` variable > `.joker/config.toml` > default (that of ref/02 §2.3.3). `--env` and `--manifest` are the same choice: an option of either of the two wins over either of the variables, and a variable of either of the two wins over the project configuration. Both options together, or both variables together, are a usage error (exit code 1, document 07, §8), and not a precedence rule that someone has to guess.
+- `--env <variant>` for a file that does not exist is `J0160`, with the list of the `joker.*.toml` in the directory.
+- `--lock <file>` (or `JK_LOCK`) replaces only the lock, with any of the forms.
 
 ---
 
-## 8. O manifesto efetivo
+## 8. The effective manifest
 
-### 8.1 Construção
+### 8.1 Construction
 
-Depois da fusão (§7), o `jk check` constrói o manifesto efetivo por esta ordem. Cada passo só corre se os anteriores não tiverem erros, e dentro de cada passo os diagnósticos são todos recolhidos (não pára no primeiro).
+After the merge (§7), `jk check` builds the effective manifest in this order. Each step only runs if the previous ones have no errors, and within each step the diagnostics are all collected (it does not stop at the first).
 
-| # | Passo | Códigos |
+| # | Step | Codes |
 |---|---|---|
-| 1 | ler e fundir as camadas | `J0140`, `J0141`, `J0146`, `J016x` |
-| 2 | tipos, enums, chaves obrigatórias, combinações | `J0142`–`J0145`, `J0147`–`J0149` |
-| 3 | gramática dos valores (durações, quantidades, caminhos, seletores, referências, sintaxe das expressões) | `J015x` |
-| 4 | carregar o lock, os perfis, as classes e a placa; construir o registo de caminhos (canónicos, aliases, instâncias, `calc`, alarmes, pontes) | `J0101`, `J017x`, `J0193`, `J0196`, `J04xx`, `J06xx` |
-| 5 | expandir os seletores, materializar as omissões (A9, A11, escritores, leases, grupos implícitos) | `J0155`, `J0156` |
-| 6 | ligações, parâmetros, instâncias | `J0107`–`J0130`, `J018x`, `J019x`, `J06xx` |
-| 7 | envelopes, árbitro, fallback, grupos atómicos | `J02xx` |
-| 8 | expressões (tipos, unidades, janelas) | `J03xx` (0301–0306) |
-| 9 | ciclos, admissão RT, barramentos, memória | `J028x`, `J0350`–`J0380` |
-| 10 | regras de `prod` (assinaturas, lock, segredos, TLS) | `error-in-prod` |
+| 1 | read and merge the layers | `J0140`, `J0141`, `J0146`, `J016x` |
+| 2 | types, enums, required keys, combinations | `J0142`–`J0145`, `J0147`–`J0149` |
+| 3 | grammar of the values (durations, quantities, paths, selectors, references, syntax of the expressions) | `J015x` |
+| 4 | load the lock, the profiles, the classes and the board; build the path registry (canonical, aliases, instances, `calc`, alarms, bridges) | `J0101`, `J017x`, `J0193`, `J0196`, `J04xx`, `J06xx` |
+| 5 | expand the selectors, materialize the defaults (A9, A11, writers, leases, implicit groups) | `J0155`, `J0156` |
+| 6 | bindings, parameters, instances | `J0107`–`J0130`, `J018x`, `J019x`, `J06xx` |
+| 7 | envelopes, arbiter, fallback, atomic groups | `J02xx` |
+| 8 | expressions (types, units, windows) | `J03xx` (0301–0306) |
+| 9 | cycles, RT admission, buses, memory | `J028x`, `J0350`–`J0380` |
+| 10 | `prod` rules (signatures, lock, secrets, TLS) | `error-in-prod` |
 
-Os diagnósticos saem ordenados por ficheiro, linha e código, para a mesma entrada dar sempre a mesma saída (invariante 9 do `AGENTS.md`).
+Diagnostics are output sorted by file, line and code, so that the same input always gives the same output (invariant 9 of `AGENTS.md`).
 
-### 8.2 Forma
+### 8.2 Form
 
-O manifesto efetivo é um documento TOML com:
+The effective manifest is a TOML document with:
 
-- as secções pela ordem da tabela do §4, e as chaves de cada tabela pela ordem das tabelas desta referência; as chaves livres (nomes, caminhos) por ordem lexicográfica;
-- **todas as omissões materializadas**, cada uma marcada como tal no `jk diff` (`# omissão`);
-- os seletores de `[outputs]` e `[signals]` mantidos como estão (a expansão aparece no `jk explain`);
-- os caminhos de ficheiros relativos à raiz do projeto;
-- sem `extends`, sem `widen`, sem `accept_missing_fallback` (que vivem no lock), com as chaves `x_*`.
+- the sections in the order of the table of §4, and the keys of each table in the order of the tables of this reference; the free keys (names, paths) in lexicographic order;
+- **all defaults materialized**, each one marked as such in `jk diff` (`# default`);
+- the selectors of `[outputs]` and `[signals]` kept as they are (the expansion appears in `jk explain`);
+- file paths relative to the project root;
+- without `extends`, without `widen`, without `accept_missing_fallback` (which live in the lock), with the `x_*` keys.
 
-`jk diff` mostra-o; `jk explain <chave>` mostra a origem de cada valor, camada a camada:
+`jk diff` shows it; `jk explain <key>` shows the origin of each value, layer by layer:
 
 ```
 $ jk explain 'outputs."pcs.p_set".range'
 outputs."pcs.p_set".range = ["-150 kW", "150 kW"]
-  templates/joker.bess-v2.toml:31   (não declarada)
-  sites/lisboa-01/joker.toml:74   ["-125 kW", "125 kW"]     origem
-  sites/lisboa-01/joker.verao.toml:9    ["-150 kW", "150 kW"]     alarga · widen: "PCS novo com 150 kW nominal; …" (joker.lock:88)
+  templates/joker.bess-v2.toml:31   (not declared)
+  sites/lisboa-01/joker.toml:74   ["-125 kW", "125 kW"]     origin
+  sites/lisboa-01/joker.verao.toml:9    ["-150 kW", "150 kW"]     widens · widen: "New PCS with 150 kW rated power; …" (joker.lock:88)
 ```
 
-### 8.3 Hash do manifesto efetivo
+### 8.3 Hash of the effective manifest
 
-Esta referência define o hash do **manifesto efetivo**; o hash da **geração** (o que o `jk`, o `jokerd`, o Deck e o `HELLO` de um MCU mostram, `ref/00` §5) é o do descritor `joker.config.v1+cbor`, definido na `ref/10` §2.6.2, e cobre este hash, o digest canónico do lock (`ref/02` §2.1.16), os contratos das classes e os artefactos por digest.
+This reference defines the hash of the **effective manifest**; the hash of the **generation** (what `jk`, `jokerd`, the Deck and the `HELLO` of an MCU show, `ref/00` §5) is that of the `joker.config.v1+cbor` descriptor, defined in `ref/10` §2.6.2, and it covers this hash, the canonical digest of the lock (`ref/02` §2.1.16), the contracts of the classes and the artifacts by digest.
 
-O hash do manifesto efetivo é o SHA-256 do CBOR determinístico (RFC 8949, §4.2.1) do manifesto efetivo:
+The hash of the effective manifest is the SHA-256 of the deterministic CBOR (RFC 8949, §4.2.1) of the effective manifest:
 
-1. **com as omissões materializadas** e **sem as chaves `x_*`**;
-2. com os valores normalizados (durações em ns, quantidades na unidade canónica, seletores e caminhos como estão, tabelas livres por ordem lexicográfica);
-3. com cada `Ficheiro` que muda o comportamento (modelos de simulação, EDS, configuração do PiCtory, perfis locais, `.pub` de `[security.trust]`) substituído pelo SHA-256 do seu conteúdo.
+1. **with the defaults materialized** and **without the `x_*` keys**;
+2. with the values normalized (durations in ns, quantities in the canonical unit, selectors and paths as they are, free tables in lexicographic order);
+3. with each `File` that changes the behavior (simulation models, EDS, PiCtory configuration, local profiles, `.pub` of `[security.trust]`) replaced by the SHA-256 of its content.
 
-Por isso, reordenar chaves, mudar comentários ou partir um ficheiro em dois overlays **não muda** o hash, e mudar uma omissão por passar a declará-la explicitamente também não. Os valores dos segredos nunca entram: só os nomes (`secret:<nome>`). O Deck compara gerações pelo hash da geração (`ref/10`).
+Therefore, reordering keys, changing comments or splitting a file into two overlays **does not change** the hash, and neither does changing a default by declaring it explicitly. The values of secrets never enter: only the names (`secret:<name>`). The Deck compares generations by the generation hash (`ref/10`).
 
-### 8.4 Na API
+### 8.4 In the API
 
-A API local expõe o manifesto efetivo da geração ativa e de cada geração guardada, em JSON com as mesmas chaves, e a proveniência num objeto à parte indexado por JSON Pointer (`ref/09`). As chaves que começam por `_` são reservadas precisamente para não colidirem com metadados deste tipo.
+The local API exposes the effective manifest of the active generation and of each stored generation, in JSON with the same keys, and the provenance in a separate object indexed by JSON Pointer (`ref/09`). Keys starting with `_` are reserved precisely so that they do not collide with metadata of this kind.
 
 ---
 
-## 9. Versões e compatibilidade
+## 9. Versions and compatibility
 
-| Regra | Detalhe |
+| Rule | Detail |
 |---|---|
-| `[project] joker = "X.Y"` | versão mínima da runtime e do esquema. Uma runtime mais antiga recusa o manifesto (`J0147`) antes de validar o resto |
-| cada chave tem uma versão de entrada (`since`) | no esquema gerado dos tipos Rust. Usar uma chave com `since` > `joker` é `J0148`, com a sugestão de subir o `joker`. É o que impede um manifesto de parecer compatível com uma runtime que o ignoraria |
-| só se acrescenta numa minor | chaves opcionais novas, variantes novas no fim de um enum, secções novas. A omissão de uma chave nova reproduz o comportamento anterior (regra de ouro, ADR 0022) |
-| **as omissões não mudam dentro de uma major** | mudar uma omissão é mudar o comportamento de todos os manifestos que não a declaram |
-| antes da 1.0 | a runtime aceita o minor atual e o anterior do esquema (documento 09, ataque 8); `jk migrate` reescreve entre minors |
-| na série 1 | uma runtime 1.x aceita qualquer manifesto 1.y com y ≤ x; `jk migrate` é opcional |
-| na 2.0 | `jk migrate` é obrigatório; a 2.0 lê a última 1.x (documento 21, §1.1) |
-| reservadas | as chaves 1.1 (§6) existem no esquema 1.0 com `since = "1.1"`: `J0290` numa runtime 1.0, e `J0148` com `joker = "1.0"` numa runtime 1.1 |
-| códigos | um código nunca se reutiliza depois de removido (`ref/00` §1) |
+| `[project] joker = "X.Y"` | minimum version of the runtime and of the schema. An older runtime rejects the manifest (`J0147`) before validating the rest |
+| each key has an entry version (`since`) | in the schema generated from the Rust types. Using a key with `since` > `joker` is `J0148`, with the suggestion to raise `joker`. This is what prevents a manifest from looking compatible with a runtime that would ignore it |
+| only additions in a minor | new optional keys, new variants at the end of an enum, new sections. The default of a new key reproduces the previous behavior (golden rule, ADR 0022) |
+| **defaults do not change within a major** | changing a default is changing the behavior of all the manifests that do not declare it |
+| before 1.0 | the runtime accepts the current minor and the previous one of the schema (document 09, attack 8); `jk migrate` rewrites between minors |
+| in the 1 series | a 1.x runtime accepts any 1.y manifest with y ≤ x; `jk migrate` is optional |
+| in 2.0 | `jk migrate` is required; 2.0 reads the last 1.x (document 21, §1.1) |
+| reserved | the 1.1 keys (§6) exist in the 1.0 schema with `since = "1.1"`: `J0290` on a 1.0 runtime, and `J0148` with `joker = "1.0"` on a 1.1 runtime |
+| codes | a code is never reused after being removed (`ref/00` §1) |
 
 ---
 
-## 10. Registo de códigos do manifesto
+## 10. Manifest code registry
 
-Todos vivem em `crates/joker-manifest/codes.toml` (documento 16, §9). Gravidades: `error`; `warning` (em todos os modos); `error-in-prod` (erro em `prod`; aviso `W` com o mesmo número em `dev`).
+All of them live in `crates/joker-manifest/codes.toml` (document 16, §9). Severities: `error`; `warning` (in all modes); `error-in-prod` (error in `prod`; `W` warning with the same number in `dev`).
 
 ```toml
-# excerto do formato do registo (spec/codes.toml; documento 16, §9)
+# excerpt of the registry format (spec/codes.toml; document 16, §9)
 [[code]]
 id       = "J0140"
 severity = "error"
-message  = "chave desconhecida"
-explain  = "O manifesto é estrito: uma chave desconhecida é quase sempre um erro de escrita. Chaves de extensão começam por x_."
+message  = "unknown key"
+explain  = "The manifest is strict: an unknown key is almost always a typo. Extension keys start with x_."
 doc      = "ref/01 §2.3"
 
 [[code]]
 id       = "J0205"
 severity = "error-in-prod"
-message  = "fallback do dispositivo em falta ou incoerente com o safe"
-explain  = "O fallback do equipamento tem de ser tão seguro ou mais do que o safe, no sentido de safer (M1)."
+message  = "device fallback missing or inconsistent with the safe"
+explain  = "The equipment fallback must be as safe as the safe, or safer, in the sense of safer (M1)."
 doc      = "01 §8"
 ```
 
-### 10.1 Códigos existentes (recolhidos dos documentos)
+### 10.1 Existing codes (collected from the documents)
 
-| Código | Gravidade | Mensagem | Onde é usado aqui | Documento |
+| Code | Severity | Message | Where it is used here | Document |
 |---|---|---|---|---|
-| `J0101` | error | sinal desconhecido (com sugestão) | caminhos, ações e sinais de perfil | 03 §15 |
-| `J0107` | error | unidade incompatível (dimensão) | quantidades, ligações, `unit` | 03 §15, 02 §3 |
-| `J0108` | error | grandeza incompatível (W vs var) | quantidades, ligações | 03 §15 |
-| `J0109` | error | unidade fora do catálogo | quantidades | 16 §5 |
-| `J0110` | error | porta obrigatória sem ligação | `bind` | 03 §15 |
-| `J0120` | error | parâmetro fora da gama declarada pela app | `params` | 03 §15 |
-| `J0121` | error | parâmetro desconhecido | `params` | 03 §15 |
-| `J0130` | warning | período do grupo fora da `period_tolerance` da tarefa | `cycles` | 04 §3.2 |
-| `J0140` | error | chave desconhecida | todo o ficheiro | `ref/00` §1 |
-| `J0201` | error | saída sem `safe` | `outputs` | 03 §15 |
-| `J0202` | error | `rate` (ou `safe_ramp`) com unidade incoerente com a saída | `outputs` | 03 §15 |
-| `J0203` | error | `safe` fora da `range` | `outputs` | 16 E5 |
-| `J0205` | error-in-prod | fallback do dispositivo em falta ou incoerente com `safe` | `outputs`, `devices.*.fallback` | 03 §15, 01 §8 |
-| `J0206` | error | escritas agendadas sem `on_late` | `outputs` (1.1) | 02 §7.2 |
-| `J0207` | error | `safe = "relinquish"` num driver sem suporte | `outputs` | 03 §6.1 |
-| `J0210` | error | dois escritores no mesmo nível da mesma saída | `writer` | 16 A5 |
-| `J0211` | error | saída com vários escritores e um sem `writer` | `writer` | 03 §8 |
-| `J0212` | error | escritor só-proposta com escrita direta | `writer.kind` (1.1) | 03 §8 |
-| `J0213` | error | lease acima de `max_lease` (numa saída de um MCU, o `max_lease` do link) | `writer.lease` | 16 A9, A12 |
-| `J0215` | error | dois envelopes para o mesmo sinal | `outputs` | 16 P2 |
-| `J0220` | error | overlay alarga o envelope sem `widen` | overlays | 03 §15 |
-| `J0301` | error | expressão com dimensões incompatíveis | expressões | 03 §15 |
-| `J0302` | error | sinal desconhecido numa expressão | expressões, `message` | 02 §10 |
-| `J0303` | error | enum sem essa variante | expressões, `Valor` | 02 §10 |
-| `J0305` | error | janela acima do máximo (15 min) | expressões | 16 §4 |
-| `J0306` | error | `own()` fora de um método de classe | expressões | 16 §4 |
-| `J0350` | error | grupo de ciclo não escalonável (M23) | `cycles` | 03 §15 |
-| `J0351` | error | grupo < 10 ms sem `kernel = "preempt_rt"` | `cycles`, `target` | 03 §15 |
-| `J0352` | warning | grupo ≥ 10 ms sem PREEMPT_RT: jitter não garantido | `cycles`, `target` | 16 §9 |
-| `J0360` | error | classe de recursos sem CPUs, ou com CPUs sobrepostas a `rt` (exceto numa placa com `cpus = 1`, onde é uma nota, §5.4) | `resources` | 03 §15 |
-| `J0370` | error | barramento sobrecarregado | `buses`, `devices` | 05 §5 |
-| `J0380` | error | memória estimada acima de 70% da RAM da placa | todo o manifesto | 03 §15 |
-| `J0381` | warning | carga de escrita projetada acima do que o `storage` da placa aguenta (também no `jk doctor`, medida) | `[telemetry]`, `[apps.*] kv`, `trace` | `ref/03` §2.3.1, 01 §12 |
+| `J0101` | error | unknown signal (with suggestion) | paths, actions and profile signals | 03 §15 |
+| `J0107` | error | incompatible unit (dimension) | quantities, bindings, `unit` | 03 §15, 02 §3 |
+| `J0108` | error | incompatible quantity (W vs var) | quantities, bindings | 03 §15 |
+| `J0109` | error | unit not in the catalog | quantities | 16 §5 |
+| `J0110` | error | required port without a binding | `bind` | 03 §15 |
+| `J0120` | error | parameter outside the range declared by the app | `params` | 03 §15 |
+| `J0121` | error | unknown parameter | `params` | 03 §15 |
+| `J0130` | warning | group period outside the task's `period_tolerance` | `cycles` | 04 §3.2 |
+| `J0140` | error | unknown key | the whole file | `ref/00` §1 |
+| `J0201` | error | output without `safe` | `outputs` | 03 §15 |
+| `J0202` | error | `rate` (or `safe_ramp`) with a unit inconsistent with the output | `outputs` | 03 §15 |
+| `J0203` | error | `safe` outside the `range` | `outputs` | 16 E5 |
+| `J0205` | error-in-prod | device fallback missing or inconsistent with `safe` | `outputs`, `devices.*.fallback` | 03 §15, 01 §8 |
+| `J0206` | error | scheduled writes without `on_late` | `outputs` (1.1) | 02 §7.2 |
+| `J0207` | error | `safe = "relinquish"` on a driver without support | `outputs` | 03 §6.1 |
+| `J0210` | error | two writers at the same level of the same output | `writer` | 16 A5 |
+| `J0211` | error | output with several writers and one without `writer` | `writer` | 03 §8 |
+| `J0212` | error | proposal-only writer with a direct write | `writer.kind` (1.1) | 03 §8 |
+| `J0213` | error | lease above `max_lease` (on an MCU output, the link's `max_lease`) | `writer.lease` | 16 A9, A12 |
+| `J0215` | error | two envelopes for the same signal | `outputs` | 16 P2 |
+| `J0220` | error | overlay widens the envelope without `widen` | overlays | 03 §15 |
+| `J0301` | error | expression with incompatible dimensions | expressions | 03 §15 |
+| `J0302` | error | unknown signal in an expression | expressions, `message` | 02 §10 |
+| `J0303` | error | enum without that variant | expressions, `Value` | 02 §10 |
+| `J0305` | error | window above the maximum (15 min) | expressions | 16 §4 |
+| `J0306` | error | `own()` outside a class method | expressions | 16 §4 |
+| `J0350` | error | cycle group not schedulable (M23) | `cycles` | 03 §15 |
+| `J0351` | error | group < 10 ms without `kernel = "preempt_rt"` | `cycles`, `target` | 03 §15 |
+| `J0352` | warning | group ≥ 10 ms without PREEMPT_RT: jitter not guaranteed | `cycles`, `target` | 16 §9 |
+| `J0360` | error | resource class without CPUs, or with CPUs overlapping `rt` (except on a board with `cpus = 1`, where it is a note, §5.4) | `resources` | 03 §15 |
+| `J0370` | error | bus overloaded | `buses`, `devices` | 05 §5 |
+| `J0380` | error | estimated memory above 70% of the board's RAM | the whole manifest | 03 §15 |
+| `J0381` | warning | projected write load above what the board's `storage` withstands (also in `jk doctor`, measured) | `[telemetry]`, `[apps.*] kv`, `trace` | `ref/03` §2.3.1, 01 §12 |
 
-Referidos, de outras gamas: `J0401` (deriva face ao lock), `J0501`, `J0502`, `J0510` (ML, 1.1), `J0601`–`J0604`, `J0610`, `J0620`, `J0630`, `J0650`–`J0656` (classes e instâncias), `J0710`, `J0720`, `J0721` (Joker Micro).
+Referred to, from other ranges: `J0401` (drift against the lock), `J0501`, `J0502`, `J0510` (ML, 1.1), `J0601`–`J0604`, `J0610`, `J0620`, `J0630`, `J0650`–`J0656` (classes and instances), `J0710`, `J0720`, `J0721` (Joker Micro).
 
-### 10.2 Códigos novos (gamas `J0140`–`J0199` e `J0230`–`J0299`)
+### 10.2 New codes (ranges `J0140`–`J0199` and `J0230`–`J0299`)
 
-**Estrutura (`J014x`)**
+**Structure (`J014x`)**
 
-| Código | Gravidade | Mensagem |
+| Code | Severity | Message |
 |---|---|---|
-| `J0140` | error | chave desconhecida (já fixado no `ref/00`) |
-| `J0141` | error | chave ou nome reservado (`_…`, `joker…`, prefixos `calc.`, `alarm.`, `app.`, `bridge.`, `joker.`, `@`) |
-| `J0142` | error | chave obrigatória em falta no manifesto efetivo |
-| `J0143` | error | tipo de valor errado |
-| `J0144` | error | valor fora do conjunto permitido |
-| `J0145` | error | combinação de chaves inválida (exclusivas, dependentes, ou que não se aplicam neste alvo) |
-| `J0146` | error | ficheiro não é TOML 1.0 válido ou não é UTF-8 |
-| `J0147` | error | `[project] joker` inválido, ou exige uma runtime mais nova do que esta |
-| `J0148` | error | chave introduzida numa versão posterior à declarada em `joker` |
-| `J0149` | error | limite do manifesto excedido (§11.3) |
+| `J0140` | error | unknown key (already fixed in `ref/00`) |
+| `J0141` | error | reserved key or name (`_…`, `joker…`, prefixes `calc.`, `alarm.`, `app.`, `bridge.`, `joker.`, `@`) |
+| `J0142` | error | required key missing in the effective manifest |
+| `J0143` | error | wrong value type |
+| `J0144` | error | value outside the allowed set |
+| `J0145` | error | invalid key combination (exclusive, dependent, or not applicable on this target) |
+| `J0146` | error | file is not valid TOML 1.0 or is not UTF-8 |
+| `J0147` | error | invalid `[project] joker`, or it requires a newer runtime than this one |
+| `J0148` | error | key introduced in a version later than the one declared in `joker` |
+| `J0149` | error | manifest limit exceeded (§11.3) |
 
-**Gramática dos valores (`J015x`)**
+**Value grammar (`J015x`)**
 
-| Código | Gravidade | Mensagem |
+| Code | Severity | Message |
 |---|---|---|
-| `J0150` | error | nome inválido (gramática, comprimento, pontos numa chave de nome) |
-| `J0151` | error | número sem unidade onde se exige uma quantidade ou duração |
-| `J0152` | error | duração inválida (sintaxe, zero, negativa, acima do máximo da chave) |
-| `J0153` | error | caminho inválido |
-| `J0154` | error | seletor inválido |
-| `J0155` | error | seletor sem correspondências (saídas, ligações, envelopes, atómicos, trips, pontes) |
-| `J0156` | warning | seletor de telemetria, exposição ou segurança sem correspondências |
-| `J0157` | error | referência inválida, esquema desconhecido, ou referência numa chave que não a aceita |
-| `J0158` | error | expressão com erro de sintaxe |
-| `J0159` | error | literal de orçamento, tamanho ou volume de dados inválido |
+| `J0150` | error | invalid name (grammar, length, dots in a name key) |
+| `J0151` | error | number without a unit where a quantity or duration is required |
+| `J0152` | error | invalid duration (syntax, zero, negative, above the key's maximum) |
+| `J0153` | error | invalid path |
+| `J0154` | error | invalid selector |
+| `J0155` | error | selector without matches (outputs, bindings, envelopes, atomics, trips, bridges) |
+| `J0156` | warning | telemetry, exposure or security selector without matches |
+| `J0157` | error | invalid reference, unknown scheme, or reference in a key that does not accept it |
+| `J0158` | error | expression with a syntax error |
+| `J0159` | error | invalid budget, size or data volume literal |
 
 **Overlays (`J016x`)**
 
-| Código | Gravidade | Mensagem |
+| Code | Severity | Message |
 |---|---|---|
-| `J0160` | error | ficheiro referido não encontrado (`extends`, `path`, `model`, `eds`, chaves…), ou `extends` não local |
-| `J0161` | error | `extends` em ciclo |
-| `J0162` | error | `extends` com mais de 8 níveis ou 32 ficheiros |
-| `J0163` | warning | `unset` sem nada a remover |
-| `J0164` | error | diretiva de fusão inválida, ou elemento repetido numa lista ordenada |
-| `J0165` | error | overlay muda o tipo de uma chave (tabela ↔ valor) |
-| `J0166` | error | `widen` sem justificação suficiente (< 10 caracteres) ou numa chave que não é de envelope |
-| `J0167` | warning | `widen` numa camada que não alarga nada |
-| `J0168` | error-in-prod | alargamento sem a entrada correspondente em `[accepted]` no lock |
-| `J0169` | warning | manifesto de entrada com nome fora da regra `joker.toml` / `joker.<variante>.toml` (aceite só por `--manifest`, §7.7) |
+| `J0160` | error | referenced file not found (`extends`, `path`, `model`, `eds`, keys…), or non-local `extends` |
+| `J0161` | error | `extends` in a cycle |
+| `J0162` | error | `extends` with more than 8 levels or 32 files |
+| `J0163` | warning | `unset` with nothing to remove |
+| `J0164` | error | invalid merge directive, or repeated element in an ordered list |
+| `J0165` | error | overlay changes the type of a key (table ↔ value) |
+| `J0166` | error | `widen` without sufficient justification (< 10 characters) or on a key that is not an envelope key |
+| `J0167` | warning | `widen` in a layer that widens nothing |
+| `J0168` | error-in-prod | widening without the matching entry in `[accepted]` in the lock |
+| `J0169` | warning | input manifest with a name outside the `joker.toml` / `joker.<variant>.toml` rule (accepted only by `--manifest`, §7.7) |
 
-**Dispositivos, barramentos e sinais (`J017x`)**
+**Devices, buses and signals (`J017x`)**
 
-| Código | Gravidade | Mensagem |
+| Code | Severity | Message |
 |---|---|---|
-| `J0170` | error | driver desconhecido neste build, ou tier W/X sem `[drivers]` |
-| `J0171` | error | barramento inexistente, de tipo incompatível, ou com protocolos incompatíveis |
-| `J0172` | error | perfil ou placa não encontrados, ou perfil sem major |
-| `J0173` | error | chave que este driver não aceita |
-| `J0174` | error | alias ou caminho criado colide com outro caminho |
-| `J0175` | error | ajuste do mesmo sinal declarado em dois sítios com valores diferentes |
-| `J0176` | error | ajuste incompatível com o tipo, a direção ou a origem do sinal |
-| `J0177` | error | `discover = true` num driver sem descoberta |
-| `J0178` | error | dois dispositivos com o mesmo endereço no mesmo barramento, ou um dispositivo com o mesmo recurso do kernel que um `board.<nome>` referido (`ref/03` §2.3.2) |
-| `J0179` | error | Joker Link sem autenticação num transporte IP |
+| `J0170` | error | driver unknown in this build, or tier W/X without `[drivers]` |
+| `J0171` | error | bus does not exist, has an incompatible type, or has incompatible protocols |
+| `J0172` | error | profile or board not found, or profile without a major |
+| `J0173` | error | key that this driver does not accept |
+| `J0174` | error | created alias or path collides with another path |
+| `J0175` | error | adjustment of the same signal declared in two places with different values |
+| `J0176` | error | adjustment incompatible with the signal's type, direction or origin |
+| `J0177` | error | `discover = true` on a driver without discovery |
+| `J0178` | error | two devices with the same address on the same bus, or a device with the same kernel resource as a referenced `board.<name>` (`ref/03` §2.3.2) |
+| `J0179` | error | Joker Link without authentication on an IP transport |
 
-**Apps e ligações (`J018x`)**
+**Apps and bindings (`J018x`)**
 
-| Código | Gravidade | Mensagem |
+| Code | Severity | Message |
 |---|---|---|
-| `J0180` | error | origem da app inválida (nenhuma ou duas; digest diferente do lock) |
-| `J0181` | error | forma de ligação inválida para o tipo da porta |
-| `J0182` | error | tarefa ou grupo desconhecido em `[apps.*.cycles]` |
-| `J0183` | error | `as = "fraction"`/`"percent"` entre unidades que não são `%` e `1` |
-| `J0184` | error | `net.allow` inválido |
-| `J0185` | error-in-prod | segredo referido que não existe no cofre do nó |
-| `J0186` | error | classe de recursos da app incoerente com a dos grupos, ou `rt` em async |
-| `J0187` | error | app `native` que não está neste build da runtime |
-| `J0188` | error | `shadow.of` não resolúvel |
-| `J0189` | error | porta ligada em dois sítios |
+| `J0180` | error | invalid app source (none or two; digest different from the lock) |
+| `J0181` | error | invalid binding form for the port type |
+| `J0182` | error | unknown task or group in `[apps.*.cycles]` |
+| `J0183` | error | `as = "fraction"`/`"percent"` between units that are not `%` and `1` |
+| `J0184` | error | invalid `net.allow` |
+| `J0185` | error-in-prod | referenced secret does not exist in the node's vault |
+| `J0186` | error | app resource class inconsistent with that of the groups, or `rt` in async |
+| `J0187` | error | `native` app that is not in this runtime build |
+| `J0188` | error | `shadow.of` not resolvable |
+| `J0189` | error | port bound in two places |
 
-**Instâncias, `calc`, alarmes, telemetria, pontes (`J019x`)**
+**Instances, `calc`, alarms, telemetry, bridges (`J019x`)**
 
-| Código | Gravidade | Mensagem |
+| Code | Severity | Message |
 |---|---|---|
-| `J0190` | error | dependência circular entre `calc` e alarmes |
-| `J0191` | error | `implemented_by` aponta para uma app inexistente ou que não implementa a classe |
-| `J0192` | error | instância com mais de uma origem (`map`, `implemented_by`, `sim`); numa instância virtual, um `map` só pode ligar membros de classe |
-| `J0193` | error | classe ou capacidade desconhecida |
-| `J0194` | error | adaptador inválido para a direção ou o tipo do membro |
-| `J0195` | error | política de gravação ambígua ou incompleta |
-| `J0196` | error | nome de alarme ou caminho criado em colisão (incluindo um alarme chamado `app`: os alarmes de apps vivem em `alarm.app.<app>.<nome>`, §5.15) |
-| `J0197` | error | `keep` com uma camada desconhecida |
-| `J0198` | error | uplink com `classes`, `live` ou `history` inválidos para o seu `kind` |
-| `J0199` | error | ponte inválida (`to`, `writable`, `listen`/`bus`, `fields`) |
+| `J0190` | error | circular dependency between `calc` and alarms |
+| `J0191` | error | `implemented_by` points to an app that does not exist or does not implement the class |
+| `J0192` | error | instance with more than one source (`map`, `implemented_by`, `sim`); in a virtual instance, a `map` may only bind class members |
+| `J0193` | error | unknown class or capability |
+| `J0194` | error | invalid adapter for the member's direction or type |
+| `J0195` | error | ambiguous or incomplete recording policy |
+| `J0196` | error | colliding alarm name or created path (including an alarm named `app`: app alarms live in `alarm.app.<app>.<name>`, §5.15) |
+| `J0197` | error | `keep` with an unknown layer |
+| `J0198` | error | uplink with `classes`, `live` or `history` invalid for its `kind` |
+| `J0199` | error | invalid bridge (`to`, `writable`, `listen`/`bus`, `fields`) |
 
 **Envelope (`J023x`)**
 
-| Código | Gravidade | Mensagem |
+| Code | Severity | Message |
 |---|---|---|
-| `J0230` | error | `range` com mínimo ≥ máximo, ou sem dois elementos |
-| `J0231` | error | `safe` com tipo incompatível com a saída |
-| `J0232` | error | `safe` não constante |
-| `J0233` | error | chave de envelope que não se aplica ao tipo da saída |
-| `J0234` | error | envelope num caminho que não é uma saída deste nó (ou governada por um Joker Micro) |
-| `J0235` | error | `verify` inválido |
-| `J0236` | warning | `reset_when` numa saída que nunca entra em trip |
-| `J0237` | error | `group` inexistente |
-| `J0238` | warning | `safer` sem fallback de dispositivo (ignorado) |
-| `J0239` | error | escritas agendadas acima de 256, ou `timed` num driver sem saídas temporizadas (1.1) |
+| `J0230` | error | `range` with minimum ≥ maximum, or without two elements |
+| `J0231` | error | `safe` with a type incompatible with the output |
+| `J0232` | error | non-constant `safe` |
+| `J0233` | error | envelope key that does not apply to the output type |
+| `J0234` | error | envelope on a path that is not an output of this node (or governed by a Joker Micro) |
+| `J0235` | error | invalid `verify` |
+| `J0236` | warning | `reset_when` on an output that never trips |
+| `J0237` | error | `group` does not exist |
+| `J0238` | warning | `safer` without a device fallback (ignored) |
+| `J0239` | error | scheduled writes above 256, or `timed` on a driver without timed outputs (1.1) |
 
-**Rede do Joker Micro (`J024x`)**
+**Joker Micro network (`J024x`)**
 
-| Código | Gravidade | Mensagem |
+| Code | Severity | Message |
 |---|---|---|
-| `J0240` | error | `[net.wifi]` inválido: `ssid` vazio ou com mais de 32 B, `country` fora da ISO 3166-1 alfa-2, ou `hostname` fora da gramática |
-| `J0241` | error | transporte IP num MCU sem `[net.wifi]` (`[link] address`, `[telemetry.uplink]`) |
-| `J0242` | error-in-prod | rede Wi-Fi aberta: `[net.wifi]` sem `password` |
+| `J0240` | error | invalid `[net.wifi]`: `ssid` empty or longer than 32 B, `country` outside ISO 3166-1 alpha-2, or `hostname` outside the grammar |
+| `J0241` | error | IP transport on an MCU without `[net.wifi]` (`[link] address`, `[telemetry.uplink]`) |
+| `J0242` | error-in-prod | open Wi-Fi network: `[net.wifi]` without `password` |
 
-**Placa sem motor Wasm (`J0243`)**
+**Board without a Wasm engine (`J0243`)**
 
-| Código | Gravidade | Mensagem |
+| Code | Severity | Message |
 |---|---|---|
-| `J0243` | warning | a placa não tem motor Wasm para a sua arquitetura: só apps nativas |
+| `J0243` | warning | the board has no Wasm engine for its architecture: native apps only |
 
-O `jk check` emite o `J0243` quando a `arch` da placa de `[target]` não tem motor Wasm nesta runtime (nem Cranelift nem Pulley; documento 01, §22): hoje, `armv6` se o Pulley não compilar para ARMv6 (documento 23, §5.2). O aviso aparece uma vez, com a lista das apps Wasm do manifesto; essas apps não se carregam no nó (ficam `failed`, ref/09 §5.14), e só as apps `kind = "native"` do build da runtime correm (documento 04, §5; `J0187`). O `jk doctor` repete-o no nó.
+`jk check` emits `J0243` when the `arch` of the `[target]` board has no Wasm engine in this runtime (neither Cranelift nor Pulley; document 01, §22): today, `armv6` if Pulley does not compile for ARMv6 (document 23, §5.2). The warning appears once, with the list of the manifest's Wasm apps; those apps are not loaded on the node (they stay `failed`, ref/09 §5.14), and only the `kind = "native"` apps of the runtime build run (document 04, §5; `J0187`). `jk doctor` repeats it on the node.
 
-**Árbitro e escritores (`J025x`)**
+**Arbiter and writers (`J025x`)**
 
-| Código | Gravidade | Mensagem |
+| Code | Severity | Message |
 |---|---|---|
-| `J0250` | error | `level` inválido, ou forma compacta incoerente com `priority` |
-| `J0251` | error | `priority` fora da faixa |
-| `J0252` | error | app ou ponte na faixa `manual` |
-| `J0253` | error | ponte na faixa `safety` |
-| `J0254` | error | escritor `proposal` com `level`, `priority` ou `lease` |
-| `J0255` | error | `max_lease` > 24 h ou `max_manual` > 7 d |
-| `J0256` | error | lease menor do que o período do grupo dono |
-| `J0257` | warning | `writer` numa app sem saídas |
+| `J0250` | error | invalid `level`, or compact form inconsistent with `priority` |
+| `J0251` | error | `priority` outside the band |
+| `J0252` | error | app or bridge in the `manual` band |
+| `J0253` | error | bridge in the `safety` band |
+| `J0254` | error | `proposal` writer with `level`, `priority` or `lease` |
+| `J0255` | error | `max_lease` > 24 h or `max_manual` > 7 d |
+| `J0256` | error | lease shorter than the owning group's period |
+| `J0257` | warning | `writer` on an app without outputs |
 
-**Fallback e grupos atómicos (`J027x`)**
+**Fallback and atomic groups (`J027x`)**
 
-| Código | Gravidade | Mensagem |
+| Code | Severity | Message |
 |---|---|---|
-| `J0270` | error | saída em dois grupos atómicos |
-| `J0271` | error | grupo atómico sem transporte comum |
-| `J0272` | error | grupo atómico com saídas de grupos donos diferentes |
-| `J0273` | error | `order` do grupo atómico não é uma permutação de `outputs` |
-| `J0274` | error | `commit.signal` inválido |
-| `J0275` | error | `fallback.configure = true` num perfil sem `[fallback]` |
-| `J0276` | error-in-prod | `keepalive` incoerente com o timeout do fallback do equipamento |
-| `J0277` | warning | `accept_missing_fallback` numa saída que tem fallback |
+| `J0270` | error | output in two atomic groups |
+| `J0271` | error | atomic group without a common transport |
+| `J0272` | error | atomic group with outputs from different owning groups |
+| `J0273` | error | atomic group `order` is not a permutation of `outputs` |
+| `J0274` | error | invalid `commit.signal` |
+| `J0275` | error | `fallback.configure = true` on a profile without `[fallback]` |
+| `J0276` | error-in-prod | `keepalive` inconsistent with the equipment fallback timeout |
+| `J0277` | warning | `accept_missing_fallback` on an output that has a fallback |
 
-**Ciclos e recursos (`J028x`)**
+**Cycles and resources (`J028x`)**
 
-| Código | Gravidade | Mensagem |
+| Code | Severity | Message |
 |---|---|---|
-| `J0280` | error | `period` fora dos limites do alvo |
-| `J0281` | error | `order` refere uma app ou tarefa que não corre neste grupo |
-| `J0282` | error | grupo com classe de recursos que não é `rt` |
-| `J0283` | error | `priority` explícita inverte a ordem rate-monotonic |
-| `J0284` | error | `cpu` fora de `[resources.rt]` |
-| `J0285` | error | `trace.continuous` acima de 7 d |
-| `J0286` | warning | `overrun = "degrade"` sem tarefas `optional` |
-| `J0287` | warning | `overrun = "catch_up"` num grupo com saídas dependentes do tempo |
-| `J0288` | error | nome de grupo reservado usado de forma não permitida |
+| `J0280` | error | `period` outside the target's limits |
+| `J0281` | error | `order` references an app or task that does not run in this group |
+| `J0282` | error | group with a resource class that is not `rt` |
+| `J0283` | error | explicit `priority` inverts the rate-monotonic order |
+| `J0284` | error | `cpu` outside `[resources.rt]` |
+| `J0285` | error | `trace.continuous` above 7 d |
+| `J0286` | warning | `overrun = "degrade"` without `optional` tasks |
+| `J0287` | warning | `overrun = "catch_up"` in a group with time-dependent outputs |
+| `J0288` | error | reserved group name used in a way that is not allowed |
 
-**Reservas e segurança (`J029x`)**
+**Reservations and security (`J029x`)**
 
-| Código | Gravidade | Mensagem |
+| Code | Severity | Message |
 |---|---|---|
-| `J0290` | error | funcionalidade reservada para uma versão posterior desta runtime |
-| `J0291` | — | retirado nesta rodada: a chave `api.mtls` saiu (TCP é sempre mTLS; a chave dá `J0140`). O número não se reutiliza |
-| `J0292` | error | `security.trust` refere uma chave que não está no bundle de confiança do nó com esse papel (o mesmo código no `jk check` e no nó, ao aplicar) |
-| `J0293` | warning | papel concedido a qualquer principal |
-| `J0294` | error-in-prod | segredo em claro numa chave do tipo segredo |
-| `J0295` | error | principal inválido em `[security.roles]` |
-| `J0296` | error-in-prod | ligação sem TLS ou sem segurança (`mqtt://`, `http://`, OPC UA `None`) |
-| `J0297` | warning | ponte com escritas a escutar em todas as interfaces |
-| `J0298` | warning | ação com `role = "viewer"`: vale como `operator`, que é o mínimo da API |
+| `J0290` | error | feature reserved for a later version of this runtime |
+| `J0291` | — | withdrawn in this round: the `api.mtls` key is gone (TCP is always mTLS; the key gives `J0140`). The number is not reused |
+| `J0292` | error | `security.trust` references a key that is not in the node's trust bundle with that role (the same code in `jk check` and on the node, on apply) |
+| `J0293` | warning | role granted to any principal |
+| `J0294` | error-in-prod | plaintext secret in a secret-type key |
+| `J0295` | error | invalid principal in `[security.roles]` |
+| `J0296` | error-in-prod | connection without TLS or without security (`mqtt://`, `http://`, OPC UA `None`) |
+| `J0297` | warning | bridge with writes listening on all interfaces |
+| `J0298` | warning | action with `role = "viewer"`: counts as `operator`, which is the API minimum |
 
-`J0244`–`J0249`, `J0258`–`J0269`, `J0278`, `J0279`, `J0289` e `J0299` ficam livres, para esta referência crescer sem sair da gama.
+`J0244`–`J0249`, `J0258`–`J0269`, `J0278`, `J0279`, `J0289` and `J0299` stay free, so that this reference can grow without leaving the range.
 
 ---
 
-## 11. Comportamento esperado
+## 11. Expected behavior
 
-### 11.1 Ao aplicar uma geração nova
+### 11.1 When applying a new generation
 
-O `jk apply` planeia o diff mínimo (documento 01, §15). O que cada mudança provoca:
+`jk apply` plans the minimal diff (document 01, §15). What each change causes:
 
-| Mudança | Efeito no nó | `--confirm` obrigatório em `prod` |
+| Change | Effect on the node | `--confirm` required in `prod` |
 |---|---|---|
-| `[outputs.*]` | a quente, no limite de tick do grupo dono; o último valor aplicado é herdado (16 A8) | não |
-| `[calc]`, `[alarms]` | a quente; o estado das janelas e dos flancos recomeça (é volátil, documento 14, A7); alarmes ativos mantêm o estado se a expressão não mudou | não |
-| `[signals]`, `[devices.*.signals]` (ajustes) | a quente, no estágio de aquisição | não |
-| `[devices.*]` (endereço, perfil, barramento, driver) | reinicia só esse driver; os sinais passam por `Uncertain(Initial)` | não |
-| `[buses.*]` | reinicia os drivers desse barramento | não |
-| `[apps.*.params]` | `on-params`, sem reinício | não |
-| `[apps.*] source`/`digest` | hot-swap num limite de tick (documento 01, §9) | não |
-| `[apps.*] bind`, `cycles`, `writer`, `resources` | nova instância da app num limite de tick, com `migrate` | não |
-| `[cycles.*]` | o grupo é recriado num limite de tick; os leases passam a contar com o período novo | não |
-| `[instances.*]` | as apps que usam as instâncias são reinstanciadas (estado de `Many` por nome, documento 14, A10) | não |
-| `[telemetry.record]`, `[telemetry.store]` | a quente | não |
-| `[telemetry.uplink.*]`, `[bridges.*]`, `[security]`, `[clock]`, `[project] mode` | religa o serviço afetado | **sim** (ADR 0015) |
-| `[resources]`, `[target]` | os cpusets são reconfigurados; os grupos afetados são recriados | não |
+| `[outputs.*]` | hot, at the tick boundary of the owning group; the last applied value is inherited (16 A8) | no |
+| `[calc]`, `[alarms]` | hot; the state of windows and edges starts over (it is volatile, document 14, A7); active alarms keep their state if the expression did not change | no |
+| `[signals]`, `[devices.*.signals]` (adjustments) | hot, in the acquisition stage | no |
+| `[devices.*]` (address, profile, bus, driver) | restarts only that driver; the signals go through `Uncertain(Initial)` | no |
+| `[buses.*]` | restarts the drivers of that bus | no |
+| `[apps.*.params]` | `on-params`, without a restart | no |
+| `[apps.*] source`/`digest` | hot swap at a tick boundary (document 01, §9) | no |
+| `[apps.*] bind`, `cycles`, `writer`, `resources` | new instance of the app at a tick boundary, with `migrate` | no |
+| `[cycles.*]` | the group is recreated at a tick boundary; leases start counting with the new period | no |
+| `[instances.*]` | the apps that use the instances are reinstantiated (state of `Many` by name, document 14, A10) | no |
+| `[telemetry.record]`, `[telemetry.store]` | hot | no |
+| `[telemetry.uplink.*]`, `[bridges.*]`, `[security]`, `[clock]`, `[project] mode` | reconnects the affected service | **yes** (ADR 0015) |
+| `[resources]`, `[target]` | the cpusets are reconfigured; the affected groups are recreated | no |
 
-### 11.2 Determinismo
+### 11.2 Determinism
 
-- Todas as tabelas livres são `BTreeMap`: a ordem de processamento é lexicográfica, e não a do ficheiro.
-- O mesmo conjunto de ficheiros dá sempre os mesmos diagnósticos, pela mesma ordem, e o mesmo hash do manifesto efetivo (§8.3).
-- Nenhuma validação depende do relógio de parede, da rede ou do nó, exceto as do passo 10 (§8.1) quando o `jk check` corre com `--node`.
+- All free tables are `BTreeMap`: the processing order is lexicographic, not that of the file.
+- The same set of files always gives the same diagnostics, in the same order, and the same effective manifest hash (§8.3).
+- No validation depends on the wall clock, the network or the node, except those of step 10 (§8.1) when `jk check` runs with `--node`.
 
-### 11.3 Limites v1 do manifesto
+### 11.3 v1 limits of the manifest
 
-| Coisa | Limite | Código |
+| Thing | Limit | Code |
 |---|---|---|
-| tamanho de um ficheiro | 4 MiB | `J0149` |
-| camadas de `extends` | 8 níveis, 32 ficheiros | `J0162` |
-| dispositivos | 1 024 | `J0149` |
-| apps | 50 (documento 09, ataque 11) | `J0149` |
-| saídas, `calc`, alarmes, instâncias | 16 384 cada | `J0149` |
-| correspondências de um seletor | 4 096 | `J0149` |
-| expressão | 4 KiB | `J0149` |
-| `message`, justificações | 1 KiB | `J0149` |
+| size of a file | 4 MiB | `J0149` |
+| `extends` layers | 8 levels, 32 files | `J0162` |
+| devices | 1 024 | `J0149` |
+| apps | 50 (document 09, attack 11) | `J0149` |
+| outputs, `calc`, alarms, instances | 16 384 each | `J0149` |
+| matches of a selector | 4 096 | `J0149` |
+| expression | 4 KiB | `J0149` |
+| `message`, justifications | 1 KiB | `J0149` |
 | `schedule_depth` | 256 | `J0239` |
-| segmentos de caminho | `ref/00` §10 | `J0153` |
+| path segments | `ref/00` §10 | `J0153` |
 
-### 11.4 Mensagens de erro
+### 11.4 Error messages
 
-No estilo do rustc (`ref/00` §8), sempre com código, localização na **camada** onde está a chave e, quando houver, ajuda:
+In the rustc style (`ref/00` §8), always with a code, the location in the **layer** where the key is and, when there is one, help:
 
 ```
-error[J0151]: número sem unidade numa quantidade
+error[J0151]: number without a unit in a quantity
   --> sites/lisboa-01/joker.toml:41:8
    |
 41 | safe = 0
-   |        ^ `pcs.p_set` está em kW
-   = ajuda: escreve `safe = "0 kW"`
+   |        ^ `pcs.p_set` is in kW
+   = help: write `safe = "0 kW"`
 ```
 
 ---
 
-## 12. Esboço dos tipos Rust (`joker-manifest`)
+## 12. Sketch of the Rust types (`joker-manifest`)
 
-Duas fases: as camadas são lidas como `toml::Spanned` sem tipos (para a fusão guardar a proveniência), e o manifesto efetivo é desserializado para os tipos abaixo. As tabelas livres são `BTreeMap` (invariante 9). O esquema JSON publicado é gerado a partir destes tipos, com o `since` de cada campo.
+Two phases: the layers are read as untyped `toml::Spanned` (so that the merge keeps the provenance), and the effective manifest is deserialized into the types below. The free tables are `BTreeMap` (invariant 9). The published JSON schema is generated from these types, with the `since` of each field.
 
 ```rust
 use std::collections::BTreeMap;
@@ -1980,7 +1980,7 @@ pub struct Device {
     pub fallback: Option<DeviceFallback>,
     #[serde(default)] pub signals: BTreeMap<Name, SignalTuning>,
     #[serde(default)] pub actions: BTreeMap<Name, ActionConfig>,
-    /// Driver-specific keys (annex A), validated against the driver's published schema (ref/06).
+    /// Driver-specific keys (appendix A), validated against the driver's published schema (ref/06).
     #[serde(flatten)] pub driver_config: BTreeMap<String, toml::Value>,
 }
 
@@ -2083,7 +2083,7 @@ pub enum ImplementedBy {
                   #[serde(default)] params: BTreeMap<Name, SignalValue> },
 }
 
-/// A value that exists in the 1.0 schema but is refused by a 1.0 runtime (J0290).
+/// A value that exists in the 1.0 schema but is rejected by a 1.0 runtime (J0290).
 #[derive(Deserialize)]
 #[serde(transparent)]
 pub struct Reserved<T>(pub T);
@@ -2091,7 +2091,7 @@ pub struct Reserved<T>(pub T);
 // Value newtypes: each implements FromStr with the grammar of §3 and carries its span for diagnostics.
 pub struct Duration(u64);                     // ns
 pub struct Quantity { pub value: f64, pub unit: joker_units::Unit }
-pub struct Rate(Quantity);                    // unit/s after normalisation
+pub struct Rate(Quantity);                    // unit/s after normalization
 pub struct ActuationBudget { pub count: u32, pub window: Duration }
 pub struct Level { pub band: Band, pub priority: Option<u8> }
 pub struct Expr(String);                      // compiled by joker-expr after the registry is built
@@ -2101,503 +2101,503 @@ pub struct Selector(String);
 
 ---
 
-## 13. Estresse: onze ataques à própria referência
+## 13. Stress: eleven attacks on the reference itself
 
-**1 — O erro de escrita que desliga uma proteção.** `max_leas = "15m"` num site. Num formato tolerante, a chave era ignorada e o `max_lease` ficava em 15 min por omissão, por acaso igual; com `requse_good`, a proteção desaparecia em silêncio. **O que acontece:** `J0140` com "querias dizer `requires_good`?". **Aguenta**, e é a razão de o TOML ser estrito (`ref/00` §1). As ferramentas que querem anotar o manifesto usam `x_*`.
+**1 — The typo that turns off a protection.** `max_leas = "15m"` in a site. In a tolerant format, the key would be ignored and `max_lease` would stay at 15 min by default, by chance the same; with `requse_good`, the protection would disappear silently. **What happens:** `J0140` with "did you mean `requires_good`?". **Holds**, and it is the reason the TOML is strict (`ref/00` §1). Tools that want to annotate the manifest use `x_*`.
 
-**2 — O `safe` sem unidade e o perfil que muda.** Um integrador escreve `safe = 0` e `range = [-125, 125]`; o perfil do PCS passa de `kW` para `W` na versão 4. **Quebrava:** a gama passava a ±125 W sem ninguém mexer no site. **Correção incorporada:** número sem unidade é `J0151` sempre que a dimensão não é `1` (§3.2), com a sugestão da unidade atual do sinal.
+**2 — The `safe` without a unit and the profile that changes.** An integrator writes `safe = 0` and `range = [-125, 125]`; the PCS profile changes from `kW` to `W` in version 4. **Broke:** the range would become ±125 W without anyone touching the site. **Fix incorporated:** a number without a unit is `J0151` whenever the dimension is not `1` (§3.2), with the suggestion of the signal's current unit.
 
-**3 — O template com seletor e o site que quer mexer num inversor.** O template declara `[outputs."inv*.w_max_lim_pct"]`; o site quer `max_lease = "5s"` só no `inv2` e escreve `[outputs."inv2.w_max_lim_pct"]`. **O que acontece:** `J0215` (dois envelopes para `inv2`), com a proveniência das duas entradas e a ajuda: "retira a entrada do template com `outputs.\"inv*.w_max_lim_pct\" = { unset = true }` e declara `inv1`…`inv3` explicitamente". Considerou-se "o mais específico vence" e **rejeitou-se** para envelopes: uma ambiguidade num envelope tem de ser erro (é a regra do Cravo). Nas gravações (§5.17.1) a especificidade é aceite, porque gravar não é uma decisão de segurança.
+**3 — The template with a selector and the site that wants to change one inverter.** The template declares `[outputs."inv*.w_max_lim_pct"]`; the site wants `max_lease = "5s"` only on `inv2` and writes `[outputs."inv2.w_max_lim_pct"]`. **What happens:** `J0215` (two envelopes for `inv2`), with the provenance of both entries and the help: "remove the template's entry with `outputs.\"inv*.w_max_lim_pct\" = { unset = true }` and declare `inv1`…`inv3` explicitly". "The most specific wins" was considered and **rejected** for envelopes: an ambiguity in an envelope must be an error (it is the Cravo rule). In recordings (§5.17.1) specificity is accepted, because recording is not a safety decision.
 
-**4 — Alargar em duas camadas.** Camada 2: `range = { unset = true }`; camada 3: `range = ["-200 kW", "200 kW"]`. Se a camada 3 se comparasse com a 2 (sem gama), "passar a existir" seria apertar, e o alargamento passava sem `widen`. **Correção incorporada:** o `unset` de uma chave de envelope já é um alargamento (§7.4), e exige `widen` na camada 2.
+**4 — Widening in two layers.** Layer 2: `range = { unset = true }`; layer 3: `range = ["-200 kW", "200 kW"]`. If layer 3 were compared with layer 2 (without a range), "coming into existence" would be tightening, and the widening would pass without `widen`. **Fix incorporated:** the `unset` of an envelope key is already a widening (§7.4), and requires `widen` in layer 2.
 
-**5 — Unidades diferentes na comparação.** O template tem `["-125 kW", "125 kW"]` e um site escreve `["-125000 W", "125000 W"]`. **O que acontece:** igual, depois de convertido; não é `J0220`. Com `["-125 kW", "125.001 kW"]`, é um alargamento de 1 W, e é `J0220`: a regra é exata, e a ajuda mostra a diferença.
+**5 — Different units in the comparison.** The template has `["-125 kW", "125 kW"]` and a site writes `["-125000 W", "125000 W"]`. **What happens:** equal, after conversion; it is not `J0220`. With `["-125 kW", "125.001 kW"]`, it is a widening of 1 W, and it is `J0220`: the rule is exact, and the help shows the difference.
 
-**6 — O diamante com `append`.** `S` estende `A` e `B`, que estendem ambos `T`, e `T` faz `requires_good = { append = ["bms.soc"] }`. Uma fusão ingénua aplicava o `append` duas vezes. **Correção incorporada:** linearização em pós-ordem com cada ficheiro uma só vez (§7.1), e `append` em conjuntos sem duplicados (§7.3).
+**6 — The diamond with `append`.** `S` extends `A` and `B`, which both extend `T`, and `T` does `requires_good = { append = ["bms.soc"] }`. A naive merge would apply the `append` twice. **Fix incorporated:** post-order linearization with each file only once (§7.1), and `append` on sets without duplicates (§7.3).
 
-**7 — Um manifesto 1.1 num nó 1.0.** O Deck envia a um nó 1.0 um site que usa `schedule_depth`. **O que acontece:** o `jk check` 1.0 conhece a chave (reservada) e dá `J0290`; o agente recusa a geração antes de a aplicar. Com uma chave que a 1.0 não conhece de todo (uma chave nova da 1.3), dá `J0148` se o manifesto declarar `joker = "1.3"`, ou `J0147` ("este manifesto exige a runtime 1.3"). Nunca uma chave é ignorada em silêncio por ser nova.
+**7 — A 1.1 manifest on a 1.0 node.** The Deck sends a 1.0 node a site that uses `schedule_depth`. **What happens:** the 1.0 `jk check` knows the key (reserved) and gives `J0290`; the agent rejects the generation before applying it. With a key that 1.0 does not know at all (a new key from 1.3), it gives `J0148` if the manifest declares `joker = "1.3"`, or `J0147` ("this manifest requires runtime 1.3"). A key is never silently ignored because it is new.
 
-**8 — Segurança: o overlay de um site acrescenta uma chave de confiança.** Um repositório de site com permissões largas acrescenta `trust.apps = ["keys/minha.pub"]` para instalar uma app assinada por uma chave própria. **Quebrava** no desenho do documento 03, §13: a configuração declarava a sua própria confiança. **Correção incorporada:** `[security.trust]` só restringe as âncoras do nó (`J0292`, §5.19). Um papel `admin = ["cert:CN=*"]` passa, mas com `J0293`, e em `prod` o `jk apply` exige `--confirm` para qualquer mudança em `[security]`.
+**8 — Security: a site's overlay adds a trust key.** A site repository with broad permissions adds `trust.apps = ["keys/minha.pub"]` to install an app signed by a key of its own. **Broke** in the design of document 03, §13: the configuration declared its own trust. **Fix incorporated:** `[security.trust]` only restricts the node's anchors (`J0292`, §5.19). A role `admin = ["cert:CN=*"]` passes, but with `J0293`, and in `prod` `jk apply` requires `--confirm` for any change in `[security]`.
 
-**9 — Um segredo colado no manifesto.** `password = "hunter2"` num uplink. **O que acontece:** `J0294` (erro em `prod`): a chave é do tipo segredo e só aceita `secret:<nome>`. O valor nunca aparece nos diagnósticos, no `jk diff` nem na API: é mascarado (`"****"`) na mensagem.
+**9 — A secret pasted into the manifest.** `password = "hunter2"` in an uplink. **What happens:** `J0294` (error in `prod`): the key is of the secret type and only accepts `secret:<name>`. The value never appears in the diagnostics, in `jk diff` or in the API: it is masked (`"****"`) in the message.
 
-**10 — Desempenho: 3 000 sites e o Deck.** Cada site tem 3 camadas e ~400 linhas. A fusão é linear no tamanho das camadas, e o `jk check` completo é dominado pela admissão RT e pela carga dos perfis (em cache pelo digest do lock). O hash do manifesto efetivo, e por isso o da geração, não depende da ordem das chaves nem dos comentários (§8.3), e por isso um reformat em massa dos repositórios não gera 3 000 rollouts. **Aguenta**; o alvo é < 200 ms por site num portátil, a medir na tarefa 16 do documento 13.
+**10 — Performance: 3,000 sites and the Deck.** Each site has 3 layers and ~400 lines. The merge is linear in the size of the layers, and the full `jk check` is dominated by the RT admission and by loading the profiles (cached by the lock digest). The hash of the effective manifest, and therefore that of the generation, does not depend on the order of the keys or on the comments (§8.3), and therefore a mass reformat of the repositories does not generate 3,000 rollouts. **Holds**; the target is < 200 ms per site on a laptop, to be measured in task 16 of document 13.
 
-**11 — Caminhos relativos em camadas de pastas diferentes.** `templates/joker.bess-v2.toml` declara `model = "sim/plant.sim.toml"` e é estendido por `sites/lisboa-01/joker.toml`. Relativo a quê? **Correção incorporada:** ao ficheiro que declara a chave (§7.5). O template leva consigo os seus ficheiros, e o site não tem de os copiar. O `jk explain` mostra o caminho resolvido.
+**11 — Relative paths in layers from different directories.** `templates/joker.bess-v2.toml` declares `model = "sim/plant.sim.toml"` and is extended by `sites/lisboa-01/joker.toml`. Relative to what? **Fix incorporated:** to the file that declares the key (§7.5). The template carries its files with it, and the site does not have to copy them. `jk explain` shows the resolved path.
 
 ---
 
-## 14. Decisões e alternativas rejeitadas
+## 14. Decisions and rejected alternatives
 
-| # | Decisão | Porquê | Alternativa rejeitada |
+| # | Decision | Why | Rejected alternative |
 |---|---|---|---|
-| D1 | `mode` tem omissão `"prod"` | esquecer a chave num site real não pode desligar assinaturas nem transformar erros em avisos | omissão `"dev"`: mais cómodo, e perigoso |
-| D2 | número sem unidade só em grandezas adimensionais | o significado de um número não pode depender da versão do perfil | aceitar números "na unidade do sinal", como nas interfaces de texto do `ref/00` §4.1 (que continuam a aceitá-los, porque aí o sinal está à vista) |
-| D3 | sobreposições de seletores: erro em envelopes e ajustes; especificidade na telemetria | ambiguidade num envelope é uma decisão de segurança tomada por acaso | especificidade em todo o lado (CSS); primeira declaração vence |
-| D4 | `extends` relativo ao ficheiro que declara; linearização em pós-ordem sem repetições | os templates são portáteis; diamantes são normais em frotas | relativo à raiz do projeto (partia templates partilhados); diamantes como erro |
-| D5 | "só apertar" comparado camada a camada, com `unset` a contar como alargamento | fecha os alargamentos em duas camadas | comparar só com a primeira camada (deixava um overlay intermédio sem controlo) |
-| D6 | sem interpolação de variáveis de ambiente | a geração tem de ser função só dos ficheiros (replay, hash, Deck); os segredos vão por `secret:` | `${ENV}` à Docker Compose |
-| D7 | `[security.trust]` só restringe as âncoras do nó | uma configuração não pode ser a sua própria raiz de confiança | manter o documento 03, §13, como está |
-| D8 | tarefas fora de `order` correm por ordem lexicográfica | o resultado não pode depender da ordem das camadas | "pela ordem do manifesto" (documento 03, §7), indefinida com overlays |
-| D9 | grupos implícitos `default` (100 ms) e `default_<período>` | concilia o A11 do documento 16 com o §8 do documento 03, que se contradiziam | um só `default` com o período pedido (conflito com A11) |
-| D10 | secção `[drivers]` para tier W e X | um driver externo precisa de artefacto ou executável declarado, e nada o dizia | registar os drivers no nó, fora do manifesto (a geração deixava de os descrever) |
-| D11 | o `commit` de um grupo atómico não tem árbitro nem envelope | sem escritores, o árbitro escreveria o `safe` em cada tick (A6) | tratá-lo como uma saída comum |
-| D12 | nível do escritor em duas formas (`level` + `priority`, ou `"faixa:n"`) | a forma compacta é a do `ref/00`, da CLI e da conformidade; a longa é a do documento 03 | só uma das formas (partia um dos dois conjuntos de exemplos) |
-| D13 | o hash do manifesto efetivo materializa as omissões e exclui `x_*` | declarar uma omissão não muda o comportamento, e as anotações de ferramentas também não | hash dos bytes dos ficheiros |
-| D14 | a API local configura-se em `[security.api]`, e não em `[api]` | cada escolha sobre a API (escutas TCP, papéis) é de segurança, e revê-se no mesmo sítio; o mTLS não é escolha (sempre ligado em TCP) | uma secção `[api]` própria |
-| D15 | `severity` obrigatória nos alarmes | a ISA-18.2 exige prioridade, e uma omissão escondia a decisão | omissão `"medium"` |
+| D1 | `mode` defaults to `"prod"` | forgetting the key in a real site must not turn off signatures nor turn errors into warnings | default `"dev"`: more convenient, and dangerous |
+| D2 | number without a unit only in dimensionless quantities | the meaning of a number must not depend on the version of the profile | accepting numbers "in the signal's unit", as in the text interfaces of `ref/00` §4.1 (which keep accepting them, because there the signal is in view) |
+| D3 | selector overlaps: an error in envelopes and adjustments; specificity in telemetry | an ambiguity in an envelope is a safety decision taken by chance | specificity everywhere (CSS); first declaration wins |
+| D4 | `extends` relative to the declaring file; post-order linearization without repetitions | templates are portable; diamonds are normal in fleets | relative to the project root (broke shared templates); diamonds as an error |
+| D5 | "only tighten" compared layer by layer, with `unset` counting as a widening | closes two-layer widenings | comparing only with the first layer (left an intermediate overlay unchecked) |
+| D6 | no interpolation of environment variables | the generation must be a function of the files only (replay, hash, Deck); secrets go through `secret:` | `${ENV}` in the Docker Compose style |
+| D7 | `[security.trust]` only restricts the node's anchors | a configuration must not be its own root of trust | keeping document 03, §13, as it is |
+| D8 | tasks outside `order` run in lexicographic order | the result must not depend on the order of the layers | "in manifest order" (document 03, §7), undefined with overlays |
+| D9 | implicit groups `default` (100 ms) and `default_<period>` | reconciles A11 of document 16 with §8 of document 03, which contradicted each other | a single `default` with the requested period (conflict with A11) |
+| D10 | `[drivers]` section for tier W and X | an external driver needs a declared artifact or executable, and nothing said so | registering the drivers on the node, outside the manifest (the generation would stop describing them) |
+| D11 | the `commit` of an atomic group has no arbiter nor envelope | without writers, the arbiter would write the `safe` on every tick (A6) | treating it as an ordinary output |
+| D12 | writer level in two forms (`level` + `priority`, or `"band:n"`) | the compact form is that of `ref/00`, of the CLI and of conformance; the long one is that of document 03 | only one of the forms (broke one of the two sets of examples) |
+| D13 | the hash of the effective manifest materializes the defaults and excludes `x_*` | declaring a default does not change the behavior, and neither do tool annotations | hash of the bytes of the files |
+| D14 | the local API is configured in `[security.api]`, and not in `[api]` | every choice about the API (TCP listeners, roles) is a security one, and is reviewed in the same place; mTLS is not a choice (always on over TCP) | a `[api]` section of its own |
+| D15 | `severity` required in alarms | ISA-18.2 requires a priority, and a default would hide the decision | default `"medium"` |
 
 ---
 
-## 15. Marcações de versão
+## 15. Version markers
 
-| Fase | O quê |
+| Phase | What |
 |---|---|
-| **1.0** | tudo o que está no §5, exceto o que se lista abaixo; `[drivers]`; `[link]` no Joker Micro; pontes (Fase 2); sombra de apps e orçamentos de uplink (Fase 3) |
-| **1.1** (reservado no esquema 1.0, `J0290`) | `[models]`, `[streams]`, `[pipelines]`, `[training]`; `writer.kind = "proposal"`; `apps.*.fallback`; `outputs.*.schedule_depth`, `timed`, `on_late`, `late_margin`; sinais `kind = "block"`; `telemetry.record` com `blocks`/`trigger`/`pre`/`post`; `resources.ml.accel`; `bind` com `model:`/`pipe:`; `source = "training:…"`; `security.trust.models`; drivers `v4l2`, `libcamera`, `spi-adc` |
-| **1.2** | drivers `ethercat` e `bacnet-ip` nativo (documento 21, §4); o tier W passa a estável e aberto a terceiros (`ref/06` §4; na 1.0 é instável, só para drivers da árvore) |
-| **1.4** | apps Wasm em MCUs M2: `[apps.*] source` num alvo MCU (hoje `J0720`) |
-| **2.0** | caminhos qualificados por nó (`@caldeira/pump.run_cmd`, prefixo `@` já reservado); manifesto de site para vários nós (documento 21, §8) |
+| **1.0** | everything in §5, except what is listed below; `[drivers]`; `[link]` on Joker Micro; bridges (Phase 2); app shadow and uplink budgets (Phase 3) |
+| **1.1** (reserved in the 1.0 schema, `J0290`) | `[models]`, `[streams]`, `[pipelines]`, `[training]`; `writer.kind = "proposal"`; `apps.*.fallback`; `outputs.*.schedule_depth`, `timed`, `on_late`, `late_margin`; signals `kind = "block"`; `telemetry.record` with `blocks`/`trigger`/`pre`/`post`; `resources.ml.accel`; `bind` with `model:`/`pipe:`; `source = "training:…"`; `security.trust.models`; drivers `v4l2`, `libcamera`, `spi-adc` |
+| **1.2** | drivers `ethercat` and native `bacnet-ip` (document 21, §4); tier W becomes stable and open to third parties (`ref/06` §4; in 1.0 it is unstable, only for in-tree drivers) |
+| **1.4** | Wasm apps on M2 MCUs: `[apps.*] source` on an MCU target (today `J0720`) |
+| **2.0** | node-qualified paths (`@caldeira/pump.run_cmd`, `@` prefix already reserved); site manifest for several nodes (document 21, §8) |
 
 ---
 
-## Anexo A — Chaves específicas por driver (catálogo v1)
+## Appendix A — Driver-specific keys (v1 catalog)
 
-As chaves comuns estão no §5.8. Para cada driver do catálogo, a coluna "Chaves do dispositivo" **é** o esquema `config` do seu descritor, a coluna "Chaves por sinal" é o esquema `address` (nos drivers sem perfil) e a coluna "`[discovered]`" é o esquema `discovered` (`ref/06` §2.3; `ref/02` §2.1.11). Nos drivers com perfil, as chaves de endereço dos pontos estão no perfil (`ref/03` §2.2.5), com os mesmos nomes. Um driver tier W ou X publica os seus esquemas no descritor, e o `jk check` valida contra eles. As chaves marcadas **(segredo)** só aceitam `secret:<nome>` (§3.10).
+The common keys are in §5.8. For each catalog driver, the "Device keys" column **is** the `config` schema of its descriptor, the "Per-signal keys" column is the `address` schema (in the drivers without a profile) and the "`[discovered]`" column is the `discovered` schema (`ref/06` §2.3; `ref/02` §2.1.11). In the drivers with a profile, the address keys of the points are in the profile (`ref/03` §2.2.5), with the same names. A tier W or X driver publishes its schemas in the descriptor, and `jk check` validates against them. The keys marked **(secret)** only accept `secret:<name>` (§3.10).
 
-| Driver | Tier | Fase | `bus` | `profile` | Chaves do dispositivo | Chaves por sinal | `[discovered]` |
+| Driver | Tier | Phase | `bus` | `profile` | Device keys | Per-signal keys | `[discovered]` |
 |---|---|---|---|---|---|---|---|
-| `sim` | N | 1.0 | — | — (o modelo declara os sinais) | `model` (`Ficheiro` do modelo de simulação, `ref/03` §2.4, obrigatória), `params` (tabela com os `[params]` do modelo) | — | — |
-| `modbus-tcp` | N | 1.0 | `ethernet`, opcional | obrigatório (`"sunspec"` com `discover = true`) | `address` (`"<host>:<porta>"`, obrigatória; porta por omissão 502), `unit_id` (0–255, omissão 1) | — | com `sunspec`: `models` |
-| `modbus-rtu` | N | 1.0 | `serial`, obrigatório | obrigatório (`"sunspec"` com `discover = true`) | `unit_id` (1–247, obrigatória) | — | com `sunspec`: `models` |
-| `gpio` | N | 1.0 | — | — (expansores: perfil da família `gpio`) | `chip` (`"gpiochip<N>"`, label, ou `"auto"`, omissão `"auto"`: a placa escolhe, `ref/03` §2.3.2; num MCU não se aplica, `J0145`) | `line` (nome BCM `"GPIO17"`, nome da linha, ou deslocamento inteiro; num MCU, o nome de um pino dos `[pins]` da placa com a função `gpio`, como `"gpio2"` no `esp32-devkit`, e um pino inexistente ou sem essa função é `J0828`; obrigatória), `direction`, `bias` (`"as-is"` \| `"pull-up"` \| `"pull-down"` \| `"disabled"`, omissão `"as-is"`), `active_low` (`false`), `drive` (`"push-pull"` \| `"open-drain"` \| `"open-source"`, só saídas), `edges` (`"none"` \| `"rising"` \| `"falling"` \| `"both"`, omissão `"none"`), `timestamp` (`"kernel"` \| `"none"`, omissão `"kernel"` quando há `edges`), `debounce` | — |
-| `sysfs` | N | 1.0 | — | — | nenhuma | exatamente um de `led` (nome em `/sys/class/leds`, p. ex. `"ACT"`; sinal `bool`, `direction = "output"` ou `"input"`; escreve `max_brightness` ou 0; numa saída, ao abrir põe o `trigger` do LED a `none` e repõe o anterior ao fechar, ver a nota a seguir à tabela) e `thermal` (zona em `/sys/class/thermal`, p. ex. `"thermal_zone0"`; entrada `f64` em `°C`, lida em m°C); `direction` (omissão `"input"`) | — |
-| `i2c` | N | 1.0 | `i2c`, obrigatório | obrigatório | `address` (inteiro 0x03–0x77, obrigatória), `config` (tabela validada pelo `[config]` do perfil, p. ex. `pga`, `rate`) | — | — |
-| `spi` | N | 1.0 | `spi`, obrigatório | obrigatório | `config` (como no `i2c`) | — | — |
-| `revpi` | N | 1.0 | — | — (módulos do PiCtory) | `config` (`Ficheiro` `.rsc`, omissão `"/var/www/revpi/pictory/projects/_config.rsc"`) | — (os sinais são as variáveis do PiCtory, com o mesmo nome) | — |
-| `mqtt` (entrada) | N | 1.0 | — | opcional | `broker` (URL `mqtt://`/`mqtts://`, obrigatória), `username`, `password` **(segredo)** | `topic` (obrigatória), `json` (ponteiro JSON RFC 6901; omissão: o payload inteiro), `qos` (0–1, omissão 1), `type`, `unit` | — |
-| `opcua` (cliente) | N | 1.0 (Fase 2) | — | opcional (importado de NodeSet) | `endpoint` (`"opc.tcp://…"`, obrigatória), `security` (`{ policy, mode }`, como nas pontes), `username`, `password` **(segredo)**, `sampling` (`Duração`, omissão = `poll`) | sem perfil: `node` (`"ns=2;s=…"`), `attribute` (omissão `"Value"`), `sampling`, `type`, `unit` | `server_uri`, `namespaces` |
-| `can` | N | 1.0 (Fase 2) | `can`, obrigatório | obrigatório (importado de DBC) | — | — | — |
-| `canopen` | N | 1.0 (Fase 2) | `can`, obrigatório | `profile` ou `eds` | `node_id` (1–127, obrigatória), `eds` (`Ficheiro`) | — | `vendor_id`, `product_code`, `revision` |
-| `m-bus` | N | 1.0 (Fase 2) | `serial`, obrigatório | obrigatório | `address` (primário 0–250, ou secundário `"<16 hex>"`) | — | — |
-| `onewire` | N | 1.0 (Fase 2) | — | obrigatório | `rom` (`"<16 hex>"`, obrigatória) | — | — |
-| `serial-line` | N | 1.0 (Fase 2) | `serial`, obrigatório | obrigatório | — | — | — |
-| `joker-link` | N | 1.0 (Fase 2) | `serial` ou `can`; ou nenhum, com `usb` ou `address` | — (gerado a partir do catálogo do MCU, `ref/03` §2.2.16) | exatamente um de `bus`, `usb` (`Ficheiro`, `/dev/ttyACM0`) e `address` (`"udp:<ip>:<porta>"` \| `"tcp:<ip>:<porta>"`, porta por omissão 7471; MCUs M2); `addr` (endereço do MCU no barramento, inteiro; omissão 0 em série, 1 em CAN; `J0736`); `can_id_base` (0–255, omissão `0x4A`; `J0737`); `auth` (`"required"` \| `"none"`, omissão `"required"`; `J0179`, `J0738`); `key` **(segredo)** (omissão `"secret:link.<dispositivo>"`); `node` (`NomeDns` esperado no `HELLO`, opcional); temporizações `report`, `refresh`, `keepalive`, `link_timeout`, `max_lease`, `rto_min`, `ack_delay`, `time_interval`, `time_tolerance`, `time_max_delay`, `turn_timeout` (`Duração`); tamanhos e contagens `max_frame`, `max_msg`, `window`, `bulk_max`, `retransmit`, `turn_frames` (`Inteiro`); `instances` (`Tabela<nome no MCU, nome no nó>`); `micro` (`Ficheiro` do manifesto do MCU: o `jk check` sem ligação ao nó valida o lado do MCU a partir dele, e o `jk apply` constrói e leva o blob de geração do MCU). Com `address`, é o IP e a porta **do MCU** (no manifesto do MCU, `[link] address` é o do nó, §5.22). Omissões e validação na `ref/07` §15 | — | nenhum além dos comuns; o `digest` é o hash do catálogo (`ref/02` §2.1.11) |
-| `ethercat` | N | 1.2 | `ethercat`, obrigatório | obrigatório | `position` (inteiro, obrigatória) | — | — |
-| `bacnet-ip` | X → N | 1.2 (os dois tiers; documento 21, §4) | `ethernet`, opcional | obrigatório ou por descoberta | `network` (CIDR), `device_instance` (inteiro), `priority` (1–16: a prioridade BACnet que o Joker usa; obrigatória com saídas) | — | segundo o esquema do driver |
-| `v4l2` | N | **1.1** | — | — | `device` (`Ficheiro`), `format` (`{ width, height, pixfmt, fps }`), `trigger` (`{ kind = "hardware" \| "software", input = Caminho }`) | — | — |
+| `sim` | N | 1.0 | — | — (the model declares the signals) | `model` (`File` of the simulation model, `ref/03` §2.4, required), `params` (table with the model's `[params]`) | — | — |
+| `modbus-tcp` | N | 1.0 | `ethernet`, optional | required (`"sunspec"` with `discover = true`) | `address` (`"<host>:<port>"`, required; port 502 by default), `unit_id` (0–255, default 1) | — | with `sunspec`: `models` |
+| `modbus-rtu` | N | 1.0 | `serial`, required | required (`"sunspec"` with `discover = true`) | `unit_id` (1–247, required) | — | with `sunspec`: `models` |
+| `gpio` | N | 1.0 | — | — (expanders: profile of the `gpio` family) | `chip` (`"gpiochip<N>"`, label, or `"auto"`, default `"auto"`: the board chooses, `ref/03` §2.3.2; on an MCU it does not apply, `J0145`) | `line` (BCM name `"GPIO17"`, line name, or integer offset; on an MCU, the name of a pin from the board's `[pins]` with the `gpio` function, such as `"gpio2"` on the `esp32-devkit`, and a pin that does not exist or lacks that function is `J0828`; required), `direction`, `bias` (`"as-is"` \| `"pull-up"` \| `"pull-down"` \| `"disabled"`, default `"as-is"`), `active_low` (`false`), `drive` (`"push-pull"` \| `"open-drain"` \| `"open-source"`, outputs only), `edges` (`"none"` \| `"rising"` \| `"falling"` \| `"both"`, default `"none"`), `timestamp` (`"kernel"` \| `"none"`, default `"kernel"` when there are `edges`), `debounce` | — |
+| `sysfs` | N | 1.0 | — | — | none | exactly one of `led` (name in `/sys/class/leds`, e.g. `"ACT"`; `bool` signal, `direction = "output"` or `"input"`; writes `max_brightness` or 0; on an output, on open it sets the LED's `trigger` to `none` and restores the previous one on close, see the note after the table) and `thermal` (zone in `/sys/class/thermal`, e.g. `"thermal_zone0"`; `f64` input in `°C`, read in m°C); `direction` (default `"input"`) | — |
+| `i2c` | N | 1.0 | `i2c`, required | required | `address` (integer 0x03–0x77, required), `config` (table validated by the profile's `[config]`, e.g. `pga`, `rate`) | — | — |
+| `spi` | N | 1.0 | `spi`, required | required | `config` (as in `i2c`) | — | — |
+| `revpi` | N | 1.0 | — | — (PiCtory modules) | `config` (`.rsc` `File`, default `"/var/www/revpi/pictory/projects/_config.rsc"`) | — (the signals are the PiCtory variables, with the same name) | — |
+| `mqtt` (input) | N | 1.0 | — | optional | `broker` (`mqtt://`/`mqtts://` URL, required), `username`, `password` **(secret)** | `topic` (required), `json` (RFC 6901 JSON pointer; by default: the whole payload), `qos` (0–1, default 1), `type`, `unit` | — |
+| `opcua` (client) | N | 1.0 (Phase 2) | — | optional (imported from NodeSet) | `endpoint` (`"opc.tcp://…"`, required), `security` (`{ policy, mode }`, as in the bridges), `username`, `password` **(secret)**, `sampling` (`Duration`, default = `poll`) | without a profile: `node` (`"ns=2;s=…"`), `attribute` (default `"Value"`), `sampling`, `type`, `unit` | `server_uri`, `namespaces` |
+| `can` | N | 1.0 (Phase 2) | `can`, required | required (imported from DBC) | — | — | — |
+| `canopen` | N | 1.0 (Phase 2) | `can`, required | `profile` or `eds` | `node_id` (1–127, required), `eds` (`File`) | — | `vendor_id`, `product_code`, `revision` |
+| `m-bus` | N | 1.0 (Phase 2) | `serial`, required | required | `address` (primary 0–250, or secondary `"<16 hex>"`) | — | — |
+| `onewire` | N | 1.0 (Phase 2) | — | required | `rom` (`"<16 hex>"`, required) | — | — |
+| `serial-line` | N | 1.0 (Phase 2) | `serial`, required | required | — | — | — |
+| `joker-link` | N | 1.0 (Phase 2) | `serial` or `can`; or none, with `usb` or `address` | — (generated from the MCU's catalog, `ref/03` §2.2.16) | exactly one of `bus`, `usb` (`File`, `/dev/ttyACM0`) and `address` (`"udp:<ip>:<port>"` \| `"tcp:<ip>:<port>"`, port 7471 by default; M2 MCUs); `addr` (address of the MCU on the bus, integer; default 0 over serial, 1 on CAN; `J0736`); `can_id_base` (0–255, default `0x4A`; `J0737`); `auth` (`"required"` \| `"none"`, default `"required"`; `J0179`, `J0738`); `key` **(secret)** (default `"secret:link.<device>"`); `node` (`DnsName` expected in the `HELLO`, optional); timings `report`, `refresh`, `keepalive`, `link_timeout`, `max_lease`, `rto_min`, `ack_delay`, `time_interval`, `time_tolerance`, `time_max_delay`, `turn_timeout` (`Duration`); sizes and counts `max_frame`, `max_msg`, `window`, `bulk_max`, `retransmit`, `turn_frames` (`Integer`); `instances` (`Table<name on the MCU, name on the node>`); `micro` (`File` of the MCU's manifest: `jk check` without a connection to the node validates the MCU side from it, and `jk apply` builds and carries the MCU's generation blob). With `address`, it is the IP and port **of the MCU** (in the MCU's manifest, `[link] address` is that of the node, §5.22). Defaults and validation in `ref/07` §15 | — | none beyond the common ones; the `digest` is the hash of the catalog (`ref/02` §2.1.11) |
+| `ethercat` | N | 1.2 | `ethercat`, required | required | `position` (integer, required) | — | — |
+| `bacnet-ip` | X → N | 1.2 (both tiers; document 21, §4) | `ethernet`, optional | required or by discovery | `network` (CIDR), `device_instance` (integer), `priority` (1–16: the BACnet priority that Joker uses; required with outputs) | — | according to the driver's schema |
+| `v4l2` | N | **1.1** | — | — | `device` (`File`), `format` (`{ width, height, pixfmt, fps }`), `trigger` (`{ kind = "hardware" \| "software", input = Path }`) | — | — |
 | `libcamera` | X | **1.1** | — | — | `camera` (id), `format`, `trigger` | — | — |
-| `spi-adc` | N | **1.1** | `spi`, obrigatório | obrigatório | `drdy` (`Caminho` de uma entrada GPIO), `rate` (`Quantidade<Hz>`) | `kind`, `block`, `unit` | — |
-| `adc`, `pwm` | N (só MCU) | 1.0 | — | — | — | `adc`: `pin` (pino com função `adc` da placa, `ref/03` §2.3.3), `unit`, `scale`; `pwm`: `pin`, `frequency` (`Quantidade<Hz>`) | — |
-| `esp32` | N (só MCU) | 1.0 | — | — | nenhuma; só em placas ESP32 (`arch` = `xtensa-esp32-none-elf` ou `xtensa-esp32s3-none-elf`), noutra `J0145` | exatamente um de: `touch` (`Inteiro` 0–9: o pad de toque capacitivo, resolvido pelo `touch_channel` dos `[pins]` da placa, `ref/03` §2.3.3; `touch = 0` é o T0, no GPIO4 do `esp32-devkit`; pad sem pino na placa `J0828`; entrada `u64`, sem unidade: o valor cru do periférico, que **desce** quando se toca), `rssi = true` (RSSI do Wi-Fi em dBm; entrada `i64` com `unit = "1"`, porque a escala é logarítmica; sem `[net.wifi]` ou sem ligação, `bad(not_connected)`), `uptime = true` (tempo desde o arranque; entrada `f64` em `s`, `monotonic`); `direction` só `"input"` (outra `J0145`); `poll` (omissão: o do dispositivo); os ajustes comuns de sinal (`deadband`, `stuck_detect`, `limits`, §5.8.1). Os tipos são os mesmos que um perfil Modbus dá a registos `u16`, `i16` e `u32` com `unit = "s"` (`ref/03` §2.2.7): trocar o firmware de bancada pelo Joker Micro não muda os tipos dos sinais (documento 23, §3 e §6.5) | — |
-| `modbus-slave` | N (só MCU) | 1.0 | `serial`, obrigatório | obrigatório (o mapa servido, no formato dos perfis) | `unit_id` (1–247, obrigatória) | — | — |
-| `extern` | — (só MCU) | 1.0 | — | — | nenhuma | `type`, `unit`, `direction` (§5.22; `J0785`) | — |
-| `w:<nome>`, `x:<nome>` | W, X | 1.0 | segundo o descritor | segundo o descritor | as do esquema `config` | as do esquema `address` | as do esquema `discovered` |
+| `spi-adc` | N | **1.1** | `spi`, required | required | `drdy` (`Path` of a GPIO input), `rate` (`Quantity<Hz>`) | `kind`, `block`, `unit` | — |
+| `adc`, `pwm` | N (MCU only) | 1.0 | — | — | — | `adc`: `pin` (pin with the board's `adc` function, `ref/03` §2.3.3), `unit`, `scale`; `pwm`: `pin`, `frequency` (`Quantity<Hz>`) | — |
+| `esp32` | N (MCU only) | 1.0 | — | — | none; only on ESP32 boards (`arch` = `xtensa-esp32-none-elf` or `xtensa-esp32s3-none-elf`), on another `J0145` | exactly one of: `touch` (`Integer` 0–9: the capacitive touch pad, resolved by the `touch_channel` of the board's `[pins]`, `ref/03` §2.3.3; `touch = 0` is T0, on GPIO4 of the `esp32-devkit`; a pad without a pin on the board is `J0828`; `u64` input, without a unit: the raw value of the peripheral, which **drops** when touched), `rssi = true` (Wi-Fi RSSI in dBm; `i64` input with `unit = "1"`, because the scale is logarithmic; without `[net.wifi]` or without a connection, `bad(not_connected)`), `uptime = true` (time since boot; `f64` input in `s`, `monotonic`); `direction` only `"input"` (another is `J0145`); `poll` (by default: that of the device); the common signal adjustments (`deadband`, `stuck_detect`, `limits`, §5.8.1). The types are the same that a Modbus profile gives to `u16`, `i16` and `u32` registers with `unit = "s"` (`ref/03` §2.2.7): replacing the bench firmware with Joker Micro does not change the types of the signals (document 23, §3 and §6.5) | — |
+| `modbus-slave` | N (MCU only) | 1.0 | `serial`, required | required (the served map, in the profile format) | `unit_id` (1–247, required) | — | — |
+| `extern` | — (MCU only) | 1.0 | — | — | none | `type`, `unit`, `direction` (§5.22; `J0785`) | — |
+| `w:<name>`, `x:<name>` | W, X | 1.0 | according to the descriptor | according to the descriptor | those of the `config` schema | those of the `address` schema | those of the `discovered` schema |
 
-**`sysfs` e o `trigger` dos LEDs.** Um LED do kernel pode estar a ser comandado por um `trigger` (`mmc0`, `heartbeat`, `default-on`…), que sobrepõe o `brightness` escrito. Ao abrir um sinal `led` com `direction = "output"`, o driver lê o `trigger` atual, guarda-o, e escreve `none`; ao fechar (paragem ordenada do `jokerd`, troca de geração que retira o sinal, `jk device stop`), repõe o `trigger` guardado. Uma paragem abrupta deixa o `trigger` a `none` e o último `brightness`: é por isso que o comportamento do LED com o `jokerd` parado é o `fallback` do `[io]` da placa (ref/03 §2.3.2), e não o `trigger` de origem. Um LED só de entrada (`direction = "input"`) não mexe no `trigger`. **Permissões:** o pacote do `jokerd` instala a regra udev `/usr/lib/udev/rules.d/60-joker-leds.rules`, que dá ao grupo `joker` escrita em `brightness` e `trigger` de `/sys/class/leds/*`; sem ela, abrir o LED falha com `bad(config_error)` e o `jk doctor` di-lo (documento 05, §10).
+**`sysfs` and the LEDs' `trigger`.** A kernel LED may be driven by a `trigger` (`mmc0`, `heartbeat`, `default-on`…), which overrides the written `brightness`. When opening a `led` signal with `direction = "output"`, the driver reads the current `trigger`, saves it, and writes `none`; on close (orderly stop of `jokerd`, a generation swap that removes the signal, `jk device stop`), it restores the saved `trigger`. An abrupt stop leaves the `trigger` at `none` and the last `brightness`: this is why the behavior of the LED with `jokerd` stopped is the `fallback` of the board's `[io]` (ref/03 §2.3.2), and not the original `trigger`. An input-only LED (`direction = "input"`) does not touch the `trigger`. **Permissions:** the `jokerd` package installs the udev rule `/usr/lib/udev/rules.d/60-joker-leds.rules`, which gives the `joker` group write access to `brightness` and `trigger` of `/sys/class/leds/*`; without it, opening the LED fails with `bad(config_error)` and `jk doctor` says so (document 05, §10).
 
-`"sunspec"` não é um driver: é a forma curta do perfil embutido `joker/sunspec@1`, descoberto pelos drivers Modbus (documento 05, §3 e §7; `ref/03` §2.2.15).
+`"sunspec"` is not a driver: it is the short form of the built-in profile `joker/sunspec@1`, discovered by the Modbus drivers (document 05, §3 and §7; `ref/03` §2.2.15).
 
-**`retries` e `retransmit` no `joker-link`.** A chave comum `retries` (§5.8, repetições do núcleo por pedido de driver) não se aplica a um `joker-link` (`J0145`): o link não faz pedidos por lote. O número de retransmissões das mensagens fiáveis do link é a chave própria `retransmit` (`ref/07` §5.6, §15).
+**`retries` and `retransmit` in `joker-link`.** The common key `retries` (§5.8, core retries per driver request) does not apply to a `joker-link` (`J0145`): the link does not make per-batch requests. The number of retransmissions of the link's reliable messages is its own key `retransmit` (`ref/07` §5.6, §15).
 
 ---
 
-## Anexo B — Tabela de cobertura
+## Appendix B — Coverage table
 
-**Método.** Um script extraiu **todos** os blocos ` ```toml ` de todos os `.md` do projeto fora de `docs/ref/` (documentos por área, exemplos, trilha, ADRs, propostas; os blocos das referências são as próprias definições, e não entram): 125 blocos, todos TOML válido. Destes, 80 são manifestos, overlays ou fragmentos de manifesto (2 fragmentos de `[apps.luz]` da trilha, lidos como `apps.*.…`); os outros são locks, perfis, placas, modelos de simulação, cenários, casos de conformidade, a configuração da `jk` e do nó, o `fleet.toml` e o `model.toml`, que pertencem à `ref/02`, à `ref/03` e à `ref/10`. O script percorreu cada manifesto e normalizou as chaves, substituindo os nomes livres por `*` (`devices.esp.poll` → `devices.*.poll`; os elementos de listas de tabelas por `[]`; as diretivas de overlay `unset`, `append` e `widen` ficam como a última componente). O resultado são **371 chaves distintas**. Cada uma foi atribuída à secção desta referência que a define, e um segundo passo confirmou que o nome da chave aparece nessa secção; nenhuma ficou sem secção nem sem definição. A tabela foi regenerada depois da reescrita da trilha (onze partes sobre a bancada do documento 23).
+**Method.** A script extracted **all** the ` ```toml ` blocks from all the project's `.md` files outside `docs/ref/` (area documents, examples, track, ADRs, proposals; the blocks of the references are the definitions themselves, and are not included): 125 blocks, all valid TOML. Of these, 80 are manifests, overlays or manifest fragments (2 fragments of `[apps.luz]` from the track, read as `apps.*.…`); the others are locks, profiles, boards, simulation models, scenarios, conformance cases, the configuration of `jk` and of the node, `fleet.toml` and `model.toml`, which belong to `ref/02`, `ref/03` and `ref/10`. The script walked through each manifest and normalized the keys, replacing the free names with `*` (`devices.esp.poll` → `devices.*.poll`; the elements of arrays of tables with `[]`; the overlay directives `unset`, `append` and `widen` stay as the last component). The result is **371 distinct keys**. Each one was assigned to the section of this reference that defines it, and a second pass confirmed that the name of the key appears in that section; none was left without a section or without a definition. The table was regenerated after the rewrite of the track (eleven parts on the bench of document 23).
 
-| Estado | Chaves |
+| Status | Keys |
 |---|---|
-| coberta | 256 |
-| coberta (1.1) | 94 |
-| coberta (só Joker Micro) | 11 |
-| coberta: diretiva de overlay | 4 |
-| coberta (1.1): chave livre de `hyper` | 3 |
-| coberta (C21 aplicado: o 08 usa `path = "apps/…"`) | 1 |
-| coberta (`proposal` é 1.1) | 1 |
-| coberta; só restringe o bundle do nó (C9, resolvido: D7) | 1 |
+| covered | 256 |
+| covered (1.1) | 94 |
+| covered (Joker Micro only) | 11 |
+| covered: overlay directive | 4 |
+| covered (1.1): free key of `hyper` | 3 |
+| covered (C21 applied: 08 uses `path = "apps/…"`) | 1 |
+| covered (`proposal` is 1.1) | 1 |
+| covered; only restricts the node's bundle (C9, resolved: D7) | 1 |
 
-A coluna "Usos" conta os blocos onde a chave aparece; "Onde" mostra a primeira ocorrência e mais duas, no máximo (ficheiro:linha do bloco, pela ordem dos ficheiros).
+The "Uses" column counts the blocks where the key appears; "Where" shows the first occurrence and at most two more (file:line of the block, in file order).
 
-| Chave | Usos | Onde | Secção | Estado |
+| Key | Uses | Where | Section | Status |
 |---|---|---|---|---|
-| `alarms` | 10 | 02-signal-model:274, 03-manifest:372, 08-stress-tests:253 (+7) | §5.15 | coberta |
-| `alarms.*` | 10 | 02-signal-model:274, 03-manifest:372, 08-stress-tests:253 (+7) | §5.15 | coberta |
-| `alarms.*.actions` | 3 | 02-signal-model:274, 03-manifest:372, examples/01-bess-peak-shaving:24 | §5.15 | coberta |
-| `alarms.*.actions.trip` | 3 | 02-signal-model:274, 03-manifest:372, examples/01-bess-peak-shaving:24 | §5.15 | coberta |
-| `alarms.*.delay_off` | 3 | 02-signal-model:274, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §5.15 | coberta |
-| `alarms.*.delay_on` | 9 | 02-signal-model:274, 08-stress-tests:253, 23-development-bench:195 (+6) | §5.15 | coberta |
-| `alarms.*.message` | 6 | 02-signal-model:274, 23-development-bench:195, examples/02-visual-inspection:35 (+3) | §5.15 | coberta |
-| `alarms.*.severity` | 10 | 02-signal-model:274, 03-manifest:372, 08-stress-tests:253 (+7) | §5.15 | coberta |
-| `alarms.*.suppress_when` | 2 | 02-signal-model:274, examples/03-predictive-maintenance:11 | §5.15 | coberta |
-| `alarms.*.when` | 10 | 02-signal-model:274, 03-manifest:372, 08-stress-tests:253 (+7) | §5.15 | coberta |
-| `apps` | 28 | 03-manifest:251, 06-ml:171, 08-stress-tests:23 (+25) | §5.12 | coberta |
-| `apps.*` | 28 | 03-manifest:251, 06-ml:171, 08-stress-tests:23 (+25) | §5.12 | coberta |
-| `apps.*.bind` | 25 | 03-manifest:251, 08-stress-tests:23, 08-stress-tests:158 (+22) | §5.12.1 | coberta |
-| `apps.*.bind.*` | 25 | 03-manifest:251, 08-stress-tests:23, 08-stress-tests:158 (+22) | §5.12.1 | coberta |
-| `apps.*.bind.*.as` | 3 | 03-manifest:251, 08-stress-tests:23, examples/01-bess-peak-shaving:103 | §5.12.1 | coberta |
-| `apps.*.bind.*.each` | 1 | 14-classes-and-instances:300 | §5.12.1 | coberta |
-| `apps.*.bind.*.map` | 1 | 14-classes-and-instances:300 | §5.12.1 | coberta |
-| `apps.*.bind.*.map.*` | 1 | 14-classes-and-instances:300 | §5.12.1 | coberta |
-| `apps.*.bind.*.optional` | 1 | 08-stress-tests:444 | §5.12.1 | coberta |
-| `apps.*.bind.*.signal` | 4 | 03-manifest:251, 08-stress-tests:23, 08-stress-tests:444 (+1) | §5.12.1 | coberta |
-| `apps.*.cycles` | 15 | 03-manifest:251, 08-stress-tests:23, 08-stress-tests:341 (+12) | §5.12 | coberta |
-| `apps.*.cycles.*` | 15 | 03-manifest:251, 08-stress-tests:23, 08-stress-tests:341 (+12) | §5.12 | coberta |
-| `apps.*.digest` | 1 | 03-manifest:251 | §5.12 | coberta |
-| `apps.*.fallback` | 2 | 06-ml:171, 08-stress-tests:518 | §6.5 | coberta (1.1) |
-| `apps.*.fallback.controller` | 2 | 06-ml:171, 08-stress-tests:518 | §6.5 | coberta (1.1) |
-| `apps.*.fallback.when` | 2 | 06-ml:171, 08-stress-tests:518 | §6.5 | coberta (1.1) |
-| `apps.*.kind` | 1 | 08-stress-tests:341 | §5.12 | coberta |
-| `apps.*.net` | 1 | 03-manifest:251 | §5.12 | coberta |
-| `apps.*.net.allow` | 1 | 03-manifest:251 | §5.12 | coberta |
-| `apps.*.params` | 15 | 03-manifest:251, 08-stress-tests:23, 08-stress-tests:158 (+12) | §5.12.2 | coberta |
-| `apps.*.params.*` | 15 | 03-manifest:251, 08-stress-tests:23, 08-stress-tests:158 (+12) | §5.12.2 | coberta |
-| `apps.*.path` | 17 | 08-stress-tests:158, 08-stress-tests:341, 08-stress-tests:518 (+14) | §5.12 | coberta |
-| `apps.*.requires_clock` | 2 | 03-manifest:251, 08-stress-tests:444 | §5.12 | coberta |
-| `apps.*.resources` | 1 | 03-manifest:251 | §5.12 | coberta |
-| `apps.*.resources.async` | 1 | 03-manifest:251 | §5.12 | coberta |
-| `apps.*.resources.cycle` | 1 | 03-manifest:251 | §5.12 | coberta |
-| `apps.*.resources.memory` | 1 | 03-manifest:251 | §5.12 | coberta |
-| `apps.*.secrets` | 1 | 03-manifest:251 | §5.12 | coberta |
-| `apps.*.secrets.*` | 1 | 03-manifest:251 | §5.12 | coberta |
-| `apps.*.shadow` | 2 | 03-manifest:251, 08-stress-tests:518 | §5.12.3 | coberta |
-| `apps.*.shadow.of` | 2 | 03-manifest:251, 08-stress-tests:518 | §5.12.3 | coberta |
-| `apps.*.shadow.promote` | 1 | 08-stress-tests:518 | §5.12.3 | coberta |
-| `apps.*.shadow.promote.outputs` | 1 | 08-stress-tests:518 | §5.12.3 | coberta |
-| `apps.*.shadow.until` | 2 | 03-manifest:251, 08-stress-tests:518 | §5.12.3 | coberta |
-| `apps.*.shadow.until.duration` | 2 | 03-manifest:251, 08-stress-tests:518 | §5.12.3 | coberta |
-| `apps.*.shadow.until.max_divergence` | 1 | 03-manifest:251 | §5.12.3 | coberta |
-| `apps.*.source` | 5 | 03-manifest:251, 08-stress-tests:23, 08-stress-tests:444 (+2) | §5.12 | coberta (C21 aplicado: o 08 usa `path = "apps/…"`) |
-| `apps.*.writer` | 12 | 03-manifest:251, 08-stress-tests:23, 08-stress-tests:158 (+9) | §5.12 | coberta |
-| `apps.*.writer.kind` | 1 | 08-stress-tests:518 | §5.12 | coberta (`proposal` é 1.1) |
-| `apps.*.writer.lease` | 11 | 03-manifest:251, 08-stress-tests:23, 08-stress-tests:158 (+8) | §5.12 | coberta |
-| `apps.*.writer.level` | 10 | 03-manifest:251, 08-stress-tests:23, 08-stress-tests:158 (+7) | §5.12 | coberta |
-| `apps.*.writer.priority` | 9 | 03-manifest:251, 08-stress-tests:23, 08-stress-tests:158 (+6) | §5.12 | coberta |
-| `atomic` | 3 | 02-signal-model:162, 03-manifest:372, 08-stress-tests:341 | §5.16 | coberta |
-| `atomic.*` | 3 | 02-signal-model:162, 03-manifest:372, 08-stress-tests:341 | §5.16 | coberta |
-| `atomic.*.commit` | 1 | 02-signal-model:162 | §5.16 | coberta |
-| `atomic.*.commit.signal` | 1 | 02-signal-model:162 | §5.16 | coberta |
-| `atomic.*.commit.value` | 1 | 02-signal-model:162 | §5.16 | coberta |
-| `atomic.*.on_rate` | 2 | 03-manifest:372, 08-stress-tests:341 | §5.16 | coberta |
-| `atomic.*.order` | 2 | 02-signal-model:162, 03-manifest:372 | §5.16 | coberta |
-| `atomic.*.outputs` | 3 | 02-signal-model:162, 03-manifest:372, 08-stress-tests:341 | §5.16 | coberta |
-| `bridges` | 2 | 03-manifest:423, 08-stress-tests:341 | §5.18 | coberta |
-| `bridges.*` | 2 | 03-manifest:423, 08-stress-tests:341 | §5.18 | coberta |
-| `bridges.*.expose` | 2 | 03-manifest:423, 08-stress-tests:341 | §5.18 | coberta |
-| `bridges.*.expose.*` | 2 | 03-manifest:423, 08-stress-tests:341 | §5.18 | coberta |
-| `bridges.*.kind` | 2 | 03-manifest:423, 08-stress-tests:341 | §5.18 | coberta |
-| `bridges.*.listen` | 1 | 03-manifest:423 | §5.18 | coberta |
-| `bridges.*.security` | 1 | 03-manifest:423 | §5.18 | coberta |
-| `bridges.*.security.mode` | 1 | 03-manifest:423 | §5.18 | coberta |
-| `bridges.*.security.policy` | 1 | 03-manifest:423 | §5.18 | coberta |
-| `bridges.*.security.trust` | 1 | 03-manifest:423 | §5.18 | coberta |
-| `bridges.*.subscribe` | 2 | 03-manifest:423, 08-stress-tests:341 | §5.18 | coberta |
-| `bridges.*.subscribe.*` | 2 | 03-manifest:423, 08-stress-tests:341 | §5.18 | coberta |
-| `bridges.*.subscribe.*.fields` | 2 | 03-manifest:423, 08-stress-tests:341 | §5.18 | coberta |
-| `bridges.*.subscribe.*.max_age` | 2 | 03-manifest:423, 08-stress-tests:341 | §5.18 | coberta |
-| `bridges.*.subscribe.*.to` | 2 | 03-manifest:423, 08-stress-tests:341 | §5.18 | coberta |
-| `bridges.*.subscribe.*.type` | 2 | 03-manifest:423, 08-stress-tests:341 | §5.18 | coberta |
-| `bridges.*.writer` | 1 | 03-manifest:423 | §5.18 | coberta |
-| `bridges.*.writer.lease` | 1 | 03-manifest:423 | §5.18 | coberta |
-| `bridges.*.writer.level` | 1 | 03-manifest:423 | §5.18 | coberta |
-| `bridges.*.writer.priority` | 1 | 03-manifest:423 | §5.18 | coberta |
-| `bridges.*.writer.writable` | 1 | 03-manifest:423 | §5.18 | coberta |
-| `buses` | 11 | 03-manifest:83, 08-stress-tests:253, 08-stress-tests:341 (+8) | §5.6 | coberta |
-| `buses.*` | 11 | 03-manifest:83, 08-stress-tests:253, 08-stress-tests:341 (+8) | §5.6 | coberta |
-| `buses.*.baud` | 8 | 03-manifest:83, 23-development-bench:255, 23-development-bench:304 (+5) | §5.6 | coberta |
-| `buses.*.bitrate` | 1 | 03-manifest:83 | §5.6 | coberta |
-| `buses.*.cycle` | 2 | 03-manifest:83, 08-stress-tests:341 | §5.6 | coberta |
-| `buses.*.dc` | 1 | 08-stress-tests:341 | §5.6 | coberta |
-| `buses.*.dev` | 3 | 08-stress-tests:253, examples/00-first-project:194, examples/03-predictive-maintenance:11 | §5.6 | coberta |
-| `buses.*.dtr` | 2 | track/04-esp32-modbus:375, track/06-switching-boards:31 | §5.6 | coberta |
-| `buses.*.iface` | 2 | 03-manifest:83, 08-stress-tests:341 | §5.6 | coberta |
-| `buses.*.kind` | 9 | 03-manifest:83, 08-stress-tests:253, 08-stress-tests:341 (+6) | §5.6 | coberta |
-| `buses.*.parity` | 2 | 03-manifest:83, examples/00-first-project:194 | §5.6 | coberta |
-| `buses.*.port` | 6 | 03-manifest:83, 23-development-bench:255, examples/00-first-project:194 (+3) | §5.6 | coberta |
-| `buses.*.rts` | 2 | track/04-esp32-modbus:375, track/06-switching-boards:31 | §5.6 | coberta |
-| `buses.*.stop` | 1 | 03-manifest:83 | §5.6 | coberta |
-| `buses.*.turnaround` | 1 | 03-manifest:83 | §5.6 | coberta |
-| `calc` | 6 | 03-manifest:372, 08-stress-tests:23, 23-development-bench:195 (+3) | §5.14 | coberta |
-| `calc.*` | 6 | 03-manifest:372, 08-stress-tests:23, 23-development-bench:195 (+3) | §5.14 | coberta |
-| `clock` | 2 | 03-manifest:53, track/09-joker-micro:48 | §5.5 | coberta |
-| `clock.max_holdover` | 1 | 03-manifest:53 | §5.5 | coberta |
-| `clock.servers` | 1 | 03-manifest:53 | §5.5 | coberta |
-| `clock.sync` | 2 | 03-manifest:53, track/09-joker-micro:48 | §5.5 | coberta |
-| `cycles` | 9 | 03-manifest:229, 08-stress-tests:23, 08-stress-tests:341 (+6) | §5.11 | coberta |
-| `cycles.*` | 9 | 03-manifest:229, 08-stress-tests:23, 08-stress-tests:341 (+6) | §5.11 | coberta |
-| `cycles.*.order` | 2 | 03-manifest:229, track/08-your-own-class:222 | §5.11 | coberta |
-| `cycles.*.overrun` | 2 | 03-manifest:229, 08-stress-tests:341 | §5.11 | coberta |
-| `cycles.*.period` | 9 | 03-manifest:229, 08-stress-tests:23, 08-stress-tests:341 (+6) | §5.11 | coberta |
-| `cycles.*.resources` | 4 | 03-manifest:229, 08-stress-tests:23, 08-stress-tests:341 (+1) | §5.11 | coberta |
-| `cycles.*.trace` | 2 | 03-manifest:229, examples/01-bess-peak-shaving:24 | §5.11 | coberta |
-| `cycles.*.trace.continuous` | 2 | 03-manifest:229, examples/01-bess-peak-shaving:24 | §5.11 | coberta |
-| `cycles.*.trip_after` | 2 | 03-manifest:229, 08-stress-tests:341 | §5.11 | coberta |
-| `devices` | 32 | 02-signal-model:179, 03-manifest:113, 03-manifest:159 (+29) | §5.8 | coberta |
-| `devices.*` | 32 | 02-signal-model:179, 03-manifest:113, 03-manifest:159 (+29) | §5.8 | coberta |
-| `devices.*.actions` | 2 | 02-signal-model:179, 03-manifest:174 | §5.8.2 | coberta |
-| `devices.*.actions.*` | 2 | 02-signal-model:179, 03-manifest:174 | §5.8.2 | coberta |
-| `devices.*.actions.*.permit` | 2 | 02-signal-model:179, 03-manifest:174 | §5.8.2 | coberta |
-| `devices.*.actions.*.role` | 2 | 02-signal-model:179, 03-manifest:174 | §5.8.2 | coberta |
-| `devices.*.actions.*.timeout` | 2 | 02-signal-model:179, 03-manifest:174 | §5.8.2 | coberta |
-| `devices.*.address` | 8 | 03-manifest:113, 08-stress-tests:23, 08-stress-tests:341 (+5) | anexo A | coberta |
-| `devices.*.align` | 1 | examples/01-bess-peak-shaving:103 | §5.8 | coberta |
-| `devices.*.auth` | 2 | 23-development-bench:304, track/09-joker-micro:199 | anexo A | coberta |
-| `devices.*.bus` | 11 | 03-manifest:113, 08-stress-tests:253, 08-stress-tests:341 (+8) | §5.8 | coberta |
-| `devices.*.bus.unset` | 1 | track/10-logic-on-the-mcu:236 | §7.2 | coberta: diretiva de overlay |
-| `devices.*.chip` | 3 | 08-stress-tests:158, 08-stress-tests:444, examples/02-visual-inspection:35 | anexo A | coberta |
-| `devices.*.config` | 1 | 03-manifest:113 | anexo A | coberta |
-| `devices.*.device` | 3 | 03-manifest:113, 08-stress-tests:158, examples/02-visual-inspection:35 | anexo A | coberta (1.1) |
-| `devices.*.discover` | 3 | 03-manifest:113, 08-stress-tests:23, examples/01-bess-peak-shaving:103 | §5.8 | coberta |
-| `devices.*.drdy` | 2 | 08-stress-tests:253, examples/03-predictive-maintenance:11 | anexo A | coberta (1.1) |
-| `devices.*.driver` | 27 | 03-manifest:113, 08-stress-tests:23, 08-stress-tests:158 (+24) | §5.8 | coberta |
-| `devices.*.eds` | 1 | 03-manifest:113 | anexo A | coberta |
-| `devices.*.fallback` | 3 | 03-manifest:113, 08-stress-tests:23, examples/01-bess-peak-shaving:103 | §5.8 | coberta |
-| `devices.*.fallback.configure` | 3 | 03-manifest:113, 08-stress-tests:23, examples/01-bess-peak-shaving:103 | §5.8 | coberta |
-| `devices.*.fallback.keepalive` | 1 | 03-manifest:113 | §5.8 | coberta |
-| `devices.*.format` | 3 | 03-manifest:113, 08-stress-tests:158, examples/02-visual-inspection:35 | anexo A | coberta (1.1) |
-| `devices.*.format.fps` | 3 | 03-manifest:113, 08-stress-tests:158, examples/02-visual-inspection:35 | anexo A | coberta (1.1) |
-| `devices.*.format.height` | 3 | 03-manifest:113, 08-stress-tests:158, examples/02-visual-inspection:35 | anexo A | coberta (1.1) |
-| `devices.*.format.pixfmt` | 3 | 03-manifest:113, 08-stress-tests:158, examples/02-visual-inspection:35 | anexo A | coberta (1.1) |
-| `devices.*.format.width` | 3 | 03-manifest:113, 08-stress-tests:158, examples/02-visual-inspection:35 | anexo A | coberta (1.1) |
-| `devices.*.micro` | 1 | track/09-joker-micro:199 | anexo A | coberta |
-| `devices.*.model` | 4 | 03-manifest:113, examples/00-first-project:41, track/01-hello-bench:97 (+1) | anexo A | coberta |
-| `devices.*.network` | 1 | 08-stress-tests:518 | anexo A | coberta |
-| `devices.*.node` | 1 | track/09-joker-micro:199 | anexo A | coberta |
-| `devices.*.node_id` | 1 | 03-manifest:113 | anexo A | coberta |
-| `devices.*.poll` | 4 | 03-manifest:113, 08-stress-tests:23, 23-development-bench:238 (+1) | §5.8 | coberta |
-| `devices.*.position` | 1 | 08-stress-tests:341 | anexo A | coberta |
-| `devices.*.priority` | 1 | 08-stress-tests:518 | anexo A | coberta |
-| `devices.*.profile` | 16 | 03-manifest:113, 08-stress-tests:23, 08-stress-tests:253 (+13) | §5.8 | coberta |
-| `devices.*.profile.unset` | 2 | 23-development-bench:304, track/09-joker-micro:199 | §7.2 | coberta: diretiva de overlay |
-| `devices.*.rate` | 2 | 08-stress-tests:253, examples/03-predictive-maintenance:11 | anexo A | coberta (1.1) |
-| `devices.*.refresh` | 3 | 23-development-bench:304, track/09-joker-micro:199, track/10-logic-on-the-mcu:236 | anexo A | coberta |
-| `devices.*.report` | 3 | 23-development-bench:304, track/09-joker-micro:199, track/10-logic-on-the-mcu:236 | anexo A | coberta |
-| `devices.*.retries` | 1 | 03-manifest:113 | §5.8 | coberta |
-| `devices.*.signals` | 16 | 03-manifest:159, 08-stress-tests:23, 08-stress-tests:158 (+13) | §5.8.1 | coberta |
-| `devices.*.signals.*` | 16 | 03-manifest:159, 08-stress-tests:23, 08-stress-tests:158 (+13) | §5.8.1 | coberta |
-| `devices.*.signals.*.active_low` | 1 | track/09-joker-micro:48 | §5.8.1, anexo A | coberta |
-| `devices.*.signals.*.alias` | 11 | 03-manifest:159, 08-stress-tests:23, 08-stress-tests:158 (+8) | §5.8.1 | coberta |
-| `devices.*.signals.*.bias` | 1 | track/09-joker-micro:48 | §5.8.1, anexo A | coberta |
-| `devices.*.signals.*.block` | 2 | 08-stress-tests:253, examples/03-predictive-maintenance:11 | §5.8.1 | coberta (1.1) |
-| `devices.*.signals.*.deadband` | 1 | track/09-joker-micro:48 | §5.8.1 | coberta |
-| `devices.*.signals.*.debounce` | 1 | track/09-joker-micro:48 | §5.8.1 | coberta |
-| `devices.*.signals.*.direction` | 9 | 08-stress-tests:158, 08-stress-tests:444, 09-architecture-under-stress:308 (+6) | §5.8.1 | coberta |
-| `devices.*.signals.*.edges` | 2 | 08-stress-tests:158, examples/02-visual-inspection:35 | §5.8.1, anexo A | coberta |
-| `devices.*.signals.*.kind` | 2 | 08-stress-tests:253, examples/03-predictive-maintenance:11 | §5.8.1 | coberta (1.1) |
-| `devices.*.signals.*.led` | 4 | 23-development-bench:238, track/02-the-pi-as-a-node:165, track/03-temperature-sensor:300 (+1) | §5.8.1, anexo A | coberta |
-| `devices.*.signals.*.limits` | 1 | 03-manifest:159 | §5.8.1 | coberta |
-| `devices.*.signals.*.line` | 5 | 08-stress-tests:158, 08-stress-tests:444, 09-architecture-under-stress:308 (+2) | §5.8.1, anexo A | coberta |
-| `devices.*.signals.*.max_age` | 1 | 03-manifest:159 | §5.8.1 | coberta |
-| `devices.*.signals.*.record` | 1 | 03-manifest:159 | §5.8.1 | coberta |
-| `devices.*.signals.*.record.every` | 1 | 03-manifest:159 | §5.8.1 | coberta |
-| `devices.*.signals.*.rssi` | 1 | track/09-joker-micro:48 | §5.8.1, anexo A | coberta |
-| `devices.*.signals.*.scale` | 2 | 03-manifest:159, examples/00-first-project:194 | §5.8.1 | coberta |
-| `devices.*.signals.*.scale.from` | 2 | 03-manifest:159, examples/00-first-project:194 | §5.8.1 | coberta |
-| `devices.*.signals.*.scale.to` | 2 | 03-manifest:159, examples/00-first-project:194 | §5.8.1 | coberta |
-| `devices.*.signals.*.stuck_detect` | 1 | 03-manifest:159 | §5.8.1 | coberta |
-| `devices.*.signals.*.thermal` | 3 | 23-development-bench:238, track/03-temperature-sensor:300, track/06-switching-boards:19 | §5.8.1, anexo A | coberta |
-| `devices.*.signals.*.timestamp` | 2 | 08-stress-tests:158, examples/02-visual-inspection:35 | §5.8.1, anexo A | coberta |
-| `devices.*.signals.*.touch` | 1 | track/09-joker-micro:48 | §5.8.1, anexo A | coberta |
-| `devices.*.signals.*.unit` | 3 | 08-stress-tests:253, examples/03-predictive-maintenance:11, track/09-joker-micro:48 | §5.8.1 | coberta |
-| `devices.*.signals.*.uptime` | 1 | track/09-joker-micro:48 | §5.8.1, anexo A | coberta |
-| `devices.*.timeout` | 1 | 03-manifest:113 | §5.8 | coberta |
-| `devices.*.trigger` | 3 | 03-manifest:113, 08-stress-tests:158, examples/02-visual-inspection:35 | anexo A | coberta (1.1) |
-| `devices.*.trigger.input` | 3 | 03-manifest:113, 08-stress-tests:158, examples/02-visual-inspection:35 | anexo A | coberta (1.1) |
-| `devices.*.trigger.kind` | 3 | 03-manifest:113, 08-stress-tests:158, examples/02-visual-inspection:35 | anexo A | coberta (1.1) |
-| `devices.*.unit_id` | 12 | 03-manifest:113, 08-stress-tests:444, 14-classes-and-instances:168 (+9) | anexo A | coberta |
-| `devices.*.unit_id.unset` | 2 | 23-development-bench:304, track/09-joker-micro:199 | §7.2 | coberta: diretiva de overlay |
-| `drivers` | 2 | 08-stress-tests:341, 08-stress-tests:518 | §5.7 | coberta |
-| `drivers.*` | 2 | 08-stress-tests:341, 08-stress-tests:518 | §5.7 | coberta |
-| `drivers.*.exec` | 2 | 08-stress-tests:341, 08-stress-tests:518 | §5.7 | coberta |
-| `drivers.*.tier` | 2 | 08-stress-tests:341, 08-stress-tests:518 | §5.7 | coberta |
-| `extends` | 12 | 03-manifest:33, 23-development-bench:238, 23-development-bench:255 (+9) | §5.1 | coberta |
-| `instances` | 7 | 03-manifest:352, 14-classes-and-instances:181, 14-classes-and-instances:425 (+4) | §5.13 | coberta |
-| `instances.*` | 7 | 03-manifest:352, 14-classes-and-instances:181, 14-classes-and-instances:425 (+4) | §5.13 | coberta |
-| `instances.*.actions` | 1 | 17-jkc:228 | §5.13 | coberta |
-| `instances.*.actions.*` | 1 | 17-jkc:228 | §5.13 | coberta |
-| `instances.*.actions.*.role` | 1 | 17-jkc:228 | §5.13 | coberta |
-| `instances.*.capabilities` | 3 | 03-manifest:352, 14-classes-and-instances:181, 17-jkc:228 | §5.13 | coberta |
-| `instances.*.class` | 7 | 03-manifest:352, 14-classes-and-instances:181, 14-classes-and-instances:425 (+4) | §5.13 | coberta |
-| `instances.*.implemented_by` | 5 | 03-manifest:352, 14-classes-and-instances:425, 14-classes-and-instances:533 (+2) | §5.13 | coberta |
-| `instances.*.implemented_by.app` | 2 | 14-classes-and-instances:533, 17-jkc:228 | §5.13 | coberta |
-| `instances.*.implemented_by.bind` | 2 | 14-classes-and-instances:533, 17-jkc:228 | §5.13 | coberta |
-| `instances.*.implemented_by.bind.*` | 2 | 14-classes-and-instances:533, 17-jkc:228 | §5.13 | coberta |
-| `instances.*.map` | 5 | 03-manifest:352, 14-classes-and-instances:181, 14-classes-and-instances:533 (+2) | §5.13 | coberta |
-| `instances.*.map.*` | 5 | 03-manifest:352, 14-classes-and-instances:181, 14-classes-and-instances:533 (+2) | §5.13 | coberta |
-| `link` | 2 | track/09-joker-micro:48, track/10-logic-on-the-mcu:222 | §5.22 | coberta (só Joker Micro) |
-| `link.address` | 1 | track/10-logic-on-the-mcu:222 | §5.22 | coberta (só Joker Micro) |
-| `link.auth` | 2 | track/09-joker-micro:48, track/10-logic-on-the-mcu:222 | §5.22 | coberta (só Joker Micro) |
-| `link.bus` | 1 | track/09-joker-micro:48 | §5.22 | coberta (só Joker Micro) |
-| `link.peer` | 2 | track/09-joker-micro:48, track/10-logic-on-the-mcu:222 | §5.22 | coberta (só Joker Micro) |
-| `models` | 7 | 03-manifest:298, 06-ml:220, 08-stress-tests:23 (+4) | §6.1 | coberta (1.1) |
-| `models.*` | 7 | 03-manifest:298, 06-ml:220, 08-stress-tests:23 (+4) | §6.1 | coberta (1.1) |
-| `models.*.backend` | 6 | 03-manifest:298, 08-stress-tests:23, 08-stress-tests:158 (+3) | §6.1 | coberta (1.1) |
-| `models.*.deadline` | 6 | 03-manifest:298, 08-stress-tests:23, 08-stress-tests:158 (+3) | §6.1 | coberta (1.1) |
-| `models.*.isolation` | 3 | 03-manifest:298, 08-stress-tests:158, examples/02-visual-inspection:35 | §6.1 | coberta (1.1) |
-| `models.*.resources` | 6 | 03-manifest:298, 08-stress-tests:23, 08-stress-tests:158 (+3) | §6.1 | coberta (1.1) |
-| `models.*.shadow` | 2 | 06-ml:220, examples/03-predictive-maintenance:11 | §6.1 | coberta (1.1) |
-| `models.*.shadow.auto` | 1 | examples/03-predictive-maintenance:11 | §6.1 | coberta (1.1) |
-| `models.*.shadow.candidate` | 1 | 06-ml:220 | §6.1 | coberta (1.1) |
-| `models.*.shadow.kpi` | 1 | 06-ml:220 | §6.1 | coberta (1.1) |
-| `models.*.shadow.on_regress` | 1 | 06-ml:220 | §6.1 | coberta (1.1) |
-| `models.*.shadow.promote_if` | 2 | 06-ml:220, examples/03-predictive-maintenance:11 | §6.1 | coberta (1.1) |
-| `models.*.shadow.until` | 2 | 06-ml:220, examples/03-predictive-maintenance:11 | §6.1 | coberta (1.1) |
-| `models.*.shadow.until.duration` | 2 | 06-ml:220, examples/03-predictive-maintenance:11 | §6.1 | coberta (1.1) |
-| `models.*.shadow.until.frames` | 1 | 06-ml:220 | §6.1 | coberta (1.1) |
-| `models.*.source` | 6 | 03-manifest:298, 08-stress-tests:23, 08-stress-tests:158 (+3) | §6.1 | coberta (1.1) |
-| `models.*.warmup` | 2 | 03-manifest:298, examples/02-visual-inspection:35 | §6.1 | coberta (1.1) |
-| `net` | 1 | track/10-logic-on-the-mcu:222 | §5.22 | coberta (só Joker Micro) |
-| `net.wifi` | 1 | track/10-logic-on-the-mcu:222 | §5.22 | coberta (só Joker Micro) |
-| `net.wifi.country` | 1 | track/10-logic-on-the-mcu:222 | §5.22 | coberta (só Joker Micro) |
-| `net.wifi.password` | 1 | track/10-logic-on-the-mcu:222 | §5.22 | coberta (só Joker Micro) |
-| `net.wifi.ssid` | 1 | track/10-logic-on-the-mcu:222 | §5.22 | coberta (só Joker Micro) |
-| `outputs` | 20 | 03-manifest:189, 08-stress-tests:23, 08-stress-tests:158 (+17) | §5.10 | coberta |
-| `outputs.*` | 20 | 03-manifest:189, 08-stress-tests:23, 08-stress-tests:158 (+17) | §5.10 | coberta |
-| `outputs.*.accept_missing_fallback` | 2 | examples/02-visual-inspection:35, track/11-production-and-fleet:40 | §5.10 | coberta |
-| `outputs.*.deadband` | 1 | 03-manifest:189 | §5.10 | coberta |
-| `outputs.*.grace` | 2 | 03-manifest:189, examples/01-bess-peak-shaving:24 | §5.10 | coberta |
-| `outputs.*.group` | 2 | 03-manifest:189, track/09-joker-micro:48 | §5.10 | coberta |
-| `outputs.*.interlock` | 7 | 03-manifest:189, 08-stress-tests:23, 08-stress-tests:341 (+4) | §5.10 | coberta |
-| `outputs.*.max_actuations` | 3 | 03-manifest:189, 14-classes-and-instances:425, examples/02-visual-inspection:35 | §5.10 | coberta |
-| `outputs.*.max_lease` | 5 | 03-manifest:189, 08-stress-tests:23, 08-stress-tests:444 (+2) | §5.10 | coberta |
-| `outputs.*.max_manual` | 2 | 03-manifest:189, track/11-production-and-fleet:40 | §5.10 | coberta |
-| `outputs.*.min_interval` | 1 | 03-manifest:189 | §5.10 | coberta |
-| `outputs.*.on_interlock` | 1 | 03-manifest:189 | §5.10 | coberta |
-| `outputs.*.on_late` | 3 | 03-manifest:189, 08-stress-tests:158, examples/02-visual-inspection:35 | §5.10 | coberta (1.1) |
-| `outputs.*.on_range` | 1 | 03-manifest:189 | §5.10 | coberta |
-| `outputs.*.pulse` | 3 | 03-manifest:189, 08-stress-tests:158, examples/02-visual-inspection:35 | §5.10 | coberta |
-| `outputs.*.range` | 7 | 03-manifest:189, 08-stress-tests:23, 08-stress-tests:341 (+4) | §5.10 | coberta |
-| `outputs.*.rate` | 6 | 03-manifest:189, 08-stress-tests:23, 08-stress-tests:341 (+3) | §5.10 | coberta |
-| `outputs.*.remote_levels` | 1 | track/09-joker-micro:48 | §5.22 | coberta (só Joker Micro) |
-| `outputs.*.requires_good` | 4 | 03-manifest:189, 08-stress-tests:23, examples/00-first-project:41 (+1) | §5.10 | coberta |
-| `outputs.*.reset_when` | 1 | 03-manifest:189 | §5.10 | coberta |
-| `outputs.*.safe` | 17 | 03-manifest:189, 08-stress-tests:23, 08-stress-tests:158 (+14) | §5.10 | coberta |
-| `outputs.*.safe_ramp` | 2 | 03-manifest:189, 08-stress-tests:341 | §5.10 | coberta |
-| `outputs.*.safer` | 3 | 03-manifest:189, 08-stress-tests:23, examples/01-bess-peak-shaving:24 | §5.10 | coberta |
-| `outputs.*.schedule_depth` | 3 | 03-manifest:189, 08-stress-tests:158, examples/02-visual-inspection:35 | §5.10 | coberta (1.1) |
-| `outputs.*.timed` | 3 | 03-manifest:189, 08-stress-tests:158, examples/02-visual-inspection:35 | §5.10 | coberta (1.1) |
-| `outputs.*.unset` | 2 | 23-development-bench:304, track/09-joker-micro:246 | §7.2 | coberta: diretiva de overlay |
-| `outputs.*.verify` | 3 | 03-manifest:189, 08-stress-tests:23, examples/01-bess-peak-shaving:24 | §5.10 | coberta |
-| `outputs.*.verify.readback` | 3 | 03-manifest:189, 08-stress-tests:23, examples/01-bess-peak-shaving:24 | §5.10 | coberta |
-| `outputs.*.verify.tolerance` | 3 | 03-manifest:189, 08-stress-tests:23, examples/01-bess-peak-shaving:24 | §5.10 | coberta |
-| `outputs.*.verify.within` | 3 | 03-manifest:189, 08-stress-tests:23, examples/01-bess-peak-shaving:24 | §5.10 | coberta |
-| `pipelines` | 5 | 03-manifest:298, 08-stress-tests:158, 08-stress-tests:253 (+2) | §6.3 | coberta (1.1) |
-| `pipelines.*` | 5 | 03-manifest:298, 08-stress-tests:158, 08-stress-tests:253 (+2) | §6.3 | coberta (1.1) |
-| `pipelines.*.deadline` | 2 | 08-stress-tests:158, examples/02-visual-inspection:35 | §6.3 | coberta (1.1) |
-| `pipelines.*.from` | 5 | 03-manifest:298, 08-stress-tests:158, 08-stress-tests:253 (+2) | §6.3 | coberta (1.1) |
-| `pipelines.*.steps` | 5 | 03-manifest:298, 08-stress-tests:158, 08-stress-tests:253 (+2) | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[]` | 5 | 03-manifest:298, 08-stress-tests:158, 08-stress-tests:253 (+2) | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[].edges_hz` | 2 | 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[].expr` | 1 | examples/03-predictive-maintenance:11 | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[].field` | 2 | 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[].fields` | 2 | 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[].hop` | 2 | 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[].iou` | 3 | 03-manifest:298, 08-stress-tests:158, examples/02-visual-inspection:35 | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[].keep_aspect` | 1 | 03-manifest:298 | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[].max` | 3 | 03-manifest:298, 08-stress-tests:158, examples/02-visual-inspection:35 | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[].mean` | 1 | 03-manifest:298 | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[].n` | 2 | 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[].name` | 5 | 03-manifest:298, 08-stress-tests:158, 08-stress-tests:253 (+2) | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[].op` | 5 | 03-manifest:298, 08-stress-tests:158, 08-stress-tests:253 (+2) | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[].roi` | 3 | 03-manifest:298, 08-stress-tests:158, examples/02-visual-inspection:35 | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[].score` | 3 | 03-manifest:298, 08-stress-tests:158, examples/02-visual-inspection:35 | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[].signals` | 1 | examples/03-predictive-maintenance:11 | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[].size` | 3 | 03-manifest:298, 08-stress-tests:158, examples/02-visual-inspection:35 | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[].std` | 1 | 03-manifest:298 | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[].window` | 4 | 08-stress-tests:158, 08-stress-tests:253, examples/02-visual-inspection:35 (+1) | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[].with` | 2 | 08-stress-tests:158, examples/02-visual-inspection:35 | §6.3 | coberta (1.1) |
-| `pipelines.*.to` | 5 | 03-manifest:298, 08-stress-tests:158, 08-stress-tests:253 (+2) | §6.3 | coberta (1.1) |
-| `project` | 13 | 03-manifest:53, 08-stress-tests:444, 09-architecture-under-stress:308 (+10) | §5.2 | coberta |
-| `project.joker` | 9 | 03-manifest:53, 23-development-bench:195, examples/01-bess-peak-shaving:24 (+6) | §5.2 | coberta |
-| `project.mode` | 10 | 03-manifest:53, 09-architecture-under-stress:308, 23-development-bench:195 (+7) | §5.2 | coberta |
-| `project.name` | 12 | 03-manifest:53, 08-stress-tests:444, 09-architecture-under-stress:308 (+9) | §5.2 | coberta |
-| `resources` | 7 | 03-manifest:53, 23-development-bench:255, examples/01-bess-peak-shaving:24 (+4) | §5.4 | coberta |
-| `resources.*` | 7 | 03-manifest:53, 23-development-bench:255, examples/01-bess-peak-shaving:24 (+4) | §5.4 | coberta |
-| `resources.*.accel` | 1 | examples/02-visual-inspection:35 | §5.4 | coberta (1.1) |
-| `resources.*.cpus` | 7 | 03-manifest:53, 23-development-bench:255, examples/01-bess-peak-shaving:24 (+4) | §5.4 | coberta |
-| `resources.*.memory` | 3 | 03-manifest:53, examples/01-bess-peak-shaving:24, examples/03-predictive-maintenance:11 | §5.4 | coberta |
-| `security` | 5 | 03-manifest:445, track/02-the-pi-as-a-node:165, track/06-switching-boards:31 (+2) | §5.19 | coberta |
-| `security.api` | 4 | 03-manifest:445, track/02-the-pi-as-a-node:165, track/06-switching-boards:31 (+1) | §5.19 | coberta |
-| `security.api.listen` | 4 | 03-manifest:445, track/02-the-pi-as-a-node:165, track/06-switching-boards:31 (+1) | §5.19 | coberta |
-| `security.roles` | 2 | 03-manifest:445, track/11-production-and-fleet:112 | §5.20 | coberta |
-| `security.roles.*` | 2 | 03-manifest:445, track/11-production-and-fleet:112 | §5.20 | coberta |
-| `security.trust` | 2 | 03-manifest:445, track/11-production-and-fleet:112 | §5.19 | coberta |
-| `security.trust.apps` | 2 | 03-manifest:445, track/11-production-and-fleet:112 | §5.19 | coberta |
-| `security.trust.config` | 2 | 03-manifest:445, track/11-production-and-fleet:112 | §5.19 | coberta; só restringe o bundle do nó (C9, resolvido: D7) |
-| `security.trust.secrets` | 1 | track/11-production-and-fleet:112 | §5.19 | coberta |
-| `signals` | 3 | track/04-esp32-modbus:226, track/05-touch-and-faults:35, track/05-touch-and-faults:63 | §5.9 | coberta |
-| `signals.*` | 3 | track/04-esp32-modbus:226, track/05-touch-and-faults:35, track/05-touch-and-faults:63 | §5.9 | coberta |
-| `signals.*.debounce` | 1 | track/04-esp32-modbus:226 | §5.9 | coberta |
-| `signals.*.stuck_detect` | 2 | track/05-touch-and-faults:35, track/05-touch-and-faults:63 | §5.9 | coberta |
-| `streams` | 3 | 03-manifest:298, 08-stress-tests:158, examples/02-visual-inspection:35 | §6.2 | coberta (1.1) |
-| `streams.*` | 3 | 03-manifest:298, 08-stress-tests:158, examples/02-visual-inspection:35 | §6.2 | coberta (1.1) |
-| `streams.*.mode` | 3 | 03-manifest:298, 08-stress-tests:158, examples/02-visual-inspection:35 | §6.2 | coberta (1.1) |
-| `streams.*.pool` | 3 | 03-manifest:298, 08-stress-tests:158, examples/02-visual-inspection:35 | §6.2 | coberta (1.1) |
-| `streams.*.record` | 1 | examples/02-visual-inspection:35 | §6.2 | coberta (1.1) |
-| `target` | 13 | 03-manifest:53, 08-stress-tests:23, 23-development-bench:255 (+10) | §5.3 | coberta |
-| `target.arch` | 1 | 03-manifest:53 | §5.3 | coberta |
-| `target.board` | 12 | 03-manifest:53, 08-stress-tests:23, 23-development-bench:255 (+9) | §5.3 | coberta |
-| `target.kernel` | 5 | 03-manifest:53, 08-stress-tests:23, examples/01-bess-peak-shaving:24 (+2) | §5.3 | coberta |
-| `telemetry` | 7 | 03-manifest:394, 08-stress-tests:253, examples/01-bess-peak-shaving:24 (+4) | §5.17 | coberta |
-| `telemetry.record` | 6 | 03-manifest:394, 08-stress-tests:253, examples/01-bess-peak-shaving:24 (+3) | §5.17.1 | coberta |
-| `telemetry.record.*` | 6 | 03-manifest:394, 08-stress-tests:253, examples/01-bess-peak-shaving:24 (+3) | §5.17.1 | coberta |
-| `telemetry.record.*.blocks` | 3 | 03-manifest:394, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §5.17.1 | coberta (1.1) |
-| `telemetry.record.*.every` | 6 | 03-manifest:394, 08-stress-tests:253, examples/01-bess-peak-shaving:24 (+3) | §5.17.1 | coberta |
-| `telemetry.record.*.keep` | 6 | 03-manifest:394, 08-stress-tests:253, examples/01-bess-peak-shaving:24 (+3) | §5.17.1 | coberta |
-| `telemetry.record.*.keep.*` | 6 | 03-manifest:394, 08-stress-tests:253, examples/01-bess-peak-shaving:24 (+3) | §5.17.1 | coberta |
-| `telemetry.record.*.on_change` | 2 | 03-manifest:394, examples/01-bess-peak-shaving:24 | §5.17.1 | coberta |
-| `telemetry.record.*.post` | 2 | 08-stress-tests:253, examples/03-predictive-maintenance:11 | §5.17.1 | coberta (1.1) |
-| `telemetry.record.*.pre` | 2 | 08-stress-tests:253, examples/03-predictive-maintenance:11 | §5.17.1 | coberta (1.1) |
-| `telemetry.record.*.trigger` | 2 | 08-stress-tests:253, examples/03-predictive-maintenance:11 | §5.17.1 | coberta (1.1) |
-| `telemetry.store` | 1 | 03-manifest:394 | §5.17.2 | coberta |
-| `telemetry.store.fsync` | 1 | 03-manifest:394 | §5.17.2 | coberta |
-| `telemetry.store.max_disk` | 1 | 03-manifest:394 | §5.17.2 | coberta |
-| `telemetry.uplink` | 3 | 03-manifest:394, examples/01-bess-peak-shaving:24, track/11-production-and-fleet:127 | §5.17.3 | coberta |
-| `telemetry.uplink.*` | 3 | 03-manifest:394, examples/01-bess-peak-shaving:24, track/11-production-and-fleet:127 | §5.17.3 | coberta |
-| `telemetry.uplink.*.broker` | 3 | 03-manifest:394, examples/01-bess-peak-shaving:24, track/11-production-and-fleet:127 | §5.17.3 | coberta |
-| `telemetry.uplink.*.budget` | 2 | 03-manifest:394, examples/01-bess-peak-shaving:24 | §5.17.3 | coberta |
-| `telemetry.uplink.*.classes` | 3 | 03-manifest:394, examples/01-bess-peak-shaving:24, track/11-production-and-fleet:127 | §5.17.3 | coberta |
-| `telemetry.uplink.*.classes.*` | 3 | 03-manifest:394, examples/01-bess-peak-shaving:24, track/11-production-and-fleet:127 | §5.17.3 | coberta |
-| `telemetry.uplink.*.group_id` | 2 | 03-manifest:394, examples/01-bess-peak-shaving:24 | §5.17.3 | coberta |
-| `telemetry.uplink.*.history` | 1 | 03-manifest:394 | §5.17.3 | coberta |
-| `telemetry.uplink.*.history.delivery` | 1 | 03-manifest:394 | §5.17.3 | coberta |
-| `telemetry.uplink.*.kind` | 3 | 03-manifest:394, examples/01-bess-peak-shaving:24, track/11-production-and-fleet:127 | §5.17.3 | coberta |
-| `telemetry.uplink.*.live` | 2 | 03-manifest:394, track/11-production-and-fleet:127 | §5.17.3 | coberta |
-| `telemetry.uplink.*.live.every` | 2 | 03-manifest:394, track/11-production-and-fleet:127 | §5.17.3 | coberta |
-| `telemetry.uplink.*.node_id` | 1 | 03-manifest:394 | §5.17.3 | coberta |
-| `telemetry.uplink.*.password` | 2 | 03-manifest:394, track/11-production-and-fleet:127 | §5.17.3 | coberta |
-| `telemetry.uplink.*.username` | 1 | track/11-production-and-fleet:127 | §5.17.3 | coberta |
-| `training` | 3 | 06-ml:197, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
-| `training.*` | 3 | 06-ml:197, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
-| `training.*.arch` | 3 | 06-ml:197, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
-| `training.*.budget` | 2 | 06-ml:197, examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
-| `training.*.budget.max_memory` | 2 | 06-ml:197, examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
-| `training.*.budget.max_time` | 2 | 06-ml:197, examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
-| `training.*.checkpoint` | 2 | 06-ml:197, examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
-| `training.*.data` | 3 | 06-ml:197, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
-| `training.*.data.signals` | 3 | 06-ml:197, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
-| `training.*.data.where` | 3 | 06-ml:197, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
-| `training.*.data.window` | 3 | 06-ml:197, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
-| `training.*.from` | 1 | 06-ml:197 | §6.4 | coberta (1.1) |
-| `training.*.hyper` | 1 | examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
-| `training.*.hyper.epochs` | 1 | examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1): chave livre de `hyper` |
-| `training.*.hyper.layers` | 1 | examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1): chave livre de `hyper` |
-| `training.*.hyper.lr` | 1 | examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1): chave livre de `hyper` |
-| `training.*.output` | 3 | 06-ml:197, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
-| `training.*.priority` | 3 | 06-ml:197, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
-| `training.*.resources` | 3 | 06-ml:197, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
-| `training.*.schedule` | 3 | 06-ml:197, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
-| `training.*.validate` | 2 | 06-ml:197, examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
-| `training.*.validate.holdout` | 2 | 06-ml:197, examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
-| `training.*.validate.max` | 2 | 06-ml:197, examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
-| `training.*.validate.metric` | 2 | 06-ml:197, examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
-| `training.*.validate.threshold` | 1 | examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
+| `alarms` | 10 | 02-signal-model:274, 03-manifest:372, 08-stress-tests:253 (+7) | §5.15 | covered |
+| `alarms.*` | 10 | 02-signal-model:274, 03-manifest:372, 08-stress-tests:253 (+7) | §5.15 | covered |
+| `alarms.*.actions` | 3 | 02-signal-model:274, 03-manifest:372, examples/01-bess-peak-shaving:24 | §5.15 | covered |
+| `alarms.*.actions.trip` | 3 | 02-signal-model:274, 03-manifest:372, examples/01-bess-peak-shaving:24 | §5.15 | covered |
+| `alarms.*.delay_off` | 3 | 02-signal-model:274, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §5.15 | covered |
+| `alarms.*.delay_on` | 9 | 02-signal-model:274, 08-stress-tests:253, 23-development-bench:195 (+6) | §5.15 | covered |
+| `alarms.*.message` | 6 | 02-signal-model:274, 23-development-bench:195, examples/02-visual-inspection:35 (+3) | §5.15 | covered |
+| `alarms.*.severity` | 10 | 02-signal-model:274, 03-manifest:372, 08-stress-tests:253 (+7) | §5.15 | covered |
+| `alarms.*.suppress_when` | 2 | 02-signal-model:274, examples/03-predictive-maintenance:11 | §5.15 | covered |
+| `alarms.*.when` | 10 | 02-signal-model:274, 03-manifest:372, 08-stress-tests:253 (+7) | §5.15 | covered |
+| `apps` | 28 | 03-manifest:251, 06-ml:171, 08-stress-tests:23 (+25) | §5.12 | covered |
+| `apps.*` | 28 | 03-manifest:251, 06-ml:171, 08-stress-tests:23 (+25) | §5.12 | covered |
+| `apps.*.bind` | 25 | 03-manifest:251, 08-stress-tests:23, 08-stress-tests:158 (+22) | §5.12.1 | covered |
+| `apps.*.bind.*` | 25 | 03-manifest:251, 08-stress-tests:23, 08-stress-tests:158 (+22) | §5.12.1 | covered |
+| `apps.*.bind.*.as` | 3 | 03-manifest:251, 08-stress-tests:23, examples/01-bess-peak-shaving:103 | §5.12.1 | covered |
+| `apps.*.bind.*.each` | 1 | 14-classes-and-instances:300 | §5.12.1 | covered |
+| `apps.*.bind.*.map` | 1 | 14-classes-and-instances:300 | §5.12.1 | covered |
+| `apps.*.bind.*.map.*` | 1 | 14-classes-and-instances:300 | §5.12.1 | covered |
+| `apps.*.bind.*.optional` | 1 | 08-stress-tests:444 | §5.12.1 | covered |
+| `apps.*.bind.*.signal` | 4 | 03-manifest:251, 08-stress-tests:23, 08-stress-tests:444 (+1) | §5.12.1 | covered |
+| `apps.*.cycles` | 15 | 03-manifest:251, 08-stress-tests:23, 08-stress-tests:341 (+12) | §5.12 | covered |
+| `apps.*.cycles.*` | 15 | 03-manifest:251, 08-stress-tests:23, 08-stress-tests:341 (+12) | §5.12 | covered |
+| `apps.*.digest` | 1 | 03-manifest:251 | §5.12 | covered |
+| `apps.*.fallback` | 2 | 06-ml:171, 08-stress-tests:518 | §6.5 | covered (1.1) |
+| `apps.*.fallback.controller` | 2 | 06-ml:171, 08-stress-tests:518 | §6.5 | covered (1.1) |
+| `apps.*.fallback.when` | 2 | 06-ml:171, 08-stress-tests:518 | §6.5 | covered (1.1) |
+| `apps.*.kind` | 1 | 08-stress-tests:341 | §5.12 | covered |
+| `apps.*.net` | 1 | 03-manifest:251 | §5.12 | covered |
+| `apps.*.net.allow` | 1 | 03-manifest:251 | §5.12 | covered |
+| `apps.*.params` | 15 | 03-manifest:251, 08-stress-tests:23, 08-stress-tests:158 (+12) | §5.12.2 | covered |
+| `apps.*.params.*` | 15 | 03-manifest:251, 08-stress-tests:23, 08-stress-tests:158 (+12) | §5.12.2 | covered |
+| `apps.*.path` | 17 | 08-stress-tests:158, 08-stress-tests:341, 08-stress-tests:518 (+14) | §5.12 | covered |
+| `apps.*.requires_clock` | 2 | 03-manifest:251, 08-stress-tests:444 | §5.12 | covered |
+| `apps.*.resources` | 1 | 03-manifest:251 | §5.12 | covered |
+| `apps.*.resources.async` | 1 | 03-manifest:251 | §5.12 | covered |
+| `apps.*.resources.cycle` | 1 | 03-manifest:251 | §5.12 | covered |
+| `apps.*.resources.memory` | 1 | 03-manifest:251 | §5.12 | covered |
+| `apps.*.secrets` | 1 | 03-manifest:251 | §5.12 | covered |
+| `apps.*.secrets.*` | 1 | 03-manifest:251 | §5.12 | covered |
+| `apps.*.shadow` | 2 | 03-manifest:251, 08-stress-tests:518 | §5.12.3 | covered |
+| `apps.*.shadow.of` | 2 | 03-manifest:251, 08-stress-tests:518 | §5.12.3 | covered |
+| `apps.*.shadow.promote` | 1 | 08-stress-tests:518 | §5.12.3 | covered |
+| `apps.*.shadow.promote.outputs` | 1 | 08-stress-tests:518 | §5.12.3 | covered |
+| `apps.*.shadow.until` | 2 | 03-manifest:251, 08-stress-tests:518 | §5.12.3 | covered |
+| `apps.*.shadow.until.duration` | 2 | 03-manifest:251, 08-stress-tests:518 | §5.12.3 | covered |
+| `apps.*.shadow.until.max_divergence` | 1 | 03-manifest:251 | §5.12.3 | covered |
+| `apps.*.source` | 5 | 03-manifest:251, 08-stress-tests:23, 08-stress-tests:444 (+2) | §5.12 | covered (C21 applied: 08 uses `path = "apps/…"`) |
+| `apps.*.writer` | 12 | 03-manifest:251, 08-stress-tests:23, 08-stress-tests:158 (+9) | §5.12 | covered |
+| `apps.*.writer.kind` | 1 | 08-stress-tests:518 | §5.12 | covered (`proposal` is 1.1) |
+| `apps.*.writer.lease` | 11 | 03-manifest:251, 08-stress-tests:23, 08-stress-tests:158 (+8) | §5.12 | covered |
+| `apps.*.writer.level` | 10 | 03-manifest:251, 08-stress-tests:23, 08-stress-tests:158 (+7) | §5.12 | covered |
+| `apps.*.writer.priority` | 9 | 03-manifest:251, 08-stress-tests:23, 08-stress-tests:158 (+6) | §5.12 | covered |
+| `atomic` | 3 | 02-signal-model:162, 03-manifest:372, 08-stress-tests:341 | §5.16 | covered |
+| `atomic.*` | 3 | 02-signal-model:162, 03-manifest:372, 08-stress-tests:341 | §5.16 | covered |
+| `atomic.*.commit` | 1 | 02-signal-model:162 | §5.16 | covered |
+| `atomic.*.commit.signal` | 1 | 02-signal-model:162 | §5.16 | covered |
+| `atomic.*.commit.value` | 1 | 02-signal-model:162 | §5.16 | covered |
+| `atomic.*.on_rate` | 2 | 03-manifest:372, 08-stress-tests:341 | §5.16 | covered |
+| `atomic.*.order` | 2 | 02-signal-model:162, 03-manifest:372 | §5.16 | covered |
+| `atomic.*.outputs` | 3 | 02-signal-model:162, 03-manifest:372, 08-stress-tests:341 | §5.16 | covered |
+| `bridges` | 2 | 03-manifest:423, 08-stress-tests:341 | §5.18 | covered |
+| `bridges.*` | 2 | 03-manifest:423, 08-stress-tests:341 | §5.18 | covered |
+| `bridges.*.expose` | 2 | 03-manifest:423, 08-stress-tests:341 | §5.18 | covered |
+| `bridges.*.expose.*` | 2 | 03-manifest:423, 08-stress-tests:341 | §5.18 | covered |
+| `bridges.*.kind` | 2 | 03-manifest:423, 08-stress-tests:341 | §5.18 | covered |
+| `bridges.*.listen` | 1 | 03-manifest:423 | §5.18 | covered |
+| `bridges.*.security` | 1 | 03-manifest:423 | §5.18 | covered |
+| `bridges.*.security.mode` | 1 | 03-manifest:423 | §5.18 | covered |
+| `bridges.*.security.policy` | 1 | 03-manifest:423 | §5.18 | covered |
+| `bridges.*.security.trust` | 1 | 03-manifest:423 | §5.18 | covered |
+| `bridges.*.subscribe` | 2 | 03-manifest:423, 08-stress-tests:341 | §5.18 | covered |
+| `bridges.*.subscribe.*` | 2 | 03-manifest:423, 08-stress-tests:341 | §5.18 | covered |
+| `bridges.*.subscribe.*.fields` | 2 | 03-manifest:423, 08-stress-tests:341 | §5.18 | covered |
+| `bridges.*.subscribe.*.max_age` | 2 | 03-manifest:423, 08-stress-tests:341 | §5.18 | covered |
+| `bridges.*.subscribe.*.to` | 2 | 03-manifest:423, 08-stress-tests:341 | §5.18 | covered |
+| `bridges.*.subscribe.*.type` | 2 | 03-manifest:423, 08-stress-tests:341 | §5.18 | covered |
+| `bridges.*.writer` | 1 | 03-manifest:423 | §5.18 | covered |
+| `bridges.*.writer.lease` | 1 | 03-manifest:423 | §5.18 | covered |
+| `bridges.*.writer.level` | 1 | 03-manifest:423 | §5.18 | covered |
+| `bridges.*.writer.priority` | 1 | 03-manifest:423 | §5.18 | covered |
+| `bridges.*.writer.writable` | 1 | 03-manifest:423 | §5.18 | covered |
+| `buses` | 11 | 03-manifest:83, 08-stress-tests:253, 08-stress-tests:341 (+8) | §5.6 | covered |
+| `buses.*` | 11 | 03-manifest:83, 08-stress-tests:253, 08-stress-tests:341 (+8) | §5.6 | covered |
+| `buses.*.baud` | 8 | 03-manifest:83, 23-development-bench:255, 23-development-bench:304 (+5) | §5.6 | covered |
+| `buses.*.bitrate` | 1 | 03-manifest:83 | §5.6 | covered |
+| `buses.*.cycle` | 2 | 03-manifest:83, 08-stress-tests:341 | §5.6 | covered |
+| `buses.*.dc` | 1 | 08-stress-tests:341 | §5.6 | covered |
+| `buses.*.dev` | 3 | 08-stress-tests:253, examples/00-first-project:194, examples/03-predictive-maintenance:11 | §5.6 | covered |
+| `buses.*.dtr` | 2 | track/04-esp32-modbus:375, track/06-switching-boards:31 | §5.6 | covered |
+| `buses.*.iface` | 2 | 03-manifest:83, 08-stress-tests:341 | §5.6 | covered |
+| `buses.*.kind` | 9 | 03-manifest:83, 08-stress-tests:253, 08-stress-tests:341 (+6) | §5.6 | covered |
+| `buses.*.parity` | 2 | 03-manifest:83, examples/00-first-project:194 | §5.6 | covered |
+| `buses.*.port` | 6 | 03-manifest:83, 23-development-bench:255, examples/00-first-project:194 (+3) | §5.6 | covered |
+| `buses.*.rts` | 2 | track/04-esp32-modbus:375, track/06-switching-boards:31 | §5.6 | covered |
+| `buses.*.stop` | 1 | 03-manifest:83 | §5.6 | covered |
+| `buses.*.turnaround` | 1 | 03-manifest:83 | §5.6 | covered |
+| `calc` | 6 | 03-manifest:372, 08-stress-tests:23, 23-development-bench:195 (+3) | §5.14 | covered |
+| `calc.*` | 6 | 03-manifest:372, 08-stress-tests:23, 23-development-bench:195 (+3) | §5.14 | covered |
+| `clock` | 2 | 03-manifest:53, track/09-joker-micro:48 | §5.5 | covered |
+| `clock.max_holdover` | 1 | 03-manifest:53 | §5.5 | covered |
+| `clock.servers` | 1 | 03-manifest:53 | §5.5 | covered |
+| `clock.sync` | 2 | 03-manifest:53, track/09-joker-micro:48 | §5.5 | covered |
+| `cycles` | 9 | 03-manifest:229, 08-stress-tests:23, 08-stress-tests:341 (+6) | §5.11 | covered |
+| `cycles.*` | 9 | 03-manifest:229, 08-stress-tests:23, 08-stress-tests:341 (+6) | §5.11 | covered |
+| `cycles.*.order` | 2 | 03-manifest:229, track/08-your-own-class:222 | §5.11 | covered |
+| `cycles.*.overrun` | 2 | 03-manifest:229, 08-stress-tests:341 | §5.11 | covered |
+| `cycles.*.period` | 9 | 03-manifest:229, 08-stress-tests:23, 08-stress-tests:341 (+6) | §5.11 | covered |
+| `cycles.*.resources` | 4 | 03-manifest:229, 08-stress-tests:23, 08-stress-tests:341 (+1) | §5.11 | covered |
+| `cycles.*.trace` | 2 | 03-manifest:229, examples/01-bess-peak-shaving:24 | §5.11 | covered |
+| `cycles.*.trace.continuous` | 2 | 03-manifest:229, examples/01-bess-peak-shaving:24 | §5.11 | covered |
+| `cycles.*.trip_after` | 2 | 03-manifest:229, 08-stress-tests:341 | §5.11 | covered |
+| `devices` | 32 | 02-signal-model:179, 03-manifest:113, 03-manifest:159 (+29) | §5.8 | covered |
+| `devices.*` | 32 | 02-signal-model:179, 03-manifest:113, 03-manifest:159 (+29) | §5.8 | covered |
+| `devices.*.actions` | 2 | 02-signal-model:179, 03-manifest:174 | §5.8.2 | covered |
+| `devices.*.actions.*` | 2 | 02-signal-model:179, 03-manifest:174 | §5.8.2 | covered |
+| `devices.*.actions.*.permit` | 2 | 02-signal-model:179, 03-manifest:174 | §5.8.2 | covered |
+| `devices.*.actions.*.role` | 2 | 02-signal-model:179, 03-manifest:174 | §5.8.2 | covered |
+| `devices.*.actions.*.timeout` | 2 | 02-signal-model:179, 03-manifest:174 | §5.8.2 | covered |
+| `devices.*.address` | 8 | 03-manifest:113, 08-stress-tests:23, 08-stress-tests:341 (+5) | appendix A | covered |
+| `devices.*.align` | 1 | examples/01-bess-peak-shaving:103 | §5.8 | covered |
+| `devices.*.auth` | 2 | 23-development-bench:304, track/09-joker-micro:199 | appendix A | covered |
+| `devices.*.bus` | 11 | 03-manifest:113, 08-stress-tests:253, 08-stress-tests:341 (+8) | §5.8 | covered |
+| `devices.*.bus.unset` | 1 | track/10-logic-on-the-mcu:236 | §7.2 | covered: overlay directive |
+| `devices.*.chip` | 3 | 08-stress-tests:158, 08-stress-tests:444, examples/02-visual-inspection:35 | appendix A | covered |
+| `devices.*.config` | 1 | 03-manifest:113 | appendix A | covered |
+| `devices.*.device` | 3 | 03-manifest:113, 08-stress-tests:158, examples/02-visual-inspection:35 | appendix A | covered (1.1) |
+| `devices.*.discover` | 3 | 03-manifest:113, 08-stress-tests:23, examples/01-bess-peak-shaving:103 | §5.8 | covered |
+| `devices.*.drdy` | 2 | 08-stress-tests:253, examples/03-predictive-maintenance:11 | appendix A | covered (1.1) |
+| `devices.*.driver` | 27 | 03-manifest:113, 08-stress-tests:23, 08-stress-tests:158 (+24) | §5.8 | covered |
+| `devices.*.eds` | 1 | 03-manifest:113 | appendix A | covered |
+| `devices.*.fallback` | 3 | 03-manifest:113, 08-stress-tests:23, examples/01-bess-peak-shaving:103 | §5.8 | covered |
+| `devices.*.fallback.configure` | 3 | 03-manifest:113, 08-stress-tests:23, examples/01-bess-peak-shaving:103 | §5.8 | covered |
+| `devices.*.fallback.keepalive` | 1 | 03-manifest:113 | §5.8 | covered |
+| `devices.*.format` | 3 | 03-manifest:113, 08-stress-tests:158, examples/02-visual-inspection:35 | appendix A | covered (1.1) |
+| `devices.*.format.fps` | 3 | 03-manifest:113, 08-stress-tests:158, examples/02-visual-inspection:35 | appendix A | covered (1.1) |
+| `devices.*.format.height` | 3 | 03-manifest:113, 08-stress-tests:158, examples/02-visual-inspection:35 | appendix A | covered (1.1) |
+| `devices.*.format.pixfmt` | 3 | 03-manifest:113, 08-stress-tests:158, examples/02-visual-inspection:35 | appendix A | covered (1.1) |
+| `devices.*.format.width` | 3 | 03-manifest:113, 08-stress-tests:158, examples/02-visual-inspection:35 | appendix A | covered (1.1) |
+| `devices.*.micro` | 1 | track/09-joker-micro:199 | appendix A | covered |
+| `devices.*.model` | 4 | 03-manifest:113, examples/00-first-project:41, track/01-hello-bench:97 (+1) | appendix A | covered |
+| `devices.*.network` | 1 | 08-stress-tests:518 | appendix A | covered |
+| `devices.*.node` | 1 | track/09-joker-micro:199 | appendix A | covered |
+| `devices.*.node_id` | 1 | 03-manifest:113 | appendix A | covered |
+| `devices.*.poll` | 4 | 03-manifest:113, 08-stress-tests:23, 23-development-bench:238 (+1) | §5.8 | covered |
+| `devices.*.position` | 1 | 08-stress-tests:341 | appendix A | covered |
+| `devices.*.priority` | 1 | 08-stress-tests:518 | appendix A | covered |
+| `devices.*.profile` | 16 | 03-manifest:113, 08-stress-tests:23, 08-stress-tests:253 (+13) | §5.8 | covered |
+| `devices.*.profile.unset` | 2 | 23-development-bench:304, track/09-joker-micro:199 | §7.2 | covered: overlay directive |
+| `devices.*.rate` | 2 | 08-stress-tests:253, examples/03-predictive-maintenance:11 | appendix A | covered (1.1) |
+| `devices.*.refresh` | 3 | 23-development-bench:304, track/09-joker-micro:199, track/10-logic-on-the-mcu:236 | appendix A | covered |
+| `devices.*.report` | 3 | 23-development-bench:304, track/09-joker-micro:199, track/10-logic-on-the-mcu:236 | appendix A | covered |
+| `devices.*.retries` | 1 | 03-manifest:113 | §5.8 | covered |
+| `devices.*.signals` | 16 | 03-manifest:159, 08-stress-tests:23, 08-stress-tests:158 (+13) | §5.8.1 | covered |
+| `devices.*.signals.*` | 16 | 03-manifest:159, 08-stress-tests:23, 08-stress-tests:158 (+13) | §5.8.1 | covered |
+| `devices.*.signals.*.active_low` | 1 | track/09-joker-micro:48 | §5.8.1, appendix A | covered |
+| `devices.*.signals.*.alias` | 11 | 03-manifest:159, 08-stress-tests:23, 08-stress-tests:158 (+8) | §5.8.1 | covered |
+| `devices.*.signals.*.bias` | 1 | track/09-joker-micro:48 | §5.8.1, appendix A | covered |
+| `devices.*.signals.*.block` | 2 | 08-stress-tests:253, examples/03-predictive-maintenance:11 | §5.8.1 | covered (1.1) |
+| `devices.*.signals.*.deadband` | 1 | track/09-joker-micro:48 | §5.8.1 | covered |
+| `devices.*.signals.*.debounce` | 1 | track/09-joker-micro:48 | §5.8.1 | covered |
+| `devices.*.signals.*.direction` | 9 | 08-stress-tests:158, 08-stress-tests:444, 09-architecture-under-stress:308 (+6) | §5.8.1 | covered |
+| `devices.*.signals.*.edges` | 2 | 08-stress-tests:158, examples/02-visual-inspection:35 | §5.8.1, appendix A | covered |
+| `devices.*.signals.*.kind` | 2 | 08-stress-tests:253, examples/03-predictive-maintenance:11 | §5.8.1 | covered (1.1) |
+| `devices.*.signals.*.led` | 4 | 23-development-bench:238, track/02-the-pi-as-a-node:165, track/03-temperature-sensor:300 (+1) | §5.8.1, appendix A | covered |
+| `devices.*.signals.*.limits` | 1 | 03-manifest:159 | §5.8.1 | covered |
+| `devices.*.signals.*.line` | 5 | 08-stress-tests:158, 08-stress-tests:444, 09-architecture-under-stress:308 (+2) | §5.8.1, appendix A | covered |
+| `devices.*.signals.*.max_age` | 1 | 03-manifest:159 | §5.8.1 | covered |
+| `devices.*.signals.*.record` | 1 | 03-manifest:159 | §5.8.1 | covered |
+| `devices.*.signals.*.record.every` | 1 | 03-manifest:159 | §5.8.1 | covered |
+| `devices.*.signals.*.rssi` | 1 | track/09-joker-micro:48 | §5.8.1, appendix A | covered |
+| `devices.*.signals.*.scale` | 2 | 03-manifest:159, examples/00-first-project:194 | §5.8.1 | covered |
+| `devices.*.signals.*.scale.from` | 2 | 03-manifest:159, examples/00-first-project:194 | §5.8.1 | covered |
+| `devices.*.signals.*.scale.to` | 2 | 03-manifest:159, examples/00-first-project:194 | §5.8.1 | covered |
+| `devices.*.signals.*.stuck_detect` | 1 | 03-manifest:159 | §5.8.1 | covered |
+| `devices.*.signals.*.thermal` | 3 | 23-development-bench:238, track/03-temperature-sensor:300, track/06-switching-boards:19 | §5.8.1, appendix A | covered |
+| `devices.*.signals.*.timestamp` | 2 | 08-stress-tests:158, examples/02-visual-inspection:35 | §5.8.1, appendix A | covered |
+| `devices.*.signals.*.touch` | 1 | track/09-joker-micro:48 | §5.8.1, appendix A | covered |
+| `devices.*.signals.*.unit` | 3 | 08-stress-tests:253, examples/03-predictive-maintenance:11, track/09-joker-micro:48 | §5.8.1 | covered |
+| `devices.*.signals.*.uptime` | 1 | track/09-joker-micro:48 | §5.8.1, appendix A | covered |
+| `devices.*.timeout` | 1 | 03-manifest:113 | §5.8 | covered |
+| `devices.*.trigger` | 3 | 03-manifest:113, 08-stress-tests:158, examples/02-visual-inspection:35 | appendix A | covered (1.1) |
+| `devices.*.trigger.input` | 3 | 03-manifest:113, 08-stress-tests:158, examples/02-visual-inspection:35 | appendix A | covered (1.1) |
+| `devices.*.trigger.kind` | 3 | 03-manifest:113, 08-stress-tests:158, examples/02-visual-inspection:35 | appendix A | covered (1.1) |
+| `devices.*.unit_id` | 12 | 03-manifest:113, 08-stress-tests:444, 14-classes-and-instances:168 (+9) | appendix A | covered |
+| `devices.*.unit_id.unset` | 2 | 23-development-bench:304, track/09-joker-micro:199 | §7.2 | covered: overlay directive |
+| `drivers` | 2 | 08-stress-tests:341, 08-stress-tests:518 | §5.7 | covered |
+| `drivers.*` | 2 | 08-stress-tests:341, 08-stress-tests:518 | §5.7 | covered |
+| `drivers.*.exec` | 2 | 08-stress-tests:341, 08-stress-tests:518 | §5.7 | covered |
+| `drivers.*.tier` | 2 | 08-stress-tests:341, 08-stress-tests:518 | §5.7 | covered |
+| `extends` | 12 | 03-manifest:33, 23-development-bench:238, 23-development-bench:255 (+9) | §5.1 | covered |
+| `instances` | 7 | 03-manifest:352, 14-classes-and-instances:181, 14-classes-and-instances:425 (+4) | §5.13 | covered |
+| `instances.*` | 7 | 03-manifest:352, 14-classes-and-instances:181, 14-classes-and-instances:425 (+4) | §5.13 | covered |
+| `instances.*.actions` | 1 | 17-jkc:228 | §5.13 | covered |
+| `instances.*.actions.*` | 1 | 17-jkc:228 | §5.13 | covered |
+| `instances.*.actions.*.role` | 1 | 17-jkc:228 | §5.13 | covered |
+| `instances.*.capabilities` | 3 | 03-manifest:352, 14-classes-and-instances:181, 17-jkc:228 | §5.13 | covered |
+| `instances.*.class` | 7 | 03-manifest:352, 14-classes-and-instances:181, 14-classes-and-instances:425 (+4) | §5.13 | covered |
+| `instances.*.implemented_by` | 5 | 03-manifest:352, 14-classes-and-instances:425, 14-classes-and-instances:533 (+2) | §5.13 | covered |
+| `instances.*.implemented_by.app` | 2 | 14-classes-and-instances:533, 17-jkc:228 | §5.13 | covered |
+| `instances.*.implemented_by.bind` | 2 | 14-classes-and-instances:533, 17-jkc:228 | §5.13 | covered |
+| `instances.*.implemented_by.bind.*` | 2 | 14-classes-and-instances:533, 17-jkc:228 | §5.13 | covered |
+| `instances.*.map` | 5 | 03-manifest:352, 14-classes-and-instances:181, 14-classes-and-instances:533 (+2) | §5.13 | covered |
+| `instances.*.map.*` | 5 | 03-manifest:352, 14-classes-and-instances:181, 14-classes-and-instances:533 (+2) | §5.13 | covered |
+| `link` | 2 | track/09-joker-micro:48, track/10-logic-on-the-mcu:222 | §5.22 | covered (Joker Micro only) |
+| `link.address` | 1 | track/10-logic-on-the-mcu:222 | §5.22 | covered (Joker Micro only) |
+| `link.auth` | 2 | track/09-joker-micro:48, track/10-logic-on-the-mcu:222 | §5.22 | covered (Joker Micro only) |
+| `link.bus` | 1 | track/09-joker-micro:48 | §5.22 | covered (Joker Micro only) |
+| `link.peer` | 2 | track/09-joker-micro:48, track/10-logic-on-the-mcu:222 | §5.22 | covered (Joker Micro only) |
+| `models` | 7 | 03-manifest:298, 06-ml:220, 08-stress-tests:23 (+4) | §6.1 | covered (1.1) |
+| `models.*` | 7 | 03-manifest:298, 06-ml:220, 08-stress-tests:23 (+4) | §6.1 | covered (1.1) |
+| `models.*.backend` | 6 | 03-manifest:298, 08-stress-tests:23, 08-stress-tests:158 (+3) | §6.1 | covered (1.1) |
+| `models.*.deadline` | 6 | 03-manifest:298, 08-stress-tests:23, 08-stress-tests:158 (+3) | §6.1 | covered (1.1) |
+| `models.*.isolation` | 3 | 03-manifest:298, 08-stress-tests:158, examples/02-visual-inspection:35 | §6.1 | covered (1.1) |
+| `models.*.resources` | 6 | 03-manifest:298, 08-stress-tests:23, 08-stress-tests:158 (+3) | §6.1 | covered (1.1) |
+| `models.*.shadow` | 2 | 06-ml:220, examples/03-predictive-maintenance:11 | §6.1 | covered (1.1) |
+| `models.*.shadow.auto` | 1 | examples/03-predictive-maintenance:11 | §6.1 | covered (1.1) |
+| `models.*.shadow.candidate` | 1 | 06-ml:220 | §6.1 | covered (1.1) |
+| `models.*.shadow.kpi` | 1 | 06-ml:220 | §6.1 | covered (1.1) |
+| `models.*.shadow.on_regress` | 1 | 06-ml:220 | §6.1 | covered (1.1) |
+| `models.*.shadow.promote_if` | 2 | 06-ml:220, examples/03-predictive-maintenance:11 | §6.1 | covered (1.1) |
+| `models.*.shadow.until` | 2 | 06-ml:220, examples/03-predictive-maintenance:11 | §6.1 | covered (1.1) |
+| `models.*.shadow.until.duration` | 2 | 06-ml:220, examples/03-predictive-maintenance:11 | §6.1 | covered (1.1) |
+| `models.*.shadow.until.frames` | 1 | 06-ml:220 | §6.1 | covered (1.1) |
+| `models.*.source` | 6 | 03-manifest:298, 08-stress-tests:23, 08-stress-tests:158 (+3) | §6.1 | covered (1.1) |
+| `models.*.warmup` | 2 | 03-manifest:298, examples/02-visual-inspection:35 | §6.1 | covered (1.1) |
+| `net` | 1 | track/10-logic-on-the-mcu:222 | §5.22 | covered (Joker Micro only) |
+| `net.wifi` | 1 | track/10-logic-on-the-mcu:222 | §5.22 | covered (Joker Micro only) |
+| `net.wifi.country` | 1 | track/10-logic-on-the-mcu:222 | §5.22 | covered (Joker Micro only) |
+| `net.wifi.password` | 1 | track/10-logic-on-the-mcu:222 | §5.22 | covered (Joker Micro only) |
+| `net.wifi.ssid` | 1 | track/10-logic-on-the-mcu:222 | §5.22 | covered (Joker Micro only) |
+| `outputs` | 20 | 03-manifest:189, 08-stress-tests:23, 08-stress-tests:158 (+17) | §5.10 | covered |
+| `outputs.*` | 20 | 03-manifest:189, 08-stress-tests:23, 08-stress-tests:158 (+17) | §5.10 | covered |
+| `outputs.*.accept_missing_fallback` | 2 | examples/02-visual-inspection:35, track/11-production-and-fleet:40 | §5.10 | covered |
+| `outputs.*.deadband` | 1 | 03-manifest:189 | §5.10 | covered |
+| `outputs.*.grace` | 2 | 03-manifest:189, examples/01-bess-peak-shaving:24 | §5.10 | covered |
+| `outputs.*.group` | 2 | 03-manifest:189, track/09-joker-micro:48 | §5.10 | covered |
+| `outputs.*.interlock` | 7 | 03-manifest:189, 08-stress-tests:23, 08-stress-tests:341 (+4) | §5.10 | covered |
+| `outputs.*.max_actuations` | 3 | 03-manifest:189, 14-classes-and-instances:425, examples/02-visual-inspection:35 | §5.10 | covered |
+| `outputs.*.max_lease` | 5 | 03-manifest:189, 08-stress-tests:23, 08-stress-tests:444 (+2) | §5.10 | covered |
+| `outputs.*.max_manual` | 2 | 03-manifest:189, track/11-production-and-fleet:40 | §5.10 | covered |
+| `outputs.*.min_interval` | 1 | 03-manifest:189 | §5.10 | covered |
+| `outputs.*.on_interlock` | 1 | 03-manifest:189 | §5.10 | covered |
+| `outputs.*.on_late` | 3 | 03-manifest:189, 08-stress-tests:158, examples/02-visual-inspection:35 | §5.10 | covered (1.1) |
+| `outputs.*.on_range` | 1 | 03-manifest:189 | §5.10 | covered |
+| `outputs.*.pulse` | 3 | 03-manifest:189, 08-stress-tests:158, examples/02-visual-inspection:35 | §5.10 | covered |
+| `outputs.*.range` | 7 | 03-manifest:189, 08-stress-tests:23, 08-stress-tests:341 (+4) | §5.10 | covered |
+| `outputs.*.rate` | 6 | 03-manifest:189, 08-stress-tests:23, 08-stress-tests:341 (+3) | §5.10 | covered |
+| `outputs.*.remote_levels` | 1 | track/09-joker-micro:48 | §5.22 | covered (Joker Micro only) |
+| `outputs.*.requires_good` | 4 | 03-manifest:189, 08-stress-tests:23, examples/00-first-project:41 (+1) | §5.10 | covered |
+| `outputs.*.reset_when` | 1 | 03-manifest:189 | §5.10 | covered |
+| `outputs.*.safe` | 17 | 03-manifest:189, 08-stress-tests:23, 08-stress-tests:158 (+14) | §5.10 | covered |
+| `outputs.*.safe_ramp` | 2 | 03-manifest:189, 08-stress-tests:341 | §5.10 | covered |
+| `outputs.*.safer` | 3 | 03-manifest:189, 08-stress-tests:23, examples/01-bess-peak-shaving:24 | §5.10 | covered |
+| `outputs.*.schedule_depth` | 3 | 03-manifest:189, 08-stress-tests:158, examples/02-visual-inspection:35 | §5.10 | covered (1.1) |
+| `outputs.*.timed` | 3 | 03-manifest:189, 08-stress-tests:158, examples/02-visual-inspection:35 | §5.10 | covered (1.1) |
+| `outputs.*.unset` | 2 | 23-development-bench:304, track/09-joker-micro:246 | §7.2 | covered: overlay directive |
+| `outputs.*.verify` | 3 | 03-manifest:189, 08-stress-tests:23, examples/01-bess-peak-shaving:24 | §5.10 | covered |
+| `outputs.*.verify.readback` | 3 | 03-manifest:189, 08-stress-tests:23, examples/01-bess-peak-shaving:24 | §5.10 | covered |
+| `outputs.*.verify.tolerance` | 3 | 03-manifest:189, 08-stress-tests:23, examples/01-bess-peak-shaving:24 | §5.10 | covered |
+| `outputs.*.verify.within` | 3 | 03-manifest:189, 08-stress-tests:23, examples/01-bess-peak-shaving:24 | §5.10 | covered |
+| `pipelines` | 5 | 03-manifest:298, 08-stress-tests:158, 08-stress-tests:253 (+2) | §6.3 | covered (1.1) |
+| `pipelines.*` | 5 | 03-manifest:298, 08-stress-tests:158, 08-stress-tests:253 (+2) | §6.3 | covered (1.1) |
+| `pipelines.*.deadline` | 2 | 08-stress-tests:158, examples/02-visual-inspection:35 | §6.3 | covered (1.1) |
+| `pipelines.*.from` | 5 | 03-manifest:298, 08-stress-tests:158, 08-stress-tests:253 (+2) | §6.3 | covered (1.1) |
+| `pipelines.*.steps` | 5 | 03-manifest:298, 08-stress-tests:158, 08-stress-tests:253 (+2) | §6.3 | covered (1.1) |
+| `pipelines.*.steps.[]` | 5 | 03-manifest:298, 08-stress-tests:158, 08-stress-tests:253 (+2) | §6.3 | covered (1.1) |
+| `pipelines.*.steps.[].edges_hz` | 2 | 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.3 | covered (1.1) |
+| `pipelines.*.steps.[].expr` | 1 | examples/03-predictive-maintenance:11 | §6.3 | covered (1.1) |
+| `pipelines.*.steps.[].field` | 2 | 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.3 | covered (1.1) |
+| `pipelines.*.steps.[].fields` | 2 | 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.3 | covered (1.1) |
+| `pipelines.*.steps.[].hop` | 2 | 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.3 | covered (1.1) |
+| `pipelines.*.steps.[].iou` | 3 | 03-manifest:298, 08-stress-tests:158, examples/02-visual-inspection:35 | §6.3 | covered (1.1) |
+| `pipelines.*.steps.[].keep_aspect` | 1 | 03-manifest:298 | §6.3 | covered (1.1) |
+| `pipelines.*.steps.[].max` | 3 | 03-manifest:298, 08-stress-tests:158, examples/02-visual-inspection:35 | §6.3 | covered (1.1) |
+| `pipelines.*.steps.[].mean` | 1 | 03-manifest:298 | §6.3 | covered (1.1) |
+| `pipelines.*.steps.[].n` | 2 | 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.3 | covered (1.1) |
+| `pipelines.*.steps.[].name` | 5 | 03-manifest:298, 08-stress-tests:158, 08-stress-tests:253 (+2) | §6.3 | covered (1.1) |
+| `pipelines.*.steps.[].op` | 5 | 03-manifest:298, 08-stress-tests:158, 08-stress-tests:253 (+2) | §6.3 | covered (1.1) |
+| `pipelines.*.steps.[].roi` | 3 | 03-manifest:298, 08-stress-tests:158, examples/02-visual-inspection:35 | §6.3 | covered (1.1) |
+| `pipelines.*.steps.[].score` | 3 | 03-manifest:298, 08-stress-tests:158, examples/02-visual-inspection:35 | §6.3 | covered (1.1) |
+| `pipelines.*.steps.[].signals` | 1 | examples/03-predictive-maintenance:11 | §6.3 | covered (1.1) |
+| `pipelines.*.steps.[].size` | 3 | 03-manifest:298, 08-stress-tests:158, examples/02-visual-inspection:35 | §6.3 | covered (1.1) |
+| `pipelines.*.steps.[].std` | 1 | 03-manifest:298 | §6.3 | covered (1.1) |
+| `pipelines.*.steps.[].window` | 4 | 08-stress-tests:158, 08-stress-tests:253, examples/02-visual-inspection:35 (+1) | §6.3 | covered (1.1) |
+| `pipelines.*.steps.[].with` | 2 | 08-stress-tests:158, examples/02-visual-inspection:35 | §6.3 | covered (1.1) |
+| `pipelines.*.to` | 5 | 03-manifest:298, 08-stress-tests:158, 08-stress-tests:253 (+2) | §6.3 | covered (1.1) |
+| `project` | 13 | 03-manifest:53, 08-stress-tests:444, 09-architecture-under-stress:308 (+10) | §5.2 | covered |
+| `project.joker` | 9 | 03-manifest:53, 23-development-bench:195, examples/01-bess-peak-shaving:24 (+6) | §5.2 | covered |
+| `project.mode` | 10 | 03-manifest:53, 09-architecture-under-stress:308, 23-development-bench:195 (+7) | §5.2 | covered |
+| `project.name` | 12 | 03-manifest:53, 08-stress-tests:444, 09-architecture-under-stress:308 (+9) | §5.2 | covered |
+| `resources` | 7 | 03-manifest:53, 23-development-bench:255, examples/01-bess-peak-shaving:24 (+4) | §5.4 | covered |
+| `resources.*` | 7 | 03-manifest:53, 23-development-bench:255, examples/01-bess-peak-shaving:24 (+4) | §5.4 | covered |
+| `resources.*.accel` | 1 | examples/02-visual-inspection:35 | §5.4 | covered (1.1) |
+| `resources.*.cpus` | 7 | 03-manifest:53, 23-development-bench:255, examples/01-bess-peak-shaving:24 (+4) | §5.4 | covered |
+| `resources.*.memory` | 3 | 03-manifest:53, examples/01-bess-peak-shaving:24, examples/03-predictive-maintenance:11 | §5.4 | covered |
+| `security` | 5 | 03-manifest:445, track/02-the-pi-as-a-node:165, track/06-switching-boards:31 (+2) | §5.19 | covered |
+| `security.api` | 4 | 03-manifest:445, track/02-the-pi-as-a-node:165, track/06-switching-boards:31 (+1) | §5.19 | covered |
+| `security.api.listen` | 4 | 03-manifest:445, track/02-the-pi-as-a-node:165, track/06-switching-boards:31 (+1) | §5.19 | covered |
+| `security.roles` | 2 | 03-manifest:445, track/11-production-and-fleet:112 | §5.20 | covered |
+| `security.roles.*` | 2 | 03-manifest:445, track/11-production-and-fleet:112 | §5.20 | covered |
+| `security.trust` | 2 | 03-manifest:445, track/11-production-and-fleet:112 | §5.19 | covered |
+| `security.trust.apps` | 2 | 03-manifest:445, track/11-production-and-fleet:112 | §5.19 | covered |
+| `security.trust.config` | 2 | 03-manifest:445, track/11-production-and-fleet:112 | §5.19 | covered; only restricts the node's bundle (C9, resolved: D7) |
+| `security.trust.secrets` | 1 | track/11-production-and-fleet:112 | §5.19 | covered |
+| `signals` | 3 | track/04-esp32-modbus:226, track/05-touch-and-faults:35, track/05-touch-and-faults:63 | §5.9 | covered |
+| `signals.*` | 3 | track/04-esp32-modbus:226, track/05-touch-and-faults:35, track/05-touch-and-faults:63 | §5.9 | covered |
+| `signals.*.debounce` | 1 | track/04-esp32-modbus:226 | §5.9 | covered |
+| `signals.*.stuck_detect` | 2 | track/05-touch-and-faults:35, track/05-touch-and-faults:63 | §5.9 | covered |
+| `streams` | 3 | 03-manifest:298, 08-stress-tests:158, examples/02-visual-inspection:35 | §6.2 | covered (1.1) |
+| `streams.*` | 3 | 03-manifest:298, 08-stress-tests:158, examples/02-visual-inspection:35 | §6.2 | covered (1.1) |
+| `streams.*.mode` | 3 | 03-manifest:298, 08-stress-tests:158, examples/02-visual-inspection:35 | §6.2 | covered (1.1) |
+| `streams.*.pool` | 3 | 03-manifest:298, 08-stress-tests:158, examples/02-visual-inspection:35 | §6.2 | covered (1.1) |
+| `streams.*.record` | 1 | examples/02-visual-inspection:35 | §6.2 | covered (1.1) |
+| `target` | 13 | 03-manifest:53, 08-stress-tests:23, 23-development-bench:255 (+10) | §5.3 | covered |
+| `target.arch` | 1 | 03-manifest:53 | §5.3 | covered |
+| `target.board` | 12 | 03-manifest:53, 08-stress-tests:23, 23-development-bench:255 (+9) | §5.3 | covered |
+| `target.kernel` | 5 | 03-manifest:53, 08-stress-tests:23, examples/01-bess-peak-shaving:24 (+2) | §5.3 | covered |
+| `telemetry` | 7 | 03-manifest:394, 08-stress-tests:253, examples/01-bess-peak-shaving:24 (+4) | §5.17 | covered |
+| `telemetry.record` | 6 | 03-manifest:394, 08-stress-tests:253, examples/01-bess-peak-shaving:24 (+3) | §5.17.1 | covered |
+| `telemetry.record.*` | 6 | 03-manifest:394, 08-stress-tests:253, examples/01-bess-peak-shaving:24 (+3) | §5.17.1 | covered |
+| `telemetry.record.*.blocks` | 3 | 03-manifest:394, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §5.17.1 | covered (1.1) |
+| `telemetry.record.*.every` | 6 | 03-manifest:394, 08-stress-tests:253, examples/01-bess-peak-shaving:24 (+3) | §5.17.1 | covered |
+| `telemetry.record.*.keep` | 6 | 03-manifest:394, 08-stress-tests:253, examples/01-bess-peak-shaving:24 (+3) | §5.17.1 | covered |
+| `telemetry.record.*.keep.*` | 6 | 03-manifest:394, 08-stress-tests:253, examples/01-bess-peak-shaving:24 (+3) | §5.17.1 | covered |
+| `telemetry.record.*.on_change` | 2 | 03-manifest:394, examples/01-bess-peak-shaving:24 | §5.17.1 | covered |
+| `telemetry.record.*.post` | 2 | 08-stress-tests:253, examples/03-predictive-maintenance:11 | §5.17.1 | covered (1.1) |
+| `telemetry.record.*.pre` | 2 | 08-stress-tests:253, examples/03-predictive-maintenance:11 | §5.17.1 | covered (1.1) |
+| `telemetry.record.*.trigger` | 2 | 08-stress-tests:253, examples/03-predictive-maintenance:11 | §5.17.1 | covered (1.1) |
+| `telemetry.store` | 1 | 03-manifest:394 | §5.17.2 | covered |
+| `telemetry.store.fsync` | 1 | 03-manifest:394 | §5.17.2 | covered |
+| `telemetry.store.max_disk` | 1 | 03-manifest:394 | §5.17.2 | covered |
+| `telemetry.uplink` | 3 | 03-manifest:394, examples/01-bess-peak-shaving:24, track/11-production-and-fleet:127 | §5.17.3 | covered |
+| `telemetry.uplink.*` | 3 | 03-manifest:394, examples/01-bess-peak-shaving:24, track/11-production-and-fleet:127 | §5.17.3 | covered |
+| `telemetry.uplink.*.broker` | 3 | 03-manifest:394, examples/01-bess-peak-shaving:24, track/11-production-and-fleet:127 | §5.17.3 | covered |
+| `telemetry.uplink.*.budget` | 2 | 03-manifest:394, examples/01-bess-peak-shaving:24 | §5.17.3 | covered |
+| `telemetry.uplink.*.classes` | 3 | 03-manifest:394, examples/01-bess-peak-shaving:24, track/11-production-and-fleet:127 | §5.17.3 | covered |
+| `telemetry.uplink.*.classes.*` | 3 | 03-manifest:394, examples/01-bess-peak-shaving:24, track/11-production-and-fleet:127 | §5.17.3 | covered |
+| `telemetry.uplink.*.group_id` | 2 | 03-manifest:394, examples/01-bess-peak-shaving:24 | §5.17.3 | covered |
+| `telemetry.uplink.*.history` | 1 | 03-manifest:394 | §5.17.3 | covered |
+| `telemetry.uplink.*.history.delivery` | 1 | 03-manifest:394 | §5.17.3 | covered |
+| `telemetry.uplink.*.kind` | 3 | 03-manifest:394, examples/01-bess-peak-shaving:24, track/11-production-and-fleet:127 | §5.17.3 | covered |
+| `telemetry.uplink.*.live` | 2 | 03-manifest:394, track/11-production-and-fleet:127 | §5.17.3 | covered |
+| `telemetry.uplink.*.live.every` | 2 | 03-manifest:394, track/11-production-and-fleet:127 | §5.17.3 | covered |
+| `telemetry.uplink.*.node_id` | 1 | 03-manifest:394 | §5.17.3 | covered |
+| `telemetry.uplink.*.password` | 2 | 03-manifest:394, track/11-production-and-fleet:127 | §5.17.3 | covered |
+| `telemetry.uplink.*.username` | 1 | track/11-production-and-fleet:127 | §5.17.3 | covered |
+| `training` | 3 | 06-ml:197, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.4 | covered (1.1) |
+| `training.*` | 3 | 06-ml:197, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.4 | covered (1.1) |
+| `training.*.arch` | 3 | 06-ml:197, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.4 | covered (1.1) |
+| `training.*.budget` | 2 | 06-ml:197, examples/03-predictive-maintenance:11 | §6.4 | covered (1.1) |
+| `training.*.budget.max_memory` | 2 | 06-ml:197, examples/03-predictive-maintenance:11 | §6.4 | covered (1.1) |
+| `training.*.budget.max_time` | 2 | 06-ml:197, examples/03-predictive-maintenance:11 | §6.4 | covered (1.1) |
+| `training.*.checkpoint` | 2 | 06-ml:197, examples/03-predictive-maintenance:11 | §6.4 | covered (1.1) |
+| `training.*.data` | 3 | 06-ml:197, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.4 | covered (1.1) |
+| `training.*.data.signals` | 3 | 06-ml:197, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.4 | covered (1.1) |
+| `training.*.data.where` | 3 | 06-ml:197, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.4 | covered (1.1) |
+| `training.*.data.window` | 3 | 06-ml:197, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.4 | covered (1.1) |
+| `training.*.from` | 1 | 06-ml:197 | §6.4 | covered (1.1) |
+| `training.*.hyper` | 1 | examples/03-predictive-maintenance:11 | §6.4 | covered (1.1) |
+| `training.*.hyper.epochs` | 1 | examples/03-predictive-maintenance:11 | §6.4 | covered (1.1): free key of `hyper` |
+| `training.*.hyper.layers` | 1 | examples/03-predictive-maintenance:11 | §6.4 | covered (1.1): free key of `hyper` |
+| `training.*.hyper.lr` | 1 | examples/03-predictive-maintenance:11 | §6.4 | covered (1.1): free key of `hyper` |
+| `training.*.output` | 3 | 06-ml:197, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.4 | covered (1.1) |
+| `training.*.priority` | 3 | 06-ml:197, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.4 | covered (1.1) |
+| `training.*.resources` | 3 | 06-ml:197, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.4 | covered (1.1) |
+| `training.*.schedule` | 3 | 06-ml:197, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.4 | covered (1.1) |
+| `training.*.validate` | 2 | 06-ml:197, examples/03-predictive-maintenance:11 | §6.4 | covered (1.1) |
+| `training.*.validate.holdout` | 2 | 06-ml:197, examples/03-predictive-maintenance:11 | §6.4 | covered (1.1) |
+| `training.*.validate.max` | 2 | 06-ml:197, examples/03-predictive-maintenance:11 | §6.4 | covered (1.1) |
+| `training.*.validate.metric` | 2 | 06-ml:197, examples/03-predictive-maintenance:11 | §6.4 | covered (1.1) |
+| `training.*.validate.threshold` | 1 | examples/03-predictive-maintenance:11 | §6.4 | covered (1.1) |
 
-**Chaves referidas só em texto** (procuradas com um segundo script, fora dos blocos de código):
+**Keys referred to only in text** (searched for with a second script, outside the code blocks):
 
-| Chave | Onde | Estado |
+| Key | Where | Status |
 |---|---|---|
-| `accept_missing_fallback` | 01 §8, 03 §14, trilha 02 (também em blocos: exemplo 02, trilha 11) | §5.10 (no manifesto) e lock (`ref/02`) |
+| `accept_missing_fallback` | 01 §8, 03 §14, track 02 (also in blocks: example 02, track 11) | §5.10 (in the manifest) and lock (`ref/02`) |
 | `align` | 03 §9.1, 08 R1 | §5.8 |
 | `batch`, `max_inflight` | 06 §4 | §6.1 (1.1) |
 | `dedup_window` | 02 §8, 16 E9 | §5.8.2 |
@@ -2606,45 +2606,45 @@ A coluna "Usos" conta os blocos onde a chave aparece; "Onde" mostra a primeira o
 | `trace.async` | 03 §9.1, 09 A10 | §5.11 |
 | `record = false` (streams) | 03 §9.1, 08 R2 | §6.2 (1.1) |
 | `keep_previous` | 01 §16 | §5.12 |
-| `health_window` | 01 §16 | configuração do nó (`ref/02`): é da runtime, não do site |
+| `health_window` | 01 §16 | node configuration (`ref/02`): it belongs to the runtime, not to the site |
 | `kind = "native"` | 01 §4, 04 §5 | §5.12 |
 | `memory.max` | 01 §9, 09 A3 | §5.12 (`cycle_memory`, `async_memory`) |
-| `margin` (de `on_late`) | 02 §7.2 | §5.10 (`late_margin`, 1.1) |
-| `record_disagreements` | exemplo 02 §5 | §6.1 (1.1) |
-| `optional` (tarefas, portas) | 01 §4, 03 §8 | declarado no código (`joker:meta`, `ref/04`); `bind.optional` no §5.12.1 |
-| `relinquish = { … }`, `coherent`, `quirks`, `implements` | 03 §6.1, 05 §6 | perfis (`ref/03`) |
-| `bounce`, `panel`, `gen`, `noise` | 04 §6, trilha 1, 3, 4, 5 | modelos de simulação (`ref/03`) |
-| `halt_if` | 20 D2 | regra de rollout do Deck (`ref/10`), não do manifesto |
-| `--skip-shadow` | ADR 0012 | opção da CLI |
+| `margin` (of `on_late`) | 02 §7.2 | §5.10 (`late_margin`, 1.1) |
+| `record_disagreements` | example 02 §5 | §6.1 (1.1) |
+| `optional` (tasks, ports) | 01 §4, 03 §8 | declared in the code (`joker:meta`, `ref/04`); `bind.optional` in §5.12.1 |
+| `relinquish = { … }`, `coherent`, `quirks`, `implements` | 03 §6.1, 05 §6 | profiles (`ref/03`) |
+| `bounce`, `panel`, `gen`, `noise` | 04 §6, track 1, 3, 4, 5 | simulation models (`ref/03`) |
+| `halt_if` | 20 D2 | rollout rule of the Deck (`ref/10`), not of the manifest |
+| `--skip-shadow` | ADR 0012 | CLI option |
 
 
 ---
 
-## Anexo C — Achados: mudanças propostas noutros documentos
+## Appendix C — Findings: changes proposed in other documents
 
-| # | Documento, secção | Problema | Mudança proposta |
+| # | Document, section | Problem | Proposed change |
 |---|---|---|---|
-| C1 | 03 §11 | `classes = { alarms = "**alarm.**", … }`: `**` dentro de um segmento não é um seletor válido | `alarms = "alarm.**"` |
-| C2 | 08, rodada 5 (`sites/joker.hb-01234.toml`) | `name = "HB-01234"` viola a gramática de nome de site (minúsculas) | `name = "hb-01234"`, e o ficheiro `sites/joker.hb-01234.toml` (a variante de um overlay segue a mesma regra de minúsculas, §7.7) |
-| C3 | 02 §8 | `kind = "modbus.write"` em `[devices.pcs.actions.reset_fault]` não é chave do manifesto (a implementação é do perfil) | retirar a linha; a nota "implementado pelo perfil" passa para o texto |
-| C4 | trilha antiga, parte 4, §4 (`joker.rpi.toml`) | `config = { pga = "4.096 V", rate = "128 SPS" }`: `SPS` não está no catálogo de unidades | **Substituído pela `ref/03` A20:** `rate` é um `choice` do `[config]` do perfil `ti/ads1115@1`, e `"128 SPS"` é um rótulo, e não uma quantidade (`ref/03` §2.2.10); a trilha fica como está, com um comentário a dizê-lo |
-| C5 | 08 R3, exemplo 03 §1 | `spi = "/dev/spidev0.0"` no dispositivo: o manifesto espera um barramento (a mesma correção do I²C, documento 18, P7) | `[buses.spi0] kind = "spi"`, `dev = "/dev/spidev0.0"`, e `bus = "spi0"` no dispositivo |
-| C6 | 03 §8 | "grupo implícito `default` com o período pedido pela app" contradiz 16 A11 (`default` = 100 ms) | "num grupo implícito `default_<período>` com o período pedido pela app; o grupo `default` (100 ms) é o de A11" |
-| C7 | exemplo 01 (template), 08 R1 | `forecast = "model:load_forecast"` e `[models.load_forecast]` são 1.1 (ADR 0019): o exemplo não passa numa runtime 1.0 | marcar os blocos "requer 1.1", ou retirar a ligação do modelo e declarar a porta `forecast` como `optional` |
-| C8 | 03 §7 | "as não listadas correm depois, pela ordem do manifesto" é indefinido com overlays | "por ordem lexicográfica de `<app>.<tarefa>`" |
-| C9 | 03 §13 | `trust.runtime` e `trust.config` no manifesto: a configuração declara a sua própria raiz de confiança | **Resolvido: D7 (ADR 0025).** "`[security.trust]` só restringe o bundle de confiança do nó (`ref/02` §2.5.4): listas de `.pub` por papel e `revoked`; nunca acrescenta chaves" |
-| C10 | `ref/00` §9 | "escritas vindas de fora do nó (…, pontes, …) levam `nonce` e `ts`": o Modbus e o OPC UA não os transportam | **Resolvido: D16.** O `ref/00` §9 já diz que as pontes se autenticam pelo protocolo delas, com nível e lease, e não levam nonce; esta referência remete para lá (§5.18) |
-| C11 | 03 §12 | `subscribe` do ROS 2 não diz o tipo da mensagem nem que campo vai para que sinal | acrescentar `type` e `fields` (§5.18) |
-| C12 | exemplo 03 §1 | `source = "state:training/ae_p1/current.jkm"` aponta para um ficheiro interno do nó (documento 15, §2.5) | `source = "training:ae_p1"` |
-| C13 | 08 R6 | `fallback.when` com janela de 30 min: acima do máximo das expressões de controlo (`J0305`) | definir `fallback.when` na gramática KPI (§6.5), avaliada em `bg`, como aqui |
-| C14 | 09 §12.2 | o manifesto mínimo não declara `mode`; com a omissão `prod`, o GPIO sem fallback é erro (`J0205`) | acrescentar `mode = "dev"` ao `[project]` do exemplo |
-| C15 | 01 §6, item 5 | "TTL obrigatório (por omissão 8 h…)" mistura o TTL (obrigatório, sem omissão; A10) com o seu máximo | "TTL obrigatório em cada escrita; o máximo é `max_manual` (omissão 8 h)" |
-| C16 | 05 §11 (perfil de placa) | `relay = { …, safe = false }` num perfil de placa: o `safe` só vive no manifesto (ADR 0006) | **Resolvido pela `ref/03` A6:** `fallback = false`. O que a placa sabe é o estado que o hardware impõe sozinho, e isso é um fallback do dispositivo (M1, §5.8), e não uma sugestão de `safe` |
-| C17 | 16 §10 | "base dos caminhos de `extends`" e "definição exata de só apertar" estavam por decidir | apontar para esta referência, §7.1 e §7.4 |
-| C18 | 03 §9.1 | `record = false` em `[streams.*]` é a omissão, mas a tabela não diz que é 1.1 | marcar a linha como 1.1 |
-| C19 | 03 §6, §8 | `schedule_depth`, `timed`, `on_late` e `writer.kind = "proposal"` aparecem sem marca de versão, e são 1.1 (ADR 0019) | marcar como 1.1 |
-| C20 | trilha antiga, parte 3, §8 | o texto diz que o LED não volta a acender sozinho depois da falha, e o cenário espera `equals = true` aos 3,6 s | corrigir o texto: volta a acender, porque a app volta a escrever o seu estado |
-| C21 | 08 R2, R4, R6 | `source = "apps/inspector"` (e `apps/diff-base`, `apps/ops-assistant`): `source` é para artefactos OCI | `path = "apps/…"` |
-| C22 | 03 §13 | `api = { …, mtls = true }`: com TCP sempre em mTLS, a chave só serve para errar | retirar `mtls` (§5.19); `J0291` retirado |
-| C23 | 03 §8, 01 §17 | `secrets = ["…"]` como lista de nomes | **D6:** tabela `[apps.<app>.secrets] <nome_local> = "secret:<nome>"` (§5.12, `ref/02` §2.4.7) |
-| C24 | 03 §4 | "um barramento serializa o acesso" sem exceções | só `serial`, `i2c`, `spi` e `ethernet` com `bus` declarado; `can` e TCP sem `bus` não serializam (§5.6, `ref/06` §2.14) |
+| C1 | 03 §11 | `classes = { alarms = "**alarm.**", … }`: `**` inside a segment is not a valid selector | `alarms = "alarm.**"` |
+| C2 | 08, round 5 (`sites/joker.hb-01234.toml`) | `name = "HB-01234"` violates the site name grammar (lowercase) | `name = "hb-01234"`, and the file `sites/joker.hb-01234.toml` (the variant of an overlay follows the same lowercase rule, §7.7) |
+| C3 | 02 §8 | `kind = "modbus.write"` in `[devices.pcs.actions.reset_fault]` is not a manifest key (the implementation belongs to the profile) | remove the line; the note "implemented by the profile" moves to the text |
+| C4 | old track, part 4, §4 (`joker.rpi.toml`) | `config = { pga = "4.096 V", rate = "128 SPS" }`: `SPS` is not in the unit catalog | **Superseded by `ref/03` A20:** `rate` is a `choice` of the `[config]` of the `ti/ads1115@1` profile, and `"128 SPS"` is a label, not a quantity (`ref/03` §2.2.10); the track stays as it is, with a comment saying so |
+| C5 | 08 R3, example 03 §1 | `spi = "/dev/spidev0.0"` in the device: the manifest expects a bus (the same fix as for I²C, document 18, P7) | `[buses.spi0] kind = "spi"`, `dev = "/dev/spidev0.0"`, and `bus = "spi0"` in the device |
+| C6 | 03 §8 | "implicit group `default` with the period requested by the app" contradicts 16 A11 (`default` = 100 ms) | "in an implicit group `default_<period>` with the period requested by the app; the group `default` (100 ms) is the one of A11" |
+| C7 | example 01 (template), 08 R1 | `forecast = "model:load_forecast"` and `[models.load_forecast]` are 1.1 (ADR 0019): the example does not pass on a 1.0 runtime | mark the blocks "requires 1.1", or remove the model binding and declare the `forecast` port as `optional` |
+| C8 | 03 §7 | "the ones not listed run afterwards, in manifest order" is undefined with overlays | "in lexicographic order of `<app>.<task>`" |
+| C9 | 03 §13 | `trust.runtime` and `trust.config` in the manifest: the configuration declares its own root of trust | **Resolved: D7 (ADR 0025).** "`[security.trust]` only restricts the node's trust bundle (`ref/02` §2.5.4): lists of `.pub` per role and `revoked`; it never adds keys" |
+| C10 | `ref/00` §9 | "writes coming from outside the node (…, bridges, …) carry `nonce` and `ts`": Modbus and OPC UA do not carry them | **Resolved: D16.** `ref/00` §9 already says that bridges authenticate through their own protocol, with level and lease, and carry no nonce; this reference points there (§5.18) |
+| C11 | 03 §12 | the ROS 2 `subscribe` does not say the message type nor which field goes to which signal | add `type` and `fields` (§5.18) |
+| C12 | example 03 §1 | `source = "state:training/ae_p1/current.jkm"` points to an internal file of the node (document 15, §2.5) | `source = "training:ae_p1"` |
+| C13 | 08 R6 | `fallback.when` with a 30 min window: above the maximum of the control expressions (`J0305`) | define `fallback.when` in the KPI grammar (§6.5), evaluated in `bg`, as here |
+| C14 | 09 §12.2 | the minimal manifest does not declare `mode`; with the default `prod`, GPIO without a fallback is an error (`J0205`) | add `mode = "dev"` to the `[project]` of the example |
+| C15 | 01 §6, item 5 | "TTL required (by default 8 h…)" mixes the TTL (required, with no default; A10) with its maximum | "TTL required on each write; the maximum is `max_manual` (default 8 h)" |
+| C16 | 05 §11 (board profile) | `relay = { …, safe = false }` in a board profile: `safe` only lives in the manifest (ADR 0006) | **Resolved by `ref/03` A6:** `fallback = false`. What the board knows is the state that the hardware imposes on its own, and that is a device fallback (M1, §5.8), not a `safe` suggestion |
+| C17 | 16 §10 | "base of the `extends` paths" and "exact definition of only tightening" were undecided | point to this reference, §7.1 and §7.4 |
+| C18 | 03 §9.1 | `record = false` in `[streams.*]` is the default, but the table does not say it is 1.1 | mark the row as 1.1 |
+| C19 | 03 §6, §8 | `schedule_depth`, `timed`, `on_late` and `writer.kind = "proposal"` appear without a version marker, and are 1.1 (ADR 0019) | mark as 1.1 |
+| C20 | old track, part 3, §8 | the text says the LED does not light up again on its own after the fault, and the scenario expects `equals = true` at 3.6 s | fix the text: it lights up again, because the app writes its state again |
+| C21 | 08 R2, R4, R6 | `source = "apps/inspector"` (and `apps/diff-base`, `apps/ops-assistant`): `source` is for OCI artifacts | `path = "apps/…"` |
+| C22 | 03 §13 | `api = { …, mtls = true }`: with TCP always in mTLS, the key only serves to make mistakes | remove `mtls` (§5.19); `J0291` withdrawn |
+| C23 | 03 §8, 01 §17 | `secrets = ["…"]` as a list of names | **D6:** table `[apps.<app>.secrets] <local_name> = "secret:<name>"` (§5.12, `ref/02` §2.4.7) |
+| C24 | 03 §4 | "a bus serializes access" with no exceptions | only `serial`, `i2c`, `spi` and `ethernet` with a declared `bus`; `can` and TCP without `bus` do not serialize (§5.6, `ref/06` §2.14) |
