@@ -1,0 +1,110 @@
+schema = 1
+
+[suite]
+kind        = "core"
+id          = "arbiter.priority"
+spec        = ["16 A3", "16 A5", "01 §6"]
+period      = "100ms"
+hosts       = ["linux", "mcu"]
+description = "The effective value is the one of the highest-priority active level; lower levels keep their leases while overridden"
+
+[[outputs]]
+path  = "x.p_set"
+type  = "f64"
+unit  = "kW"
+range = ["-100 kW", "100 kW"]
+safe  = "0 kW"
+
+[[writers]]
+id    = "s"
+level = "safety:2"
+lease = "300ms"
+kind  = "cycle"
+
+[[writers]]
+id    = "c"
+level = "control:10"
+lease = "300ms"
+kind  = "cycle"
+
+[[writers]]
+id    = "o"
+level = "optimizer:13"
+lease = "300ms"
+kind  = "cycle"
+
+[[case]]
+id   = "higher_priority_wins"
+name = "Control (10) beats optimizer (13) in the same tick"
+spec = ["16 A5"]
+do   = [
+  { at = "0ms", propose = "x.p_set", writer = "o", value = "50 kW" },
+  { at = "0ms", propose = "x.p_set", writer = "c", value = "20 kW" },
+]
+expect = [{ at = "0ms", output = "x.p_set", outcome = "accepted", equals = "20 kW", level = "control:10" }]
+
+[[case]]
+id   = "declaration_order_does_not_matter"
+name = "The winner does not depend on the order in which proposals arrive"
+spec = ["16 A5"]
+do   = [
+  { at = "0ms", propose = "x.p_set", writer = "c", value = "20 kW" },
+  { at = "0ms", propose = "x.p_set", writer = "o", value = "50 kW" },
+]
+expect = [{ at = "0ms", output = "x.p_set", outcome = "accepted", equals = "20 kW", level = "control:10" }]
+
+[[case]]
+id   = "safety_overrides_all"
+name = "A safety level beats control and optimizer"
+spec = ["16 A5", "01 §6"]
+do   = [
+  { at = "0ms", propose = "x.p_set", writer = "o", value = "50 kW" },
+  { at = "0ms", propose = "x.p_set", writer = "c", value = "20 kW" },
+  { at = "0ms", propose = "x.p_set", writer = "s", value = "5 kW" },
+]
+expect = [{ at = "0ms", output = "x.p_set", outcome = "accepted", equals = "5 kW", level = "safety:2" }]
+
+[[case]]
+id   = "lower_write_does_not_displace_active_higher"
+name = "A later lower-priority proposal leaves the active higher level in charge"
+spec = ["16 A5"]
+do   = [
+  { at = "0ms",   propose = "x.p_set", writer = "c", value = "20 kW" },
+  { at = "100ms", propose = "x.p_set", writer = "o", value = "50 kW" },
+]
+expect = [
+  { at = "100ms", output = "x.p_set", equals = "20 kW", level = "control:10" },
+  { at = "200ms", output = "x.p_set", equals = "20 kW", level = "control:10" },
+]
+
+[[case]]
+id   = "falls_back_to_lower_level_on_expiry"
+name = "When the higher lease expires, the next active level takes over in the same tick"
+spec = ["16 A2", "16 A5"]
+do   = [
+  { at = "0ms",   propose = "x.p_set", writer = "c", value = "20 kW" },
+  { at = "0ms",   propose = "x.p_set", writer = "o", value = "50 kW" },
+  { at = "100ms", propose = "x.p_set", writer = "o", value = "50 kW" },
+  { at = "200ms", propose = "x.p_set", writer = "o", value = "50 kW" },
+  { at = "300ms", propose = "x.p_set", writer = "o", value = "50 kW" },
+]
+expect = [
+  { at = "200ms", output = "x.p_set", equals = "20 kW", level = "control:10" },
+  { at = "300ms", output = "x.p_set", outcome = "accepted", equals = "50 kW", level = "optimizer:13" },
+]
+
+[[case]]
+id   = "overridden_proposal_renews_its_lease"
+name = "A proposal overridden by a higher level still renews its own lease"
+spec = ["16 A3", "01 §6"]
+do   = [
+  { at = "0ms",   propose = "x.p_set", writer = "c", value = "20 kW" },
+  { at = "0ms",   propose = "x.p_set", writer = "o", value = "50 kW" },
+  { at = "200ms", propose = "x.p_set", writer = "o", value = "50 kW" },
+]
+expect = [
+  { at = "200ms", output = "x.p_set", equals = "20 kW", level = "control:10" },
+  { at = "300ms", output = "x.p_set", equals = "50 kW", level = "optimizer:13" },
+  { at = "400ms", output = "x.p_set", equals = "50 kW", level = "optimizer:13" },
+  { at = "500ms", output = "x.p_set", equals = "0 kW", level = "none" },
+]

@@ -1,0 +1,99 @@
+schema = 1
+
+[suite]
+kind        = "core"
+id          = "arbiter.lease"
+spec        = ["16 A2", "16 A4", "16 A6", "16 A9", "01 §6"]
+period      = "100ms"
+hosts       = ["linux", "mcu"]
+description = "Writer leases: renewal on every proposal, expiry at the owner group's latch, default lease and safe without an active level"
+
+[[outputs]]
+path  = "x.p_set"
+type  = "f64"
+unit  = "kW"
+range = ["-100 kW", "100 kW"]
+safe  = "0 kW"
+
+[[writers]]
+id    = "a"
+level = "optimizer:13"
+lease = "300ms"
+kind  = "cycle"
+
+[[writers]]
+id    = "d"
+level = "control:12"
+kind  = "cycle"
+
+[[writers]]
+id    = "s"
+level = "supervisor:7"
+lease = "300ms"
+kind  = "async"
+
+[[case]]
+id     = "no_active_level_applies_safe"
+name   = "Without any writer the output holds its safe value on every tick"
+spec   = ["16 A6", "16 A8", "ref/03 §2.6.1"]
+expect = [
+  { at = "0ms", output = "x.p_set", outcome = "none", equals = "0 kW", level = "none" },
+  { during = "0ms .. 500ms", output = "x.p_set", equals = "0 kW", level = "none" },
+]
+
+[[case]]
+id   = "lease_expires_at_boundary"
+name = "A lease taken at t expires on the first latch with t_latch >= t + lease"
+spec = ["16 A2"]
+do   = [{ at = "0ms", propose = "x.p_set", writer = "a", value = "10 kW" }]
+expect = [
+  { at = "0ms",   output = "x.p_set", outcome = "accepted", equals = "10 kW", level = "optimizer:13" },
+  { at = "200ms", output = "x.p_set", equals = "10 kW", level = "optimizer:13" },
+  { at = "300ms", output = "x.p_set", outcome = "none", equals = "0 kW", level = "none" },
+]
+
+[[case]]
+id   = "each_proposal_renews"
+name = "A second proposal moves lease_until to its own tick plus the lease"
+spec = ["16 A2", "01 §6"]
+do   = [
+  { at = "0ms",   propose = "x.p_set", writer = "a", value = "10 kW" },
+  { at = "200ms", propose = "x.p_set", writer = "a", value = "20 kW" },
+]
+expect = [
+  { at = "200ms", output = "x.p_set", outcome = "accepted", equals = "20 kW", level = "optimizer:13" },
+  { at = "400ms", output = "x.p_set", equals = "20 kW", level = "optimizer:13" },
+  { at = "500ms", output = "x.p_set", equals = "0 kW", level = "none" },
+]
+
+[[case]]
+id   = "default_lease_is_three_periods"
+name = "A writer without a lease gets 3 x the owner group period"
+spec = ["16 A9", "ref/01 §5.10"]
+do   = [{ at = "0ms", propose = "x.p_set", writer = "d", value = "15 kW" }]
+expect = [
+  { at = "200ms", output = "x.p_set", equals = "15 kW", level = "control:12" },
+  { at = "300ms", output = "x.p_set", equals = "0 kW", level = "none" },
+]
+
+[[case]]
+id   = "last_proposal_in_tick_wins"
+name = "Several proposals of one writer on one output in one tick: the last one wins"
+spec = ["16 A4"]
+do   = [
+  { at = "0ms", propose = "x.p_set", writer = "a", value = "10 kW" },
+  { at = "0ms", propose = "x.p_set", writer = "a", value = "30 kW" },
+]
+expect = [{ at = "0ms", output = "x.p_set", outcome = "accepted", equals = "30 kW", level = "optimizer:13" }]
+
+[[case]]
+id   = "async_proposal_applies_in_its_tick"
+name = "An async proposal is drained in step 2 of its tick and leases like any other"
+spec = ["16 §8", "16 A2", "01 §4"]
+do   = [{ at = "100ms", propose = "x.p_set", writer = "s", value = "25 kW" }]
+expect = [
+  { at = "0ms",   output = "x.p_set", equals = "0 kW", level = "none" },
+  { at = "100ms", output = "x.p_set", outcome = "accepted", equals = "25 kW", level = "supervisor:7" },
+  { at = "300ms", output = "x.p_set", equals = "25 kW", level = "supervisor:7" },
+  { at = "400ms", output = "x.p_set", equals = "0 kW", level = "none" },
+]
