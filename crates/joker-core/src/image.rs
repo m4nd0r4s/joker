@@ -50,6 +50,9 @@ pub struct Proposal {
     pub source: Source,
     /// Opaque tag returned with the result, for async write tickets.
     pub ticket: u32,
+    /// TTL of a manual write in ns, which is its lease (ref/09 §5.6); 0 uses
+    /// the writer's declared TTL. Ignored for other writers.
+    pub ttl_ns: u64,
 }
 
 impl Proposal {
@@ -61,6 +64,7 @@ impl Proposal {
         flags: 0,
         source: Source::Cycle,
         ticket: 0,
+        ttl_ns: 0,
     };
 
     /// True when this proposal relinquishes the writer's level.
