@@ -1,0 +1,61 @@
+schema = 1
+
+[suite]
+kind        = "core"
+id          = "alarms.interlock"
+spec        = ["02 §11", "01 §7 step 2", "ref/01 §5.15"]
+period      = "100ms"
+hosts       = ["linux", "mcu"]
+description = "Alarm signals used in a permissive: alarm.<name>.active blocks writes while the alarm is active"
+
+[[signals]]
+path = "x.m"
+type = "f64"
+unit = "kW"
+
+[[alarms]]
+id       = "hi"
+when     = "x.m > 50 kW"
+severity = "high"
+
+[[outputs]]
+path      = "x.p_set"
+type      = "f64"
+unit      = "kW"
+range     = ["-100 kW", "100 kW"]
+interlock = "!alarm.hi.active"
+safe      = "0 kW"
+
+[[writers]]
+id    = "a"
+level = "control:10"
+lease = "1s"
+kind  = "cycle"
+
+[[case]]
+id   = "inactive_alarm_permits"
+name = "While the alarm is normal the permissive passes"
+spec = ["02 §11", "01 §7 step 2"]
+do   = [
+  { at = "0ms", input = "x.m", value = "10 kW" },
+  { at = "0ms", propose = "x.p_set", writer = "a", value = "10 kW" },
+]
+expect = [
+  { at = "0ms", alarm = "hi", active = false },
+  { at = "0ms", output = "x.p_set", outcome = "accepted", equals = "10 kW" },
+]
+
+[[case]]
+id   = "active_alarm_blocks"
+name = "An active alarm blocks the write through the permissive"
+spec = ["02 §11", "01 §7 step 2", "16 E3"]
+do   = [
+  { at = "0ms",   input = "x.m", value = "10 kW" },
+  { at = "0ms",   propose = "x.p_set", writer = "a", value = "10 kW" },
+  { at = "100ms", input = "x.m", value = "60 kW" },
+  { at = "200ms", propose = "x.p_set", writer = "a", value = "10 kW" },
+]
+expect = [
+  { at = "200ms", alarm = "hi", active = true },
+  { at = "200ms", output = "x.p_set", outcome = "rejected(interlock)", equals = "0 kW" },
+]
