@@ -521,6 +521,35 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 
 ---
 
+## 17. HTTP API and agent protocol vocabulary (`ref/09`–`ref/10`)
+
+Terms fixed while translating ref/09 and ref/10. Sections 15 and 16 apply to these references too.
+
+| PT | EN | Notes / source |
+|---|---|---|
+| trinco de transição de gerações | **generation-transition mutex**; short form **transition mutex** | shared by the local API and the agent (ref/09 §5.13, ref/10 §3.4.2); avoid "latch" (core term, §3) and "lock" (`joker.lock`, §6) |
+| balde de fichas, balde de tokens | **token bucket** | rate limits |
+| rajada | **burst** | |
+| contrapressão | **backpressure** | ref/09 §6.6 |
+| coalescência, coalescer | **coalescing**, **coalesce** | state topics |
+| amostrador | **sampler** | |
+| retoma, retomar (sessão WebSocket) | **resumption**, **resume** | `resume`; "retomável" → **resumable** (§15) |
+| código de fecho | **close code** | WebSocket |
+| conjunto causal | **causal set** | `Decision.inputs` |
+| ocupação (de um nível manual) | **holding** | see **held** (§15) |
+| caixas de saída | **outboxes** | latest-wins, document 01 §3.4 |
+| autoridade (do nó) | **authority** | the Deck the node is enrolled with |
+| documento de estado desejado (DSD) | **desired state document (DSD)** | ref/10 §1.4 |
+| núcleo mínimo (do protocolo) | **minimal core** | ref/10 §3.14; not the runtime **core** (§3) |
+| aplicação (de um estado desejado, de uma fase) | **apply** (noun) | "a última aplicação falhou" → "the last apply failed"; never "application" |
+| fase (de uma aplicação) | **phase** | `runtime`, `mcu`, `generation` |
+| pinos (TLS) | **pins** | `deck_tls` SPKI pins |
+| prova de renovação | **renewal proof** | `renew-proof` |
+| em experiência (firmware) | **on trial** | test swap before confirmation |
+| Preparado para ML | **ML-ready** | document 11 heading; version markers |
+
+---
+
 ## Appendix A. File-name map
 
 Every file under `docs/` keeps its number and gets an English slug (ADR 0029, decision 3). The directories `trilha/`, `exemplos/` and `propostas/` become `track/`, `examples/` and `proposals/`. The rename is one commit, and every remission and link in `docs/`, `spec/`, `wit/`, `README.md` and `AGENTS.md` was rewritten with it. Files whose name does not change are omitted.
