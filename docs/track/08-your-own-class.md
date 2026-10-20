@@ -71,7 +71,7 @@ The decisions are yours, as the class author, and each has a reason in document 
 The first version everybody writes calls the member `period`, like the argument. `jk class check classes/local/status_light.jkc` rejects it:
 
 ```
-error[JC0206]: the argument `period` has the name of a member of the class
+error[JC0206]: argument with the same name as a member: `period`
  --> classes/local/status_light.jkc:17:25
    |
 17 |     atomic method blink(period: f64 ms) order(period, mode) {
@@ -246,7 +246,7 @@ $ jk check --env sim
 ```
 
 ```
-error[J0201]: output `sinal.blink_period` has no `safe`
+error[J0201]: output without `safe`: `sinal.blink_period`
  --> joker.toml:61:1
    |
 61 | [instances.sinal]
@@ -316,7 +316,7 @@ $ jk test --env sim
 apps/luz (cargo test, wasm component on wasmtime) ............... 5 passed
 apps/status_light_ctl (cargo test, wasm component on wasmtime) .. 2 passed
 sim/scenarios/pisca.scenario.toml (joker.sim.toml) .............................. FAILED
-  error[J0842]: 8.1s pi.act_led: level expected "none", seen "control:12" (app:status_light_ctl)
+  error[J0842]: expectation failed: 8.1s pi.act_led: level expected "none", seen "control:12" (app:status_light_ctl)
 sim/scenarios/{aquece,botao}.scenario.toml (joker.sim.toml) ..................... 2 passed
 sim/scenarios/falha_esp.scenario.toml (joker.sim.toml) .......................... passed
 ```
@@ -552,7 +552,7 @@ $ jk check --env sim
 ```
 
 ```
-warning[J0655]: the instance `led_esp` reaches two apps through different paths
+warning[J0655]: instance with `out` members that reaches different apps by different paths, one of them through a composition: `led_esp`
  --> joker.toml:82:1
    |
 82 | [instances.esp_io]

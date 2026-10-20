@@ -139,7 +139,7 @@ It is, signal by signal, the profile of document 23, §4, with the project's nam
 A classic mistake when reviewing by hand is copying the read FC to the output (`"led" = { at = 0, fc = 1, …, direction = "output" }`):
 
 ```
-error[J0810]: invalid address or function code for the direction
+error[J0810]: invalid address or function code for the driver or for the direction
   --> profiles/local/bench-esp32@1.profile.toml:14:13
    |
 14 | "led"     = { at = 0, fc = 1, type = "bool", direction = "output", … }
@@ -405,8 +405,8 @@ $ jk check --env lab
                      + keepalive of esp.led (FC5, 16 B) every 400 ms ≈ 3 ms per poll
                      → occupancy 38% (maximum 80%)
 note: `esp.led` has a readback suggested by the profile: verify = { readback = "esp.led_rb" }
-warning[W0205]: `pi.act_led` has no device fallback                           (the one from part 2)
-warning[W0451]: the profile of `esp` declares [fallback], but the lock does not have it verified
+warning[W0205]: device fallback missing or inconsistent with `safe`: `pi.act_led`   (the one from part 2)
+warning[W0451]: profile fallback without verification pinned in the lock: the profile of `esp` declares [fallback]
    = help: jk lock --env lab --node lab
 ```
 

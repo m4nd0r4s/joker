@@ -92,7 +92,7 @@ fn control(io: &mut CycleIo<Level>, _st: &mut ()) -> Result<()> {
 **An error, as `jk check` shows it:**
 
 ```
-error[J0107]: incompatible unit in binding
+error[J0107]: incompatible unit (dimension)
   --> joker.toml:42:18
    |
 42 | bind.soc = "pcs.p_ac"

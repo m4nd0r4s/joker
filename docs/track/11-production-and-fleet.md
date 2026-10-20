@@ -59,7 +59,7 @@ $ jk check --env lab-link
 ```
 
 ```
-error[J0786]: board without safe outputs at reset (`reset_safe = false`); acceptable with `accept_unsafe_reset`
+error[J0786]: board without safe outputs on reset (`reset_safe = false`); acceptable with `accept_unsafe_reset`
   --> micro/esp/joker.toml:8:9
    |
  8 | board = "esp32-devkit@1"
@@ -294,7 +294,7 @@ $ jk node enroll ssh://pi@lab.local --deck https://portatil.local:8443 --token j
 
 ```
 → ssh://pi@lab.local · already enrolled with ~/org-ca: --force generates a new identity
-warning[J0933]: identity key in a file, without TPM or secure element
+warning[J0933]: identity key in a file, without a TPM or secure element (or required attestation missing)
 certificate CN=lab, O=bancada · until 2027-09-25 · issued by bancada-deck
 anchors: ed25519:5e0c9a17… (matches the token) · bundle version 2 · authority bancada-deck
 policy.allow_dev = false

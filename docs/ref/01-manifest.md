@@ -1891,7 +1891,7 @@ Referred to, from other ranges: `J0401` (drift against the lock), `J0501`, `J050
 In the rustc style (`ref/00` §8), always with a code, the location in the **layer** where the key is and, when there is one, help:
 
 ```
-error[J0151]: number without a unit in a quantity
+error[J0151]: number without a unit where a quantity or duration is required
   --> sites/lisboa-01/joker.toml:41:8
    |
 41 | safe = 0

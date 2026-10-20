@@ -904,7 +904,7 @@ class site@1.0.0 {
 ```
 
 ```
-error[JC0501]: composition with depth 4 (maximum 3)
+error[JC0501]: composition with depth > 3 (counted as in §8): depth 4
  --> classes/local/site.jkc:4:5
   |
 4 |     member hps: local/heat_pump@1[1..4]

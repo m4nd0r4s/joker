@@ -169,7 +169,7 @@ $ jk check --env sim            # the same as --manifest joker.sim.toml
 ✓ bindings           luz.led → pi.act_led (bool)
 ✓ parameters         luz.half_period = 500 ms (20..5000 ms)
 ✓ RT admission       main 20ms: 5 µs declared (0.03%)
-warning[J0352]: group `main` (20 ms) has no PREEMPT_RT kernel on this target; jitter not guaranteed
+warning[J0352]: group ≥ 10 ms without PREEMPT_RT: jitter not guaranteed: group `main` (20 ms)
    = note: on the laptop, with the simulator, it is irrelevant
 note: without `[target] board`, the checks that depend on the board are left undone
 note: joker.sim.lock updated (apps.luz)
@@ -186,7 +186,7 @@ $ jk check
 ```
 
 ```
-error[J0101]: unknown signal `pi.act_led`
+error[J0101]: unknown signal (with suggestion): `pi.act_led`
  --> joker.toml:8:10
   |
 8 | [outputs."pi.act_led"]
@@ -208,7 +208,7 @@ manifest = "joker.sim.toml"
 Now delete the line `safe = false` from `joker.toml` and check again:
 
 ```
-error[J0201]: output `pi.act_led` has no `safe`
+error[J0201]: output without `safe`: `pi.act_led`
  --> joker.toml:8:1
   |
 8 | [outputs."pi.act_led"]

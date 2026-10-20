@@ -102,7 +102,7 @@ instances = { botao = { pressed = "button" } }
 ```
 
 ```
-error[J0807]: the key `instances` is reserved for a future version (1.x)
+error[J0807]: key reserved for a future version: `instances` (1.x)
  --> profiles/local/bench-esp32@1.profile.toml:24:1
    |
 24 | instances = { botao = { pressed = "button" } }

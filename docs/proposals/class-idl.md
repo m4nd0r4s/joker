@@ -287,7 +287,7 @@ pump@1.contract.json  canonical form, ordered, without comments or formatting
 Errors use the prefix `JC` and the `jk` format:
 
 ```
-error[JC0204]: method writes to a member that is not `out`
+error[JC0204]: method assigns to something that is not `out`
   --> classes/std/pump@1.jkc:34:9
    |
 34 |         running = true

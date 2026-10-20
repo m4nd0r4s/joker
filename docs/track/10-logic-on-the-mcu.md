@@ -112,7 +112,7 @@ async fn estatistica(io: &TaskIo<Reflexo>) -> Result<()> {
 ```
 
 ```
-error[J0720]: `history` does not exist in Joker Micro
+error[J0720]: API or manifest section unavailable on Joker Micro (§2.11.5, ref/04 §4.14): `history`
   --> micro/esp/apps/reflexo/src/lib.rs:34:22
    |
 34 |     let h = io.botao.history(io.now() - 1.h(), io.now(), 1.mins()).await?;
@@ -128,7 +128,7 @@ The error is born in `rustc` (the function requires a *trait* that the native ba
 ```
 
 ```
-warning[J0721]: `f64` on an MCU without a double-precision FPU
+warning[J0721]: `f64` on an MCU without a double-precision FPU (`fpu` = `none` or `sp`, §2.14)
   --> micro/esp/apps/reflexo/src/lib.rs:9:74
    |
  9 |     #[param(unit = "ms", range = "0..2000", default = 300.0)] bloqueio: Param<f64>,
@@ -211,7 +211,7 @@ $ jk secret set wifi_bancada --nodes esp
 value of wifi_bancada: ••••••••••••
 repeat: ••••••••••••
 wifi_bancada · rev 1 · encrypted for node:esp (x25519:3c8a…, record 19, from the enrollment of part 9)
-warning[W0926]: entry without a `secrets` signature (in `prod` it is an error; part 11)
+warning[W0926]: secret signature missing or invalid: entry without a `secrets` signature (in `prod` it is an error; part 11)
 ✓ secrets.toml.enc
 ```
 
@@ -263,7 +263,7 @@ Without negotiation, an attacker on the network cannot "downgrade" the security 
 **Why a 1 s lease.** With the 100 ms of part 9, `jk check` warns:
 
 ```
-warning[W0730]: liveness condition not met: the lease of a remote writer does not survive a lost renewal
+warning[W0730]: liveness condition not met: the lease of a remote writer does not survive one lost renewal
   = note: luz → esp.led over UDP (Wi-Fi): 2 × 20 ms + 10 ms (MCU group main) + 0.2 ms (1024 B block)
           + 100 ms (peak latency on Wi-Fi, ref/07 §11.4) + 1 ms = 151 ms > 100 ms
   = help: over Wi-Fi, leases of remote writers ≥ 1 s, and never fast control; in `prod` this is an error

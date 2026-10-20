@@ -88,7 +88,7 @@ $ jk check --env zero
 ```
 
 ```
-error[J0172]: board `rpi-zero-w` not found
+error[J0172]: profile or board not found, or profile without a major: board `rpi-zero-w`
   --> joker.zero.toml:5:9
    |
  5 | board = "rpi-zero-w@1"
@@ -259,9 +259,9 @@ $ jk board check boards/rpi-zero-w.board.toml --node zero
 ```
 
 ```
-error[J0829]: the board says `arch = "aarch64"` and `cpus = 4`; node zero is armv6l with 1 CPU
+error[J0829]: inconsistent board profile (architecture, system, CPUs, pins): the board says `arch = "aarch64"` and `cpus = 4`; node zero is armv6l with 1 CPU
   --> boards/rpi-zero-w.board.toml:6:1
-error[J0828]: resource missing on node zero: /dev/i2c-1 ([i2c] "i2c1"), /dev/spidev0.0 ([spi] "spi0"), eth0 ([net] "eth")
+error[J0828]: resource nonexistent on the board (line, port, bus, accelerator): on node zero, /dev/i2c-1 ([i2c] "i2c1"), /dev/spidev0.0 ([spi] "spi0"), eth0 ([net] "eth")
   --> boards/rpi-zero-w.board.toml:37:1
    = help: for a board that does not exist yet, start from what the node says: jk board probe --node zero
 ```
@@ -281,16 +281,16 @@ $ jk check --env zero --node zero
 ```
 
 ```
-error[J0144]: CPU 3 does not exist on the board rpi-zero-w (1 CPU: 0)
+error[J0144]: value outside the allowed set: CPU 3 does not exist on the board rpi-zero-w (1 CPU: 0)
   --> joker.zero.toml:8:15
    |
  8 | rt = { cpus = [3] }
    |               ^^^ also io.cpus = [2] (line 9) and bg.cpus = [0, 1] (line 10)
    = help: remove [resources]: the default is the board's `recommended`
-error[J0828]: resource missing on node zero: port /dev/serial/by-id/usb-Silicon_Labs_CP2102_… ([buses.esp32])
+error[J0828]: resource nonexistent on the board (line, port, bus, accelerator): on node zero, port /dev/serial/by-id/usb-Silicon_Labs_CP2102_… ([buses.esp32])
   --> joker.zero.toml:14:8
    = note: the ESP32 is connected to the Pi 3, and not to this node
-warning[J0352]: group `main` (20 ms) without PREEMPT_RT: jitter not guaranteed
+warning[J0352]: group ≥ 10 ms without PREEMPT_RT: jitter not guaranteed: group `main` (20 ms)
   = note: rpi-zero-w is `kernel = "standard"`; it is what is expected on this board (document 23, §5.2)
 note: Wasm engine on armv6: Pulley (interpreter), to be confirmed in Phase 1 (document 23, §5.2)
 ```
@@ -369,7 +369,7 @@ One lock per input manifest (D8): `joker.zero.toml` gives `joker.zero.lock`, nex
 ```
 → zero (dev) · from --node
 luz.pisca  100,000 runs · Pulley · p50 150 µs · p99.9 240 µs · max 610 µs
-warning[J0432]: measured WCET (240 µs) above the one declared by the app (20 µs)
+warning[J0432]: measured WCET above the one declared by the app: 240 µs measured, 20 µs declared
   = note: the declared one is the author's estimate; RT admission uses the measured one, from the lock, for this board
 RT admission  main 20 ms · 240 µs · 1.2% of the period ✓
 written       joker.zero.lock [wcet] "luz.pisca" (board = "rpi-zero-w")

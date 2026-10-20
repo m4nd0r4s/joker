@@ -170,9 +170,9 @@ $ jk build --target mcu:esp32-devkit --generation --firmware target/joker/firmwa
 ```
 ✓ micro/esp/joker.toml     2 devices (gpio, esp32), 5 signals, 1 output, 1 group, 1 link
 ✓ capacities               5/256 signals · 1/64 outputs · 1/4 groups (J0710: fits)
-warning[W0786]: the board esp32-devkit has no safe outputs at reset (`reset_safe = false`)
+warning[W0786]: board without safe outputs on reset (`reset_safe = false`); acceptable with `accept_unsafe_reset`: esp32-devkit
   = note: until the firmware configures the pins, GPIO2 is an input with the internal pull-down of a strapping pin (the LED stays off), but the board does not guarantee this for the other pins; on the bench there is no load
-warning[W0788]: generation in flash not bound to a node
+warning[W0788]: generation in flash not bound to a node (`node`)
 warning[W0779]: unsigned generation blob
   = help: all three are errors in `mode = "prod"`; part 11 deals with signatures
 ✓ target/joker/bancada-esp.jkgen   6.1 KiB · gen 1 · generation sha256:5d21… · catalog sha256:3b9e…
@@ -231,7 +231,7 @@ $ jk check --env lab-link
 ```
 
 ```
-error[J0234]: envelope on a path that is not an output of this node
+error[J0234]: envelope on a path that is not an output of this node (or governed by a Joker Micro)
  --> joker.toml:14:1
    |
 14 | [outputs."esp.led"]
@@ -339,7 +339,7 @@ The new blob goes to the **other** area (`gen_b`), while the MCU keeps running g
 Now repeat with `deadband = 8` and **do not confirm**. After 5 min:
 
 ```
-esp   … generation 3 rolled_back → generation 2 (gen_b) · J-E2409: the update was not confirmed within the window
+esp   … generation 3 rolled_back → generation 2 (gen_b) · J-E2409: OTA: the update was not confirmed within the window; rollback
 ```
 
 The MCU went back by itself, without anybody telling it anything. The window counts **on the MCU**, because the Linux node may be the cause of the problem (ref/07 §9.4; ADR 0015). The node also goes back to generation 11. Put `deadband = 3` back in the file.

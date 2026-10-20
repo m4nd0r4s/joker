@@ -66,7 +66,7 @@ stuck_detect = "10m"
 ```
 
 ```
-error[J0176]: `stuck_detect` does not apply to `bool` signals
+error[J0176]: adjustment incompatible with the signal's type, direction or origin: `stuck_detect` on a `bool` signal
   --> joker.toml:14:1
    |
 14 | stuck_detect = "10m"

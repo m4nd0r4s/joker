@@ -111,14 +111,14 @@ $ jk doctor --rt --node lab
 → lab · no generation · from --node
 board            Raspberry Pi 3 Model B Plus Rev 1.3 → rpi3b-plus@1 (level 2)
 kernel.preempt_rt    no      6.12.25-v8 (PREEMPT_DYNAMIC)
-   warning[J0352]: groups ≥ 10 ms run without guaranteed jitter; < 10 ms will be rejected (J0351)
+   warning[J0352]: group ≥ 10 ms without PREEMPT_RT: jitter not guaranteed: groups < 10 ms are rejected (J0351)
 cpu.isolcpus         —       the board suggests: isolcpus=3 nohz_full=3 rcu_nocbs=3
 cpu.governor         ondemand   suggestion: performance
 watchdog             /dev/watchdog0 · 15 s · ok
 clock                NTP synchronized (systemd-timesyncd)
 permissions, groups  ok
 disk                 22 GiB free
-warning[J0933]: identity key in a file, without TPM or secure element
+warning[J0933]: identity key in a file, without a TPM or secure element (or required attestation missing)
 rt.cyclictest        60 s on cpu 3 · p99 118 µs · max 2.4 ms   (recorded; no target on this board)
 device_fallbacks     —   (no generation)
 ```
@@ -206,8 +206,8 @@ $ jk check --env lab
 ✓ resources          rt [3] · io [2] · bg [0, 1]
 ✓ RT admission       main 20ms → cpu 3: 5 µs declared (0.03%)
 ✓ memory             estimated 38 MiB of 1 GiB
-warning[J0352]: group `main` (20 ms) has no PREEMPT_RT kernel on this target; jitter not guaranteed
-warning[W0205]: `pi.act_led` has no device fallback
+warning[J0352]: group ≥ 10 ms without PREEMPT_RT: jitter not guaranteed: group `main` (20 ms)
+warning[W0205]: device fallback missing or inconsistent with `safe`: `pi.act_led`
    = note: an LED in sysfs has no watchdog of its own; if jokerd dies, it stays at the last value
    = help: in `mode = "prod"` this is an error; accept it with `accept_missing_fallback = "<justification>"`,
             or use hardware with a fallback
@@ -221,7 +221,7 @@ Keep the `W0205` in mind: you will see it happen in section 12.
 Change to `mode = "prod"` in `joker.toml` and check again:
 
 ```
-error[J0205]: `pi.act_led` has no device fallback
+error[J0205]: device fallback missing or inconsistent with `safe`: `pi.act_led`
  --> joker.lab.toml:14:1
    |
 14 | [devices.pi]

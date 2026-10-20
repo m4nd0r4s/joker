@@ -971,7 +971,7 @@ The remaining `# REVIEW` lines appear at the end as notes, with the line. An exa
 ```
 $ jk board check boards/rpi-zero-w.board.toml --node zero
 → zero (dev) · from --node
-error[J0828]: resource nonexistent on the board: `/dev/i2c-1`
+error[J0828]: resource nonexistent on the board (line, port, bus, accelerator): `/dev/i2c-1`
   --> boards/rpi-zero-w.board.toml:38:10
    |
 38 | "i2c1" = "/dev/i2c-1"
