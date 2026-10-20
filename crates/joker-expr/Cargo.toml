@@ -1,0 +1,19 @@
+[package]
+name = "joker-expr"
+description = "Joker manifest expression language: parser, checker and allocation-free VM (no_std)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[features]
+default = []
+alloc = []
+
+[dependencies]
+joker-units.workspace = true
+
+[lints]
+workspace = true

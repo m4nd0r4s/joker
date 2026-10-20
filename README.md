@@ -2,7 +2,7 @@
 
 A runtime coringa para dispositivos de edge. O mesmo núcleo em Linux (Raspberry Pi, RevPi, PC industrial) e em microcontroladores (Joker Micro), e uma só abstração: **sinais tipados com unidade, qualidade e tempo**. Controla I/O, fala protocolos industriais e recolhe telemetria, com um envelope de segurança nativo entre cada app e o hardware; o ML chega na 1.1. Faz parte de uma família com o registo (Hub) e o plano de controlo da frota (Deck).
 
-**Estado:** documento de desenho. Nada está implementado. Os números marcados como *alvo* são estimativas a validar nas Fases 0 a 2 (`docs/11-roadmap.md`).
+**Estado:** em implementação, a começar pela primeira fatia vertical M0 (`docs/26-revisao-final.md` §6). Licença: Apache-2.0 OR MIT. Os números marcados como *alvo* são estimativas a validar nas Fases 0 a 2 (`docs/11-roadmap.md`).
 
 ## Estrutura proposta
 

@@ -1,0 +1,20 @@
+[package]
+name = "joker-core"
+description = "Joker core: registry, slots, process image, arbiter, envelope, alarms and trace (no_std, no I/O)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[features]
+default = []
+alloc = []
+
+[dependencies]
+joker-units.workspace = true
+joker-expr.workspace = true
+
+[lints]
+workspace = true

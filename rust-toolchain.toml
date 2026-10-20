@@ -1,0 +1,4 @@
+[toolchain]
+channel = "1.99.0"
+components = ["rustfmt", "clippy"]
+targets = ["thumbv8m.main-none-eabihf", "riscv32imac-unknown-none-elf", "wasm32-wasip2"]
