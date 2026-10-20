@@ -108,6 +108,10 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | gravação, gravar | **recording**, **record** | |
 | reproduzir, replay | **replay** | |
 | verdade de fundo | **ground truth** | 12 |
+| carimbo (de tempo), carimbo da origem | **timestamp**, **source timestamp** | `ts_src`; 16 §3.3 |
+| lido por poll, leitura | **read by poll**, **read** | 16 §3.4 |
+| prazo | **deadline** | 16 A14, §7 |
+| vírgula flutuante | **floating point** | 19 |
 
 ---
 
@@ -156,6 +160,13 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | ponte | **bridge** | API bridges (Home Assistant, OPC UA server) |
 | API local | **local API** | |
 | observabilidade | **observability** | |
+| rastreio causal | **causal tracing** | M3 |
+| buffers partilhados | **shared buffers** | M4 |
+| gravação por gatilho | **triggered recording** | M7 |
+| caixa latest-wins, caixa do driver, caixa de valor | **latest-wins box**, **driver box**, **value box** | 01 §3.4, 18 P1 |
+| malha (de controlo), malha de corrente | **loop**, **current loop** | 11, 12, 19 |
+| executor de interrupção | **interrupt executor** | Embassy; 12, 19 |
+| medição de *fuel* | ***fuel* metering** | wasmi; 19 §5 |
 | saúde | **health** | |
 | modo de falha, falha | **failure mode**, **failure** / **fault** | "falha" of a device or bus → **fault**; of a process or plan → **failure** |
 | plataforma | **platform** | |
@@ -172,6 +183,8 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | buffer de propostas | **proposal buffer** | |
 | ciclo de vida de uma proposta | **lifecycle of a proposal** | 02 §7.1 |
 | aplicada (escrita) | **applied**, **committed** | "escritas já aplicadas (*committed*)" → "writes already applied (*committed*)" |
+| saída (sinal comandado) | **output** | the commanded signal with envelope and `safe`; not an exit gate |
+| origem (de um escritor) | **origin** | writer = (origin, level); 16 A1 |
 | aceite, limitada, rejeitada | **accepted**, **clamped**, **rejected** | the three outcomes; ref/00 §4.4 |
 | resultado de escrita | **write result** | |
 | escritas agendadas | **scheduled writes** | M6 |
@@ -179,6 +192,8 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | árbitro, arbitragem | **arbiter**, **arbitration** | ADR 0011 |
 | nível (do árbitro) | **level** | `safety`, `manual`, … |
 | prioridade | **priority** | |
+| escritores só-proposta | **proposal-only writers** | M18 |
+| registos com tipo | **typed records** | proposal buffer; 18 P1 |
 | escrita efetiva | **effective write** | |
 | envelope | **envelope** | range, rate, interlocks, safe state, lease |
 | passo do envelope | **envelope step** | |
@@ -237,6 +252,8 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | planta simulada | **simulated plant** | |
 | semente | **seed** | random seed |
 | lógica de negócio | **business logic** | |
+| programador de negócio | **business programmer** | persona; 14, 15 |
+| sinal de vida | **heartbeat signal** | 14 §2 |
 
 ---
 
@@ -288,6 +305,8 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | política de versões | **versioning policy** | ADR 0022 |
 | estável, instável | **stable**, **unstable** | |
 | major, minor, patch | **major**, **minor**, **patch** | |
+| versionado, versionar | **version-controlled**, **version-control** | 15 |
+| armazém por conteúdo | **content-addressed store** | 15 §2.5 |
 
 ---
 
@@ -321,6 +340,8 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | debounce, flanco | **debounce**, **edge** | |
 | integrador de hardware | **hardware integrator** | |
 | fabricante | **vendor** / **manufacturer** | vendor for software and NPUs, manufacturer for equipment |
+| duplos de equipamento | **equipment doubles** | `joker-drvtest`; 13 |
+| quadro (elétrico) | **cabinet** | 12, 19 |
 
 ---
 
@@ -341,6 +362,14 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | contrato, hash de contrato | **contract**, **contract hash** | |
 | IDL de classes | **class IDL** | `.jkc`, 17 |
 | gramática | **grammar** | |
+| registo (tipo do `.jkc`), registo de instâncias | **record**, **instance registry** | a `record` type vs the registry of instances; 17 §3.3, §6 |
+| membro fixo, membro coleção | **fixed member**, **collection member** | 17 §3.2, §8 |
+| agregação | **aggregation** | `any`, `count`; 17 §8 |
+| profundidade (da composição) | **depth** | `JC0501`; 17 §8 |
+| camadas de implementação | **implementation layers** | `J0620`; 14 §7.2 |
+| cumprir (uma classe) | **fulfill** | a profile or instance fulfills a class |
+| sugestão (`@*_hint`) | **hint** | 17 |
+| método de topo | **top-level method** | 17 §4.1 |
 | autor de abstrações | **abstraction author** | persona; 24 |
 
 ---
@@ -398,6 +427,10 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | chaves da organização | **organization keys** | |
 | bundle de confiança, cadeia de bundles | **trust bundle**, **bundle chain** | |
 | política de confiança | **trust policy** | |
+| papel de assinatura | **signing role** | 15 |
+| responsável de segurança | **security officer** | persona; 15 |
+| integrador do site, engenheiro do site | **site integrator**, **site engineer** | personas; 15 |
+| multi-inquilino | **multi-tenant** | 11 |
 | CA local | **local CA** | |
 | memória de nonces | **nonce memory** | |
 | proteção de dados | **data protection** | 26 |
@@ -480,6 +513,14 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | veredicto | **verdict** | |
 | auditoria | **audit** | |
 | revisão final | **final review** | 26 |
+| revisão de âmbito | **scope review** | 12 |
+| marco | **milestone** | 13 |
+| executor (de conformidade) | **runner** | 13 |
+| noturno (CI) | **nightly** | 13 |
+| piloto de bancada, piloto de campo | **bench pilot**, **field pilot** | 11 |
+| congelar, checklist de congelamento | **freeze**, **freeze checklist** | 18 |
+| adenda | **addendum** | 18, 19 |
+| marca (registada) | **trademark** | 18 |
 | mudanças de desenho, primitivas | **design changes**, **primitives** | 10 |
 | limites | **limits** | 12 |
 | fora do nicho | **out of niche** | 12 |
@@ -517,6 +558,17 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | inspeção visual | **visual inspection** |
 | manutenção preditiva | **predictive maintenance** |
 | comissionamento | **commissioning** |
+| UTA | **AHU** |
+| estação de bombagem, bomba principal | **pumping station**, **lead pump** |
+| boia, fim de curso, relé térmico | **float**, **limit switch**, **thermal relay** |
+| ida, retorno (água) | **supply**, **return** |
+| proteção contra ciclos curtos | **protection against short cycling** |
+| contador certificado | **certified meter** |
+| sinópticos, ecrãs de operação | **mimic diagrams**, **operator screens** |
+| troca (ativo/standby) | **switchover** |
+| blocos funcionais | **function blocks** |
+| SGTC | **BMS** (building management system) |
+| alarme que pisca | **flapping alarm** (a LED **blinks**) |
 | piso (de um edifício) | **floor** |
 
 ---
