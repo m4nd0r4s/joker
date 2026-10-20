@@ -1,179 +1,179 @@
-# 22 — Rodada da API: as interfaces fechadas
+# 22 — API round: the interfaces closed
 
-Esta rodada pegou em **todas as interfaces** do Joker e escreveu-as como referência exaustiva, para que a implementação trabalhe só sobre especificações. O resultado está em `docs/ref/` (onze documentos) e nos ficheiros máquina-legíveis em `wit/` e `spec/`. Este documento conta o que se decidiu, onde as referências se contradiziam e como se resolveu, e o que se atacou de ponta a ponta.
+This round took **all the interfaces** of Joker and wrote them down as an exhaustive reference, so that the implementation works on specifications only. The result is in `docs/ref/` (eleven documents) and in the machine-readable files in `wit/` and `spec/`. This document tells what was decided, where the references contradicted each other and how that was resolved, and what was attacked end to end.
 
 ---
 
-## 1. O que existe agora
+## 1. What exists now
 
-| Referência | Superfície | Máquina-legível |
+| Reference | Surface | Machine-readable |
 |---|---|---|
-| `ref/00-conventions.md` | representação comum: versões, nomes, tempo, valores, códigos numéricos, identificadores, codificações, erros, segurança, limites | — |
-| `ref/01-manifest.md` | `joker.toml` e overlays: todas as secções e chaves, gramática dos valores, manifesto efetivo | (esquema JSON gerado dos tipos, 16 §10) |
-| `ref/02-lock-node-and-client.md` | `joker.lock`, `/etc/joker/node.toml`, `/var/lib/joker/`, cliente `jk`, segredos, confiança | `spec/cddl/secrets.cddl` |
-| `ref/03-profiles-boards-sim.md` | perfis, placas, simulação, cenários, conformidade (núcleo e classes), pacotes e Hub | `wit/joker-sim.wit` |
-| `ref/04-wit-and-rust-sdk.md` | mundo `joker:runtime`, ABI de ciclo, `joker:meta`, SDK Rust, `joker-test`, erros `J-E0xxx` | `wit/joker-runtime.wit`, `spec/cddl/joker-meta.cddl` |
-| `ref/05-python-and-typescript-sdks.md` | SDKs de tier 2 (Python, TypeScript) e bibliotecas cliente (Rust, Python, TypeScript) | — |
-| `ref/06-drivers.md` | tier N (traits), tier W (`joker:driver`), tier X (JDP), suite de conformidade de drivers | `wit/joker-driver.wit`, `spec/cddl/jdp.cddl`, `spec/c/jdp.h` |
-| `ref/07-joker-link.md` | Joker Link ao nível do fio: enquadramento, segurança, sessão, as mensagens (lista na ref/07 §6.1), OTA, orçamentos | `spec/cddl/joker-link.cddl` |
-| `ref/08-joker-micro-abi.md` | ABI C, crate `joker-micro`, modo firmware, blob `.jkgen`, descritor `.jkfw`, alvos | `spec/c/joker_node.h`, `spec/c/example/`, `spec/cddl/joker-micro.cddl` |
-| `ref/09-http-api.md` | API HTTP local, WebSocket e SSE (as operações são as do OpenAPI) | `spec/openapi/joker-api.yaml` |
-| `ref/10-agent-protocol.md` | nó ↔ Deck: enrolamento, estado desejado, relatórios, eventos, sessões, HTTPS e MQTT, perfil micro | `spec/cddl/agent.cddl` |
+| `ref/00-conventions.md` | common representation: versions, names, time, values, numeric codes, identifiers, encodings, errors, security, limits | — |
+| `ref/01-manifest.md` | `joker.toml` and overlays: all the sections and keys, grammar of the values, effective manifest | (JSON schema generated from the types, 16 §10) |
+| `ref/02-lock-node-and-client.md` | `joker.lock`, `/etc/joker/node.toml`, `/var/lib/joker/`, the `jk` client, secrets, trust | `spec/cddl/secrets.cddl` |
+| `ref/03-profiles-boards-sim.md` | profiles, boards, simulation, scenarios, conformance (core and classes), packages and Hub | `wit/joker-sim.wit` |
+| `ref/04-wit-and-rust-sdk.md` | `joker:runtime` world, cycle ABI, `joker:meta`, Rust SDK, `joker-test`, `J-E0xxx` errors | `wit/joker-runtime.wit`, `spec/cddl/joker-meta.cddl` |
+| `ref/05-python-and-typescript-sdks.md` | tier 2 SDKs (Python, TypeScript) and client libraries (Rust, Python, TypeScript) | — |
+| `ref/06-drivers.md` | tier N (traits), tier W (`joker:driver`), tier X (JDP), driver conformance suite | `wit/joker-driver.wit`, `spec/cddl/jdp.cddl`, `spec/c/jdp.h` |
+| `ref/07-joker-link.md` | Joker Link at the wire level: framing, security, session, the messages (list in ref/07 §6.1), OTA, budgets | `spec/cddl/joker-link.cddl` |
+| `ref/08-joker-micro-abi.md` | C ABI, `joker-micro` crate, firmware mode, `.jkgen` blob, `.jkfw` descriptor, targets | `spec/c/joker_node.h`, `spec/c/example/`, `spec/cddl/joker-micro.cddl` |
+| `ref/09-http-api.md` | local HTTP API, WebSocket and SSE (the operations are those of the OpenAPI) | `spec/openapi/joker-api.yaml` |
+| `ref/10-agent-protocol.md` | node ↔ Deck: enrollment, desired state, reports, events, sessions, HTTPS and MQTT, micro profile | `spec/cddl/agent.cddl` |
 
-**Validação feita:** todos os blocos TOML, JSON e YAML passam num parser; o OpenAPI passa no `openapi-spec-validator`; os três pacotes WIT (`joker:runtime`, `joker:driver`, `joker:sim`) passam no parser oficial (via `jco`), e o `joker:driver` resolve contra o `joker:runtime`; os headers C compilam com `-std=c11 -Wall -Wextra -pedantic` e em C++17; o CDDL do `joker:meta` foi validado com `zcbor` contra instâncias, e os restantes passam num parser de CDDL; os vetores de teste do Joker Link (CRC, COBS, ChaCha20-Poly1305, COSE) foram gerados e verificados por código.
+**Validation done:** all the TOML, JSON and YAML blocks pass a parser; the OpenAPI passes `openapi-spec-validator`; the three WIT packages (`joker:runtime`, `joker:driver`, `joker:sim`) pass the official parser (via `jco`), and `joker:driver` resolves against `joker:runtime`; the C headers compile with `-std=c11 -Wall -Wextra -pedantic` and as C++17; the `joker:meta` CDDL was validated with `zcbor` against instances, and the others pass a CDDL parser; the Joker Link test vectors (CRC, COBS, ChaCha20-Poly1305, COSE) were generated and verified by code.
 
-**O que ainda não foi compilado:** as assinaturas Rust e os blocos TypeScript foram revistos à mão, e os CDDL, exceto o do `joker:meta`, só passaram num parser de sintaxe. Isto passa a ser a tarefa 0 da Fase 0 (§8).
+**What has not been compiled yet:** the Rust signatures and the TypeScript blocks were reviewed by hand, and the CDDL files, except that of `joker:meta`, only passed a syntax parser. This becomes task 0 of Phase 0 (§8).
 
 ---
 
-## 2. O mapa das interfaces
+## 2. The map of the interfaces
 
 ```
-            pessoas                                          máquinas
+            people                                           machines
  ┌──────────────────────────┐                   ┌────────────────────────────────┐
  │ joker.toml, overlays      │ ref/01            │ Joker Deck                     │
- │ perfis, placas, sim,      │ ref/03            │   ▲ agent/1 (JSON/HTTPS,       │
- │ cenários, conformidade    │                   │   │  CBOR/MQTT) ref/10         │
+ │ profiles, boards, sim,    │ ref/03            │   ▲ agent/1 (JSON/HTTPS,       │
+ │ scenarios, conformance    │                   │   │  CBOR/MQTT) ref/10         │
  │ classes .jkc              │ 17                └───┼────────────────────────────┘
  └────────────┬─────────────┘                        │
               │ jk check / build / lock (ref/02)     │
               ▼                                      │
  ┌──────────────────────────────────────────────────┴───────────────────────────┐
  │ jokerd                                                                        │
- │  API HTTP/WS ref/09 ◀── jk, Studio, clientes Rust/Python/TS (ref/05)          │
- │  apps Wasm ── joker:runtime (ref/04; SDKs Rust ref/04, Python/TS ref/05)      │
+ │  HTTP/WS API ref/09 ◀── jk, Studio, Rust/Python/TS clients (ref/05)           │
+ │  Wasm apps ── joker:runtime (ref/04; Rust SDK ref/04, Python/TS ref/05)       │
  │  drivers ── tier N traits · tier W joker:driver · tier X JDP (ref/06)         │
- │  dispositivo joker-link ──────────────┐                                       │
+ │  joker-link device ───────────────────┐                                       │
  └───────────────────────────────────────┼───────────────────────────────────────┘
                                          │ Joker Link ref/07 (COBS+CRC-32C, CBOR)
                                          ▼
                         ┌───────────────────────────────────────┐
-                        │ Joker Micro: firmware · lib C · crate │ ref/08
-                        │   blob .jkgen, joker_node.h            │
+                        │ Joker Micro: firmware · C lib · crate │ ref/08
+                        │   .jkgen blob, joker_node.h            │
                         └───────────────────────────────────────┘
-            tudo com a mesma representação: ref/00 · a mesma semântica: 16
+            all with the same representation: ref/00 · the same semantics: 16
 ```
 
 ---
 
-## 3. Um valor de ponta a ponta
+## 3. A value end to end
 
-A potência de um inversor atrás de um RP2350, lida pelo MCU às 10:00:00,1238 UTC com a qualidade `Uncertain(Stale)`. O mesmo valor em cada interface:
+The power of an inverter behind an RP2350, read by the MCU at 10:00:00.1238 UTC with the quality `Uncertain(Stale)`. The same value in each interface:
 
-| Onde | Forma | Referência |
+| Where | Form | Reference |
 |---|---|---|
-| registo Modbus no MCU | `u16` cru `0x101D`, escala 0,1 | ref/03 §2.2, ref/06 §2.7 |
-| slot no MCU | `value` = bits de `412.5_f64`; `quality` = `0x0000_0301` (código 1, motivo 3) | 01 §3.2, ref/00 §4.3 |
-| Joker Link, `SAMPLES` | `[40, 5120, 412.5, 1800, 769]`: `sid`, `seq` de 16 bits, valor, `dt` em µs, qualidade | ref/07 §6.9 |
-| slot no `jokerd` | `ts_acq` = instante monotónico (ns) da receção no nó Linux; `ts_hw` = `t0 + dt` do MCU, convertido para o monotónico do nó pelo desvio e pela taxa que o `TIME` estima, com a flag de domínio "link"; `seq` do slot do nó (a de 16 bits do MCU só serve para descartar amostras velhas) | ref/07 §8.3, §8.4, 01 §3.2 |
-| app Rust, ciclo | `inv.p.get()` → `Err(QualityError { port, quality: Quality::uncertain(Stale) })`; `get_uncertain()` → `Ok(412.5)` (na unidade da porta, kW) | ref/04 §4.6, §4.7.1, 16 §3.1 |
-| app TypeScript | `inv.p.get()` lança `QualityError`; `inv.p.tryGet()` → `{ ok: false, … }` | ref/05 §6.1 |
-| traço | 16 B: `seq` u32, qualidade u32, valor u64 | 16 §7 |
-| API HTTP | `{"path":"inv.p","value":412.5,"unit":"kW","quality":"uncertain","reason":"stale","ts_hw":"2026-09-24T10:00:00.123800000Z","ts_acq":"2026-09-24T10:00:00.126100000Z","seq":88123}` (`ts_hw` é o instante do MCU, `ts_acq` o da receção; `seq` é a do slot do nó) | ref/00 §4.2, ref/09 §3.3 |
-| Deck | não recebe a amostra: recebe a telemetria (Sparkplug B) e, no relatório, a saúde do dispositivo | ref/10 §2.10, 20 §3.3 |
+| Modbus register on the MCU | raw `u16` `0x101D`, scale 0.1 | ref/03 §2.2, ref/06 §2.7 |
+| slot on the MCU | `value` = bits of `412.5_f64`; `quality` = `0x0000_0301` (code 1, reason 3) | 01 §3.2, ref/00 §4.3 |
+| Joker Link, `SAMPLES` | `[40, 5120, 412.5, 1800, 769]`: `sid`, 16-bit `seq`, value, `dt` in µs, quality | ref/07 §6.9 |
+| slot in `jokerd` | `ts_acq` = monotonic instant (ns) of reception on the Linux node; `ts_hw` = the MCU's `t0 + dt`, converted to the node's monotonic clock by the offset and the rate that `TIME` estimates, with the "link" domain flag; `seq` of the node's slot (the MCU's 16-bit one only serves to discard stale samples) | ref/07 §8.3, §8.4, 01 §3.2 |
+| Rust app, cycle | `inv.p.get()` → `Err(QualityError { port, quality: Quality::uncertain(Stale) })`; `get_uncertain()` → `Ok(412.5)` (in the port's unit, kW) | ref/04 §4.6, §4.7.1, 16 §3.1 |
+| TypeScript app | `inv.p.get()` throws `QualityError`; `inv.p.tryGet()` → `{ ok: false, … }` | ref/05 §6.1 |
+| trace | 16 B: `seq` u32, quality u32, value u64 | 16 §7 |
+| HTTP API | `{"path":"inv.p","value":412.5,"unit":"kW","quality":"uncertain","reason":"stale","ts_hw":"2026-09-24T10:00:00.123800000Z","ts_acq":"2026-09-24T10:00:00.126100000Z","seq":88123}` (`ts_hw` is the MCU's instant, `ts_acq` that of reception; `seq` is that of the node's slot) | ref/00 §4.2, ref/09 §3.3 |
+| Deck | does not receive the sample: it receives the telemetry (Sparkplug B) and, in the report, the health of the device | ref/10 §2.10, 20 §3.3 |
 
-Em nenhum ponto a qualidade se perde, a unidade muda sem conversão explícita, ou um instante monotónico sai do nó sem o par UTC.
+At no point is the quality lost, does the unit change without explicit conversion, or does a monotonic instant leave the node without its UTC pair.
 
-## 4. Uma escrita de ponta a ponta
+## 4. A write end to end
 
-Uma operadora força a bomba de um MCU a parar, a partir do Studio no portátil, por TCP com mTLS:
+An operator forces the pump of an MCU to stop, from the Studio on the laptop, over TCP with mTLS:
 
-1. `POST /v1/outputs/pump.run_cmd/manual` com `value: false`, `ttl: "2h"`, `reason`, `level` por omissão `manual:4`, e os cabeçalhos `Joker-Nonce` e `Joker-Timestamp` (ref/09 §5.6, §2.5).
-2. O `jokerd` verifica o papel `operator`, o anti-replay e a ocupação do nível (16 A13). Como a saída é de um MCU, o nó Linux **não** a arbitra nem lhe aplica envelope (`J0234`, ref/07 §8.1): guarda o TTL e o nível e trata a escrita como um escritor remoto `user:<principal>` (16 A10, A12).
-3. O árbitro do **MCU** é o que decide: o `jokerd` envia `PROPOSE` no nível delegado ao link, com `lease = min(TTL restante, max_lease)` (omissão 5 s; ref/07 §6.12, §8.1, 16 A12). O MCU aplica o envelope dele e devolve `OUTCOMES` com `accepted` (valor 1, ref/00 §4.4).
-4. A resposta HTTP é `200` com o `WriteTicket` e o resultado, que se resolve no primeiro `OUTCOMES` que cobre o `PROPOSE` (ref/07 §8.2). Um `clamped_rate` ou `rejected(interlock)` também é `200`, porque é um resultado do envelope e não um erro do pedido (ref/09 §3.4).
-5. O `jokerd` renova o lease no MCU, em pedaços de `max_lease`, enquanto o TTL durar. Se o cabo cair, o lease expira **no MCU** em ≤ `max_lease`, e o MCU passa ao nível ativo seguinte ou ao `safe` (ref/07 §7.4).
-6. Se o `jokerd` reiniciar, o nível manual é reposto a partir do disco com o prazo em UTC (16 A14), e volta a ser enviado ao MCU: a paragem para manutenção não desaparece com um reinício. Sem relógio `synced` no arranque, repõe-se o TTL restante e levanta-se o alarme `joker.output.<s>.manual_restored`.
-7. O Deck vê tudo isto só no relatório (`overrides`, os níveis manuais ativos, ref/10 §2.10.1) e nos eventos `decision` das escritas manuais (ref/10 §2.11); a auditoria da API fica no nó. **O protocolo do agente não tem nenhuma mensagem de escrita em sinais** (ref/10 D9).
+1. `POST /v1/outputs/pump.run_cmd/manual` with `value: false`, `ttl: "2h"`, `reason`, `level` by default `manual:4`, and the `Joker-Nonce` and `Joker-Timestamp` headers (ref/09 §5.6, §2.5).
+2. `jokerd` checks the `operator` role, the anti-replay and the occupation of the level (16 A13). Because the output belongs to an MCU, the Linux node does **not** arbitrate it nor apply an envelope to it (`J0234`, ref/07 §8.1): it keeps the TTL and the level and treats the write as a remote writer `user:<principal>` (16 A10, A12).
+3. The **MCU**'s arbiter is the one that decides: `jokerd` sends `PROPOSE` at the level delegated to the link, with `lease = min(remaining TTL, max_lease)` (default 5 s; ref/07 §6.12, §8.1, 16 A12). The MCU applies its envelope and returns `OUTCOMES` with `accepted` (value 1, ref/00 §4.4).
+4. The HTTP response is `200` with the `WriteTicket` and the result, which resolves on the first `OUTCOMES` that covers the `PROPOSE` (ref/07 §8.2). A `clamped_rate` or `rejected(interlock)` is also `200`, because it is a result of the envelope and not a request error (ref/09 §3.4).
+5. `jokerd` renews the lease on the MCU, in chunks of `max_lease`, for as long as the TTL lasts. If the cable drops, the lease expires **on the MCU** within ≤ `max_lease`, and the MCU moves to the next active level or to `safe` (ref/07 §7.4).
+6. If `jokerd` restarts, the manual level is restored from disk with the deadline in UTC (16 A14), and is sent to the MCU again: the stop for maintenance does not disappear with a restart. Without a `synced` clock at startup, the remaining TTL is restored and the alarm `joker.output.<s>.manual_restored` is raised.
+7. The Deck sees all this only in the report (`overrides`, the active manual levels, ref/10 §2.10.1) and in the `decision` events of the manual writes (ref/10 §2.11); the API audit stays on the node. **The agent protocol has no message for writing to signals** (ref/10 D9).
 
 ---
 
-## 5. Decisões transversais
+## 5. Cross-cutting decisions
 
-Onde as referências, escritas em paralelo, divergiam ou deixavam uma escolha, decidiu-se assim. As referências e os documentos existentes foram alinhados com estas decisões (§7).
+Where the references, written in parallel, diverged or left a choice, it was decided as follows. The references and the existing documents were aligned with these decisions (§7).
 
-| # | Decisão | Onde se aplica |
+| # | Decision | Where it applies |
 |---|---|---|
-| **D1** | **Precedência:** `ref/00` tem o nível do 16; `ref/01`–`ref/10` ficam **acima** dos documentos por área (01–05, 14, 19, 20), que passam a ser a explicação e remetem para a referência no detalhe. ADR 0023. | docs/README, AGENTS |
-| **D2** | **Registos em CBOR** (eventos, argumentos e resultados de ações e métodos, `Internal<T>`): mapa com **chaves inteiras = posição do campo** no esquema (`joker:meta` ou contrato `.jkc`). Os campos só se acrescentam no fim dentro de uma major. O JSON usa os nomes. | ref/00 §4.1, ref/04 §4.10, ref/07 §6.2, 17 §9 |
-| **D3** | **Expressões:** o curto-circuito com qualidade é **simétrico** (`false && Bad` e `Bad && false` dão ambos `false (Good)`), porque os operandos não têm efeitos. `any`/`all` generalizam o curto-circuito; `count`/`sum`/`maxs`/`mins` dão a pior qualidade. Aritmética de inteiros em `f64`, comparações entre inteiros exatas. `own(x)` sem proposta anterior devolve o valor aplicado. | 02 §4, 16 §3.2, §4, 17 §4.1 |
-| **D4** | **Regras novas do núcleo:** A12 (escritores remotos: posse por nível delegado, lease contado no consumidor), A13 (dois principais no mesmo nível manual: o segundo é recusado sem `takeover`), A14 (os níveis manuais persistem a reinícios, com o prazo em UTC), E10 (proposta NaN, infinita ou com enum inexistente é `Rejected(WrongType)`). | 16 §1, §2 |
-| **D5** | **Escritas agendadas (M6) e intenções (M18) são 1.1** em todas as superfícies: reservadas no manifesto (`J0290`), `@unstable` no WIT, endpoints que respondem vazio ou `J-E1017`, reservadas no MCU (`J0783`). | 01, 02, 03, 04, 07, ref/* |
-| **D6** | **Segredos cifrados por destinatário (HPKE)**, com assinatura por entrada: o `secrets.toml.enc` **pode** ir para o Git, e é assim que o Deck os distribui sem os conseguir ler. Nas apps: `[apps.<app>.secrets] <nome_local> = "secret:<nome>"`. ADR 0024. | 01 §17, 03 §1, 15 §2.4, ref/01, ref/02, trilha |
-| **D7** | **Identidade e assinaturas:** a identidade do nó é **P-256** (TPM e elementos seguros suportam-na); as chaves da organização que assinam artefactos e documentos são **Ed25519**; COSE_Sign1 aceita `EdDSA` e `ES256`. Documentos assinados vão sempre em CBOR/COSE, também sobre HTTPS. A confiança vem de um bundle assinado por uma raiz fora de linha; `[security.trust]` no manifesto só restringe. ADR 0025. | ref/00 §7, 01 §17, 03 §13, 20 |
-| **D8** | **Um lock por manifesto de entrada:** `joker.rpi.toml` dá `joker.rpi.lock`. | 15, trilha antiga 05 |
-| **D9** | **Rollback reativa a geração anterior** com o mesmo hash e o mesmo número; o histórico é de ativações, cada uma com `origin`. `generation_state` ganha `discarded`. | 01 §15, ref/09, ref/10 |
-| **D10** | **Um só esquema de conformidade** para o núcleo e para as classes (`[suite]`, `[[case]]`, `do`, `expect`, `at`, `equals`), com os literais canónicos em minúsculas (`clamped_rate`, `bad(comm_failure)`) e as formas da CLI como sinónimos exatos. | 16 §8, 14 §7.3, ref/03 §2.6 |
-| **D11** | **`schema = 1`** é o primeiro par chave/valor dos ficheiros de catálogo e de teste (comentários antes são permitidos). | ref/00 §1, exemplos, trilha |
-| **D12** | **CRC-32C** (Castagnoli) em todo o lado: Joker Link, blob de geração, registos de persistência no MCU. | 19 §6, ref/07, ref/08 |
-| **D13** | **Tipos de media numa só tabela** (ref/00 §7.1), com a forma completa `application/vnd.joker.<tipo>.v1+<sufixo>`, incluindo `runtime`, `config`, `driver` (wasm e tar), `secrets`, `manifest`, `lock`, `provenance`, `cwasm`, `conformance`. | 20 §3.2 |
-| **D14** | **SDK Rust:** `Many<C, MIN, MAX>` (a forma `1..=8` não é Rust válido); `.mins()` (evita o `Ord::min`); alocar no ciclo é trap `J-E0903` (o alocador bump deixava ponteiros pendentes); sai o `#[joker::shared]`; `by_name()`; `clamped(clamp)` e `record error`. | 04, 14, trilha 06–08 |
-| **D15** | **Tier 2 também no ciclo**, com período mínimo de 100 ms em TypeScript e 500 ms em Python, e admissão pelo **máximo** medido (as pausas de GC tornam o p99,9 enganador). Plano B se o async do WASI 0.3 não estiver pronto nos toolchains: variante bloqueante numa thread `app`. | 04 §4, ref/02, ref/05 |
-| **D16** | **Anti-replay** (nonce e `ts`) na API em TCP, no túnel e no agente. As pontes autenticam-se pelo protocolo delas, com nível e lease. A janela de ±30 s só vale com o relógio `synced`; sem ele, valem o nonce e a ligação ao alvo, e isso fica na auditoria. | ref/00 §9, 01 §17 |
-| **D17** | **Identificadores estáveis entre gerações:** o *path-hash* (primeiros 8 B do SHA-256 do caminho canónico) liga a interface externa de um MCU a cada geração. O `SignalId` continua denso e válido só numa geração. | ref/00 §5, ref/08 |
-| **D18** | **Nomes de pacotes:** Python `joker_sdk`, `joker_client`, `joker_testing`, `joker_classes` (`import joker` levaria a instalar o pacote errado do PyPI); npm `@joker/*` (**confirmar a organização**); crates novos `joker-client`, `joker-agent`, `joker-agent-proto` (`no_std`), `joker-hal`, `joker-driver-sdk`, `joker-jdp`. | 13 |
-| **D19** | **Escrita manual:** nível por omissão `manual:4`; `--reason` obrigatório; `--to` (e não `--until`) nos intervalos. | 07 |
-| **D20** | **Drivers:** o núcleo executa os passos dos perfis (`connect`, `relinquish`, fallback M1) sobre duas primitivas do driver (`read-addr`, `write-addr`); a conversão cru ↔ engenharia é toda do núcleo; os tier X arrancam como unidades systemd transitórias com `DynamicUser`. | 05, 01 §17 |
-| **D21** | **Joker Link:** a segurança configura-se nos dois lados, sem negociação (não há *downgrade*); três classes de entrega (efémera, estado, fiável); modos de sessão `full`, `observe`, `maintenance`, `refused`; `SAMPLES` retransmite o valor atual, nunca o antigo. | 19 §6 |
-| **D22** | **ABI C:** dois headers (`joker_node.h` fixo, `joker_project.h` gerado); o código C escreve como uma app `kind = "extern"`; um *panic* de app num MCU é fatal (`jk_fatal`), porque não há sandbox; o trip é gravado em flash até `service_deadline` depois de acontecer. | 19 §4 |
-| **D23** | **Agente:** o estado desejado é completo e idempotente, com `seq`; sem fila de ordens; fases por ordem fixa (runtime → MCU → geração); uma geração só se confirma sozinha depois de um `report-ack` do Deck (uma geração que cortou a rede não se confirma a si própria); proteções locais contra um Deck comprometido (janela de manutenção, `max_applies_per_day`, `local_changes = "hold"`). | 20 |
+| **D1** | **Precedence:** `ref/00` has the level of 16; `ref/01`–`ref/10` sit **above** the per-area documents (01–05, 14, 19, 20), which become the explanation and refer to the reference for the detail. ADR 0023. | docs/README, AGENTS |
+| **D2** | **Records in CBOR** (events, arguments and results of actions and methods, `Internal<T>`): a map with **integer keys = position of the field** in the schema (`joker:meta` or `.jkc` contract). Fields are only added at the end within a major. JSON uses the names. | ref/00 §4.1, ref/04 §4.10, ref/07 §6.2, 17 §9 |
+| **D3** | **Expressions:** short-circuit with quality is **symmetric** (`false && Bad` and `Bad && false` both give `false (Good)`), because the operands have no effects. `any`/`all` generalize the short-circuit; `count`/`sum`/`maxs`/`mins` give the worst quality. Integer arithmetic in `f64`, exact comparisons between integers. `own(x)` with no previous proposal returns the applied value. | 02 §4, 16 §3.2, §4, 17 §4.1 |
+| **D4** | **New core rules:** A12 (remote writers: ownership by delegated level, lease counted at the consumer), A13 (two principals at the same manual level: the second is refused without `takeover`), A14 (manual levels persist across restarts, with the deadline in UTC), E10 (a NaN or infinite proposal, or one with a nonexistent enum, is `Rejected(WrongType)`). | 16 §1, §2 |
+| **D5** | **Scheduled writes (M6) and intents (M18) are 1.1** in every surface: reserved in the manifest (`J0290`), `@unstable` in the WIT, endpoints that respond empty or `J-E1017`, reserved on the MCU (`J0783`). | 01, 02, 03, 04, 07, ref/* |
+| **D6** | **Secrets encrypted per recipient (HPKE)**, with a signature per entry: `secrets.toml.enc` **may** go into Git, and that is how the Deck distributes them without being able to read them. In apps: `[apps.<app>.secrets] <local_name> = "secret:<name>"`. ADR 0024. | 01 §17, 03 §1, 15 §2.4, ref/01, ref/02, track |
+| **D7** | **Identity and signatures:** the node identity is **P-256** (TPMs and secure elements support it); the organization keys that sign artifacts and documents are **Ed25519**; COSE_Sign1 accepts `EdDSA` and `ES256`. Signed documents always go in CBOR/COSE, also over HTTPS. Trust comes from a bundle signed by an offline root; `[security.trust]` in the manifest only restricts. ADR 0025. | ref/00 §7, 01 §17, 03 §13, 20 |
+| **D8** | **One lock per input manifest:** `joker.rpi.toml` gives `joker.rpi.lock`. | 15, old track 05 |
+| **D9** | **Rollback reactivates the previous generation** with the same hash and the same number; the history is of activations, each with an `origin`. `generation_state` gains `discarded`. | 01 §15, ref/09, ref/10 |
+| **D10** | **A single conformance schema** for the core and for classes (`[suite]`, `[[case]]`, `do`, `expect`, `at`, `equals`), with the canonical literals in lowercase (`clamped_rate`, `bad(comm_failure)`) and the CLI forms as exact synonyms. | 16 §8, 14 §7.3, ref/03 §2.6 |
+| **D11** | **`schema = 1`** is the first key/value pair of the catalog and test files (comments before it are allowed). | ref/00 §1, examples, track |
+| **D12** | **CRC-32C** (Castagnoli) everywhere: Joker Link, generation blob, persistence records on the MCU. | 19 §6, ref/07, ref/08 |
+| **D13** | **Media types in a single table** (ref/00 §7.1), with the full form `application/vnd.joker.<type>.v1+<suffix>`, including `runtime`, `config`, `driver` (wasm and tar), `secrets`, `manifest`, `lock`, `provenance`, `cwasm`, `conformance`. | 20 §3.2 |
+| **D14** | **Rust SDK:** `Many<C, MIN, MAX>` (the `1..=8` form is not valid Rust); `.mins()` (avoids `Ord::min`); allocating in the cycle is trap `J-E0903` (the bump allocator left dangling pointers); `#[joker::shared]` goes away; `by_name()`; `clamped(clamp)` and `record error`. | 04, 14, track 06–08 |
+| **D15** | **Tier 2 in the cycle too**, with a minimum period of 100 ms in TypeScript and 500 ms in Python, and admission by the measured **maximum** (GC pauses make p99.9 misleading). Plan B if WASI 0.3 async is not ready in the toolchains: a blocking variant on an `app` thread. | 04 §4, ref/02, ref/05 |
+| **D16** | **Anti-replay** (nonce and `ts`) in the API over TCP, in the tunnel and in the agent. Bridges authenticate through their own protocol, with a level and a lease. The ±30 s window only applies with a `synced` clock; without it, the nonce and the binding to the target apply, and that goes into the audit. | ref/00 §9, 01 §17 |
+| **D17** | **Identifiers stable across generations:** the *path-hash* (first 8 B of the SHA-256 of the canonical path) binds the external interface of an MCU to each generation. The `SignalId` remains dense and valid only within one generation. | ref/00 §5, ref/08 |
+| **D18** | **Package names:** Python `joker_sdk`, `joker_client`, `joker_testing`, `joker_classes` (`import joker` would lead to installing the wrong PyPI package); npm `@joker/*` (**confirm the organization**); new crates `joker-client`, `joker-agent`, `joker-agent-proto` (`no_std`), `joker-hal`, `joker-driver-sdk`, `joker-jdp`. | 13 |
+| **D19** | **Manual write:** default level `manual:4`; `--reason` required; `--to` (and not `--until`) in intervals. | 07 |
+| **D20** | **Drivers:** the core executes the profile steps (`connect`, `relinquish`, M1 fallback) on top of two driver primitives (`read-addr`, `write-addr`); the raw ↔ engineering conversion belongs entirely to the core; tier X drivers start as transient systemd units with `DynamicUser`. | 05, 01 §17 |
+| **D21** | **Joker Link:** security is configured on both sides, without negotiation (there is no *downgrade*); three delivery classes (ephemeral, state, reliable); session modes `full`, `observe`, `maintenance`, `refused`; `SAMPLES` retransmits the current value, never the old one. | 19 §6 |
+| **D22** | **C ABI:** two headers (`joker_node.h` fixed, `joker_project.h` generated); the C code writes like a `kind = "extern"` app; an app *panic* on an MCU is fatal (`jk_fatal`), because there is no sandbox; the trip is recorded in flash until `service_deadline` after it happens. | 19 §4 |
+| **D23** | **Agent:** the desired state is complete and idempotent, with `seq`; no queue of orders; phases in a fixed order (runtime → MCU → generation); a generation only confirms itself after a `report-ack` from the Deck (a generation that cut the network does not confirm itself); local protections against a compromised Deck (maintenance window, `max_applies_per_day`, `local_changes = "hold"`). | 20 |
 
 ---
 
-## 6. Estresse transversal
+## 6. Cross-cutting stress
 
-Os casos de cada superfície estão na sua referência (8 a 12 por documento). Aqui ficam os que atravessam várias.
+The cases of each surface are in its reference (8 to 12 per document). Here are the ones that cross several.
 
-**X1 — Versões desalinhadas em todo o lado.** Deck 1.5, nó 1.3, MCU com firmware 1.0, app compilada para `joker:runtime@1.1`, `jk` 1.4 no portátil. O agente negoceia `agent/1` e o Deck limita-se ao que um 1.3 entende (ref/10 §3.14); a app 1.1 corre num 1.3 (o mundo só cresce); o MCU anuncia `link_version` 1.0 no `HELLO` e o `jokerd` fala 1.0 com ele (ref/07); a `jk` 1.4 lê `GET /v1/version` e as `features` do `GET /v1/info` e recusa, com uma mensagem clara, as opções que o nó não tem (ref/09 §9.3, ref/05 §21). **Aguenta**, porque cada superfície tem a sua versão e a regra "leitores toleram o desconhecido, pedidos são estritos" (ref/00 §1).
+**X1 — Misaligned versions everywhere.** Deck 1.5, node 1.3, MCU with firmware 1.0, app compiled for `joker:runtime@1.1`, `jk` 1.4 on the laptop. The agent negotiates `agent/1` and the Deck limits itself to what a 1.3 understands (ref/10 §3.14); the 1.1 app runs on a 1.3 (the world only grows); the MCU announces `link_version` 1.0 in `HELLO` and `jokerd` speaks 1.0 with it (ref/07); `jk` 1.4 reads `GET /v1/version` and the `features` of `GET /v1/info` and refuses, with a clear message, the options the node does not have (ref/09 §9.3, ref/05 §21). **Holds**, because each surface has its own version and the rule "readers tolerate the unknown, requests are strict" (ref/00 §1).
 
-**X2 — Um sinal muda de nome entre gerações.** `pump.speed` passa a `pump.speed_ref`. O `SignalId` muda (é denso por geração); as apps recebem handles novos no `init` da geração; a interface externa de uma biblioteca C num MCU é ligada por nome (com o *path-hash* da secção `PATHS`) a cada geração, e uma geração a que falte uma entrada obrigatória é recusada pelo `jk build --generation` (`J0790`) e, se chegar ao MCU, pelo `jk_init` (`JK_E_GEN_FIRMWARE`, `J-E2516`), em vez de ligar a variável errada (ref/08 §2.8.2). **Aguenta.**
+**X2 — A signal changes name between generations.** `pump.speed` becomes `pump.speed_ref`. The `SignalId` changes (it is dense per generation); apps receive new handles in the generation's `init`; the external interface of a C library on an MCU is bound by name (with the *path-hash* of the `PATHS` section) at each generation, and a generation that lacks a required entry is rejected by `jk build --generation` (`J0790`) and, if it reaches the MCU, by `jk_init` (`JK_E_GEN_FIRMWARE`, `J-E2516`), instead of binding the wrong variable (ref/08 §2.8.2). **Holds.**
 
-**X3 — Relógio `unsynced` do princípio ao fim.** Um nó arranca sem RTC nem rede. O controlo corre em monotónico e não muda (01 §18); os instantes UTC saem marcados com o relógio `unsynced`, e as apps com `requires_clock = "synced"` ficam com as saídas bloqueadas (`Rejected(ClockUnsynced)`); a API aceita escritas por TCP só com nonce e regista-o na auditoria (D16); o `TIME` leva ao MCU a qualidade `unsynced`, e o MCU fica `unsynced` (ref/07 §8.4); o agente não verifica `issued` nem `expires`, aceita o estado desejado pelo `seq`, e as fases com janelas esperam (`wait = clock`; ref/10 §3.12). **Aguenta**, com a regra "sem relógio, nada que dependa dele decide em silêncio".
+**X3 — `unsynced` clock from start to finish.** A node starts without an RTC or a network. Control runs on the monotonic clock and does not change (01 §18); UTC instants go out marked with the `unsynced` clock, and apps with `requires_clock = "synced"` have their outputs blocked (`Rejected(ClockUnsynced)`); the API accepts writes over TCP with the nonce only and records it in the audit (D16); `TIME` carries the `unsynced` quality to the MCU, and the MCU stays `unsynced` (ref/07 §8.4); the agent does not check `issued` or `expires`, accepts the desired state by `seq`, and the phases with windows wait (`wait = clock`; ref/10 §3.12). **Holds**, with the rule "without a clock, nothing that depends on it decides silently".
 
-**X4 — Um segredo tenta sair por uma porta lateral.** Pelo manifesto da geração (`GET /v1/generations/{gen}/manifest`, que só tem referências `secret:<nome>`), pelo traço (os segredos nunca são sinais), pelo `joker:meta` (só nomes), pelo relatório ao Deck (nomes e `rev`, nunca valores), por um log de app (a interface `secrets` só existe em async, e o SDK marca os valores como não imprimíveis). **Aguenta**; o risco que fica é a própria app enviar o segredo por rede, que só pode para os destinos de `net.allow` (ref/01).
+**X4 — A secret tries to leave through a side door.** Through the generation's manifest (`GET /v1/generations/{gen}/manifest`, which only has `secret:<name>` references), through the trace (secrets are never signals), through `joker:meta` (names only), through the report to the Deck (names and `rev`, never values), through an app log (the `secrets` interface only exists in async, and the SDK marks the values as non-printable). **Holds**; the risk that remains is the app itself sending the secret over the network, which it can only do to the destinations in `net.allow` (ref/01).
 
-**X5 — Um cliente WebSocket lento, um Deck lento e um MCU lento ao mesmo tempo.** Três filas independentes, nenhuma no caminho de controlo: o WebSocket amostra os slots (um cliente lento só recebe menos vezes) e fecha com 4008 ao fim de 30 s de fila cheia; o agente tem store-and-forward com perdas marcadas (`gap`); o Joker Link coalesce amostras (`coalescidas` no `SAMPLES`). **Aguenta**; o que se perde é sempre contado.
+**X5 — A slow WebSocket client, a slow Deck and a slow MCU at the same time.** Three independent queues, none on the control path: the WebSocket samples the slots (a slow client just receives less often) and closes with 4008 after 30 s of full queue; the agent has store-and-forward with marked drops (`gap`); Joker Link coalesces samples (`coalesced` in `SAMPLES`). **Holds**; what is lost is always counted.
 
-**X6 — A mesma app em quatro linguagens.** O peak shaver em Rust, TypeScript e Python (ref/05 §20 mostra-o lado a lado) e, num MCU, a mesma lógica em C como app `extern` (o padrão de `spec/c/example/`, ref/08 §2.17). A rodada encontrou dois bugs no exemplo original do documento 04 (limite de 0 kW com o plano ainda por calcular; porta `grid` contra `grid_power` no `bind`), que foram corrigidos. **Quebrou, corrigido.**
+**X6 — The same app in four languages.** The peak shaver in Rust, TypeScript and Python (ref/05 §20 shows it side by side) and, on an MCU, the same logic in C as an `extern` app (the pattern of `spec/c/example/`, ref/08 §2.17). The round found two bugs in the original example of document 04 (a 0 kW limit with the plan not yet computed; port `grid` against `grid_power` in the `bind`), which were fixed. **Broke, fixed.**
 
-**X7 — Um erro de escrita num ficheiro.** `max_leas = "2s"`. É `J0140` com sugestão (`max_lease`), porque os ficheiros escritos por pessoas são estritos; num JSON da API, um campo desconhecido num pedido é `J-E1011`; num CBOR recebido de um MCU mais novo, é ignorado. **Aguenta**: estrito onde erra uma pessoa, tolerante onde evolui uma máquina.
+**X7 — A typo in a file.** `max_leas = "2s"`. It is `J0140` with a suggestion (`max_lease`), because files written by people are strict; in an API JSON, an unknown field in a request is `J-E1011`; in a CBOR received from a newer MCU, it is ignored. **Holds**: strict where a person makes mistakes, tolerant where a machine evolves.
 
-**X8 — Um Deck comprometido.** Consegue enviar um estado desejado assinado pela chave `deck`, mas os artefactos precisam de assinaturas do pipeline, que não vivem no Deck; não consegue escrever em sinais (não há mensagem para isso); não consegue alargar envelopes nem mudar a configuração (uma geração nova tem de vir assinada pela chave `config`, que não vive no Deck, e passa pelo `jk check` no nó); não consegue ler segredos (HPKE para os nós). Consegue, no máximo, voltar a gerações e runtimes antigas já assinadas, acima dos pisos, limitado por `max_applies_per_day` e pela janela de manutenção local. **Aguenta**, com o risco residual declarado na ref/10 §4 (S1).
+**X8 — A compromised Deck.** It can send a desired state signed by the `deck` key, but the artifacts need signatures from the pipeline, which do not live in the Deck; it cannot write to signals (there is no message for that); it cannot widen envelopes nor change the configuration (a new generation must come signed by the `config` key, which does not live in the Deck, and goes through `jk check` on the node); it cannot read secrets (HPKE to the nodes). At most, it can go back to old generations and runtimes already signed, above the floors, limited by `max_applies_per_day` and by the local maintenance window. **Holds**, with the residual risk declared in ref/10 §4 (S1).
 
-**X9 — Um integrador escreve um driver e uma classe e publica no Hub.** Driver tier W validado pela suite de conformidade de drivers (ref/06 §6), classe validada pela suite de conformidade de classes (ref/03 §2.6), relatórios assinados como referrers OCI, perfil com relatório de hardware real (ref/03 §2.8). O Hub recusa publicações sem relatório (`J0849`, `J0880`). **Aguenta.**
+**X9 — An integrator writes a driver and a class and publishes to the Hub.** Tier W driver validated by the driver conformance suite (ref/06 §6), class validated by the class conformance suite (ref/03 §2.6), reports signed as OCI referrers, profile with a real hardware report (ref/03 §2.8). The Hub rejects publications without a report (`J0849`, `J0880`). **Holds.**
 
-**X10 — Replay de um incidente com um MCU pelo meio.** O traço do MCU chega por `TRACE` (em ns, sem saídas de ML), os escritores remotos aparecem a partir de `0x8000_0000` (16 §7), e o replay no portátil reproduz os resultados do MCU byte a byte, porque o núcleo é o mesmo (ADR 0020). **Aguenta.**
+**X10 — Replay of an incident with an MCU in the middle.** The MCU's trace arrives through `TRACE` (in ns, without ML outputs), remote writers appear from `0x8000_0000` (16 §7), and the replay on the laptop reproduces the MCU's results byte for byte, because the core is the same (ADR 0020). **Holds.**
 
 ---
 
-## 7. Achados nos documentos existentes
+## 7. Findings in the existing documents
 
-As onze referências registaram mais de cem achados (as listas que ficaram depois da integração estão na ref/01, anexo C, na ref/03, na ref/04 §9 e na ref/05 §33): contradições entre documentos, exemplos que não compilariam, chaves usadas sem estar definidas, erros de aritmética e dois bugs de lógica. Cada referência tem a sua lista, com a mudança exata. **Foram todos aceites e aplicados**, com as resoluções da §5 onde havia conflito. Os mais importantes:
+The eleven references recorded more than a hundred findings (the lists that remained after integration are in ref/01, appendix C, in ref/03, in ref/04 §9 and in ref/05 §33): contradictions between documents, examples that would not compile, keys used without being defined, arithmetic errors and two logic bugs. Each reference has its own list, with the exact change. **They were all accepted and applied**, with the resolutions of §5 where there was a conflict. The most important:
 
-| Documento | O que mudou |
+| Document | What changed |
 |---|---|
-| 16 | A12–A14, E10; curto-circuito simétrico; agregações; inteiros; `own()`; traço com escritores remotos e MCU em ns; §8 passa a remeter para o esquema único de conformidade |
-| 02 | curto-circuito simétrico; `Clamped` com os dois valores; M6 marcado 1.1 |
-| 03 | `secrets` como tabela; `trust` só restringe; `mtls` sai (TCP é sempre mTLS); chaves 1.1 marcadas; `"**alarm.**"` → `"alarm.**"`; grupo `default` alinhado com A11 |
-| 04 | WIT substituído por remissão para `wit/`; propostas de 14 B; sem alocação no ciclo; `Many<C, MIN, MAX>`; `.mins()`; peak shaver corrigido; tier 2 com mínimos |
-| 05 | trait novo, `joker:driver` e JDP por remissão para a ref/06 |
-| 07 | comandos novos das referências; `--to`; `manual:4`; `--reason`; intenções marcadas 1.1 |
-| 14, 17 | `Many`; nomes reservados de membros; métodos contra membros; idempotência só sem `own()`; bug da rotação de bombas no §9.1 |
-| 19 | CRC-32C, TCP, `TIME` bidirecional, exemplo C com `joker_project.h`, *panic* fatal, orçamento do U1 |
-| 20 | tipos de media; princípio 2 reescrito; rollback por `reject` |
-| 01, 13, 15 | segredos, identidade P-256, drivers X por systemd, crates novos, layout de `/var/lib/joker` |
-| exemplos, trilha (antiga) | `schema = 1`; `joker.rpi.lock`; `.gitignore` sem o `secrets.toml.enc`; chaves 1.1 marcadas; sintaxe do SDK atualizada |
+| 16 | A12–A14, E10; symmetric short-circuit; aggregations; integers; `own()`; trace with remote writers and MCU in ns; §8 now refers to the single conformance schema |
+| 02 | symmetric short-circuit; `Clamped` with both values; M6 marked 1.1 |
+| 03 | `secrets` as a table; `trust` only restricts; `mtls` goes away (TCP is always mTLS); 1.1 keys marked; `"**alarm.**"` → `"alarm.**"`; `default` group aligned with A11 |
+| 04 | WIT replaced by a cross-reference to `wit/`; 14 B proposals; no allocation in the cycle; `Many<C, MIN, MAX>`; `.mins()`; peak shaver fixed; tier 2 with minimums |
+| 05 | new trait, `joker:driver` and JDP by cross-reference to ref/06 |
+| 07 | new commands from the references; `--to`; `manual:4`; `--reason`; intents marked 1.1 |
+| 14, 17 | `Many`; reserved member names; methods against members; idempotency only without `own()`; the pump rotation bug in §9.1 |
+| 19 | CRC-32C, TCP, bidirectional `TIME`, C example with `joker_project.h`, fatal *panic*, U1 budget |
+| 20 | media types; principle 2 rewritten; rollback by `reject` |
+| 01, 13, 15 | secrets, P-256 identity, X drivers through systemd, new crates, layout of `/var/lib/joker` |
+| examples, track (old) | `schema = 1`; `joker.rpi.lock`; `.gitignore` without `secrets.toml.enc`; 1.1 keys marked; SDK syntax updated |
 
 ---
 
-## 8. O que isto pede à Fase 0
+## 8. What this asks of Phase 0
 
-A rodada fecha as specs **no papel**. A Fase 0 fecha-as **no código**, antes de qualquer funcionalidade:
+The round closes the specs **on paper**. Phase 0 closes them **in code**, before any feature:
 
-1. **Tarefa 0a — compilar as referências.** Um crate `joker-spec-tests` que (1) compila os blocos Rust das referências como doctests, (2) corre `tsc` nos blocos TypeScript, (3) valida os CDDL com um validador completo contra os exemplos, (4) gera o esquema JSON do manifesto a partir dos tipos e valida contra ele todos os blocos TOML dos documentos, (5) valida o OpenAPI, (6) verifica as contagens que a prosa ainda repete (códigos, operações, mensagens) contra as fontes (`spec/codes.toml`, OpenAPI, CDDL; documento 13, §5.1). Falha a CI se uma referência e o código divergirem.
-2. **Tarefa 0b — o registo de códigos.** A semente já existe: `spec/codes.toml`, com as entradas extraídas das tabelas (ativos e retirados; o ficheiro é a fonte das contagens), uma gravidade por código e sem colisões. A tarefa passa-a para `crates/joker-manifest/codes.toml`, escreve as mensagens do produto e liga o teste de CI (16 §9). A rodada criou a maior parte dos códigos (os que estão nas tabelas das referências e não estavam nas dos documentos por área; as contagens são as do `spec/codes.toml`, verificadas pelo `joker-spec-tests`), em gamas separadas por referência (ref/00 §8), sem colisões: os dois códigos que aparecem em duas referências (`J0109`, `J0720`) têm o mesmo significado nas duas.
-3. **Tarefa 0c — os vetores de teste.** Os do Joker Link (ref/07 §4.8), os da ABI C (ref/08) e os casos de conformidade do núcleo passam a ficheiros em `conformance/`, corridos em Linux e num MCU.
+1. **Task 0a — compile the references.** A `joker-spec-tests` crate that (1) compiles the Rust blocks of the references as doctests, (2) runs `tsc` on the TypeScript blocks, (3) validates the CDDL files with a complete validator against the examples, (4) generates the JSON schema of the manifest from the types and validates all the TOML blocks of the documents against it, (5) validates the OpenAPI, (6) checks the counts that the prose still repeats (codes, operations, messages) against the sources (`spec/codes.toml`, OpenAPI, CDDL; document 13, §5.1). It fails the CI if a reference and the code diverge.
+2. **Task 0b — the code registry.** The seed already exists: `spec/codes.toml`, with the entries extracted from the tables (active and retired; the file is the source of the counts), one severity per code and no collisions. The task moves it to `crates/joker-manifest/codes.toml`, writes the product messages and wires up the CI test (16 §9). The round created most of the codes (those that are in the tables of the references and were not in those of the per-area documents; the counts are those of `spec/codes.toml`, checked by `joker-spec-tests`), in ranges separated by reference (ref/00 §8), without collisions: the two codes that appear in two references (`J0109`, `J0720`) have the same meaning in both.
+3. **Task 0c — the test vectors.** Those of Joker Link (ref/07 §4.8), those of the C ABI (ref/08) and the core conformance cases become files in `conformance/`, run on Linux and on an MCU.
 
-Continuam a ser decididas na Fase 0 as questões do documento 16, §10 (admissão RT exata, `dt()` após `skip`, transições a partir de `Unknown`, orçamento de barramentos além do RTU). A base de `extends` já não está em aberto: a ref/01 fecha-a (os caminhos de `extends` são relativos ao ficheiro que os declara, `J0160`), e o esquema JSON do manifesto é gerado a partir dos tipos.
+The questions of document 16, §10 (exact RT admission, `dt()` after `skip`, transitions from `Unknown`, bus budget beyond RTU) are still to be decided in Phase 0. The base of `extends` is no longer open: ref/01 closes it (the `extends` paths are relative to the file that declares them, `J0160`), and the JSON schema of the manifest is generated from the types.
 
-**Continua em aberto, e não é técnico:** a licença, o nome e a marca, a organização `@joker` no npm, a equipa por frente, o hardware de CI e o modelo de negócio (documento 18, §6).
+**Still open, and not technical:** the license, the name and the brand, the `@joker` organization on npm, the team per front, the CI hardware and the business model (document 18, §6).
