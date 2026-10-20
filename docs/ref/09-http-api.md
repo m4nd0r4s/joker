@@ -865,7 +865,7 @@ An unknown `op` is `J-E1901`; an unknown topic, `J-E1902`; a malformed message, 
 
 ### 6.5 Rate and coalescing
 
-- **State topics** (`signals`, `outputs`, `status`, `metrics`, `signal_trace`) are **sampled**, not queued. At each `min_interval`, the server reads the current state and sends what changed (`mode = change`, default: only signals with a new `seq`) or everything (`mode = interval`). Between two sends, the intermediate samples are dropped on purpose: it is the same *latest-wins* policy of the outboxes (document 01, §3.4). The jump in the `seq` of each signal tells the client how many samples were coalesced.
+- **State topics** (`signals`, `outputs`, `status`, `metrics`, `signal_trace`) are **sampled**, not queued. At each `min_interval`, the server reads the current state and sends what changed (`mode = change`, default: only signals with a new `seq`) or everything (`mode = interval`). Between two sends, the intermediate samples are dropped on purpose: it is the same *latest-wins* policy of the output boxes (document 01, §3.4). The jump in the `seq` of each signal tells the client how many samples were coalesced.
 - `min_interval`: default `100ms` in `signals`, `outputs` and `signal_trace`; `1s` in `status` and `metrics`. Minimum `10ms` (`J-E1905`); in `outputs`, the minimum is the period of the owning group; in `status` and `metrics`, `1s`.
 - **Event topics** are not coalesced: each item is delivered, or its drop is declared with a `gap`.
 - `initial: true` (default): the first message is a `resync` with the current state (state topics) or the active alarms (`alarms`).

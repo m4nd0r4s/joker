@@ -272,7 +272,7 @@ The descriptor does not declare this table: `plan` rejects a `type` the driver c
 | Code | Reasons a driver may report | Example |
 |---|---|---|
 | `good` | `none`, `overridden`, `local_override` | OPC UA `Good_LocalOverride`; PLC with the value forced |
-| `uncertain` | `stale`, `substituted`, `sensor_cal`, `initial`, `clock_unsynced` | OPC UA `Uncertain_LastUsableValue`, `Uncertain_SubstituteValue`, `Uncertain_InitialValue`; `ts-src` stamp with an unsynchronized remote clock |
+| `uncertain` | `stale`, `substituted`, `sensor_cal`, `initial`, `clock_unsynced` | OPC UA `Uncertain_LastUsableValue`, `Uncertain_SubstituteValue`, `Uncertain_InitialValue`; `ts-src` timestamp from an unsynchronized remote clock |
 | `bad` | `comm_failure`, `device_fault`, `out_of_range`, `config_error`, `not_connected`, `stale` | point with its own error in a batch response (OPC UA `Bad_*` per node) |
 | any | 240–255 (private, ref/00 §4.3) | the code counts; outside the node, the reason appears as 0 |
 

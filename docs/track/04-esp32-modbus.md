@@ -69,7 +69,7 @@ uptime,4,2,u32,,s,,,,
 fw,3,0,u16,param,,,,,
 ```
 
-- `led` is coil 0 **written** with FC 5; `led_rb` is the same coil **read** with FC 1. A profile separates the write from the read-back: it is the only case of two points at the same address (ref/03 §2.2.5).
+- `led` is coil 0 **written** with FC 5; `led_rb` is the same coil **read** with FC 1. A profile separates the write from the readback: it is the only case of two points at the same address (ref/03 §2.2.5).
 - `at` is the protocol address, 0-based. A datasheet that says "30001" means input register 0.
 
 ```sh
@@ -155,7 +155,7 @@ $ jk profile check profiles/local/bench-esp32@1.profile.toml
 
 ```
 ✓ schema           7 signals: 1 output, 5 inputs, 1 param; [fallback] over `led`; identity.firmware = fw
-✓ addresses        coil 0 (write and read-back) · discrete 0 · input 0–3 · holding 0; no overlaps
+✓ addresses        coil 0 (write and readback) · discrete 0 · input 0–3 · holding 0; no overlaps
 ✓ types            touch u16→u64 · rssi i16→i64 · uptime u32→f64 s · fw u16→u64
 ✓ requests (plan)  per poll: FC1 × 1 bit, FC2 × 1 bit, FC4 × 4 registers · on request: FC3 × 1 register
 ```
@@ -207,7 +207,7 @@ uptime = { type = "f64", unit = "s", init = 0 }
 fw     = { type = "u64", direction = "param", init = 1 }
 
 [dynamics]
-led_rb = "led"                     # the read-back follows the applied value
+led_rb = "led"                     # the readback follows the applied value
 uptime = "integrate(1)"            # 1 s per second
 
 [faults]
@@ -463,9 +463,9 @@ Within 2 s, the ESP32's LED goes off. Nobody told it to: the firmware stopped re
 
 ## 10. What happened underneath
 
-- **The profile belongs to the equipment model; the manifest belongs to the site.** The profile states addresses, types, scales, read-back and fallback; the manifest states the `safe`, the debounce and the bindings (ref/03 §2.2; ref/01 §5.8.1). `safe_hint` only suggests: the `safe` is always a written decision of whoever installs (ADR 0006).
+- **The profile belongs to the equipment model; the manifest belongs to the site.** The profile states addresses, types, scales, readback and fallback; the manifest states the `safe`, the debounce and the bindings (ref/03 §2.2; ref/01 §5.8.1). `safe_hint` only suggests: the `safe` is always a written decision of whoever installs (ADR 0006).
 - **Acquisition.** The driver delivers raw values; the acquisition stage applies type, deadband and debounce in the order of ref/03 §3, and the link quality on top (document 05, §12).
-- **Bus.** A serial bus serializes: one request at a time, with priority to writes (document 05, §5). The four input registers are read in a single request, because they are contiguous and of the same FC. An output is not read in a cycle: its value is the applied one, and the read-back is another point.
+- **Bus.** A serial bus serializes: one request at a time, with priority to writes (document 05, §5). The four input registers are read in a single request, because they are contiguous and of the same FC. An output is not read in a cycle: its value is the applied one, and the readback is another point.
 - **Writes.** The app proposes `esp.led` every 20 ms, but it only goes to the wire when it changes, plus the keepalive (01 §8), which keeps the equipment seeing requests even with the LED unchanged.
 - **Fallback (M1).** The core compares the profile's fallback with the `safe` and the `safer` (`J0205`), the lock pins it, and the drift is `J0401 kind=fallback` (ref/02 §3.1.5).
 

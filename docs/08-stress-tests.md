@@ -251,7 +251,7 @@ The signal abstraction held the logic, but not the data. Without M4–M6, Joker 
 ### 3.2 The model
 
 ```toml
-# (1.1): block signals, pipelines, models, training and trigger-based recording
+# (1.1): block signals, pipelines, models, training and triggered recording
 [buses.spi0]
 kind = "spi"
 dev  = "/dev/spidev0.0"
@@ -582,7 +582,7 @@ This is the round that justifies Joker against "a Python script with an ML libra
 |---|---|---|---|---|
 | 1 | BESS + PV (RevPi Connect 5) | field robustness, regulation | M1 device fallback, M2 discovery and lock, M3 causal tracing | fiscal metering |
 | 2 | Visual inspection (RPi 5 + Hailo) | bulky data, deterministic latency | M4 streams, M5 native pipelines, M6 scheduled writes | compilation for NPU, image privacy |
-| 3 | Vibration + training (CM5) | high rate, on-site training, alarms | M7 block signals (and trigger-based recording), M8 resource classes, M9 alarms, M10 lineage | hardware sampling above ~1 kHz |
+| 3 | Vibration + training (CM5) | high rate, on-site training, alarms | M7 block signals (and triggered recording), M8 resource classes, M9 alarms, M10 lineage | hardware sampling above ~1 kHz |
 | 4 | AGV (x86 + EtherCAT + ROS 2) | multi-rate, interop, safety | M11 bridges (M20 confirmed, with proportional rate) | functional safety, control > 1 kHz |
 | 5 | Heterogeneous fleet (3,000) | portability, operation at scale | M12 uplink budgets, M13 overlays, M14 clock quality | fleet server |
 | 6 | HVAC + LLM | ML actuating, humans in the loop | M15 arbitration, M16 shadow, M17 guard + fallback, M18 proposals | quality of model decisions |
