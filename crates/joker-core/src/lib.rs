@@ -16,6 +16,7 @@ pub mod registry;
 pub mod slot;
 mod sync;
 pub mod time;
+pub mod trace;
 pub mod value;
 
 pub use arbiter::{Intake, OutputArbiter, Refusal};
