@@ -32,5 +32,10 @@
 | [0028](0028-estavel-igual-implementado.md) | Estável = implementado; o que não sai na 1.0 fica reservado |
 | [0029](0029-english-project-language.md) | English is the project language; code has docstrings only, no comments |
 | [0030](0030-unit-syntax-and-kinds.md) | Unit syntax, quantity kinds in compounds, and literal error codes |
+| [0031](0031-registry-hash-encoding.md) | Signal ordering and the registry hash encoding |
+| [0032](0032-dt-after-overrun-skip.md) | `dt()` counts whole periods, also after `overrun = "skip"` |
+| [0033](0033-write-outcomes-and-decision-records.md) | Write outcomes per proposal and per tick, and decision records |
+| [0034](0034-expression-typing-and-evaluation.md) | Expression typing, `J0304` and `J0307`, and the semantics of windows and stateful functions |
+| [0035](0035-trace-v1-encoding-details.md) | Encoding details of the `.jktrace` v1 format |
 
 Mudar uma decisão = escrever uma ADR nova que a substitui, e atualizar os documentos afetados no mesmo conjunto de commits.

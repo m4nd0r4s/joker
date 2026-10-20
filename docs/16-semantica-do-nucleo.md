@@ -105,6 +105,8 @@ Um `debounce` menor do que o `poll` do sinal é aceite e equivale a duas leitura
 | janelas | máximo 15 min (`J0305` acima); o KPI dos modelos tem outra gramática (documento 06, §10.1) |
 | `own(x)` | só é válido dentro de métodos de classe (documento 17); fora deles é `J0306`. É a última proposta do chamador no seu nível (incluindo as anteriores do mesmo tick, 17 §4.1); **sem proposta anterior** (lease expirado ou primeira chamada), devolve o **valor aplicado** de `x` |
 
+Os casos que esta tabela não fecha (tipos, alinhamento de unidades, `J0304` e `J0307`, amostragem das janelas, estado de `held`, `rose`, `fell` e `hyst`) estão na ADR 0034.
+
 ## 5. Unidades: catálogo da v1
 
 - **Base:** `s`, `m`, `g` (grama), `A`, `K`, `mol`, `cd`, e `1` (adimensional).
@@ -224,7 +226,7 @@ As subdivisões destas gamas, uma por referência e sem sobreposições, estão 
 | Tema | Onde fica decidido |
 |---|---|
 | fórmula exata da admissão RT (a margem de 30%, o que entra no WCET) | ADR na tarefa 17 do documento 13 |
-| `dt()` depois de um `overrun = skip` (período nominal ou real) | ADR na tarefa 8 |
+| `dt()` depois de um `overrun = skip` (período nominal ou real) | **decidido:** ADR 0032 (períodos inteiros desde o tick anterior executado) |
 | transições de alarmes a partir de `Unknown` | ADR na tarefa 12 |
 | modelo de orçamento de barramentos além do RTU | ADR na tarefa 17 |
 | esquema JSON do manifesto | **gerado** a partir dos tipos do `joker-manifest` (a `ref/01` é a fonte; o documento 03 é a explicação) |
