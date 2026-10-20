@@ -1,476 +1,476 @@
-# 01 — Arquitetura
+# 01 — Architecture
 
-Documento normativo. Descreve o desenho final, já com as primitivas M1–M23 que saíram dos documentos 08 e 09 incorporadas. Onde uma secção existe por causa de uma rodada de estresse, a referência aparece entre parênteses.
+Normative document. It describes the final design, with the primitives M1–M23 that came out of documents 08 and 09 already incorporated. Where a section exists because of a stress round, the reference appears in parentheses.
 
-A semântica do núcleo está no documento 16 e a representação comum na `ref/00`, que prevalecem sobre este documento. As interfaces (manifesto, lock, WIT, drivers, Joker Link, ABI C, API, agente) têm referências exaustivas em `docs/ref/` (ADR 0023); aqui fica a explicação, com remissões.
+The core semantics is in document 16 and the common representation in `ref/00`, which take precedence over this document. The interfaces (manifest, lock, WIT, drivers, Joker Link, C ABI, API, agent) have exhaustive references in `docs/ref/` (ADR 0023); this document holds the explanation, with cross-references.
 
 ---
 
-## 1. Visão em camadas
+## 1. Layered view
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
-│  APPS (componentes Wasm)          Rust · TypeScript · Python             │
-│  portas tipadas ─ ciclo (sync) ─ tarefas (async) ─ ações ─ kv            │
+│  APPS (Wasm components)           Rust · TypeScript · Python             │
+│  typed ports ─ cycle (sync) ─ tasks (async) ─ actions ─ kv               │
 ├──────────────────────────────────────────────────────────────────────────┤
-│  HOST WASM (joker-host)   wasmtime · AOT · pooling · epochs · capacidades │
+│  WASM HOST (joker-host)   wasmtime · AOT · pooling · epochs · capabilities│
 ├───────────────┬───────────────────────────────┬──────────────────────────┤
-│  NÚCLEO       │  ML (joker-ml)                │  SERVIÇOS                │
+│  CORE         │  ML (joker-ml)                │  SERVICES                │
 │  (joker-core) │  backends: burn · ort · hailo │  historian (joker-store) │
-│  registo      │  · tensorrt                   │  uplink    (joker-link)  │
-│  imagem proc. │  modelos .jkm · pipelines     │  API local (joker-api)   │
-│  árbitro      │  streams · treino             │  pontes (ROS 2, Zenoh)   │
-│  envelope     │                               │  OTA · config · segredos │
-│  expressões   │                               │                          │
-│  alarmes      │                               │                          │
-│  traço        │                               │                          │
+│  registry     │  · tensorrt                   │  uplink    (joker-link)  │
+│  proc. image  │  .jkm models · pipelines      │  local API (joker-api)   │
+│  arbiter      │  streams · training           │  bridges (ROS 2, Zenoh)  │
+│  envelope     │                               │  OTA · config · secrets  │
+│  expressions  │                               │                          │
+│  alarms       │                               │                          │
+│  trace        │                               │                          │
 ├───────────────┴───────────────────────────────┴──────────────────────────┤
-│  HAL (joker-hal)   trait Driver · planos de leitura · transportes         │
+│  HAL (joker-hal)   trait Driver · read plans · transports                 │
 ├──────────────────────────────────────────────────────────────────────────┤
-│  DRIVERS  tier N (nativos) · tier W (Wasm) · tier X (processo externo)   │
+│  DRIVERS  tier N (native) · tier W (Wasm) · tier X (external process)    │
 │  modbus · opcua · gpio · i2c · spi · can/canopen · ethercat · revpi ·    │
 │  m-bus · mqtt · serial · v4l2 · sim · …                                  │
 ├──────────────────────────────────────────────────────────────────────────┤
-│  LINUX  PREEMPT_RT (recomendado) · cgroups v2 · systemd · /dev/*          │
+│  LINUX  PREEMPT_RT (recommended) · cgroups v2 · systemd · /dev/*          │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-Regras de dependência:
+Dependency rules:
 
-- `joker-core` não depende de nenhuma camada acima nem abaixo. Recebe um `Clock`, recebe amostras e devolve escritas aplicadas. É o que se prova, testa por propriedades e reproduz.
-- Os drivers não conhecem apps; as apps não conhecem drivers. O único ponto de encontro é o **caminho de um sinal** resolvido para um **handle denso** (`u32`) no arranque de cada geração de configuração (§15).
-- Os serviços (historian, uplink, API) consomem o núcleo apenas através de filas lock-free com limite. Nenhum serviço consegue travar o núcleo (ADR 0013).
+- `joker-core` does not depend on any layer above or below it. It receives a `Clock`, receives samples and returns applied writes. It is what gets proven, property-tested and replayed.
+- Drivers do not know apps; apps do not know drivers. The only meeting point is the **path of a signal**, resolved to a **dense handle** (`u32`) at the start of each configuration generation (§15).
+- The services (historian, uplink, API) consume the core only through bounded lock-free queues. No service can stall the core (ADR 0013).
 
 ---
 
-## 2. Processos e threads
+## 2. Processes and threads
 
-O Joker é **um processo** (`jokerd`) mais processos auxiliares opcionais:
+Joker is **one process** (`jokerd`) plus optional auxiliary processes:
 
-| Processo | Quando existe | Porquê |
+| Process | When it exists | Why |
 |---|---|---|
-| `jokerd` | sempre | núcleo, host Wasm, drivers tier N e W, ML em processo, serviços |
-| `joker-drv-<nome>` | driver tier X | SDKs de fabricante (blobs em C, licenças), isolamento de falhas |
-| `joker-ml-<id>` | modelo com `isolation = "process"` | drivers de GPU/NPU que podem encravar ou rebentar o processo |
+| `jokerd` | always | core, Wasm host, tier N and W drivers, in-process ML, services |
+| `joker-drv-<name>` | tier X driver | vendor SDKs (C blobs, licenses), fault isolation |
+| `joker-ml-<id>` | model with `isolation = "process"` | GPU/NPU drivers that can hang or crash the process |
 
-Dentro do `jokerd`:
+Inside `jokerd`:
 
-| Thread | Classe | Escalonamento | Função |
+| Thread | Class | Scheduling | Function |
 |---|---|---|---|
-| `rt/<grupo>` (uma por grupo de ciclo) | `rt` | `SCHED_FIFO`, prioridade rate-monotonic (período menor → prioridade maior), fixada a uma CPU `rt` | latch, tarefas de ciclo, árbitro, envelope, commit |
-| `rt/supervisor` | `rt` | `SCHED_FIFO` máx. | watchdog dos grupos, expiração de leases, trips, alimenta o watchdog de hardware |
-| `rt/drv/<bus>` | `rt` | `SCHED_FIFO` | só para barramentos com ciclo próprio (EtherCAT, piControl com sync) |
-| `io` (runtime tokio multi-thread) | `io` | `SCHED_OTHER`, nice −5 | drivers tier N assíncronos, transportes |
-| `app` (runtime tokio) | `bg`/declarada | `SCHED_OTHER` | tarefas assíncronas das apps (WASI 0.3) |
-| `ml/*` (pool) | `ml` | `SCHED_OTHER` / `SCHED_IDLE` para treino | inferência, pipelines, treino |
-| `svc` (runtime tokio) | `bg` | `SCHED_OTHER`, nice 5 | historian, uplink, API, OTA |
+| `rt/<group>` (one per cycle group) | `rt` | `SCHED_FIFO`, rate-monotonic priority (shorter period → higher priority), pinned to an `rt` CPU | latch, cycle tasks, arbiter, envelope, commit |
+| `rt/supervisor` | `rt` | `SCHED_FIFO` max. | watchdog of the groups, lease expiry, trips, feeds the hardware watchdog |
+| `rt/drv/<bus>` | `rt` | `SCHED_FIFO` | only for buses with their own cycle (EtherCAT, piControl with sync) |
+| `io` (tokio multi-thread runtime) | `io` | `SCHED_OTHER`, nice −5 | async tier N drivers, transports |
+| `app` (tokio runtime) | `bg`/declared | `SCHED_OTHER` | async tasks of the apps (WASI 0.3) |
+| `ml/*` (pool) | `ml` | `SCHED_OTHER` / `SCHED_IDLE` for training | inference, pipelines, training |
+| `svc` (tokio runtime) | `bg` | `SCHED_OTHER`, nice 5 | historian, uplink, API, OTA |
 
-**Classes de recursos (M8).** `rt`, `io`, `ml` e `bg` são cpusets (cgroups v2) declarados no manifesto. Numa placa de 4 núcleos, a configuração recomendada é `rt = [3]` com `isolcpus=3 nohz_full=3 rcu_nocbs=3` no kernel, `io = [2]`, `ml = [1,2]` e `bg = [0]`. O `jk doctor` verifica isto (documento 07).
+**Resource classes (M8).** `rt`, `io`, `ml` and `bg` are cpusets (cgroups v2) declared in the manifest. On a board with 4 CPU cores, the recommended configuration is `rt = [3]` with `isolcpus=3 nohz_full=3 rcu_nocbs=3` on the kernel, `io = [2]`, `ml = [1,2]` and `bg = [0]`. `jk doctor` checks this (document 07).
 
-**Porque é um processo só.** A EdgeX paga latência e memória por cada microserviço, e o Kura paga a JVM. Com um processo, uma leitura vai do driver à app sem serialização nem IPC: uma cópia de 32 bytes para o slot, outra para o snapshot. O isolamento de falhas, que é o argumento a favor de vários processos, obtém-se de outra forma. As apps estão em sandbox Wasm (um trap não derruba o processo), e o código em que não se confia com memória nativa (blobs de fabricante, drivers de GPU) vai para processos tier X.
+**Why it is a single process.** EdgeX pays latency and memory for each microservice, and Kura pays for the JVM. With one process, a read goes from the driver to the app with no serialization and no IPC: one 32-byte copy into the slot, another into the snapshot. Fault isolation, which is the argument for several processes, is obtained in another way. Apps are in a Wasm sandbox (a trap does not bring down the process), and code that is not trusted with native memory (vendor blobs, GPU drivers) goes into tier X processes.
 
 ---
 
-## 3. O núcleo: registo de sinais e imagem de processo
+## 3. The core: signal registry and process image
 
-### 3.1 Registo
+### 3.1 Registry
 
-No arranque de cada geração de configuração, o manifesto e o `joker.lock` são compilados para um **registo imutável**:
+At the start of each configuration generation, the manifest and `joker.lock` are compiled into an **immutable registry**:
 
-- cada sinal tem um `SignalId(u32)` denso, ordenado por caminho (o que dá determinismo);
-- metadados: tipo, unidade canónica, direção, dispositivo dono, `max_age`, envelope (se for saída), grupo dono (se for saída), política de gravação;
-- tabelas derivadas: sinais por driver, portas por app, dependências de expressões.
+- each signal has a dense `SignalId(u32)`, ordered by path (which gives determinism);
+- metadata: type, canonical unit, direction, owning device, `max_age`, envelope (if it is an output), owning group (if it is an output), recording policy;
+- derived tables: signals per driver, ports per app, expression dependencies.
 
-**Nenhum lookup por string acontece no caminho quente.** As apps recebem handles na inicialização; as expressões são compiladas para bytecode sobre `SignalId`.
+**No string lookup happens on the hot path.** Apps receive handles at initialization; expressions are compiled to bytecode over `SignalId`.
 
-### 3.2 Armazém de últimos valores
+### 3.2 Last-value store
 
-Cada sinal escalar tem um **slot de 32 bytes** alinhado a cache line (dois por linha):
+Each scalar signal has a **32-byte slot** aligned to the cache line (two per line):
 
 ```
 struct Slot {            // 32 bytes
-    version: AtomicU32,  // seqlock: ímpar = escrita em curso; seq da amostra = version / 2
-    quality: u32,        // código (8 bits) + motivo (8 bits) + flags (16 bits, inclui o domínio de ts_src)
-    value:   u64,        // bits do valor (bool/i64/u64/f64/f32 promovido; enum = u64)
-    ts_src:  i64,        // ns: UTC do dispositivo remoto, ou monotónico de hardware local (flag); i64::MIN se não houver
-    ts_acq:  u64,        // ns monotónicos (CLOCK_MONOTONIC) da receção
+    version: AtomicU32,  // seqlock: odd = write in progress; sample seq = version / 2
+    quality: u32,        // code (8 bits) + reason (8 bits) + flags (16 bits, includes the ts_src domain)
+    value:   u64,        // value bits (bool/i64/u64/f64/f32 promoted; enum = u64)
+    ts_src:  i64,        // ns: UTC of the remote device, or local hardware monotonic (flag); i64::MIN if none
+    ts_acq:  u64,        // monotonic ns (CLOCK_MONOTONIC) of reception
 }
 ```
 
-**Domínio do carimbo.** O campo `ts_src` guarda um de três carimbos, e as flags da palavra de qualidade dizem qual: o UTC do dispositivo remoto (`ts_src` propriamente dito), o monotónico de captura em hardware local (`ts_hw`), ou o `ts_hw` de um MCU **convertido** para o monotónico deste nó pela estimativa do `TIME` do Joker Link (domínio "link", `ref/07` §8.3). Um carimbo convertido tem a incerteza da estimativa, e por isso nunca se confunde com um local. A disposição exata dos bits está na `ref/00` §4.3 e na `ref/04` §3.2.
+**Timestamp domain.** The `ts_src` field holds one of three timestamps, and the flags of the quality word say which: the UTC of the remote device (`ts_src` proper), the monotonic capture time in local hardware (`ts_hw`), or the `ts_hw` of an MCU **converted** to this node's monotonic clock by the Joker Link `TIME` estimate ("link" domain, `ref/07` §8.3). A converted timestamp carries the uncertainty of the estimate, and so it is never confused with a local one. The exact bit layout is in `ref/00` §4.3 and in `ref/04` §3.2.
 
-Cada slot tem **um único escritor**: o estágio de aquisição do driver dono (ingestão) ou, para sinais derivados, o grupo de ciclo dono. Os leitores (latch dos grupos, tarefas assíncronas, historian) usam o protocolo seqlock, com uma regra: **um leitor nunca espera por um escritor**. Se uma leitura colide com uma escrita em curso, o leitor repete-a um número limitado de vezes e, se continuar a colidir, usa a amostra completa anterior e conta a colisão. Num MCU de um núcleo, onde o leitor pode ser uma interrupção que preemptou o próprio escritor, não repete: usa logo a anterior (`ref/08` §2.4.1). Um leitor que esperasse ficaria bloqueado para sempre. Strings e `bytes` curtos (≤ 64 B) vão para uma arena à parte com double buffering. Os maiores são streams (§11).
+Each slot has **a single writer**: the acquisition stage of the owning driver (ingestion) or, for derived signals, the owning cycle group. Readers (group latch, async tasks, historian) use the seqlock protocol, with one rule: **a reader never waits for a writer**. If a read collides with a write in progress, the reader retries it a bounded number of times and, if it keeps colliding, uses the previous complete sample and counts the collision. On a single-core MCU, where the reader can be an interrupt that preempted the writer itself, it does not retry: it uses the previous one right away (`ref/08` §2.4.1). A reader that waited would be blocked forever. Strings and short `bytes` (≤ 64 B) go to a separate arena with double buffering. Larger ones are streams (§11).
 
-A `seq` de 64 bits exposta às apps é a versão do seqlock a dividir por 2, estendida pelo leitor com um contador de voltas por sinal guardado fora do slot (uma volta a cada 2³¹ amostras). Custo alvo: escrita ~20 ns, leitura ~10 ns num Cortex-A76.
+The 64-bit `seq` exposed to apps is the seqlock version divided by 2, extended by the reader with a per-signal wrap counter kept outside the slot (one wrap every 2³¹ samples). Target cost: write ~20 ns, read ~10 ns on a Cortex-A76.
 
-### 3.3 Aquisição
+### 3.3 Acquisition
 
 ```
-driver ──RawSample──▶ fila SPSC do driver ──▶ estágio de aquisição ──▶ slot
-                                                 │ escala/offset/byte order
-                                                 │ conversão de unidade
-                                                 │ qualidade: link, limites físicos, NaN
-                                                 │ deadband de aquisição
-                                                 └▶ evento "changed" (bitset por grupo)
+driver ──RawSample──▶ driver SPSC queue ──▶ acquisition stage ──▶ slot
+                                                 │ scale/offset/byte order
+                                                 │ unit conversion
+                                                 │ quality: link, physical limits, NaN
+                                                 │ acquisition deadband
+                                                 └▶ "changed" event (bitset per group)
 ```
 
-O estágio de aquisição corre na thread `io`, logo depois do driver, e é código do núcleo: os drivers entregam valores crus mais o estado do link, e a semântica (escala, unidade, qualidade) é aplicada num único sítio.
+The acquisition stage runs on the `io` thread, right after the driver, and it is core code: drivers deliver raw values plus the link state, and the semantics (scale, unit, quality) is applied in a single place.
 
-**Envelhecimento.** Cada sinal tem `max_age` (por omissão, 3 × o período de poll). No latch, uma amostra mais velha do que `max_age` é marcada `Uncertain(Stale)`, e mais velha do que `2 × max_age` passa a `Bad(Stale)`. Não se muda o slot: calcula-se no momento da leitura, porque a idade depende de quando se lê.
+**Aging.** Each signal has `max_age` (by default, 3 × the poll period). At the latch, a sample older than `max_age` is marked `Uncertain(Stale)`, and one older than `2 × max_age` becomes `Bad(Stale)`. The slot is not changed: this is computed at read time, because the age depends on when the read happens.
 
-### 3.4 Imagem de processo por grupo
+### 3.4 Per-group process image
 
-Cada grupo de ciclo tem uma **imagem de processo própria**: um vetor denso só com os sinais que as suas tarefas leem (as entradas ligadas) e escrevem (as saídas donas). É pré-alocado no arranque.
+Each cycle group has **its own process image**: a dense vector with only the signals that its tasks read (the bound inputs) and write (the owned outputs). It is preallocated at startup.
 
-- **Latch**: no início do tick, o grupo copia os slots relevantes para o seu snapshot. Todas as tarefas do tick veem exatamente os mesmos valores.
-- **Staging**: as escritas das tarefas vão para um buffer de propostas do grupo, e não para os slots.
-- **Commit**: no fim do tick, as propostas passam pelo árbitro e pelo envelope (§6, §7). As aplicadas vão para os slots de saída e para as filas de saída dos drivers.
+- **Latch**: at the start of the tick, the group copies the relevant slots into its snapshot. All tasks of the tick see exactly the same values.
+- **Staging**: the writes of the tasks go into a proposal buffer of the group, and not into the slots.
+- **Commit**: at the end of the tick, the proposals go through the arbiter and the envelope (§6, §7). The applied ones go to the output slots and to the output queues of the drivers.
 
-**Caixas de saída para os drivers.** O commit não escreve numa FIFO. Cada saída tem uma **caixa latest-wins** (o último valor aplicado substitui o anterior ainda não enviado), de modo que um equipamento lento ou encravado nunca recebe, ao acordar, uma fila de valores velhos. Só as escritas agendadas, os impulsos e os grupos atómicos usam uma fila ordenada, e essa é limitada. Cada caixa tem ainda um bit atómico `force_safe` que só o supervisor ativa (documento 09, ataque 4): é o caminho de emergência quando um grupo encrava, e não viola o escritor único dos valores.
+**Output boxes for the drivers.** The commit does not write into a FIFO. Each output has a **latest-wins box** (the last applied value replaces the previous one not yet sent), so that slow or hung equipment never receives, when it wakes up, a queue of stale values. Only scheduled writes, pulses and atomic groups use an ordered queue, and that one is bounded. Each box also has an atomic `force_safe` bit that only the supervisor sets (document 09, attack 4): it is the emergency path when a group hangs, and it does not violate the single writer of the values.
 
-Consistência entre grupos: um grupo lê os valores **aplicados** (commits) de outro grupo, no estado em que estavam no seu latch. Não há consistência transacional entre grupos de períodos diferentes, e isso é declarado (documento 02, §6.3). Quem precisa de consistência entre duas tarefas põe-nas no mesmo grupo.
+Consistency between groups: a group reads the **applied** values (commits) of another group, in the state they were in at its latch. There is no transactional consistency between groups of different periods, and this is declared (document 02, §6.3). Whoever needs consistency between two tasks puts them in the same group.
 
 ---
 
-## 4. O tick de um grupo de ciclo
+## 4. The tick of a cycle group
 
 ```
  t_k = t_0 + k·T  (clock_nanosleep TIMER_ABSTIME, CLOCK_MONOTONIC)
  │
- ├─ 1. latch               copia N_in slots → snapshot            (~10 ns/sinal)
- ├─ 2. pedidos async       drena inbox de propostas async → staging
- ├─ 3. expressões          derivados, alarmes e permissivos do grupo (bytecode)
- ├─ 4. tarefas             para cada tarefa, pela ordem declarada (`order` do grupo):
- │                           chamada Wasm síncrona com deadline por epoch
- │    4b. comandos virtuais  se uma tarefa posterior implementa uma instância virtual, os comandos
- │                           desta tarefa são arbitrados e passam pelo envelope já aqui (documento 17, §5.3)
- ├─ 5a. métodos            expandir os registos de método das propostas, pela ordem das chamadas (documento 17, §4.1)
- ├─ 5. árbitro             por saída: escolhe o lease ativo de maior prioridade (regras: documento 16, §1)
- ├─ 6. envelope            por saída: permissivo → gama → taxa → deadband → grupos atómicos
- ├─ 7. commit              slots de saída + caixas latest-wins dos drivers + escritas agendadas
- ├─ 8. traço               entrada no anel: seq do tick, seqs lidas, resultados das escritas
- └─ 9. estatísticas        jitter, duração, overruns (histogramas sem alocação)
+ ├─ 1. latch               copies N_in slots → snapshot           (~10 ns/signal)
+ ├─ 2. async requests      drains inbox of async proposals → staging
+ ├─ 3. expressions         derived signals, alarms and permissives of the group (bytecode)
+ ├─ 4. tasks               for each task, in the declared order (`order` of the group):
+ │                           synchronous Wasm call with epoch deadline
+ │    4b. virtual commands   if a later task implements a virtual instance, the commands
+ │                           of this task are arbitrated and go through the envelope right here (document 17, §5.3)
+ ├─ 5a. methods            expand the method records of the proposals, in call order (document 17, §4.1)
+ ├─ 5. arbiter             per output: picks the active lease with the highest priority (rules: document 16, §1)
+ ├─ 6. envelope            per output: permissive → range → rate → deadband → atomic groups
+ ├─ 7. commit              output slots + latest-wins boxes of the drivers + scheduled writes
+ ├─ 8. trace               entry in the ring: tick seq, seqs read, write results
+ └─ 9. statistics          jitter, duration, overruns (allocation-free histograms)
 ```
 
-**Orçamento.** Cada tarefa declara ou mede (`jk bench`) o seu WCET. O `jk check` soma os orçamentos por CPU `rt` e aplica o teste de escalonabilidade rate-monotonic (Liu & Layland, com margem de 30%). Um manifesto que não passa é recusado (**admissão de tempo real**, M23). É o que impede alguém de pôr um grupo de 1 ms com 900 µs de tarefas e descobrir o problema em campo. **A admissão não garante ausência de overruns num núcleo partilhado:** o WCET é medido com a tarefa sozinha (`jk bench`), e com a CPU `rt` partilhada com `io`, `bg` ou o sistema (uma placa com `cpus = 1`, ou sem `isolcpus`), as interrupções, a cache e o escalonador de outras classes somam-se ao tempo real; a margem de 30% amortece, não prova, e os overruns contam-se sempre (`jk status`).
+**Budget.** Each task declares or measures (`jk bench`) its WCET. `jk check` adds up the budgets per `rt` CPU and applies the rate-monotonic schedulability test (Liu & Layland, with a 30% margin). A manifest that does not pass is rejected (**real-time admission**, M23). This is what stops someone from putting a 1 ms group with 900 µs of tasks and discovering the problem in the field. **Admission does not guarantee the absence of overruns on a shared CPU core:** the WCET is measured with the task alone (`jk bench`), and with the `rt` CPU shared with `io`, `bg` or the system (a board with `cpus = 1`, or without `isolcpus`), the interrupts, the cache and the scheduler of other classes add to the real time; the 30% margin cushions, it does not prove, and overruns are always counted (`jk status`).
 
-**Deadline e overrun.** Cada chamada Wasm tem um deadline por epoch: o supervisor incrementa a epoch do motor a cada 100 µs, e a instância é interrompida se ultrapassar `max(wcet × 2, 200 µs)` (a granularidade da epoch não permite deadlines mais finos; o WCET de tarefas curtas é vigiado por medição, não por interrupção). Se o tick inteiro ultrapassar o período, aplica-se a política do grupo:
+**Deadline and overrun.** Each Wasm call has an epoch deadline: the supervisor increments the engine epoch every 100 µs, and the instance is interrupted if it exceeds `max(wcet × 2, 200 µs)` (the epoch granularity does not allow finer deadlines; the WCET of short tasks is watched by measurement, not by interruption). If the whole tick exceeds the period, the group's policy applies:
 
-| `overrun` | Comportamento |
+| `overrun` | Behavior |
 |---|---|
-| `skip` (omissão) | o tick seguinte é saltado para realinhar; conta `overruns` |
-| `catch_up` | corre imediatamente, até 1 vez; só para grupos sem efeitos dependentes do tempo |
-| `degrade` | desativa as tarefas marcadas `optional` até N ticks limpos |
-| `trip` | põe todas as saídas do grupo em estado seguro |
+| `skip` (default) | the next tick is skipped to realign; counts `overruns` |
+| `catch_up` | runs immediately, at most once; only for groups without time-dependent effects |
+| `degrade` | disables the tasks marked `optional` until N clean ticks |
+| `trip` | puts all outputs of the group in the safe state |
 
-N overruns consecutivos (por omissão 10) geram o alarme `joker.group.<g>.overrun` e, se `trip_after` estiver declarado, o trip do grupo.
+N consecutive overruns (10 by default) raise the alarm `joker.group.<g>.overrun` and, if `trip_after` is declared, the trip of the group.
 
-**Tarefas nativas.** Para os raros casos em que a fronteira Wasm pesa (1 kHz com muita aritmética), uma tarefa de ciclo pode ser escrita como crate Rust compilado dentro do `jokerd` (`kind = "native"`). Perde-se o sandbox e o hot-swap e ganham-se 1–3 µs por chamada. A regra é Wasm por omissão e nativo com justificação.
-
----
-
-## 5. O domínio assíncrono
-
-As tarefas assíncronas (`#[joker::task]`) correm na runtime tokio `app` como exports `async` do WASI 0.3. Servem para eventos, temporizadores lentos, ML, cálculo pesado, rede autorizada e ações.
-
-- **Leitura**: veem o *último valor* (slot), não um snapshot, e cada leitura traz `seq` e `ts`. Para ler vários sinais de forma consistente, pedem `snapshot([h1, h2, …])`, que repete a leitura seqlock até obter uma época coerente.
-- **Escrita**: é sempre uma proposta que vai para a inbox do **grupo dono** da saída (SPSC por par tarefa→grupo). É aplicada no próximo tick desse grupo e devolve `Deferred`, com o resultado final a chegar por um future (`WriteTicket`).
-- **Nunca tocam no domínio de ciclo**: não há chamada síncrona do domínio assíncrono para o de ciclo, nem ao contrário.
-
-**Uma app, duas instâncias.** Um `Store` do wasmtime não pode ser usado por duas threads ao mesmo tempo. Uma app com tarefas de ciclo e tarefas assíncronas é portanto instanciada **duas vezes** a partir do mesmo componente: uma instância de ciclo (thread `rt/<grupo>`) e uma assíncrona (tokio `app`). Não partilham memória linear. Comunicam por **sinais internos** da app (`#[internal]`, que vivem em slots como os outros) e por **caixas de correio** limitadas. O SDK torna isto explícito no sistema de tipos (documento 04, §3.4). A decisão e as alternativas rejeitadas estão no documento 09, ataque 6.
+**Native tasks.** For the rare cases where the Wasm boundary weighs (1 kHz with a lot of arithmetic), a cycle task can be written as a Rust crate compiled into `jokerd` (`kind = "native"`). The sandbox and hot swap are lost, and 1–3 µs per call are gained. The rule is Wasm by default and native with a justification.
 
 ---
 
-## 6. O árbitro (M15)
+## 5. The async domain
 
-Cada saída tem um árbitro com **16 níveis de prioridade**, em que 1 é o mais alto (como o *priority array* do BACnet). Cada escritor autorizado ocupa um nível, declarado na ligação:
+Async tasks (`#[joker::task]`) run on the tokio `app` runtime as WASI 0.3 `async` exports. They serve for events, slow timers, ML, heavy computation, authorized network and actions.
 
-| Faixa | Nome | Uso típico |
+- **Read**: they see the *last value* (slot), not a snapshot, and each read carries `seq` and `ts`. To read several signals consistently, they ask for `snapshot([h1, h2, …])`, which repeats the seqlock read until it obtains a coherent epoch.
+- **Write**: it is always a proposal that goes to the inbox of the output's **owning group** (SPSC per task→group pair). It is applied at that group's next tick and returns `Deferred`, with the final result arriving through a future (`WriteTicket`).
+- **They never touch the cycle domain**: there is no synchronous call from the async domain to the cycle domain, nor the other way around.
+
+**One app, two instances.** A wasmtime `Store` cannot be used by two threads at the same time. An app with cycle tasks and async tasks is therefore instantiated **twice** from the same component: a cycle instance (thread `rt/<group>`) and an async one (tokio `app`). They do not share linear memory. They communicate through the app's **internal signals** (`#[internal]`, which live in slots like the others) and through bounded **mailboxes**. The SDK makes this explicit in the type system (document 04, §3.4). The decision and the rejected alternatives are in document 09, attack 6.
+
+---
+
+## 6. The arbiter (M15)
+
+Each output has an arbiter with **16 priority levels**, where 1 is the highest (like the BACnet *priority array*). Each authorized writer occupies a level, declared in the binding:
+
+| Band | Name | Typical use |
 |---|---|---|
-| 1–2 | `safety` | apps de proteção (software, nunca substituem proteção de hardware) |
-| 3–5 | `manual` | operador (CLI, API, HMI) |
-| 6–8 | `supervisor` | coordenador do site, redução por ordem do operador de rede |
-| 9–12 | `control` | controladores de regulação |
-| 13–15 | `optimizer` | otimizadores, modelos de ML |
-| 16 | `schedule` | calendários, valores de base |
+| 1–2 | `safety` | protection apps (software, they never replace hardware protection) |
+| 3–5 | `manual` | operator (CLI, API, HMI) |
+| 6–8 | `supervisor` | site coordinator, curtailment ordered by the grid operator |
+| 9–12 | `control` | regulation controllers |
+| 13–15 | `optimizer` | optimizers, ML models |
+| 16 | `schedule` | calendars, base values |
 
-Semântica:
+Semantics:
 
-1. Uma escrita de um escritor coloca `(valor, lease_até)` no seu nível. Cada escrita renova o lease.
-2. O valor efetivo é o do **nível ativo de maior prioridade** (lease não expirado).
-3. `relinquish()` liberta o nível de imediato.
-4. **Sem nenhum nível ativo, a saída vai para o estado seguro.** Não há valor de *relinquish default* configurável separado do `safe`: um valor "de repouso" que não fosse seguro seria uma segunda verdade.
-5. Os escritores `manual` têm um **TTL obrigatório em cada escrita**, sem omissão; o máximo é o `max_manual` da saída (omissão 8 h). O override esquecido é o problema mais comum em sistemas de gestão de edifícios, e aqui expira sozinho. 15 minutos antes do fim, o alarme `joker.output.<s>.manual_expiring` (gravidade `medium`) e um evento no tópico `manual`; com um TTL ≤ 15 min, só o evento, porque um alarme imediato seria ruído (`ref/09` §5.6). Os níveis manuais sobrevivem a um reinício do `jokerd`, com o prazo em UTC (16, A14); se o relógio não estiver `synced` no arranque, repõe-se o TTL restante e levanta-se o alarme `joker.output.<s>.manual_restored` (gravidade `medium`), para que um operador confirme ou liberte.
-6. Cada nível só aceita o escritor declarado. Duas apps não partilham um nível, e duas ligações de apps diferentes na mesma saída sem níveis distintos são um erro de validação (`J0210`). Num nível manual, ocupado em runtime por uma pessoa, um segundo principal é recusado a não ser que peça `takeover` (16, A13).
-7. Escritores só-proposta (M18, **1.1**) não ocupam nível: criam **intenções** que só passam a escrita `manual` depois de aprovação humana (§6.1).
+1. A write from a writer places `(value, lease_until)` at its level. Each write renews the lease.
+2. The effective value is that of the **active level with the highest priority** (lease not expired).
+3. `relinquish()` frees the level immediately.
+4. **With no active level, the output goes to the safe state.** There is no configurable *relinquish default* value separate from `safe`: a "resting" value that was not safe would be a second truth.
+5. `manual` writers have a **mandatory TTL on every write**, with no default; the maximum is the output's `max_manual` (default 8 h). The forgotten override is the most common problem in building management systems, and here it expires on its own. 15 minutes before the end, the alarm `joker.output.<s>.manual_expiring` (severity `medium`) and an event on the `manual` topic; with a TTL ≤ 15 min, only the event, because an immediate alarm would be noise (`ref/09` §5.6). The manual levels survive a restart of `jokerd`, with the deadline in UTC (16, A14); if the clock is not `synced` at startup, the remaining TTL is restored and the alarm `joker.output.<s>.manual_restored` (severity `medium`) is raised, so that an operator confirms or releases.
+6. Each level only accepts the declared writer. Two apps do not share a level, and two bindings from different apps on the same output without distinct levels are a validation error (`J0210`). On a manual level, occupied at runtime by a person, a second principal is refused unless it asks for `takeover` (16, A13).
+7. Proposal-only writers (M18, **1.1**) do not occupy a level: they create **intents** that only become a `manual` write after human approval (§6.1).
 
-Numa saída de um MCU, o árbitro é o do MCU; o nó Linux é um escritor remoto em níveis delegados (16, A12).
+On an output of an MCU, the arbiter is the MCU's; the Linux node is a remote writer on delegated levels (16, A12).
 
-O árbitro corre **antes** do envelope. O envelope aplica-se a quem ganhou, seja quem for, incluindo `safety` e `manual`.
+The arbiter runs **before** the envelope. The envelope applies to whoever won, whoever it is, including `safety` and `manual`.
 
-### 6.1 Intenções e aprovação (M18, **1.1**)
+### 6.1 Intents and approval (M18, **1.1**)
 
-Reservado para a 1.1 (D5): `writer.kind = "proposal"` é `J0290` numa runtime 1.0, e os endpoints de intenções respondem vazio. O desenho fica aqui. Um escritor com `writer.kind = "proposal"` (um assistente LLM, um otimizador em teste, um sistema externo sem confiança) não escreve: chama `propose(saída, valor, justificação, ttl)`. A intenção fica pendente na API local, e um humano com o papel `operator` aprova-a ou rejeita-a (`jk intent approve <id>`, ou uma HMI). Aprovada, é executada como escrita `manual` com o TTL da intenção, em nome de quem aprovou. Tudo fica no registo de decisões.
+Reserved for 1.1 (D5): `writer.kind = "proposal"` is `J0290` on a 1.0 runtime, and the intent endpoints respond empty. The design stays here. A writer with `writer.kind = "proposal"` (an LLM assistant, an optimizer under test, an untrusted external system) does not write: it calls `propose(output, value, justification, ttl)`. The intent stays pending in the local API, and a human with the `operator` role approves or rejects it (`jk intent approve <id>`, or an HMI). Once approved, it is executed as a `manual` write with the TTL of the intent, on behalf of whoever approved it. Everything goes into the decision log.
 
 ---
 
-## 7. O envelope
+## 7. The envelope
 
-Aplicado por saída, no commit do grupo dono, pela ordem seguinte. O primeiro passo que falha decide o resultado. As regras exatas estão no documento 16, §2 (E1–E10).
+Applied per output, at the commit of the owning group, in the following order. The first step that fails decides the result. The exact rules are in document 16, §2 (E1–E10).
 
-| # | Passo | Falha → |
+| # | Step | Failure → |
 |---|---|---|
-| 0 | **relógio**: o escritor vencedor é uma app com `requires_clock = "synced"` e o relógio do nó não está `synced` (§18) | `Rejected(ClockUnsynced)`, e a saída vai para `safe`; renova o lease (16, A3 e E1) |
-| 1 | tipo e unidade (já convertida pela ligação) | `Rejected(WrongType)`; nunca acontece se o `jk check` passou |
-| 2 | **permissivo** (`interlock`): expressão booleana sobre sinais; `Bad` conta como falso | `Rejected(Interlock)`, e a saída mantém o valor anterior ou vai para `safe`, conforme `on_interlock` |
-| 3 | **qualidade das dependências** (`requires_good`): sinais que têm de estar `Good` | `Rejected(Quality)` depois de `grace`, e a saída mantém o valor anterior ou vai para `safe`, conforme `on_interlock` (16, E4) |
-| 4 | **gama** (`range`) | `clamp` → `Clamped(Range)`; `reject` → `Rejected(Range)`; `trip` → `Tripped` |
-| 5 | **taxa** (`rate`, unidade/s) em relação ao último valor aplicado | `Clamped(Rate)` (aplica o passo máximo) |
-| 6 | **deadband**, **intervalo mínimo** (`min_interval`) e **orçamento de atuações** (`max_actuations = "20/h"`, para relés e contactores) | `Suppressed`: não é erro, e não gasta o barramento; o orçamento esgotado dá `Rejected(Budget)` e alarme |
-| 7 | **grupos atómicos** (M20): se a saída pertence a um grupo atómico, todas as do grupo passam juntas ou nenhuma passa | `Rejected(AtomicGroup)` |
+| 0 | **clock**: the winning writer is an app with `requires_clock = "synced"` and the node clock is not `synced` (§18) | `Rejected(ClockUnsynced)`, and the output goes to `safe`; renews the lease (16, A3 and E1) |
+| 1 | type and unit (already converted by the binding) | `Rejected(WrongType)`; never happens if `jk check` passed |
+| 2 | **permissive** (`interlock`): boolean expression over signals; `Bad` counts as false | `Rejected(Interlock)`, and the output keeps the previous value or goes to `safe`, according to `on_interlock` |
+| 3 | **quality of the dependencies** (`requires_good`): signals that must be `Good` | `Rejected(Quality)` after `grace`, and the output keeps the previous value or goes to `safe`, according to `on_interlock` (16, E4) |
+| 4 | **range** (`range`) | `clamp` → `Clamped(Range)`; `reject` → `Rejected(Range)`; `trip` → `Tripped` |
+| 5 | **rate** (`rate`, unit/s) relative to the last applied value | `Clamped(Rate)` (applies the maximum step) |
+| 6 | **deadband**, **minimum interval** (`min_interval`) and **actuation budget** (`max_actuations = "20/h"`, for relays and contactors) | `Suppressed`: it is not an error, and it does not use the bus; the exhausted budget gives `Rejected(Budget)` and an alarm |
+| 7 | **atomic groups** (M20): if the output belongs to an atomic group, all outputs of the group pass together or none passes | `Rejected(AtomicGroup)` |
 | 8 | commit | `Accepted` |
 
-O `safe` é um valor ou `relinquish`, que devolve o controlo à lógica do próprio equipamento ou ao sistema anterior (documento 03, §6.1). **O valor seguro é sempre admissível.** Ir para `safe` não é bloqueado por permissivos nem por gama. A taxa só se aplica se houver `safe_ramp` declarado, porque há processos em que saltar para o seguro é perigoso: fechar uma válvula de repente provoca golpe de aríete.
+`safe` is a value or `relinquish`, which hands control back to the equipment's own logic or to the previous system (document 03, §6.1). **The safe value is always admissible.** Going to `safe` is not blocked by permissives nor by range. The rate only applies if a `safe_ramp` is declared, because there are processes in which jumping to the safe value is dangerous: closing a valve suddenly causes water hammer.
 
-**Trip.** Uma saída em trip fica em `safe` até haver um `reset` explícito (ação `manual` ou condição `reset_when`). O trip é persistente entre reinícios do `jokerd`, porque fica em `state/trips`, com fsync.
+**Trip.** An output in trip stays at `safe` until there is an explicit `reset` (a `manual` action or a `reset_when` condition). The trip persists across restarts of `jokerd`, because it is kept in `state/trips`, with fsync.
 
-**Verificação por leitura de retorno.** Uma saída pode declarar `verify = { readback = "pcs.p_set_rb", tolerance = "1 kW", within = "2s" }`. Se o valor lido não confirmar o escrito, a saída passa a `Uncertain(NotConfirmed)` e o alarme `joker.output.<s>.unconfirmed` dispara. É o que apanha o caso "o equipamento aceitou o Modbus e ignorou o valor".
+**Readback verification.** An output may declare `verify = { readback = "pcs.p_set_rb", tolerance = "1 kW", within = "2s" }`. If the value read does not confirm the one written, the output becomes `Uncertain(NotConfirmed)` and the alarm `joker.output.<s>.unconfirmed` fires. This is what catches the case "the equipment accepted the Modbus and ignored the value".
 
 ---
 
-## 8. Estado seguro em três camadas
+## 8. Three-layer safe state
 
-| Camada | Quem a garante | O que cobre | O que não cobre |
+| Layer | Who guarantees it | What it covers | What it does not cover |
 |---|---|---|---|
-| **Lease da app** | árbitro + supervisor `rt` | app morta, encravada, modelo lento, rede de uma tarefa async | `jokerd` morto |
-| **Supervisor do jokerd** | thread `rt/supervisor` + watchdog de hardware (`/dev/watchdog`, RevPi, IPC) + `WatchdogSec` do systemd | grupo encravado, deadlock, runtime morta → reinício da placa | comunicação com o equipamento perdida |
-| **Fallback do dispositivo (M1)** | o próprio equipamento | tudo o que está acima, incluindo o cabo cortado | nada: é a última linha |
+| **App lease** | arbiter + `rt` supervisor | dead or hung app, slow model, network of an async task | dead `jokerd` |
+| **jokerd supervisor** | `rt/supervisor` thread + hardware watchdog (`/dev/watchdog`, RevPi, IPC) + systemd `WatchdogSec` | hung group, deadlock, dead runtime → board restart | lost communication with the equipment |
+| **Device fallback (M1)** | the equipment itself | everything above, including the cut cable | nothing: it is the last line |
 
-**M1: o fallback do dispositivo é declarado e verificado.** Os perfis declaram como o equipamento se protege (registo de timeout de comunicação, valor de fallback). No arranque, o driver lê esses registos e, se o manifesto o permitir, escreve-os. Depois compara-os com o `safe` do Joker. As regras:
+**M1: the device fallback is declared and verified.** Profiles declare how the equipment protects itself (communication timeout register, fallback value). At startup, the driver reads those registers and, if the manifest allows it, writes them. Then it compares them with Joker's `safe`. The rules:
 
-- `device_fallback.value` tem de ser **tão seguro ou mais** do que o `safe` do Joker (o sentido de "mais seguro" é declarado por saída: `safer = "lower" | "higher" | "equal"`);
-- a runtime **renova a escrita** no equipamento a cada `keepalive` (por omissão, 1/5 do timeout do equipamento), mesmo que o valor não mude; o deadband e o `min_interval` nunca suprimem um keepalive;
-- `device_fallback.timeout` tem de ser **maior** do que `keepalive` mais o tempo de reinício do `jokerd` (medido pelo `jk doctor`), senão o equipamento cai para fallback a cada atualização da runtime. Os leases dos escritores não entram nesta conta: são internos ao Joker e, quando expiram, a runtime escreve o `safe` ativamente;
-- um reinício da **placa** inteira (watchdog de hardware) demora mais do que o timeout, e o fallback do equipamento é o comportamento certo nesse caso;
-- um fallback em falta ou incoerente é `warning` em `dev` e **erro** em `prod`, a não ser que haja `accept_missing_fallback = "<justificação>"`, que fica no `joker.lock`.
-
----
-
-## 9. Host Wasm (joker-host)
-
-- **Motor:** wasmtime (≥ 46, WASI 0.3 com async nativo). Cranelift em x86_64, aarch64 e riscv64; o interpretador Pulley em armv7 e noutras arquiteturas sem Cranelift (documento 08, rodada 5).
-- **AOT obrigatório em produção.** Os componentes são pré-compilados (`.cwasm`) no `jk build --target` ou na instalação no dispositivo, com o hash do motor e das flags de CPU. Nunca há JIT no caminho do ciclo.
-- **Imagem empacotada.** O caminho rápido do ciclo é uma única chamada por tarefa: `on-cycle(task, image) -> cycle-result`. A imagem de entradas da app vai empacotada (24 B por amostra e 24 B por resultado de saída) e as propostas voltam num buffer de registos empacotados (uma escrita são 14 B: tipo, flags, porta `u32`, valor `u64`). O layout exato está na `ref/04` §3. Os SDKs de tier 2 (TypeScript, Python) usam a **mesma** imagem e o mesmo buffer; as chamadas `cycle-io.read/write` ficam só para acessos dinâmicos e para valores que não cabem em `u64` (documento 09, ataque 2; `ref/05`).
-- **Tier 2 no ciclo** (D15): permitido, com período mínimo de 100 ms em TypeScript e 500 ms em Python; a admissão usa o **máximo** medido pelo `jk bench`, e não o p99,9, porque as pausas de GC tornam o percentil enganador.
-- **Determinismo do motor:** relaxed SIMD desativado e NaN canonicalizados nas instâncias de ciclo, para que o mesmo `.wasm` dê os mesmos bits em aarch64 e x86_64 (documento 09, ataque 10).
-- **32 bits:** em armv7, memórias com verificação explícita de limites e sem as reservas virtuais de 4 GiB (documento 09, ataque 3).
-- **Pooling allocator.** Memória linear e tabelas pré-reservadas por instância, com `memory.max` declarado pela app. A omissão depende do tier: 16 MiB no ciclo e 64 MiB no async em Rust; 64/64 MiB em TypeScript; 128/128 MiB em Python (o SDK põe a sugestão no `joker:meta`, e o manifesto vence: `ref/01` §5.12, `ref/05` §19). As páginas da instância de ciclo são pré-tocadas e fixadas. Alocar no ciclo, fora do que foi reservado no `init`, é trap (`J-E0903`, `ref/04`).
-- **Deadlines:** epoch interruption (§4). O fuel é opcional e só se usa em testes deterministas.
-- **Capacidades.** Uma app só recebe handles das portas ligadas. Por omissão não tem sistema de ficheiros, sockets nem relógio de parede (usa `cx.now()`, que vem do tick). Rede para tarefas async só com `net.allow = ["api.example.com:443"]`, e ficheiros só em `kv` (§9.1).
-- **Falhas.** Uma tarefa que termina com erro (`cycle-result.error`) mantém as propostas que já pôs no buffer. Um trap numa tarefa de ciclo conta como falha do tick dessa app: as suas propostas do tick são descartadas e os leases continuam a correr. K traps em janela (por omissão 3 em 10 s) põem a app em `crashloop`, com a instância descartada, recriação com backoff exponencial (1 s → 5 min) e alarme. As saídas seguem o lease e vão para o seguro sozinhas.
-- **Hot-swap.** Uma nova versão é instanciada ao lado, recebe o estado via `migrate(old_state) -> new_state` (opcional) e entra num **limite de tick**: no tick k corre a versão antiga, no k+1 a nova. Se o `init` falhar, a antiga continua.
-
-### 9.1 Estado persistente das apps
-
-`kv`: armazenamento chave-valor pequeno (≤ 1 MiB por app), transacional, com fsync configurável. Só as tarefas async lhe têm acesso. O ciclo não faz I/O: se precisa de estado persistente, publica um sinal interno e uma tarefa async guarda-o.
+- `device_fallback.value` must be **as safe or safer** than Joker's `safe` (the meaning of "safer" is declared per output: `safer = "lower" | "higher" | "equal"`);
+- the runtime **renews the write** on the equipment every `keepalive` (by default, 1/5 of the equipment timeout), even if the value does not change; deadband and `min_interval` never suppress a keepalive;
+- `device_fallback.timeout` must be **greater** than `keepalive` plus the restart time of `jokerd` (measured by `jk doctor`), otherwise the equipment drops to fallback on every runtime update. The writers' leases do not enter this calculation: they are internal to Joker and, when they expire, the runtime actively writes `safe`;
+- a restart of the whole **board** (hardware watchdog) takes longer than the timeout, and the equipment fallback is the right behavior in that case;
+- a missing or incoherent fallback is a `warning` in `dev` and an **error** in `prod`, unless there is `accept_missing_fallback = "<justification>"`, which is kept in `joker.lock`.
 
 ---
 
-## 10. ML (v1.1; resumo; detalhe no documento 06)
+## 9. Wasm host (joker-host)
 
-O ML não faz parte da v1 (ADR 0019). O que a v1 já reserva para ele está no documento 11, "Preparado para ML".
+- **Engine:** wasmtime (≥ 46, WASI 0.3 with native async). Cranelift on x86_64, aarch64 and riscv64; the Pulley interpreter on armv7 and on other architectures without Cranelift (document 08, round 5).
+- **AOT is mandatory in production.** Components are precompiled (`.cwasm`) at `jk build --target` or at installation on the device, with the hash of the engine and of the CPU flags. There is never JIT on the cycle path.
+- **Packed image.** The fast path of the cycle is a single call per task: `on-cycle(task, image) -> cycle-result`. The app's input image goes packed (24 B per sample and 24 B per output result) and the proposals come back in a buffer of packed records (a write is 14 B: type, flags, `u32` port, `u64` value). The exact layout is in `ref/04` §3. The tier 2 SDKs (TypeScript, Python) use the **same** image and the same buffer; the `cycle-io.read/write` calls are kept only for dynamic accesses and for values that do not fit in `u64` (document 09, attack 2; `ref/05`).
+- **Tier 2 in the cycle** (D15): allowed, with a minimum period of 100 ms in TypeScript and 500 ms in Python; admission uses the **maximum** measured by `jk bench`, and not the p99.9, because GC pauses make the percentile misleading.
+- **Engine determinism:** relaxed SIMD disabled and NaNs canonicalized in the cycle instances, so that the same `.wasm` gives the same bits on aarch64 and x86_64 (document 09, attack 10).
+- **32 bits:** on armv7, memories with explicit bounds checks and without the 4 GiB virtual reservations (document 09, attack 3).
+- **Pooling allocator.** Linear memory and tables pre-reserved per instance, with `memory.max` declared by the app. The default depends on the tier: 16 MiB in the cycle and 64 MiB in async in Rust; 64/64 MiB in TypeScript; 128/128 MiB in Python (the SDK puts the suggestion in `joker:meta`, and the manifest wins: `ref/01` §5.12, `ref/05` §19). The pages of the cycle instance are pre-touched and pinned. Allocating in the cycle, beyond what was reserved in `init`, is a trap (`J-E0903`, `ref/04`).
+- **Deadlines:** epoch interruption (§4). Fuel is optional and is only used in deterministic tests.
+- **Capabilities.** An app only receives handles for the bound ports. By default it has no file system, no sockets and no wall clock (it uses `cx.now()`, which comes from the tick). Network for async tasks only with `net.allow = ["api.example.com:443"]`, and files only in `kv` (§9.1).
+- **Failures.** A task that ends with an error (`cycle-result.error`) keeps the proposals it has already put in the buffer. A trap in a cycle task counts as a tick failure of that app: its proposals for the tick are discarded and the leases keep running. K traps in a window (by default 3 in 10 s) put the app in `crashloop`, with the instance discarded, re-creation with exponential backoff (1 s → 5 min) and an alarm. The outputs follow the lease and go to the safe state on their own.
+- **Hot swap.** A new version is instantiated alongside, receives the state via `migrate(old_state) -> new_state` (optional) and comes in at a **tick boundary**: at tick k the old version runs, at k+1 the new one. If `init` fails, the old one continues.
 
-- Um **modelo** é declarado no manifesto como um dispositivo: artefacto `.jkm`, assinatura de tensores, backend com cadeia de fallback, deadline, classe de recursos e isolamento.
-- As apps chamam `infer` (async) com tensores pequenos, ou consomem as saídas de **pipelines nativos** (M5), que levam streams diretamente ao acelerador sem passar pela memória Wasm.
-- Os backends implementam o trait `InferenceBackend`. O **Burn** é o de omissão e de referência (CPU Flex/CubeCL, Vulkan, CUDA, Metal para desenvolvimento). ORT, HailoRT e TensorRT são plugins.
-- **Guarda de entrada (M17):** a assinatura declara gamas plausíveis por entrada, e uma entrada fora da distribuição devolve `Uncertain(OutOfDistribution)` junto com o resultado, que a app ou o controlador de fallback tratam.
-- **Saídas não deterministas (M22):** as saídas de modelos em GPU/NPU são gravadas no traço, e o replay usa-as em vez de reexecutar.
+### 9.1 Persistent state of apps
 
----
-
-## 11. Streams e dados volumosos (M4)
-
-Imagens, nuvens de pontos e blocos de áudio não cabem em slots de 32 bytes. Um **stream** é:
-
-- um **pool de buffers** pré-alocado (memfd ou dmabuf quando o driver o suporta: V4L2, libcamera), de tamanho fixo por stream;
-- **frames com contagem de referências**, com metadados (ts de captura em hardware quando existe, seq, formato, dimensões);
-- semântica `latest` (os consumidores lentos perdem frames, e isso é contado) ou `queue(n)` (com contrapressão sobre o produtor até n e perda a partir daí).
-
-Um frame nunca é copiado entre produtor e consumidores nativos. As apps Wasm recebem um **recurso** `frame` e podem pedir `view(roi, formato)`, que copia só a região pedida para a memória linear. O caminho normal para ML é o pipeline nativo (documento 06, §5).
-
-**Sinais em bloco (M7).** Para formas de onda (vibração a 25,6 kS/s, corrente a 10 kS/s), o driver entrega **blocos**: `t0`, `período`, `n`, amostras contíguas e qualidade por bloco. Vivem num anel por sinal, e os consumidores leem blocos inteiros. O historian guarda-os comprimidos, e os derivados escalares (RMS, pico, bandas FFT) são calculados por pipelines ou tarefas.
+`kv`: small key-value storage (≤ 1 MiB per app), transactional, with configurable fsync. Only async tasks have access to it. The cycle does no I/O: if it needs persistent state, it publishes an internal signal and an async task saves it.
 
 ---
 
-## 12. Historian local (joker-store)
+## 10. ML (v1.1; summary; detail in document 06)
 
-- **Segmentos por série**, append-only, com blocos de 4 KiB: compressão Gorilla (delta-of-delta nos tempos, XOR nos floats) para escalares, e zstd para blocos de forma de onda e eventos.
-- **WAL** partilhado, com fsync em lote (por omissão a cada 1 s, `fsync = "batch" | "always" | "never"`). Perde-se no máximo 1 s numa falta de energia. Usam `always` só os trips, as escritas manuais, as rejeições e as mudanças de nível ativo; o resto do registo de decisões vai em lote (§19).
-- **Retenção por camadas:** `raw` (p. ex. 7 d), agregados `1s`, `1m` e `15m` (min/max/média/última/contagem/qualidade dominante), cada um com o seu `keep`. A retenção por tamanho tem prioridade sobre a retenção por tempo (`max_disk = "8 GiB"`). Com o disco a 90%, apaga-se primeiro o `raw` mais antigo.
-- **Consulta:** API local (`/v1/history`), `jk history`, exportação em Parquet. O Parquet é escrito pela `jk`, a partir do NDJSON da API: o nó não leva um escritor de Parquet (`ref/09` §5.5).
-- **Store-and-forward:** cada uplink tem um cursor persistente sobre o historian, e o reenvio lê do historian em vez de manter uma fila separada. Uma queda de rede de dias não custa memória, só disco, e está limitada pela retenção.
+ML is not part of v1 (ADR 0019). What v1 already reserves for it is in document 11, "Prepared for ML".
 
-Alvo: 200 k amostras/s de ingestão num CM4 com eMMC, com 1–2 bytes por amostra comprimida em sinais de processo típicos.
+- A **model** is declared in the manifest like a device: `.jkm` artifact, tensor signature, backend with a fallback chain, deadline, resource class and isolation.
+- Apps call `infer` (async) with small tensors, or consume the outputs of **native pipelines** (M5), which take streams directly to the accelerator without going through Wasm memory.
+- Backends implement the `InferenceBackend` trait. **Burn** is the default and reference backend (CPU Flex/CubeCL, Vulkan, CUDA, Metal for development). ORT, HailoRT and TensorRT are plugins.
+- **Input guard (M17):** the signature declares plausible ranges per input, and an out-of-distribution input returns `Uncertain(OutOfDistribution)` along with the result, which the app or the fallback controller handles.
+- **Non-deterministic outputs (M22):** the outputs of models on GPU/NPU are recorded in the trace, and replay uses them instead of re-executing.
 
-**O meio de armazenamento conta.** A placa declara `storage = "sd" | "emmc" | "ssd"` (`ref/03` §2.3.1). O `jk check` projeta a carga de escrita do manifesto (historian, registo de decisões, `kv`, traço contínuo, e o número de fsyncs) e o `jk doctor` mede-a no nó; acima do que o meio aguenta, o aviso `J0381` diz quanto e de onde vem. Um cartão SD é o caso mais frágil, e é o da bancada (documento 23).
+---
+
+## 11. Streams and bulk data (M4)
+
+Images, point clouds and audio blocks do not fit in 32-byte slots. A **stream** is:
+
+- a preallocated **buffer pool** (memfd or dmabuf when the driver supports it: V4L2, libcamera), of fixed size per stream;
+- **reference-counted frames**, with metadata (hardware capture ts when it exists, seq, format, dimensions);
+- `latest` semantics (slow consumers drop frames, and this is counted) or `queue(n)` (with backpressure on the producer up to n and drops from there on).
+
+A frame is never copied between the producer and native consumers. Wasm apps receive a `frame` **resource** and may ask for `view(roi, format)`, which copies only the requested region into linear memory. The normal path for ML is the native pipeline (document 06, §5).
+
+**Block signals (M7).** For waveforms (vibration at 25.6 kS/s, current at 10 kS/s), the driver delivers **blocks**: `t0`, `period`, `n`, contiguous samples and per-block quality. They live in a ring per signal, and consumers read whole blocks. The historian stores them compressed, and the scalar derived signals (RMS, peak, FFT bands) are computed by pipelines or tasks.
+
+---
+
+## 12. Local historian (joker-store)
+
+- **Per-series segments**, append-only, with 4 KiB blocks: Gorilla compression (delta-of-delta on times, XOR on floats) for scalars, and zstd for waveform blocks and events.
+- Shared **WAL**, with batched fsync (by default every 1 s, `fsync = "batch" | "always" | "never"`). At most 1 s is lost in a power outage. Only trips, manual writes, rejections and changes of active level use `always`; the rest of the decision log goes in a batch (§19).
+- **Tiered retention:** `raw` (e.g. 7 d), aggregates `1s`, `1m` and `15m` (min/max/mean/last/count/dominant quality), each with its own `keep`. Retention by size has priority over retention by time (`max_disk = "8 GiB"`). With the disk at 90%, the oldest `raw` is deleted first.
+- **Query:** local API (`/v1/history`), `jk history`, export to Parquet. Parquet is written by `jk`, from the API's NDJSON: the node does not carry a Parquet writer (`ref/09` §5.5).
+- **Store-and-forward:** each uplink has a persistent cursor over the historian, and resending reads from the historian instead of keeping a separate queue. A network outage of days costs no memory, only disk, and is bounded by retention.
+
+Target: 200 k samples/s of ingestion on a CM4 with eMMC, with 1–2 bytes per compressed sample on typical process signals.
+
+**The storage medium matters.** The board declares `storage = "sd" | "emmc" | "ssd"` (`ref/03` §2.3.1). `jk check` projects the write load of the manifest (historian, decision log, `kv`, continuous trace, and the number of fsyncs) and `jk doctor` measures it on the node; above what the medium can take, the warning `J0381` says how much and where it comes from. An SD card is the most fragile case, and it is the bench's (document 23).
 
 ---
 
 ## 13. Uplink (joker-link)
 
-| Tipo | Uso |
+| Type | Use |
 |---|---|
-| `mqtt` | genérico, tópicos e JSON/CBOR configuráveis |
-| `mqtt-sparkplug` | Sparkplug B: NBIRTH/DBIRTH, métricas com alias, estado do nó; o mapeamento de sinais para métricas é automático |
-| `zenoh` | pub/sub/query eficiente, interop com ROS 2 (`rmw_zenoh`), malhas locais |
-| `otlp` | métricas, logs e traços **da própria runtime** para observabilidade |
-| `http` | webhook de eventos e alarmes |
+| `mqtt` | generic, configurable topics and JSON/CBOR |
+| `mqtt-sparkplug` | Sparkplug B: NBIRTH/DBIRTH, metrics with alias, node state; the mapping of signals to metrics is automatic |
+| `zenoh` | efficient pub/sub/query, interop with ROS 2 (`rmw_zenoh`), local meshes |
+| `otlp` | metrics, logs and traces **of the runtime itself** for observability |
+| `http` | webhook for events and alarms |
 
-**Orçamentos (M12).** Cada uplink pode declarar `budget = "100 MB/month"` e classes de prioridade (`alarms > events > telemetry.high > telemetry.low > bulk`). Um estimador de consumo projeta o mês. Quando a projeção ultrapassa o orçamento, as classes baixas passam a agregados (1 s → 1 min → 15 min) antes de alguma coisa ser descartada. Os alarmes nunca são degradados. O estado do orçamento é um sinal (`joker.link.<u>.budget_used`).
+**Budgets (M12).** Each uplink may declare `budget = "100 MB/month"` and priority classes (`alarms > events > telemetry.high > telemetry.low > bulk`). A consumption estimator projects the month. When the projection exceeds the budget, the low classes switch to aggregates (1 s → 1 min → 15 min) before anything is discarded. Alarms are never degraded. The budget state is a signal (`joker.link.<u>.budget_used`).
 
-**Entrega:** `at_least_once` com número de sequência por série (o destino deduplica) para histórico, e `latest` para valores ao vivo. A ordem é garantida por série, não entre séries.
-
----
-
-## 14. API local e pontes
-
-- **API local** (`joker-api`): HTTP/1.1 e HTTP/2 com JSON, WebSocket e SSE para subscrições e OpenAPI publicada. Escuta num socket Unix (`/run/joker/api.sock`) por omissão e, opcionalmente, em TCP, sempre com mTLS. Papéis: `viewer`, `operator` (escritas manuais, aprovação de intenções, reset de trips), `admin` (config, OTA). A CLI `jk` é apenas um cliente desta API. A referência exaustiva (endpoints, erros, anti-replay, WebSocket) está na `ref/09` e no `spec/openapi/joker-api.yaml`.
-- **Pontes (M11):** exposição bidirecional de sinais para outros ecossistemas: ROS 2 via Zenoh (`rmw_zenoh`), OPC UA **servidor** (o Joker publica o seu espaço de endereços para SCADA), Modbus **servidor** (para PLCs legados que querem ler do Joker). **Uma escrita que chega por uma ponte é uma escrita de um escritor declarado**, com prioridade, lease e envelope. Uma ponte não é um atalho.
+**Delivery:** `at_least_once` with a sequence number per series (the destination deduplicates) for history, and `latest` for live values. Order is guaranteed per series, not across series.
 
 ---
 
-## 15. Configuração: gerações e aplicação transacional
+## 14. Local API and bridges
 
-Uma **geração** é o par (manifesto resolvido, `joker.lock`) com o registo compilado. Mudar de configuração é mudar de geração. Cada geração tem um número `gen`, dado na criação, e um hash do conteúdo, que a identifica (o do descritor `joker.config.v1+cbor`, `ref/10` §2.6.2).
+- **Local API** (`joker-api`): HTTP/1.1 and HTTP/2 with JSON, WebSocket and SSE for subscriptions, and published OpenAPI. It listens on a Unix socket (`/run/joker/api.sock`) by default and, optionally, on TCP, always with mTLS. Roles: `viewer`, `operator` (manual writes, approval of intents, reset of trips), `admin` (config, OTA). The `jk` CLI is only a client of this API. The exhaustive reference (endpoints, errors, anti-replay, WebSocket) is in `ref/09` and in `spec/openapi/joker-api.yaml`.
+- **Bridges (M11):** bidirectional exposure of signals to other ecosystems: ROS 2 via Zenoh (`rmw_zenoh`), OPC UA **server** (Joker publishes its address space for SCADA), Modbus **server** (for legacy PLCs that want to read from Joker). **A write that arrives through a bridge is a write from a declared writer**, with priority, lease and envelope. A bridge is not a shortcut.
+
+---
+
+## 15. Configuration: generations and transactional apply
+
+A **generation** is the pair (resolved manifest, `joker.lock`) with the compiled registry. Changing configuration is changing generation. Each generation has a `gen` number, given at creation, and a content hash, which identifies it (that of the `joker.config.v1+cbor` descriptor, `ref/10` §2.6.2).
 
 ```
-jk apply  ──▶ validar (J-codes) ──▶ planear diff ──▶ preparar ──▶ trocar ──▶ janela de confirmação ──▶ confirmado
-                                         │                            │                │
-                                         │                            │                └─ expirou → rollback automático
-                                         │                            └─ num limite de tick de cada grupo afetado
-                                         └─ o que muda: drivers a reiniciar, apps a recarregar,
-                                            envelopes a trocar (a quente), sinais novos/removidos
+jk apply  ──▶ validate (J-codes) ──▶ plan diff ──▶ prepare ──▶ swap ──▶ confirmation window ──▶ confirmed
+                                         │                       │              │
+                                         │                       │              └─ expired → automatic rollback
+                                         │                       └─ at a tick boundary of each affected group
+                                         └─ what changes: drivers to restart, apps to reload,
+                                            envelopes to swap (hot), new/removed signals
 ```
 
-- **Diff mínimo:** mudar um envelope não reinicia o driver, e mudar o endereço de um dispositivo reinicia só esse driver. Os sinais que sobrevivem mantêm o `SignalId` quando possível, e as apps não afetadas continuam sem interrupção.
-- **Confirmação (ADR 0015):** `jk apply --confirm 5m` aplica e espera um `jk confirm`. Se ele não chegar (porque a nova config cortou a rede, por exemplo), volta sozinho à geração anterior. É o `commit confirmed` dos routers aplicado ao edge. Em `prod`, a janela é **obrigatória** quando o plano muda a rede, a segurança, os uplinks ou a **própria API** (pontos de escuta, papéis): são os `confirm_reasons` do plano (`network`, `security`, `uplinks`, `api`, `ref/09` §5.13).
-- **Rollback reativa** (D9): voltar atrás não cria uma geração nova. A geração anterior volta a ser a ativa com o mesmo hash e o mesmo `gen`, e o histórico de gerações é um histórico de **ativações**, cada uma com a sua origem (`origin`; `ref/09` §5.13, `ref/10`). Uma geração ativada que não chega a ser confirmada fica `rolled_back`; uma `pending` que nunca foi ativada fica `discarded` (`ref/00` §6, `ref/09` §5.13).
-- **Sobreposições (M13):** `extends = ["templates/joker.bess-v2.toml"]` com fusão profunda e regras explícitas (documento 03, §2). O `jk diff` mostra o manifesto efetivo.
+- **Minimal diff:** changing an envelope does not restart the driver, and changing the address of a device restarts only that driver. The signals that survive keep their `SignalId` when possible, and unaffected apps continue without interruption.
+- **Confirmation (ADR 0015):** `jk apply --confirm 5m` applies and waits for a `jk confirm`. If it does not arrive (because the new config cut the network, for example), it returns on its own to the previous generation. It is the `commit confirmed` of routers applied to the edge. In `prod`, the window is **mandatory** when the plan changes the network, security, the uplinks or the **API itself** (listen endpoints, roles): these are the plan's `confirm_reasons` (`network`, `security`, `uplinks`, `api`, `ref/09` §5.13).
+- **Rollback reactivates** (D9): going back does not create a new generation. The previous generation becomes the active one again with the same hash and the same `gen`, and the generation history is a history of **activations**, each with its origin (`origin`; `ref/09` §5.13, `ref/10`). An activated generation that is never confirmed becomes `rolled_back`; a `pending` one that was never activated becomes `discarded` (`ref/00` §6, `ref/09` §5.13).
+- **Overlays (M13):** `extends = ["templates/joker.bess-v2.toml"]` with deep merge and explicit rules (document 03, §2). `jk diff` shows the effective manifest.
 
 ---
 
-## 16. OTA: quatro tipos de artefacto
+## 16. OTA: four artifact types
 
-| Artefacto | Unidade | Troca | Rollback |
+| Artifact | Unit | Swap | Rollback |
 |---|---|---|---|
-| **runtime** (`jokerd`) | binário assinado | slots A/B em `/var/lib/joker/runtime/{a,b}`; o systemd arranca o ativo; teste de saúde (N ticks limpos, drivers ligados) | automático se a saúde falhar dentro de `health_window` |
-| **app** | componente `.wasm` assinado + `.cwasm` | hot-swap num limite de tick (§9) | versão anterior mantida quente durante `keep_previous` |
-| **modelo** | `.jkm` assinado | modo sombra → promoção (M16) | despromoção automática por KPI |
-| **config** | manifesto + lock | geração com confirmação (§15) | janela de confirmação |
+| **runtime** (`jokerd`) | signed binary | A/B slots in `/var/lib/joker/runtime/{a,b}`; systemd starts the active one; health test (N clean ticks, drivers connected) | automatic if health fails within `health_window` |
+| **app** | signed `.wasm` component + `.cwasm` | hot swap at a tick boundary (§9) | previous version kept warm during `keep_previous` |
+| **model** | signed `.jkm` | shadow mode → promotion (M16) | automatic demotion by KPI |
+| **config** | manifest + lock | generation with confirmation (§15) | confirmation window |
 
-Uma runtime nova arranca **com a geração confirmada atual**: o OTA da runtime nunca muda de configuração ao mesmo tempo (`ref/10` §3). Durante o reinício, os equipamentos cobrem o intervalo com o seu fallback (M1) e os MCUs com os seus leases.
+A new runtime starts **with the current confirmed generation**: the runtime OTA never changes configuration at the same time (`ref/10` §3). During the restart, the equipment covers the gap with its fallback (M1) and the MCUs with their leases.
 
-O Joker **não atualiza o SO**. Integra-se com RAUC, SWUpdate ou Mender para isso (documento 12). A gestão da frota é do **Joker Deck** (documento 20, ADR 0021): o `jokerd` expõe um agente com estado desejado e estado reportado (ref/10), que o Deck, ou outro gestor, usa.
-
----
-
-## 17. Segurança
-
-- **Identidade do dispositivo:** certificado X.509 **P-256** emitido pela CA da organização, com a chave em TPM 2.0 ou elemento seguro quando existe, e em ficheiro protegido quando não existe (fica declarado no `jk doctor`). O enrolamento cria também a chave X25519 do nó para os segredos (ADR 0025, `ref/02` §2.5).
-- **Assinaturas:** runtime, apps, drivers, perfis, placas, classes, firmware, configs de produção e segredos são assinados com chaves **Ed25519** da organização, fora dos nós; os documentos assinados vão em COSE_Sign1 sobre CBOR (ADR 0025). A política de confiança (que chave assina que papel) vem de um **bundle** assinado por uma raiz fora de linha; o `[security.trust]` do manifesto só a restringe. O `jokerd` recusa artefactos não assinados em `mode = "prod"`.
-- **Memória:** `oom_score_adj = -900` no `jokerd` e `+500` nos processos `joker-ml-*`/`joker-drv-*`, para que o kernel mate primeiro o modelo e não o controlo.
-- **Privilégios mínimos:** o `jokerd` corre como utilizador `joker`, com acesso por grupos (`gpio`, `dialout`, `i2c`, `spi`, `video`) e `CAP_SYS_NICE` + `CAP_IPC_LOCK` (para RT e `mlockall`). Não precisa de root. Os drivers tier X arrancam como **unidades systemd transitórias** (`StartTransientUnit`), com `DynamicUser` por omissão e a sandbox do systemd: é assim que correm com outro utilizador sem o `jokerd` ter `CAP_SETUID` (D20, `ref/06` §5.2).
-- **Sandbox:** as apps Wasm não têm ambient authority (§9). Os drivers tier W só veem o transporte que lhes foi dado.
-- **Rede:** a API local escuta no socket Unix por omissão, e o TCP é sempre mTLS (não há chave para o desligar). Os uplinks usam TLS com verificação de certificado obrigatória.
-- **Comandos vindos de fora** (D16): as escritas pela API em TCP, pelo túnel de uma sessão remota e pelo protocolo do agente levam `nonce` e `ts` do emissor. Um nonce repetido é sempre rejeitado; com o relógio `synced`, também um `ts` fora de ±30 s. Sem relógio sincronizado, verifica-se só o nonce e a ligação ao alvo, e a auditoria regista-o. A memória de nonces nunca esquece: cheia, recusa pedidos (`ref/00` §9; documento 09, ataque 9). As **pontes** (OPC UA, Modbus, ROS 2) não levam nonce: autenticam-se pelo protocolo delas e escrevem como escritores declarados, com nível e lease.
-- **Segredos** (ADR 0024): cada segredo é cifrado com HPKE para a chave X25519 de cada nó destinatário e assinado por entrada. O `secrets.toml.enc` só tem valores cifrados e **pode ir para o Git**; é assim que o Deck os distribui sem os ler. O nó guarda-os cifrados e decifra em memória fixada no momento do uso. As apps pedem segredos por um nome local ligado no manifesto (`[apps.<app>.secrets]`), só na instância async, e nunca os leem do manifesto (`ref/02` §2.4).
+Joker **does not update the OS**. It integrates with RAUC, SWUpdate or Mender for that (document 12). Fleet management belongs to **Joker Deck** (document 20, ADR 0021): `jokerd` exposes an agent with desired state and reported state (ref/10), which the Deck, or another manager, uses.
 
 ---
 
-## 18. Tempo (M14)
+## 17. Security
 
-- **Escalonamento:** `CLOCK_MONOTONIC`. Nunca o relógio de parede.
-- **Timestamps:** UTC em ns, com **qualidade do relógio** por geração de tempo: `Synced(ntp|ptp|gnss)`, `Holdover(desde)`, `Unsynced`. Cada amostra guarda o `ts_acq` em monotónico relativo, e a tradução para UTC usa a tabela de correspondências do historian. Um salto de relógio (NTP a corrigir 3 horas depois de um arranque sem RTC) não baralha as séries: corrige-se retroativamente a correspondência, sem reescrever amostras.
-- **Apps:** `cx.now()` devolve o tempo do tick (monotónico e UTC, mais a qualidade). Uma app pode declarar `requires_clock = "synced"`, e nesse caso as suas saídas ficam bloqueadas enquanto o relógio não estiver sincronizado: `Rejected(ClockUnsynced)` no passo 0 do envelope, e a saída vai para `safe` (§7; 16, E1). É o caso de uma tarifa horária.
-- **PTP** (IEEE 1588 via `linuxptp`) para sites que precisam de correlação sub-ms entre dispositivos.
+- **Device identity:** **P-256** X.509 certificate issued by the organization's CA, with the key in a TPM 2.0 or secure element when one exists, and in a protected file when it does not (this is declared in `jk doctor`). Enrollment also creates the node's X25519 key for secrets (ADR 0025, `ref/02` §2.5).
+- **Signatures:** runtime, apps, drivers, profiles, boards, classes, firmware, production configs and secrets are signed with the organization's **Ed25519** keys, outside the nodes; signed documents go in COSE_Sign1 over CBOR (ADR 0025). The trust policy (which key signs which role) comes from a **bundle** signed by an offline root; the manifest's `[security.trust]` only restricts it. `jokerd` refuses unsigned artifacts in `mode = "prod"`.
+- **Memory:** `oom_score_adj = -900` on `jokerd` and `+500` on the `joker-ml-*`/`joker-drv-*` processes, so that the kernel kills the model first and not the control.
+- **Least privilege:** `jokerd` runs as user `joker`, with access through groups (`gpio`, `dialout`, `i2c`, `spi`, `video`) and `CAP_SYS_NICE` + `CAP_IPC_LOCK` (for RT and `mlockall`). It does not need root. Tier X drivers start as **transient systemd units** (`StartTransientUnit`), with `DynamicUser` by default and the systemd sandbox: this is how they run as another user without `jokerd` having `CAP_SETUID` (D20, `ref/06` §5.2).
+- **Sandbox:** Wasm apps have no ambient authority (§9). Tier W drivers only see the transport they were given.
+- **Network:** the local API listens on the Unix socket by default, and TCP is always mTLS (there is no switch to turn it off). Uplinks use TLS with mandatory certificate verification.
+- **Commands from outside** (D16): writes through the API over TCP, through the tunnel of a remote session and through the agent protocol carry the sender's `nonce` and `ts`. A repeated nonce is always rejected; with the clock `synced`, so is a `ts` outside ±30 s. Without a synchronized clock, only the nonce and the binding to the target are checked, and the audit records it. The nonce memory never forgets: when full, it refuses requests (`ref/00` §9; document 09, attack 9). The **bridges** (OPC UA, Modbus, ROS 2) do not carry a nonce: they authenticate through their own protocol and write as declared writers, with level and lease.
+- **Secrets** (ADR 0024): each secret is encrypted with HPKE to the X25519 key of each recipient node and signed per entry. `secrets.toml.enc` only has encrypted values and **may go into Git**; this is how the Deck distributes them without reading them. The node stores them encrypted and decrypts them into pinned memory at the moment of use. Apps request secrets by a local name bound in the manifest (`[apps.<app>.secrets]`), only in the async instance, and never read them from the manifest (`ref/02` §2.4).
 
 ---
 
-## 19. Observabilidade
+## 18. Time (M14)
 
-Métricas próprias, expostas como sinais `joker.*` (portanto gravadas, alarmáveis e enviáveis como qualquer outro sinal) e via OTLP:
+- **Scheduling:** `CLOCK_MONOTONIC`. Never the wall clock.
+- **Timestamps:** UTC in ns, with **clock quality** per time generation: `Synced(ntp|ptp|gnss)`, `Holdover(since)`, `Unsynced`. Each sample stores `ts_acq` in relative monotonic time, and the translation to UTC uses the historian's correspondence table. A clock jump (NTP correcting 3 hours after a boot without an RTC) does not scramble the series: the correspondence is corrected retroactively, without rewriting samples.
+- **Apps:** `cx.now()` returns the tick time (monotonic and UTC, plus the quality). An app may declare `requires_clock = "synced"`, and in that case its outputs stay blocked while the clock is not synchronized: `Rejected(ClockUnsynced)` at step 0 of the envelope, and the output goes to `safe` (§7; 16, E1). This is the case of an hourly tariff.
+- **PTP** (IEEE 1588 via `linuxptp`) for sites that need sub-ms correlation between devices.
 
-| Área | Métricas |
+---
+
+## 19. Observability
+
+Own metrics, exposed as `joker.*` signals (therefore recorded, alarmable and sendable like any other signal) and via OTLP:
+
+| Area | Metrics |
 |---|---|
-| Ciclo | jitter do arranque (histograma HDR), duração do tick, overruns, WCET medido por tarefa |
-| Drivers | latência por pedido, timeouts, reconexões, bytes, pedidos coalescidos |
-| Envelope | resultados por saída (`accepted/clamped/rejected/suppressed/tripped`) |
-| Árbitro | nível ativo por saída, leases a expirar, overrides manuais ativos |
-| Apps | traps, reinícios, memória, tempo de CPU async |
-| ML | latência p50/p99 por modelo e backend, fallbacks de backend, OOD |
-| Store/link | fila, lag do cursor, perdas por política, orçamento |
-| Sistema | temperatura, throttling de CPU, disco, memória, qualidade do relógio |
+| Cycle | start jitter (HDR histogram), tick duration, overruns, measured WCET per task |
+| Drivers | latency per request, timeouts, reconnections, bytes, coalesced requests |
+| Envelope | results per output (`accepted/clamped/rejected/suppressed/tripped`) |
+| Arbiter | active level per output, leases about to expire, active manual overrides |
+| Apps | traps, restarts, memory, async CPU time |
+| ML | p50/p99 latency per model and backend, backend fallbacks, OOD |
+| Store/link | queue, cursor lag, drops by policy, budget |
+| System | temperature, CPU throttling, disk, memory, clock quality |
 
-`jk top` mostra tudo isto ao vivo, e `jk trace <sinal>` segue um sinal do driver ao envelope.
+`jk top` shows all of this live, and `jk trace <signal>` follows a signal from the driver to the envelope.
 
-**Registo de decisões (regra normativa).** Regista-se por **mudança de resultado**, e não por tick: para cada saída, guarda-se cada mudança do triplo (valor aplicado, resultado, nível ativo), com a causa e a **contagem de repetições** do triplo anterior (quantos ticks seguidos deram o mesmo), e o instante da primeira e da última. Uma saída estável a 100 Hz gera uma entrada quando muda, e não 100 por segundo. O `fsync = "always"` (§12) só se aplica às entradas de **trips**, **escritas manuais**, **rejeições** (`Rejected(*)`) e **mudanças de nível ativo**; as outras (`Accepted`, `Clamped`, `Suppressed`, `Overridden` sem mudança de nível) vão no lote do WAL. O traço (16 §7) continua a ter todos os ticks: o registo é o resumo auditável, o traço é o replay. Para as saídas de um MCU, o registo aceita resultados **compactados**: quando a janela do Joker Link enche, os resultados pendentes juntam-se por (saída, nível), fica o mais recente, e os perdidos contam-se (`ref/07` §8.2). A telemetria nunca trava o controlo, e o que se perde é contado.
+**Decision log (normative rule).** Entries are logged per **change of result**, and not per tick: for each output, each change of the triple (applied value, result, active level) is kept, with the cause and the **repetition count** of the previous triple (how many consecutive ticks gave the same), and the instant of the first and of the last. An output stable at 100 Hz generates one entry when it changes, and not 100 per second. `fsync = "always"` (§12) only applies to the entries for **trips**, **manual writes**, **rejections** (`Rejected(*)`) and **changes of active level**; the others (`Accepted`, `Clamped`, `Suppressed`, `Overridden` without a change of level) go in the WAL batch. The trace (16 §7) still has every tick: the log is the auditable summary, the trace is the replay. For the outputs of an MCU, the log accepts **compacted** results: when the Joker Link window fills up, the pending results are merged by (output, level), the most recent one is kept, and the lost ones are counted (`ref/07` §8.2). Telemetry never stalls control, and what is lost is counted.
 
 ---
 
-## 20. Modos de falha
+## 20. Failure modes
 
-| Falha | Deteção | Reação | Onde se vê |
+| Failure | Detection | Reaction | Where it shows |
 |---|---|---|---|
-| Equipamento deixa de responder | timeout do driver | sinais `Bad(CommFailure)`; permissivos dependentes a falso; saídas do equipamento: fallback do dispositivo | alarme `joker.device.<d>.offline` |
-| Valor absurdo (NaN, fora dos limites físicos) | estágio de aquisição | `Bad(OutOfRange)` | qualidade |
-| Sensor congelado com qualidade boa | `stuck_detect` | `Uncertain(Frozen)` | qualidade, alarme |
-| Escrita que nunca volta | timeout por escrita | caixa latest-wins; N timeouts → `Down` → fallback do dispositivo | alarme |
-| App em trap | host | propostas do tick descartadas; crashloop após K | alarme, `jk status` |
-| App lenta no ciclo | epoch | interrompida; tick sem essa app | overrun da app |
-| Grupo encravado | supervisor (deadline do grupo × 3) | o supervisor ativa o bit `force_safe` nas caixas das saídas do grupo, e os drivers enviam o `safe` sem passar pelo grupo | alarme crítico |
-| `jokerd` morto | watchdog systemd / hardware | reinício; trips persistentes restaurados; saídas começam em `safe` | contador de arranques |
-| Placa congelada | watchdog de hardware | reset; fallback do dispositivo cobre o intervalo | — |
-| Modelo lento | deadline do modelo | `Err(Deadline)` para a app; fallback de backend após N | métricas ML |
-| Driver de GPU encravado | watchdog do processo `joker-ml-<id>` | kill + reinício; fallback de backend | alarme |
-| Disco cheio | store | retenção agressiva; sem bloquear ingestão; se `< 1%`, só alarmes e decisões | alarme |
-| Rede do uplink em baixo | link | store-and-forward; orçamento recalculado | lag do cursor |
-| Relógio salta | módulo de tempo | nova correspondência; `Holdover`/`Unsynced` | qualidade do relógio |
-| Config nova corta a rede | janela de confirmação | rollback automático | registo de gerações |
-| Falta de energia | — | no arranque: WAL, trips, níveis manuais (16, A14), última geração confirmada | — |
+| Equipment stops responding | driver timeout | signals `Bad(CommFailure)`; dependent permissives to false; outputs of the equipment: device fallback | alarm `joker.device.<d>.offline` |
+| Absurd value (NaN, outside physical limits) | acquisition stage | `Bad(OutOfRange)` | quality |
+| Frozen sensor with good quality | `stuck_detect` | `Uncertain(Frozen)` | quality, alarm |
+| Write that never comes back | per-write timeout | latest-wins box; N timeouts → `Down` → device fallback | alarm |
+| App in trap | host | proposals of the tick discarded; crashloop after K | alarm, `jk status` |
+| Slow app in the cycle | epoch | interrupted; tick without that app | app overrun |
+| Hung group | supervisor (group deadline × 3) | the supervisor sets the `force_safe` bit in the boxes of the group's outputs, and the drivers send `safe` without going through the group | critical alarm |
+| Dead `jokerd` | systemd / hardware watchdog | restart; persistent trips restored; outputs start at `safe` | startup counter |
+| Frozen board | hardware watchdog | reset; device fallback covers the gap | — |
+| Slow model | model deadline | `Err(Deadline)` to the app; backend fallback after N | ML metrics |
+| Hung GPU driver | watchdog of the `joker-ml-<id>` process | kill + restart; backend fallback | alarm |
+| Disk full | store | aggressive retention; without blocking ingestion; if `< 1%`, only alarms and decisions | alarm |
+| Uplink network down | link | store-and-forward; budget recalculated | cursor lag |
+| Clock jumps | time module | new correspondence; `Holdover`/`Unsynced` | clock quality |
+| New config cuts the network | confirmation window | automatic rollback | generation log |
+| Power outage | — | at startup: WAL, trips, manual levels (16, A14), last confirmed generation | — |
 
 ---
 
-## 21. Números alvo (a validar)
+## 21. Target figures (to be validated)
 
-| Métrica | Alvo | Condição |
+| Metric | Target | Condition |
 |---|---|---|
-| Binário `jokerd`, build `minimal` (`sim`, `sysfs`, Modbus, MQTT; `ref/06` §3.8) | ≤ 20 MB | aarch64, estático, `strip`; sem ML (a 1.0 não tem Burn, ADR 0019) |
-| Binário `jokerd`, build completo (`default`, `ref/06` §3.8) | ≤ 30 MB | idem |
-| RSS em repouso sem ML | ≤ 60 MB | 1 000 sinais, 3 apps, cache do historian de 8 MB (o `.text` residente conta) |
-| Arranque até ao primeiro tick | ≤ 2 s | AOT em cache |
-| Jitter do tick p99.9 | ≤ 100 µs | CM4/CM5, PREEMPT_RT, CPU isolada, grupo de 1 ms |
-| Jitter do tick p99.9 | ≤ 2 ms | kernel sem RT, grupo de 100 ms |
-| Overhead da chamada Wasm de ciclo | ≤ 5 µs | tarefa vazia, Cranelift |
-| Envelope + árbitro por saída | ≤ 300 ns | sem grupos atómicos |
-| Ingestão de amostras escalares | ≥ 100 k/s | CM4, 1 núcleo `io` |
-| Ingestão do historian | ≥ 200 k amostras/s | CM4, eMMC |
-| Hot-swap de app | 0 ticks perdidos | mesma assinatura de portas |
+| `jokerd` binary, `minimal` build (`sim`, `sysfs`, Modbus, MQTT; `ref/06` §3.8) | ≤ 20 MB | aarch64, static, `strip`; no ML (1.0 has no Burn, ADR 0019) |
+| `jokerd` binary, full build (`default`, `ref/06` §3.8) | ≤ 30 MB | same |
+| Idle RSS without ML | ≤ 60 MB | 1,000 signals, 3 apps, historian cache of 8 MB (the resident `.text` counts) |
+| Startup to the first tick | ≤ 2 s | AOT in cache |
+| Tick jitter p99.9 | ≤ 100 µs | CM4/CM5, PREEMPT_RT, isolated CPU, 1 ms group |
+| Tick jitter p99.9 | ≤ 2 ms | kernel without RT, 100 ms group |
+| Overhead of the cycle Wasm call | ≤ 5 µs | empty task, Cranelift |
+| Envelope + arbiter per output | ≤ 300 ns | no atomic groups |
+| Ingestion of scalar samples | ≥ 100 k/s | CM4, 1 `io` CPU core |
+| Historian ingestion | ≥ 200 k samples/s | CM4, eMMC |
+| App hot swap | 0 ticks lost | same port signature |
 
-**Tamanho do binário na CI.** Os dois builds (`minimal` e completo) medem-se em cada commit com `cargo bloat --release --crates` para `aarch64-unknown-linux-gnu`; um build acima do limite da tabela faz a CI falhar, com os crates que mais cresceram. Subir um limite é uma decisão explícita, no mesmo commit que o justifica.
+**Binary size in CI.** The two builds (`minimal` and full) are measured on every commit with `cargo bloat --release --crates` for `aarch64-unknown-linux-gnu`; a build above the table's limit makes CI fail, with the crates that grew the most. Raising a limit is an explicit decision, in the same commit that justifies it.
 
 ---
 
-## 22. Plataformas
+## 22. Platforms
 
-| Tier | Plataforma | Estado previsto |
+| Tier | Platform | Planned status |
 |---|---|---|
-| **1** | Linux aarch64: Raspberry Pi 4/5, CM4/CM5, RevPi Connect 4/5, Jetson Orin | CI com hardware, RT medido |
-| **1** | Linux x86_64: PCs industriais | CI com hardware |
-| **2** | Linux aarch64 sem hardware em CI: Raspberry Pi 3 B+ (a bancada, documento 23) | Cranelift; RT medido na bancada, sem alvo |
-| **2** | Linux armv7: RevPi Core 3, gateways antigos | Pulley em vez de Cranelift; sem ML em GPU |
-| **2** | Linux riscv64 | Cranelift; sem hardware em CI |
-| **dev** | macOS, Windows (WSL2) | drivers `sim`, Burn Metal/Vulkan; nunca em produção |
-| **dev** | Linux armv6: Raspberry Pi Zero W (bancada) | Pulley, se o wasmtime compilar para ARMv6 (a confirmar na Fase 1); senão só apps nativas, e o `jk check` avisa com o `J0243` (ref/01 §10.2); 1 núcleo, sem RT |
-| **dev (MCU)** | ESP32 original (Xtensa LX6, bancada) | Joker Micro para desenvolvimento; toolchain Xtensa da Espressif |
-| **1 (MCU, M1)** | RP2350, STM32G4 | **Joker Micro**: o mesmo núcleo `no_std`, Embassy, apps Rust nativas, Joker Link (documento 19) |
-| **2 (MCU, M2)** | ESP32-C6/S3, STM32H5/H7 | Joker Micro com rede (Wi-Fi, Ethernet): nós autónomos |
+| **1** | Linux aarch64: Raspberry Pi 4/5, CM4/CM5, RevPi Connect 4/5, Jetson Orin | CI with hardware, RT measured |
+| **1** | Linux x86_64: industrial PCs | CI with hardware |
+| **2** | Linux aarch64 without hardware in CI: Raspberry Pi 3 B+ (the bench, document 23) | Cranelift; RT measured on the bench, no target |
+| **2** | Linux armv7: RevPi Core 3, older gateways | Pulley instead of Cranelift; no ML on GPU |
+| **2** | Linux riscv64 | Cranelift; no hardware in CI |
+| **dev** | macOS, Windows (WSL2) | `sim` drivers, Burn Metal/Vulkan; never in production |
+| **dev** | Linux armv6: Raspberry Pi Zero W (bench) | Pulley, if wasmtime compiles for ARMv6 (to be confirmed in Phase 1); otherwise only native apps, and `jk check` warns with `J0243` (ref/01 §10.2); 1 CPU core, no RT |
+| **dev (MCU)** | original ESP32 (Xtensa LX6, bench) | Joker Micro for development; Espressif's Xtensa toolchain |
+| **1 (MCU, M1)** | RP2350, STM32G4 | **Joker Micro**: the same `no_std` core, Embassy, native Rust apps, Joker Link (document 19) |
+| **2 (MCU, M2)** | ESP32-C6/S3, STM32H5/H7 | Joker Micro with network (Wi-Fi, Ethernet): standalone nodes |
