@@ -494,7 +494,7 @@ The principles of document 20, §2, seen on your bench:
 $ git add -A && git commit -m "track(11): production and fleet"
 ```
 
-**State at the end:** app `light` 0.7 with `half_period = "300 ms"`; `mode = "prod"`; new files `keys/*.pub`, `secrets.toml.enc`, `fleet.toml`; `[telemetry.uplink.bench]`, `[security]` and `accept_missing_fallback` in `joker.toml`; `micro/esp/joker.toml` in `prod`, with `accept_unsafe_reset`; `[accepted]` in the locks (also in `micro/esp/joker.lock`); both nodes enrolled in `bench-deck`; outside the project, `~/deck/deck.toml` and the root on a USB stick.
+**State at the end of this part:** app `light` 0.7 with `half_period = "300 ms"`; `mode = "prod"`; new files `keys/*.pub`, `secrets.toml.enc`, `fleet.toml`; `[telemetry.uplink.bench]`, `[security]` and `accept_missing_fallback` in `joker.toml`; `micro/esp/joker.toml` in `prod`, with `accept_unsafe_reset`; `[accepted]` in the locks (also in `micro/esp/joker.lock`); both nodes enrolled in `bench-deck`; outside the project, `~/deck/deck.toml` and the root on a USB stick.
 
 ---
 

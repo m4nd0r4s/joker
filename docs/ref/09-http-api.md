@@ -300,7 +300,7 @@ Token bucket per principal. When exceeded: `J-E1014` (429) with `Retry-After`. T
 | `application/json` | default |
 | `application/problem+json` | errors |
 | `application/x-ndjson` | bulky lists (§3.5) |
-| `text/csv` | `GET /v1/history`, `GET /v1/decisions` (columns of §5.7 and §5.11) |
+| `text/csv` | `GET /v1/history`, `GET /v1/decisions` (columns of §5.5 and §5.7) |
 | `text/event-stream` | `GET /v1/stream` |
 | `application/toml` | manifest and lock of a generation |
 | `application/octet-stream` | upload chunks, blobs |

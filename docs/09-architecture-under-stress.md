@@ -147,7 +147,7 @@ A p99.9 of 100 µs in a 1 ms group is only achievable if none of the following t
 | Latency source | Mitigation in the design | Verification |
 |---|---|---|
 | page faults | `mlockall(MCL_CURRENT\|MCL_FUTURE)`, pre-touched stacks, pre-touched cycle instances | `jk doctor --rt` counts *major faults* for 60 s |
-| allocation in the host during the tick | invariant 5 of `AGENTS.md` | *no-alloc* guard in debug and in CI (`assert_no_alloc` on the tick path) |
+| allocation in the host during the tick | invariant 6 of `AGENTS.md` | *no-alloc* guard in debug and in CI (`assert_no_alloc` on the tick path) |
 | locks and priority inversion | no lock on the tick path; seqlocks and SPSC | review + stress test with load on `io`/`bg` |
 | frequency scaling | `performance` governor on the `rt` core | `jk doctor` |
 | interrupts | IRQ affinity off the `rt` core (except the EtherCAT NIC, which goes *to* the `rt/drv` core) | `jk doctor` reads `/proc/interrupts` |
@@ -303,7 +303,7 @@ Document 10 lists 23 primitives (24, with the equipment classes of document 14, 
 
 ### 12.2 Progressive disclosure in the DX
 
-The minimal manifest has 16 lines, and a beginner only needs 4 concepts (signal, port, binding, envelope). `mode = "dev"` is what lets it run without the equipment fallback verified; in `prod`, the same GPIO output without a fallback is `J0205` (ref/01):
+The minimal manifest has 17 lines (13 without the blank ones), and a beginner only needs 4 concepts (signal, port, binding, envelope). `mode = "dev"` is what lets it run without the equipment fallback verified; in `prod`, the same GPIO output without a fallback is `J0205` (ref/01):
 
 ```toml
 [project]

@@ -63,7 +63,7 @@ Normative words: **must** / **must not** (required), **should** (recommended; de
 | **L2 frame** | the bytes between L1 and L3: security header, message (encrypted or not) and tag |
 | **message** | L3 header + CBOR body |
 | **packet** | an L2 frame with its message; it is the unit the session numbers (`seq`) and acknowledges |
-| `max_frame` | the maximum size of an L2 frame, negotiated in `HELLO` (§3.6) |
+| `max_frame` | the maximum size of an L2 frame, negotiated in `HELLO` (§3.7) |
 | `max_msg` | the maximum size of a message after reassembly (§5.5) |
 
 All binary integers (L1, L2, L3) are **little-endian**, as in the trace (16 §7).
@@ -1688,7 +1688,7 @@ A small number in `ERROR` (key 1), `RESULT` (key 4), answer `HELLO` (key 8) and 
 | 30 | `not_delegated` | `J-E2303` |
 | 31 | `catalog` | `J-E2203` |
 
-### 10.2 Validation codes (`jk check`, `jk build`): `J0730`–`J0741`
+### 10.2 Validation codes (`jk check`, `jk build`): `J0730`–`J0742`
 
 | Code | Severity | Message | Where |
 |---|---|---|---|

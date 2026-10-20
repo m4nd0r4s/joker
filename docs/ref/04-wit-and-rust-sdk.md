@@ -22,7 +22,7 @@ Out of scope: the tier 2 SDKs (ref/05), the world `joker:driver` (ref/06), the C
 
 ### 1.2 Sources
 
-Documents 04 (all), 14 §3 and §6–7, 17 §2 and §4–6, 16 (all), 19 §3 and §5, 02 §4–8, 01 §3–5, §9 and §18, 09 (attacks 2, 6, 8 and 10), 11 (§"Ready for ML"), 21 §1 and §3, ADR 0004, 0020 and 0022, and the 34 `rust` blocks of `docs/**/*.md` (§9).
+Documents 04 (all), 14 §3 and §6–7, 17 §2 and §4–6, 16 (all), 19 §3 and §5, 02 §4–8, 01 §3–5, §9 and §18, 09 (attacks 2, 6, 8 and 10), 11 (§"Ready for ML"), 21 §1 and §3, ADR 0004, 0020 and 0022, and the 39 `rust` blocks of `docs/**/*.md` (§9).
 
 ### 1.3 Connections to other references
 

@@ -18,4 +18,4 @@ All writes (apps, CLI, API, bridges, uplinks, approved intents) go through the a
 ## Consequences
 
 - A technician who needs to "force" a value outside the envelope must change the envelope through config (with a justified and audited `widen`), and not through a command.
-- Invariant 2 of `AGENTS.md`.
+- Invariant 3 of `AGENTS.md`.

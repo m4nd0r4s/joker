@@ -433,7 +433,7 @@ Joker fits as the **layer between ROS and the hardware** (what is usually a `ros
 
 | Hardware | Quantity | CPU | RAM | Storage | Connection |
 |---|---|---|---|---|---|
-| CM4 in DIN enclosure | 1 800 | aarch64 4×A72 | 2 GB | eMMC 16 GB | Ethernet/LTE |
+| CM4 in DIN enclosure | 1,800 | aarch64 4×A72 | 2 GB | eMMC 16 GB | Ethernet/LTE |
 | industrial PC | 900 | x86_64 | 4 GB | SSD 64 GB | Ethernet |
 | old gateway | 300 | **armv7** 2×A7 | **512 MB** | **eMMC 4 GB** | **LTE, 50 MB/month** |
 

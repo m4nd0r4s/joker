@@ -807,7 +807,7 @@ name             := [a-z][a-z0-9_]{0,63}
                   | "link." [a-z][a-z0-9_]{0,31}      (Joker Link key of a device)
 ```
 
-- It is accepted only in the keys that ref/01 marks as **(secret)** (§3.10: `password` and `token` of the uplinks, `password` of the `mqtt` and `opcua` drivers, `key` of `joker-link`, the keys of type `secret` of a W or X driver, and the values of `[apps.<app>.secrets]`). In another key it is `J0157` (ref/01).
+- It is accepted only in the keys that ref/01 marks as **(secret)** (ref/01 §3.10: `password` and `token` of the uplinks, `password` of the `mqtt` and `opcua` drivers, `key` of `joker-link`, the keys of type `secret` of a W or X driver, and the values of `[apps.<app>.secrets]`). In another key it is `J0157` (ref/01).
 - In a credential key, a literal value (without `secret:`) is `J0925`: a warning in `dev`, an error in `prod`.
 - The name must exist in `secrets.toml.enc` and be encrypted for the target node: otherwise `J0920` or `J0922` in `jk check` (if the file exists) and in `jk apply` (always).
 - The generation records **the names** it depends on, never the values. The generation digest does not change when a secret is rotated.

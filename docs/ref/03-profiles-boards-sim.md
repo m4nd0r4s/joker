@@ -409,7 +409,7 @@ Address in a `forbidden`, unknown step, `wait` above the `timeout` or undeclared
 
 #### 2.2.14 `[implements]`
 
-A profile (or a simulation model, §2.4.8) declares the classes that the equipment fulfills. Each device with the profile is an implicit instance of those classes, with the name of the device (14 §5.1).
+A profile (or a simulation model, §2.4.9) declares the classes that the equipment fulfills. Each device with the profile is an implicit instance of those classes, with the name of the device (14 §5.1).
 
 ```toml
 [implements."std/pump@1"]
