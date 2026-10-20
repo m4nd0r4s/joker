@@ -15,6 +15,13 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
 
+  codes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show
+      - run: cargo test -p joker-manifest --test corpus
+
   no-std:
     runs-on: ubuntu-latest
     strategy:
