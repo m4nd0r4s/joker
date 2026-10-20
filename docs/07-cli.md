@@ -199,16 +199,16 @@ They talk to the node's local API, which talks to the Deck (ref/10, §2.18).
 |---|---|
 | `jk discover <uri>` | read-only discovery (document 05, §7) |
 | `jk profile import <sunspec\|nodeset\|eds\|esi> <file>` | generates a profile for review |
-| `jk profile import csv <file> --name <vendor>/<model> --driver modbus [--out <file>] [--modicon]` | generates a profile **draft** from a register map in CSV (columns `signal,fc,at,type,direction,unit,scale,offset,label,description`); what the CSV does not say is marked `# REVER`; `--modicon` reads `at` in the old 1-based notation (`30002` → register 1). Format and rules in ref/03 §2.2.19 |
+| `jk profile import csv <file> --name <vendor>/<model> --driver modbus [--out <file>] [--modicon]` | generates a profile **draft** from a register map in CSV (columns `signal,fc,at,type,direction,unit,scale,offset,label,description`); what the CSV does not say is marked `# REVIEW`; `--modicon` reads `at` in the old 1-based notation (`30002` → register 1). Format and rules in ref/03 §2.2.19 |
 | `jk profile check <profile>` | validates a profile without equipment (schema, units, the driver's `plan`) |
 | `jk profile diff <a> <b>` | compares two versions and says which part of the version must go up (ref/03, §2.2) |
 | `jk profile test <profile> --uri <uri> [--node <target>]` | reads all the signals of the profile from a real piece of equipment and shows values, units, quality, measured latency and errors; **never writes**. The URI gives the protocol, the port or the address and the unit: `modbus-rtu:<port>?baud=<b>&unit=<u>`, `modbus-tcp://<host>:<port>?unit=<u>` (full grammar in ref/03 §2.2.20). Without `--node`, the driver runs on the laptop |
 | `jk profile publish <profile>` | publishes to the registry (requires `jk profile diff` and conformance reports, ref/03 §2.8) |
 | `jk board show <board>` | the profile of a board: fixed IO, ports, watchdog, capabilities, probe |
-| `jk board probe --node <node> [--name <board>] [--out <file>]` | reads the node's hardware inventory (`GET /v1/node/hardware`, reads only) and writes a board profile **draft** (default: `boards/<board>.board.toml`); what the inventory cannot know (tier, target kernel, `fallback` of the fixed IO, `recommended`) is marked `# REVER` (ref/03 §2.3.7) |
-| `jk board check <file> [--node <node>]` | validates a board profile (`J0800`–`J0849`); with `--node`, confirms on the node that the architecture, the CPUs, the peripherals, the lines and the declared paths exist (`J0828`, `J0829`) and lists the `# REVER` left to resolve |
-| `jk board new <name> --from <board>` | copies an existing board profile (from the project or from the registry) to `boards/<name>.board.toml`, with a new `name`, `version = "1.0.0"` and `tier = "dev"` marked `# REVER` |
-| `jk board publish <file>` | publishes a board to the registry (with no unresolved `# REVER`; ref/03 §2.3.7 and §2.8.4). A `tier = "dev"` board is never published (`J0848`) |
+| `jk board probe --node <node> [--name <board>] [--out <file>]` | reads the node's hardware inventory (`GET /v1/node/hardware`, reads only) and writes a board profile **draft** (default: `boards/<board>.board.toml`); what the inventory cannot know (tier, target kernel, `fallback` of the fixed IO, `recommended`) is marked `# REVIEW` (ref/03 §2.3.7) |
+| `jk board check <file> [--node <node>]` | validates a board profile (`J0800`–`J0849`); with `--node`, confirms on the node that the architecture, the CPUs, the peripherals, the lines and the declared paths exist (`J0828`, `J0829`) and lists the `# REVIEW` left to resolve |
+| `jk board new <name> --from <board>` | copies an existing board profile (from the project or from the registry) to `boards/<name>.board.toml`, with a new `name`, `version = "1.0.0"` and `tier = "dev"` marked `# REVIEW` |
+| `jk board publish <file>` | publishes a board to the registry (with no unresolved `# REVIEW`; ref/03 §2.3.7 and §2.8.4). A `tier = "dev"` board is never published (`J0848`) |
 | `jk driver test <ref> [--fixture <f>] [--case <glob>] [--report <out.cbor>]` | driver conformance suite against an N, W (`w:./x.wasm`) or X (`x:./binário`) driver (ref/06, §6) |
 | `jk driver meta <driver>.driver.toml` | generates the CBOR descriptor of a driver from TOML (for C drivers) |
 
@@ -293,8 +293,8 @@ jk shadow promote detector --node linha2
 **A board that does not have a profile yet, and a piece of equipment with a register map** (ref/03 §2.3.7 and §2.2.19):
 
 ```sh
-jk board probe --node zero --name rpi-zero-w           # draft in boards/rpi-zero-w.board.toml, with # REVER
-jk board check boards/rpi-zero-w.board.toml --node zero      # after resolving the # REVER
+jk board probe --node zero --name rpi-zero-w           # draft in boards/rpi-zero-w.board.toml, with # REVIEW
+jk board check boards/rpi-zero-w.board.toml --node zero      # after resolving the # REVIEW
 jk profile import csv mapa.csv --name local/xy-md02 --driver modbus
 jk profile test local/xy-md02@1 --node zero --uri "modbus-tcp://192.168.1.50:502?unit=1"
 jk check --env zero                                      # joker.zero.toml, lock joker.zero.lock
