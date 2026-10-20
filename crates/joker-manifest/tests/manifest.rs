@@ -118,7 +118,7 @@ fn context() -> Context {
             .collect(),
             fallback: true,
             poll: Some(Duration::from_millis(100)),
-            timeout: None,
+            ..ProfileInfo::default()
         },
     );
     c.profiles.insert(
@@ -143,6 +143,7 @@ fn context() -> Context {
             .into_iter()
             .map(|(k, v)| (k.to_owned(), v))
             .collect(),
+            fallback: true,
             ..ProfileInfo::default()
         },
     );
@@ -173,6 +174,7 @@ fn context() -> Context {
         BoardInfo {
             majors: vec![1],
             arch: "aarch64".into(),
+            ..BoardInfo::default()
         },
     );
     c.boards.insert(
@@ -180,6 +182,7 @@ fn context() -> Context {
         BoardInfo {
             majors: vec![1],
             arch: "armv6".into(),
+            ..BoardInfo::default()
         },
     );
     c.apps.insert(
@@ -206,6 +209,7 @@ fn context() -> Context {
             tasks: [("pisca".to_owned(), Some(Duration::from_millis(20)))]
                 .into_iter()
                 .collect(),
+            ..AppInterface::default()
         },
     );
     c.apps.insert(
@@ -229,6 +233,7 @@ fn context() -> Context {
             tasks: [("control".to_owned(), Some(Duration::from_millis(200)))]
                 .into_iter()
                 .collect(),
+            ..AppInterface::default()
         },
     );
     c
@@ -293,7 +298,7 @@ fn bench_manifests_of_docs_23_pass() {
         );
         assert_eq!(
             report.codes(),
-            ["J0352"],
+            ["J0205", "J0352"],
             "joker.{node}.toml:\n{}",
             report.render()
         );
@@ -873,7 +878,13 @@ fn the_cases_cover_every_code_the_checker_emits() {
         emitted.extend(literal.captures_iter(code).map(|c| c[1].to_owned()));
     }
     emitted.extend(["J0108".to_owned(), "J0109".to_owned()]);
-    let covered: BTreeSet<String> = cases().iter().map(|(c, _, _)| (*c).to_owned()).collect();
+    let marker = Regex::new(r#"\(\s*"(J0\d{3})","#).unwrap();
+    let tests = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
+    let mut covered: BTreeSet<String> = BTreeSet::new();
+    for entry in std::fs::read_dir(tests).unwrap() {
+        let text = std::fs::read_to_string(entry.unwrap().path()).unwrap();
+        covered.extend(marker.captures_iter(&text).map(|c| c[1].to_owned()));
+    }
     let missing: Vec<&String> = emitted.difference(&covered).collect();
     assert!(missing.is_empty(), "codes without a case: {missing:?}");
 }

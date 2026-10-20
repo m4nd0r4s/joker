@@ -25,6 +25,12 @@ pub struct Context {
     pub boards: BTreeMap<String, BoardInfo>,
     /// The interfaces of the apps, by app name in the manifest.
     pub apps: BTreeMap<String, AppInterface>,
+    /// The class contracts, by full reference (`"std/pump@1"`, docs/17).
+    pub classes: BTreeMap<String, ClassInfo>,
+    /// With `true`, a profile, board, class, driver or app that the context
+    /// does not know is assumed to exist and its dependent checks are
+    /// skipped: the mode for checking documentation examples.
+    pub open_world: bool,
 }
 
 impl Default for Context {
@@ -35,8 +41,95 @@ impl Default for Context {
             profiles: BTreeMap::new(),
             boards: BTreeMap::new(),
             apps: BTreeMap::new(),
+            classes: BTreeMap::new(),
+            open_world: false,
         }
     }
+}
+
+/// The full reference of a class: `std/` is implied (ref/01 §3.10).
+pub fn class_ref(text: &str) -> String {
+    if text.contains('/') {
+        text.to_owned()
+    } else {
+        format!("std/{text}")
+    }
+}
+
+/// A class contract (docs/17 §6), as far as instances need it.
+#[derive(Debug, Clone, Default)]
+pub struct ClassInfo {
+    /// The members, by name.
+    pub members: BTreeMap<String, Member>,
+    /// The optional capabilities.
+    pub capabilities: BTreeSet<String>,
+}
+
+/// The kind of a class member (docs/17 §3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MemberKind {
+    /// `in`.
+    In,
+    /// `out`.
+    Out,
+    /// `param`.
+    Param,
+    /// `event`.
+    Event,
+    /// `action`.
+    Action,
+    /// `method`.
+    Method,
+    /// `query`.
+    Query,
+    /// A class member (`member boot: std/button@1`).
+    Class,
+}
+
+/// A class member.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Member {
+    /// The kind.
+    pub kind: MemberKind,
+    /// The value type, for `in`, `out` and `param`.
+    pub ty: SignalType,
+    /// The unit, for numeric members.
+    pub unit: Option<Unit>,
+    /// `@optional`.
+    pub optional: bool,
+    /// The capability that brings the member, if any.
+    pub capability: Option<String>,
+    /// For a class member: the class, the bounds and `@requires`.
+    pub class: Option<ClassMember>,
+}
+
+impl Member {
+    /// A required member of a kind and type.
+    pub const fn new(kind: MemberKind, ty: SignalType) -> Self {
+        Self {
+            kind,
+            ty,
+            unit: None,
+            optional: false,
+            capability: None,
+            class: None,
+        }
+    }
+}
+
+/// The class of a class member.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClassMember {
+    /// The full class reference.
+    pub class: String,
+    /// The smallest collection; 1 for a fixed member.
+    pub min: u32,
+    /// The largest collection; 1 for a fixed member.
+    pub max: u32,
+    /// Whether the member is a single instance rather than a collection.
+    pub fixed: bool,
+    /// `@requires`: the capabilities the bound instances must have.
+    pub requires: Vec<String>,
 }
 
 /// A driver descriptor, as far as the manifest is concerned (ref/06 §2.3).
@@ -66,6 +159,8 @@ pub struct ProfileInfo {
     pub signals: BTreeMap<String, SignalInfo>,
     /// Whether the profile declares a `[fallback]`.
     pub fallback: bool,
+    /// Whether `fallback.configure = true` is allowed (`configurable`).
+    pub configurable: bool,
     /// `[defaults] poll`.
     pub poll: Option<Duration>,
     /// `[defaults] timeout`.
@@ -79,6 +174,11 @@ pub struct BoardInfo {
     pub majors: Vec<u32>,
     /// The architecture.
     pub arch: String,
+    /// Whether the board is a microcontroller (`os = "none"`, ref/03 §2.3.3),
+    /// so its manifest is a Joker Micro manifest (ref/01 §5.22).
+    pub micro: bool,
+    /// The CPU cores, when known.
+    pub cpus: Option<u32>,
 }
 
 /// The type of a signal (ref/00 §6), as far as the manifest checks go.
@@ -161,6 +261,10 @@ pub struct AppInterface {
     pub params: BTreeMap<String, Param>,
     /// The cycle tasks, by name, with the period each requests.
     pub tasks: BTreeMap<String, Option<Duration>>,
+    /// The tasks marked `optional` (`overrun = "degrade"`, docs/01 §4).
+    pub optional_tasks: BTreeSet<String>,
+    /// The classes the app implements (`#[implements]`), by full reference.
+    pub implements: Vec<String>,
 }
 
 /// The kind of a port.

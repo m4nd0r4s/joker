@@ -12,10 +12,13 @@ pub mod context;
 pub mod decode;
 pub mod diag;
 pub mod effective;
+pub mod expr;
 pub mod grammar;
 pub mod layers;
 pub mod lock;
 pub mod model;
+pub mod schema;
+mod sections;
 pub mod source;
 pub mod value;
 
@@ -99,7 +102,15 @@ pub fn check(fs: &dyn FileSystem, entry: &Path, context: &Context) -> Report {
     if report.diagnostics.has_errors(Mode::Dev) {
         return report;
     }
-    let manifest = decode::Decoder::new(&mut report.diagnostics).manifest(&merged, top_span);
+    let micro = merged
+        .get("target")
+        .and_then(|e| e.node.as_table())
+        .and_then(|t| t.get("board"))
+        .and_then(|e| e.node.as_str())
+        .map(|board| board.split('@').next().unwrap_or(board))
+        .and_then(|name| context.boards.get(name))
+        .is_some_and(|b| b.micro);
+    let manifest = decode::Decoder::new(&mut report.diagnostics, micro).manifest(&merged, top_span);
     let mode = manifest.project.mode;
     if report.diagnostics.has_errors(mode) {
         report.manifest = Some(manifest);
@@ -112,6 +123,7 @@ pub fn check(fs: &dyn FileSystem, entry: &Path, context: &Context) -> Report {
         fs,
         &report.sources,
         root,
+        micro,
         &mut report.diagnostics,
     );
     if !report.diagnostics.has_errors(mode) {

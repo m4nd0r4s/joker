@@ -2,12 +2,14 @@
 //! M0 subset (references, the path registry, bindings and units, envelopes,
 //! writers and cycle groups).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use joker_units::{Duration, ErrorKind, Literal, QuantityKind, Unit};
 
-use crate::context::{AppInterface, Context, Direction, PortKind, SignalInfo, SignalType};
+use crate::context::{
+    AppInterface, Context, Direction, DriverInfo, PortKind, SignalInfo, SignalType,
+};
 use crate::diag::{Diagnostic, Diagnostics};
 use crate::grammar;
 use crate::layers::FileSystem;
@@ -61,23 +63,31 @@ pub struct Registered {
 /// Every path of the site: canonical paths, aliases and `calc` results.
 pub type PathRegistry = BTreeMap<String, Registered>;
 
-struct Checker<'a> {
-    manifest: &'a Manifest,
-    context: &'a Context,
-    fs: &'a dyn FileSystem,
-    sources: &'a Sources,
-    root: &'a Path,
-    diags: &'a mut Diagnostics,
-    paths: PathRegistry,
+pub(crate) struct Checker<'a> {
+    pub(crate) manifest: &'a Manifest,
+    pub(crate) context: &'a Context,
+    pub(crate) fs: &'a dyn FileSystem,
+    pub(crate) sources: &'a Sources,
+    pub(crate) root: &'a Path,
+    pub(crate) diags: &'a mut Diagnostics,
+    pub(crate) paths: PathRegistry,
+    pub(crate) micro: bool,
+    pub(crate) opaque: BTreeSet<String>,
+    pub(crate) owner: BTreeMap<String, String>,
 }
 
 /// Runs the semantic checks and returns the path registry.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the inputs of one check, kept explicit"
+)]
 pub fn check(
     manifest: &Manifest,
     context: &Context,
     fs: &dyn FileSystem,
     sources: &Sources,
     root: &Path,
+    micro: bool,
     diags: &mut Diagnostics,
 ) -> PathRegistry {
     let mut checker = Checker {
@@ -88,13 +98,17 @@ pub fn check(
         root,
         diags,
         paths: PathRegistry::new(),
+        micro,
+        opaque: BTreeSet::new(),
+        owner: BTreeMap::new(),
     };
     checker.limits();
     checker.project();
     checker.target();
     checker.devices();
-    checker.pending();
+    checker.before_outputs();
     checker.outputs();
+    checker.after_outputs();
     checker.cycles();
     checker.apps();
     checker.paths
@@ -119,7 +133,7 @@ pub fn describe(unit: &Unit) -> String {
 }
 
 impl Checker<'_> {
-    fn push(&mut self, diagnostic: Diagnostic) {
+    pub(crate) fn push(&mut self, diagnostic: Diagnostic) {
         self.diags.push(diagnostic);
     }
 
@@ -219,22 +233,66 @@ impl Checker<'_> {
             let Some(driver_name) = &device.driver else {
                 continue;
             };
+            let tier = driver_name.value.split_once(':').map(|(t, _)| t);
             let bare = driver_name
                 .value
                 .strip_prefix("w:")
                 .or_else(|| driver_name.value.strip_prefix("x:"))
                 .unwrap_or(&driver_name.value);
-            let Some(driver) = self.context.drivers.get(bare) else {
-                let mut d =
-                    Diagnostic::new("J0170", format!("unknown driver `{}`", driver_name.value))
-                        .at(driver_name.span);
-                if let Some(s) =
-                    grammar::suggest(bare, self.context.drivers.keys().map(String::as_str))
-                {
-                    d = d.help(format!("did you mean `{s}`?"));
+            if let Some(tier) = tier {
+                let declared = manifest
+                    .pending
+                    .get("drivers")
+                    .and_then(Node::as_table)
+                    .and_then(|t| t.get(bare))
+                    .and_then(|e| e.node.as_table())
+                    .and_then(|t| t.get("tier"))
+                    .and_then(|e| e.node.as_str());
+                if declared != Some(tier) {
+                    self.push(
+                        Diagnostic::new(
+                            "J0170",
+                            format!(
+                                "driver `{}` has no `[drivers.{bare}]` of tier `{tier}`",
+                                driver_name.value
+                            ),
+                        )
+                        .at(driver_name.span)
+                        .help(format!(
+                            "declare `[drivers.{bare}]` with `tier = \"{tier}\"`"
+                        )),
+                    );
+                    continue;
                 }
-                self.push(d);
-                continue;
+            }
+            let permissive = DriverInfo {
+                buses: crate::model::BusKind::ALL.to_vec(),
+                config: device.config.keys().cloned().collect(),
+                discover: true,
+                relinquish: true,
+                ..DriverInfo::default()
+            };
+            let extern_driver = self.micro && driver_name.value == "extern";
+            let driver = match self.context.drivers.get(bare) {
+                Some(driver) => driver,
+                None if tier.is_some() || extern_driver || self.context.open_world => {
+                    if !extern_driver {
+                        self.opaque.insert(name.clone());
+                    }
+                    &permissive
+                }
+                None => {
+                    let mut d =
+                        Diagnostic::new("J0170", format!("unknown driver `{}`", driver_name.value))
+                            .at(driver_name.span);
+                    if let Some(s) =
+                        grammar::suggest(bare, self.context.drivers.keys().map(String::as_str))
+                    {
+                        d = d.help(format!("did you mean `{s}`?"));
+                    }
+                    self.push(d);
+                    continue;
+                }
             };
             match &device.bus {
                 None if driver.bus_required => self.push(
@@ -264,6 +322,10 @@ impl Checker<'_> {
             let profile = match &device.profile {
                 Some(reference) => match self.context.profiles.get(&reference.value) {
                     Some(p) => Some(p),
+                    None if self.context.open_world => {
+                        self.opaque.insert(name.clone());
+                        None
+                    }
                     None => {
                         self.push(
                             Diagnostic::new(
@@ -384,8 +446,14 @@ impl Checker<'_> {
                 self.register(&format!("{name}.{signal}"), info.clone(), name, None);
             }
         }
+        let opaque = self.opaque.contains(name);
         for (signal, tuning) in &device.signals {
             let path = format!("{name}.{signal}");
+            if opaque && device.profile.is_some() {
+                let info = SignalInfo::new(SignalType::Unknown, Direction::Input);
+                self.register(&path, info, name, Some(tuning.span));
+                continue;
+            }
             let mut info = match profile {
                 Some(p) => match p.signals.get(signal) {
                     Some(info) => Some(info.clone()),
@@ -439,6 +507,7 @@ impl Checker<'_> {
                 if !PROFILE_TUNING.contains(&key)
                     && !DECLARATION_ONLY.contains(&key)
                     && address_key.is_none()
+                    && !opaque
                 {
                     let mut d =
                         Diagnostic::new("J0140", format!("unknown key `{key}` in a signal"))
@@ -504,8 +573,13 @@ impl Checker<'_> {
                 }
             }
             if declared {
+                let default_ty = if opaque {
+                    SignalType::Unknown
+                } else {
+                    SignalType::Bool
+                };
                 let mut base =
-                    declared_info.unwrap_or(SignalInfo::new(SignalType::Bool, Direction::Input));
+                    declared_info.unwrap_or(SignalInfo::new(default_ty, Direction::Input));
                 if let Some(ty) = declared_type {
                     base.ty = ty;
                 }
@@ -515,7 +589,7 @@ impl Checker<'_> {
                 if let Some(u) = &unit {
                     base.unit = Some(u.value);
                 }
-                if base.ty.is_numeric() && base.unit.is_none() {
+                if base.ty.is_numeric() && base.unit.is_none() && !opaque {
                     self.push(
                         Diagnostic::new("J0142", format!("numeric signal `{path}` without `unit`"))
                             .at(tuning.span),
@@ -572,7 +646,13 @@ impl Checker<'_> {
         }
     }
 
-    fn register(&mut self, path: &str, info: SignalInfo, device: &str, span: Option<Span>) {
+    pub(crate) fn register(
+        &mut self,
+        path: &str,
+        info: SignalInfo,
+        device: &str,
+        span: Option<Span>,
+    ) {
         self.paths.insert(
             path.to_owned(),
             Registered {
@@ -601,23 +681,20 @@ impl Checker<'_> {
         }
     }
 
-    fn pending(&mut self) {
-        if let Some(calc) = self.manifest.pending.get("calc").and_then(Node::as_table) {
-            for (name, entry) in calc {
-                self.paths.insert(
-                    format!("calc.{name}"),
-                    Registered {
-                        info: SignalInfo::new(SignalType::Unknown, Direction::Input),
-                        canonical: format!("calc.{name}"),
-                        device: None,
-                        span: Some(entry.key),
-                    },
-                );
-            }
+    pub(crate) fn opaque_path(&self, path: &str) -> bool {
+        path.split('.')
+            .next()
+            .is_some_and(|first| self.opaque.contains(first))
+    }
+
+    pub(crate) fn report_unknown(&mut self, path: &str, span: Span) {
+        if !self.opaque_path(path) {
+            let d = self.unknown_path(path, span);
+            self.push(d);
         }
     }
 
-    fn unknown_path(&self, path: &str, span: Span) -> Diagnostic {
+    pub(crate) fn unknown_path(&self, path: &str, span: Span) -> Diagnostic {
         let mut d = Diagnostic::new("J0101", format!("unknown signal `{path}`")).at(span);
         if let Some(s) = grammar::suggest(path, self.paths.keys().map(String::as_str)) {
             d = d.help(format!("did you mean `{s}`?"));
@@ -625,13 +702,12 @@ impl Checker<'_> {
         d
     }
 
-    fn group_exists(&self, group: &str) -> bool {
+    pub(crate) fn group_exists(&self, group: &str) -> bool {
         self.manifest.cycles.contains_key(group) || IMPLICIT_GROUPS.contains(&group)
     }
 
     fn outputs(&mut self) {
         let manifest = self.manifest;
-        let mut owner: BTreeMap<String, String> = BTreeMap::new();
         for (key, envelope) in &manifest.outputs {
             let targets: Vec<String> = if grammar::is_wildcard(key) {
                 let matched: Vec<String> = self
@@ -654,8 +730,7 @@ impl Checker<'_> {
             } else {
                 match self.paths.get(key) {
                     None => {
-                        let d = self.unknown_path(key, envelope.key);
-                        self.push(d);
+                        self.report_unknown(key, envelope.key);
                         continue;
                     }
                     Some(r) if r.info.direction != Direction::Output => {
@@ -672,7 +747,7 @@ impl Checker<'_> {
                 }
             };
             for target in targets {
-                if let Some(first) = owner.get(&target) {
+                if let Some(first) = self.owner.get(&target) {
                     self.push(
                         Diagnostic::new("J0215", format!("output `{target}` has two envelopes"))
                             .at(envelope.key)
@@ -680,19 +755,31 @@ impl Checker<'_> {
                     );
                     continue;
                 }
-                owner.insert(target.clone(), key.clone());
+                self.owner.insert(target.clone(), key.clone());
                 if let Some(registered) = self.paths.get(&target).cloned() {
                     self.envelope(&target, &registered, envelope);
                 }
             }
         }
+        let commits: BTreeSet<String> = manifest
+            .pending
+            .get("atomic")
+            .and_then(Node::as_table)
+            .into_iter()
+            .flat_map(|t| t.values())
+            .filter_map(|e| {
+                let commit = e.node.as_table()?.get("commit")?.node.as_table()?;
+                commit.get("signal")?.node.as_str().map(str::to_owned)
+            })
+            .collect();
         let missing: Vec<(String, Option<Span>, Option<String>)> = self
             .paths
             .iter()
             .filter(|(p, r)| {
                 r.info.direction == Direction::Output
                     && **p == r.canonical
-                    && !owner.contains_key(*p)
+                    && !self.owner.contains_key(*p)
+                    && !commits.contains(*p)
             })
             .map(|(p, r)| (p.clone(), r.span, r.device.clone()))
             .collect();
@@ -710,6 +797,7 @@ impl Checker<'_> {
     }
 
     fn envelope(&mut self, path: &str, registered: &Registered, envelope: &Envelope) {
+        self.envelope_expressions(registered, envelope);
         let info = &registered.info;
         let discrete = matches!(info.ty, SignalType::Bool | SignalType::Enum { .. });
         let safe_value = match &envelope.safe {
@@ -814,8 +902,7 @@ impl Checker<'_> {
                     );
                 }
             } else if !self.paths.contains_key(&required.value) {
-                let d = self.unknown_path(&required.value, required.span);
-                self.push(d);
+                self.report_unknown(&required.value, required.span);
             }
         }
         if let Some(verify) = envelope.verify.as_ref().and_then(Node::as_table)
@@ -1180,8 +1267,7 @@ impl Checker<'_> {
                 Binding::List(items) if many => {
                     for item in items {
                         if !self.paths.contains_key(&item.value) {
-                            let d = self.unknown_path(&item.value, item.span);
-                            self.push(d);
+                            self.report_unknown(&item.value, item.span);
                         }
                     }
                 }
@@ -1233,8 +1319,7 @@ impl Checker<'_> {
         conversion: Option<&Spanned<String>>,
     ) {
         let Some(registered) = self.paths.get(&target.value).cloned() else {
-            let d = self.unknown_path(&target.value, target.span);
-            self.push(d);
+            self.report_unknown(&target.value, target.span);
             return;
         };
         let info = &registered.info;

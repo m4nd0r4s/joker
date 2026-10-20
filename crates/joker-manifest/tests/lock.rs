@@ -269,6 +269,7 @@ fn manifest(text: &str) -> Manifest {
         joker_manifest::context::BoardInfo {
             majors: vec![1],
             arch: "aarch64".into(),
+            ..joker_manifest::context::BoardInfo::default()
         },
     );
     context.drivers.insert(

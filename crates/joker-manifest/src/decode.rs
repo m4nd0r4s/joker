@@ -13,6 +13,7 @@ use crate::model::{
     App, Binding, BoardRef, Bus, BusKind, Cycle, Device, Envelope, Kernel, Manifest, Mode, Project,
     SafeValue, Spanned, Target, Writer,
 };
+use crate::schema;
 use crate::source::Span;
 use crate::value::{Entry, Node, Table, Value};
 
@@ -80,12 +81,26 @@ impl<'t> Reader<'t> {
 #[derive(Debug)]
 pub struct Decoder<'a> {
     diags: &'a mut Diagnostics,
+    micro: bool,
 }
 
 impl<'a> Decoder<'a> {
-    /// A decoder that records into `diags`.
-    pub fn new(diags: &'a mut Diagnostics) -> Self {
-        Self { diags }
+    /// A decoder that records into `diags`; `micro` when the target is a
+    /// Joker Micro (ref/01 §5.22).
+    pub fn new(diags: &'a mut Diagnostics, micro: bool) -> Self {
+        Self { diags, micro }
+    }
+
+    fn options(&self) -> schema::Options {
+        schema::Options {
+            micro: self.micro,
+            required: true,
+        }
+    }
+
+    fn by_schema(&mut self, key: &schema::Key, entry: &Entry, at: &str) {
+        let options = self.options();
+        schema::validate_entry(key, entry, at, options, self.diags);
     }
 
     fn push(&mut self, diagnostic: Diagnostic) {
@@ -285,6 +300,9 @@ impl<'a> Decoder<'a> {
     }
 
     fn micro_only(&mut self, entry: &Entry, what: &str) {
+        if self.micro {
+            return;
+        }
         self.push(
             Diagnostic::new(
                 "J0145",
@@ -414,21 +432,18 @@ impl<'a> Decoder<'a> {
                 }
             }
         }
-        for section in PENDING_SECTIONS {
-            if let Some(entry) = reader.get(section) {
+        for section in PENDING_SECTIONS
+            .iter()
+            .chain(RESERVED_SECTIONS.iter())
+            .chain(MICRO_SECTIONS.iter())
+        {
+            if let Some(entry) = reader.get(section)
+                && let Some(key) = schema::root_key(section)
+            {
+                self.by_schema(key, entry, section);
                 manifest
                     .pending
-                    .insert(section.to_owned(), entry.node.clone());
-            }
-        }
-        for section in RESERVED_SECTIONS {
-            if let Some(entry) = reader.get(section) {
-                self.reserved(entry, &format!("`[{section}]`"));
-            }
-        }
-        for section in MICRO_SECTIONS {
-            if let Some(entry) = reader.get(section) {
-                self.micro_only(entry, &format!("`[{section}]`"));
+                    .insert((*section).to_owned(), entry.node.clone());
             }
         }
         manifest.extensions = reader.finish(self, "the manifest root");
@@ -517,9 +532,22 @@ impl<'a> Decoder<'a> {
             Some(k) if k.value == "preempt_rt" => Kernel::PreemptRt,
             _ => Kernel::Standard,
         };
-        for key in ["capacity", "extern", "micro"] {
-            if let Some(e) = r.get(key) {
-                self.micro_only(e, &format!("`[target.{key}]`"));
+        for key in ["capacity", "extern", "micro", "accept_unsafe_reset"] {
+            if let Some(e) = r.get(key)
+                && let Some(spec) = schema::TARGET.iter().find(|k| k.name == key)
+            {
+                self.by_schema(spec, e, "target");
+                if key == "accept_unsafe_reset"
+                    && self.micro
+                    && let Some(reason) = self.string(e)
+                    && reason.value.chars().count() < 10
+                {
+                    self.push(
+                        Diagnostic::new("J0442", "justification too short")
+                            .at(reason.span)
+                            .label("at least 10 characters"),
+                    );
+                }
             }
         }
         r.finish(self, "`[target]`");
@@ -706,13 +734,15 @@ impl<'a> Decoder<'a> {
         }
         if let Some(d) = &driver {
             if d.value == "extern" {
-                self.push(
-                    Diagnostic::new(
-                        "J0145",
-                        "`driver = \"extern\"` only applies in a Joker Micro manifest",
-                    )
-                    .at(d.span),
-                );
+                if !self.micro {
+                    self.push(
+                        Diagnostic::new(
+                            "J0145",
+                            "`driver = \"extern\"` only applies in a Joker Micro manifest",
+                        )
+                        .at(d.span),
+                    );
+                }
             } else {
                 let name = d
                     .value
