@@ -1,22 +1,22 @@
-# ADR 0007 — O relógio é um input do núcleo
+# ADR 0007 — The clock is an input of the core
 
-**Estado:** aceite (v1) · **Data:** 2026-09
+**Status:** accepted (v1) · **Date:** 2026-09
 
-## Contexto
+## Context
 
-Replay determinista, testes com relógio virtual e análise de incidentes exigem que "o mesmo traço dê o mesmo resultado". Uma chamada ao relógio do sistema dentro da lógica torna isto impossível.
+Deterministic replay, tests with a virtual clock and incident analysis require that "the same trace gives the same result". A call to the system clock inside the logic makes this impossible.
 
-## Decisão
+## Decision
 
-O `joker-core` e o `joker-expr` recebem o tempo por um trait `Clock`. As apps recebem `now()` do latch do tick. O relógio de parede tem qualidade (M14).
+`joker-core` and `joker-expr` receive time through a `Clock` trait. Apps receive `now()` from the tick's latch. The wall clock has quality (M14).
 
-## Razões
+## Reasons
 
-- Replay exato e testes com dias simulados em segundos.
-- Timestamps corretos mesmo depois de saltos de NTP.
-- É a mesma decisão do Cravo (ADR 0007 do Cravo).
+- Exact replay, and tests with simulated days in seconds.
+- Correct timestamps even after NTP jumps.
+- It is the same decision as Cravo's (Cravo's ADR 0007).
 
-## Consequências
+## Consequences
 
-- A disciplina interna é forte: `std::time` está proibido nesses crates, e isso é verificado com um lint.
-- As apps que precisam de hora certa declaram `requires_clock = "synced"`.
+- The internal discipline is strict: `std::time` is forbidden in those crates, and this is checked with a lint.
+- Apps that need the correct time declare `requires_clock = "synced"`.

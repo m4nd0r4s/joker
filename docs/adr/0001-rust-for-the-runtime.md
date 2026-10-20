@@ -1,23 +1,23 @@
-# ADR 0001 — Rust para a runtime
+# ADR 0001 — Rust for the runtime
 
-**Estado:** aceite (v1) · **Data:** 2026-09
+**Status:** accepted (v1) · **Date:** 2026-09
 
-## Contexto
+## Context
 
-A runtime corre em dispositivos com 512 MB a 8 GB, durante anos sem reinício, com uma parte em tempo real. Precisa de cross-compilação simples para aarch64, armv7 e x86_64, e de um binário único sem dependências de sistema pesadas.
+The runtime runs on devices with 512 MB to 8 GB, for years without a restart, with a real-time part. It needs simple cross-compilation for aarch64, armv7 and x86_64, and a single binary without heavy system dependencies.
 
-## Decisão
+## Decision
 
-O `jokerd`, a `jk`, os drivers tier N e os backends de ML são escritos em Rust (edition 2024), com `unsafe` confinado aos crates `*-sys` e à FFI do host.
+`jokerd`, `jk`, the tier N drivers and the ML backends are written in Rust (edition 2024), with `unsafe` confined to the `*-sys` crates and to the host FFI.
 
-## Razões
+## Reasons
 
-- Sem GC: latência previsível no domínio de ciclo, e memória controlada.
-- Segurança de memória num processo que junta drivers, rede e ML.
-- O ecossistema já existe onde importa: `tokio`, `wasmtime`, `tokio-modbus`, `async-opcua`, `ethercrab`, `socketcan`, `rumqttc`, `zenoh` e o **Burn**.
-- Cross-compilação e binários estáticos com `cargo` e `cross`.
+- No GC: predictable latency in the cycle domain, and controlled memory.
+- Memory safety in a process that brings together drivers, networking and ML.
+- The ecosystem already exists where it matters: `tokio`, `wasmtime`, `tokio-modbus`, `async-opcua`, `ethercrab`, `socketcan`, `rumqttc`, `zenoh` and **Burn**.
+- Cross-compilation and static binaries with `cargo` and `cross`.
 
-## Consequências
+## Consequences
 
-- Alternativas rejeitadas: **C/C++** (a produtividade e a segurança de memória custam mais do que o que se ganha); **Go** (GC no caminho de ciclo, e cgo para metade dos drivers); **Zig** (ecossistema industrial inexistente).
-- O custo é a curva de aprendizagem para contribuidores de automação, e é por isso que as apps não obrigam a Rust (ADR 0002).
+- Rejected alternatives: **C/C++** (productivity and memory safety cost more than what is gained); **Go** (GC on the cycle path, and cgo for half of the drivers); **Zig** (no industrial ecosystem).
+- The cost is the learning curve for automation contributors, and that is why apps do not require Rust (ADR 0002).

@@ -1,20 +1,20 @@
-# ADR 0006 — Estado seguro obrigatório e sem valor por omissão
+# ADR 0006 — Mandatory safe state, with no default
 
-**Estado:** aceite (v1) · **Data:** 2026-09
+**Status:** accepted (v1) · **Date:** 2026-09
 
-## Contexto
+## Context
 
-O que é "seguro" depende do processo: 0 kW numa bateria, fechado numa válvula de gás, aberto numa válvula de alívio, "devolver ao SGTC" num edifício, "ejetar" numa linha de inspeção. Qualquer valor por omissão está errado para alguém.
+What is "safe" depends on the process: 0 kW on a battery, closed on a gas valve, open on a relief valve, "hand back to the BMS" in a building, "eject" on an inspection line. Any default is wrong for someone.
 
-## Decisão
+## Decision
 
-Cada saída declara `safe` (um valor ou `relinquish`). Faltar é `J0201`. O mesmo princípio aplica-se a `on_late` (`J0206`). O fallback do próprio equipamento é declarado no perfil e verificado face ao `safe` (M1).
+Each output declares `safe` (a value or `relinquish`). Missing it is `J0201`. The same principle applies to `on_late` (`J0206`). The equipment's own fallback is declared in the profile and checked against `safe` (M1).
 
-## Razões
+## Reasons
 
-- Obriga quem configura a pensar no modo de falha de cada saída, no momento em que a declara.
-- Torna as três camadas de estado seguro (lease, supervisor, equipamento) coerentes.
+- It forces whoever configures to think about the failure mode of each output, at the moment they declare it.
+- It makes the three layers of safe state (lease, supervisor, equipment) coherent.
 
-## Consequências
+## Consequences
 
-- Mais uma linha por saída no manifesto. Os perfis podem sugerir um valor, mas o manifesto tem de o aceitar explicitamente.
+- One more line per output in the manifest. Profiles may suggest a value, but the manifest must accept it explicitly.
