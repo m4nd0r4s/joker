@@ -51,6 +51,7 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 - **Codes**: `J0795`, `J-E0001`, M-numbers (`M15`), C/D/E/X item ids used in the stress documents, ADR numbers.
 - **Section and document numbers**: `docs/16 §3`, `ref/02 §2.1.13`, "document 23", "ADR 0015". Remissions point at numbers, so they survive the translation unchanged.
 - **Text inside code blocks** is code: keep it, except comments and human-readable strings in illustrative examples, which are translated (AGENTS.md rules 11 and 12). A string that is a normative message (a code's `message` in `spec/codes.toml`, an error text quoted from a reference) is taken from its source, never retranslated by hand.
+- **Placeholders** in angle brackets inside code spans and command synopses are human-readable and are translated: `<nome>` → `<name>`, `<caminho>` → `<path>`, `<placa|triplo>` → `<board|triple>`, `perfil@major` → `profile@major`. Identifiers next to them are not.
 - English words already used as terms in the Portuguese source stay as they are: lease, latch, tick, snapshot, trip, fallback, overlay, rollout, inbox, watchdog, historian, uplink, bundle, blob, digest, handle, backend, pipeline, stream, replay, commit, deploy, guest, host, harness.
 
 ### 1.5 Remissions and links
@@ -98,6 +99,8 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | tipo escalar | **scalar type** | |
 | ação | **action** | command-type port with a result; 02 §8 |
 | alarme | **alarm** | 02 §11 |
+| permissivo | **permissive** | a boolean condition that allows an action; 01 §4 |
+| faixa (de níveis do árbitro) | **band** | 01 §6 |
 | evento | **event** | |
 | expressão | **expression** | the manifest expression language |
 | casos-limite | **edge cases** | |
@@ -106,6 +109,13 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | anel de traço | **trace ring** | |
 | segmento de estado | **state segment** | in a trace; 16 §7 |
 | gravação, gravar | **recording**, **record** | |
+| carimbo (de tempo), domínio do carimbo | **timestamp**, **timestamp domain** | 01 §3.2, 02 §5 |
+| envelhecimento | **aging** | 01 §3.3 |
+| registo (tipo de dados, WIT) | **record** | "os registos do contrato" → **the contract records**; not a register or a registry |
+| gravidade (de alarme) | **severity** | |
+| arquivar (alarme), *shelving* | **shelve**, **shelving** | 02 §11 |
+| gatilho, gravação por gatilho | **trigger**, **trigger-based recording** | |
+| rastreio causal | **causal tracing** | |
 | reproduzir, replay | **replay** | |
 | verdade de fundo | **ground truth** | 12 |
 
@@ -131,6 +141,11 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | tick, tick do grupo | **tick**, **group tick** | |
 | limite de tick | **tick boundary** | where a hot swap takes effect |
 | caminho do tick | **tick path** | "não aloca no caminho do tick" → "does not allocate on the tick path" |
+| caixa (de saída), caixa por saída | **output box**, **per-output box** | latest-wins; not the app **mailbox** |
+| contrapressão | **backpressure** | |
+| lote, execução de lote | **batch**, **batch execution** | |
+| registo (Hub, OCI, de perfis) | **registry** | "registo de perfis" → **profile registry** |
+| registo de gerações | **generation log** | |
 | latch, instante do latch | **latch**, **latch instant** | |
 | inbox (do grupo) | **(group) inbox** | |
 | grupo dono, dispositivo dono, driver dono | **owning group**, **owning device**, **owning driver** | avoid "owner group" |
@@ -304,6 +319,8 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | registo (Modbus, hardware) | **register** | |
 | escala | **scale** | |
 | driver, drivers da árvore, driver do catálogo | **driver**, **in-tree drivers**, **catalog driver** | |
+| variador | **drive**, **variable-frequency drive** | |
+| leitura de retorno | **readback** | `verify = { readback = … }` |
 | tier (N, W, X) | **tier** | |
 | plano de leitura | **read plan** | |
 | transporte | **transport** | |
@@ -458,6 +475,10 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | precedência | **precedence** | |
 | fase, Fase 0 | **phase**, **Phase 0** | |
 | porta de saída (de uma fase) | **exit gate** | roadmap; not an output port |
+| porta de saída (escape) | **escape hatch** | 04 §5; neither an output port nor an exit gate |
+| promoção, despromoção | **promotion**, **demotion** | shadow → active and back; 06 §10 |
+| fronteira (a declarar) | **boundary (to declare)** | stress verdicts; counterpart of **gap (to close)** |
+| revelação progressiva | **progressive disclosure** | 09 |
 | ponto de decisão | **decision point** | |
 | fatia vertical | **vertical slice** | M0 |
 | âmbito | **scope** | |
@@ -517,6 +538,11 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | inspeção visual | **visual inspection** |
 | manutenção preditiva | **predictive maintenance** |
 | comissionamento | **commissioning** |
+| SGTC (sistema de gestão técnica centralizada) | **building management system** | abbreviated **BMS** only where no battery BMS is in context |
+| UTA | **AHU** (air handling unit) |
+| contagem fiscal | **fiscal metering** |
+| homem-morto | **dead man's switch** |
+| golpe de aríete | **water hammer** |
 | piso (de um edifício) | **floor** |
 
 ---
