@@ -14,9 +14,13 @@ publish = false
 joker-units = { path = "crates/joker-units", default-features = false }
 joker-expr = { path = "crates/joker-expr", default-features = false }
 joker-core = { path = "crates/joker-core", default-features = false }
+portable-atomic = { version = "1.13", default-features = false, features = ["critical-section"] }
+critical-section = { version = "1.2", default-features = false }
+loom = "0.7"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(loom)"] }
 missing_debug_implementations = "warn"
 
 [workspace.lints.clippy]
