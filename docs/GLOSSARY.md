@@ -521,6 +521,71 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 
 ---
 
+## 16. Reference vocabulary: conventions, manifest, lock and node (`ref/00`–`ref/02`)
+
+Terms fixed while translating `ref/00`, `ref/01` and `ref/02`. Section 15 (diagnostics, API and protocol vocabulary) applies to these references too.
+
+| PT | EN | Notes / source |
+|---|---|---|
+| `Texto`, `Inteiro`, `Número`, `Nome`, `NomeDns`, `Duração`, `Quantidade<D>`, `Taxa<U>`, `Orçamento`, `Tamanho`, `VolumeDados`, `Percentagem`, `Valor<S>`, `Caminho`, `Seletor`, `Nível`, `Ficheiro`, `Lista<T>`, `Tabela<K, V>` | `Text`, `Integer`, `Number`, `Name`, `DnsName`, `Duration`, `Quantity<D>`, `Rate<U>`, `Budget`, `Size`, `DataVolume`, `Percentage`, `Value<S>`, `Path`, `Selector`, `Level`, `File`, `List<T>`, `Table<K, V>` | type names of ref/01 §2.2; they are documentation metasyntax (they match the Rust types of ref/01 §12), so they are translated, also inside code spans; `Bool`, `Expr<T>`, `Ref` stay |
+| placeholders `<nome>`, `<caminho>`, `<dispositivo>`, `<placa>`… | `<name>`, `<path>`, `<device>`, `<board>`… | metasyntax in headings, grammars and code spans is translated; keys, values and identifiers are not |
+| não-terminais de gramática (`duração`, `seletor`, `nível`…) | grammar nonterminals (`duration`, `selector`, `level`…) | ref/00 §3.1, ref/01 §3 |
+| colunas `Obr.`, `Omissão`, `Validação`, `Origem`, `Fase` | `Req.`, `Default`, `Validation`, `Origin`, `Phase` | key tables; cells `sim`/`não`/`nova` → `yes`/`no`/`new` |
+| colunas `Código`, `Gravidade`, `Mensagem` | `Code`, `Severity`, `Message` | code tables; a message quoted from `spec/codes.toml` is copied from it |
+| gama (de códigos) | **range** | "a gama `J0140`–`J0199`" |
+| incoerente, coerente | **inconsistent**, **consistent** | as in `spec/codes.toml` |
+| erro de escrita (gralha) | **typo** | not a **write** |
+| fixar (no lock) | **pin** | verb of "fixado → pinned" (§15) |
+| registo (OCI) | **registry** | `oci://<registry>/…`; a Modbus register stays **register** |
+| ficheiro de arranque do nó, configuração de arranque do nó | **node startup file**, **node startup configuration** | `/etc/joker/node.toml`; ref/02 §2.2 |
+| layout em disco | **on-disk layout** | `/var/lib/joker/` |
+| escuta (da API) | **listener** | "onde escutar" → **where to listen** |
+| falha fechada | **fail closed** | |
+| espelho do registo | **registry mirror** | |
+| inquilino | **tenant** | |
+| armazém por conteúdo | **content-addressed store** | |
+| motor (Wasm, AOT) | **engine** | |
+| caminho de pesquisa | **search path** | `defaults.search` |
+| contexto (da `jk`) | **context** | |
+| endereço de arranque | **bootstrap address** | see **bootstrap channel** (§10) |
+| troca de âncoras | **anchor swap** | |
+| responsável de segurança | **security officer** | |
+| separação de funções | **separation of duties** | |
+| revogar, revogação, expiração | **revoke**, **revocation**, **expiration** | |
+| confiança no primeiro uso | **trust on first use** | |
+| impressão digital (certificado) | **fingerprint** | |
+| memória bloqueada (`mlock`) | **locked memory** | |
+| payload destacado | **detached payload** | COSE |
+| pessoas de escrow | **escrow holders** | |
+| valor substituto | **substitute value** | |
+| enrolamento sem intervenção | **zero-touch enrollment** | |
+| imagem de fábrica | **factory image** | |
+| reter (um nó) | **hold back** | Deck rollout |
+| captura, capturar | **capture** | device facts captured into the lock |
+| factos de dispositivo | **device facts** | |
+| órfão, podar | **orphan**, **prune** | |
+| princípio da mudança mínima | **principle of minimal change** | |
+| apertar, alargamento | **tighten**, **widening** | "os envelopes só apertam" → **envelopes only tighten**; "alargar" → **widen** (§15) |
+| fusão, fundir, diretiva de fusão | **merge**, **merge directive** | overlays; ref/01 §7 |
+| chave pontuada | **dotted key** | TOML |
+| listas de tabelas (TOML) | **arrays of tables** | the TOML term |
+| linearização em pós-ordem | **post-order linearization** | `extends` |
+| materializar as omissões | **materialize the defaults** | effective manifest |
+| casa com, correspondências (seletor) | **matches** | |
+| prefixos com dono | **owned prefixes** | document 02 §9 |
+| grupo de avaliação | **evaluation group** | expressions |
+| envelope por passos | **step-by-step envelope** | |
+| atómicos (grupos) | **atomics** | short for atomic groups |
+| reservas (de ML) | **(ML) reservations** | document 11 |
+| modelo (de texto, `"{}.temp"`) | **template** | not an ML **model** |
+| membro fixo, coleção (de classe) | **fixed member**, **collection** | |
+| (versão) quente | **warm** (previous version) | after a hot swap |
+| coberta (só Joker Micro), diretiva de overlay | **covered (Joker Micro only)**, **overlay directive** | coverage table of ref/01 appendix B |
+| segundos intercalares | **leap seconds** | |
+| complemento para dois | **two's complement** | |
+
+---
+
 ## Appendix A. File-name map
 
 Every file under `docs/` keeps its number and gets an English slug (ADR 0029, decision 3). The directories `trilha/`, `exemplos/` and `propostas/` become `track/`, `examples/` and `proposals/`. The rename is one commit, and every remission and link in `docs/`, `spec/`, `wit/`, `README.md` and `AGENTS.md` was rewritten with it. Files whose name does not change are omitted.
