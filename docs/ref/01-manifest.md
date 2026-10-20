@@ -1,329 +1,329 @@
-# ref/01 — O manifesto (`joker.toml`) e os overlays
+# ref/01 — The manifest (`joker.toml`) and overlays
 
-Referência completa do manifesto de um site: todas as secções e chaves, a gramática exata dos valores, as regras de fusão dos overlays, o manifesto efetivo e o registo dos códigos de validação `J01xx`, `J02xx` e `J03xx`.
+Complete reference of a site's manifest: all the sections and keys, the exact grammar of the values, the merge rules of the overlays, the effective manifest and the registry of the validation codes `J01xx`, `J02xx` and `J03xx`.
 
-É **normativo**. Fica acima do documento 03, de que é a forma fechada (ADR 0023). A semântica (árbitro, envelope, qualidade, expressões, unidades, caminhos) continua no documento 16, e a representação comum (versões, nomes, tempo, valores, erros) no `ref/00`. Onde este documento e o 03 divergem, vale este, e a divergência está listada nos achados (anexo C) para o 03 ser corrigido.
+It is **normative**. It sits above document 03, of which it is the closed form (ADR 0023). The semantics (arbiter, envelope, quality, expressions, units, paths) stay in document 16, and the common representation (versions, names, time, values, errors) in `ref/00`. Where this document and 03 diverge, this one prevails, and the divergence is listed in the findings (appendix C) so that 03 is corrected.
 
-Os tipos Rust do crate `joker-manifest` são escritos a partir desta referência (§12), e o JSON Schema publicado é gerado a partir deles (documento 16, §10).
-
----
-
-## 1. Âmbito e fontes
-
-### 1.1 O que cobre
-
-| Cobre | Não cobre (e onde está) |
-|---|---|
-| `joker.toml` e todos os overlays (`joker.sim.toml`, `joker.rpi.toml`, `templates/joker.*.toml`, `sites/joker.*.toml`) | `joker.lock`, configuração de arranque do nó, cliente `jk`, cofre de segredos → `ref/02` |
-| a gramática dos valores escritos em TOML (durações, quantidades, taxas, expressões, seletores, referências) | perfis de equipamento, perfis de placa, modelos de simulação, cenários, casos de conformidade → `ref/03` |
-| a ordem de resolução dos overlays e o manifesto efetivo | a IDL `.jkc` → documento 17 |
-| as chaves de dispositivo de cada driver do catálogo v1 (anexo A) | como o driver recebe essa configuração (`Config`, `plan`) → `ref/06` |
-| os códigos de validação do manifesto (`J01xx`, `J02xx`, `J03xx`), existentes e novos | códigos `J04xx` (lock), `J05xx` (ML), `J06xx` (classes), `J07xx` (Joker Micro): só referidos |
-| as chaves reservadas para a 1.1 (ML, streams, pipelines, blocos, escritas agendadas) | a semântica dessas funcionalidades → documento 06 |
-
-### 1.2 Fontes
-
-| Documento | O que dá a esta referência |
-|---|---|
-| 03 | a lista original de secções e chaves, os exemplos, os códigos §15 |
-| 16 | árbitro (A1–A11), envelope (E1–E9), qualidade, expressões, unidades, caminhos (P1–P5), registo de códigos |
-| `ref/00` | versões, nomes, literais de duração e de quantidade, valores, níveis, erros, segurança, limites |
-| 01, 02 | tick, envelope por passos, fallback do dispositivo, gerações, tempo; tipos, qualidade, caminhos, expressões, alarmes, ações, atómicos |
-| 05 | drivers, perfis, barramentos, descoberta, orçamento de barramento |
-| 14, 17 | instâncias (implícitas, compostas, virtuais), `map` e adaptadores, ações de instâncias |
-| 04, 06, 19, 20 | portas e ligações, reservas de ML, Joker Micro, segurança da família |
-| 08, 09, 18, exemplos, trilha | todos os blocos TOML usados como teste de cobertura (anexo B) |
-
-### 1.3 Ligações a outras referências
-
-| Referência | Contrato com esta |
-|---|---|
-| `ref/02` | o lock guarda `widen`, `accept_missing_fallback` e `accept_unsafe_reset` com as chaves daqui, e fixa `[profiles]`, `[boards]`, `[drivers]`, `[discovered]` e `[fallback]` pelas chaves dos dispositivos, perfis, placas e drivers declarados aqui; o bundle de confiança do nó é o que `[security.trust]` só pode restringir; o cofre resolve `secret:` |
-| `ref/03` | os perfis definem os sinais que `[devices.*.signals]` ajusta; as placas dão `recommended`, núcleos, RAM, arquiteturas e, nos MCUs, as capacidades por omissão; o simulador de classe interpreta `[instances.*] sim` |
-| `ref/04` | a secção `joker:meta` dá as portas, parâmetros, tarefas, segredos e `optional` contra os quais `bind`, `params`, `secrets` e `cycles` são validados |
-| `ref/06` | cada driver publica no descritor o esquema da sua configuração; para os drivers do catálogo, esse esquema é o anexo A; as chaves de `[drivers]` (§5.7) configuram os hosts W e X |
-| `ref/07`, `ref/08` | as chaves dos dispositivos `joker-link` (anexo A), a secção `[link]` e as restrições do manifesto num Joker Micro (§5.22) |
-| `ref/09` | a API expõe o manifesto efetivo e a proveniência de cada chave (§8.4) |
-| `ref/10` | o estado desejado leva o hash da **geração** (ref/10 §2.6.2), que cobre o hash do **manifesto efetivo** definido em §8.3 |
+The Rust types of the `joker-manifest` crate are written from this reference (§12), and the published JSON Schema is generated from them (document 16, §10).
 
 ---
 
-## 2. Como ler esta referência
+## 1. Scope and sources
 
-### 2.1 Colunas das tabelas
+### 1.1 What it covers
 
-| Coluna | Significado |
+| Covers | Does not cover (and where it is) |
 |---|---|
-| **Tipo** | um dos tipos de §2.2 |
-| **Obr.** | `sim`: obrigatória no **manifesto efetivo** (depois dos overlays), e não em cada ficheiro. `prod`: obrigatória só em `mode = "prod"`. `cond.`: obrigatória numa condição descrita na validação |
-| **Omissão** | o valor usado quando a chave falta. `—` quer dizer "sem valor": a funcionalidade fica desligada |
-| **Validação** | regras além do tipo; o código entre parênteses é o erro |
-| **Origem** | documento de onde vem a chave; `nova` quando esta referência a introduz |
-| **Fase** | `1.0`, ou `1.1` (reservada: a chave existe no esquema da 1.0, mas usá-la numa runtime 1.0 é `J0290`) |
+| `joker.toml` and all the overlays (`joker.sim.toml`, `joker.rpi.toml`, `templates/joker.*.toml`, `sites/joker.*.toml`) | `joker.lock`, node startup configuration, `jk` client, secrets vault → `ref/02` |
+| the grammar of the values written in TOML (durations, quantities, rates, expressions, selectors, references) | equipment profiles, board profiles, simulation models, scenarios, conformance cases → `ref/03` |
+| the resolution order of the overlays and the effective manifest | the `.jkc` IDL → document 17 |
+| the device keys of each driver of the v1 catalog (appendix A) | how the driver receives that configuration (`Config`, `plan`) → `ref/06` |
+| the validation codes of the manifest (`J01xx`, `J02xx`, `J03xx`), existing and new | codes `J04xx` (lock), `J05xx` (ML), `J06xx` (classes), `J07xx` (Joker Micro): only referred to |
+| the keys reserved for 1.1 (ML, streams, pipelines, blocks, scheduled writes) | the semantics of those features → document 06 |
 
-### 2.2 Tipos
+### 1.2 Sources
 
-| Tipo | TOML | Gramática | Exemplo |
+| Document | What it gives this reference |
+|---|---|
+| 03 | the original list of sections and keys, the examples, the codes of §15 |
+| 16 | arbiter (A1–A11), envelope (E1–E9), quality, expressions, units, paths (P1–P5), code registry |
+| `ref/00` | versions, names, duration and quantity literals, values, levels, errors, security, limits |
+| 01, 02 | tick, step-by-step envelope, device fallback, generations, time; types, quality, paths, expressions, alarms, actions, atomics |
+| 05 | drivers, profiles, buses, discovery, bus budget |
+| 14, 17 | instances (implicit, composite, virtual), `map` and adapters, instance actions |
+| 04, 06, 19, 20 | ports and bindings, ML reservations, Joker Micro, family security |
+| 08, 09, 18, examples, track | all the TOML blocks used as a coverage test (appendix B) |
+
+### 1.3 Links to other references
+
+| Reference | Contract with this one |
+|---|---|
+| `ref/02` | the lock stores `widen`, `accept_missing_fallback` and `accept_unsafe_reset` with the keys from here, and pins `[profiles]`, `[boards]`, `[drivers]`, `[discovered]` and `[fallback]` by the keys of the devices, profiles, boards and drivers declared here; the node's trust bundle is what `[security.trust]` can only restrict; the vault resolves `secret:` |
+| `ref/03` | the profiles define the signals that `[devices.*.signals]` tunes; the boards give `recommended`, CPU cores, RAM, architectures and, on MCUs, the default capabilities; the class simulator interprets `[instances.*] sim` |
+| `ref/04` | the `joker:meta` section gives the ports, parameters, tasks, secrets and `optional` against which `bind`, `params`, `secrets` and `cycles` are validated |
+| `ref/06` | each driver publishes the schema of its configuration in the descriptor; for the catalog drivers, that schema is appendix A; the keys of `[drivers]` (§5.7) configure the W and X hosts |
+| `ref/07`, `ref/08` | the keys of the `joker-link` devices (appendix A), the `[link]` section and the manifest restrictions on a Joker Micro (§5.22) |
+| `ref/09` | the API exposes the effective manifest and the provenance of each key (§8.4) |
+| `ref/10` | the desired state carries the hash of the **generation** (ref/10 §2.6.2), which covers the hash of the **effective manifest** defined in §8.3 |
+
+---
+
+## 2. How to read this reference
+
+### 2.1 Table columns
+
+| Column | Meaning |
+|---|---|
+| **Type** | one of the types of §2.2 |
+| **Req.** | `yes`: required in the **effective manifest** (after the overlays), and not in each file. `prod`: required only in `mode = "prod"`. `cond.`: required under a condition described in the validation |
+| **Default** | the value used when the key is missing. `—` means "no value": the feature stays off |
+| **Validation** | rules beyond the type; the code in parentheses is the error |
+| **Origin** | document the key comes from; `new` when this reference introduces it |
+| **Phase** | `1.0`, or `1.1` (reserved: the key exists in the 1.0 schema, but using it on a 1.0 runtime is `J0290`) |
+
+### 2.2 Types
+
+| Type | TOML | Grammar | Example |
 |---|---|---|---|
-| `Texto` | string | UTF-8, ≤ 1 KiB salvo indicação | `"Sobre-frequência"` |
+| `Text` | string | UTF-8, ≤ 1 KiB unless stated otherwise | `"Over-frequency"` |
 | `Bool` | boolean | | `true` |
-| `Inteiro` | integer | | `3` |
-| `Número` | integer ou float | | `0.45` |
-| `Nome` | string ou chave | `[a-z][a-z0-9_]*`, ≤ 32 caracteres (16, P5) | `peak_shaver` |
-| `NomeDns` | string | rótulo DNS (`ref/00` §5) | `site-lisboa-01` |
-| `Duração` | string | §3.1 | `"200ms"` |
-| `Quantidade<D>` | string | §3.2; `D` é a dimensão esperada | `"125 kW"` |
-| `Taxa<U>` | string | §3.3; unidade de `U` por tempo | `"25 kW/s"` |
-| `Orçamento` | string | §3.4 | `"120/h"` |
-| `Tamanho` | string | §3.5 | `"512 MiB"` |
-| `VolumeDados` | string | §3.5 | `"300 MB/month"` |
-| `Percentagem` | string | §3.2 com `%` | `"20 %"` |
-| `Valor<S>` | depende do sinal `S` | §3.6 | `false`, `"0 kW"`, `"StatusMode.off"` |
-| `Expr<T>` | string | expressão do documento 02, §10, com resultado `T` (§3.7) | `"meter.f > 49.8 Hz"` |
-| `Caminho` | string | §3.8 | `"pcs.p_set"` |
-| `Seletor` | string | §3.9 | `"inv*.w_max_lim_pct"` |
+| `Integer` | integer | | `3` |
+| `Number` | integer or float | | `0.45` |
+| `Name` | string or key | `[a-z][a-z0-9_]*`, ≤ 32 characters (16, P5) | `peak_shaver` |
+| `DnsName` | string | DNS label (`ref/00` §5) | `site-lisboa-01` |
+| `Duration` | string | §3.1 | `"200ms"` |
+| `Quantity<D>` | string | §3.2; `D` is the expected dimension | `"125 kW"` |
+| `Rate<U>` | string | §3.3; unit of `U` per time | `"25 kW/s"` |
+| `Budget` | string | §3.4 | `"120/h"` |
+| `Size` | string | §3.5 | `"512 MiB"` |
+| `DataVolume` | string | §3.5 | `"300 MB/month"` |
+| `Percentage` | string | §3.2 with `%` | `"20 %"` |
+| `Value<S>` | depends on the signal `S` | §3.6 | `false`, `"0 kW"`, `"StatusMode.off"` |
+| `Expr<T>` | string | expression of document 02, §10, with result `T` (§3.7) | `"meter.f > 49.8 Hz"` |
+| `Path` | string | §3.8 | `"pcs.p_set"` |
+| `Selector` | string | §3.9 | `"inv*.w_max_lim_pct"` |
 | `Ref` | string | §3.10 | `"model:load_forecast"` |
-| `Nível` | string | §3.11 | `"optimizer"`, `"optimizer:13"` |
-| `Ficheiro` | string | caminho relativo ao ficheiro que o declara (§7.5) ou absoluto | `"sim/tank.sim.toml"` |
-| `Lista<T>` | array | | `["a", "b"]` |
-| `Tabela<K, V>` | table | chaves `K` livres (nomes, caminhos, seletores) com valores `V` | `[calc]` |
+| `Level` | string | §3.11 | `"optimizer"`, `"optimizer:13"` |
+| `File` | string | path relative to the file that declares it (§7.5) or absolute | `"sim/tank.sim.toml"` |
+| `List<T>` | array | | `["a", "b"]` |
+| `Table<K, V>` | table | free keys `K` (names, paths, selectors) with values `V` | `[calc]` |
 
-Uma **lista** é ordenada (a ordem conta) ou um **conjunto** (a ordem não conta e os duplicados fundem-se). A tabela de cada chave diz qual é, porque isso muda o efeito de `append` (§7.3).
+A **list** is ordered (the order matters) or a **set** (the order does not matter and duplicates merge). The table of each key says which one it is, because that changes the effect of `append` (§7.3).
 
-### 2.3 Regras gerais do ficheiro
+### 2.3 General rules of the file
 
-1. **TOML 1.0, UTF-8** (ADR 0018). Um ficheiro que não é TOML válido ou não é UTF-8 é `J0146`.
-2. **Chaves desconhecidas são erro** (`J0140`), com sugestão por distância de edição (`max_leas` → "querias dizer `max_lease`?"). É a regra 3 do `ref/00` §1.
-3. **Chaves de extensão** começam por `x_` (`x_owner = "equipa-energia"`), em qualquer tabela, e são ignoradas pela runtime. Não entram no hash do manifesto efetivo (§8.3), nem por isso no da geração, mas passam para o manifesto efetivo, para as ferramentas.
-4. **Chaves começadas por `_`** são reservadas (`J0141`).
-5. As chaves de tabelas livres (nomes de dispositivos, apps, grupos, alarmes, `calc`) seguem `Nome`; as de `[outputs]`, `[signals]` e `[telemetry.record]` são caminhos ou seletores, e por isso vão entre aspas (`[outputs."pcs.p_set"]`).
-6. **Uma chave é obrigatória no manifesto efetivo**, não em cada ficheiro: um template sem `[project] name` é válido como camada, e o `name` vem do site (§7).
-7. A chave `[project] joker` declara a versão mínima da runtime e, com ela, o esquema. Uma chave introduzida numa versão posterior à declarada é `J0148` (§10.2).
+1. **TOML 1.0, UTF-8** (ADR 0018). A file that is not valid TOML or is not UTF-8 is `J0146`.
+2. **Unknown keys are an error** (`J0140`), with a suggestion by edit distance (`max_leas` → "did you mean `max_lease`?"). It is rule 3 of `ref/00` §1.
+3. **Extension keys** start with `x_` (`x_owner = "energy-team"`), in any table, and are ignored by the runtime. They do not enter the hash of the effective manifest (§8.3), and therefore not that of the generation either, but they pass into the effective manifest, for the tools.
+4. **Keys starting with `_`** are reserved (`J0141`).
+5. The keys of free tables (names of devices, apps, groups, alarms, `calc`) follow `Name`; those of `[outputs]`, `[signals]` and `[telemetry.record]` are paths or selectors, and so they go in quotes (`[outputs."pcs.p_set"]`).
+6. **A key is required in the effective manifest**, not in each file: a template without `[project] name` is valid as a layer, and the `name` comes from the site (§7).
+7. The key `[project] joker` declares the minimum runtime version and, with it, the schema. A key introduced in a version later than the declared one is `J0148` (§10.2).
 
 ---
 
-## 3. Gramática dos valores
+## 3. Grammar of the values
 
-As quantidades, durações, expressões e referências são strings, porque o TOML não tem unidades. Cada posição do esquema tem um tipo conhecido, e a string é interpretada **segundo esse tipo**. Por isso não há ambiguidade entre `"1m"` (um minuto, numa duração) e `"1 m"` (um metro, numa quantidade de comprimento).
+Quantities, durations, expressions and references are strings, because TOML has no units. Each position of the schema has a known type, and the string is interpreted **according to that type**. So there is no ambiguity between `"1m"` (one minute, in a duration) and `"1 m"` (one meter, in a length quantity).
 
-### 3.1 Durações
+### 3.1 Durations
 
-A gramática é a do `ref/00` §3.1:
-
-```
-duração  := número espaço? unid-t
-unid-t   := "ns" | "us" | "µs" | "ms" | "s" | "m" | "min" | "h" | "d"
-número   := dígitos ("." dígitos)?
-```
-
-- Sem sinal: uma duração nunca é negativa (`J0152`).
-- `"0s"` só é aceite onde a tabela o diz (`grace`, `min_interval`, `delay_on`, `delay_off`). Nas outras chaves, zero é `J0152`.
-- Sem compostos (`"1h30m"` é `J0152`); escreve-se `"90m"`. As somas (`"2m+1.2s"`) só existem nos instantes de cenários e casos (`ref/00` §3.1, `ref/03` §2.1.3), e não no manifesto.
-- Arredondamento a ns. O máximo absoluto é `"3650d"`; cada chave pode ter um máximo menor.
-- Não se aceita um número nu (`200` em vez de `"200ms"`): é `J0151`.
-
-### 3.2 Quantidades e percentagens
+The grammar is that of `ref/00` §3.1:
 
 ```
-quantidade := "-"? número expoente? espaço? unidade
-expoente   := ("e" | "E") ("+" | "-")? dígitos
-unidade    := uma unidade do catálogo do documento 16, §5, com prefixos e compostas
+duration := number space? unit-t
+unit-t   := "ns" | "us" | "µs" | "ms" | "s" | "m" | "min" | "h" | "d"
+number   := digits ("." digits)?
 ```
 
-- A **dimensão** tem de ser a esperada pela chave (`J0107`), e a **grandeza** também, quando a chave a conhece (`J0108`: `"5 kvar"` na gama de uma saída em `kW`).
-- Um valor em unidade diferente da do sinal é **convertido** (`"125000 W"` numa saída em `kW` é `125 kW`). As comparações de overlays (§7.4) fazem-se já convertidas.
-- `%` é uma unidade como as outras: `"5 %"` não se liga a um sinal em `1` (documento 16, §4).
-- **Número sem unidade:** só é aceite quando a dimensão esperada é adimensional (`1`), ou quando o sinal não tem unidade (inteiros sem unidade, `bits`). Noutros casos é `J0151`, com a sugestão da unidade do sinal. A razão: se o perfil passar de `W` para `kW`, um `safe = 0` continuaria certo por acaso, e um `range = [0, 125]` mudaria de significado em silêncio.
-- `°C` é afim: um valor absoluto escreve-se em `°C` e uma diferença em `K` (documento 16, §4). `deadband`, `tolerance` e `max_divergence` são diferenças: numa saída em `°C` escrevem-se em `K`, e `"0.5 °C"` é `J0107` com a sugestão `"0.5 K"`.
-- Uma `Percentagem` é uma quantidade com unidade `%`.
+- No sign: a duration is never negative (`J0152`).
+- `"0s"` is only accepted where the table says so (`grace`, `min_interval`, `delay_on`, `delay_off`). In the other keys, zero is `J0152`.
+- No compounds (`"1h30m"` is `J0152`); you write `"90m"`. Sums (`"2m+1.2s"`) only exist in the instants of scenarios and cases (`ref/00` §3.1, `ref/03` §2.1.3), and not in the manifest.
+- Rounding to ns. The absolute maximum is `"3650d"`; each key may have a smaller maximum.
+- A bare number (`200` instead of `"200ms"`) is not accepted: it is `J0151`.
 
-### 3.3 Taxas
-
-```
-taxa := quantidade          com unidade  U "/" ("s" | "min" | "h")   ou a unidade derivada equivalente
-```
-
-- `U` tem a dimensão da saída: `"25 kW/s"` para uma saída em `kW`, `"20 %/s"` para `%`, `"1.5 m/s2"` para uma velocidade em `m/s` (`m/s2` = (m/s)/s), `"0.5 °C/min"` para uma temperatura (lida como `K/min`).
-- Dimensão incoerente com a saída é `J0202`. Uma taxa negativa ou zero é `J0202`.
-- Internamente, tudo é convertido para unidade-da-saída por segundo.
-
-### 3.4 Orçamentos de atuações
+### 3.2 Quantities and percentages
 
 ```
-orçamento := inteiro "/" (unid-t | duração)
+quantity := "-"? number exponent? space? unit
+exponent := ("e" | "E") ("+" | "-")? digits
+unit     := a unit of the catalog of document 16, §5, with prefixes and compounds
 ```
 
-`"120/h"`, `"6/h"`, `"7200/h"`, `"3/10min"`. O período é uma janela deslizante. Inteiro ≥ 1; período entre `1s` e `7d` (`J0159`).
+- The **dimension** must be the one expected by the key (`J0107`), and so must the **quantity**, when the key knows it (`J0108`: `"5 kvar"` in the range of an output in `kW`).
+- A value in a unit different from that of the signal is **converted** (`"125000 W"` in an output in `kW` is `125 kW`). The overlay comparisons (§7.4) are made already converted.
+- `%` is a unit like the others: `"5 %"` does not bind to a signal in `1` (document 16, §4).
+- **Number without a unit:** only accepted when the expected dimension is dimensionless (`1`), or when the signal has no unit (integers without a unit, `bits`). In other cases it is `J0151`, with the suggestion of the signal's unit. The reason: if the profile changed from `W` to `kW`, a `safe = 0` would stay correct by chance, and a `range = [0, 125]` would change meaning silently.
+- `°C` is affine: an absolute value is written in `°C` and a difference in `K` (document 16, §4). `deadband`, `tolerance` and `max_divergence` are differences: on an output in `°C` they are written in `K`, and `"0.5 °C"` is `J0107` with the suggestion `"0.5 K"`.
+- A `Percentage` is a quantity with unit `%`.
 
-### 3.5 Tamanhos e volumes de dados
+### 3.3 Rates
 
 ```
-tamanho      := número espaço? ("B" | "KiB" | "MiB" | "GiB" | "TiB")
-volume-dados := número espaço? ("kB" | "MB" | "GB" | "KiB" | "MiB" | "GiB") "/" ("day" | "month")
+rate := quantity          with unit  U "/" ("s" | "min" | "h")   or the equivalent derived unit
 ```
 
-- Tamanhos de memória e disco usam prefixos IEC (`ref/00` §3.2); `"512 MB"` num `Tamanho` é `J0159` com a sugestão `"512 MiB"` ou `"488 MiB"`.
-- Os volumes de uplink aceitam SI, porque os tarifários de dados se exprimem assim (`"300 MB/month"`). `month` é o mês civil em UTC; o estimador projeta até ao fim do mês corrente (documento 01, §13).
+- `U` has the dimension of the output: `"25 kW/s"` for an output in `kW`, `"20 %/s"` for `%`, `"1.5 m/s2"` for a speed in `m/s` (`m/s2` = (m/s)/s), `"0.5 °C/min"` for a temperature (read as `K/min`).
+- A dimension inconsistent with the output is `J0202`. A negative or zero rate is `J0202`.
+- Internally, everything is converted to output-unit per second.
 
-### 3.6 Valores de sinais
+### 3.4 Actuation budgets
 
-Um `Valor<S>` (usado em `safe`, `on_late.apply`, `atomic.commit.value`, `params`, adaptadores `const:`) escreve-se segundo o tipo de `S`:
+```
+budget := integer "/" (unit-t | duration)
+```
 
-| Tipo do sinal | TOML | Exemplo |
+`"120/h"`, `"6/h"`, `"7200/h"`, `"3/10min"`. The period is a sliding window. Integer ≥ 1; period between `1s` and `7d` (`J0159`).
+
+### 3.5 Sizes and data volumes
+
+```
+size        := number space? ("B" | "KiB" | "MiB" | "GiB" | "TiB")
+data-volume := number space? ("kB" | "MB" | "GB" | "KiB" | "MiB" | "GiB") "/" ("day" | "month")
+```
+
+- Memory and disk sizes use IEC prefixes (`ref/00` §3.2); `"512 MB"` in a `Size` is `J0159` with the suggestion `"512 MiB"` or `"488 MiB"`.
+- Uplink volumes accept SI, because data plans are expressed that way (`"300 MB/month"`). `month` is the calendar month in UTC; the estimator projects up to the end of the current month (document 01, §13).
+
+### 3.6 Signal values
+
+A `Value<S>` (used in `safe`, `on_late.apply`, `atomic.commit.value`, `params`, `const:` adapters) is written according to the type of `S`:
+
+| Signal type | TOML | Example |
 |---|---|---|
 | `bool` | boolean | `safe = false` |
-| `i64`, `u64` sem unidade, `bits<N>` | integer | `value = 1` |
-| `f64`, `f32` com unidade | quantidade (string) | `safe = "0 kW"` |
-| `f64`, `f32` em `1` | número ou `"0.5"` | `safe = 0.0` |
-| `enum<E>` | string `"E.variante"` (canónica) ou `"variante"` | `safe = "StatusMode.off"` |
+| `i64`, `u64` without a unit, `bits<N>` | integer | `value = 1` |
+| `f64`, `f32` with a unit | quantity (string) | `safe = "0 kW"` |
+| `f64`, `f32` in `1` | number or `"0.5"` | `safe = 0.0` |
+| `enum<E>` | string `"E.variant"` (canonical) or `"variant"` | `safe = "StatusMode.off"` |
 | `string` | string, ≤ 64 B | `safe = "idle"` |
 | `bytes` | string `"base64:…"`, ≤ 64 B | `safe = "base64:AAA="` |
 
-Um valor de tipo errado é `J0231` (em `safe`) ou `J0143` (noutras chaves); uma variante inexistente é `J0303`.
+A value of the wrong type is `J0231` (in `safe`) or `J0143` (in other keys); a nonexistent variant is `J0303`.
 
-### 3.7 Expressões em strings
+### 3.7 Expressions in strings
 
-A linguagem é a do documento 02, §10, com os casos-limite do documento 16, §4. Os erros de compilação são os `J03xx` (§10). Onde cada chave aceita expressões:
+The language is that of document 02, §10, with the edge cases of document 16, §4. The compilation errors are the `J03xx` (§10). Where each key accepts expressions:
 
-| Chave | Resultado | Janelas | `own()` | Seletores | Estado (flancos, `held`) |
+| Key | Result | Windows | `own()` | Selectors | State (edges, `held`) |
 |---|---|---|---|---|---|
-| `outputs.*.interlock` | `bool` | sim, ≤ 15 min | não (`J0306`) | só em agregações | sim |
-| `outputs.*.range[i]` | número com a dimensão da saída | sim | não | só em agregações | sim |
-| `outputs.*.reset_when` | `bool` | sim | não | só em agregações | sim |
-| `alarms.*.when`, `alarms.*.suppress_when` | `bool` | sim | não | só em agregações | sim |
-| `calc.*` | qualquer escalar | sim | não | só em agregações | sim |
-| `devices.*.actions.*.permit`, `instances.*.actions.*.permit` | `bool` | sim | não | só em agregações | sim |
-| `apps.*.fallback.when` (1.1) | `bool` | gramática KPI (documento 06, §10.1) | não | não | — |
-| `models.*.shadow.promote_if`, `.kpi`, `.until` (1.1) | gramática KPI | até 30 d | não | não | — |
-| `pipelines.*.steps[].expr`, `training.*.data.where`, `telemetry.record.*.trigger` (1.1) | `bool` | sim | não | só em agregações | sim |
+| `outputs.*.interlock` | `bool` | yes, ≤ 15 min | no (`J0306`) | only in aggregations | yes |
+| `outputs.*.range[i]` | number with the dimension of the output | yes | no | only in aggregations | yes |
+| `outputs.*.reset_when` | `bool` | yes | no | only in aggregations | yes |
+| `alarms.*.when`, `alarms.*.suppress_when` | `bool` | yes | no | only in aggregations | yes |
+| `calc.*` | any scalar | yes | no | only in aggregations | yes |
+| `devices.*.actions.*.permit`, `instances.*.actions.*.permit` | `bool` | yes | no | only in aggregations | yes |
+| `apps.*.fallback.when` (1.1) | `bool` | KPI grammar (document 06, §10.1) | no | no | — |
+| `models.*.shadow.promote_if`, `.kpi`, `.until` (1.1) | KPI grammar | up to 30 d | no | no | — |
+| `pipelines.*.steps[].expr`, `training.*.data.where`, `telemetry.record.*.trigger` (1.1) | `bool` | yes | no | only in aggregations | yes |
 
-- **Constante ou expressão:** numa posição que aceita as duas (`range`), uma string que é inteira uma `quantidade` é uma constante; qualquer outra coisa é uma expressão. `"-125 kW"` é constante; `"-bms.p_max_discharge"` é expressão.
-- **Referências** (`model:`, `pipe:`, `class:`) não são caminhos (16, P4) e não aparecem em expressões, exceto nas funções de modelo das posições 1.1 (`good(model:m)`, `ood_ratio(model:m, 15m)`, `model_threshold(m)`).
-- **Grupo de avaliação:** as expressões de uma saída correm no grupo dono dela (A11); `calc` e alarmes correm no grupo mais rápido que os consome, ou no grupo implícito `calc` (100 ms), ou no grupo indicado por `group` (§5.13, §5.14).
-- **Dependências entre `calc`** formam um grafo acíclico; um ciclo é `J0190`.
-- Uma expressão com erro de sintaxe é `J0158`; sinal desconhecido `J0302`; variante desconhecida `J0303`; dimensões `J0301`; janela acima do máximo `J0305`.
+- **Constant or expression:** in a position that accepts both (`range`), a string that is entirely a `quantity` is a constant; anything else is an expression. `"-125 kW"` is a constant; `"-bms.p_max_discharge"` is an expression.
+- **References** (`model:`, `pipe:`, `class:`) are not paths (16, P4) and do not appear in expressions, except in the model functions of the 1.1 positions (`good(model:m)`, `ood_ratio(model:m, 15m)`, `model_threshold(m)`).
+- **Evaluation group:** the expressions of an output run in its owning group (A11); `calc` and alarms run in the fastest group that consumes them, or in the implicit `calc` group (100 ms), or in the group indicated by `group` (§5.13, §5.14).
+- **Dependencies between `calc`** form an acyclic graph; a cycle is `J0190`.
+- An expression with a syntax error is `J0158`; unknown signal `J0302`; unknown variant `J0303`; dimensions `J0301`; window above the maximum `J0305`.
 
-### 3.8 Caminhos e nomes
-
-```
-caminho   := segmento ("." segmento)*
-segmento  := [a-z][a-z0-9_]*            (≤ 32 caracteres; ≤ 8 segmentos)
-```
-
-- Violar a gramática é `J0153`.
-- **Prefixos com dono** (documento 02, §9): `<dispositivo>.`, `<instância>.`, `app.<app>.`, `calc.`, `alarm.`, `bridge.<ponte>.`, caminhos `to` de pipelines (1.1), `board.<nome>.` (IO fixo da placa, `ref/03` §2.3.2), `joker.` (reservado).
-- Um alias ou um `to` que comece por `calc.`, `alarm.`, `app.`, `board.`, `joker.` ou `bridge.` (fora da sua ponte) é `J0141`. O primeiro segmento `@` fica reservado para a v2 (`ref/00` §2). Um dispositivo, instância ou app chamado `joker` ou `board` também é `J0141`.
-- **Nomes** de dispositivos, instâncias, apps, grupos, barramentos, alarmes, `calc`, pontes, uplinks e grupos atómicos são `Nome` (16, P5). O nome de uma app não pode começar por `joker` (`J0141`). Os nomes reservados de portas e de membros de classes são os do `ref/00` §2 (validados contra o `joker:meta` e o `.jkc`, e não aqui). O `[project] name` é um `NomeDns` (é o identificador do site, `ref/00` §5).
-- Os nomes de drivers (`modbus-tcp`, `spi-adc`) seguem `[a-z][a-z0-9-]{0,31}` (`ref/06` §2.2), porque vêm do catálogo ou do descritor, e não de quem escreve o manifesto.
-
-### 3.9 Seletores
+### 3.8 Paths and names
 
 ```
-seletor   := sseg ("." sseg)*
-sseg      := "**" | padrão
-padrão    := ( [a-z0-9_] | "*" )+          (começa por letra ou "*")
+path      := segment ("." segment)*
+segment   := [a-z][a-z0-9_]*            (≤ 32 characters; ≤ 8 segments)
 ```
 
-| Forma | Casa com | Exemplo |
+- Violating the grammar is `J0153`.
+- **Owned prefixes** (document 02, §9): `<device>.`, `<instance>.`, `app.<app>.`, `calc.`, `alarm.`, `bridge.<bridge>.`, `to` paths of pipelines (1.1), `board.<name>.` (fixed IO of the board, `ref/03` §2.3.2), `joker.` (reserved).
+- An alias or a `to` that starts with `calc.`, `alarm.`, `app.`, `board.`, `joker.` or `bridge.` (outside its own bridge) is `J0141`. The first segment `@` is reserved for v2 (`ref/00` §2). A device, instance or app named `joker` or `board` is also `J0141`.
+- **Names** of devices, instances, apps, groups, buses, alarms, `calc`, bridges, uplinks and atomic groups are `Name` (16, P5). The name of an app must not start with `joker` (`J0141`). The reserved names of ports and of class members are those of `ref/00` §2 (validated against `joker:meta` and the `.jkc`, and not here). The `[project] name` is a `DnsName` (it is the site identifier, `ref/00` §5).
+- Driver names (`modbus-tcp`, `spi-adc`) follow `[a-z][a-z0-9-]{0,31}` (`ref/06` §2.2), because they come from the catalog or from the descriptor, and not from whoever writes the manifest.
+
+### 3.9 Selectors
+
+```
+selector  := sseg ("." sseg)*
+sseg      := "**" | pattern
+pattern   := ( [a-z0-9_] | "*" )+          (starts with a letter or "*")
+```
+
+| Form | Matches | Example |
 |---|---|---|
-| `*` dentro de um segmento | zero ou mais caracteres `[a-z0-9_]` **desse segmento** | `"inv*.ac.p"` casa com `inv1.ac.p`, `inv12.ac.p`; `"vav_3*"` casa com `vav_30` |
-| segmento `*` | exatamente um segmento | `"p1.acc.*"` |
-| segmento `**` | **um ou mais** segmentos | `"meter.**"` casa com `meter.f` e `meter.l1.v`, não com `meter` |
-| `"**"` sozinho | todos os caminhos | `low = "**"` |
+| `*` inside a segment | zero or more characters `[a-z0-9_]` **of that segment** | `"inv*.ac.p"` matches `inv1.ac.p`, `inv12.ac.p`; `"vav_3*"` matches `vav_30` |
+| segment `*` | exactly one segment | `"p1.acc.*"` |
+| segment `**` | **one or more** segments | `"meter.**"` matches `meter.f` and `meter.l1.v`, not `meter` |
+| `"**"` alone | all paths | `low = "**"` |
 
-- `**` só pode ser um segmento inteiro: `"**alarm.**"` é `J0154` (e é um erro do exemplo do documento 03, §11, anexo C).
-- A resolução é feita no `jk check`, sobre **todos os caminhos** (canónicos, aliases, membros de instâncias), e o resultado é deduplicado por `SignalId`: um seletor que apanhe o caminho canónico e um alias do mesmo sinal conta uma vez.
-- A ordem dos resultados é a **ordem lexicográfica do caminho canónico**. É a ordem de `OutputMany`, `InputMany` e `Many<T>` ligados por seletor.
-- Um seletor sem correspondências é `J0155` (erro) em `outputs`, `bind`, `requires_good`, `alarms.*.actions.trip`, `bridges.*.writer.writable` e `atomic`; e `J0156` (aviso) em `telemetry`, `bridges.*.expose` e `security`. Um template aplicado a um site sem inversores não falha por causa da telemetria.
-- Mais de 4096 correspondências num seletor é `J0149`.
-- Em expressões, os seletores só são aceites como argumento de agregações (`any`, `all`, `count`, `sum`, `maxs`, `mins`; documento 02, §10).
+- `**` can only be a whole segment: `"**alarm.**"` is `J0154` (and it is an error of the example of document 03, §11, appendix C).
+- Resolution is done in `jk check`, over **all paths** (canonical, aliases, instance members), and the result is deduplicated by `SignalId`: a selector that catches the canonical path and an alias of the same signal counts once.
+- The order of the results is the **lexicographic order of the canonical path**. It is the order of `OutputMany`, `InputMany` and `Many<T>` bound by selector.
+- A selector without matches is `J0155` (error) in `outputs`, `bind`, `requires_good`, `alarms.*.actions.trip`, `bridges.*.writer.writable` and `atomic`; and `J0156` (warning) in `telemetry`, `bridges.*.expose` and `security`. A template applied to a site without inverters does not fail because of the telemetry.
+- More than 4096 matches in a selector is `J0149`.
+- In expressions, selectors are only accepted as an argument of aggregations (`any`, `all`, `count`, `sum`, `maxs`, `mins`; document 02, §10).
 
-### 3.10 Referências
+### 3.10 References
 
-| Forma | Onde | Significado | Fase |
+| Form | Where | Meaning | Phase |
 |---|---|---|---|
-| `"oci://<registo>/<repo>:<tag>"`, `"oci://<registo>/<repo>@sha256:<hex>"` | `apps.*.source`, `models.*.source`, `drivers.*.source` | artefacto OCI (documento 20, §3.2) | 1.0 (modelos 1.1) |
-| `"sha256:<64 hex>"` | `digest` | digest de conteúdo | 1.0 |
-| `"app:<app>"` | `instances.*.implemented_by`, `apps.*.fallback.controller` | uma app declarada em `[apps]` | 1.0 (fallback 1.1) |
-| `"class:<classe>"` | `bind` de portas de classe `Many<T>` | todas as instâncias da classe (documento 14, §8, A3) | 1.0 |
-| `"const:<valor>"` | `instances.*.map` (só membros `in` e `param`; num `out` é `J0603`) | constante com qualidade `Good` (17, §5.2) | 1.0 |
-| `"secret:<nome>"` | só as chaves marcadas **(segredo)** nas tabelas desta referência: `password` e `token` dos uplinks (§5.17.3), `password` dos drivers `mqtt` e `opcua` e `key` do `joker-link` (anexo A), as chaves de tipo `secret` do esquema de um driver W ou X (`ref/06` §2.3.1), e os valores de `[apps.<app>.secrets]` (§5.12) | segredo do cofre do nó, pelo nome (`ref/00` §9, `ref/02` §2.4.6) | 1.0 |
-| `"model:<modelo>"` | `bind` de portas de modelo | um `[models.<modelo>]` | 1.1 |
-| `"pipe:<pipeline>"` | `bind`, `training.*.data.signals` | a saída de um pipeline como fluxo de eventos, com metadados de frame | 1.1 |
-| `"training:<trabalho>"` | `models.*.source` | a versão promovida do resultado de `[training.<trabalho>]` | 1.1 |
-| `"unix:<caminho>"`, `"tcp:<host>:<porta>"` | `security.api.listen` | pontos de escuta | 1.0 |
-| `"cert:<ATTR>=<padrão>"`, `"local:user=<u>"`, `"local:group=<g>"`, `"deck:<deck_id>/user:<id>"`, `"deck:<deck_id>/group:<g>"` | `security.roles.*` | identidades (§5.20) | 1.0 (`deck:` usado a partir da 1.3) |
+| `"oci://<registry>/<repo>:<tag>"`, `"oci://<registry>/<repo>@sha256:<hex>"` | `apps.*.source`, `models.*.source`, `drivers.*.source` | OCI artifact (document 20, §3.2) | 1.0 (models 1.1) |
+| `"sha256:<64 hex>"` | `digest` | content digest | 1.0 |
+| `"app:<app>"` | `instances.*.implemented_by`, `apps.*.fallback.controller` | an app declared in `[apps]` | 1.0 (fallback 1.1) |
+| `"class:<class>"` | `bind` of class ports `Many<T>` | all the instances of the class (document 14, §8, A3) | 1.0 |
+| `"const:<value>"` | `instances.*.map` (only `in` and `param` members; on an `out` it is `J0603`) | constant with quality `Good` (17, §5.2) | 1.0 |
+| `"secret:<name>"` | only the keys marked **(secret)** in the tables of this reference: `password` and `token` of the uplinks (§5.17.3), `password` of the `mqtt` and `opcua` drivers and `key` of `joker-link` (appendix A), the keys of type `secret` of the schema of a W or X driver (`ref/06` §2.3.1), and the values of `[apps.<app>.secrets]` (§5.12) | secret from the node's vault, by name (`ref/00` §9, `ref/02` §2.4.6) | 1.0 |
+| `"model:<model>"` | `bind` of model ports | a `[models.<model>]` | 1.1 |
+| `"pipe:<pipeline>"` | `bind`, `training.*.data.signals` | the output of a pipeline as an event stream, with frame metadata | 1.1 |
+| `"training:<job>"` | `models.*.source` | the promoted version of the result of `[training.<job>]` | 1.1 |
+| `"unix:<path>"`, `"tcp:<host>:<port>"` | `security.api.listen` | listening endpoints | 1.0 |
+| `"cert:<ATTR>=<pattern>"`, `"local:user=<u>"`, `"local:group=<g>"`, `"deck:<deck_id>/user:<id>"`, `"deck:<deck_id>/group:<g>"` | `security.roles.*` | identities (§5.20) | 1.0 (`deck:` used from 1.3 onward) |
 
-- Um esquema desconhecido, ou uma referência numa chave que não a aceita, é `J0157`.
-- `<classe>` segue o documento 17, §3.2: `<pacote>/<nome>@<major>`, com `std/` opcional (`"pump@1"` ≡ `"std/pump@1"`).
-- Um segredo em claro numa chave do tipo segredo é `J0294`. Um `secret:` numa chave que não é do tipo segredo é `J0157` (é o código que também a `ref/02` §2.4.6 usa).
+- An unknown scheme, or a reference in a key that does not accept it, is `J0157`.
+- `<class>` follows document 17, §3.2: `<package>/<name>@<major>`, with optional `std/` (`"pump@1"` ≡ `"std/pump@1"`).
+- A plaintext secret in a key of the secret type is `J0294`. A `secret:` in a key that is not of the secret type is `J0157` (it is the code that `ref/02` §2.4.6 also uses).
 
-### 3.11 Níveis do árbitro
+### 3.11 Arbiter levels
 
 ```
-nível := faixa | faixa ":" prioridade
-faixa := "safety" | "manual" | "supervisor" | "control" | "optimizer" | "schedule"
+level    := band | band ":" priority
+band     := "safety" | "manual" | "supervisor" | "control" | "optimizer" | "schedule"
 ```
 
-| Faixa | Prioridades | Omissão da faixa | Quem pode ocupar |
+| Band | Priorities | Band default | Who may occupy it |
 |---|---|---|---|
 | `safety` | 1–2 | 2 | apps |
-| `manual` | 3–5 | — | só utilizadores (CLI, API, HMI) e intenções aprovadas: uma app ou ponte aqui é `J0252` |
-| `supervisor` | 6–8 | 8 | apps, pontes |
-| `control` | 9–12 | 12 | apps, pontes, implementações |
-| `optimizer` | 13–15 | 15 | apps, pontes |
-| `schedule` | 16 | 16 | apps, pontes |
+| `manual` | 3–5 | — | only users (CLI, API, HMI) and approved intents: an app or bridge here is `J0252` |
+| `supervisor` | 6–8 | 8 | apps, bridges |
+| `control` | 9–12 | 12 | apps, bridges, implementations |
+| `optimizer` | 13–15 | 15 | apps, bridges |
+| `schedule` | 16 | 16 | apps, bridges |
 
-- Nos escritores (`[apps.*.writer]`, `[bridges.*.writer]`), o nível escreve-se com `level` + `priority` (documento 03) ou na forma compacta `level = "optimizer:13"` (`ref/00` §5). As duas juntas têm de concordar (`J0250`).
-- `priority` fora da faixa é `J0251`. Uma ponte na faixa `safety` é `J0253`.
-- Sem `priority`, vale a **omissão da faixa**, a mais baixa (o maior número). É a regra que dá `control:12` ao escritor único (A11 e documento 03, §8).
+- In the writers (`[apps.*.writer]`, `[bridges.*.writer]`), the level is written with `level` + `priority` (document 03) or in the compact form `level = "optimizer:13"` (`ref/00` §5). The two together must agree (`J0250`).
+- `priority` outside the band is `J0251`. A bridge in the `safety` band is `J0253`.
+- Without `priority`, the **band default** applies, the lowest one (the largest number). It is the rule that gives `control:12` to the single writer (A11 and document 03, §8).
 
 ---
 
-## 4. Estrutura do ficheiro
+## 4. Structure of the file
 
-| Secção | Chaves livres | Obr. | Fase | Origem | Referência |
+| Section | Free keys | Req. | Phase | Origin | Reference |
 |---|---|---|---|---|---|
-| `extends` (raiz) | — | não | 1.0 | 03 §2 | §5.1, §7 |
-| `[project]` | — | sim | 1.0 | 03 §3 | §5.2 |
+| `extends` (root) | — | no | 1.0 | 03 §2 | §5.1, §7 |
+| `[project]` | — | yes | 1.0 | 03 §3 | §5.2 |
 | `[target]` | — | prod | 1.0 | 03 §3 | §5.3 |
-| `[target.capacity]`, `[target.extern]`, `[target.micro]` | — | não | 1.0 (só Joker Micro) | `ref/08` §2.17, nova | §5.22 |
-| `[resources.<classe>]` | `rt`, `io`, `ml`, `bg` | não | 1.0 (`accel` 1.1) | 03 §3, 01 §2 | §5.4 |
-| `[clock]` | — | não | 1.0 | 03 §3, 01 §18 | §5.5 |
-| `[buses.<barramento>]` | `Nome` | não | 1.0 | 03 §4 | §5.6 |
-| `[drivers.<driver>]` | nome de driver | não | 1.0 | nova | §5.7 |
-| `[devices.<dispositivo>]` | `Nome` | não | 1.0 | 03 §5 | §5.8 |
-| `[signals."<caminho>"]` | `Caminho` ou `Seletor` | não | 1.0 | 03 §9.1, trilha 04 | §5.9 |
-| `[outputs."<caminho>"]` | `Caminho` ou `Seletor` | cond. | 1.0 (escritas agendadas 1.1) | 03 §6 | §5.10 |
-| `[cycles.<grupo>]` | `Nome` | não | 1.0 | 03 §7 | §5.11 |
-| `[apps.<app>]` | `Nome` | não | 1.0 | 03 §8 | §5.12 |
-| `[instances.<instância>]` | `Nome` | não | 1.0 | 03 §9.2, 14, 17 | §5.13 |
-| `[calc]` | `Nome` | não | 1.0 | 03 §10 | §5.14 |
-| `[alarms.<alarme>]` | `Nome` | não | 1.0 | 03 §10, 02 §11 | §5.15 |
-| `[atomic.<grupo>]` | `Nome` | não | 1.0 | 03 §10, 02 §7.3 | §5.16 |
-| `[telemetry]` | — | não | 1.0 (blocos 1.1) | 03 §11 | §5.17 |
-| `[bridges.<ponte>]` | `Nome` | não | 1.0 | 03 §12 | §5.18 |
-| `[security]` | — | não | 1.0 | 03 §13 | §5.19–§5.20 |
-| `[link]` | — | não | 1.0 (só Joker Micro) | 19 §6, nova | §5.22 |
-| `[models.<modelo>]` | `Nome` | não | **1.1** | 03 §9, 06 | §6.1 |
-| `[streams."<caminho>"]` | `Caminho` | não | **1.1** | 03 §9 | §6.2 |
-| `[pipelines.<pipeline>]` | `Nome` | não | **1.1** | 03 §9, 06 §5 | §6.3 |
-| `[training.<trabalho>]` | `Nome` | não | **1.1** | 06 §9 | §6.4 |
+| `[target.capacity]`, `[target.extern]`, `[target.micro]` | — | no | 1.0 (Joker Micro only) | `ref/08` §2.17, new | §5.22 |
+| `[resources.<class>]` | `rt`, `io`, `ml`, `bg` | no | 1.0 (`accel` 1.1) | 03 §3, 01 §2 | §5.4 |
+| `[clock]` | — | no | 1.0 | 03 §3, 01 §18 | §5.5 |
+| `[buses.<bus>]` | `Name` | no | 1.0 | 03 §4 | §5.6 |
+| `[drivers.<driver>]` | driver name | no | 1.0 | new | §5.7 |
+| `[devices.<device>]` | `Name` | no | 1.0 | 03 §5 | §5.8 |
+| `[signals."<path>"]` | `Path` or `Selector` | no | 1.0 | 03 §9.1, track 04 | §5.9 |
+| `[outputs."<path>"]` | `Path` or `Selector` | cond. | 1.0 (scheduled writes 1.1) | 03 §6 | §5.10 |
+| `[cycles.<group>]` | `Name` | no | 1.0 | 03 §7 | §5.11 |
+| `[apps.<app>]` | `Name` | no | 1.0 | 03 §8 | §5.12 |
+| `[instances.<instance>]` | `Name` | no | 1.0 | 03 §9.2, 14, 17 | §5.13 |
+| `[calc]` | `Name` | no | 1.0 | 03 §10 | §5.14 |
+| `[alarms.<alarm>]` | `Name` | no | 1.0 | 03 §10, 02 §11 | §5.15 |
+| `[atomic.<group>]` | `Name` | no | 1.0 | 03 §10, 02 §7.3 | §5.16 |
+| `[telemetry]` | — | no | 1.0 (blocks 1.1) | 03 §11 | §5.17 |
+| `[bridges.<bridge>]` | `Name` | no | 1.0 | 03 §12 | §5.18 |
+| `[security]` | — | no | 1.0 | 03 §13 | §5.19–§5.20 |
+| `[link]` | — | no | 1.0 (Joker Micro only) | 19 §6, new | §5.22 |
+| `[models.<model>]` | `Name` | no | **1.1** | 03 §9, 06 | §6.1 |
+| `[streams."<path>"]` | `Path` | no | **1.1** | 03 §9 | §6.2 |
+| `[pipelines.<pipeline>]` | `Name` | no | **1.1** | 03 §9, 06 §5 | §6.3 |
+| `[training.<job>]` | `Name` | no | **1.1** | 06 §9 | §6.4 |
 
-Não há `[api]` na raiz: a API local configura-se em `[security.api]` (§5.19), porque cada decisão sobre ela é uma decisão de segurança. Também não há interpolação de variáveis de ambiente (§14, D6).
+There is no `[api]` at the root: the local API is configured in `[security.api]` (§5.19), because every decision about it is a security decision. There is also no interpolation of environment variables (§14, D6).
 
 ---
 
-## 5. Secções (v1.0)
+## 5. Sections (v1.0)
 
-### 5.1 Raiz
+### 5.1 Root
 
-| Chave | Tipo | Obr. | Omissão | Validação | Origem | Fase |
+| Key | Type | Req. | Default | Validation | Origin | Phase |
 |---|---|---|---|---|---|---|
-| `extends` | `Lista<Ficheiro>` (ordenada) | não | `[]` | só ficheiros locais, relativos ao ficheiro que os declara (`J0160`); sem ciclos (`J0161`); ≤ 8 níveis e ≤ 32 ficheiros (`J0162`); é a primeira chave do ficheiro (é da raiz) | 03 §2 | 1.0 |
-| `x_*` | qualquer | não | — | ignorada | `ref/00` §1 | 1.0 |
+| `extends` | `List<File>` (ordered) | no | `[]` | local files only, relative to the file that declares them (`J0160`); no cycles (`J0161`); ≤ 8 levels and ≤ 32 files (`J0162`); it is the first key of the file (it belongs to the root) | 03 §2 | 1.0 |
+| `x_*` | any | no | — | ignored | `ref/00` §1 | 1.0 |
 
-`extends` não se funde: cada ficheiro tem a sua lista, e o manifesto efetivo não a tem (§7).
+`extends` is not merged: each file has its own list, and the effective manifest does not have it (§7).
 
 ### 5.2 `[project]`
 
@@ -334,15 +334,15 @@ joker = "1.0"
 mode  = "prod"
 ```
 
-| Chave | Tipo | Obr. | Omissão | Validação | Origem | Fase |
+| Key | Type | Req. | Default | Validation | Origin | Phase |
 |---|---|---|---|---|---|---|
-| `name` | `NomeDns` | sim | — | rótulo DNS em minúsculas, ≤ 63 (`J0150`); é o identificador do site | 03 §3 | 1.0 |
-| `joker` | string `"MAJOR.MINOR"` | prod | a versão da `jk` que valida | a runtime tem de ser ≥ (`J0147`); formato (`J0147`); limita as chaves aceites (`J0148`) | 03 §3, 09 A8 | 1.0 |
-| `mode` | `"dev"` \| `"prod"` | não | `"prod"` | `J0144` | 03 §3 | 1.0 |
+| `name` | `DnsName` | yes | — | lowercase DNS label, ≤ 63 (`J0150`); it is the identifier of the site | 03 §3 | 1.0 |
+| `joker` | string `"MAJOR.MINOR"` | prod | the version of the `jk` that validates | the runtime must be ≥ (`J0147`); format (`J0147`); limits the accepted keys (`J0148`) | 03 §3, 09 A8 | 1.0 |
+| `mode` | `"dev"` \| `"prod"` | no | `"prod"` | `J0144` | 03 §3 | 1.0 |
 
-**`mode`.** Em `prod`: artefactos sem assinatura são recusados; os códigos de gravidade `error-in-prod` são erros; a descoberta não usa mapas que não estejam no lock; a deriva bloqueia as saídas do dispositivo (`J0401`); `jk apply` exige `--confirm` quando a geração mexe em rede, segurança ou uplinks (ADR 0015); `[project] joker` e `[target] board` são obrigatórios. Em `dev`, os códigos `error-in-prod` aparecem como avisos `W` com o mesmo número (documento 03, §15).
+**`mode`.** In `prod`: unsigned artifacts are rejected; the codes of severity `error-in-prod` are errors; discovery does not use maps that are not in the lock; drift blocks the outputs of the device (`J0401`); `jk apply` requires `--confirm` when the generation touches network, security or uplinks (ADR 0015); `[project] joker` and `[target] board` are required. In `dev`, the `error-in-prod` codes appear as `W` warnings with the same number (document 03, §15).
 
-A omissão é `"prod"` porque esquecer a chave num site real não pode desligar as assinaturas. O `jk init` escreve `mode = "dev"` explicitamente (trilha, parte 1).
+The default is `"prod"` because forgetting the key on a real site must not turn signatures off. `jk init` writes `mode = "dev"` explicitly (track, part 1).
 
 ### 5.3 `[target]`
 
@@ -352,15 +352,15 @@ board  = "revpi-connect-5"
 kernel = "preempt_rt"
 ```
 
-| Chave | Tipo | Obr. | Omissão | Validação | Origem | Fase |
+| Key | Type | Req. | Default | Validation | Origin | Phase |
 |---|---|---|---|---|---|---|
-| `board` | string `"<placa>"` ou `"<placa>@<major>"` (perfil de placa, `ref/03` §2.3); sem major, a maior major conhecida | prod | — (em `dev`, sem placa, as verificações que dependem dela, como `J0380` e `recommended`, ficam por fazer, e o `jk check` di-lo numa nota) | placa conhecida (`J0172`); em falta em `prod`, `J0142`; o lock fixa-a em `[boards."<valor>"]` (`ref/02` §2.1.4) | 03 §3 | 1.0 |
-| `arch` | `"aarch64"` \| `"x86_64"` \| `"armv7"` \| `"riscv64"`, ou um alvo de MCU do catálogo de placas (`ref/03`) | não | a da placa; sem placa, a do anfitrião | tem de coincidir com a da placa (`J0145`) | 03 §3 | 1.0 |
-| `kernel` | `"preempt_rt"` \| `"standard"` | não | `"standard"` | `J0351`, `J0352`; num MCU não se aplica (`J0145`) | 03 §3 | 1.0 |
+| `board` | string `"<board>"` or `"<board>@<major>"` (board profile, `ref/03` §2.3); without a major, the highest known major | prod | — (in `dev`, without a board, the checks that depend on it, such as `J0380` and `recommended`, are not done, and `jk check` says so in a note) | known board (`J0172`); missing in `prod`, `J0142`; the lock pins it in `[boards."<value>"]` (`ref/02` §2.1.4) | 03 §3 | 1.0 |
+| `arch` | `"aarch64"` \| `"x86_64"` \| `"armv7"` \| `"riscv64"`, or an MCU target from the board catalog (`ref/03`) | no | that of the board; without a board, that of the host | must match that of the board (`J0145`) | 03 §3 | 1.0 |
+| `kernel` | `"preempt_rt"` \| `"standard"` | no | `"standard"` | `J0351`, `J0352`; on an MCU it does not apply (`J0145`) | 03 §3 | 1.0 |
 
-A omissão de `kernel` é a conservadora: um grupo < 10 ms sem `kernel = "preempt_rt"` declarado é `J0351`, mesmo que o nó o tenha. O `jk doctor` verifica se o nó cumpre o que o manifesto declara.
+The default of `kernel` is the conservative one: a group < 10 ms without `kernel = "preempt_rt"` declared is `J0351`, even if the node has it. `jk doctor` checks whether the node meets what the manifest declares.
 
-### 5.4 `[resources.<classe>]`
+### 5.4 `[resources.<class>]`
 
 ```toml
 [resources]
@@ -370,15 +370,15 @@ ml = { cpus = [1, 2], memory = "1 GiB" }
 bg = { cpus = [0], memory = "512 MiB" }
 ```
 
-As classes são fixas: `rt`, `io`, `ml` e `bg` (documento 01, §2). Outra chave é `J0140`.
+The classes are fixed: `rt`, `io`, `ml` and `bg` (document 01, §2). Any other key is `J0140`.
 
-| Chave | Tipo | Obr. | Omissão | Validação | Origem | Fase |
+| Key | Type | Req. | Default | Validation | Origin | Phase |
 |---|---|---|---|---|---|---|
-| `cpus` | `Lista<Inteiro>` (conjunto) | não | a recomendação da placa (`recommended`); sem placa, todas as CPUs e sem cpuset | índices < núcleos da placa (`J0144`); `rt` não se sobrepõe às outras e não é vazia quando há grupos (`J0360`); as outras podem sobrepor-se entre si. **Exceção:** numa placa com `cpus = 1`, a sobreposição de `rt` com as outras classes vinda do `recommended` da placa (ou declarada igual a ele) é uma nota do `jk check` (a admissão RT conta o núcleo partilhado, documento 01 §4), não o `J0360` | 03 §3 | 1.0 |
-| `memory` | `Tamanho` | não | sem limite (`rt` nunca tem limite) | `memory.max` do cgroup; em `rt` é `J0145` | 03 §3 | 1.0 |
-| `accel` | `Lista<string>` `"<tipo>:<id>"` (`"npu:hailo0"`, `"gpu:0"`) | não | `[]` | só em `ml` (`J0145`) | 03 §3 | **1.1** |
+| `cpus` | `List<Integer>` (set) | no | the board's recommendation (`recommended`); without a board, all CPUs and no cpuset | indices < CPU cores of the board (`J0144`); `rt` does not overlap the others and is not empty when there are groups (`J0360`); the others may overlap each other. **Exception:** on a board with `cpus = 1`, the overlap of `rt` with the other classes coming from the board's `recommended` (or declared equal to it) is a `jk check` note (real-time admission counts the shared CPU core, document 01 §4), not `J0360` | 03 §3 | 1.0 |
+| `memory` | `Size` | no | no limit (`rt` never has a limit) | `memory.max` of the cgroup; in `rt` it is `J0145` | 03 §3 | 1.0 |
+| `accel` | `List<string>` `"<type>:<id>"` (`"npu:hailo0"`, `"gpu:0"`) | no | `[]` | only in `ml` (`J0145`) | 03 §3 | **1.1** |
 
-A classe `ml` existe na 1.0 sem nada que a use: é uma das reservas do documento 11 ("Preparado para ML").
+The `ml` class exists in 1.0 with nothing that uses it: it is one of the reservations of document 11 ("Prepared for ML").
 
 ### 5.5 `[clock]`
 
@@ -389,16 +389,16 @@ servers      = ["ntp1.example.com", "ntp2.example.com"]
 max_holdover = "24h"
 ```
 
-| Chave | Tipo | Obr. | Omissão | Validação | Origem | Fase |
+| Key | Type | Req. | Default | Validation | Origin | Phase |
 |---|---|---|---|---|---|---|
-| `sync` | `"ntp"` \| `"ptp"` \| `"gnss"` \| `"link"` \| `"extern"` \| `"none"` | não | `"ntp"` (Linux), `"link"` (Joker Micro) | `link` e `extern` só num Joker Micro (`J0145`): `link` é o `TIME` do Joker Link, `extern` é o relógio dado pelo firmware do integrador (`jk_time_set_utc`, `ref/08` §2.6.m); `none` com apps `requires_clock = "synced"` é `J0145` | 03 §3, 19 §6, `ref/08` §2.17 | 1.0 |
-| `servers` | `Lista<string>` (hosts) | não | os do sistema operativo | só com `ntp`; o `jk doctor` verifica que o daemon do SO os usa | 03 §3 | 1.0 |
-| `iface` | string (interface) | cond. | — | obrigatória com `ptp` (`J0142`) | nova | 1.0 |
-| `max_holdover` | `Duração` | não | `"24h"` | ≤ `"30d"` | 03 §3 | 1.0 |
+| `sync` | `"ntp"` \| `"ptp"` \| `"gnss"` \| `"link"` \| `"extern"` \| `"none"` | no | `"ntp"` (Linux), `"link"` (Joker Micro) | `link` and `extern` only on a Joker Micro (`J0145`): `link` is the `TIME` of Joker Link, `extern` is the clock given by the integrator's firmware (`jk_time_set_utc`, `ref/08` §2.6.m); `none` with apps `requires_clock = "synced"` is `J0145` | 03 §3, 19 §6, `ref/08` §2.17 | 1.0 |
+| `servers` | `List<string>` (hosts) | no | those of the operating system | only with `ntp`; `jk doctor` checks that the OS daemon uses them | 03 §3 | 1.0 |
+| `iface` | string (interface) | cond. | — | required with `ptp` (`J0142`) | new | 1.0 |
+| `max_holdover` | `Duration` | no | `"24h"` | ≤ `"30d"` | 03 §3 | 1.0 |
 
-O `jokerd` não implementa NTP nem PTP: lê o estado do daemon do sistema (chrony, systemd-timesyncd, linuxptp) e deriva a qualidade do relógio (documento 01, §18). Com `sync = "none"`, a qualidade é sempre `unsynced`. O tempo do Deck só serve de fonte grosseira, nunca acima de `holdover` (`ref/02` §3.2.4). Num Joker Micro, a sincronização vem da mensagem `TIME` do Joker Link, ou do firmware com `extern`.
+`jokerd` does not implement NTP or PTP: it reads the state of the system daemon (chrony, systemd-timesyncd, linuxptp) and derives the quality of the clock (document 01, §18). With `sync = "none"`, the quality is always `unsynced`. The time of the Deck only serves as a coarse source, never beyond `holdover` (`ref/02` §3.2.4). On a Joker Micro, synchronization comes from the `TIME` message of Joker Link, or from the firmware with `extern`.
 
-### 5.6 `[buses.<barramento>]`
+### 5.6 `[buses.<bus>]`
 
 ```toml
 [buses.rs485]
@@ -415,37 +415,37 @@ iface   = "can0"
 bitrate = 500000
 ```
 
-Um barramento `serial`, `i2c`, `spi` ou `ethernet` **serializa** o acesso: todos os dispositivos que o usam partilham um escalonador de pedidos, com uma só chamada em curso de cada vez (documento 05, §5; `ref/06` §2.14), e o `jk check` estima a ocupação (`J0370`). Um barramento `can` **não** serializa entre dispositivos (as tramas são assíncronas; o `jk check` estima a carga do barramento na mesma), e o `ethercat` é servido por uma instância `bus` do driver, que é dona do ciclo. Protocolos diferentes no mesmo barramento série (Modbus RTU e Joker Link, por exemplo) são `J0171`.
+A `serial`, `i2c`, `spi` or `ethernet` bus **serializes** access: all the devices that use it share a request scheduler, with a single call in flight at a time (document 05, §5; `ref/06` §2.14), and `jk check` estimates the occupancy (`J0370`). A `can` bus does **not** serialize between devices (frames are asynchronous; `jk check` estimates the bus load all the same), and `ethercat` is served by a `bus` instance of the driver, which owns the cycle. Different protocols on the same serial bus (Modbus RTU and Joker Link, for example) are `J0171`.
 
-| `kind` | Chave | Tipo | Obr. | Omissão | Validação | Origem | Fase |
+| `kind` | Key | Type | Req. | Default | Validation | Origin | Phase |
 |---|---|---|---|---|---|---|---|
-| todos | `kind` | `"ethernet"` \| `"serial"` \| `"can"` \| `"ethercat"` \| `"i2c"` \| `"spi"` | sim | — | `J0144` | 03 §4 | 1.0 |
-| `ethernet` | `iface` | string | sim | — | | 03 §4 | 1.0 |
-| `serial` | `port` | `Ficheiro` (dispositivo) em Linux; `Nome` num MCU | sim | — | em Linux, caminho absoluto; **num MCU** (§5.22), o nome de um `[uart.<nome>]` da placa (`ref/03` §2.3.3), como `port = "uart0"`, e nunca um caminho (inexistente `J0828`; um caminho `J0145`) | 03 §4 | 1.0 |
-| `serial` | `baud` | `Inteiro` | sim | — | 300–4 000 000 | 03 §4 | 1.0 |
-| `serial` | `parity` | `"none"` \| `"even"` \| `"odd"` | não | `"none"` | | 03 §4 | 1.0 |
-| `serial` | `stop` | `1` \| `2` | não | `1` | | 03 §4 | 1.0 |
-| `serial` | `data_bits` | `7` \| `8` | não | `8` | | nova | 1.0 |
-| `serial` | `turnaround` | `Duração` | não | 3,5 caracteres ao `baud` declarado (silêncio de trama do Modbus RTU) | | 03 §4 | 1.0 |
-| `serial` | `dtr`, `rts` | `"keep"` \| `"low"` \| `"high"` | não | `"low"` | estado das linhas de controlo **ao abrir a porta** e enquanto está aberta. `"low"` (desativada) nas duas é o que deixa abrir a porta sem acionar o *auto-reset* das placas ESP32 (o circuito de DTR/RTS da ponte USB leva o `EN` e o `GPIO0` a zero, e o ESP32 reinicia ou entra no modo de gravação); `"keep"` não mexe nas linhas (o estado que o controlador da ponte tiver); `"high"` ativa-a (há adaptadores RS-485 que usam o RTS para a direção). Só em Linux; num MCU `J0145`. Com `duplex = "half"` e um adaptador que faça a direção pelo RTS, o driver controla o RTS e `rts` é `J0145` | nova (trilha, parte 4) | 1.0 |
-| `serial` | `duplex` | `"full"` \| `"half"` | não | `"full"` | `half` em RS-485 a dois fios: o Joker Link usa vez de fala (`ref/07` §15); o Modbus RTU ignora-o | `ref/07` §15 | 1.0 |
-| `can` | `iface` | string | sim | — | | 03 §4 | 1.0 |
-| `can` | `bitrate` | `Inteiro` (bit/s) | sim | — | | 03 §4 | 1.0 |
-| `can` | `fd` | `Bool` | não | `false` | | nova | 1.0 |
-| `can` | `data_bitrate` | `Inteiro` | cond. | — | só com `fd = true` (`J0145`) | nova | 1.0 |
-| `ethercat` | `iface` | string | sim | — | | 03 §4 | 1.0 |
-| `ethercat` | `cycle` | `Duração` | sim | — | ≥ 100 µs | 03 §4 | 1.0 |
-| `ethercat` | `dc` | `Bool` (distributed clocks) | não | `false` | | 08 R4 | 1.0 |
-| `i2c` | `dev` | `Ficheiro` | sim | — | | exemplo 00, trilha antiga (parte 4) | 1.0 |
-| `spi` | `dev` | `Ficheiro` (`/dev/spidevB.C`) | sim | — | | nova (corrige 08 R3) | 1.0 |
-| `spi` | `mode` | `0`–`3` | não | `0` | | nova | 1.0 |
-| `spi` | `speed` | `Quantidade<Hz>` | não | `"1 MHz"` | | nova | 1.0 |
+| all | `kind` | `"ethernet"` \| `"serial"` \| `"can"` \| `"ethercat"` \| `"i2c"` \| `"spi"` | yes | — | `J0144` | 03 §4 | 1.0 |
+| `ethernet` | `iface` | string | yes | — | | 03 §4 | 1.0 |
+| `serial` | `port` | `File` (device) on Linux; `Name` on an MCU | yes | — | on Linux, an absolute path; **on an MCU** (§5.22), the name of a `[uart.<name>]` of the board (`ref/03` §2.3.3), such as `port = "uart0"`, and never a path (nonexistent `J0828`; a path `J0145`) | 03 §4 | 1.0 |
+| `serial` | `baud` | `Integer` | yes | — | 300–4 000 000 | 03 §4 | 1.0 |
+| `serial` | `parity` | `"none"` \| `"even"` \| `"odd"` | no | `"none"` | | 03 §4 | 1.0 |
+| `serial` | `stop` | `1` \| `2` | no | `1` | | 03 §4 | 1.0 |
+| `serial` | `data_bits` | `7` \| `8` | no | `8` | | new | 1.0 |
+| `serial` | `turnaround` | `Duration` | no | 3.5 characters at the declared `baud` (Modbus RTU frame silence) | | 03 §4 | 1.0 |
+| `serial` | `dtr`, `rts` | `"keep"` \| `"low"` \| `"high"` | no | `"low"` | state of the control lines **when the port is opened** and while it is open. `"low"` (deasserted) on both is what lets the port be opened without triggering the *auto-reset* of ESP32 boards (the DTR/RTS circuit of the USB bridge pulls `EN` and `GPIO0` to zero, and the ESP32 restarts or enters flashing mode); `"keep"` does not touch the lines (whatever state the bridge controller has); `"high"` asserts it (some RS-485 adapters use RTS for the direction). Only on Linux; on an MCU `J0145`. With `duplex = "half"` and an adapter that does the direction through RTS, the driver controls RTS and `rts` is `J0145` | new (track, part 4) | 1.0 |
+| `serial` | `duplex` | `"full"` \| `"half"` | no | `"full"` | `half` on two-wire RS-485: Joker Link uses turn-taking (`ref/07` §15); Modbus RTU ignores it | `ref/07` §15 | 1.0 |
+| `can` | `iface` | string | yes | — | | 03 §4 | 1.0 |
+| `can` | `bitrate` | `Integer` (bit/s) | yes | — | | 03 §4 | 1.0 |
+| `can` | `fd` | `Bool` | no | `false` | | new | 1.0 |
+| `can` | `data_bitrate` | `Integer` | cond. | — | only with `fd = true` (`J0145`) | new | 1.0 |
+| `ethercat` | `iface` | string | yes | — | | 03 §4 | 1.0 |
+| `ethercat` | `cycle` | `Duration` | yes | — | ≥ 100 µs | 03 §4 | 1.0 |
+| `ethercat` | `dc` | `Bool` (distributed clocks) | no | `false` | | 08 R4 | 1.0 |
+| `i2c` | `dev` | `File` | yes | — | | example 00, old track (part 4) | 1.0 |
+| `spi` | `dev` | `File` (`/dev/spidevB.C`) | yes | — | | new (fixes 08 R3) | 1.0 |
+| `spi` | `mode` | `0`–`3` | no | `0` | | new | 1.0 |
+| `spi` | `speed` | `Quantity<Hz>` | no | `"1 MHz"` | | new | 1.0 |
 
-Um dispositivo TCP sem `bus` usa o encaminhamento do sistema e **não** serializa com os outros (cada um tem a sua ligação). Com `bus` de `kind = "ethernet"`, liga-se por essa interface e partilha o escalonador (útil quando um PLC só aceita uma ligação TCP, ou atrás de um gateway Modbus TCP/RTU).
+A TCP device without `bus` uses the system routing and does **not** serialize with the others (each one has its own connection). With a `bus` of `kind = "ethernet"`, it connects through that interface and shares the scheduler (useful when a PLC only accepts one TCP connection, or behind a Modbus TCP/RTU gateway).
 
 ### 5.7 `[drivers.<driver>]`
 
-Os drivers tier N estão compilados no `jokerd`. Os tier W e X referem-se com um prefixo em `driver` (`"w:dlms-cosem"`, `"x:bacnet-ip"`) e declaram-se aqui. Na 1.0, o tier W é **instável**: só os drivers da árvore passam em `prod`, e um W de fora dela é `J0860` (`ref/06` §4); estável e aberto a terceiros na 1.2.
+Tier N drivers are compiled into `jokerd`. Tier W and X drivers are referred to with a prefix in `driver` (`"w:dlms-cosem"`, `"x:bacnet-ip"`) and are declared here. In 1.0, tier W is **unstable**: only in-tree drivers pass in `prod`, and a W driver from outside the tree is `J0860` (`ref/06` §4); stable and open to third parties in 1.2.
 
 ```toml
 [drivers.bacnet-ip]
@@ -463,30 +463,30 @@ source = "oci://registry.example.com/joker/drivers/dlms-cosem:0.3.1"
 memory = "8 MiB"
 ```
 
-| Chave | Tier | Tipo | Obr. | Omissão | Validação | Origem | Fase |
+| Key | Tier | Type | Req. | Default | Validation | Origin | Phase |
 |---|---|---|---|---|---|---|---|
-| `tier` | w, x | `"w"` \| `"x"` | sim | — | tem de coincidir com o prefixo usado em `driver` (`J0170`) | nova | 1.0 |
-| `source` | w, x | `Ref` `oci://…` ou `Ficheiro` | cond. | — | obrigatória em `w`; em `x`, alternativa a `exec` (`J0145`) | nova | 1.0 |
-| `digest` | w, x | `"sha256:…"` | não | fixado no lock (`ref/02` §2.1.8) | diferente do lock `J0420` | nova | 1.0 |
-| `exec` | x | `Ficheiro` (absoluto) | cond. | — | | nova | 1.0 |
-| `args` | x | `Lista<string>` (ordenada) | não | `[]` | | nova | 1.0 |
-| `launch` | x | `"systemd"` \| `"spawn"` \| `"external"` | não | `"systemd"` onde houver systemd, senão `"spawn"` | `ref/06` §5.2.1; `spawn` com o utilizador do `jokerd` em `prod` `J0865` | `ref/06` | 1.0 |
-| `user` | x | `"dynamic"` ou nome de utilizador | não | `"dynamic"` com `launch = "systemd"` (`DynamicUser`); `"joker-drv-<driver>"` com `launch = "spawn"` | utilizador inexistente `J0864` | 01 §17, `ref/06` §5.2.4 | 1.0 |
-| `groups` | x | `Lista<string>` (conjunto) | não | `[]` | só grupos de acesso a dispositivos (`dialout`, `video`, `gpio`, `i2c`, `spi`); `joker`, `root`, `wheel`, `sudo` `J0865` | `ref/06` | 1.0 |
-| `memory` | w, x | `Tamanho` | não | W: o do descritor (16 MiB); X: `"256 MiB"` | W ≤ `"64 MiB"` (`J0874`) | `ref/06` | 1.0 |
-| `cpu` | x | `Percentagem` de uma CPU | não | `"100 %"` | `"1 %"`–`"400 %"` (`J0144`) | `ref/06` | 1.0 |
-| `cpu_per_call` | w | `Duração` | não | `"50ms"` | ≤ `"1s"` (`J0152`) | `ref/06` | 1.0 |
-| `plan_fuel` | w | `Inteiro` | não | 10⁹ | ≤ 10¹⁰ (`J0144`) | `ref/06` | 1.0 |
-| `isolation` | x | `"process"` \| `"per_device"` | não | `"process"` | `per_device`: um processo por dispositivo | `ref/06` | 1.0 |
-| `net` | x | `Lista<string>` (IP ou CIDR; conjunto) | não | `[]` | destinos além dos endereços dos dispositivos (`J0184` se mal formado) | `ref/06` | 1.0 |
-| `devices` | x | `Lista<Ficheiro>` (nós de `/dev`; conjunto) | não | `[]` | nós extra para o `DeviceAllow` | `ref/06` | 1.0 |
-| `raw_net` | x | `Bool` | não | `false` | `AF_PACKET` (GigE Vision, EtherCAT externo) | `ref/06` | 1.0 |
-| `env` | x | `Tabela<string, string>` | não | `{}` | chaves `JDP_*` reservadas (`J0141`) | `ref/06` | 1.0 |
-| `restart` | w, x | `{ min = Duração, max = Duração }` | não | `{ min = "1s", max = "5m" }` | `min ≤ max` (`J0145`) | `ref/06` §4.5, §5.7 | 1.0 |
+| `tier` | w, x | `"w"` \| `"x"` | yes | — | must match the prefix used in `driver` (`J0170`) | new | 1.0 |
+| `source` | w, x | `Ref` `oci://…` or `File` | cond. | — | required in `w`; in `x`, an alternative to `exec` (`J0145`) | new | 1.0 |
+| `digest` | w, x | `"sha256:…"` | no | pinned in the lock (`ref/02` §2.1.8) | different from the lock `J0420` | new | 1.0 |
+| `exec` | x | `File` (absolute) | cond. | — | | new | 1.0 |
+| `args` | x | `List<string>` (ordered) | no | `[]` | | new | 1.0 |
+| `launch` | x | `"systemd"` \| `"spawn"` \| `"external"` | no | `"systemd"` where there is systemd, otherwise `"spawn"` | `ref/06` §5.2.1; `spawn` with the `jokerd` user in `prod` `J0865` | `ref/06` | 1.0 |
+| `user` | x | `"dynamic"` or a user name | no | `"dynamic"` with `launch = "systemd"` (`DynamicUser`); `"joker-drv-<driver>"` with `launch = "spawn"` | nonexistent user `J0864` | 01 §17, `ref/06` §5.2.4 | 1.0 |
+| `groups` | x | `List<string>` (set) | no | `[]` | only device-access groups (`dialout`, `video`, `gpio`, `i2c`, `spi`); `joker`, `root`, `wheel`, `sudo` `J0865` | `ref/06` | 1.0 |
+| `memory` | w, x | `Size` | no | W: that of the descriptor (16 MiB); X: `"256 MiB"` | W ≤ `"64 MiB"` (`J0874`) | `ref/06` | 1.0 |
+| `cpu` | x | `Percentage` of one CPU | no | `"100 %"` | `"1 %"`–`"400 %"` (`J0144`) | `ref/06` | 1.0 |
+| `cpu_per_call` | w | `Duration` | no | `"50ms"` | ≤ `"1s"` (`J0152`) | `ref/06` | 1.0 |
+| `plan_fuel` | w | `Integer` | no | 10⁹ | ≤ 10¹⁰ (`J0144`) | `ref/06` | 1.0 |
+| `isolation` | x | `"process"` \| `"per_device"` | no | `"process"` | `per_device`: one process per device | `ref/06` | 1.0 |
+| `net` | x | `List<string>` (IP or CIDR; set) | no | `[]` | destinations beyond the addresses of the devices (`J0184` if malformed) | `ref/06` | 1.0 |
+| `devices` | x | `List<File>` (`/dev` nodes; set) | no | `[]` | extra nodes for `DeviceAllow` | `ref/06` | 1.0 |
+| `raw_net` | x | `Bool` | no | `false` | `AF_PACKET` (GigE Vision, external EtherCAT) | `ref/06` | 1.0 |
+| `env` | x | `Table<string, string>` | no | `{}` | `JDP_*` keys reserved (`J0141`) | `ref/06` | 1.0 |
+| `restart` | w, x | `{ min = Duration, max = Duration }` | no | `{ min = "1s", max = "5m" }` | `min ≤ max` (`J0145`) | `ref/06` §4.5, §5.7 | 1.0 |
 
-Uma chave marcada só para um tier numa entrada do outro tier é `J0145`. Um `driver = "x:<nome>"` sem `[drivers.<nome>]` é `J0170`. O nome do driver segue a gramática do §3.8 (hífen permitido). A forma como o `jokerd` arranca, isola e supervisiona o driver, e como cada chave se traduz em propriedades da unidade systemd, estão na `ref/06` §4.5 e §5.2; esta tabela é a lista normativa das chaves.
+A key marked for only one tier in an entry of the other tier is `J0145`. A `driver = "x:<name>"` without `[drivers.<name>]` is `J0170`. The driver name follows the grammar of §3.8 (hyphen allowed). How `jokerd` starts, isolates and supervises the driver, and how each key translates into properties of the systemd unit, are in `ref/06` §4.5 and §5.2; this table is the normative list of the keys.
 
-### 5.8 `[devices.<dispositivo>]`
+### 5.8 `[devices.<device>]`
 
 ```toml
 [devices.meter]
@@ -508,38 +508,38 @@ align    = "meter"
 fallback = { configure = true, keepalive = "5s" }
 ```
 
-**Chaves comuns a todos os drivers:**
+**Keys common to all drivers:**
 
-| Chave | Tipo | Obr. | Omissão | Validação | Origem | Fase |
+| Key | Type | Req. | Default | Validation | Origin | Phase |
 |---|---|---|---|---|---|---|
-| `driver` | string: `<nome>` (tier N), `"w:<nome>"`, `"x:<nome>"`, ou `"extern"` (só num Joker Micro, §5.22) | sim | — | driver do catálogo deste build ou declarado em `[drivers]` (`J0170`); a família do perfil tem de o aceitar (`J0808`, `ref/03` §2.2.2) | 03 §5 | 1.0 |
-| `bus` | `Nome` de `[buses]` | cond. | — | obrigatória nos drivers que precisam de transporte (anexo A); `kind` compatível com o descritor do driver (`J0171`) | 03 §5 | 1.0 |
-| `profile` | string `"<fabricante>/<modelo>@<major>"`, ou a forma curta `"sunspec"` (≡ `"joker/sunspec@1"`, o perfil embutido, `ref/03` §2.2.15) | cond. | — | obrigatória nos drivers com perfil (anexo A); major obrigatória; resolvido em `profiles/`, depois no registo, depois nos embutidos (`ref/03` §3); não encontrado ou sem major `J0172`; o lock fixa-o em `[profiles."<nome>@<major>"]`, sempre na forma completa (`ref/02` §2.1.5) | 03 §5 | 1.0 |
-| `poll` | `Duração` | não | a do perfil (`defaults.poll`); sem ela, `"1s"` | ≥ o `min_interval` das `quirks` do perfil | 03 §5 | 1.0 |
-| `timeout` | `Duração` | não | a do perfil; sem ela, `"1s"` | | 03 §5 | 1.0 |
-| `retries` | `Inteiro` | não | `1` | 0–10 | 03 §5 | 1.0 |
-| `align` | `Nome` de outro dispositivo | não | — | o poll deste dispositivo é agendado logo a seguir ao do indicado (documento 08, R1e); dispositivo inexistente `J0157` | 03 §9.1 | 1.0 |
-| `discover` | `Bool` | não | `false` | só em drivers com a capacidade `discover` (`J0177`); resultado no lock, em `[discovered.<dispositivo>]` (M2, `ref/02` §2.1.11) | 03 §5 | 1.0 |
-| `fallback` | tabela (abaixo) | não | — | | 03 §5 | 1.0 |
-| `signals` | `Tabela<nome do sinal, ajuste>` | não | — | §5.8.1 | 03 §5.1 | 1.0 |
-| `actions` | `Tabela<nome da ação, configuração>` | não | — | §5.8.2 | 03 §5.2 | 1.0 |
+| `driver` | string: `<name>` (tier N), `"w:<name>"`, `"x:<name>"`, or `"extern"` (only on a Joker Micro, §5.22) | yes | — | a driver from the catalog of this build or declared in `[drivers]` (`J0170`); the profile's family must accept it (`J0808`, `ref/03` §2.2.2) | 03 §5 | 1.0 |
+| `bus` | `Name` from `[buses]` | cond. | — | required in the drivers that need a transport (appendix A); `kind` compatible with the driver's descriptor (`J0171`) | 03 §5 | 1.0 |
+| `profile` | string `"<vendor>/<model>@<major>"`, or the short form `"sunspec"` (≡ `"joker/sunspec@1"`, the built-in profile, `ref/03` §2.2.15) | cond. | — | required in the drivers with a profile (appendix A); major required; resolved in `profiles/`, then in the registry, then in the built-in ones (`ref/03` §3); not found or without a major `J0172`; the lock pins it in `[profiles."<name>@<major>"]`, always in the full form (`ref/02` §2.1.5) | 03 §5 | 1.0 |
+| `poll` | `Duration` | no | that of the profile (`defaults.poll`); without it, `"1s"` | ≥ the `min_interval` of the profile's `quirks` | 03 §5 | 1.0 |
+| `timeout` | `Duration` | no | that of the profile; without it, `"1s"` | | 03 §5 | 1.0 |
+| `retries` | `Integer` | no | `1` | 0–10 | 03 §5 | 1.0 |
+| `align` | `Name` of another device | no | — | the poll of this device is scheduled right after that of the one indicated (document 08, R1e); nonexistent device `J0157` | 03 §9.1 | 1.0 |
+| `discover` | `Bool` | no | `false` | only in drivers with the `discover` capability (`J0177`); result in the lock, in `[discovered.<device>]` (M2, `ref/02` §2.1.11) | 03 §5 | 1.0 |
+| `fallback` | table (below) | no | — | | 03 §5 | 1.0 |
+| `signals` | `Table<signal name, adjustment>` | no | — | §5.8.1 | 03 §5.1 | 1.0 |
+| `actions` | `Table<action name, configuration>` | no | — | §5.8.2 | 03 §5.2 | 1.0 |
 
-As chaves específicas de cada driver (`address`, `unit_id`, `chip`, `model`, `params`, `node_id`, `eds`, `config`, `position`…) estão no **anexo A**, que é o esquema `config` do descritor de cada driver do catálogo (`ref/06` §2.3). Para um driver W ou X, valem as do esquema que ele publica. Uma chave que existe noutro driver mas não neste é `J0173`; uma que não existe em nenhum é `J0140`; um valor fora do esquema do driver é `J0852` (`ref/06` §2.3.1). Dois dispositivos com o mesmo endereço no mesmo barramento são `J0178`; também o é um dispositivo que use o mesmo recurso do kernel (LED, linha GPIO, zona térmica) que um IO fixo `board.<nome>` referido pelo manifesto. O IO fixo da placa só existe quando o manifesto refere `board.<nome>`, e o seu `fallback` só conta por esse caminho (`ref/03` §2.3.2).
+The keys specific to each driver (`address`, `unit_id`, `chip`, `model`, `params`, `node_id`, `eds`, `config`, `position`…) are in **appendix A**, which is the `config` schema of the descriptor of each catalog driver (`ref/06` §2.3). For a W or X driver, those of the schema it publishes apply. A key that exists in another driver but not in this one is `J0173`; one that exists in none is `J0140`; a value outside the driver's schema is `J0852` (`ref/06` §2.3.1). Two devices with the same address on the same bus are `J0178`; so is a device that uses the same kernel resource (LED, GPIO line, thermal zone) as a fixed IO `board.<name>` referred to by the manifest. The fixed IO of the board only exists when the manifest refers to `board.<name>`, and its `fallback` only counts through that path (`ref/03` §2.3.2).
 
-**Duas chaves com o mesmo nome e papéis diferentes.** `config` é uma **tabela** validada pelo `[config]` do **perfil** (chaves do chip, `ref/03` §2.2.10), exceto no `revpi`, em que é o ficheiro do PiCtory (anexo A). `model` é o **ficheiro** do modelo de simulação no driver `sim`; a designação comercial de um equipamento é `[profile] model`, no perfil, e nunca aparece no manifesto.
+**Two keys with the same name and different roles.** `config` is a **table** validated by the `[config]` of the **profile** (chip keys, `ref/03` §2.2.10), except in `revpi`, where it is the PiCtory file (appendix A). `model` is the **file** of the simulation model in the `sim` driver; the commercial designation of a piece of equipment is `[profile] model`, in the profile, and never appears in the manifest.
 
 **`fallback` (M1):**
 
-| Chave | Tipo | Obr. | Omissão | Validação | Origem | Fase |
+| Key | Type | Req. | Default | Validation | Origin | Phase |
 |---|---|---|---|---|---|---|
-| `fallback.configure` | `Bool` | não | `false` | com `true`, o núcleo escreve no arranque o fallback declarado no perfil (`ref/06` §2.1, passo 5); perfil sem `[fallback]` é `J0275`; perfil com `configurable = false` é `J0275` | 03 §5 | 1.0 |
-| `fallback.keepalive` | `Duração` | não | 1/5 do timeout de fallback do equipamento (lido do lock) | `timeout do equipamento > keepalive + tempo de reinício do jokerd` (`J0276`, `error-in-prod`) | 03 §9.1, 01 §8 | 1.0 |
+| `fallback.configure` | `Bool` | no | `false` | with `true`, the core writes at startup the fallback declared in the profile (`ref/06` §2.1, step 5); a profile without `[fallback]` is `J0275`; a profile with `configurable = false` is `J0275` | 03 §5 | 1.0 |
+| `fallback.keepalive` | `Duration` | no | 1/5 of the equipment's fallback timeout (read from the lock) | `equipment timeout > keepalive + jokerd restart time` (`J0276`, `error-in-prod`) | 03 §9.1, 01 §8 | 1.0 |
 
-Com ou sem `configure`, o núcleo **lê e verifica** o fallback do equipamento no arranque, e o `jk lock` fixa-o em `[fallback.<dispositivo>]` (`ref/02` §2.1.12), com `configured` = o valor de `fallback.configure`. `configure = false` quer dizer "não escrevo; aceito o que lá está, se for coerente com o `safe`" (`J0205`). Nas placas, o IO fixo tem o seu `fallback` na própria placa (`ref/03` §2.3.2), e conta como fallback do dispositivo para esse sinal.
+With or without `configure`, the core **reads and checks** the equipment fallback at startup, and `jk lock` pins it in `[fallback.<device>]` (`ref/02` §2.1.12), with `configured` = the value of `fallback.configure`. `configure = false` means "I do not write; I accept what is there, if it is consistent with `safe`" (`J0205`). On boards, the fixed IO has its `fallback` in the board itself (`ref/03` §2.3.2), and it counts as the device fallback for that signal.
 
 #### 5.8.1 `[devices.<d>.signals.<s>]`
 
-O perfil define os sinais; o manifesto só os **ajusta**. Nos drivers sem perfil (`gpio`, `mqtt`, `joker-link` gerado pelo `HELLO`, anexo A), o manifesto **declara-os**. Um sinal que não existe no perfil é `J0101`, com sugestão.
+The profile defines the signals; the manifest only **adjusts** them. In the drivers without a profile (`gpio`, `mqtt`, `joker-link` generated by `HELLO`, appendix A), the manifest **declares** them. A signal that does not exist in the profile is `J0101`, with a suggestion.
 
 ```toml
 [devices.meter.signals]
@@ -550,26 +550,26 @@ f       = { limits = ["45 Hz", "55 Hz"], stuck_detect = "1m" }
 a0 = { alias = "tank.level", scale = { from = ["0.6 V", "3.0 V"], to = ["0 m", "3 m"] } }
 ```
 
-| Chave | Tipo | Obr. | Omissão | Validação | Origem | Fase |
+| Key | Type | Req. | Default | Validation | Origin | Phase |
 |---|---|---|---|---|---|---|
-| `alias` | `Caminho` ou `Lista<Caminho>` (conjunto) | não | — | um segundo caminho para o mesmo `SignalId` (16, P1); colisão com outro caminho `J0174`; prefixo reservado `J0141` | 03 §5.1 | 1.0 |
-| `max_age` | `Duração` | não | 3 × `poll` | **maior** do que o `poll` (`J0816`, a regra da `ref/03` §2.2.4) | 03 §5.1 | 1.0 |
-| `limits` | `[Quantidade, Quantidade]` | não | os do perfil | limites físicos: fora deles, `Bad(OutOfRange)`; mínimo < máximo (`J0176`); só numéricos (`J0176`) | 03 §5.1 | 1.0 |
-| `stuck_detect` | `Duração` | não | a do perfil; sem ela, desligado | ≥ 2 × `poll`; não se aplica a `bool` (`J0176`) | 03 §9.1 | 1.0 |
-| `deadband` | `Quantidade` (diferença, na dimensão do sinal) | não | `0` | deadband de aquisição (documento 01, §3.3); não se aplica a `bool` nem `enum` (`J0176`) | trilha 05 | 1.0 |
-| `debounce` | `Duração` | não | `0` | só `bool` (`J0176`); num driver que o suporte (GPIO chardev), é feito pelo kernel, e o estágio de aquisição não o repete. Num `bool` **lido por poll** (Modbus, `sysfs`, um GPIO sem `edges`), o valor publicado só muda depois de leituras consecutivas iguais ao novo valor que cobrem pelo menos o `debounce` (documento 16, §3.4) | trilha 04 | 1.0 |
-| `scale` | `Número` (fator) ou `{ from = [Quantidade, Quantidade], to = [Quantidade, Quantidade] }` | não | `1` | linear, aplicado **depois** da escala do perfil (`ref/03` §3, "Aquisição"); com `from`/`to`, `from` está na unidade do perfil, e a unidade do sinal passa a ser a de `to` (o canónico e os aliases); é a mesma gramática da `scale` de dois pontos dos perfis (`ref/03` §2.2.4) | exemplo 00 | 1.0 |
-| `offset` | `Número` ou `Quantidade` | não | `0` | aplicado depois de `scale`; incompatível com a forma `from`/`to` (`J0145`) | 17 §5.2 | 1.0 |
-| `unit` | unidade | cond. | a do perfil | num sinal de perfil, só para outra unidade da **mesma** dimensão (`J0107`); obrigatória nos sinais numéricos declarados em drivers sem perfil | 08 R3 | 1.0 |
-| `type` | tipo de sinal (`ref/00` §6) | cond. | `bool` no `gpio` | só em drivers sem perfil (`J0176`) | nova | 1.0 |
-| `direction` | `"input"` \| `"output"` \| `"param"` | cond. | `"input"` | só em drivers sem perfil; num sinal de perfil não se muda a direção (`J0176`) | trilha 02 | 1.0 |
-| `poll` | `Duração` ou `"on_demand"` | não | o do dispositivo | `on_demand` só em `param` (documento 05, §3) | 05 §3 | 1.0 |
-| `record` | tabela de gravação (§5.17.1) | não | — | atalho para `[telemetry.record."<caminho canónico>"]`; os dois juntos para o mesmo sinal são `J0195` | 03 §5.1 | 1.0 |
-| `kind` | `"scalar"` \| `"block"` | não | `"scalar"` | `block` é M7 | 08 R3 | **1.1** |
-| `block` | `Inteiro` (amostras por bloco) | cond. | — | obrigatória com `kind = "block"` | 08 R3 | **1.1** |
-| chaves de endereço do driver (`line`, `bias`, `active_low`, `edges`, `timestamp`, `drive`, `topic`, `node`…) | anexo A | | | só em drivers sem perfil; num sinal de perfil, o endereço é do perfil (`J0176`) | trilha 02, 09, 08 R2 | 1.0 |
+| `alias` | `Path` or `List<Path>` (set) | no | — | a second path for the same `SignalId` (16, P1); collision with another path `J0174`; reserved prefix `J0141` | 03 §5.1 | 1.0 |
+| `max_age` | `Duration` | no | 3 × `poll` | **greater** than the `poll` (`J0816`, the rule of `ref/03` §2.2.4) | 03 §5.1 | 1.0 |
+| `limits` | `[Quantity, Quantity]` | no | those of the profile | physical limits: outside them, `Bad(OutOfRange)`; minimum < maximum (`J0176`); numeric only (`J0176`) | 03 §5.1 | 1.0 |
+| `stuck_detect` | `Duration` | no | that of the profile; without it, off | ≥ 2 × `poll`; does not apply to `bool` (`J0176`) | 03 §9.1 | 1.0 |
+| `deadband` | `Quantity` (difference, in the dimension of the signal) | no | `0` | acquisition deadband (document 01, §3.3); does not apply to `bool` or `enum` (`J0176`) | track 05 | 1.0 |
+| `debounce` | `Duration` | no | `0` | only `bool` (`J0176`); in a driver that supports it (GPIO chardev), it is done by the kernel, and the acquisition stage does not repeat it. On a `bool` **read by poll** (Modbus, `sysfs`, a GPIO without `edges`), the published value only changes after consecutive reads equal to the new value that cover at least the `debounce` (document 16, §3.4) | track 04 | 1.0 |
+| `scale` | `Number` (factor) or `{ from = [Quantity, Quantity], to = [Quantity, Quantity] }` | no | `1` | linear, applied **after** the profile's scale (`ref/03` §3, "Acquisition"); with `from`/`to`, `from` is in the profile's unit, and the unit of the signal becomes that of `to` (the canonical one and the aliases); it is the same grammar as the two-point `scale` of profiles (`ref/03` §2.2.4) | example 00 | 1.0 |
+| `offset` | `Number` or `Quantity` | no | `0` | applied after `scale`; incompatible with the `from`/`to` form (`J0145`) | 17 §5.2 | 1.0 |
+| `unit` | unit | cond. | that of the profile | on a profile signal, only for another unit of the **same** dimension (`J0107`); required on the numeric signals declared in drivers without a profile | 08 R3 | 1.0 |
+| `type` | signal type (`ref/00` §6) | cond. | `bool` in `gpio` | only in drivers without a profile (`J0176`) | new | 1.0 |
+| `direction` | `"input"` \| `"output"` \| `"param"` | cond. | `"input"` | only in drivers without a profile; on a profile signal the direction is not changed (`J0176`) | track 02 | 1.0 |
+| `poll` | `Duration` or `"on_demand"` | no | that of the device | `on_demand` only in `param` (document 05, §3) | 05 §3 | 1.0 |
+| `record` | recording table (§5.17.1) | no | — | shorthand for `[telemetry.record."<canonical path>"]`; the two together for the same signal are `J0195` | 03 §5.1 | 1.0 |
+| `kind` | `"scalar"` \| `"block"` | no | `"scalar"` | `block` is M7 | 08 R3 | **1.1** |
+| `block` | `Integer` (samples per block) | cond. | — | required with `kind = "block"` | 08 R3 | **1.1** |
+| driver address keys (`line`, `bias`, `active_low`, `edges`, `timestamp`, `drive`, `topic`, `node`…) | appendix A | | | only in drivers without a profile; on a profile signal, the address belongs to the profile (`J0176`) | track 02, 09, 08 R2 | 1.0 |
 
-**Ajustar um sinal de perfil ou declarar um sinal.** Num sinal que vem de um perfil, o manifesto só aceita `alias`, `max_age`, `limits`, `stuck_detect`, `deadband`, `debounce`, `scale`, `offset`, `unit` (mesma dimensão), `poll` e `record`; é a lista da `ref/03` §2.2.4. As outras chaves (`type`, `direction`, chaves de endereço) só se usam nos drivers sem perfil, e as chaves de endereço são o esquema `address` do descritor do driver (`ref/06` §2.3), com os mesmos nomes da `ref/03` §2.2.5.
+**Adjusting a profile signal or declaring a signal.** On a signal that comes from a profile, the manifest only accepts `alias`, `max_age`, `limits`, `stuck_detect`, `deadband`, `debounce`, `scale`, `offset`, `unit` (same dimension), `poll` and `record`; it is the list of `ref/03` §2.2.4. The other keys (`type`, `direction`, address keys) are only used in the drivers without a profile, and the address keys are the `address` schema of the driver's descriptor (`ref/06` §2.3), with the same names as in `ref/03` §2.2.5.
 
 #### 5.8.2 `[devices.<d>.actions.<a>]`
 
@@ -580,16 +580,16 @@ role    = "operator"
 timeout = "5s"
 ```
 
-A ação tem de existir no perfil (`J0101`). A implementação (passos, registos) é do perfil, e não do manifesto.
+The action must exist in the profile (`J0101`). The implementation (steps, registers) belongs to the profile, not to the manifest.
 
-| Chave | Tipo | Obr. | Omissão | Validação | Origem | Fase |
+| Key | Type | Req. | Default | Validation | Origin | Phase |
 |---|---|---|---|---|---|---|
-| `permit` | `Expr<bool>` | não | `"true"` | permissivo avaliado antes de cada invocação (`Uncertain` conta como falso) | 03 §5.2 | 1.0 |
-| `role` | `"viewer"` \| `"operator"` \| `"admin"` | não | `"operator"` | papel mínimo de quem invoca pela CLI, API, HMI ou ponte; `"viewer"` é aceite com o aviso `J0298` e vale como `"operator"`, porque a API exige pelo menos `operator` para qualquer ação (`ref/09`) | 03 §5.2 | 1.0 |
-| `timeout` | `Duração` | cond. | o do perfil | sem nenhum dos dois, `J0142` | 03 §5.2 | 1.0 |
-| `dedup_window` | `Duração` | não | `"60s"` | janela da chave de idempotência (16, E9) | 16 E9 | 1.0 |
+| `permit` | `Expr<bool>` | no | `"true"` | permissive evaluated before each invocation (`Uncertain` counts as false) | 03 §5.2 | 1.0 |
+| `role` | `"viewer"` \| `"operator"` \| `"admin"` | no | `"operator"` | minimum role of whoever invokes through the CLI, API, HMI or bridge; `"viewer"` is accepted with the warning `J0298` and counts as `"operator"`, because the API requires at least `operator` for any action (`ref/09`) | 03 §5.2 | 1.0 |
+| `timeout` | `Duration` | cond. | that of the profile | without either of the two, `J0142` | 03 §5.2 | 1.0 |
+| `dedup_window` | `Duration` | no | `"60s"` | window of the idempotency key (16, E9) | 16 E9 | 1.0 |
 
-Uma **app** só invoca uma ação através de uma porta `Action` ligada no seu `bind`: a ligação é a autorização, e o `role` não se lhe aplica.
+An **app** only invokes an action through an `Action` port bound in its `bind`: the binding is the authorization, and `role` does not apply to it.
 
 ### 5.9 `[signals."<caminho>"]`
 
