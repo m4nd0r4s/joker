@@ -39,5 +39,6 @@
 | [0037](0037-trace-v1-encoding-details.md) | Encoding details of the `.jktrace` v1 format |
 | [0038](0038-envelope-steps-2-to-6.md) | Details of envelope steps 2–6 |
 | [0039](0039-atomic-groups-in-the-envelope.md) | Atomic groups in the envelope |
+| [0040](0040-alarm-lifecycle-and-unknown.md) | Alarm lifecycle: delays, `Unknown`, suppression and shelving |
 
 Mudar uma decisão = escrever uma ADR nova que a substitui, e atualizar os documentos afetados no mesmo conjunto de commits.

@@ -227,7 +227,7 @@ As subdivisões destas gamas, uma por referência e sem sobreposições, estão 
 |---|---|
 | fórmula exata da admissão RT (a margem de 30%, o que entra no WCET) | ADR na tarefa 17 do documento 13 |
 | `dt()` depois de um `overrun = skip` (período nominal ou real) | **decidido:** ADR 0032 (períodos inteiros desde o tick anterior executado) |
-| transições de alarmes a partir de `Unknown` | ADR na tarefa 12 |
+| transições de alarmes a partir de `Unknown` | **decidido:** ADR 0040 (`Unknown` é uma sobreposição; retoma o estado subjacente) |
 | modelo de orçamento de barramentos além do RTU | ADR na tarefa 17 |
 | esquema JSON do manifesto | **gerado** a partir dos tipos do `joker-manifest` (a `ref/01` é a fonte; o documento 03 é a explicação) |
 
