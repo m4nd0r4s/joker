@@ -1,126 +1,126 @@
-# ref/05 — SDKs de tier 2 (Python, TypeScript) e bibliotecas cliente da API
+# ref/05 — Tier 2 SDKs (Python, TypeScript) and API client libraries
 
-Referência normativa de duas superfícies:
+Normative reference for two surfaces:
 
-- **A. SDKs de apps de tier 2**: a API com que se escrevem apps Joker em **TypeScript** (ComponentizeJS/jco) e em **Python** (componentize-py), compiladas para componentes do mundo `joker:runtime`.
-- **B. Bibliotecas cliente da API HTTP local**: `joker-client` em **Rust** (a que a `jk` usa), **Python** e **TypeScript**.
+- **A. Tier 2 app SDKs**: the API used to write Joker apps in **TypeScript** (ComponentizeJS/jco) and in **Python** (componentize-py), compiled to components of the `joker:runtime` world.
+- **B. Local HTTP API client libraries**: `joker-client` in **Rust** (the one `jk` uses), **Python** and **TypeScript**.
 
-Aplica o `ref/00` sem o repetir. A semântica (árbitro, envelope, qualidade, expressões) é a do documento 16, e este documento só a referencia. As decisões que pertencem a outras referências (o mundo WIT e o `joker:meta` da ref/04, os `operationId` da ref/09, o lock da ref/02) estão tomadas nelas e aqui seguem-se; o §32 diz onde ficou cada uma.
+It applies `ref/00` without repeating it. The semantics (arbiter, envelope, quality, expressions) are those of document 16, and this document only references them. The decisions that belong to other references (the WIT world and the `joker:meta` of ref/04, the `operationId`s of ref/09, the lock of ref/02) are taken there and followed here; §32 says where each one ended up.
 
 ---
 
-## 1. Âmbito e fontes
+## 1. Scope and sources
 
-### 1.1 O que cobre
+### 1.1 What it covers
 
-| Parte | Superfície | Pacotes | Estado |
+| Part | Surface | Packages | Status |
 |---|---|---|---|
-| A | SDK TypeScript de apps | `@joker/sdk`, `@joker/test`, `@joker/classes-<pacote>` | **v1.0** (Fase 3) |
-| A | SDK Python de apps | `joker-sdk`, `joker-testing`, `joker-classes-<pacote>` | **v1.2** (documentos 11 e 21); a API fica fechada aqui |
-| B | cliente Rust | crate `joker-client` | **v1.0** (a `jk` é cliente desta crate) |
-| B | cliente Python | `joker-client` (PyPI), import `joker_client` | **v1.0** |
-| B | cliente TypeScript | `@joker/client` (npm) | **v1.0** (Node ≥ 20); browser na 1.3, com o Studio |
+| A | TypeScript app SDK | `@joker/sdk`, `@joker/test`, `@joker/classes-<package>` | **v1.0** (Phase 3) |
+| A | Python app SDK | `joker-sdk`, `joker-testing`, `joker-classes-<package>` | **v1.2** (documents 11 and 21); the API is closed here |
+| B | Rust client | crate `joker-client` | **v1.0** (`jk` is a client of this crate) |
+| B | Python client | `joker-client` (PyPI), import `joker_client` | **v1.0** |
+| B | TypeScript client | `@joker/client` (npm) | **v1.0** (Node ≥ 20); browser in 1.3, with the Studio |
 
-Não cobre: o mundo WIT e o SDK Rust (ref/04), os endpoints e esquemas da API (ref/09), o ficheiro de configuração do cliente e os contextos (ref/02), o formato `.jkc` e o que o `jkc` gera (documento 17).
+It does not cover: the WIT world and the Rust SDK (ref/04), the API endpoints and schemas (ref/09), the client configuration file and the contexts (ref/02), the `.jkc` format and what `jkc` generates (document 17).
 
-### 1.2 Fontes
+### 1.2 Sources
 
-| Documento | O que se tirou |
+| Document | What was taken |
 |---|---|
-| 04 §1, §2, §3, §4 | princípios de DX, o mundo WIT, a API Rust de referência, os exemplos e os limites de tier 2 |
-| 14 §3, §6, §7 | handles de classe, `Many<T>`, classes locais, implementações ativas, TS e Python |
-| 17 §2, §4, §6, §11 | `method` contra `action`, expansão de métodos, o que o `jkc` gera, leitura de `out` |
-| 02 §4–§8, §11 | qualidade, tempo, semântica de leitura e escrita, ações, alarmes |
-| 16 §1, §3, §9 | árbitro, tabela normativa de acesso à qualidade, registo de códigos |
-| 01 §4, §5, §9, §14, §17, §18 | tick, domínio assíncrono, host Wasm, API local, segurança, tempo |
-| 07 | comandos da `jk` que os clientes têm de permitir reproduzir |
-| 09 ataques 2, 6, 8, 10 | imagem empacotada, duas instâncias, versões, determinismo |
-| 20 §2 | local-first: tudo o que o Deck faz, um cliente faz nó a nó |
-| 03 §8, §13 | `[apps.*]`, papéis e `api.listen` |
-| 11, 21 | o que é v1.0, 1.1 e 1.2 |
+| 04 §1, §2, §3, §4 | DX principles, the WIT world, the reference Rust API, the examples and the tier 2 limits |
+| 14 §3, §6, §7 | class handles, `Many<T>`, local classes, active implementations, TS and Python |
+| 17 §2, §4, §6, §11 | `method` versus `action`, method expansion, what `jkc` generates, reading `out` |
+| 02 §4–§8, §11 | quality, time, read and write semantics, actions, alarms |
+| 16 §1, §3, §9 | arbiter, normative table of quality access, code registry |
+| 01 §4, §5, §9, §14, §17, §18 | tick, async domain, Wasm host, local API, security, time |
+| 07 | `jk` commands that the clients must make it possible to reproduce |
+| 09 attacks 2, 6, 8, 10 | packed image, two instances, versions, determinism |
+| 20 §2 | local-first: everything the Deck does, a client does node by node |
+| 03 §8, §13 | `[apps.*]`, roles and `api.listen` |
+| 11, 21 | what is v1.0, 1.1 and 1.2 |
 
-### 1.3 Ligações
+### 1.3 Connections
 
-| Referência | Relação |
+| Reference | Relation |
 |---|---|
-| ref/00 | nomes, tempo, valores, qualidade, resultados, erros, limites (aplicados sem exceção) |
-| ref/04 | cada função dos SDKs de tier 2 mapeia 1:1 para uma função do mundo `joker:runtime` (§16) e para uma chave do `joker:meta` |
-| ref/09 | as bibliotecas cliente seguem os `operationId` e os esquemas do `spec/openapi/joker-api.yaml` (§23) |
-| ref/02 | as bibliotecas cliente leem a configuração do cliente `jk` (contextos, identidades) com as mesmas regras da `jk` (§22) |
-| 17 | os tipos gerados para as classes (§14) |
+| ref/00 | names, time, values, quality, results, errors, limits (applied without exception) |
+| ref/04 | each function of the tier 2 SDKs maps 1:1 to a function of the `joker:runtime` world (§16) and to a key of `joker:meta` |
+| ref/09 | the client libraries follow the `operationId`s and the schemas of `spec/openapi/joker-api.yaml` (§23) |
+| ref/02 | the client libraries read the `jk` client configuration (contexts, identities) with the same rules as `jk` (§22) |
+| 17 | the types generated for the classes (§14) |
 
 ---
 
-# Parte A — SDKs de apps de tier 2
+# Part A — Tier 2 app SDKs
 
-## 2. Princípios
+## 2. Principles
 
-1. **Paridade semântica com o SDK Rust, não paridade de sintaxe.** Cada conceito do SDK Rust (ref/04) tem exatamente um equivalente em cada linguagem, com a mesma semântica e o mesmo nome traduzido pelas regras do ref/00, §2. A sintaxe é a idiomática de cada linguagem.
-2. **O código é o manifesto da app** (04 §1). As declarações executam-se uma vez, no `jk build`, e produzem a secção `joker:meta`. Não há `app.toml`, e as chaves `[tool.joker]` e `"joker"` só dizem ao `jk build` onde está a app (§18).
-3. **Nomes do utilizador em `snake_case` em todas as linguagens** (ref/00 §2): portas, parâmetros, tarefas, registos, membros de classes e variantes de enums. Só a API do SDK segue o estilo da linguagem (`getOr` em TS, `get_or` em Python).
-4. **A qualidade nunca desaparece em silêncio** (invariante 4). O equivalente do `?` do Rust é uma **exceção** (`QualityError`) que o SDK apanha na fronteira da tarefa. O equivalente do `panic` é qualquer outra exceção (§9.3).
-5. **Ciclo e async são domínios diferentes.** Em TS, são tipos diferentes (`CycleIo<P>` e `TaskIo<P>`), e o compilador apanha os erros. Em Python, são funções diferentes (`def` contra `async def`), o `jk build` apanha os erros comuns por análise estática (`J-E0859`), e o resto dá `J-E0901`/`J-E0802` em runtime.
-6. **Mesmo caminho quente do Rust.** Os SDKs de tier 2 usam a imagem empacotada do `on-cycle` (09 ataque 2), e não uma chamada ao host por leitura. Uma chamada ao host a partir de um motor JS ou Python custa microssegundos, e 250 portas custariam milissegundos.
-7. **O que se testa é o que vai para produção.** O harness corre o `.wasm` real no wasmtime, com relógio virtual (04 §3.7), e é a mesma crate `joker-test` do Rust, embrulhada (§17).
+1. **Semantic parity with the Rust SDK, not syntax parity.** Each concept of the Rust SDK (ref/04) has exactly one equivalent in each language, with the same semantics and the same name translated by the rules of ref/00, §2. The syntax is the idiomatic one of each language.
+2. **The code is the app's manifest** (04 §1). The declarations run once, in `jk build`, and produce the `joker:meta` section. There is no `app.toml`, and the `[tool.joker]` and `"joker"` keys only tell `jk build` where the app is (§18).
+3. **User names in `snake_case` in every language** (ref/00 §2): ports, parameters, tasks, records, class members and enum variants. Only the SDK API follows the style of the language (`getOr` in TS, `get_or` in Python).
+4. **Quality never disappears silently** (invariant 4). The equivalent of Rust's `?` is an **exception** (`QualityError`) that the SDK catches at the task boundary. The equivalent of `panic` is any other exception (§9.3).
+5. **Cycle and async are different domains.** In TS, they are different types (`CycleIo<P>` and `TaskIo<P>`), and the compiler catches the errors. In Python, they are different functions (`def` versus `async def`), `jk build` catches the common errors by static analysis (`J-E0859`), and the rest gives `J-E0901`/`J-E0802` at runtime.
+6. **Same hot path as Rust.** The tier 2 SDKs use the packed image of `on-cycle` (09 attack 2), and not one host call per read. A host call from a JS or Python engine costs microseconds, and 250 ports would cost milliseconds.
+7. **What is tested is what goes to production.** The harness runs the real `.wasm` in wasmtime, with a virtual clock (04 §3.7), and it is the same `joker-test` crate as Rust, wrapped (§17).
 
 ---
 
-## 3. Pacotes, versões e mundo
+## 3. Packages, versions and world
 
-| Pacote | Registo | Import | Conteúdo |
+| Package | Registry | Import | Contents |
 |---|---|---|---|
-| `@joker/sdk` | npm | `@joker/sdk` | declarações, tipos, runtime do guest, ferramenta de build `joker-build` (Node) |
-| `@joker/test` | npm | `@joker/test` | harness com relógio virtual (addon nativo napi-rs sobre `joker-test`), setup para vitest |
-| `@joker/classes-<pacote>` | npm | idem | handles gerados pelo `jkc` (`@joker/classes-std`; `acme/water` → `@joker/classes-acme-water`) |
-| `joker-sdk` | PyPI | `joker_sdk` | declarações, tipos, runtime do guest, `python -m joker_sdk.build` |
-| `joker-testing` | PyPI | `joker_testing` | harness (roda PyO3 sobre `joker-test`), plugin pytest |
-| `joker-classes-<pacote>` | PyPI | `joker_classes.<pacote>` | handles gerados (`joker_classes.std`; `acme/water` → `joker_classes.acme.water`); `joker_classes` é um *namespace package* (PEP 420) |
+| `@joker/sdk` | npm | `@joker/sdk` | declarations, types, guest runtime, build tool `joker-build` (Node) |
+| `@joker/test` | npm | `@joker/test` | harness with virtual clock (napi-rs native addon over `joker-test`), setup for vitest |
+| `@joker/classes-<package>` | npm | same | handles generated by `jkc` (`@joker/classes-std`; `acme/water` → `@joker/classes-acme-water`) |
+| `joker-sdk` | PyPI | `joker_sdk` | declarations, types, guest runtime, `python -m joker_sdk.build` |
+| `joker-testing` | PyPI | `joker_testing` | harness (PyO3 wheel over `joker-test`), pytest plugin |
+| `joker-classes-<package>` | PyPI | `joker_classes.<package>` | generated handles (`joker_classes.std`; `acme/water` → `joker_classes.acme.water`); `joker_classes` is a *namespace package* (PEP 420) |
 
-**Porque `joker_sdk` e não `joker`.** O nome `joker` existe no PyPI e é o *namespace* de import de um conjunto de pacotes de terceiros (`joker-stream`, `joker-studio`, …), e `joker-test` também existe (verificado em 2026-09-24). Um `import joker` na documentação levaria as pessoas a `pip install joker` e a instalar outra coisa: é um risco de cadeia de fornecimento, não só de estética. Em Python, o nome de import é o da distribuição com `_`. No npm, `@joker/sdk`, `@joker/client` e `@joker/test` estavam livres na mesma data; a posse da organização `@joker` tem de ser confirmada antes da primeira publicação (§33, A18).
+**Why `joker_sdk` and not `joker`.** The name `joker` exists on PyPI and is the import *namespace* of a set of third-party packages (`joker-stream`, `joker-studio`, …), and `joker-test` also exists (checked on 2026-09-24). An `import joker` in the documentation would lead people to `pip install joker` and to install something else: it is a supply-chain risk, not only an aesthetic one. In Python, the import name is the distribution's with `_`. On npm, `@joker/sdk`, `@joker/client` and `@joker/test` were free on the same date; ownership of the `@joker` organization must be confirmed before the first publication (§33, A18).
 
-**Versões (ref/00 §1).** Cada SDK tem SemVer próprio e declara o mundo que gera:
+**Versions (ref/00 §1).** Each SDK has its own SemVer and declares the world it generates:
 
-| SDK | Mundo gerado | Regra |
+| SDK | Generated world | Rule |
 |---|---|---|
-| `@joker/sdk` 1.y | `joker:runtime@1.0.0` (ou a minor que a 1.y acrescentar) | uma minor do SDK pode passar a gerar a minor seguinte do mundo; o `joker:meta` diz qual (`wit`) |
-| `joker-sdk` 1.y | idem | idem |
-| 0.x (antes da 1.0) | `joker:runtime@0.x.y` | a política M21 (09 ataque 8): a runtime aceita o mundo atual e a minor anterior |
+| `@joker/sdk` 1.y | `joker:runtime@1.0.0` (or the minor that 1.y adds) | a minor of the SDK may start generating the next minor of the world; `joker:meta` says which (`wit`) |
+| `joker-sdk` 1.y | same | same |
+| 0.x (before 1.0) | `joker:runtime@0.x.y` | the M21 policy (09 attack 8): the runtime accepts the current world and the previous minor |
 
-O `joker:meta` de uma app de tier 2 é o da ref/04 §5 (`spec/cddl/joker-meta.cddl`), com o `sdk-info` (chave 4) preenchido assim: `0` = `lang` (`"typescript"` ou `"python"`), `1` = versão do SDK, `2` = backend (0, `wasm`), `3` = `tier` (2), `4` = `engine` (`"starlingmonkey <versão>"` ou `"cpython <versão>"`), `5` = o pacote (`"@joker/sdk"`, `"joker_sdk"`). O `jk check` usa `tier` e `lang` para aplicar os limites do §19, e a chave 16 (`limits`) leva as sugestões de `memory.max` do §19.
+The `joker:meta` of a tier 2 app is that of ref/04 §5 (`spec/cddl/joker-meta.cddl`), with `sdk-info` (key 4) filled in as follows: `0` = `lang` (`"typescript"` or `"python"`), `1` = SDK version, `2` = backend (0, `wasm`), `3` = `tier` (2), `4` = `engine` (`"starlingmonkey <version>"` or `"cpython <version>"`), `5` = the package (`"@joker/sdk"`, `"joker_sdk"`). `jk check` uses `tier` and `lang` to apply the limits of §19, and key 16 (`limits`) carries the `memory.max` suggestions of §19.
 
 ---
 
-## 4. Tipos base
+## 4. Base types
 
-### 4.1 Tipos de sinal em cada linguagem
+### 4.1 Signal types in each language
 
-| Tipo do sinal (ref/00 §6) | Rust | TypeScript | Python | Notas |
+| Signal type (ref/00 §6) | Rust | TypeScript | Python | Notes |
 |---|---|---|---|---|
 | `bool` | `bool` | `boolean` | `bool` | |
-| `i64` | `i64` | `bigint` | `int` (marcador `i64` na declaração) | TS usa `bigint` sempre: nunca há perda silenciosa acima de 2⁵³ |
-| `u64` | `u64` | `bigint` | `int` (marcador `u64` na declaração) | idem; Python valida a gama ao escrever (`J-E0806`) |
-| `f64` | `f64` | `number` | `float` (ou marcador `f64`) | tipo por omissão das grandezas físicas |
-| `f32` | `f32` | `number` | `float` com marcador `f32` | promovido a `f64` na leitura (02 §2) |
-| `enum<E>` | enum gerado | união de literais com os nomes das variantes (`"run"`) | subclasse de `joker_sdk.Enum` (`IntEnum`) | TS usa o nome, como o JSON (ref/00 §4.1); Python usa o membro (`Mode.run`) |
-| `bits<N>` | tipo gerado | `Bits<Nomes>` (`.word: bigint`, `.has(nome)`) | subclasse de `joker_sdk.Bits` (`IntFlag`) | |
-| `string` | `String` (≤ 64 B) | `string` | `str` | validado em UTF-8 ≤ 64 B ao escrever (`J-E0805`) |
-| `bytes` | `Vec<u8>` (≤ 64 B) | `Uint8Array` | `bytes` | idem |
-| registo (eventos, argumentos, `Internal`) | `#[derive(Record)]` | `record({...})` → `Infer<typeof R>` | classe com `@record` | CBOR determinístico, mapa com **chaves inteiras** = posição do campo a contar de 0 (D2, ref/00 §4.1, ref/04 §4.10); os nomes só no `joker:meta` |
+| `i64` | `i64` | `bigint` | `int` (marker `i64` in the declaration) | TS always uses `bigint`: there is never a silent loss above 2⁵³ |
+| `u64` | `u64` | `bigint` | `int` (marker `u64` in the declaration) | same; Python validates the range on write (`J-E0806`) |
+| `f64` | `f64` | `number` | `float` (or marker `f64`) | default type of physical quantities |
+| `f32` | `f32` | `number` | `float` with marker `f32` | promoted to `f64` on read (02 §2) |
+| `enum<E>` | generated enum | union of literals with the variant names (`"run"`) | subclass of `joker_sdk.Enum` (`IntEnum`) | TS uses the name, like JSON (ref/00 §4.1); Python uses the member (`Mode.run`) |
+| `bits<N>` | generated type | `Bits<Names>` (`.word: bigint`, `.has(name)`) | subclass of `joker_sdk.Bits` (`IntFlag`) | |
+| `string` | `String` (≤ 64 B) | `string` | `str` | validated as UTF-8 ≤ 64 B on write (`J-E0805`) |
+| `bytes` | `Vec<u8>` (≤ 64 B) | `Uint8Array` | `bytes` | same |
+| record (events, arguments, `Internal`) | `#[derive(Record)]` | `record({...})` → `Infer<typeof R>` | class with `@record` | deterministic CBOR, map with **integer keys** = position of the field counting from 0 (D2, ref/00 §4.1, ref/04 §4.10); the names only in `joker:meta` |
 
-Os números nas portas estão **sempre na unidade declarada pela porta**. A runtime converte da unidade do sinal (02 §3). As APIs dos SDKs não aceitam literais de quantidade (`"50 kW"`): isso é das interfaces de texto (ref/00 §4.1), como a biblioteca cliente.
+The numbers on the ports are **always in the unit declared by the port**. The runtime converts from the signal's unit (02 §3). The SDK APIs do not accept quantity literals (`"50 kW"`): those belong to the text interfaces (ref/00 §4.1), such as the client library.
 
-### 4.2 Tempo
+### 4.2 Time
 
-| Conceito | TypeScript | Python |
+| Concept | TypeScript | Python |
 |---|---|---|
-| duração | `Duration` (`.ns: bigint`, `.seconds: number`); as funções aceitam `DurationLike = string \| Duration` | `Duration` (`.ns: int`, `.seconds: float`); as funções aceitam `DurationLike = str \| Duration \| datetime.timedelta` |
-| instante | `Instant` (`.monoNs: bigint`, `.utcNs: bigint`, `.clock: ClockQuality`) | `Instant` (`.mono_ns: int`, `.utc_ns: int`, `.clock: ClockQuality`) |
-| aritmética | `now.minus("24h")`, `now.plus(d)`, `a.since(b)` | `now - "24h"`, `now + d`, `a - b` → `Duration` |
+| duration | `Duration` (`.ns: bigint`, `.seconds: number`); the functions accept `DurationLike = string \| Duration` | `Duration` (`.ns: int`, `.seconds: float`); the functions accept `DurationLike = str \| Duration \| datetime.timedelta` |
+| instant | `Instant` (`.monoNs: bigint`, `.utcNs: bigint`, `.clock: ClockQuality`) | `Instant` (`.mono_ns: int`, `.utc_ns: int`, `.clock: ClockQuality`) |
+| arithmetic | `now.minus("24h")`, `now.plus(d)`, `a.since(b)` | `now - "24h"`, `now + d`, `a - b` → `Duration` |
 | UTC | `now.utcSeconds(): bigint`, `now.toDate(): Date` (ms) | `now.utc_seconds() -> UtcSeconds`, `now.datetime() -> datetime` (µs, `tz=UTC`) |
 
-As strings de duração seguem o ref/00, §3.1. Um literal inválido é um `TypeError` na declaração (erro no `jk build`) ou `J-E0806` em runtime. Os instantes em nanossegundos são `bigint` em TS porque o monotónico em ns passa 2⁵³ ao fim de ~104 dias de funcionamento, e o UTC em ns já o passou há muito.
+Duration strings follow ref/00, §3.1. An invalid literal is a `TypeError` in the declaration (error in `jk build`) or `J-E0806` at runtime. Instants in nanoseconds are `bigint` in TS because the monotonic clock in ns passes 2⁵³ after ~104 days of operation, and UTC in ns passed it long ago.
 
-### 4.3 Qualidade e amostras
+### 4.3 Quality and samples
 
 ```ts
 export type QualityCode = "good" | "uncertain" | "bad";
@@ -128,7 +128,7 @@ export type QualityReason =
   | "none" | "overridden" | "local_override" | "stale" | "not_confirmed" | "substituted"
   | "out_of_distribution" | "sensor_cal" | "clock_unsynced" | "initial" | "frozen" | "partial_write"
   | "comm_failure" | "device_fault" | "out_of_range" | "config_error" | "not_connected" | "nan"
-  | "tripped" | "deadline" | "unknown";            // "unknown": motivo futuro (ref/00 §1, regra 2)
+  | "tripped" | "deadline" | "unknown";            // "unknown": future reason (ref/00 §1, rule 2)
 export interface Quality { readonly code: QualityCode; readonly reason: QualityReason; }
 ```
 
@@ -157,24 +157,24 @@ class Quality:
     def bad(reason: QualityReason | str) -> Quality: ...
 ```
 
-Os valores das enums são as strings do ref/00, §4.3, que são também as do JSON da API: um `Quality` de uma app e um `Quality` lido pelo cliente têm a mesma forma. Um motivo numérico entre 20 e 255 chega ao SDK como `unknown` (motivos futuros e privados, ref/00 §4.3).
+The enum values are the strings of ref/00, §4.3, which are also those of the API JSON: a `Quality` from an app and a `Quality` read by the client have the same shape. A numeric reason between 20 and 255 reaches the SDK as `unknown` (future and private reasons, ref/00 §4.3).
 
-`Sample<T>` / `Sample[T]` (campos em `snake_case` em Python e em `camelCase` em TS, porque são API do SDK):
+`Sample<T>` / `Sample[T]` (fields in `snake_case` in Python and in `camelCase` in TS, because they are SDK API):
 
-| Campo | Tipo | Significado (02 §5) |
+| Field | Type | Meaning (02 §5) |
 |---|---|---|
-| `value` | `T` | o valor entregue pelo host. Existe sempre; com qualidade `bad` não tem significado de processo e só serve para diagnóstico |
+| `value` | `T` | the value delivered by the host. It always exists; with `bad` quality it has no process meaning and only serves for diagnostics |
 | `quality` | `Quality` | |
-| `ts_src` / `tsSrc` | `int \| None` / `bigint \| null` | ns UTC do dispositivo remoto |
-| `ts_hw` / `tsHw` | idem | ns monotónicos da captura em hardware |
-| `ts_acq` / `tsAcq` | `int` / `bigint` | ns monotónicos da receção |
-| `seq` | `int` / `bigint` | contador por sinal |
+| `ts_src` / `tsSrc` | `int \| None` / `bigint \| null` | UTC ns of the remote device |
+| `ts_hw` / `tsHw` | same | monotonic ns of the hardware capture |
+| `ts_acq` / `tsAcq` | `int` / `bigint` | monotonic ns of the reception |
+| `seq` | `int` / `bigint` | per-signal counter |
 
-E os mesmos acessores de uma porta: `get()`, `get_uncertain()` / `getUncertain()`, `get_or(d)` / `getOr(d)`, `is_good()` / `isGood()`.
+And the same accessors as a port: `get()`, `get_uncertain()` / `getUncertain()`, `get_or(d)` / `getOr(d)`, `is_good()` / `isGood()`.
 
-### 4.4 Resultados de escrita
+### 4.4 Write results
 
-A forma é a do JSON do ref/00, §4.4, nas duas linguagens:
+The shape is that of the JSON of ref/00, §4.4, in both languages:
 
 ```ts
 export type RejectReason =
@@ -207,20 +207,20 @@ class RejectReason(StrEnum):
 @dataclass(frozen=True, slots=True)
 class WriteOutcome:
     outcome: Outcome
-    applied: int | float | None = None      # só em clamped_range / clamped_rate
-    level: str | None = None                # só em overridden, "<faixa>:<nível>"
-    reason: RejectReason | None = None      # só em rejected
+    applied: int | float | None = None      # only in clamped_range / clamped_rate
+    level: str | None = None                # only in overridden, "<band>:<level>"
+    reason: RejectReason | None = None      # only in rejected
     @property
     def ok(self) -> bool: ...               # accepted, clamped_*, suppressed
 ```
 
-- `none` (valor 0 do ref/00 §4.4, "sem proposta neste tick") não é um `WriteOutcome`: `last_outcome()` devolve `None`/`null`.
-- O WIT distingue `clamped(clamp)` (ref/00 §4.4); o SDK traduz para `clamped_range` e `clamped_rate`.
-- `overridden(u8)` chega com o nível absoluto; o SDK formata-o como `"<faixa>:<nível>"` com as faixas do documento 01, §6.
-- Uma variante nova do WIT chega como `unknown` (ref/00 §1, regra 2).
-- Em Python, `match` funciona sobre o `dataclass`: `case WriteOutcome(outcome=Outcome.CLAMPED_RATE, applied=v)`.
+- `none` (value 0 of ref/00 §4.4, "no proposal in this tick") is not a `WriteOutcome`: `last_outcome()` returns `None`/`null`.
+- The WIT distinguishes `clamped(clamp)` (ref/00 §4.4); the SDK translates it into `clamped_range` and `clamped_rate`.
+- `overridden(u8)` arrives with the absolute level; the SDK formats it as `"<band>:<level>"` with the bands of document 01, §6.
+- A new WIT variant arrives as `unknown` (ref/00 §1, rule 2).
+- In Python, `match` works on the `dataclass`: `case WriteOutcome(outcome=Outcome.CLAMPED_RATE, applied=v)`.
 
-### 4.5 Erros
+### 4.5 Errors
 
 ```ts
 export declare class JokerError extends Error { readonly code: string; }       // "J-E0800"
@@ -228,19 +228,19 @@ export declare class QualityError extends JokerError { readonly port: string; re
 export declare class DomainError extends JokerError {}          // J-E0901, J-E0802
 export declare class ActionError extends JokerError {
   readonly kind: "denied" | "forbidden" | "timeout" | "device" | "invalid" | "busy" | "not_connected"
-               | "cancelled" | "conflict" | "unsupported" | "failed" | "other";   // ActionErrorKind da ref/04 §4.7.1
+               | "cancelled" | "conflict" | "unsupported" | "failed" | "other";   // ActionErrorKind of ref/04 §4.7.1
   readonly detail: string;
 }
 export declare class CapabilityError extends JokerError { readonly capability: string; }
 export declare class LimitError extends JokerError {}           // J-E0804, J-E0805, J-E0806, J-E0811
-export declare class UnavailableError extends JokerError {}     // J-E0601 (item @unstable, stub em dev) ou J-E0809 (API de um mundo posterior ao gerado)
+export declare class UnavailableError extends JokerError {}     // J-E0601 (@unstable item, stub in dev) or J-E0809 (API of a world later than the generated one)
 export declare class KvError extends JokerError {}
-export declare class HostError extends JokerError {}            // erro do host com código próprio (ref/04)
+export declare class HostError extends JokerError {}            // host error with its own code (ref/04)
 ```
 
-Python tem a mesma hierarquia (`class JokerError(Exception)` com `code: str` e `message: str`, e as subclasses com os mesmos nomes e campos em `snake_case`). O `str()` de um `JokerError` começa sempre pelo código (`"J-E0800: port 'grid_power' is bad(comm_failure)"`), para que `jk explain` funcione a partir de qualquer log (ref/00 §8).
+Python has the same hierarchy (`class JokerError(Exception)` with `code: str` and `message: str`, and the subclasses with the same names and fields in `snake_case`). The `str()` of a `JokerError` always starts with the code (`"J-E0800: port 'grid_power' is bad(comm_failure)"`), so that `jk explain` works from any log (ref/00 §8).
 
-### 4.6 Declarações auxiliares
+### 4.6 Auxiliary declarations
 
 ```python
 class ClockQuality(StrEnum):
@@ -306,7 +306,7 @@ export interface Bits<B extends string> { readonly word: bigint; has(bit: B): bo
 export interface Readable<T> { sample(): Sample<T> }
 export interface Secrets { get(name: string): Promise<SecretString> }
 export interface SecretString { reveal(): string; toString(): string; toJSON(): string }   // "***"
-// opacos: o SDK constrói-os e quem escreve apps não os usa diretamente
+// opaque: the SDK builds them and app writers do not use them directly
 export interface SecretDecl { readonly kind: "secret"; readonly name: string }
 export interface ModelDecl { readonly kind: "model" }                                     // v1.1
 export interface ImplementsDecl<C> { readonly kind: "implements"; readonly __c?: C }
@@ -318,31 +318,31 @@ export interface ActionCx {
   readonly key: string; readonly caller: string; readonly deadline: bigint;     // deadline: mono ns
   progress(fraction: number | null, message?: string): void; isCancelled(): boolean;
 }
-// CycleView<Cy, Req> e TaskView<Ta, Req>: a vista gerada de uma classe, com os membros das capacidades
-// de Req obrigatórios (§14.1); LocalCycle/LocalTask: o mesmo para classes locais
+// CycleView<Cy, Req> and TaskView<Ta, Req>: the generated view of a class, with the members of the capabilities
+// of Req required (§14.1); LocalCycle/LocalTask: the same for local classes
 ```
 
 ---
 
-## 5. Declarar uma app
+## 5. Declaring an app
 
-### 5.1 A escolha em cada linguagem
+### 5.1 The choice in each language
 
 | | Rust (ref/04) | TypeScript | Python |
 |---|---|---|---|
-| app | `#[joker::app(name, version)] struct` | `export default app({ name, version, … })` (**objeto de definição**) | `@app(name=…, version=…)` sobre `class X(App)` |
-| portas | campos com atributos | propriedades de `inputs`, `outputs`, `params`, … | atributos de classe (descritores) |
-| tarefa de ciclo | `#[joker::cycle] fn(io, st)` | `cycles: { nome: cycle(opts, (io, st) => …) }` | `@cycle(…) def nome(self, st)` |
-| tarefa async | `#[joker::task] async fn(io)` | `tasks: { nome: task.every(…, async (io) => …) }` | `@task.every(…) async def nome(self)` |
-| vista de I/O | `CycleIo<A>` / `TaskIo<A>` | `CycleIo<P>` / `TaskIo<P>` (tipos inferidos da definição) | `self`, que é a vista do domínio onde a instância Wasm corre |
+| app | `#[joker::app(name, version)] struct` | `export default app({ name, version, … })` (**definition object**) | `@app(name=…, version=…)` on `class X(App)` |
+| ports | fields with attributes | properties of `inputs`, `outputs`, `params`, … | class attributes (descriptors) |
+| cycle task | `#[joker::cycle] fn(io, st)` | `cycles: { name: cycle(opts, (io, st) => …) }` | `@cycle(…) def name(self, st)` |
+| async task | `#[joker::task] async fn(io)` | `tasks: { name: task.every(…, async (io) => …) }` | `@task.every(…) async def name(self)` |
+| I/O view | `CycleIo<A>` / `TaskIo<A>` | `CycleIo<P>` / `TaskIo<P>` (types inferred from the definition) | `self`, which is the view of the domain where the Wasm instance runs |
 
-**TypeScript: objeto de definição, e não decoradores.** Com um objeto, o TypeScript infere o tipo de `io` a partir da própria declaração: `io.grid_power.get()` é `number`, `io.battery.set("x")` é um erro de tipos, e `io.grid_power.history()` só existe em `TaskIo`. Com decoradores (TC39, TS ≥ 5.0), os campos de uma classe não conseguem mudar o tipo de `this` por domínio, as tarefas de ciclo e async partilhariam `this` (que são duas instâncias diferentes, 09 ataque 6), e a inferência exigiria gerar código. O objeto funciona em JavaScript sem compilador, e é o que o documento 04 já mostrava.
+**TypeScript: definition object, and not decorators.** With an object, TypeScript infers the type of `io` from the declaration itself: `io.grid_power.get()` is `number`, `io.battery.set("x")` is a type error, and `io.grid_power.history()` only exists in `TaskIo`. With decorators (TC39, TS ≥ 5.0), the fields of a class cannot change the type of `this` per domain, the cycle and async tasks would share `this` (when they are two different instances, 09 attack 6), and inference would require generating code. The object works in JavaScript without a compiler, and it is what document 04 already showed.
 
-**Python: classe com decoradores, e `self` como vista.** É a forma idiomática, e os descritores dão tipos a `self.grid_power.get()` no mypy e no pyright sem geração de código. `self` **não** é estado: uma atribuição `self.x = …` levanta `J-E0803`, porque o ciclo e o async correm em instâncias Wasm diferentes e um atributo escrito numa nunca seria visto na outra. O estado do ciclo vai para `st` (§9.1), e o que se partilha vai por `Internal`, `Mailbox` ou eventos (§10). O decorador `@app` fixa a identidade e valida; a classe base `App` dá os tipos da vista (`now()`, `dt()`, `kv`, …). Uma classe com `@app` que não herde de `App` é `J-E0850`.
+**Python: class with decorators, and `self` as the view.** It is the idiomatic form, and the descriptors give types to `self.grid_power.get()` in mypy and pyright without code generation. `self` is **not** state: an assignment `self.x = …` raises `J-E0803`, because the cycle and async run in different Wasm instances and an attribute written in one would never be seen in the other. Cycle state goes into `st` (§9.1), and what is shared goes through `Internal`, `Mailbox` or events (§10). The `@app` decorator fixes the identity and validates; the base class `App` gives the types of the view (`now()`, `dt()`, `kv`, …). A class with `@app` that does not inherit from `App` is `J-E0850`.
 
-### 5.2 Python: API de declaração
+### 5.2 Python: declaration API
 
-Excerto normativo do `joker_sdk/__init__.pyi`. Todos os argumentos depois do tipo são *keyword-only*.
+Normative excerpt of `joker_sdk/__init__.pyi`. All arguments after the type are *keyword-only*.
 
 ```python
 from __future__ import annotations
@@ -355,29 +355,29 @@ H = TypeVar("H", bound="ClassHandle")
 DurationLike = str | "Duration" | timedelta
 Severity = Literal["low", "medium", "high", "critical"]
 
-# ---- marcadores de tipo (ref/00 §6): só descrevem o sinal; os handles usam int e float
-i64 = Annotated[int, "i64"]                    # `int` sozinho = i64
+# ---- type markers (ref/00 §6): they only describe the signal; the handles use int and float
+i64 = Annotated[int, "i64"]                    # `int` alone = i64
 u64 = Annotated[int, "u64"]
-f64 = Annotated[float, "f64"]                  # `float` sozinho = f64
+f64 = Annotated[float, "f64"]                  # `float` alone = f64
 f32 = Annotated[float, "f32"]
 UtcSeconds = Annotated[int, "utc_seconds"]
-class Enum(IntEnum): ...                       # enums do utilizador: class Mode(Enum): off = 0; run = 2
-class Bits(IntFlag): ...                       # palavras de bits: class Status(Bits): alarm_overtemp = 1 << 3
+class Enum(IntEnum): ...                       # user enums: class Mode(Enum): off = 0; run = 2
+class Bits(IntFlag): ...                       # bit words: class Status(Bits): alarm_overtemp = 1 << 3
 
-# ---- registos (eventos, argumentos e resultados de ações, Internal, Mailbox)
-def record(cls: type[T]) -> type[T]: ...       # dataclass congelada; campos com anotações de tipo
+# ---- records (events, action arguments and results, Internal, Mailbox)
+def record(cls: type[T]) -> type[T]: ...       # frozen dataclass; fields with type annotations
 def field(*, unit: str | None = None, default: Any = ..., default_factory: Callable[[], Any] | None = None) -> Any: ...
-def state(cls: type[S] | None = None, *, persist: bool = False) -> Any: ...   # estado de ciclo (§9.1)
+def state(cls: type[S] | None = None, *, persist: bool = False) -> Any: ...   # cycle state (§9.1)
 
-# ---- a app
+# ---- the app
 def app(*, name: str, version: str | None = None, description: str | None = None) -> Callable[[type[T]], type[T]]: ...
 
 class App:
-    # vista comum aos dois domínios
+    # view common to both domains
     def now(self) -> Instant: ...
-    # só ciclo
+    # cycle only
     def dt(self) -> Duration: ...
-    # só async
+    # async only
     def snapshot(self, *ports: "Readable[Any]") -> tuple[Sample[Any], ...]: ...
     def subscribe(self, *ports: "Readable[Any]") -> AsyncIterator[Change]: ...
     async def sleep(self, d: DurationLike) -> None: ...
@@ -385,7 +385,7 @@ class App:
     kv: ClassVar["Kv"]
     secrets: ClassVar["Secrets"]
 
-# ---- portas (camada 1)
+# ---- ports (layer 1)
 class Input(Generic[T]):
     def __init__(self, type: type[T], *, unit: str | None = None, quantity: str | None = None,
                  optional: bool = False, doc: str | None = None) -> None: ...
@@ -429,7 +429,7 @@ class EventOutput(Generic[R]):
     def __init__(self, type: type[R], *, doc: str | None = None) -> None: ...
     def __get__(self, obj: App, owner: type) -> EventOutputHandle[R]: ...
 
-class Action(Generic[A, R]):                     # porta ligada a uma ação de um dispositivo (02 §8)
+class Action(Generic[A, R]):                     # port bound to an action of a device (02 §8)
     def __init__(self, args: type[A] | None = None, result: type[R] | None = None, *,
                  optional: bool = False, doc: str | None = None) -> None: ...
     def __get__(self, obj: App, owner: type) -> ActionHandle[A, R]: ...
@@ -438,28 +438,28 @@ class Alarm:
     def __init__(self, *, severity: Severity, message: str, doc: str | None = None) -> None: ...
     def __get__(self, obj: App, owner: type) -> AlarmHandle: ...
 
-class Published(Generic[T]):                     # sinal app.<app>.<nome> (04 §3.1)
+class Published(Generic[T]):                     # signal app.<app>.<name> (04 §3.1)
     def __init__(self, type: type[T], *, unit: str | None = None, quantity: str | None = None,
                  doc: str | None = None) -> None: ...
     def __get__(self, obj: App, owner: type) -> PublishedHandle[T]: ...
 
-class Counter:                                   # contador monotónico publicado (u64)
+class Counter:                                   # published monotonic counter (u64)
     def __init__(self, *, doc: str | None = None) -> None: ...
     def __get__(self, obj: App, owner: type) -> CounterHandle: ...
 
-class Secret:                                    # segredo declarado (ref/04 §2.5.2; joker:meta chave 13)
+class Secret:                                    # declared secret (ref/04 §2.5.2; joker:meta key 13)
     def __init__(self, name: str, *, optional: bool = False, doc: str | None = None) -> None: ...
 
-class Model:                                     # v1.1 (ML); reservado
+class Model:                                     # v1.1 (ML); reserved
     def __init__(self, *, inputs: str, outputs: str, doc: str | None = None) -> None: ...
 
-# ---- classes (camada 2, §14)
+# ---- classes (layer 2, §14)
 def device(cls: type[H], *, requires: Sequence[str] = (), optional: bool = False) -> H: ...
 def devices(cls: type[H], min: int, max: int, *, requires: Sequence[str] = ()) -> Many[H]: ...
 def implements(cls: type[ClassHandle], *, capabilities: Sequence[str] = ()) -> Callable[[type[T]], type[T]]: ...
 def local_class(cls: type[T]) -> type[T]: ...
 
-# ---- tarefas (§9)
+# ---- tasks (§9)
 def cycle(period: str, *, wcet: str | None = None, state: type[S] | None = None,
           init: Callable[[Any], S] | None = None, optional: bool = False) -> Callable[[Callable[..., None]], Any]: ...
 
@@ -475,14 +475,14 @@ class task:
     @staticmethod
     def startup() -> Callable[[Callable[..., Awaitable[None]]], Any]: ...
 
-def on_action(name: str) -> Callable[[Callable[..., Awaitable[Any]]], Any]: ...     # só com @implements
+def on_action(name: str) -> Callable[[Callable[..., Awaitable[Any]]], Any]: ...     # only with @implements
 def on_params(fn: Callable[[Any, Mapping[str, Any]], None]) -> Any: ...
 def migrate(fn: Callable[[Any, Any, str], Any]) -> Any: ...                         # (self, previous, from_version) -> state
 ```
 
-### 5.3 TypeScript: API de declaração
+### 5.3 TypeScript: declaration API
 
-Excerto normativo do `@joker/sdk/index.d.ts`. `P` é o tipo das portas inferido da definição.
+Normative excerpt of `@joker/sdk/index.d.ts`. `P` is the type of the ports inferred from the definition.
 
 ```ts
 export type DurationLiteral = `${number}${"ns" | "us" | "µs" | "ms" | "s" | "m" | "min" | "h" | "d"}`
@@ -490,7 +490,7 @@ export type DurationLiteral = `${number}${"ns" | "us" | "µs" | "ms" | "s" | "m"
 export type DurationLike = DurationLiteral | Duration;
 export type Severity = "low" | "medium" | "high" | "critical";
 
-// ---- esquemas de valores
+// ---- value schemas
 export interface PortOpts { unit?: string; quantity?: string; optional?: boolean; doc?: string }
 export interface ManyOpts extends Omit<PortOpts, "optional"> { min?: number; max?: number }
 export interface ParamOpts<T> extends Omit<PortOpts, "optional"> { default?: T; range?: readonly [number, number] }
@@ -512,7 +512,7 @@ export interface RecordSchema<R> { readonly fields: { [K in keyof R]: FieldSchem
 export declare function record<F extends Record<string, FieldSchema<any>>>(fields: F): RecordSchema<{ [K in keyof F]: F[K] extends FieldSchema<infer T> ? T : never }>;
 export type Infer<S> = S extends RecordSchema<infer R> ? R : never;
 
-// ---- declarações de portas (camada 1)
+// ---- port declarations (layer 1)
 export interface InputDecl<T> { readonly kind: "input"; readonly __t?: T }
 export interface InputManyDecl<T> { readonly kind: "input_many"; readonly __t?: T }
 export interface OutputDecl<T> { readonly kind: "output"; readonly __t?: T }
@@ -559,9 +559,9 @@ export declare function alarm(o: { severity: Severity; message: string; doc?: st
 export declare function published<T>(d: OutputDecl<T>): PublishedDecl<T>;        // published(output.f64("kW"))
 export declare function counter(o?: { doc?: string }): CounterDecl;
 export declare function secret(name: string, o?: { optional?: boolean }): SecretDecl;   // ref/04 §2.5.2
-export declare function model(o: { inputs: string; outputs: string }): ModelDecl;  // v1.1, reservado
+export declare function model(o: { inputs: string; outputs: string }): ModelDecl;  // v1.1, reserved
 
-// ---- classes (camada 2, §14)
+// ---- classes (layer 2, §14)
 export interface ClassSchema<Cy, Ta, Caps extends string> { readonly class: string; readonly __cy?: Cy; readonly __ta?: Ta; readonly __caps?: Caps }
 export interface DeviceDecl<C, Req extends string> { readonly kind: "device"; readonly __c?: C; readonly __r?: Req }
 export interface ManyDecl<C, Req extends string> { readonly kind: "many"; readonly __c?: C; readonly __r?: Req }
@@ -570,7 +570,7 @@ export declare function many<Cy, Ta, Caps extends string, Req extends Caps = nev
 export declare function implementsClass<Cy, Ta, Caps extends string>(c: ClassSchema<Cy, Ta, Caps>, o?: { capabilities?: readonly Caps[] }): ImplementsDecl<ClassSchema<Cy, Ta, Caps>>;
 export declare function localClass<L extends LocalClassDef>(def: L): ClassSchema<LocalCycle<L>, LocalTask<L>, never>;
 
-// ---- tarefas (§9)
+// ---- tasks (§9)
 export interface CycleOpts<P, S> { period: DurationLiteral; wcet?: DurationLiteral; state?: (io: CycleIo<P>) => S; persist?: boolean; optional?: boolean }
 export declare function cycle<P, S = void>(opts: CycleOpts<P, S> | DurationLiteral, body: (io: CycleIo<P>, st: S) => void): CycleDecl<P, S>;
 export declare const task: {
@@ -582,7 +582,7 @@ export declare const task: {
   startup<P>(body: (io: TaskIo<P>) => Promise<void>): TaskDecl<P>;
 };
 
-// ---- a app
+// ---- the app
 export interface AppDef<I, O, Pa, In, Mb, Al, Pu, Dv, Ac, Cy, Ta> {
   name: string; version?: string; description?: string;
   inputs?: I; outputs?: O; params?: Pa; internals?: In; mailboxes?: Mb; alarms?: Al;
@@ -590,88 +590,88 @@ export interface AppDef<I, O, Pa, In, Mb, Al, Pu, Dv, Ac, Cy, Ta> {
   models?: Readonly<Record<string, ModelDecl>>;                             // v1.1
   implements?: ImplementsDecl<any>;
   cycles?: Cy; tasks?: Ta;
-  onAction?: Record<string, (io: TaskIo<any>, args: any, cx: ActionCx) => Promise<any>>;   // só com implements
+  onAction?: Record<string, (io: TaskIo<any>, args: any, cx: ActionCx) => Promise<any>>;   // only with implements
   onParams?: (params: Readonly<Record<string, unknown>>) => void;
   migrate?: (previous: unknown, fromVersion: string) => unknown;
 }
 export declare function app<I, O, Pa, In, Mb, Al, Pu, Dv, Ac, Cy, Ta>(def: AppDef<I, O, Pa, In, Mb, Al, Pu, Dv, Ac, Cy, Ta>): AppComponent;
 ```
 
-As tarefas recebem `io` com o tipo `CycleIo<P>` ou `TaskIo<P>`, em que `P` junta todas as portas da definição (as chaves de `inputs`, `outputs`, `params`, `devices`, … vivem num só espaço de nomes, e uma chave repetida em dois grupos é `J-E0857`). Em TS as tarefas escrevem-se dentro de `app({...})` para que a inferência funcione; uma tarefa definida fora tem de anotar `io` com `CycleIo<typeof ports>`, e o SDK exporta `defineCycle(ports, …)` e `defineTask(ports, …)` para isso.
+The tasks receive `io` with the type `CycleIo<P>` or `TaskIo<P>`, where `P` gathers all the ports of the definition (the keys of `inputs`, `outputs`, `params`, `devices`, … live in a single namespace, and a key repeated in two groups is `J-E0857`). In TS the tasks are written inside `app({...})` so that inference works; a task defined outside must annotate `io` with `CycleIo<typeof ports>`, and the SDK exports `defineCycle(ports, …)` and `defineTask(ports, …)` for that.
 
-### 5.4 Tabela de declarações
+### 5.4 Table of declarations
 
-A última coluna diz onde a declaração fica no `joker:meta` (ref/04 §5; as chaves são inteiras, e `port.1` é o `port-kind`).
+The last column says where the declaration goes in `joker:meta` (ref/04 §5; the keys are integers, and `port.1` is the `port-kind`).
 
-| Conceito | Rust (ref/04) | TypeScript | Python | `joker:meta` |
+| Concept | Rust (ref/04) | TypeScript | Python | `joker:meta` |
 |---|---|---|---|---|
-| app | `#[joker::app(name, version)]` | `app({ name, version })` | `@app(name=, version=)` | chaves 1 e 2 |
-| entrada | `#[input(unit, quantity)] x: Input<f64>` | `inputs: { x: input.f64({ unit, quantity }) }` | `x = Input(float, unit=, quantity=)` | porta, `1: 0` (input) |
-| entrada múltipla | `#[input(many)] InputMany<T>` | `inputs: { x: inputMany.f64(...) }` | `InputMany(float, ...)` | porta com `6` (`many`) |
-| saída | `#[output] Output<T>` | `outputs: { x: output.f64(...) }` | `Output(float, ...)` | porta, `1: 1` (output) |
-| saída múltipla | `#[output(many)] OutputMany<T>` | `outputMany.f64(...)` | `OutputMany(float, ...)` | idem, com `6` |
-| parâmetro | `#[param(unit, range, default)] Param<T>` | `params: { x: param.f64({ unit, range, default }) }` | `Param(float, unit=, range=, default=)` | porta, `1: 2`, com `7` (`range`) e `8` (`default`) |
-| sinal interno | `#[internal] Internal<R>` | `internals: { x: internal(R) }` | `Internal(R)` | porta, `1: 3`, com `9` (esquema) e `11` (domínio) |
-| caixa de correio | `#[mailbox(to)] Mailbox<R, N>` | `mailboxes: { x: mailbox(R, { capacity, to }) }` | `Mailbox(R, capacity=, to=)` | porta, `1: 9`, com `12` |
-| evento de entrada | `#[input(event)] EventInput<R>` | `inputs: { x: input.event(R) }` | `EventInput(R)` | porta, `1: 6` |
-| evento de saída | `#[output(event)] EventOutput<R>` | `outputs: { x: output.event(R) }` | `EventOutput(R)` | porta, `1: 7` |
-| ação (usar) | `#[action] Action<A, R>` | `actions: { x: action({ args, result }) }` | `Action(A, R)` | porta, `1: 8`, com `13` |
-| alarme | `#[alarm(severity, message)] Alarm` | `alarms: { x: alarm({ severity, message }) }` | `Alarm(severity=, message=)` | porta, `1: 10`, com `14`; id `app.<app>.<nome>` |
-| publicado | `#[publish] Published<T>` / `Counter` | `published: { x: published(output.f64(...)), n: counter() }` | `Published(float, ...)` / `Counter()` | porta, `1: 4` / `1: 5` |
-| segredo | `#[joker::app(secrets = [...], optional_secrets = [...])]` | `secrets: [secret("mqtt_password")]` | `Secret("mqtt_password")` | chave 13 |
-| modelo (1.1) | `#[model] Model` | `model({...})` | `Model(...)` | porta, `1: 11`; chave 10 com `"ml"` |
-| equipamento | `#[device(requires)] Pump` | `devices: { p: device(Pump, { requires }) }` | `p = device(Pump, requires=)` | chave 8 |
-| vários equipamentos | `Many<Pump, 1, 8>` | `many(Pump, { min: 1, max: 8 })` | `devices(Pump, 1, 8)` | chave 8, com `4` (`many`) |
-| implementar classe | `#[joker::implements(Pump, capabilities)]` | `implements: implementsClass(Pump, { capabilities })` | `@implements(Pump, capabilities=)` | chave 9, com o hash do contrato |
-| classe local | `#[derive(joker::Class)]` | `localClass({...})` | `@local_class` | chave 8, `class-ref = "local:<Nome>"` |
-| tarefa de ciclo | `#[joker::cycle(period, wcet, init)]` | `cycle({ period, wcet, state }, fn)` | `@cycle(period, wcet=, state=, init=)` | chave 7, `1: 0` |
-| tarefa async | `#[joker::task(every/on/on_event/at/startup)]` | `task.every/on/onEvent/at/startup` | `@task.every/on/on_event/at/startup` | chave 7, `1: 1`, com `6` (`trigger`) |
-| estado persistente | `#[joker::state(persist)]` | `cycle({ persist: true })` | `@state(persist=True)` | chave 14 |
-| ações de uma instância virtual | `#[joker::on_action(<ação>)]` | `onAction: { reset: … }` | `@on_action("reset")` | chave 7, `1: 2`, com `7` |
+| app | `#[joker::app(name, version)]` | `app({ name, version })` | `@app(name=, version=)` | keys 1 and 2 |
+| input | `#[input(unit, quantity)] x: Input<f64>` | `inputs: { x: input.f64({ unit, quantity }) }` | `x = Input(float, unit=, quantity=)` | port, `1: 0` (input) |
+| multiple input | `#[input(many)] InputMany<T>` | `inputs: { x: inputMany.f64(...) }` | `InputMany(float, ...)` | port with `6` (`many`) |
+| output | `#[output] Output<T>` | `outputs: { x: output.f64(...) }` | `Output(float, ...)` | port, `1: 1` (output) |
+| multiple output | `#[output(many)] OutputMany<T>` | `outputMany.f64(...)` | `OutputMany(float, ...)` | same, with `6` |
+| parameter | `#[param(unit, range, default)] Param<T>` | `params: { x: param.f64({ unit, range, default }) }` | `Param(float, unit=, range=, default=)` | port, `1: 2`, with `7` (`range`) and `8` (`default`) |
+| internal signal | `#[internal] Internal<R>` | `internals: { x: internal(R) }` | `Internal(R)` | port, `1: 3`, with `9` (schema) and `11` (domain) |
+| mailbox | `#[mailbox(to)] Mailbox<R, N>` | `mailboxes: { x: mailbox(R, { capacity, to }) }` | `Mailbox(R, capacity=, to=)` | port, `1: 9`, with `12` |
+| input event | `#[input(event)] EventInput<R>` | `inputs: { x: input.event(R) }` | `EventInput(R)` | port, `1: 6` |
+| output event | `#[output(event)] EventOutput<R>` | `outputs: { x: output.event(R) }` | `EventOutput(R)` | port, `1: 7` |
+| action (use) | `#[action] Action<A, R>` | `actions: { x: action({ args, result }) }` | `Action(A, R)` | port, `1: 8`, with `13` |
+| alarm | `#[alarm(severity, message)] Alarm` | `alarms: { x: alarm({ severity, message }) }` | `Alarm(severity=, message=)` | port, `1: 10`, with `14`; id `app.<app>.<name>` |
+| published | `#[publish] Published<T>` / `Counter` | `published: { x: published(output.f64(...)), n: counter() }` | `Published(float, ...)` / `Counter()` | port, `1: 4` / `1: 5` |
+| secret | `#[joker::app(secrets = [...], optional_secrets = [...])]` | `secrets: [secret("mqtt_password")]` | `Secret("mqtt_password")` | key 13 |
+| model (1.1) | `#[model] Model` | `model({...})` | `Model(...)` | port, `1: 11`; key 10 with `"ml"` |
+| equipment | `#[device(requires)] Pump` | `devices: { p: device(Pump, { requires }) }` | `p = device(Pump, requires=)` | key 8 |
+| several pieces of equipment | `Many<Pump, 1, 8>` | `many(Pump, { min: 1, max: 8 })` | `devices(Pump, 1, 8)` | key 8, with `4` (`many`) |
+| implement a class | `#[joker::implements(Pump, capabilities)]` | `implements: implementsClass(Pump, { capabilities })` | `@implements(Pump, capabilities=)` | key 9, with the contract hash |
+| local class | `#[derive(joker::Class)]` | `localClass({...})` | `@local_class` | key 8, `class-ref = "local:<Name>"` |
+| cycle task | `#[joker::cycle(period, wcet, init)]` | `cycle({ period, wcet, state }, fn)` | `@cycle(period, wcet=, state=, init=)` | key 7, `1: 0` |
+| async task | `#[joker::task(every/on/on_event/at/startup)]` | `task.every/on/onEvent/at/startup` | `@task.every/on/on_event/at/startup` | key 7, `1: 1`, with `6` (`trigger`) |
+| persistent state | `#[joker::state(persist)]` | `cycle({ persist: true })` | `@state(persist=True)` | key 14 |
+| actions of a virtual instance | `#[joker::on_action(<action>)]` | `onAction: { reset: … }` | `@on_action("reset")` | key 7, `1: 2`, with `7` |
 
-### 5.5 Validação das declarações
+### 5.5 Validation of the declarations
 
-Feita pelo SDK durante a execução da declaração no `jk build` (§18.4). Todos os erros aparecem antes de haver `.wasm`.
+Done by the SDK while the declaration runs in `jk build` (§18.4). All errors appear before there is a `.wasm`.
 
-| Regra | Código |
+| Rule | Code |
 |---|---|
-| nome da app, porta, tarefa, parâmetro, campo de registo, variante: gramática `[a-z][a-z0-9_]*`, ≤ 32 caracteres (02 §9, 16 P5) | `J-E0857` |
-| nome reservado para porta ou tarefa: `now`, `dt`, `kv`, `secrets`, `snapshot`, `subscribe`, `sleep`, `sleep_until`, `log`, `cmd`, `state`, `http`, `random`, `meta` | `J-E0857` |
-| dois elementos com o mesmo nome na app (portas, tarefas, equipamentos, alarmes partilham um espaço) | `J-E0857` |
-| unidade fora do catálogo (16 §5) | `J0109` |
-| grandeza (`quantity`) sem unidade da dimensão certa | `J0108` |
-| `range` com `min > max`, `default` fora da `range` | `J-E0851` |
-| `Internal` com um campo não escalar, ou tamanho CBOR máximo > 64 B (ref/00 §10) | `J-E0804` |
-| registo de evento ou argumento com `string` sem limite > 1 KiB ou lista > 64 (ref/00 §10) | `J-E0805` |
-| `@cycle` sobre `async def`, `@task.*` sobre `def`, assinatura errada, `task.on` sobre uma porta que não é entrada | `J-E0813` |
-| `version` do código diferente da do `pyproject.toml`/`package.json` | `J-E0852` |
-| `@app` sem herdar de `App`; zero ou mais do que uma app no ponto de entrada | `J-E0850` |
-| `@on_action` sem `@implements`, ou para uma ação que a classe não tem | `J-E0813` |
-| chamada ao host durante a declaração (ler o relógio, `kv`, uma porta) | `J-E0810` |
+| name of the app, port, task, parameter, record field, variant: grammar `[a-z][a-z0-9_]*`, ≤ 32 characters (02 §9, 16 P5) | `J-E0857` |
+| reserved name for a port or task: `now`, `dt`, `kv`, `secrets`, `snapshot`, `subscribe`, `sleep`, `sleep_until`, `log`, `cmd`, `state`, `http`, `random`, `meta` | `J-E0857` |
+| two elements with the same name in the app (ports, tasks, equipment, alarms share one space) | `J-E0857` |
+| unit outside the catalog (16 §5) | `J0109` |
+| quantity (`quantity`) without a unit of the right dimension | `J0108` |
+| `range` with `min > max`, `default` outside the `range` | `J-E0851` |
+| `Internal` with a non-scalar field, or maximum CBOR size > 64 B (ref/00 §10) | `J-E0804` |
+| event or argument record with an unbounded `string` > 1 KiB or a list > 64 (ref/00 §10) | `J-E0805` |
+| `@cycle` on `async def`, `@task.*` on `def`, wrong signature, `task.on` on a port that is not an input | `J-E0813` |
+| `version` in the code different from that of `pyproject.toml`/`package.json` | `J-E0852` |
+| `@app` without inheriting from `App`; zero or more than one app in the entry point | `J-E0850` |
+| `@on_action` without `@implements`, or for an action the class does not have | `J-E0813` |
+| host call during the declaration (reading the clock, `kv`, a port) | `J-E0810` |
 
 ---
 
-## 6. Portas: leitura e qualidade
+## 6. Ports: reading and quality
 
-### 6.1 Acessores
+### 6.1 Accessors
 
-Os acessores seguem a tabela normativa do documento 16, §3.1, sem exceções:
+The accessors follow the normative table of document 16, §3.1, without exceptions:
 
-| Python | TypeScript | `good` | `uncertain` | `bad` | Domínios |
+| Python | TypeScript | `good` | `uncertain` | `bad` | Domains |
 |---|---|---|---|---|---|
-| `get()` | `get()` | valor | `QualityError` | `QualityError` | ciclo, async |
-| `get_uncertain()` | `getUncertain()` | valor | valor | `QualityError` | ciclo, async |
-| `get_or(d)` | `getOr(d)` | valor | `d` | `d` | ciclo, async |
-| `sample()` | `sample()` | amostra | amostra | amostra | ciclo, async |
-| — | `tryGet()` | `{ ok: true, value }` | `{ ok: false, error }` | `{ ok: false, error }` | ciclo, async |
+| `get()` | `get()` | value | `QualityError` | `QualityError` | cycle, async |
+| `get_uncertain()` | `getUncertain()` | value | value | `QualityError` | cycle, async |
+| `get_or(d)` | `getOr(d)` | value | `d` | `d` | cycle, async |
+| `sample()` | `sample()` | sample | sample | sample | cycle, async |
+| — | `tryGet()` | `{ ok: true, value }` | `{ ok: false, error }` | `{ ok: false, error }` | cycle, async |
 
-- **No ciclo**, todos leem do latch do tick: duas leituras no mesmo tick dão a mesma amostra (02 §6.1). O SDK descodifica a imagem empacotada que o `on-cycle` recebe e não chama o host.
-- **Em async**, leem o slot atual (`async-io.read`), e duas leituras seguidas podem diferir (02 §6.4). Para ler vários sinais de forma coerente, `self.snapshot(a, b)` / `io.snapshot([io.a, io.b])`.
-- `get_or` regista no traço que a leitura foi substituída (16 §3.1). No ciclo, o SDK acrescenta ao buffer de propostas um registo `NOTE` (tipo 6, ref/04 §3.3); em async, chama `async-io.note-substituted`.
-- `tryGet()` só existe em TS: é o `Result` do Rust para quem prefere não usar exceções. Em Python não há equivalente, porque a exceção é a forma idiomática e um segundo caminho só confundiria.
-- `QualityError` traz a porta e a amostra completa; `str(e)` é `"J-E0800: port 'soc' is bad(comm_failure)"`.
+- **In the cycle**, all of them read from the tick's latch: two reads in the same tick give the same sample (02 §6.1). The SDK decodes the packed image that `on-cycle` receives and does not call the host.
+- **In async**, they read the current slot (`async-io.read`), and two consecutive reads may differ (02 §6.4). To read several signals coherently, `self.snapshot(a, b)` / `io.snapshot([io.a, io.b])`.
+- `get_or` records in the trace that the read was substituted (16 §3.1). In the cycle, the SDK appends a `NOTE` record (type 6, ref/04 §3.3) to the proposal buffer; in async, it calls `async-io.note-substituted`.
+- `tryGet()` only exists in TS: it is Rust's `Result` for those who prefer not to use exceptions. In Python there is no equivalent, because the exception is the idiomatic form and a second path would only confuse.
+- `QualityError` carries the port and the complete sample; `str(e)` is `"J-E0800: port 'soc' is bad(comm_failure)"`.
 
-### 6.2 Handles de entrada, parâmetro e interno
+### 6.2 Input, parameter and internal handles
 
 ```python
 class InputHandle(Generic[T]):
@@ -679,7 +679,7 @@ class InputHandle(Generic[T]):
     def get_uncertain(self) -> T: ...
     def get_or(self, default: T) -> T: ...
     def sample(self) -> Sample[T]: ...
-    # só async
+    # async only
     async def history(self, start: Instant | str | None = None, end: Instant | str | None = None, *,
                       last: DurationLike | None = None, step: DurationLike | None = None,
                       agg: Agg = "mean") -> History[T]: ...
@@ -687,19 +687,19 @@ class InputHandle(Generic[T]):
 Agg = Literal["raw", "mean", "min", "max", "first", "last", "count"]   # history-query.agg (ref/04 §2.4)
 
 class ParamHandle(Generic[T]):
-    def get(self) -> T: ...                           # parâmetros são sempre válidos: a gama é do jk check (J0120)
+    def get(self) -> T: ...                           # parameters are always valid: the range belongs to jk check (J0120)
 
 class InternalHandle(Generic[R]):
-    def get(self) -> R: ...                           # QualityError enquanto for uncertain(initial)
+    def get(self) -> R: ...                           # QualityError while it is uncertain(initial)
     def get_or(self, default: R) -> R: ...
-    def get_or_default(self) -> R: ...                # o registo com o valor zero de cada campo (§6.2)
+    def get_or_default(self) -> R: ...                # the record with the zero value of each field (§6.2)
     def sample(self) -> Sample[R]: ...
-    def set(self, value: R) -> None: ...              # ciclo e async; sem resultado
+    def set(self, value: R) -> None: ...              # cycle and async; no result
 
 class History(Sequence[Sample[T]]):
-    def values(self, *, quality: Literal["good", "uncertain"] = "good") -> list[T]: ...   # só as amostras com essa qualidade ou melhor
-    def mean(self) -> float: ...                      # média das amostras good; QualityError se não houver nenhuma
-    def coverage(self) -> float: ...                  # fração de amostras good, 0..1
+    def values(self, *, quality: Literal["good", "uncertain"] = "good") -> list[T]: ...   # only the samples with that quality or better
+    def mean(self) -> float: ...                      # mean of the good samples; QualityError if there are none
+    def coverage(self) -> float: ...                  # fraction of good samples, 0..1
 ```
 
 ```ts
@@ -716,32 +716,32 @@ export interface History<T> extends ReadonlyArray<Sample<T>> {
 export type Result<T, E> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: E };
 ```
 
-`get_or_default()` devolve o registo com o **valor zero** de cada campo (`False`, `0`, `0.0`, `""`, `b""`, a variante de valor 0 de um enum, `None` nos opcionais), como o `Default` derivado do Rust, e não os valores por omissão do construtor Python: assim as três linguagens dão o mesmo registo.
+`get_or_default()` returns the record with the **zero value** of each field (`False`, `0`, `0.0`, `""`, `b""`, the variant with value 0 of an enum, `None` in the optional ones), like Rust's derived `Default`, and not the default values of the Python constructor: that way the three languages give the same record.
 
-`history()` devolve as amostras do historian no intervalo (`async-io.history`, ref/04 §2.4). Com `step`, uma amostra por passo, agregada por `agg` (omissão `mean`), com a **qualidade dominante** do passo; sem `step`, `agg` tem de ser `raw` e vêm os pontos crus. `last="24h"` é `[now − 24h, now]`. `start`/`end` como string aceitam RFC 3339 (ref/00 §3). Mais de 10 000 pontos é `J-E0402`.
+`history()` returns the historian's samples in the interval (`async-io.history`, ref/04 §2.4). With `step`, one sample per step, aggregated by `agg` (default `mean`), with the **dominant quality** of the step; without `step`, `agg` must be `raw` and the raw points come back. `last="24h"` is `[now − 24h, now]`. `start`/`end` as a string accept RFC 3339 (ref/00 §3). More than 10,000 points is `J-E0402`.
 
-### 6.3 Portas múltiplas
+### 6.3 Multiple ports
 
-`InputMany`/`OutputMany` dão um `ManyPorts[H]` (Python) ou `ManyPorts<H>` (TS): uma sequência imutável de handles, ordenada pelo caminho do sinal ligado, com o tamanho fixado no `init` (04 §3.1). Cada elemento tem `.path` (o caminho ligado, em texto) e `.index`.
+`InputMany`/`OutputMany` give a `ManyPorts[H]` (Python) or `ManyPorts<H>` (TS): an immutable sequence of handles, ordered by the path of the bound signal, with the size fixed at `init` (04 §3.1). Each element has `.path` (the bound path, as text) and `.index`.
 
 ---
 
-## 7. Escritas e resultados
+## 7. Writes and results
 
-### 7.1 Saídas
+### 7.1 Outputs
 
-| Python | TypeScript | Domínio | Semântica |
+| Python | TypeScript | Domain | Semantics |
 |---|---|---|---|
-| `set(v)` | `set(v)` | ciclo | proposta no buffer do tick; a última do tick vence (16 A4); sem resultado |
-| `set(v)` | `set(v)` | async | proposta sem esperar pelo resultado (`async-io.set`): vai para a inbox do grupo dono; `last_outcome()` dá `deferred` até ao commit |
-| `relinquish()` | `relinquish()` | ciclo, async | liberta o nível já (01 §6) |
-| `pending()` | `pending()` | ciclo | a proposta desta app neste tick, ou `None`/`null`; `None` também para saídas escritas só por métodos (17 §4.1) |
-| `last_outcome()` | `lastOutcome()` | ciclo, async | o `WriteOutcome` da proposta deste escritor no commit mais recente do grupo dono, ou `None`/`null` (02 §7.1) |
-| `get()`, `sample()` | `get()`, `sample()` | ciclo, async | o valor **aplicado** (17 §11), com qualidade |
-| `await write(v)` | `await write(v)` | async | proposta para o grupo dono; resolve com o resultado **final**, depois do commit (01 §5) |
-| `set_at(v, at)` | `setAt(v, at)` | ciclo | escrita agendada (M6), **v1.1** |
-| `await write_at(v, at)` | `await writeAt(v, at)` | async | idem, **v1.1** |
-| `await propose(v, reason=, ttl=)` | `await propose(v, { reason, ttl })` | async | intenção (M18), **v1.1**; devolve o `IntentId` (ULID) |
+| `set(v)` | `set(v)` | cycle | proposal in the tick's buffer; the last one of the tick wins (16 A4); no result |
+| `set(v)` | `set(v)` | async | proposal without waiting for the result (`async-io.set`): it goes to the owning group's inbox; `last_outcome()` gives `deferred` until the commit |
+| `relinquish()` | `relinquish()` | cycle, async | releases the level immediately (01 §6) |
+| `pending()` | `pending()` | cycle | this app's proposal in this tick, or `None`/`null`; also `None` for outputs written only by methods (17 §4.1) |
+| `last_outcome()` | `lastOutcome()` | cycle, async | the `WriteOutcome` of this writer's proposal in the most recent commit of the owning group, or `None`/`null` (02 §7.1) |
+| `get()`, `sample()` | `get()`, `sample()` | cycle, async | the **applied** value (17 §11), with quality |
+| `await write(v)` | `await write(v)` | async | proposal to the owning group; resolves with the **final** result, after the commit (01 §5) |
+| `set_at(v, at)` | `setAt(v, at)` | cycle | scheduled write (M6), **v1.1** |
+| `await write_at(v, at)` | `await writeAt(v, at)` | async | same, **v1.1** |
+| `await propose(v, reason=, ttl=)` | `await propose(v, { reason, ttl })` | async | intent (M18), **v1.1**; returns the `IntentId` (ULID) |
 
 ```python
 class OutputHandle(Generic[T]):
@@ -771,22 +771,22 @@ export interface OutputTask<T> {
 }
 ```
 
-- **Um resultado mau não é uma exceção.** `rejected`, `tripped` e `overridden` são resultados normais, como no Rust. `outcome.ok` diz se algum valor desta proposta foi aplicado.
-- **Valores inválidos são exceções.** Um valor fora do tipo (`u64` negativo, `i64` acima de 2⁶³−1, `string` com mais de 64 B, `number` não inteiro numa porta `i64`) levanta `LimitError` (`J-E0806`, `J-E0805`) **antes** de chegar ao buffer. Um `NaN` ou infinito numa saída `f64` é um valor válido para o SDK e é o envelope que o trata (passo 1, `Rejected(WrongType)`).
-- **Em async, esquecer o `await`** de `write()` não perde a escrita: a proposta é enviada no momento da chamada, e o `await` só espera pelo resultado. O Python avisa pelo `RuntimeWarning` normal de corrotina não aguardada; o TS com a regra `no-floating-promises` que o modelo do `jk app new` liga.
-- As APIs da v1.1 existem nos tipos desde a 1.0 e comportam-se **como no SDK Rust** (ref/04 §2.9): o SDK marca a funcionalidade instável no `joker:meta` (chave 10) quando a função é referenciada (§18.4); em `mode = "prod"`, o `jokerd` recusa o componente (`J-E0003`, `error-in-prod`), e o `jk check` avisa antes do deploy; em `mode = "dev"`, a runtime liga-a a stubs que devolvem `J-E0601`, e o SDK levanta `UnavailableError` com esse código. O `J-E0809` fica para outro caso: uma API **estável** de um mundo posterior àquele para que a app foi gerada (E10).
+- **A bad result is not an exception.** `rejected`, `tripped` and `overridden` are normal results, as in Rust. `outcome.ok` says whether some value of this proposal was applied.
+- **Invalid values are exceptions.** A value outside the type (negative `u64`, `i64` above 2⁶³−1, `string` with more than 64 B, non-integer `number` on an `i64` port) raises `LimitError` (`J-E0806`, `J-E0805`) **before** reaching the buffer. A `NaN` or infinity on an `f64` output is a valid value for the SDK, and it is the envelope that handles it (step 1, `Rejected(WrongType)`).
+- **In async, forgetting the `await`** of `write()` does not lose the write: the proposal is sent at the moment of the call, and the `await` only waits for the result. Python warns through the normal `RuntimeWarning` of a coroutine that was never awaited; TS through the `no-floating-promises` rule that the `jk app new` template turns on.
+- The v1.1 APIs exist in the types since 1.0 and behave **as in the Rust SDK** (ref/04 §2.9): the SDK marks the unstable feature in `joker:meta` (key 10) when the function is referenced (§18.4); in `mode = "prod"`, `jokerd` rejects the component (`J-E0003`, `error-in-prod`), and `jk check` warns before the deploy; in `mode = "dev"`, the runtime binds it to stubs that return `J-E0601`, and the SDK raises `UnavailableError` with that code. `J-E0809` is kept for another case: a **stable** API of a world later than the one the app was generated for (E10).
 
-### 7.2 Publicados, contadores e alarmes
+### 7.2 Published signals, counters and alarms
 
 ```python
 class PublishedHandle(Generic[T]):
-    def set(self, value: T) -> None: ...             # ciclo e async
+    def set(self, value: T) -> None: ...             # cycle and async
 
 class CounterHandle:
     def add(self, n: int = 1) -> None: ...           # counter-add; n ≥ 0; n < 0 → LimitError (J-E0806)
 
 class AlarmHandle:
-    def raise_(self) -> None: ...                    # PEP 8: sufixo _ para palavras reservadas
+    def raise_(self) -> None: ...                    # PEP 8: suffix _ for reserved words
     def clear(self) -> None: ...
     def set(self, active: bool) -> None: ...
     def state(self) -> AlarmState: ...               # normal | active_unacked | active_acked | rtn_unacked | unknown (ref/00 §6)
@@ -799,25 +799,25 @@ export interface AlarmHandle { raise(): void; clear(): void; set(active: boolean
 export type AlarmState = "normal" | "active_unacked" | "active_acked" | "rtn_unacked" | "unknown";
 ```
 
-Um alarme de app é uma **condição** que a app escreve; o ciclo de vida (atrasos, reconhecimento, shelving, supressão) é o do núcleo (02 §11). `raise_()`/`raise()` e `clear()` são açúcar sobre `set(True)`/`set(False)`. No mundo WIT, o alarme é uma porta `alarm` (`port-kind` 10), escrita com `publish` e um `bool`; `state()` lê o sinal `alarm.app.<app>.<nome>.state` (do latch no ciclo, do slot em async). O id do alarme na API e na `jk` é `app.<app>.<nome>` (ref/04 §4.2). O Rust não tem `get()` num contador, e por isso os SDKs de tier 2 também não: quem precisa do valor lê o sinal publicado por uma porta de entrada.
+An app alarm is a **condition** that the app writes; the lifecycle (delays, acknowledgment, shelving, suppression) is that of the core (02 §11). `raise_()`/`raise()` and `clear()` are sugar over `set(True)`/`set(False)`. In the WIT world, the alarm is an `alarm` port (`port-kind` 10), written with `publish` and a `bool`; `state()` reads the signal `alarm.app.<app>.<name>.state` (from the latch in the cycle, from the slot in async). The alarm id in the API and in `jk` is `app.<app>.<name>` (ref/04 §4.2). Rust has no `get()` on a counter, and so the tier 2 SDKs do not either: whoever needs the value reads the published signal through an input port.
 
 ---
 
-## 8. Parâmetros
+## 8. Parameters
 
-- `ParamHandle.get()` devolve sempre um valor: os parâmetros vêm do manifesto (`[apps.<a>.params]`), com a unidade convertida para a da porta, a gama verificada no `jk check` (`J0120`) e o `default` da declaração quando o manifesto não o dá. Não há qualidade.
-- Um parâmetro sem `default` e sem valor no manifesto é `J0142` no `jk check`.
-- **Mudança a quente** (`on-params`): os valores novos valem a partir do tick seguinte. Se a app declarar `@on_params` / `onParams`, o SDK chama-o antes de aceitar os valores; uma exceção rejeita-os (`on-params` devolve `Err` com a mensagem, e a geração é recusada para esta app com `J-E0011`, ref/04 §2.6.1).
-- `Param(float, unit="%", range=(0, 50))` guarda o valor em `%`. Para uma fração, divide-se por 100 no código, como no documento 04, §3.2.
+- `ParamHandle.get()` always returns a value: the parameters come from the manifest (`[apps.<a>.params]`), with the unit converted to that of the port, the range checked in `jk check` (`J0120`) and the declaration's `default` when the manifest does not give one. There is no quality.
+- A parameter without a `default` and without a value in the manifest is `J0142` in `jk check`.
+- **Hot change** (`on-params`): the new values take effect from the next tick. If the app declares `@on_params` / `onParams`, the SDK calls it before accepting the values; an exception rejects them (`on-params` returns `Err` with the message, and the generation is rejected for this app with `J-E0011`, ref/04 §2.6.1).
+- `Param(float, unit="%", range=(0, 50))` stores the value in `%`. For a fraction, divide by 100 in the code, as in document 04, §3.2.
 
 ---
 
-## 9. Tarefas
+## 9. Tasks
 
-### 9.1 Tarefas de ciclo
+### 9.1 Cycle tasks
 
 ```python
-@state(persist=True)                       # opcional; sem persist, o estado não sobrevive ao hot-swap
+@state(persist=True)                       # optional; without persist, the state does not survive the hot swap
 class Ctl:
     integral: float = 0.0
 
@@ -831,78 +831,78 @@ cycles: {
 }
 ```
 
-| Opção | Tipo | Omissão | Semântica |
+| Option | Type | Default | Semantics |
 |---|---|---|---|
-| `period` | duração | obrigatório | período **pedido**; o grupo é do manifesto (`[apps.<a>.cycles]`), e uma divergência > `period_tolerance` é `J0130` (04 §3.2). Mínimo em tier 2: §19 (`J-E0854`) |
-| `wcet` | duração | 20% do `period` | WCET declarado para a admissão (M23), até o `jk bench` o medir; > 50% do período é `J-E0854` |
-| `state` (Python: classe; TS: fábrica) | — | nenhum | o estado local da tarefa; vive na memória da instância de ciclo |
-| `init` (Python) | `(self) -> S` | `S()` | corre uma vez, dentro do primeiro `on-cycle` da tarefa (com latch e parâmetros disponíveis); em TS, a fábrica `state(io)` faz o mesmo |
-| `persist` | `bool` | `false` | exporta o estado no `export-state` e restaura-o no `migrate` (§9.4) |
-| `optional` | `bool` | `false` | tarefa que o `overrun = "degrade"` pode desligar (01 §4) |
+| `period` | duration | required | **requested** period; the group comes from the manifest (`[apps.<a>.cycles]`), and a divergence > `period_tolerance` is `J0130` (04 §3.2). Minimum in tier 2: §19 (`J-E0854`) |
+| `wcet` | duration | 20% of the `period` | WCET declared for admission (M23), until `jk bench` measures it; > 50% of the period is `J-E0854` |
+| `state` (Python: class; TS: factory) | — | none | the local state of the task; it lives in the memory of the cycle instance |
+| `init` (Python) | `(self) -> S` | `S()` | runs once, inside the task's first `on-cycle` (with latch and parameters available); in TS, the factory `state(io)` does the same |
+| `persist` | `bool` | `false` | exports the state in `export-state` and restores it in `migrate` (§9.4) |
+| `optional` | `bool` | `false` | a task that `overrun = "degrade"` may switch off (01 §4) |
 
-Regras:
+Rules:
 
-- **Não há `async` nem I/O no ciclo.** Em Python, uma tarefa de ciclo é um `def`; em TS, a função devolve `void` e um `Promise` devolvido é `J-E0813` no build (e `J-E0901` em runtime, se passar por `any`).
-- **Estado:** o `st` é o mesmo objeto em todos os ticks. Em Python, `self` é só leitura (`J-E0803`). Em TS, `io` é congelado (`Object.freeze`), e uma atribuição em modo estrito lança `TypeError` com a mensagem de `J-E0803`.
-- **Relógio e aleatoriedade determinísticos.** Na instância de ciclo, `Date.now()`, `performance.now()`, `time.time()`, `time.monotonic()` e `time.time_ns()` devolvem o instante do latch (o mesmo de `now()`), porque o host serve `wasi:clocks` com ele (ref/04 §2.7). `Math.random()` e o módulo `random` são semeados no `init` a partir de `wasi:random`, que o host serve com o gerador determinista semeado pela geração (ref/04 §2.7: não é gravado no traço, reproduz-se a partir do `generation-hash`). O replay é exato.
-- **Memória:** o SDK não repõe a memória no fim do tick (há GC). O heap da instância é pré-alocado com o `memory.max` e fixado (01 §9); as pausas de GC acontecem dentro do tick e contam para o WCET (§19).
+- **There is no `async` and no I/O in the cycle.** In Python, a cycle task is a `def`; in TS, the function returns `void`, and a returned `Promise` is `J-E0813` at build (and `J-E0901` at runtime, if it gets through via `any`).
+- **State:** `st` is the same object in every tick. In Python, `self` is read-only (`J-E0803`). In TS, `io` is frozen (`Object.freeze`), and an assignment in strict mode throws `TypeError` with the message of `J-E0803`.
+- **Deterministic clock and randomness.** In the cycle instance, `Date.now()`, `performance.now()`, `time.time()`, `time.monotonic()` and `time.time_ns()` return the latch instant (the same as `now()`), because the host serves `wasi:clocks` with it (ref/04 §2.7). `Math.random()` and the `random` module are seeded at `init` from `wasi:random`, which the host serves with the deterministic generator seeded by the generation (ref/04 §2.7: it is not recorded in the trace, it is reproduced from the `generation-hash`). The replay is exact.
+- **Memory:** the SDK does not reset the memory at the end of the tick (there is GC). The instance's heap is preallocated with `memory.max` and pinned (01 §9); GC pauses happen inside the tick and count towards the WCET (§19).
 
-### 9.2 Tarefas async
+### 9.2 Async tasks
 
-| Gatilho | Python | TypeScript | Handler | Semântica |
+| Trigger | Python | TypeScript | Handler | Semantics |
 |---|---|---|---|---|
-| periódico | `@task.every("15m", jitter="30s")` | `task.every("15m", { jitter: "30s" }, fn)` | `(self)` / `(io)` | se a execução anterior ainda corre, o disparo fica pendente (um só) e os seguintes contam em `joker.app.<app>.task.<t>.coalesced` (ref/04 §4.3.2) |
-| cron | `@task.at("0 */15 * * * *")` | `task.at("0 */15 * * * *", fn)` | idem | cron de 6 campos, UTC; exige relógio `synced` ou `holdover`, e com `unsynced` o disparo espera (ref/04 §4.3.2) |
-| mudança | `@task.on("soc")` | `task.on("soc", fn)` | `(self, s: Sample[T])` / `(io, s)` | uma chamada por amostra nova; com o handler ocupado, fica só a mais recente (*latest-wins*) e as outras são contadas como perdidas |
-| evento | `@task.on_event("detections")` | `task.onEvent("detections", fn)` | `(self, e: R)` / `(io, e)` | cada evento é entregue, por ordem; a fila é a do consumidor (02 §1) |
-| arranque | `@task.startup()` | `task.startup(fn)` | `(self)` / `(io)` | uma vez, depois do `init` |
+| periodic | `@task.every("15m", jitter="30s")` | `task.every("15m", { jitter: "30s" }, fn)` | `(self)` / `(io)` | if the previous execution is still running, the firing stays pending (only one) and the following ones are counted in `joker.app.<app>.task.<t>.coalesced` (ref/04 §4.3.2) |
+| cron | `@task.at("0 */15 * * * *")` | `task.at("0 */15 * * * *", fn)` | same | 6-field cron, UTC; requires a `synced` or `holdover` clock, and with `unsynced` the firing waits (ref/04 §4.3.2) |
+| change | `@task.on("soc")` | `task.on("soc", fn)` | `(self, s: Sample[T])` / `(io, s)` | one call per new sample; with the handler busy, only the most recent stays (*latest-wins*) and the others are counted as dropped |
+| event | `@task.on_event("detections")` | `task.onEvent("detections", fn)` | `(self, e: R)` / `(io, e)` | every event is delivered, in order; the queue is the consumer's (02 §1) |
+| startup | `@task.startup()` | `task.startup(fn)` | `(self)` / `(io)` | once, after `init` |
 
-- As tarefas async de uma app correm **concorrentemente** no mesmo *event loop* (asyncio em Python, o *event loop* do motor em TS), uma de cada vez entre dois `await`. Não há threads (`threading.Thread.start()` e `Worker` falham).
-- **Como os gatilhos chegam ao guest** (ref/04 §2.6.1, §4.3.2): o host chama `run-task(task, why)` uma vez por disparo, em todos os gatilhos: `timer` para `every` e `at`, `change` para `on`, `event` para `on_event`, `startup`. O SDK despacha para o handler com a amostra ou o evento já descodificados. Um disparo que chega com o handler a correr fica pendente (um só; as mudanças juntam-se na mais recente) e os perdidos contam em `joker.app.<app>.task.<t>.coalesced`. As funções `subscribe()` e `events()` continuam disponíveis para quem quer consumir um fluxo dentro de uma tarefa.
-- Na instância async, os relógios de `Date.now()` e `time.time()` são os reais, e `now()` também. O replay de async é o das propostas na fronteira, ou exato com `trace.async = true` (09 ataque 10).
+- The async tasks of an app run **concurrently** on the same *event loop* (asyncio in Python, the engine's *event loop* in TS), one at a time between two `await`s. There are no threads (`threading.Thread.start()` and `Worker` fail).
+- **How the triggers reach the guest** (ref/04 §2.6.1, §4.3.2): the host calls `run-task(task, why)` once per firing, for every trigger: `timer` for `every` and `at`, `change` for `on`, `event` for `on_event`, `startup`. The SDK dispatches to the handler with the sample or the event already decoded. A firing that arrives while the handler is running stays pending (only one; changes merge into the most recent) and the dropped ones are counted in `joker.app.<app>.task.<t>.coalesced`. The functions `subscribe()` and `events()` remain available for whoever wants to consume a stream inside a task.
+- In the async instance, the clocks of `Date.now()` and `time.time()` are the real ones, and so is `now()`. The async replay is that of the proposals at the boundary, or exact with `trace.async = true` (09 attack 10).
 
-### 9.3 Erros numa tarefa
+### 9.3 Errors in a task
 
-| O que acontece | Ciclo | Async |
+| What happens | Cycle | Async |
 |---|---|---|
-| a tarefa termina normalmente | as propostas do tick seguem para o árbitro | — |
-| um `JokerError` sai da tarefa (incluindo `QualityError`) | a tarefa termina **neste tick**; as propostas já feitas **ficam** (`cycle-result.error` com o código, ref/04 §2.6.1); conta em `joker.app.<a>.task.<t>.errors` e fica no log com o código | a execução termina (`run-task` devolve `Err`); fica no log; o gatilho continua |
-| qualquer outra exceção | equivalente a um `panic`: as propostas desta app **neste tick são descartadas** (01 §9); conta para os K traps do crashloop; o log leva o *traceback* | a execução termina; conta em `joker.app.<a>.task.<t>.failures`; o log leva o *traceback*; a instância continua |
-| trap real do Wasm (`memory.grow` falha, pilha, deadline por epoch) | trap (01 §9) | trap; a instância async é recriada |
+| the task ends normally | the tick's proposals go on to the arbiter | — |
+| a `JokerError` leaves the task (including `QualityError`) | the task ends **in this tick**; the proposals already made **remain** (`cycle-result.error` with the code, ref/04 §2.6.1); it is counted in `joker.app.<a>.task.<t>.errors` and goes to the log with the code | the execution ends (`run-task` returns `Err`); it goes to the log; the trigger continues |
+| any other exception | equivalent to a `panic`: this app's proposals **in this tick are discarded** (01 §9); it counts towards the K traps of the crashloop; the log carries the *traceback* | the execution ends; it is counted in `joker.app.<a>.task.<t>.failures`; the log carries the *traceback*; the instance continues |
+| real Wasm trap (`memory.grow` fails, stack, epoch deadline) | trap (01 §9) | trap; the async instance is recreated |
 
-A distinção é a do Rust: um `JokerError` é um `Err` esperado (dados maus), e o resto é um bug. Uma exceção não apanhada **não** faz trap à instância: o SDK apanha-a e devolve `cycle-result` com `proposals` vazio e `error.code = J-E0816` (ou `Err(J-E0816)` em `run-task`); o host conta-o como um trap para o crashloop, sem recriar a instância, porque recriar uma instância Python custa centenas de ms (ref/04 §2.6.1). Para os `JokerError` no ciclo, o SDK devolve as propostas do tick e o erro no mesmo `cycle-result`: não há registo de erro no buffer.
+The distinction is Rust's: a `JokerError` is an expected `Err` (bad data), and the rest is a bug. An uncaught exception does **not** trap the instance: the SDK catches it and returns `cycle-result` with empty `proposals` and `error.code = J-E0816` (or `Err(J-E0816)` in `run-task`); the host counts it as a trap for the crashloop, without recreating the instance, because recreating a Python instance costs hundreds of ms (ref/04 §2.6.1). For `JokerError`s in the cycle, the SDK returns the tick's proposals and the error in the same `cycle-result`: there is no error record in the buffer.
 
-### 9.4 Estado persistente e migração
+### 9.4 Persistent state and migration
 
-- Com `persist`, o SDK codifica o estado de cada tarefa de ciclo em CBOR determinístico no `export-state`, num mapa `{ "<tarefa>": estado }`, e os `Many` por nome de instância (14 A10). Tamanho máximo: 64 KiB (`J-E0815` acima).
-- No `migrate(previous, from_version)`, o SDK descodifica o mapa e, se a app declarar `@migrate`/`migrate`, chama-o com o estado anterior (já descodificado em `dict`/objeto) e a versão; o valor devolvido é o estado novo. Sem hook, o SDK restaura os campos com o mesmo nome e tipo e usa o valor por omissão nos outros. Um campo com tipo incompatível e sem hook é `J-E0815` e a versão nova não entra (01 §9, "se o `init` falhar, a antiga continua").
-- Os campos de um estado persistente têm de ser codificáveis em CBOR: escalares, `str`/`string`, `bytes`, listas, mapas com chaves de texto e registos. Um objeto qualquer é `J-E0815` no primeiro `export-state` e, se o SDK o conseguir ver pelas anotações, já no build.
+- With `persist`, the SDK encodes the state of each cycle task in deterministic CBOR in `export-state`, in a map `{ "<task>": state }`, and the `Many`s by instance name (14 A10). Maximum size: 64 KiB (`J-E0815` above it).
+- In `migrate(previous, from_version)`, the SDK decodes the map and, if the app declares `@migrate`/`migrate`, calls it with the previous state (already decoded into a `dict`/object) and the version; the returned value is the new state. Without a hook, the SDK restores the fields with the same name and type and uses the default value in the others. A field with an incompatible type and no hook is `J-E0815`, and the new version does not go in (01 §9, "if `init` fails, the old one continues").
+- The fields of a persistent state must be encodable in CBOR: scalars, `str`/`string`, `bytes`, lists, maps with text keys and records. An arbitrary object is `J-E0815` at the first `export-state` and, if the SDK can see it through the annotations, already at build.
 
 ---
 
-## 10. Partilha entre ciclo e async
+## 10. Sharing between cycle and async
 
-As duas instâncias não partilham memória (01 §5, 09 ataque 6). Os três canais são os do documento 04, §3.4:
+The two instances do not share memory (01 §5, 09 attack 6). The three channels are those of document 04, §3.4:
 
-| Canal | Python | TypeScript | Semântica |
+| Channel | Python | TypeScript | Semantics |
 |---|---|---|---|
-| sinal interno | `Internal(R)` → `get()`, `set(r)` | `internal(R)` → `get()`, `set(r)` | último valor, ≤ 64 B, seqlock; o ciclo lê do latch |
-| caixa de correio | `Mailbox(R, capacity=N, to="async")` | `mailbox(R, { capacity: N, to: "async" })` | fila SPSC limitada (`mailbox-send`, `mailbox-recv`, `mailbox-next`, ref/04 §2.3–§2.4); `try_send`/`trySend` nunca bloqueia e devolve `False` se estiver cheia; as perdas são contadas pelo emissor |
-| eventos | `EventOutput(R).emit(r)` | `output.event(R)` → `emit(r)` | fila por consumidor |
+| internal signal | `Internal(R)` → `get()`, `set(r)` | `internal(R)` → `get()`, `set(r)` | last value, ≤ 64 B, seqlock; the cycle reads from the latch |
+| mailbox | `Mailbox(R, capacity=N, to="async")` | `mailbox(R, { capacity: N, to: "async" })` | bounded SPSC queue (`mailbox-send`, `mailbox-recv`, `mailbox-next`, ref/04 §2.3–§2.4); `try_send`/`trySend` never blocks and returns `False` if it is full; the drops are counted by the sender |
+| events | `EventOutput(R).emit(r)` | `output.event(R)` → `emit(r)` | queue per consumer |
 
 ```python
 class MailboxHandle(Generic[R]):
-    def try_send(self, item: R) -> bool: ...          # no domínio que envia (mailbox-send)
-    def lost(self) -> int: ...                        # no domínio que envia: envios recusados por fila cheia
-    def try_recv(self) -> R | None: ...               # no domínio que recebe (mailbox-recv)
-    def drain(self) -> list[R]: ...                   # idem, mailbox-recv até vazia
-    async def recv(self) -> R: ...                    # só quando o recetor é async (mailbox-next)
+    def try_send(self, item: R) -> bool: ...          # in the sending domain (mailbox-send)
+    def lost(self) -> int: ...                        # in the sending domain: sends refused because the queue was full
+    def try_recv(self) -> R | None: ...               # in the receiving domain (mailbox-recv)
+    def drain(self) -> list[R]: ...                   # same, mailbox-recv until empty
+    async def recv(self) -> R: ...                    # only when the receiver is async (mailbox-next)
 
 class EventOutputHandle(Generic[R]):
-    def emit(self, event: R) -> None: ...             # ciclo e async
+    def emit(self, event: R) -> None: ...             # cycle and async
 
 class EventInputHandle(Generic[R]):
-    def events(self) -> AsyncIterator[R]: ...         # só async
+    def events(self) -> AsyncIterator[R]: ...         # async only
 ```
 
 ```ts
@@ -913,15 +913,15 @@ export interface EventOutputHandle<R> { emit(e: R): void }
 export interface EventInputHandle<R> { events(): AsyncIterable<R> }
 ```
 
-Em TS o tipo de `io.<caixa>` depende do domínio e de `to`: do lado que envia só há `trySend`, do lado que recebe só há `tryRecv`/`drain`/`recv`. Em Python o handle tem os dois lados e o do domínio errado levanta `DomainError` (`J-E0802`).
+In TS the type of `io.<mailbox>` depends on the domain and on `to`: on the sending side there is only `trySend`, on the receiving side there are only `tryRecv`/`drain`/`recv`. In Python the handle has both sides, and the one of the wrong domain raises `DomainError` (`J-E0802`).
 
-**Variáveis globais do módulo.** O mesmo módulo é carregado nas duas instâncias, e uma variável global escrita numa tarefa async nunca é vista pelo ciclo (nem ao contrário). O SDK não o consegue impedir em runtime. O `jk build` avisa (`J-E0858`) quando uma função decorada como tarefa escreve numa global do módulo (`global x` em Python; atribuição a um `let` do módulo em TS).
+**Module global variables.** The same module is loaded in both instances, and a global variable written in an async task is never seen by the cycle (nor the other way round). The SDK cannot prevent it at runtime. `jk build` warns (`J-E0858`) when a function decorated as a task writes to a module global (`global x` in Python; assignment to a module `let` in TS).
 
 ---
 
-## 11. Ações
+## 11. Actions
 
-**Usar uma ação** (uma porta `Action`, ou a ação de uma instância de classe, §14): só em async, porque espera por resposta (02 §8).
+**Using an action** (an `Action` port, or the action of a class instance, §14): only in async, because it waits for a reply (02 §8).
 
 ```python
 class ActionHandle(Generic[A, R]):
@@ -929,10 +929,10 @@ class ActionHandle(Generic[A, R]):
                      timeout: DurationLike | None = None) -> R: ...                      # async-io.invoke
     def invoke_long(self, args: A | None = None, *, key: str | None = None) -> LongAction[R]: ...  # start-action
 
-class LongAction(Generic[R]):                         # recurso action-call (ref/04 §2.4)
+class LongAction(Generic[R]):                         # action-call resource (ref/04 §2.4)
     def progress(self) -> AsyncIterator[tuple[float | None, str]]: ...
     def cancel(self) -> None: ...
-    async def finish(self) -> R: ...                  # ActionError(kind="cancelled") se foi cancelada
+    async def finish(self) -> R: ...                  # ActionError(kind="cancelled") if it was canceled
 ```
 
 ```ts
@@ -948,19 +948,19 @@ export interface LongAction<R> {
 }
 ```
 
-- `key` é a chave de idempotência (ref/00 §5: ASCII imprimível, 1–64 B; `J-E0805` fora disso). Sem `key`, o SDK gera uma (`"<app>:<porta>:<ULID>"`) por chamada. Para uma nova tentativa depois de um `timeout`, a app reutiliza a mesma chave, e o núcleo devolve o resultado anterior dentro do `dedup_window` (16 E9).
-- `timeout` só pode encurtar o do manifesto; nunca o alonga.
-- Erros: `ActionError` com o `code` que o host der (`J-E0301`…`J-E0313`) e `kind` derivado dele pela tabela da ref/04 §7 (`denied`, `forbidden`, `timeout`, `device`, `invalid`, `busy`, `not_connected`, `cancelled`, `conflict`, `unsupported`, `failed`, `other`).
-- No ciclo, as ações não existem nos tipos TS, e em Python levantam `DomainError` (`J-E0901`) e são apanhadas pelo `J-E0859` no build. Uma tarefa de ciclo que precise de uma ação publica um evento ou usa uma `Mailbox`, e uma tarefa async executa-a (02 §8).
-- Ações longas (`@long`, 17 §4.2): `invoke_long()`/`invokeLong()` sobre `async-io.start-action` e o recurso `action-call` (ref/04 §2.4). `invoke_long` numa ação que não é longa é `ActionError` com `J-E0313`.
+- `key` is the idempotency key (ref/00 §5: printable ASCII, 1–64 B; `J-E0805` outside that). Without `key`, the SDK generates one (`"<app>:<port>:<ULID>"`) per call. For a retry after a `timeout`, the app reuses the same key, and the core returns the previous result within the `dedup_window` (16 E9).
+- `timeout` may only shorten the one in the manifest; it never lengthens it.
+- Errors: `ActionError` with the `code` the host gives (`J-E0301`…`J-E0313`) and `kind` derived from it by the table of ref/04 §7 (`denied`, `forbidden`, `timeout`, `device`, `invalid`, `busy`, `not_connected`, `cancelled`, `conflict`, `unsupported`, `failed`, `other`).
+- In the cycle, actions do not exist in the TS types, and in Python they raise `DomainError` (`J-E0901`) and are caught by `J-E0859` at build. A cycle task that needs an action publishes an event or uses a `Mailbox`, and an async task executes it (02 §8).
+- Long actions (`@long`, 17 §4.2): `invoke_long()`/`invokeLong()` over `async-io.start-action` and the `action-call` resource (ref/04 §2.4). `invoke_long` on an action that is not long is `ActionError` with `J-E0313`.
 
-**Implementar uma ação** (instância virtual, 17 §5.3): §14.5.
+**Implementing an action** (virtual instance, 17 §5.3): §14.5.
 
 ---
 
-## 12. Relógio, `kv`, log, segredos e rede
+## 12. Clock, `kv`, log, secrets and network
 
-### 12.1 `kv` (só async)
+### 12.1 `kv` (async only)
 
 ```python
 class Kv:
@@ -968,7 +968,7 @@ class Kv:
     async def set(self, key: str, value: bytes) -> None: ...
     async def delete(self, key: str) -> None: ...
     def keys(self, prefix: str = "") -> list[str]: ...
-    def batch(self) -> KvBatch: ...                   # .set(k, v).delete(k); await .commit() (kv.commit, ≤ 64 operações)
+    def batch(self) -> KvBatch: ...                   # .set(k, v).delete(k); await .commit() (kv.commit, ≤ 64 operations)
     def get_record(self, key: str, type: type[R]) -> R | None: ...
     async def set_record(self, key: str, value: R) -> None: ...
 ```
@@ -985,50 +985,50 @@ export interface Kv {
 }
 ```
 
-| Regra | Valor | Código |
+| Rule | Value | Code |
 |---|---|---|
-| chave | 1–128 B, `[A-Za-z0-9._:/-]` | `J-E0811` |
-| valor | ≤ 64 KiB | `J-E0811` |
-| total por app | ≤ 1 MiB (01 §9.1) | o host recusa: `KvError` com `J-E0404` (ref/04 §2.5.1) |
-| no ciclo | não existe (01 §9.1) | `J-E0901` |
+| key | 1–128 B, `[A-Za-z0-9._:/-]` | `J-E0811` |
+| value | ≤ 64 KiB | `J-E0811` |
+| total per app | ≤ 1 MiB (01 §9.1) | the host refuses: `KvError` with `J-E0404` (ref/04 §2.5.1) |
+| in the cycle | does not exist (01 §9.1) | `J-E0901` |
 
-`get` é síncrono porque o WIT o é (04 §2); `set` e `delete` só resolvem depois do fsync da política do `kv`. Os registos usam o mesmo CBOR dos eventos (§15.2).
+`get` is synchronous because the WIT is (04 §2); `set` and `delete` only resolve after the fsync of the `kv` policy. Records use the same CBOR as events (§15.2).
 
 ### 12.2 Log
 
 ```python
 from joker_sdk import log
-log.info("plano novo", target_soc=0.62, source="history")     # também trace, debug, warn, error
+log.info("new plan", target_soc=0.62, source="history")     # also trace, debug, warn, error
 ```
 
 ```ts
 import { log } from "@joker/sdk";
-log.info("plano novo", { target_soc: 0.62, source: "history" });
+log.info("new plan", { target_soc: 0.62, source: "history" });
 ```
 
-- Os campos vão como `list<tuple<string, string>>` (`log.log`, ref/04 §2.5.3): o SDK converte cada valor com `str()`/`String()`. A mensagem é truncada a 1 KiB e os campos a 16, com a marca `…` no fim (sem erro).
-- `log.enabled("debug")` / `log.enabled("debug")` é o `log.enabled` do WIT: o SDK usa-o para não formatar mensagens que o host deitaria fora.
-- Funciona nos dois domínios; no ciclo vai para o anel lock-free (09 ataque 5).
-- Em Python, o SDK instala um handler no `logging` (os `logging.getLogger(__name__)` das bibliotecas acabam no mesmo sítio) e `print()` vai para o log com `stream=stdout`. Em TS, `console.log/info/warn/error` fazem o mesmo.
-- Os nomes dos campos são dados do utilizador: ficam em `snake_case`, mesmo em TS.
+- The fields go as `list<tuple<string, string>>` (`log.log`, ref/04 §2.5.3): the SDK converts each value with `str()`/`String()`. The message is truncated to 1 KiB and the fields to 16, with the mark `…` at the end (no error).
+- `log.enabled("debug")` / `log.enabled("debug")` is the WIT's `log.enabled`: the SDK uses it so as not to format messages the host would throw away.
+- It works in both domains; in the cycle it goes to the lock-free ring (09 attack 5).
+- In Python, the SDK installs a handler in `logging` (the libraries' `logging.getLogger(__name__)` end up in the same place) and `print()` goes to the log with `stream=stdout`. In TS, `console.log/info/warn/error` do the same.
+- The field names are user data: they stay in `snake_case`, even in TS.
 
-### 12.3 Segredos
+### 12.3 Secrets
 
-Um segredo é declarado pelo nome local (`Secret("mqtt_password")`, `secret("mqtt_password")`; chave 13 do `joker:meta`), ligado no manifesto em `[apps.<app>.secrets] mqtt_password = "secret:<nome>"` (D6, ref/01) e lido só em async: `await self.secrets.get("mqtt_password")` / `await io.secrets.get("mqtt_password")`, sobre `secrets.reveal` (ref/04 §2.5.2). Devolve um `SecretStr` (Python) ou `SecretString` (TS) cujo `repr`/`toString`/`toJSON` é `"***"`; o valor lê-se com `.reveal()`. Ler um nome que a app não declarou é `J-E0817`, sem chamar o host; declarado mas não ligado é `J-E0408`, e ligado mas ausente no nó é `J-E0409` (ref/04). O manifesto nunca tem o valor (01 §17, ref/00 §9).
+A secret is declared by its local name (`Secret("mqtt_password")`, `secret("mqtt_password")`; key 13 of `joker:meta`), bound in the manifest in `[apps.<app>.secrets] mqtt_password = "secret:<name>"` (D6, ref/01) and read only in async: `await self.secrets.get("mqtt_password")` / `await io.secrets.get("mqtt_password")`, over `secrets.reveal` (ref/04 §2.5.2). It returns a `SecretStr` (Python) or `SecretString` (TS) whose `repr`/`toString`/`toJSON` is `"***"`; the value is read with `.reveal()`. Reading a name the app did not declare is `J-E0817`, without calling the host; declared but not bound is `J-E0408`, and bound but absent on the node is `J-E0409` (ref/04). The manifest never has the value (01 §17, ref/00 §9).
 
-### 12.4 Rede (só async)
+### 12.4 Network (async only)
 
-- **TS:** `fetch()` global, implementado sobre `wasi:http/outgoing-handler`. Só alcança os destinos de `[apps.<a>.net] allow` (03 §8); o resto falha com um `TypeError` do `fetch` cuja causa é um `HostError` com o código do host. No ciclo, `fetch` lança `DomainError` (`J-E0901`).
-- **Python:** `joker_sdk.http` (`async def request(method, url, *, headers=None, body=None, timeout=None) -> Response`, mais `get` e `post`), sobre o mesmo `wasi:http`. `socket`, `urllib.request`, `requests` e `httpx` não funcionam, porque não há sockets no componente.
-- Não há sistema de ficheiros. Os ficheiros de dados declarados em `include` (§18) leem-se com `importlib.resources` (Python) ou `import … with { type: "json" }` (TS, embutido pelo bundler).
+- **TS:** global `fetch()`, implemented over `wasi:http/outgoing-handler`. It only reaches the destinations in `[apps.<a>.net] allow` (03 §8); the rest fails with a `fetch` `TypeError` whose cause is a `HostError` with the host's code. In the cycle, `fetch` throws `DomainError` (`J-E0901`).
+- **Python:** `joker_sdk.http` (`async def request(method, url, *, headers=None, body=None, timeout=None) -> Response`, plus `get` and `post`), over the same `wasi:http`. `socket`, `urllib.request`, `requests` and `httpx` do not work, because there are no sockets in the component.
+- There is no file system. The data files declared in `include` (§18) are read with `importlib.resources` (Python) or `import … with { type: "json" }` (TS, embedded by the bundler).
 
 ---
 
-## 13. A vista de I/O
+## 13. The I/O view
 
-**Python.** `self`, dentro de uma tarefa, é a vista do domínio em que a instância corre. Os atributos de classe (descritores) devolvem handles; os métodos de `App` estão no §5.2. Chamar uma função do outro domínio levanta `DomainError`: `J-E0901` (API async no ciclo) ou `J-E0802` (API de ciclo em async, como `dt()` ou `pending()`).
+**Python.** `self`, inside a task, is the view of the domain in which the instance runs. The class attributes (descriptors) return handles; the methods of `App` are in §5.2. Calling a function of the other domain raises `DomainError`: `J-E0901` (async API in the cycle) or `J-E0802` (cycle API in async, such as `dt()` or `pending()`).
 
-**TypeScript.** `io` é um objeto congelado com as portas da definição e os serviços do domínio:
+**TypeScript.** `io` is a frozen object with the ports of the definition and the services of the domain:
 
 ```ts
 export type CycleIo<P> = { readonly [K in keyof P]: CycleHandleOf<P[K]> } & {
@@ -1061,30 +1061,30 @@ type CycleHandleOf<D> =
   D extends CounterDecl ? CounterHandle :
   D extends DeviceDecl<ClassSchema<infer Cy, any, any>, infer Req> ? CycleView<Cy, Req> :
   D extends ManyDecl<ClassSchema<infer Cy, any, any>, infer Req> ? Many<CycleView<Cy, Req>> :
-  never;                                   // EventInput e Action não existem no ciclo
-type TaskHandleOf<D> = /* o mesmo, com InputTask, OutputTask, MailboxRecvTask, EventInputHandle,
-                          ActionHandle e TaskView das classes */ unknown;
+  never;                                   // EventInput and Action do not exist in the cycle
+type TaskHandleOf<D> = /* the same, with InputTask, OutputTask, MailboxRecvTask, EventInputHandle,
+                          ActionHandle and TaskView of the classes */ unknown;
 ```
 
-Um `never` no tipo do ciclo é o que faz de `io.reset_line.invoke()` numa tarefa de ciclo um erro de compilação, como o A9 do documento 14 pede.
+A `never` in the cycle type is what makes `io.reset_line.invoke()` in a cycle task a compile error, as A9 of document 14 asks.
 
 ---
 
-## 14. Classes de equipamento
+## 14. Equipment classes
 
-### 14.1 O que o `jkc` gera
+### 14.1 What `jkc` generates
 
-Para cada classe, o `jkc` (17 §6) gera um módulo por linguagem. Para `std/pump@1`:
+For each class, `jkc` (17 §6) generates one module per language. For `std/pump@1`:
 
 ```python
-# joker_classes/std/pump.pyi (gerado)
+# joker_classes/std/pump.pyi (generated)
 class PumpState(Record):
     running: bool
     fault: bool
     fault_code: int | None
-    speed: float | None               # capacidade variable_speed
-    pressure_out: float | None        # capacidade pressure
-    hours: float | None               # capacidade hour_counter
+    speed: float | None               # capability variable_speed
+    pressure_out: float | None        # capability pressure
+    hours: float | None               # capability hour_counter
 
 class PumpTripped(Record):
     code: int
@@ -1092,7 +1092,7 @@ class PumpTripped(Record):
 class Pump(ClassHandle[PumpState]):
     CLASS: ClassVar[str] = "std/pump@1"
     CAPABILITIES: ClassVar[tuple[str, ...]] = ("variable_speed", "pressure", "hour_counter")
-    # membros (camada 1 por baixo): in, param e query são leituras; out lê o valor aplicado
+    # members (layer 1 underneath): in, param and query are reads; out reads the applied value
     run_cmd: OutMember[bool]
     running: Member[bool]
     fault: Member[bool]
@@ -1106,16 +1106,16 @@ class Pump(ClassHandle[PumpState]):
     dry_running: Member[bool]         # pressure
     hours: Member[float]              # hour_counter
     tripped: EventMember[PumpTripped]
-    # métodos: no ciclo, registo de método (sem resultado); em async, await → resultados das escritas expandidas
+    # methods: in the cycle, method record (no result); in async, await → results of the expanded writes
     def start(self) -> MethodTicket: ...
     def stop(self) -> MethodTicket: ...
-    def run_at(self, pct: float) -> MethodTicket: ...        # pct em %
-    # ações: só async
+    def run_at(self, pct: float) -> MethodTicket: ...        # pct in %
+    # actions: async only
     async def reset(self, *, key: str | None = None, timeout: DurationLike | None = None) -> None: ...
 ```
 
 ```ts
-// @joker/classes-std/pump.d.ts (gerado)
+// @joker/classes-std/pump.d.ts (generated)
 export interface PumpState {
   running: boolean; fault: boolean; fault_code: bigint | null;
   speed: number | null; pressure_out: number | null; hours: number | null;
@@ -1134,28 +1134,28 @@ export type PumpCycle<Req extends string> = PumpCycleCore
   & ("variable_speed" extends Req ? PumpCycleVariableSpeed : Partial<PumpCycleVariableSpeed>)
   & ("pressure" extends Req ? PumpCyclePressure : Partial<PumpCyclePressure>)
   & ("hour_counter" extends Req ? PumpCycleHourCounter : Partial<PumpCycleHourCounter>);
-// PumpTask<Req>: os mesmos membros; start/stop/run_at devolvem Promise<WriteOutcome[]>;
+// PumpTask<Req>: the same members; start/stop/run_at return Promise<WriteOutcome[]>;
 // reset(o?: InvokeOpts): Promise<void>; tripped: EventMember<PumpTripped>
 export declare const Pump: ClassSchema<PumpCycle<never>, PumpTask<never>, "variable_speed" | "pressure" | "hour_counter">;
 ```
 
-Os tipos partilhados das classes:
+The shared types of the classes:
 
 ```python
-class Member(Generic[T]):                 # chamável: p.running() ≡ get()
+class Member(Generic[T]):                 # callable: p.running() ≡ get()
     def __call__(self) -> T: ...
     def get(self) -> T: ...
     def get_uncertain(self) -> T: ...
     def get_or(self, default: T) -> T: ...
     def sample(self) -> Sample[T]: ...
-    async def history(self, start=None, end=None, *, last=None, step) -> History[T]: ...   # só async
+    async def history(self, start=None, end=None, *, last=None, step) -> History[T]: ...   # async only
 
-class OutMember(Member[T]): ...           # lê o valor aplicado (17 §11); escreve-se por métodos ou por raw()
+class OutMember(Member[T]): ...           # reads the applied value (17 §11); written through methods or through raw()
 
 class EventMember(Generic[R]):
     def events(self) -> AsyncIterator[R]: ...
 
-class MethodTicket(Awaitable[list[WriteOutcome]]): ...   # no ciclo não se aguarda; em async, await
+class MethodTicket(Awaitable[list[WriteOutcome]]): ...   # not awaited in the cycle; in async, await
 
 class HealthStatus(StrEnum):
     OK = "ok"; DEGRADED = "degraded"; FAILED = "failed"
@@ -1163,24 +1163,24 @@ class HealthStatus(StrEnum):
 @dataclass(frozen=True)
 class Health:
     status: HealthStatus
-    members: tuple[str, ...]              # os membros que não estão good
+    members: tuple[str, ...]              # the members that are not good
 
 class ClassHandle(Generic[S]):
-    name: str                             # nome da instância no manifesto
-    index: int                            # posição num Many (0 fora de um Many)
+    name: str                             # name of the instance in the manifest
+    index: int                            # position in a Many (0 outside a Many)
     def health(self) -> Health: ...
-    def read(self) -> S: ...              # QualityError se Failed; membros de capacidades não good → None
-    def raw(self) -> Any: ...             # handles de camada 1 dos membros (14 §3): p.raw().run_cmd.set(True)
+    def read(self) -> S: ...              # QualityError if Failed; capability members not good → None
+    def raw(self) -> Any: ...             # layer 1 handles of the members (14 §3): p.raw().run_cmd.set(True)
     def has(self, capability: str) -> bool: ...
 
 class Many(Generic[H]):
     def __len__(self) -> int: ...
     def __iter__(self) -> Iterator[H]: ...
-    def __getitem__(self, i: int | str) -> H: ...   # posição ou nome da instância
-    def get(self, name: str) -> H: ...           # nome desconhecido → KeyError com J-E0807
-    def at(self, i: int) -> H: ...               # fora da gama → IndexError com J-E0807
+    def __getitem__(self, i: int | str) -> H: ...   # position or name of the instance
+    def get(self, name: str) -> H: ...           # unknown name → KeyError with J-E0807
+    def at(self, i: int) -> H: ...               # out of range → IndexError with J-E0807
     def healthy(self) -> Iterator[H]: ...
-    def read_all(self) -> list[Any]: ...         # QualityError se alguma estiver failed
+    def read_all(self) -> list[Any]: ...         # QualityError if any is failed
 ```
 
 ```ts
@@ -1196,24 +1196,24 @@ export interface Many<H> extends Iterable<H> {
 }
 ```
 
-### 14.2 Semântica
+### 14.2 Semantics
 
-| Operação | Ciclo | Async | Fonte |
+| Operation | Cycle | Async | Source |
 |---|---|---|---|
-| ler membro, consulta (`p.running()`, `p.failed_to_start()`) | latch | slot atual | 14 §6.4; as consultas são sinais derivados do núcleo (14 A7) |
-| método (`p.start()`) | registo de método no buffer; `pending()` do `out` fica `None` | `await` devolve os `WriteOutcome` das escritas expandidas, depois do commit | 17 §4.1 |
-| ação (`p.reset()`) | não existe | pedido/resposta, chave, timeout | 17 §4.2 |
-| `health()` | regra de 17 §4.5 sobre os membros do latch | idem, sobre o slot atual | 17 §4.5 |
-| `read()` | registo gerado; `QualityError` se `failed` | idem | 14 §6.3 |
-| `Many` | ordem estável (manifesto, ou nome); tamanho fixo no `init` | idem | 14 §6.2 |
-| `raw()` | handles de camada 1 dos membros | idem | 14 §3 |
+| read member, query (`p.running()`, `p.failed_to_start()`) | latch | current slot | 14 §6.4; queries are derived signals of the core (14 A7) |
+| method (`p.start()`) | method record in the buffer; `pending()` of the `out` stays `None` | `await` returns the `WriteOutcome`s of the expanded writes, after the commit | 17 §4.1 |
+| action (`p.reset()`) | does not exist | request/response, key, timeout | 17 §4.2 |
+| `health()` | rule of 17 §4.5 over the members of the latch | same, over the current slot | 17 §4.5 |
+| `read()` | generated record; `QualityError` if `failed` | same | 14 §6.3 |
+| `Many` | stable order (manifest, or name); size fixed at `init` | same | 14 §6.2 |
+| `raw()` | layer 1 handles of the members | same | 14 §3 |
 
-- **`health()` é calculado pelo SDK**, com a regra do documento 17, §4.5: uma função pura das qualidades dos membros, sem estado nem tempo, que não é o caso que o A7 do documento 14 proíbe. Para garantir que Rust, TS e Python dão o mesmo resultado, os três SDKs passam os mesmos vetores de teste, em `conformance/sdk/health.json`.
-- **Capacidades.** Em TS, os membros das capacidades listadas em `requires` são obrigatórios no tipo; os outros são opcionais (`Partial`), e um membro de uma capacidade que a instância não tem é `undefined`. Em Python, estão sempre no tipo; aceder a um membro de uma capacidade que a instância não tem levanta `CapabilityError` (`J-E0808`), e `p.has("pressure")` permite testar. Com `requires`, o `jk check` garante-os (`J0602`).
-- **Unidades dos argumentos de métodos:** a unidade da classe (`run_at(pct: f64 %)` recebe `60.0` para 60 %).
-- **Colisões de nomes.** Os nomes da API do handle (`name`, `index`, `health`, `read`, `raw`, `has`) são reservados para membros de classes (ref/00 §2, documento 17 §3.2): o `jkc` recusa-os. Um membro com o nome de uma palavra reservada da linguagem (Python: `from`, `in`, `class`, …; TS: nenhuma, porque as propriedades aceitam palavras reservadas) ganha um `_` no fim no código gerado (`p.from_()`), e o `jkc` avisa.
+- **`health()` is computed by the SDK**, with the rule of document 17, §4.5: a pure function of the members' qualities, with no state and no time, which is not the case that A7 of document 14 forbids. To guarantee that Rust, TS and Python give the same result, the three SDKs pass the same test vectors, in `conformance/sdk/health.json`.
+- **Capabilities.** In TS, the members of the capabilities listed in `requires` are required in the type; the others are optional (`Partial`), and a member of a capability the instance does not have is `undefined`. In Python, they are always in the type; accessing a member of a capability the instance does not have raises `CapabilityError` (`J-E0808`), and `p.has("pressure")` makes it possible to test. With `requires`, `jk check` guarantees them (`J0602`).
+- **Units of method arguments:** the class's unit (`run_at(pct: f64 %)` receives `60.0` for 60%).
+- **Name collisions.** The names of the handle API (`name`, `index`, `health`, `read`, `raw`, `has`) are reserved for class members (ref/00 §2, document 17 §3.2): `jkc` rejects them. A member with the name of a reserved word of the language (Python: `from`, `in`, `class`, …; TS: none, because properties accept reserved words) gets a `_` at the end in the generated code (`p.from_()`), and `jkc` warns.
 
-### 14.3 Usar classes
+### 14.3 Using classes
 
 ```python
 from joker_classes.std import Led, Button
@@ -1229,9 +1229,9 @@ class HelloWorld(App):
             self.led.toggle()
 ```
 
-O exemplo do documento 14, §6.6, usa `cycle("10ms")`, que fica abaixo do mínimo de tier 2 (§19, `J-E0854`). Com 500 ms, um clique mais curto do que o período perde-se, porque `clicked` = `rose(pressed)` é avaliado no latch de quem o consome (14 A7). Para botões em Python ou TS, a forma certa é uma tarefa `task.on("<porta>")` sobre uma porta ligada ao sinal do botão (cada mudança é entregue), ou uma implementação ativa em Rust.
+The example of document 14, §6.6, uses `cycle("10ms")`, which is below the tier 2 minimum (§19, `J-E0854`). With 500 ms, a click shorter than the period is lost, because `clicked` = `rose(pressed)` is evaluated in the latch of whoever consumes it (14 A7). For buttons in Python or TS, the right form is a `task.on("<port>")` task on a port bound to the button's signal (every change is delivered), or an active implementation in Rust.
 
-### 14.4 Classes locais
+### 14.4 Local classes
 
 ```python
 @local_class
@@ -1254,9 +1254,9 @@ const Zone = localClass({
 export default app({ name: "floor_ctl", version: "0.1.0", devices: { zones: many(Zone, { min: 1, max: 64 }) }, /* … */ });
 ```
 
-Liga-se com `each`/`map` (14 §6.5). Uma classe local não tem métodos nem consultas de contrato: o comportamento é código da app, que em Python pode ser um método da classe local e em TS uma função.
+It is bound with `each`/`map` (14 §6.5). A local class has no methods or contract queries: the behavior is app code, which in Python may be a method of the local class and in TS a function.
 
-### 14.5 Implementar uma classe (instância virtual)
+### 14.5 Implementing a class (virtual instance)
 
 ```python
 from joker_classes.std import Pump
@@ -1264,7 +1264,7 @@ from joker_classes.std import Pump
 @implements(Pump, capabilities=["hour_counter"])
 @app(name="pump_ctl", version="1.2.0")
 class PumpCtl(App):
-    cmd: Pump.Commands                    # anotação para os tipos; o SDK preenche-a
+    cmd: Pump.Commands                    # annotation for the types; the SDK fills it in
     state: Pump.State
     contactor = Output(bool)
     feedback = Input(bool)
@@ -1274,30 +1274,30 @@ class PumpCtl(App):
 
     @on_action("reset")
     async def reset(self, args: None) -> None:
-        ...                                # rearme; uma exceção vira ActionError(device) para quem chamou
+        ...                                # rearm; an exception becomes ActionError(device) for the caller
 ```
 
-- `self.cmd` / `io.cmd` tem os `out` da classe como entradas (comandos recebidos, já arbitrados e com envelope, 14 §7.2); `self.state` / `io.state` tem os `in` da classe como saídas publicadas; os `event` emitem-se com `self.state.<evento>.emit(r)`.
-- `@on_action("<ação>")` / `onAction: { <ação>: async (io, args, cx) => … }` recebe os argumentos já descodificados e, opcionalmente, um `cx` (`ActionCx`: `key`, `caller`, `deadline`, `progress(fraction, message)` sobre `report-progress`, `is_cancelled()`/`isCancelled()` sobre `is-cancelled`), e devolve o resultado (ou `None`). Mapeia para o export `on-action` (ref/04 §2.6.1). Para terminar uma ação cancelada, lança `ActionError.cancelled()` (`J-E0308`). Uma ação da classe sem handler é `J-E0813` no build.
-- `Pump.Commands` e `Pump.State` são gerados pelo `jkc`. Em TS, `io.cmd` e `io.state` têm o tipo certo sem anotação.
+- `self.cmd` / `io.cmd` has the class's `out`s as inputs (received commands, already arbitrated and with envelope, 14 §7.2); `self.state` / `io.state` has the class's `in`s as published outputs; the `event`s are emitted with `self.state.<event>.emit(r)`.
+- `@on_action("<action>")` / `onAction: { <action>: async (io, args, cx) => … }` receives the arguments already decoded and, optionally, a `cx` (`ActionCx`: `key`, `caller`, `deadline`, `progress(fraction, message)` over `report-progress`, `is_cancelled()`/`isCancelled()` over `is-cancelled`), and returns the result (or `None`). It maps to the `on-action` export (ref/04 §2.6.1). To end a canceled action, throw `ActionError.cancelled()` (`J-E0308`). An action of the class without a handler is `J-E0813` at build.
+- `Pump.Commands` and `Pump.State` are generated by `jkc`. In TS, `io.cmd` and `io.state` have the right type without annotation.
 
-### 14.6 Membros de classe (handles aninhados)
+### 14.6 Class members (nested handles)
 
-Um membro de classe (documento 17, §8) é uma **propriedade** do handle com o handle da classe do membro, como em Rust (ref/04 §4.8.6). Os nomes do utilizador ficam em `snake_case` nas duas linguagens.
+A class member (document 17, §8) is a **property** of the handle with the handle of the member's class, as in Rust (ref/04 §4.8.6). User names stay in `snake_case` in both languages.
 
 ```ts
-// gerado a partir de classes/local/bench_io.jkc (excerto)
+// generated from classes/local/bench_io.jkc (excerpt)
 interface BenchIoCycleCore extends ClassHandleCycle<BenchIoState> {
   readonly status: LedCycle<never>;
   readonly boot: ButtonCycle<never>;
   readonly knob: AnalogInCycle<never>;
   rssi: Member<bigint>; uptime: Member<number>; online: Member<boolean>;
 }
-// um membro coleção: readonly pumps: Many<PumpCycle<never>>; um @optional: readonly grid?: SgReadyCycle<never>
+// a collection member: readonly pumps: Many<PumpCycle<never>>; an @optional: readonly grid?: SgReadyCycle<never>
 ```
 
 ```python
-# gerado a partir de classes/local/bench_io.jkc (excerto)
+# generated from classes/local/bench_io.jkc (excerpt)
 class BenchIo(ClassHandle[BenchIoState]):
     CLASS: ClassVar[str] = "local/bench_io@1"
     status: Led
@@ -1306,64 +1306,64 @@ class BenchIo(ClassHandle[BenchIoState]):
     rssi: Member[int]
     uptime: Member[float]
     online: Member[bool]
-# um membro coleção: pumps: Many[Pump]; um @optional: grid: SgReady | None
+# a collection member: pumps: Many[Pump]; an @optional: grid: SgReady | None
 ```
 
-| Forma | TypeScript | Python |
+| Form | TypeScript | Python |
 |---|---|---|
-| consulta de um membro fixo | `io.esp.boot.clicked()` | `self.esp.boot.clicked()` |
-| coleção | `for (const p of io.station.pumps) …` | `for p in self.station.pumps: …` |
-| método de um membro | `io.hp.compressor.stop()` | `self.hp.compressor.stop()` |
-| membro `@optional` | `io.hp.grid?.boost()` | `if self.hp.grid is not None: self.hp.grid.boost()` |
+| query of a fixed member | `io.esp.boot.clicked()` | `self.esp.boot.clicked()` |
+| collection | `for (const p of io.station.pumps) …` | `for p in self.station.pumps: …` |
+| method of a member | `io.hp.compressor.stop()` | `self.hp.compressor.stop()` |
+| `@optional` member | `io.hp.grid?.boost()` | `if self.hp.grid is not None: self.hp.grid.boost()` |
 
-A semântica é a do §14.2 e da ref/04 §4.8.6: as escritas são do escritor da app, e numa instância virtual os membros de classe só se leem (o método é descartado com `J-E0507`, documento 16, P6). O `health()` do handle composto é o da árvore (17 §4.5), com os mesmos vetores de teste de `conformance/sdk/health.json`.
-
----
-
-## 15. Codificações no guest
-
-### 15.1 Imagem e propostas
-
-O SDK descodifica a imagem empacotada do `on-cycle` e escreve o buffer de propostas com o layout da ref/04 §3: cabeçalho de 64 B, amostras e resultados de 24 B, secção larga; registos `WRITE`, `METHOD`, `PUBLISH`, `COUNTER_ADD`, `EMIT` e `NOTE`. Em Python, com `struct.unpack_from`/`pack_into` sobre um `memoryview`, sem cópias por leitura; em TS, com `DataView` sobre o `Uint8Array`. Os valores de `string`, `bytes` e `Internal` até 64 B seguem no próprio registo, com a flag `INLINE` (ref/04 §3.3); `cycle-io.read` só é preciso para os carimbos `ts_src`/`ts_hw` (flags `HAS_TS_*` da amostra) e para acesso dinâmico por nome.
-
-**Handles.** O handle da porta *i* é a sua posição na tabela de portas, construída pela ordem da lista de portas do `joker:meta` (ref/04 §2.6.2). Os SDKs de tier 2 emitem as portas **ordenadas por nome** (bytes UTF-8), e não pela ordem de declaração: assim a ordem não depende de detalhes do interpretador, e o mesmo código dá o mesmo `joker:meta` byte a byte. O Rust usa a ordem dos campos da struct; o host não distingue.
-
-### 15.2 Registos
-
-- CBOR determinístico (RFC 8949, §4.2.1), com a forma de D2 (ref/00 §4.1, ref/04 §4.10): um mapa com **chaves inteiras**, a posição do campo no esquema do `joker:meta` a contar de 0; inteiros na forma mais curta; `f64` na forma mais curta que preserve o valor; um campo opcional a `None`/`null` omite-se. `Plan(target_soc=0.62, limit_kw=400.0, valid_until=…)` é `{0: 0.62, 1: 400.0, 2: …}`.
-- Cada SDK tem o seu codificador (sem dependências), e todos passam os vetores de `conformance/sdk/cbor.json`: os mesmos registos dão os mesmos bytes em Rust, TS e Python.
-- Limites (ref/00 §10): `string` ≤ 1 KiB, listas ≤ 64, `Internal` ≤ 64 B codificado. Fora disso, `LimitError` na codificação (`J-E0805`, `J-E0804`).
-- As interfaces de texto (API, `jk`, logs do SDK) mostram os campos pelo nome, a partir do esquema.
+The semantics are those of §14.2 and of ref/04 §4.8.6: the writes belong to the app's writer, and in a virtual instance class members are read-only (the method is discarded with `J-E0507`, document 16, P6). The `health()` of the composite handle is that of the tree (17 §4.5), with the same test vectors of `conformance/sdk/health.json`.
 
 ---
 
-## 16. Mapeamento para o mundo `joker:runtime`
+## 15. Encodings in the guest
 
-Cada função do mundo (`wit/joker-runtime.wit`, ref/04 §2) tem a sua forma nas três linguagens. "Imagem" e "buffer" querem dizer que o SDK não chama o host: usa a imagem do `on-cycle` ou escreve um registo no buffer de propostas (ref/04 §3). Os itens `@unstable` (1.1) existem nos tipos de tier 2, com o comportamento do SDK Rust (§7, ref/04 §2.9): recusados em `prod` (`J-E0003`), e em `dev` levantam `UnavailableError` com o `J-E0601` dos stubs.
+### 15.1 Image and proposals
 
-**`cycle-io` (instância de ciclo)**
+The SDK decodes the packed image of `on-cycle` and writes the proposal buffer with the layout of ref/04 §3: 64 B header, 24 B samples and results, wide section; records `WRITE`, `METHOD`, `PUBLISH`, `COUNTER_ADD`, `EMIT` and `NOTE`. In Python, with `struct.unpack_from`/`pack_into` over a `memoryview`, with no copies per read; in TS, with `DataView` over the `Uint8Array`. Values of `string`, `bytes` and `Internal` up to 64 B go in the record itself, with the `INLINE` flag (ref/04 §3.3); `cycle-io.read` is only needed for the `ts_src`/`ts_hw` stamps (flags `HAS_TS_*` of the sample) and for dynamic access by name.
 
-| WIT | Rust (ref/04) | Python | TypeScript | Caminho |
+**Handles.** The handle of port *i* is its position in the port table, built in the order of the port list of `joker:meta` (ref/04 §2.6.2). The tier 2 SDKs emit the ports **ordered by name** (UTF-8 bytes), and not in declaration order: that way the order does not depend on details of the interpreter, and the same code gives the same `joker:meta` byte for byte. Rust uses the order of the struct's fields; the host does not distinguish.
+
+### 15.2 Records
+
+- Deterministic CBOR (RFC 8949, §4.2.1), with the shape of D2 (ref/00 §4.1, ref/04 §4.10): a map with **integer keys**, the position of the field in the `joker:meta` schema counting from 0; integers in the shortest form; `f64` in the shortest form that preserves the value; an optional field set to `None`/`null` is omitted. `Plan(target_soc=0.62, limit_kw=400.0, valid_until=…)` is `{0: 0.62, 1: 400.0, 2: …}`.
+- Each SDK has its own encoder (without dependencies), and all of them pass the vectors of `conformance/sdk/cbor.json`: the same records give the same bytes in Rust, TS and Python.
+- Limits (ref/00 §10): `string` ≤ 1 KiB, lists ≤ 64, `Internal` ≤ 64 B encoded. Outside that, `LimitError` on encoding (`J-E0805`, `J-E0804`).
+- The text interfaces (API, `jk`, SDK logs) show the fields by name, from the schema.
+
+---
+
+## 16. Mapping to the `joker:runtime` world
+
+Each function of the world (`wit/joker-runtime.wit`, ref/04 §2) has its form in the three languages. "Image" and "buffer" mean that the SDK does not call the host: it uses the image of `on-cycle` or writes a record in the proposal buffer (ref/04 §3). The `@unstable` items (1.1) exist in the tier 2 types, with the behavior of the Rust SDK (§7, ref/04 §2.9): rejected in `prod` (`J-E0003`), and in `dev` they raise `UnavailableError` with the stubs' `J-E0601`.
+
+**`cycle-io` (cycle instance)**
+
+| WIT | Rust (ref/04) | Python | TypeScript | Path |
 |---|---|---|---|---|
-| `read` | `get`, `get_uncertain`, `get_or`, `sample` | `get()`, `get_uncertain()`, `get_or()`, `sample()` | `get()`, `getUncertain()`, `getOr()`, `sample()`, `tryGet()` | imagem; `read` para `ts_src`/`ts_hw` |
+| `read` | `get`, `get_uncertain`, `get_or`, `sample` | `get()`, `get_uncertain()`, `get_or()`, `sample()` | `get()`, `getUncertain()`, `getOr()`, `sample()`, `tryGet()` | image; `read` for `ts_src`/`ts_hw` |
 | `write` | `CycleOutput::set` | `OutputHandle.set` | `OutputCycle.set` | buffer (`WRITE`) |
-| `relinquish` | `relinquish` | `relinquish()` | `relinquish()` | buffer (`WRITE` com `RELINQUISH`) |
-| `pending` | `pending` | `pending()` | `pending()` | SDK (buffer local) |
-| `last-outcome` | `last_outcome`, `mine`, `winner` | `last_outcome()` | `lastOutcome()` | imagem (secção de resultados) |
-| `param` | `ParamHandle::get` | `ParamHandle.get()` | `ParamHandle.get()` | imagem |
-| `call` | método da classe (`p.start()`) | `p.start()` | `p.start()` | buffer (`METHOD`) |
-| `publish` | `PublishedHandle::set`, `AlarmHandle::set/raise/clear`, `CycleInternal::set` (escritor de ciclo), `io.state.<m>.set` | `Published.set`, `Alarm.set/raise_/clear`, `Internal.set`, `self.state.<m>.set` | `set`, `raise`/`clear`, `set`, `io.state.<m>.set` | buffer (`PUBLISH`) |
+| `relinquish` | `relinquish` | `relinquish()` | `relinquish()` | buffer (`WRITE` with `RELINQUISH`) |
+| `pending` | `pending` | `pending()` | `pending()` | SDK (local buffer) |
+| `last-outcome` | `last_outcome`, `mine`, `winner` | `last_outcome()` | `lastOutcome()` | image (results section) |
+| `param` | `ParamHandle::get` | `ParamHandle.get()` | `ParamHandle.get()` | image |
+| `call` | class method (`p.start()`) | `p.start()` | `p.start()` | buffer (`METHOD`) |
+| `publish` | `PublishedHandle::set`, `AlarmHandle::set/raise/clear`, `CycleInternal::set` (cycle writer), `io.state.<m>.set` | `Published.set`, `Alarm.set/raise_/clear`, `Internal.set`, `self.state.<m>.set` | `set`, `raise`/`clear`, `set`, `io.state.<m>.set` | buffer (`PUBLISH`) |
 | `counter-add` | `CounterHandle::inc/add` | `Counter.add(n)` | `CounterHandle.add(n)` | buffer (`COUNTER_ADD`) |
 | `emit` | `EventOutputHandle::emit`, `io.events.<e>.emit` | `EventOutput.emit`, `self.state.<e>.emit` | `emit` | buffer (`EMIT`) |
 | `note-substituted` | `get_or` | `get_or()` | `getOr()` | buffer (`NOTE`) |
 | `mailbox-send` | `MailboxEnd::try_send` | `Mailbox.try_send` | `MailboxSend.trySend` | host |
 | `mailbox-recv` | `MailboxEnd::try_recv` | `Mailbox.try_recv`, `drain` | `MailboxRecvCycle.tryRecv`, `drain` | host |
-| `now` | `CycleIo::now` | `self.now()` (e `time.*`) | `io.now()` (e `Date.now()`) | imagem (cabeçalho); `wasi:clocks` servido com o latch |
-| `dt-ns` | `CycleIo::dt` | `self.dt()` | `io.dt()` | imagem (cabeçalho) |
-| `random-u64` | `CycleIo::random` | `random` (semeado) | `Math.random()` (semeado) | host, via `wasi:random` |
-| `write-at` (1.1) | `write_at` (`unstable-scheduled-writes`) | `set_at` | `setAt` | buffer (`WRITE` com `AT`) |
+| `now` | `CycleIo::now` | `self.now()` (and `time.*`) | `io.now()` (and `Date.now()`) | image (header); `wasi:clocks` served with the latch |
+| `dt-ns` | `CycleIo::dt` | `self.dt()` | `io.dt()` | image (header) |
+| `random-u64` | `CycleIo::random` | `random` (seeded) | `Math.random()` (seeded) | host, via `wasi:random` |
+| `write-at` (1.1) | `write_at` (`unstable-scheduled-writes`) | `set_at` | `setAt` | buffer (`WRITE` with `AT`) |
 
-**`async-io` (instância async)**
+**`async-io` (async instance)**
 
 | WIT | Rust (ref/04) | Python | TypeScript |
 |---|---|---|---|
@@ -1374,10 +1374,10 @@ Cada função do mundo (`wit/joker-runtime.wit`, ref/04 §2) tem a sua forma nas
 | `relinquish` | `relinquish` | `relinquish()` | `relinquish()` |
 | `last-outcome` | `last_outcome` | `last_outcome()` | `lastOutcome()` |
 | `param` | `ParamHandle::get` | `ParamHandle.get()` | `ParamHandle.get()` |
-| `call` | método da classe `.await` → `MethodOutcome` | `await p.start()` → `list[WriteOutcome]` | `await p.start()` → `WriteOutcome[]` |
+| `call` | class method `.await` → `MethodOutcome` | `await p.start()` → `list[WriteOutcome]` | `await p.start()` → `WriteOutcome[]` |
 | `invoke` | `ActionPort::invoke(args).await`, `p.reset().await` | `await invoke(args, key=)` | `await invoke(args, { key })` |
 | `start-action`, `action-call.*` | `ActionCall::start`, `ActionHandle::{progress, cancel, finish}` | `invoke_long()`, `LongAction.{progress, cancel, finish}` | `invokeLong()`, `LongAction.{progress, cancel, finish}` |
-| `publish` | `PublishedHandle::set`, `AlarmHandle::set`, `TaskInternal::set` (escritor async) | `set`, `Alarm.set`, `Internal.set` | `set`, `set`, `set` |
+| `publish` | `PublishedHandle::set`, `AlarmHandle::set`, `TaskInternal::set` (async writer) | `set`, `Alarm.set`, `Internal.set` | `set`, `set`, `set` |
 | `counter-add` | `CounterHandle::add` | `Counter.add` | `CounterHandle.add` |
 | `emit` | `EventOutputHandle::emit` | `emit` | `emit` |
 | `note-substituted` | `get_or` | `get_or()` | `getOr()` |
@@ -1387,7 +1387,7 @@ Cada função do mundo (`wit/joker-runtime.wit`, ref/04 §2) tem a sua forma nas
 | `mailbox-next` | `MailboxEnd::recv().await` | `await recv()` | `await recv()` |
 | `history` | `history`, `history_agg` | `await history(…, step=, agg=)` | `await history({ …, step, agg })` |
 | `now` | `TaskIo::now` | `self.now()` | `io.now()` |
-| `sleep-until` | `TaskIo::sleep`, `sleep_until` | `await self.sleep()`, `sleep_until()` (e `asyncio.sleep`) | `await io.sleep()`, `sleepUntil()` (e `setTimeout`) |
+| `sleep-until` | `TaskIo::sleep`, `sleep_until` | `await self.sleep()`, `sleep_until()` (and `asyncio.sleep`) | `await io.sleep()`, `sleepUntil()` (and `setTimeout`) |
 | `random-u64` | `TaskIo::random` | `random` | `Math.random()` |
 | `report-progress`, `is-cancelled` | `ActionCx::progress`, `is_cancelled` | `cx.progress()`, `cx.is_cancelled()` | `cx.progress()`, `cx.isCancelled()` |
 | `write-at` (1.1) | `write_at` | `await write_at()` | `await writeAt()` |
@@ -1403,25 +1403,25 @@ Cada função do mundo (`wit/joker-runtime.wit`, ref/04 §2) tem a sua forma nas
 | `kv.keys` | `Kv::keys` | `kv.keys(prefix)` | `kv.keys(prefix)` |
 | `kv.commit` | `Kv::batch().….commit().await` | `await kv.batch().….commit()` | `await kv.batch().….commit()` |
 | `secrets.reveal` | `TaskIo::secret(name)` → `Secret` | `await self.secrets.get(name)` → `SecretStr` | `await io.secrets.get(name)` → `SecretString` |
-| `log.log` | `log::info!(…)` e as outras macros | `log.info(…)`, `logging`, `print` | `log.info(…)`, `console.*` |
+| `log.log` | `log::info!(…)` and the other macros | `log.info(…)`, `logging`, `print` | `log.info(…)`, `console.*` |
 | `log.enabled` | `joker::log::enabled(Level)` | `log.enabled(level)` | `log.enabled(level)` |
 
 **`guest` (exports)**
 
 | WIT | Rust (ref/04) | Python | TypeScript |
 |---|---|---|---|
-| `init` | gerado pelo `#[joker::app]` | SDK (guarda parâmetros, semeia `random`, resolve handles) | idem |
+| `init` | generated by `#[joker::app]` | SDK (stores parameters, seeds `random`, resolves handles) | same |
 | `on-params` | `#[joker::on_params]` | `@on_params` | `onParams` |
 | `on-cycle` | `#[joker::cycle]` | `@cycle` | `cycles: { … }` |
 | `run-task` | `#[joker::task]` | `@task.*` | `tasks: { … }` |
 | `on-action` | `#[joker::on_action]` | `@on_action` | `onAction` |
 | `export-state`, `migrate` | `#[joker::state(persist)]`, `#[joker::migrate]` | `@state(persist=True)`, `@migrate` | `cycle({ persist: true })`, `migrate` |
 
-**Reservados (1.1):** `ml.infer` e o recurso `tensor` (`dtype`, `shape`, `data`) → `Model.infer`, `Tensor`; `frames.next` e o recurso `frame` (`meta`, `view`) → `StreamInput`; `blocks.next` → `BlockInput`: nos tipos; na v1, `J-E0003` em `prod` e `UnavailableError` (`J-E0601`) em `dev` (os nomes Rust são os da ref/04 §4.15). **WASI:** `wasi:clocks` (latch no ciclo, real em async), `wasi:random` (o gerador determinista), `wasi:http/outgoing-handler` (`fetch`, `joker_sdk.http`, com `net.allow`), como na ref/04 §2.7.
+**Reserved (1.1):** `ml.infer` and the `tensor` resource (`dtype`, `shape`, `data`) → `Model.infer`, `Tensor`; `frames.next` and the `frame` resource (`meta`, `view`) → `StreamInput`; `blocks.next` → `BlockInput`: in the types; in v1, `J-E0003` in `prod` and `UnavailableError` (`J-E0601`) in `dev` (the Rust names are those of ref/04 §4.15). **WASI:** `wasi:clocks` (latch in the cycle, real in async), `wasi:random` (the deterministic generator), `wasi:http/outgoing-handler` (`fetch`, `joker_sdk.http`, with `net.allow`), as in ref/04 §2.7.
 
-## 17. Testes
+## 17. Tests
 
-O harness é a crate `joker-test` do SDK Rust (04 §3.7), embrulhada: **PyO3** no pacote `joker-testing` e **napi-rs** no `@joker/test`, com rodas e binários pré-compilados para Linux (x86_64, aarch64), macOS (aarch64, x86_64) e Windows (x86_64). Corre o componente real (`.wasm`) no wasmtime, com o relógio virtual e o `joker-core` verdadeiro: o mesmo harness, a mesma semântica, nas três linguagens.
+The harness is the `joker-test` crate of the Rust SDK (04 §3.7), wrapped: **PyO3** in the `joker-testing` package and **napi-rs** in `@joker/test`, with prebuilt wheels and binaries for Linux (x86_64, aarch64), macOS (aarch64, x86_64) and Windows (x86_64). It runs the real component (`.wasm`) in wasmtime, with the virtual clock and the real `joker-core`: the same harness, the same semantics, in the three languages.
 
 ### 17.1 API
 
@@ -1429,12 +1429,12 @@ O harness é a crate `joker-test` do SDK Rust (04 §3.7), embrulhada: **PyO3** n
 class Harness(Generic[AppT]):
     @classmethod
     def for_app(cls, app: type[AppT] | None = None, *, wasm: str | os.PathLike[str] | None = None) -> Harness[AppT]: ...
-    # configuração (encadeável)
+    # configuration (chainable)
     def group(self, task: str, period: DurationLike) -> Self: ...
     def param(self, name: str, value: Any) -> Self: ...
     def input(self, name: str, value: Series | Any) -> Self: ...
     def internal(self, name: str, value: Any) -> Self: ...
-    def history(self, name: str, series: Series, *, before: DurationLike) -> Self: ...   # historian pré-carregado
+    def history(self, name: str, series: Series, *, before: DurationLike) -> Self: ...   # preloaded historian
     def instance(self, port: str, name: str, *, capabilities: Sequence[str] = (), sim: bool = True) -> Self: ...
     def member(self, instance: str, member: str, value: Series | Any) -> Self: ...
     def action(self, target: str, handler: Callable[[Any], Any] | BaseException) -> Self: ...
@@ -1442,13 +1442,13 @@ class Harness(Generic[AppT]):
                  safe: Any = None, interlock: str | None = None) -> Self: ...
     def clock(self, *, start: str = "2026-01-01T00:00:00Z", quality: str = "synced") -> Self: ...
     def seed(self, seed: int) -> Self: ...
-    # execução, em tempo virtual
+    # execution, in virtual time
     def run_for(self, d: DurationLike) -> None: ...
     def step(self, ticks: int = 1) -> None: ...
-    def run_task(self, task: str) -> None: ...          # força uma execução de uma tarefa async
+    def run_task(self, task: str) -> None: ...          # forces one execution of an async task
     def now(self) -> Instant: ...
-    # observação
-    def output(self, name: str) -> OutputTrace: ...     # propostas, resultados e valores aplicados
+    # observation
+    def output(self, name: str) -> OutputTrace: ...     # proposals, results and applied values
     def input_series(self, name: str) -> Trace: ...
     def events(self, name: str) -> list[tuple[Instant, Any]]: ...
     def alarm(self, name: str) -> Trace: ...
@@ -1485,11 +1485,11 @@ export declare class Harness {
 }
 ```
 
-- **Séries:** `Series.constant(v)`, `Series.step(before, after, at)`, `Series.ramp(a, b, over)` (fica em `b` depois de `over`), `Series.linear(a, b, over)` (continua a reta), `Series.sine(mean, amp, period)`, `Series.noise(mean, std, seed=)`, `Series.replay(path, column)` (Parquet), e `.with_quality_at(t, q)`/`.withQualityAt(t, q)`, `.with_quality(start, end, q)`. As mesmas do `joker-test`.
-- **Traços:** `.values()`, `.last()`, `.when(cond)`, `.after(t)`, `.before(t)`, `.all(pred)`, `.any(pred)`, `.no_new_writes()`/`.noNewWrites()`, `.outcomes()`, `.lt(x)`/`.gt(x)`/`.eq(x)` (para condições).
-- **Envelope:** sem `envelope()`, cada proposta é `accepted`. Com `envelope()`, o harness usa o envelope real do `joker-core` com essa configuração, e os resultados são os de produção.
-- **Instâncias de classe:** `instance(port, name, sim=True)` liga uma instância ao simulador de classe (14 A13); com `sim=False`, os membros vêm de `member()`.
-- **Tarefas async** correm no mesmo relógio virtual; `history()` é servido pelo que o harness já gerou mais o pré-carregado.
+- **Series:** `Series.constant(v)`, `Series.step(before, after, at)`, `Series.ramp(a, b, over)` (stays at `b` after `over`), `Series.linear(a, b, over)` (continues the line), `Series.sine(mean, amp, period)`, `Series.noise(mean, std, seed=)`, `Series.replay(path, column)` (Parquet), and `.with_quality_at(t, q)`/`.withQualityAt(t, q)`, `.with_quality(start, end, q)`. The same as in `joker-test`.
+- **Traces:** `.values()`, `.last()`, `.when(cond)`, `.after(t)`, `.before(t)`, `.all(pred)`, `.any(pred)`, `.no_new_writes()`/`.noNewWrites()`, `.outcomes()`, `.lt(x)`/`.gt(x)`/`.eq(x)` (for conditions).
+- **Envelope:** without `envelope()`, every proposal is `accepted`. With `envelope()`, the harness uses the real envelope of `joker-core` with that configuration, and the results are those of production.
+- **Class instances:** `instance(port, name, sim=True)` binds an instance to the class simulator (14 A13); with `sim=False`, the members come from `member()`.
+- **Async tasks** run on the same virtual clock; `history()` is served from what the harness has already generated plus the preloaded data.
 
 ### 17.2 pytest
 
@@ -1505,7 +1505,7 @@ def test_nunca_descarrega_abaixo_da_reserva() -> None:
          .input("grid_power", Series.ramp(300.0, 700.0, "10m"))
          .input("soc", Series.linear(0.30, 0.05, "10m"))
          .internal("plan", Plan(target_soc=0.5, limit_kw=400.0, valid_until=2**62)))
-    h.run_for("10m")                                    # relógio virtual: corre em milissegundos
+    h.run_for("10m")                                    # virtual clock: runs in milliseconds
     soc = h.input_series("soc")
     assert h.output("battery").when(soc.lt(0.1)).all(lambda v: v == 0.0)
     assert h.traps() == []
@@ -1518,9 +1518,9 @@ def test_qualidade_ma_nao_escreve() -> None:
     assert h.output("battery").after("30s").no_new_writes()
 ```
 
-O plugin (`pytest11`, ativado ao instalar `joker-testing`) faz o `jk build` da app uma vez por sessão, só se as fontes mudaram, e `Harness.for_app` usa esse `.wasm`. `jk test` corre o `pytest` das apps Python.
+The plugin (`pytest11`, activated when `joker-testing` is installed) runs `jk build` on the app once per session, only if the sources changed, and `Harness.for_app` uses that `.wasm`. `jk test` runs `pytest` for Python apps.
 
-### 17.3 vitest e `node:test`
+### 17.3 vitest and `node:test`
 
 ```ts
 // test/peak_shaver.test.ts
@@ -1529,7 +1529,7 @@ import { Harness, Series, Quality } from "@joker/test";
 import peakShaver from "../src/app.js";
 
 describe("peak_shaver", () => {
-  it("nunca descarrega abaixo da reserva", () => {
+  it("never discharges below the reserve", () => {
     const h = Harness.forApp(peakShaver)
       .group("control", "200ms")
       .param("limit", 400).param("reserve", 10)
@@ -1544,15 +1544,15 @@ describe("peak_shaver", () => {
 });
 ```
 
-`vitest.config.ts` com `globalSetup: ["@joker/test/setup"]` faz o build uma vez. Com `node:test`, `import "@joker/test/register"` faz o mesmo no primeiro `Harness.forApp`. A API não depende do *framework*: funciona também com Jest.
+`vitest.config.ts` with `globalSetup: ["@joker/test/setup"]` does the build once. With `node:test`, `import "@joker/test/register"` does the same at the first `Harness.forApp`. The API does not depend on the *framework*: it also works with Jest.
 
-### 17.4 Modo nativo
+### 17.4 Native mode
 
-`import joker_sdk` num CPython normal, e `import "@joker/sdk"` num Node normal, funcionam em **modo nativo**: as declarações e as funções puras da app podem ser testadas diretamente (`Plan.from_peak(…)`), sem harness. Qualquer chamada ao host levanta `J-E0818`. É também o modo que o `jk build` usa para extrair os metadados (§18.4).
+`import joker_sdk` in a normal CPython, and `import "@joker/sdk"` in a normal Node, work in **native mode**: the declarations and the pure functions of the app can be tested directly (`Plan.from_peak(…)`), without a harness. Any host call raises `J-E0818`. It is also the mode `jk build` uses to extract the metadata (§18.4).
 
 ---
 
-## 18. Empacotamento e build
+## 18. Packaging and build
 
 ### 18.1 Python: `pyproject.toml`
 
@@ -1586,71 +1586,71 @@ include = ["peak_shaver/data/*.json"]
 }
 ```
 
-### 18.3 Chaves
+### 18.3 Keys
 
-As chaves `[tool.joker]` e `"joker"` são as mesmas. São ficheiros escritos por pessoas, e por isso estritos: uma chave desconhecida é `J0140`; as chaves `x_*` são ignoradas (ref/00 §1).
+The `[tool.joker]` and `"joker"` keys are the same. They are files written by people, and therefore strict: an unknown key is `J0140`; the `x_*` keys are ignored (ref/00 §1).
 
-| Chave | Tipo | Obrigatória | Omissão | Validação |
+| Key | Type | Required | Default | Validation |
 |---|---|---|---|---|
-| `app` | Python: `"módulo:Classe"`; TS: caminho do ficheiro de entrada | sim | — | tem de ter exatamente uma app (`J-E0850`) |
-| `world` | `"joker:runtime@X.Y.Z"` | não | o mundo do SDK | tem de ser um mundo que o SDK instalado sabe gerar (`J-E0856`) |
-| `include` | lista de globs relativos ao pacote | não | `[]` | ficheiros de dados embutidos só de leitura; total ≤ 4 MiB (`J-E0860`) |
+| `app` | Python: `"module:Class"`; TS: path of the entry file | yes | — | must have exactly one app (`J-E0850`) |
+| `world` | `"joker:runtime@X.Y.Z"` | no | the SDK's world | must be a world the installed SDK knows how to generate (`J-E0856`) |
+| `include` | list of globs relative to the package | no | `[]` | embedded read-only data files; total ≤ 4 MiB (`J-E0860`) |
 
-**Não há mais chaves, de propósito.** O nome, a versão, as portas, as tarefas, as unidades e os alarmes estão no código (04 §1). A memória, o grupo, o nível no árbitro e a rede são do site (`[apps.<a>]`, 03 §8). A `version` do código é opcional: sem ela, vale a do `[project]`/`"version"`; com as duas, têm de ser iguais (`J-E0852`). O `name` do código é obrigatório (é o nome da app no manifesto, em `snake_case`), e o do pacote é livre (`peak-shaver`).
+**There are no more keys, on purpose.** The name, the version, the ports, the tasks, the units and the alarms are in the code (04 §1). The memory, the group, the level in the arbiter and the network belong to the site (`[apps.<a>]`, 03 §8). The `version` in the code is optional: without it, the one in `[project]`/`"version"` applies; with both, they must be equal (`J-E0852`). The `name` in the code is required (it is the app's name in the manifest, in `snake_case`), and the package's name is free (`peak-shaver`).
 
-### 18.4 O que o `jk build` faz
+### 18.4 What `jk build` does
 
-1. **Deteta a linguagem:** `Cargo.toml` → Rust (ref/04); `package.json` com `"joker"` → TS; `pyproject.toml` com `[tool.joker]` → Python. Mais do que um na mesma pasta é `J-E0850`.
-2. **Verifica a toolchain:** TS exige Node ≥ 20 e o `@joker/sdk` em `node_modules`; Python exige o interpretador do `requires-python` e o `joker-sdk` no ambiente ativo (ou em `.venv`), que fixa a versão do `componentize-py`. Em falta: `J-E0861`, com o comando que resolve.
-3. **Executa a declaração em modo nativo** (§17.4): importa o ponto de entrada, recolhe o registo, valida (§5.5), produz o `joker:meta`, e corre os *lints* estáticos: `J-E0859` (API async numa tarefa de ciclo), `J-E0858` (global do módulo escrita numa tarefa) e `J-E0863` (captura genérica de exceções à volta de leituras numa tarefa de ciclo).
-4. **Empacota:** TS com o esbuild (ESM, `es2022`, um só ficheiro, com o `@joker/sdk` incluído; imports `node:*` são `J-E0853`); Python com o pacote de entrada e as dependências do ambiente, que têm de ser Python puro ou ter rodas `wasm32-wasi` (`J-E0853`, com a lista das que falham).
-5. **Componentiza com pré-inicialização:** ComponentizeJS (StarlingMonkey, com weval) ou componentize-py (CPython, com Wizer), contra o `wit/` do mundo pedido. O código de topo volta a correr dentro do Wasm, e o SDK compara o digest do registo com o do passo 3: diferença é `J-E0862` (a declaração depende do ambiente).
-6. **Injeta** a secção `joker:meta` e escreve `dist/<app>.wasm`. Com `--target`, pré-compila o `.cwasm` (01 §9).
-7. **Verifica os limites** de tamanho do §19 (`J-E0860`).
+1. **Detects the language:** `Cargo.toml` → Rust (ref/04); `package.json` with `"joker"` → TS; `pyproject.toml` with `[tool.joker]` → Python. More than one in the same directory is `J-E0850`.
+2. **Checks the toolchain:** TS requires Node ≥ 20 and `@joker/sdk` in `node_modules`; Python requires the interpreter of `requires-python` and `joker-sdk` in the active environment (or in `.venv`), which pins the version of `componentize-py`. If missing: `J-E0861`, with the command that fixes it.
+3. **Runs the declaration in native mode** (§17.4): imports the entry point, collects the registry, validates (§5.5), produces `joker:meta`, and runs the static *lints*: `J-E0859` (async API in a cycle task), `J-E0858` (module global written in a task) and `J-E0863` (generic exception catch around reads in a cycle task).
+4. **Packages:** TS with esbuild (ESM, `es2022`, a single file, with `@joker/sdk` included; `node:*` imports are `J-E0853`); Python with the entry package and the dependencies of the environment, which must be pure Python or have `wasm32-wasi` wheels (`J-E0853`, with the list of those that fail).
+5. **Componentizes with pre-initialization:** ComponentizeJS (StarlingMonkey, with weval) or componentize-py (CPython, with Wizer), against the `wit/` of the requested world. The top-level code runs again inside the Wasm, and the SDK compares the digest of the registry with that of step 3: a difference is `J-E0862` (the declaration depends on the environment).
+6. **Injects** the `joker:meta` section and writes `dist/<app>.wasm`. With `--target`, it precompiles the `.cwasm` (01 §9).
+7. **Checks the size limits** of §19 (`J-E0860`).
 
-O build é reprodutível: as mesmas fontes, as mesmas dependências (fixadas pelo lock do ecossistema: `package-lock.json`, `uv.lock` ou `pylock.toml`), a mesma versão do SDK e da toolchain dão os mesmos bytes. Sem lock do ecossistema, o `jk build` avisa (`J-E0864`), porque o digest do lock do Joker deixa de ser reprodutível a partir do Git.
+The build is reproducible: the same sources, the same dependencies (pinned by the ecosystem's lock: `package-lock.json`, `uv.lock` or `pylock.toml`), the same version of the SDK and of the toolchain give the same bytes. Without an ecosystem lock, `jk build` warns (`J-E0864`), because the digest of the Joker lock stops being reproducible from Git.
 
-`jk app new <nome> --lang ts|py` gera o `package.json` ou o `pyproject.toml`, o ponto de entrada, um teste, o lock do ecossistema e, em TS, o `tsconfig.json` (`strict`, `noUncheckedIndexedAccess`) e a regra de lint `no-floating-promises`.
+`jk app new <name> --lang ts|py` generates the `package.json` or the `pyproject.toml`, the entry point, a test, the ecosystem lock and, in TS, the `tsconfig.json` (`strict`, `noUncheckedIndexedAccess`) and the lint rule `no-floating-promises`.
 
 ---
 
-## 19. Limites de tier 2
+## 19. Tier 2 limits
 
-**Tier 2 corre no ciclo e em async**, com um período mínimo de ciclo. Proibir o ciclo obrigaria a escrever em Rust controlos lentos que o TS e o Python fazem bem (HVAC a 1 s, níveis de tanques a 1 s), e empurraria as pessoas para tarefas `every("1s")` em async, que não têm latch, nem determinismo, nem admissão de tempo real. O que torna o ciclo aceitável é que as pausas de GC acontecem **dentro** do tick, são medidas pelo `jk bench` e entram na admissão (M23).
+**Tier 2 runs in the cycle and in async**, with a minimum cycle period. Forbidding the cycle would force slow controls that TS and Python do well (HVAC at 1 s, tank levels at 1 s) to be written in Rust, and would push people towards `every("1s")` tasks in async, which have no latch, no determinism and no real-time admission. What makes the cycle acceptable is that GC pauses happen **inside** the tick, are measured by `jk bench` and enter the admission (M23).
 
-| | Rust (04 §4.3) | TypeScript | Python | Onde se aplica |
+| | Rust (04 §4.3) | TypeScript | Python | Where it applies |
 |---|---|---|---|---|
-| período mínimo de uma tarefa de ciclo | 1 ms | **100 ms** | **500 ms** | `jk check` e `jk build`: `J-E0854` (erro em `prod`, aviso em `dev`) |
-| `wcet` por omissão | declarado | 20% do período | 20% do período | até haver medição no lock |
-| `wcet` máximo | admissão | 50% do período | 50% do período | `J-E0854` |
-| admissão com medição | p99,9 | **máximo** medido | **máximo** medido | o `jk bench` corre ≥ 10 000 ticks e grava `p999` e `max` no `[wcet]` do lock; a admissão de tier 2 usa o `max` (D15, ref/02 §2.1.13) |
-| deadline por epoch | `max(2 × wcet, 200 µs)` (01 §4) | idem | idem | host |
-| `memory.max` por omissão (ciclo / async) | 16 / 64 MiB (01 §9) | **64 / 64 MiB** | **128 / 128 MiB** | o SDK põe a sugestão no `joker:meta`; `[apps.<a>] resources.memory` do manifesto vence; entra no `J0380` |
-| tamanho do componente (`.wasm`) | 0,1–2 MB | alvo 8–12 MB, máximo 32 MB | alvo 15–30 MB, máximo 64 MB | `J-E0860` |
-| arranque a frio (do `.cwasm` em cache até ao fim do `init`), p95 num CM4 | < 10 ms | **≤ 100 ms** | **≤ 300 ms** | alvo; a pré-inicialização e as memórias *copy-on-write* do pooling tornam-no possível |
-| AOT no dispositivo (sem `.cwasm` pré-compilado), CM4 | segundos | ≤ 60 s | ≤ 180 s | alvo; por isso o `jk build --target` é o caminho normal |
-| sobrecusto do `on-cycle` com uma tarefa vazia e 20 portas | ≤ 5 µs | ≤ 200 µs | ≤ 1 ms | alvo |
-| pausa de GC p99,9 com 32 MiB de heap vivo | — | ≤ 5 ms | ≤ 20 ms | alvo; medida no `jk bench` |
-| hot-swap | 0 ticks perdidos | 0 ticks perdidos | 0 ticks perdidos | a instância nova é criada ao lado (01 §9) |
-| tipos e unidades | compilação | tipos na compilação (`tsc`); unidades no `jk build` | tipos no mypy/pyright; unidades no `jk build` | `J0109`, `J0107` no `jk check` como em Rust |
-| arquiteturas | todas (01 §22) | x86_64, aarch64, riscv64 (Cranelift) | idem | armv7 (Pulley) é `J-E0855`: um interpretador de JS ou Python sobre um interpretador de Wasm fica 50–100× mais lento |
-| Joker Micro | sim (nativo) | **não** | **não** | `jk build --target mcu:…` falha com `J0720` |
+| minimum period of a cycle task | 1 ms | **100 ms** | **500 ms** | `jk check` and `jk build`: `J-E0854` (error in `prod`, warning in `dev`) |
+| default `wcet` | declared | 20% of the period | 20% of the period | until there is a measurement in the lock |
+| maximum `wcet` | admission | 50% of the period | 50% of the period | `J-E0854` |
+| admission with measurement | p99.9 | measured **maximum** | measured **maximum** | `jk bench` runs ≥ 10,000 ticks and records `p999` and `max` in the lock's `[wcet]`; tier 2 admission uses `max` (D15, ref/02 §2.1.13) |
+| epoch deadline | `max(2 × wcet, 200 µs)` (01 §4) | same | same | host |
+| default `memory.max` (cycle / async) | 16 / 64 MiB (01 §9) | **64 / 64 MiB** | **128 / 128 MiB** | the SDK puts the suggestion in `joker:meta`; the manifest's `[apps.<a>] resources.memory` wins; it enters `J0380` |
+| component size (`.wasm`) | 0.1–2 MB | target 8–12 MB, maximum 32 MB | target 15–30 MB, maximum 64 MB | `J-E0860` |
+| cold start (from the cached `.cwasm` to the end of `init`), p95 on a CM4 | < 10 ms | **≤ 100 ms** | **≤ 300 ms** | target; pre-initialization and the *copy-on-write* memories of pooling make it possible |
+| AOT on the device (without a precompiled `.cwasm`), CM4 | seconds | ≤ 60 s | ≤ 180 s | target; that is why `jk build --target` is the normal path |
+| `on-cycle` overhead with an empty task and 20 ports | ≤ 5 µs | ≤ 200 µs | ≤ 1 ms | target |
+| GC pause p99.9 with 32 MiB of live heap | — | ≤ 5 ms | ≤ 20 ms | target; measured in `jk bench` |
+| hot swap | 0 ticks lost | 0 ticks lost | 0 ticks lost | the new instance is created alongside (01 §9) |
+| types and units | compilation | types at compilation (`tsc`); units in `jk build` | types in mypy/pyright; units in `jk build` | `J0109`, `J0107` in `jk check` as in Rust |
+| architectures | all (01 §22) | x86_64, aarch64, riscv64 (Cranelift) | same | armv7 (Pulley) is `J-E0855`: a JS or Python interpreter on top of a Wasm interpreter is 50–100× slower |
+| Joker Micro | yes (native) | **no** | **no** | `jk build --target mcu:…` fails with `J0720` |
 
-- Os números "alvo" são estimativas a validar quando cada SDK existir (TS na Fase 3, Python na 1.2), como os do documento 01, §21. Os mínimos de período, os máximos de WCET e de tamanho, e as arquiteturas são **regras**, aplicadas pelo `jk check`.
-- Uma tarefa de tier 2 pode partilhar um grupo com tarefas Rust, se o período do grupo respeitar o mínimo. A pausa de GC atrasa as tarefas seguintes do mesmo tick, e a admissão conta-a. Para malhas rápidas, a regra do documento 04 continua: Rust.
-- Se o *async* do Component Model (WASI 0.3) não estiver estável no ComponentizeJS ou no componentize-py quando o SDK sair, vale o **plano B** do §29, D9: o mundo `app-blocking` da ref/04 §2.11.
+- The "target" figures are estimates to validate when each SDK exists (TS in Phase 3, Python in 1.2), like those of document 01, §21. The period minimums, the WCET and size maximums, and the architectures are **rules**, applied by `jk check`.
+- A tier 2 task may share a group with Rust tasks, if the group's period respects the minimum. The GC pause delays the following tasks of the same tick, and the admission counts it. For fast loops, the rule of document 04 still holds: Rust.
+- If the Component Model *async* (WASI 0.3) is not stable in ComponentizeJS or in componentize-py when the SDK ships, **plan B** of §29, D9 applies: the `app-blocking` world of ref/04 §2.11.
 
 ---
 
-## 20. Paridade: a mesma app em três linguagens
+## 20. Parity: the same app in three languages
 
-As duas apps abaixo são a prova de que a API fecha. O Rust segue o documento 04 e é **ilustrativo** (a sintaxe normativa é a do ref/04); o TS e o Python são normativos. Com uma exceção deliberada no §20.1 (o período e o WCET, por causa do §19), as três versões têm as mesmas portas, os mesmos nomes, os mesmos resultados de escrita e a mesma semântica de qualidade.
+The two apps below are the proof that the API closes. The Rust one follows document 04 and is **illustrative** (the normative syntax is that of ref/04); the TS and the Python ones are normative. With one deliberate exception in §20.1 (the period and the WCET, because of §19), the three versions have the same ports, the same names, the same write results and the same quality semantics.
 
-### 20.1 `peak_shaver` (documento 04, §3)
+### 20.1 `peak_shaver` (document 04, §3)
 
-Versão da v1.0, sem ML: o plano é calculado a partir do historian. A porta de modelo e o `infer` da 1.1 estão no fim da secção. Duas correções face ao documento 04 (§33, A3 e A4): a porta chama-se `grid_power`, como no `bind` do documento 03, §8, e, com o plano expirado ou ainda inexistente, o limite é o do parâmetro (com o `Plan::default()` do documento 04, o limite seria 0 kW e a bateria descarregaria para cobrir toda a importação da rede).
+Version of v1.0, without ML: the plan is computed from the historian. The model port and the `infer` of 1.1 are at the end of the section. Two corrections with respect to document 04 (§33, A3 and A4): the port is called `grid_power`, as in the `bind` of document 03, §8, and, with the plan expired or not yet existing, the limit is that of the parameter (with the `Plan::default()` of document 04, the limit would be 0 kW and the battery would discharge to cover all the import from the grid).
 
-**Rust** (ilustrativo):
+**Rust** (illustrative):
 
 ```rust
 use joker::prelude::*;
@@ -1677,7 +1677,7 @@ pub struct PeakShaver {
     #[param(unit = "kW", range = "0..5000", default = 400.0)] limit: Param<f64>,
     #[param(unit = "%", range = "0..50", default = 10.0)]     reserve: Param<f64>,
     #[internal]                                        plan: Internal<Plan>,
-    #[alarm(severity = "medium", message = "plano expirado")] plan_stale: Alarm,
+    #[alarm(severity = "medium", message = "plan expired")] plan_stale: Alarm,
     #[output(event)]                                   low_soc: EventOutput<LowSoc>,
 }
 
@@ -1748,11 +1748,11 @@ export default app({
     reserve: param.f64({ unit: "%", range: [0, 50], default: 10 }),
   },
   internals: { plan: internal(Plan) },
-  alarms: { plan_stale: alarm({ severity: "medium", message: "plano expirado" }) },
+  alarms: { plan_stale: alarm({ severity: "medium", message: "plan expired" }) },
 
   cycles: {
     control: cycle({ period: "200ms", wcet: "20ms", state: () => ({ integral: 0 }) }, (io, st) => {
-      const grid = io.grid_power.get();          // QualityError → o tick desta tarefa termina aqui
+      const grid = io.grid_power.get();          // QualityError → this task's tick ends here
       const soc = io.soc.get();
       const plan = io.plan.getOrDefault();
       const stale = plan.valid_until < io.now().utcSeconds();
@@ -1760,7 +1760,7 @@ export default app({
       const limit = stale ? io.limit.get() : Math.min(plan.limit_kw, io.limit.get());
       const excess = grid - limit;
       st.integral = Math.min(Math.max(st.integral + excess * io.dt().seconds, -50), 50);
-      const floor = io.reserve.get() / 100;      // % → fração, como o soc
+      const floor = io.reserve.get() / 100;      // % → fraction, like soc
       io.battery.set(soc <= floor ? 0 : Math.max(excess + 0.1 * st.integral, 0));
     }),
   },
@@ -1813,12 +1813,12 @@ class PeakShaver(App):
     limit = Param(float, unit="kW", range=(0, 5000), default=400.0)
     reserve = Param(float, unit="%", range=(0, 50), default=10.0)
     plan = Internal(Plan)
-    plan_stale = Alarm(severity="medium", message="plano expirado")
+    plan_stale = Alarm(severity="medium", message="plan expired")
     low_soc = EventOutput(LowSoc)
 
     @cycle("500ms", wcet="100ms", state=Ctl)
     def control(self, st: Ctl) -> None:
-        grid = self.grid_power.get()            # QualityError → o tick desta tarefa termina aqui
+        grid = self.grid_power.get()            # QualityError → this task's tick ends here
         soc = self.soc.get()
         plan = self.plan.get_or_default()
         stale = plan.valid_until < self.now().utc_seconds()
@@ -1826,7 +1826,7 @@ class PeakShaver(App):
         limit = self.limit.get() if stale else min(plan.limit_kw, self.limit.get())
         excess = grid - limit
         st.integral = min(max(st.integral + excess * self.dt().seconds, -50.0), 50.0)
-        floor = self.reserve.get() / 100.0      # % → fração, como o soc
+        floor = self.reserve.get() / 100.0      # % → fraction, like soc
         self.battery.set(0.0 if soc <= floor else max(excess + 0.1 * st.integral, 0.0))
 
     @task.every("15m", jitter="30s")
@@ -1842,39 +1842,39 @@ class PeakShaver(App):
             self.low_soc.emit(LowSoc(soc=s.value))
 ```
 
-**A diferença deliberada:** o `control` em Python pede `"500ms"`, porque 200 ms está abaixo do mínimo de Python (§19). Num site com o grupo `fast` a 200 ms, a versão Python não liga a esse grupo (`J-E0854`), e é o `jk check` que o diz. O controlo integral usa `dt()`, e por isso a lógica não muda com o período (04 §3.2).
+**The deliberate difference:** the Python `control` asks for `"500ms"`, because 200 ms is below the Python minimum (§19). On a site with the `fast` group at 200 ms, the Python version does not bind to that group (`J-E0854`), and it is `jk check` that says so. The integral control uses `dt()`, and so the logic does not change with the period (04 §3.2).
 
-**Correspondência:**
+**Correspondence:**
 
-| Conceito | Rust | TypeScript | Python |
+| Concept | Rust | TypeScript | Python |
 |---|---|---|---|
-| ler com qualidade | `io.soc.get()?` | `io.soc.get()` (lança) | `self.soc.get()` (lança) |
-| interno com omissão | `io.plan.get_or_default()` | `io.plan.getOrDefault()` | `self.plan.get_or_default()` |
-| estado do ciclo | `st: &mut Ctl` | `st` da fábrica `state` | `st: Ctl` |
-| período efetivo | `io.dt().as_secs_f64()` | `io.dt().seconds` | `self.dt().seconds` |
-| proposta | `io.battery.set(sp)` | `io.battery.set(sp)` | `self.battery.set(sp)` |
-| histórico | `.history(now - 24.h(), now, 15.mins()).await?` | `await .history({ start: now.minus("24h"), end: now, step: "15m" })` | `await .history(now - "24h", now, step="15m")` |
-| só as boas | `hist.iter().filter_map(\|s\| s.good().copied())` | `hist.values()` | `hist.values()` |
-| gatilho por mudança | `#[joker::task(on = "soc")]` | `task.on("soc", …)` | `@task.on("soc")` |
-| amostra do gatilho | `s.get()` | `s.isGood()`, `s.value` | `s.is_good()`, `s.value` |
+| read with quality | `io.soc.get()?` | `io.soc.get()` (throws) | `self.soc.get()` (raises) |
+| internal with default | `io.plan.get_or_default()` | `io.plan.getOrDefault()` | `self.plan.get_or_default()` |
+| cycle state | `st: &mut Ctl` | `st` from the `state` factory | `st: Ctl` |
+| effective period | `io.dt().as_secs_f64()` | `io.dt().seconds` | `self.dt().seconds` |
+| proposal | `io.battery.set(sp)` | `io.battery.set(sp)` | `self.battery.set(sp)` |
+| history | `.history(now - 24.h(), now, 15.mins()).await?` | `await .history({ start: now.minus("24h"), end: now, step: "15m" })` | `await .history(now - "24h", now, step="15m")` |
+| only the good ones | `hist.iter().filter_map(\|s\| s.good().copied())` | `hist.values()` | `hist.values()` |
+| trigger on change | `#[joker::task(on = "soc")]` | `task.on("soc", …)` | `@task.on("soc")` |
+| sample of the trigger | `s.get()` | `s.isGood()`, `s.value` | `s.is_good()`, `s.value` |
 
-**A mesma app com o modelo, na 1.1** (reservado; na v1 a porta `Model` não se liga, o componente é recusado em `prod` com `J-E0003`, e em `dev` o `infer` levanta `UnavailableError` com `J-E0601`):
+**The same app with the model, in 1.1** (reserved; in v1 the `Model` port is not bound, the component is rejected in `prod` with `J-E0003`, and in `dev` `infer` raises `UnavailableError` with `J-E0601`):
 
 ```python
     forecast = Model(inputs="f32[1,96,4]", outputs="f32[1,96]")
-    # em replan: y = await self.forecast.infer([x]); y.quality, y.outputs[0]
+    # in replan: y = await self.forecast.infer([x]); y.quality, y.outputs[0]
 ```
 
 ```ts
   models: { forecast: model({ inputs: "f32[1,96,4]", outputs: "f32[1,96]" }) },
-  // em replan: const y = await io.forecast.infer([x]);
+  // in replan: const y = await io.forecast.infer([x]);
 ```
 
-### 20.2 `pump_duty`: classes, `Many<Pump>`, métodos, consultas, ações
+### 20.2 `pump_duty`: classes, `Many<Pump>`, methods, queries, actions
 
-Uma app de negócio sobre `std/pump@1` (17 §3.1): arranca a bomba principal quando o nível desce, escolhe a principal **no início de cada pedido** (a saudável com menos horas), passa à seguinte quando a principal falha o arranque, e pede o rearme em async. É uma versão reduzida do §9.1 do documento 14, com a correção do achado A6 (§33): lá, a principal é reescolhida em todos os ticks, e duas bombas com horas próximas trocam de principal com a bomba a trabalhar.
+A business app over `std/pump@1` (17 §3.1): it starts the lead pump when the level drops, chooses the lead **at the start of each demand** (the healthy one with the fewest hours), moves on to the next one when the lead fails to start, and requests the rearm in async. It is a reduced version of §9.1 of document 14, with the fix of finding A6 (§33): there, the lead is chosen again in every tick, and two pumps with close hours swap the lead while the pump is running.
 
-**Rust** (ilustrativo):
+**Rust** (illustrative):
 
 ```rust
 use joker::prelude::*;
@@ -1910,14 +1910,14 @@ fn control(io: &mut CycleIo<PumpDuty>, st: &mut Duty) -> Result<()> {
     }
     let n = io.pumps.len();
     let mut running: u64 = 0;
-    for p in io.pumps.iter() {                         // os métodos dos handles são &self
+    for p in io.pumps.iter() {                         // the methods of the handles are &self
         let i = p.index();
         if st.demand && i == st.lead { p.start() } else { p.stop() }
         let failed = p.failed_to_start()?;
         if failed && !st.failed[i] {
             st.n += 1;
             let pump = BoundedString::try_from(p.name()).unwrap_or_default();
-            let _ = io.failures.try_send(PumpFailed { pump, n: st.n });   // cheia: perda contada
+            let _ = io.failures.try_send(PumpFailed { pump, n: st.n });   // full: counted drop
             st.lead = (st.lead + 1) % n;
         }
         st.failed[i] = failed;
@@ -1932,8 +1932,8 @@ async fn handle_failures(io: &TaskIo<PumpDuty>) -> Result<()> {
     while let Some(f) = io.failures.try_recv() {
         let Some(p) = io.pumps.get(f.pump.as_str()) else { continue };
         match p.reset().key(&format!("reset:{}:{}", f.pump.as_str(), f.n)).await {
-            Ok(()) => log::info!("rearme pedido"; pump = f.pump.as_str()),
-            Err(e) => log::warn!("rearme falhou"; pump = f.pump.as_str(), code = e.error.code().as_str()),
+            Ok(()) => log::info!("rearm requested"; pump = f.pump.as_str()),
+            Err(e) => log::warn!("rearm failed"; pump = f.pump.as_str(), code = e.error.code().as_str()),
         }
     }
     Ok(())
@@ -1998,10 +1998,10 @@ export default app({
       for (const f of io.failures.drain()) {
         try {
           await io.pumps.get(f.pump).reset({ key: `reset:${f.pump}:${f.n}` });
-          log.info("rearme pedido", { pump: f.pump });
+          log.info("rearm requested", { pump: f.pump });
         } catch (e) {
           if (!(e instanceof ActionError)) throw e;
-          log.warn("rearme falhou", { pump: f.pump, code: e.code });
+          log.warn("rearm failed", { pump: f.pump, code: e.code });
         }
       }
     }),
@@ -2070,84 +2070,84 @@ class PumpDuty(App):
         for f in self.failures.drain():
             try:
                 await self.pumps.get(f.pump).reset(key=f"reset:{f.pump}:{f.n}")
-                log.info("rearme pedido", pump=f.pump)
+                log.info("rearm requested", pump=f.pump)
             except ActionError as e:
-                log.warn("rearme falhou", pump=f.pump, code=e.code)
+                log.warn("rearm failed", pump=f.pump, code=e.code)
 ```
 
-- Um `QualityError` em `p.failed_to_start()` termina o tick **depois** das propostas das bombas anteriores, que ficam; as seguintes mantêm o lease do tick anterior até expirar (16 A2). É a semântica do `?` do Rust.
-- `p.start()` no ciclo é um registo de método (17 §4.1); o `jk check` sabe que escreve `run_cmd`. `p.reset()` só existe em async, com chave de idempotência derivada do número da falha: uma nova tentativa da mesma falha não repete o rearme (16 E9).
-- A política de rearme é do site: o `permit` e o `role` da ação vêm do manifesto (17 §4.2), e um `denied` chega como `ActionError`.
+- A `QualityError` in `p.failed_to_start()` ends the tick **after** the proposals of the previous pumps, which remain; the following ones keep the lease of the previous tick until it expires (16 A2). It is the semantics of Rust's `?`.
+- `p.start()` in the cycle is a method record (17 §4.1); `jk check` knows that it writes `run_cmd`. `p.reset()` only exists in async, with an idempotency key derived from the failure number: a retry for the same failure does not repeat the rearm (16 E9).
+- The rearm policy belongs to the site: the action's `permit` and `role` come from the manifest (17 §4.2), and a `denied` arrives as `ActionError`.
 
 ---
 
-# Parte B — Bibliotecas cliente da API HTTP local
+# Part B — Local HTTP API client libraries
 
-## 21. Pacotes e geração
+## 21. Packages and generation
 
-| Biblioteca | Registo | Import | Dependências | Quem a usa |
+| Library | Registry | Import | Dependencies | Who uses it |
 |---|---|---|---|---|
-| `joker-client` (Rust) | crates.io | `joker_client` | `tokio`, `hyper` 1 + `hyper-util`, `rustls`, `tokio-tungstenite`, `serde` | a `jk`, o Deck (via túnel, 1.3), ferramentas em Rust |
-| `joker-client` (Python) | PyPI | `joker_client` | `httpx` ≥ 0.27, `websockets` ≥ 13, `pydantic` ≥ 2; extra `[pandas]`: `pandas` ≥ 2.2, `pyarrow` ≥ 15 | notebooks, scripts de dados, integração |
-| `@joker/client` | npm | `@joker/client` | `undici` ≥ 6, `ws` ≥ 8; Node ≥ 20 | scripts de comissionamento, integrações, o Studio (1.3) |
+| `joker-client` (Rust) | crates.io | `joker_client` | `tokio`, `hyper` 1 + `hyper-util`, `rustls`, `tokio-tungstenite`, `serde` | `jk`, the Deck (via tunnel, 1.3), tools in Rust |
+| `joker-client` (Python) | PyPI | `joker_client` | `httpx` ≥ 0.27, `websockets` ≥ 13, `pydantic` ≥ 2; extra `[pandas]`: `pandas` ≥ 2.2, `pyarrow` ≥ 15 | notebooks, data scripts, integration |
+| `@joker/client` | npm | `@joker/client` | `undici` ≥ 6, `ws` ≥ 8; Node ≥ 20 | commissioning scripts, integrations, the Studio (1.3) |
 
-**Tipos gerados, API escrita à mão.** As três bibliotecas têm duas camadas:
+**Generated types, hand-written API.** The three libraries have two layers:
 
-1. **Camada gerada** a partir de `spec/openapi/joker-api.yaml` (ref/09), com o comando `cargo xtask gen-clients`:
-   - os **esquemas** (Rust com `typify`; Python com `datamodel-code-generator` para modelos pydantic v2 com `extra = "ignore"`; TS com `openapi-typescript`);
-   - uma **tabela de operações** por `operationId`: método, caminho, parâmetros, papel mínimo, se é mutável e se é idempotente.
-   Os ficheiros gerados ficam no repositório, e o CI corre `cargo xtask gen-clients --check`: uma diferença entre o OpenAPI e os clientes falha o build.
-2. **Camada escrita à mão** por cima: ligação (socket Unix, mTLS), contextos, anti-replay (`nonce`, `ts`), novas tentativas, erros `problem+json` como exceções com código, paginação, subscrições WebSocket, conversões de unidades e tempo, e a exportação para pandas.
+1. **Generated layer** from `spec/openapi/joker-api.yaml` (ref/09), with the command `cargo xtask gen-clients`:
+   - the **schemas** (Rust with `typify`; Python with `datamodel-code-generator` for pydantic v2 models with `extra = "ignore"`; TS with `openapi-typescript`);
+   - an **operation table** by `operationId`: method, path, parameters, minimum role, whether it is mutating and whether it is idempotent.
+   The generated files live in the repository, and CI runs `cargo xtask gen-clients --check`: a difference between the OpenAPI and the clients fails the build.
+2. **Hand-written layer** on top: connection (Unix socket, mTLS), contexts, anti-replay (`nonce`, `ts`), retries, `problem+json` errors as exceptions with a code, pagination, WebSocket subscriptions, unit and time conversions, and the export to pandas.
 
-Porque não tudo gerado: os geradores de OpenAPI não tratam sockets Unix, mTLS com contextos, WebSocket, anti-replay nem *streaming*, e o resultado não é idiomático em nenhuma das três linguagens. Porque não tudo à mão: os esquemas derivariam do ref/09 sem ninguém dar por isso. A tabela de operações gerada é o ponto de encontro: um método da camada escrita à mão só chama um `operationId` que exista.
+Why not everything generated: OpenAPI generators do not handle Unix sockets, mTLS with contexts, WebSocket, anti-replay or *streaming*, and the result is not idiomatic in any of the three languages. Why not everything by hand: the schemas would drift from ref/09 without anyone noticing. The generated operation table is the meeting point: a method of the hand-written layer only calls an `operationId` that exists.
 
-**Versões.** A major do cliente é a da API (`/v1` → clientes 1.x). Um cliente 1.y fala com qualquer nó 1.x: campos desconhecidos são ignorados e valores de enum desconhecidos chegam como `unknown` (ref/00 §1, regra 2). No `connect`, o cliente lê `getInfo` (versão da API e a lista `features`, ref/09 §5.1) e, se precisar, `getVersion`; chamar uma operação que o nó não tem (pela `x-joker-since` do OpenAPI ou por uma `feature` em falta) dá `J-E0883` com a versão do nó, antes de enviar o pedido.
+**Versions.** The client's major is the API's (`/v1` → clients 1.x). A 1.y client talks to any 1.x node: unknown fields are ignored and unknown enum values arrive as `unknown` (ref/00 §1, rule 2). On `connect`, the client reads `getInfo` (API version and the `features` list, ref/09 §5.1) and, if needed, `getVersion`; calling an operation the node does not have (by the OpenAPI's `x-joker-since` or by a missing `feature`) gives `J-E0883` with the node's version, before sending the request.
 
 ---
 
-## 22. Ligação e nós
+## 22. Connection and nodes
 
-### 22.1 Endereços
+### 22.1 Addresses
 
-Os endereços são os do `--node` (ref/02 §3.3.1, e `nodes.<nome>.address` do §2.3.2): `local`, um nome de contexto, `unix:<caminho>`, `<host>:<porta>` e `ssh://[<utilizador>@]<host>[:<porta>]`, e só estes (ref/09 §2.1, documento 07 §1):
+The addresses are those of `--node` (ref/02 §3.3.1, and `nodes.<name>.address` of §2.3.2): `local`, a context name, `unix:<path>`, `<host>:<port>` and `ssh://[<user>@]<host>[:<port>]`, and only these (ref/09 §2.1, document 07 §1):
 
-| Forma | Transporte | Autenticação | Papel |
+| Form | Transport | Authentication | Role |
 |---|---|---|---|
-| `unix:/run/joker/api.sock` | HTTP/1.1 sobre socket Unix | credenciais do processo (`SO_PEERCRED`) | `local:uid=…`, `local:group=…` (ref/02 §3.3.2, 03 §13) |
-| `<host>:<porta>` (porta 7443 por omissão) | HTTP/2 sobre TLS 1.3 | **mTLS** sempre (01 §14); o certificado do nó verifica pela CA **e** tem o nome do nó no SAN (`J0912`) | pelo CN do certificado (`cert:CN=ops-*`) |
-| `ssh://[<utilizador>@]<host>[:<porta>]` | túnel SSH até ao socket Unix do nó | a do SSH | a do utilizador SSH no nó (ref/02 §3.3.2) |
-| `nodes.<n>.via = "deck:<nome>"` | sessão remota pelo Deck | a do Deck | **1.3**, reservado (ref/02) |
+| `unix:/run/joker/api.sock` | HTTP/1.1 over Unix socket | process credentials (`SO_PEERCRED`) | `local:uid=…`, `local:group=…` (ref/02 §3.3.2, 03 §13) |
+| `<host>:<port>` (port 7443 by default) | HTTP/2 over TLS 1.3 | **mTLS** always (01 §14); the node's certificate verifies against the CA **and** has the node's name in the SAN (`J0912`) | by the certificate's CN (`cert:CN=ops-*`) |
+| `ssh://[<user>@]<host>[:<port>]` | SSH tunnel to the node's Unix socket | that of SSH | that of the SSH user on the node (ref/02 §3.3.2) |
+| `nodes.<n>.via = "deck:<name>"` | remote session through the Deck | that of the Deck | **1.3**, reserved (ref/02) |
 
-- O Rust implementa `ssh://` com a mesma crate que a `jk`. Python e TS usam o `ssh` do sistema com reencaminhamento de socket (`ssh -N -L <socket temporário>:/run/joker/api.sock`), que exige OpenSSH ≥ 6.7; sem `ssh` no `PATH`, `J-E0881` com a indicação.
-- Não há modo inseguro nem confiança no primeiro uso (ref/02 §3.3.1).
+- Rust implements `ssh://` with the same crate as `jk`. Python and TS use the system's `ssh` with socket forwarding (`ssh -N -L <temporary socket>:/run/joker/api.sock`), which requires OpenSSH ≥ 6.7; without `ssh` in the `PATH`, `J-E0881` with the hint.
+- There is no insecure mode and no trust on first use (ref/02 §3.3.1).
 
-### 22.2 Resolução
+### 22.2 Resolution
 
-As bibliotecas resolvem o nó **pelas regras da `jk`** (ref/02 §3.3.1 e §2.3.3), para que um script e a `jk` falem com o mesmo nó sem configuração repetida:
+The libraries resolve the node **by the rules of `jk`** (ref/02 §3.3.1 and §2.3.3), so that a script and `jk` talk to the same node without repeated configuration:
 
-1. um endereço explícito (`Client.connect("lisboa-01.example.com:7443", identity=…)`), sem ler configuração;
-2. senão, o valor de `node` dado a `Client.from_config(node)`, ou `JK_NODE`, ou `defaults.node` (com a precedência do ref/02: argumento > variável > `.joker/config.toml` do projeto > `config.toml` do utilizador), resolvido pelos 5 passos do ref/02 §3.3.1 (`local`, endereço literal, nome em `[nodes]`, host de um só contexto, `<valor>:7443`);
-3. sem nenhum, `local` (o `jk dev` do projeto, ou `/run/joker/api.sock`).
+1. an explicit address (`Client.connect("lisboa-01.example.com:7443", identity=…)`), without reading configuration;
+2. otherwise, the value of `node` given to `Client.from_config(node)`, or `JK_NODE`, or `defaults.node` (with the precedence of ref/02: argument > variable > the project's `.joker/config.toml` > the user's `config.toml`), resolved by the 5 steps of ref/02 §3.3.1 (`local`, literal address, name in `[nodes]`, host of a single context, `<value>:7443`);
+3. with none of them, `local` (the project's `jk dev`, or `/run/joker/api.sock`).
 
-A identidade é a de `[user]` ou a do contexto (`cert`, `key`, `ca`, incluindo `pkcs11:`), ou `JK_CERT`/`JK_KEY`/`JK_CA`. As bibliotecas **leem** a configuração (`JK_CONFIG` incluído) e nunca a escrevem. Os erros são os do ref/02: `J0910` (configuração inválida), `J0911` (nó desconhecido ou ambíguo), `J0912` (certificado do nó), `J0913` (chave com permissões inseguras). A biblioteca expõe a origem da escolha (`client.origin`, por exemplo `"lisboa-01 · de JK_NODE"`), para que um script possa mostrar a mesma linha que a `jk` mostra antes de mudar o nó (ref/02 §3.3.1).
+The identity is that of `[user]` or that of the context (`cert`, `key`, `ca`, including `pkcs11:`), or `JK_CERT`/`JK_KEY`/`JK_CA`. The libraries **read** the configuration (`JK_CONFIG` included) and never write it. The errors are those of ref/02: `J0910` (invalid configuration), `J0911` (unknown or ambiguous node), `J0912` (node certificate), `J0913` (key with insecure permissions). The library exposes the origin of the choice (`client.origin`, for example `"lisboa-01 · from JK_NODE"`), so that a script can show the same line that `jk` shows before changing the node (ref/02 §3.3.1).
 
-### 22.3 Construção
+### 22.3 Construction
 
 ```python
 from joker_client import AsyncClient, Client, Identity
 
-jk = Client.from_config()                                    # regras do §22.2
+jk = Client.from_config()                                    # rules of §22.2
 jk = Client.from_config("lisboa-01", timeout="30s")
 jk = Client.connect("unix:/run/joker/api.sock")
 jk = Client.connect("lisboa-01.example.com:7443",
                     identity=Identity(cert="ops.crt", key="ops.key", ca="site-ca.crt"))
-async with AsyncClient.from_config("lisboa-01") as ajk:     # a mesma API, com await
+async with AsyncClient.from_config("lisboa-01") as ajk:     # the same API, with await
     ...
 ```
 
 ```ts
 import { Client } from "@joker/client";
-const jk = await Client.fromConfig();                        // regras do §22.2
+const jk = await Client.fromConfig();                        // rules of §22.2
 const jk2 = await Client.connect("lisboa-01.example.com:7443", {
   identity: { cert: "ops.crt", key: "ops.key", ca: "site-ca.crt" },
 });
@@ -2158,77 +2158,77 @@ let jk = joker_client::Client::from_config(None).await?;
 let jk = joker_client::Client::connect(&"unix:/run/joker/api.sock".parse()?, None).await?;
 ```
 
-Python tem cliente **síncrono** (`Client`, para notebooks e scripts) e **assíncrono** (`AsyncClient`), com os mesmos métodos. TS e Rust são só assíncronos.
+Python has a **synchronous** client (`Client`, for notebooks and scripts) and an **asynchronous** one (`AsyncClient`), with the same methods. TS and Rust are asynchronous only.
 
 ---
 
-## 23. Superfície
+## 23. Surface
 
-Cada método corresponde a um `operationId` do OpenAPI (`spec/openapi/joker-api.yaml`), que é o da ref/09. A coluna `jk` diz que comando da CLI usa a operação, porque a `jk` é só um cliente (01 §14, 20 §2).
+Each method corresponds to an `operationId` of the OpenAPI (`spec/openapi/joker-api.yaml`), which is that of ref/09. The `jk` column says which CLI command uses the operation, because `jk` is only a client (01 §14, 20 §2).
 
-| Operação | `jk` | `operationId` | Python | TypeScript | Papel | Versão |
+| Operation | `jk` | `operationId` | Python | TypeScript | Role | Version |
 |---|---|---|---|---|---|---|
-| informação do nó | `jk status` | `getInfo`, `getVersion` | `info()`, `version()` | `info()`, `version()` | viewer | 1.0 |
-| estado | `jk status [--instances]` | `getStatus` | `status()` | `status()` | viewer | 1.0 |
-| ler sinais | `jk read <sel>` | `readValues` (`queryValues` com muitos seletores) | `read(sel, *, coherent=False, mono=False)` | `read(sel, o?)` | viewer | 1.0 |
-| forçar leitura | `jk read --refresh` | `refreshValues` | `read(sel, refresh=True)` | `read(sel, { refresh: true })` | operator | 1.0 |
-| subscrever | `jk read --watch`, `jk logs --follow` | `websocket` (e `sse`) | `subscribe(...)` | `subscribe(...)` | viewer | 1.0 |
-| histórico | `jk history` | `queryHistory` (`getHistory`) | `history(sel, start, end, *, step=None, agg=None)` | `history(sel, o)` | viewer | 1.0 |
-| exportar Parquet | `jk export --parquet` | `queryHistory` em NDJSON | `export(sel, start, end, path)` (o Parquet é escrito pela biblioteca) | `export(sel, o)` | viewer | 1.0 |
-| pré-visualizar escrita | `jk write` (antes de confirmar) | `previewManualWrite` | `write(…, dry_run=True)` | `write(…, { dryRun: true })` | viewer | 1.0 |
-| escrita manual | `jk write` | `manualWrite` | `write(path, value, *, ttl, reason, level=None, takeover=False)` | `write(path, value, o)` | operator | 1.0 |
-| libertar nível | `jk release` | `releaseManual` | `release(path, *, level=None, reason)` | `release(path, o)` | operator | 1.0 |
-| pré-visualizar método | `jk call` (antes de confirmar) | `previewMethodCall` | `call(…, dry_run=True)` | `call(…, { dryRun: true })` | viewer | 1.0 |
-| chamar método | `jk call` | `callMethod` | `call(target, args=None, *, ttl, reason)` | `call(target, args, o)` | operator | 1.0 |
-| invocar ação | `jk action` | `invokeAction`, `getInvocation`, `cancelInvocation` | `invoke(target, args=None, *, key=None, timeout=None)` | `invoke(target, args, o?)` | o do manifesto (mín. operator) | 1.0 |
-| alarmes | `jk alarms`, `jk alarm ack/shelve` | `listAlarms`, `getAlarm`, `ackAlarm`, `shelveAlarm`, `unshelveAlarm`, `listAlarmEvents` | `alarms.list()`, `.ack(id, *, reason=None)`, `.shelve(id, ttl, reason)`, `.unshelve(id)`, `.events(…)` | idem, camelCase | viewer / operator | 1.0 |
-| trips | `jk trips`, `jk reset` | `listTrips`, `resetTrip`, `resetTrips` | `trips.list()`, `trips.reset(path, *, reason)` | idem | viewer / operator | 1.0 |
-| decisões | `jk decisions` | `listDecisions` | `decisions.query(*, output=None, cause=None, start=None, end=None, since=None)` | `decisions.query(o)` | viewer | 1.0 |
-| gerações | `jk generations`, `jk apply`, `jk confirm`, `jk rollback` | `listGenerations`, `getGeneration`, `createGeneration`, `activateGeneration`, `confirmGeneration`, `rollbackGeneration`, `discardGeneration` | `generations.list()`, `.current()`, `.get(gen)`, `.apply(bundle, *, confirm=None, dry_run=False)`, `.confirm(gen, *, reason)`, `.rollback(to=None, *, reason)` | idem | viewer / admin | 1.0 |
-| apps | `jk app start/stop/restart/logs` | `listApps`, `getApp`, `startApp`, `stopApp`, `restartApp` | `apps.list()`, `.get(name)`, `.start(name)`, `.stop(name, *, reason)`, `.restart(name)` | idem | viewer / operator | 1.0 |
-| instâncias | `jk status --instances`, `jk explain <i>` | `listInstances`, `getInstance` | `instances.list()`, `.get(name)` | idem | viewer | 1.0 |
+| node information | `jk status` | `getInfo`, `getVersion` | `info()`, `version()` | `info()`, `version()` | viewer | 1.0 |
+| status | `jk status [--instances]` | `getStatus` | `status()` | `status()` | viewer | 1.0 |
+| read signals | `jk read <sel>` | `readValues` (`queryValues` with many selectors) | `read(sel, *, coherent=False, mono=False)` | `read(sel, o?)` | viewer | 1.0 |
+| force a read | `jk read --refresh` | `refreshValues` | `read(sel, refresh=True)` | `read(sel, { refresh: true })` | operator | 1.0 |
+| subscribe | `jk read --watch`, `jk logs --follow` | `websocket` (and `sse`) | `subscribe(...)` | `subscribe(...)` | viewer | 1.0 |
+| history | `jk history` | `queryHistory` (`getHistory`) | `history(sel, start, end, *, step=None, agg=None)` | `history(sel, o)` | viewer | 1.0 |
+| export Parquet | `jk export --parquet` | `queryHistory` in NDJSON | `export(sel, start, end, path)` (the Parquet is written by the library) | `export(sel, o)` | viewer | 1.0 |
+| preview a write | `jk write` (before confirming) | `previewManualWrite` | `write(…, dry_run=True)` | `write(…, { dryRun: true })` | viewer | 1.0 |
+| manual write | `jk write` | `manualWrite` | `write(path, value, *, ttl, reason, level=None, takeover=False)` | `write(path, value, o)` | operator | 1.0 |
+| release a level | `jk release` | `releaseManual` | `release(path, *, level=None, reason)` | `release(path, o)` | operator | 1.0 |
+| preview a method | `jk call` (before confirming) | `previewMethodCall` | `call(…, dry_run=True)` | `call(…, { dryRun: true })` | viewer | 1.0 |
+| call a method | `jk call` | `callMethod` | `call(target, args=None, *, ttl, reason)` | `call(target, args, o)` | operator | 1.0 |
+| invoke an action | `jk action` | `invokeAction`, `getInvocation`, `cancelInvocation` | `invoke(target, args=None, *, key=None, timeout=None)` | `invoke(target, args, o?)` | the one in the manifest (min. operator) | 1.0 |
+| alarms | `jk alarms`, `jk alarm ack/shelve` | `listAlarms`, `getAlarm`, `ackAlarm`, `shelveAlarm`, `unshelveAlarm`, `listAlarmEvents` | `alarms.list()`, `.ack(id, *, reason=None)`, `.shelve(id, ttl, reason)`, `.unshelve(id)`, `.events(…)` | same, camelCase | viewer / operator | 1.0 |
+| trips | `jk trips`, `jk reset` | `listTrips`, `resetTrip`, `resetTrips` | `trips.list()`, `trips.reset(path, *, reason)` | same | viewer / operator | 1.0 |
+| decisions | `jk decisions` | `listDecisions` | `decisions.query(*, output=None, cause=None, start=None, end=None, since=None)` | `decisions.query(o)` | viewer | 1.0 |
+| generations | `jk generations`, `jk apply`, `jk confirm`, `jk rollback` | `listGenerations`, `getGeneration`, `createGeneration`, `activateGeneration`, `confirmGeneration`, `rollbackGeneration`, `discardGeneration` | `generations.list()`, `.current()`, `.get(gen)`, `.apply(bundle, *, confirm=None, dry_run=False)`, `.confirm(gen, *, reason)`, `.rollback(to=None, *, reason)` | same | viewer / admin | 1.0 |
+| apps | `jk app start/stop/restart/logs` | `listApps`, `getApp`, `startApp`, `stopApp`, `restartApp` | `apps.list()`, `.get(name)`, `.start(name)`, `.stop(name, *, reason)`, `.restart(name)` | same | viewer / operator | 1.0 |
+| instances | `jk status --instances`, `jk explain <i>` | `listInstances`, `getInstance` | `instances.list()`, `.get(name)` | same | viewer | 1.0 |
 | logs | `jk logs` | `listLogs` | `logs.query(*, app=None, since=None, level=None)` | `logs.query(o)` | viewer | 1.0 |
-| intenções | `jk intents`, `jk intent approve/reject` | `listIntents`, `getIntent`, `approveIntent`, `rejectIntent` | `intents.list()`, `.get(id)`, `.approve(id, *, reason)`, `.reject(id, *, reason)` | idem | operator | 1.0 (vazias até à 1.1) |
-| qualquer outra | — | qualquer | `request(operation_id, *, params=None, body=None)` | `request(opId, o)` | a da operação | 1.0 |
+| intents | `jk intents`, `jk intent approve/reject` | `listIntents`, `getIntent`, `approveIntent`, `rejectIntent` | `intents.list()`, `.get(id)`, `.approve(id, *, reason)`, `.reject(id, *, reason)` | same | operator | 1.0 (empty until 1.1) |
+| any other | — | any | `request(operation_id, *, params=None, body=None)` | `request(opId, o)` | that of the operation | 1.0 |
 
-`apply` compõe `findMissingBlobs`, `startBlobUpload`/`uploadBlobChunk`/`finishBlobUpload`, `createGeneration` e `activateGeneration`; `rollback` pede primeiro o `ETag` (`getGeneration` de `current`) para o `If-Match`.
+`apply` composes `findMissingBlobs`, `startBlobUpload`/`uploadBlobChunk`/`finishBlobUpload`, `createGeneration` and `activateGeneration`; `rollback` first asks for the `ETag` (`getGeneration` of `current`) for the `If-Match`.
 
-Regras que a camada escrita à mão impõe **antes** de enviar:
+Rules that the hand-written layer enforces **before** sending:
 
-- **`ttl` e `reason` são obrigatórios** em `write` e `call` (16 A10, D19): em Python, argumentos *keyword-only* sem omissão (um `TypeError` se faltarem); em TS, propriedades obrigatórias do tipo; em Rust, o *builder* não constrói sem eles. Um `ttl` acima do `max_manual` é recusado pelo nó (`J-E1102`).
-- **`dry_run`** chama a operação de pré-visualização (`previewManualWrite`, `previewMethodCall`) e devolve o que a `jk write` mostra antes de pedir confirmação: o envelope, o nível ativo e o resultado previsto (07 §4). A escrita que se segue leva `If-Match` com a geração que a pré-visualização viu. A confirmação interativa é da `jk`, e não da biblioteca.
-- `level` omitido: `manual:4` (D19, ref/09 §5.6). Um nível ocupado por outro principal é `J-E1105`; `takeover=True` substitui-o (A13).
-- `apply` envia o *bundle* da geração (manifesto, lock, contratos, artefactos) pelo upload em blocos da ref/09 §5.13 (ref/00 §10) e devolve a geração pendente.
-- `history` e `export` pedem `application/x-ndjson` e paginam pelo cabeçalho `Link` (ref/09 §3.5). O nó não produz Arrow nem Parquet (ref/09 §12): a biblioteca converte o NDJSON para `pandas`/Arrow/Parquet do lado do cliente.
+- **`ttl` and `reason` are required** in `write` and `call` (16 A10, D19): in Python, *keyword-only* arguments without a default (a `TypeError` if they are missing); in TS, required properties of the type; in Rust, the *builder* does not build without them. A `ttl` above `max_manual` is rejected by the node (`J-E1102`).
+- **`dry_run`** calls the preview operation (`previewManualWrite`, `previewMethodCall`) and returns what `jk write` shows before asking for confirmation: the envelope, the active level and the predicted result (07 §4). The write that follows carries `If-Match` with the generation the preview saw. The interactive confirmation belongs to `jk`, and not to the library.
+- `level` omitted: `manual:4` (D19, ref/09 §5.6). A level occupied by another principal is `J-E1105`; `takeover=True` replaces it (A13).
+- `apply` sends the generation *bundle* (manifest, lock, contracts, artifacts) through the chunked upload of ref/09 §5.13 (ref/00 §10) and returns the pending generation.
+- `history` and `export` ask for `application/x-ndjson` and paginate through the `Link` header (ref/09 §3.5). The node produces neither Arrow nor Parquet (ref/09 §12): the library converts the NDJSON to `pandas`/Arrow/Parquet on the client side.
 
 ---
 
-## 24. Tipos, valores e erros
+## 24. Types, values and errors
 
-### 24.1 Amostras e tempo
+### 24.1 Samples and time
 
-- Uma amostra é o objeto JSON do ref/00, §4.2, com os mesmos campos (`path`, `value`, `unit`, `quality`, `reason`, `ts_src`, `ts_acq`, `seq`, e `mono_ns` com `mono=True`). Em Python, `Sample` (pydantic); em TS, `interface Sample`. Nos nomes de campos, a API das bibliotecas segue o estilo da linguagem (`tsAcq` em TS), e os valores (`"comm_failure"`) são os do JSON.
-- `Sample.get()` levanta `QualityError` (`J-E0800`) se a qualidade não for `good`; `get_or(d)`/`getOr(d)`; `value` é o valor tal como veio. A mesma regra das apps: **a biblioteca nunca devolve só um número de uma amostra `bad`**.
-- Os instantes UTC são `UtcTime` (`.ns`, `.isoformat()`, `.datetime()` em Python; `.ns: bigint`, `.toISOString()`, `.toDate()` em TS), porque o `datetime` do Python e o `Date` do JS perdem os nanossegundos do ref/00, §3.
-- `i64` e `u64` em TS são `bigint`, também quando o JSON os traz como número (ref/00 §4.1). Em Python, `int`.
-- `bits` trazem `bits` com os nomes ativos (ref/00 §4.1); `enum` trazem o nome da variante.
+- A sample is the JSON object of ref/00, §4.2, with the same fields (`path`, `value`, `unit`, `quality`, `reason`, `ts_src`, `ts_acq`, `seq`, and `mono_ns` with `mono=True`). In Python, `Sample` (pydantic); in TS, `interface Sample`. In field names, the libraries' API follows the style of the language (`tsAcq` in TS), and the values (`"comm_failure"`) are those of the JSON.
+- `Sample.get()` raises `QualityError` (`J-E0800`) if the quality is not `good`; `get_or(d)`/`getOr(d)`; `value` is the value as it came. The same rule as for apps: **the library never returns just a number from a `bad` sample**.
+- UTC instants are `UtcTime` (`.ns`, `.isoformat()`, `.datetime()` in Python; `.ns: bigint`, `.toISOString()`, `.toDate()` in TS), because Python's `datetime` and JS's `Date` lose the nanoseconds of ref/00, §3.
+- `i64` and `u64` in TS are `bigint`, also when the JSON carries them as a number (ref/00 §4.1). In Python, `int`.
+- `bits` carry `bits` with the active names (ref/00 §4.1); `enum`s carry the variant name.
 
-### 24.2 Valores na entrada
+### 24.2 Input values
 
-`write("pcs.p_set", 50)` escreve 50 na unidade do sinal; `write("pcs.p_set", "50 kW")` envia o literal de quantidade, e o nó converte (ref/00 §4.1; dimensão errada é `J0107`, devolvido como erro da API). As durações aceitam literais (`"10m"`) e, em Python, `timedelta`; em Rust, `std::time::Duration`. Os instantes aceitam RFC 3339, `UtcTime`, `datetime` com fuso (Python) ou `Date` (TS); um `datetime` sem fuso é `TypeError`, porque não há hora local implícita.
+`write("pcs.p_set", 50)` writes 50 in the signal's unit; `write("pcs.p_set", "50 kW")` sends the quantity literal, and the node converts (ref/00 §4.1; a wrong dimension is `J0107`, returned as an API error). Durations accept literals (`"10m"`) and, in Python, `timedelta`; in Rust, `std::time::Duration`. Instants accept RFC 3339, `UtcTime`, `datetime` with a time zone (Python) or `Date` (TS); a `datetime` without a time zone is `TypeError`, because there is no implicit local time.
 
-### 24.3 Erros
+### 24.3 Errors
 
 ```python
-class ApiError(JokerClientError):          # resposta application/problem+json (ref/00 §8)
+class ApiError(JokerClientError):          # application/problem+json response (ref/00 §8)
     code: str                              # "J-E1203", "J0107", …
     title: str
     detail: str
     status: int
     spans: list[Span] | None
-    exit_code: int                         # o código de saída da jk (07 §8) para este erro
+    exit_code: int                         # the jk exit code (07 §8) for this error
 
-class JokerClientError(Exception):         # erros do lado do cliente (J-E088x)
+class JokerClientError(Exception):         # client-side errors (J-E088x)
     code: str
 ```
 
@@ -2239,21 +2239,21 @@ export declare class ApiError extends JokerClientError {
 }
 ```
 
-Uma resposta que não cumpre o esquema gerado (campo obrigatório em falta, tipo errado) é `J-E0884`, com o `operationId` e o caminho do campo; campos a mais nunca são erro. `exit_code`/`exitCode` segue o documento 07, §8: 2 para erros de validação (`J01xx`–`J06xx`), 3 para recusas (403, envelope, assinatura), 4 para timeout ou nó inacessível (`J-E0881`), 5 para confirmação expirada, 1 para o resto. É o que a `jk` usa para sair, e o que um script de CI pode usar também.
+A response that does not comply with the generated schema (required field missing, wrong type) is `J-E0884`, with the `operationId` and the path of the field; extra fields are never an error. `exit_code`/`exitCode` follows document 07, §8: 2 for validation errors (`J01xx`–`J06xx`), 3 for refusals (403, envelope, signature), 4 for timeout or unreachable node (`J-E0881`), 5 for expired confirmation, 1 for the rest. It is what `jk` uses to exit, and what a CI script can use too.
 
-### 24.4 Anti-replay, novas tentativas e idempotência
+### 24.4 Anti-replay, retries and idempotency
 
-- Cada pedido mutável leva os cabeçalhos `Joker-Nonce` (ULID) e `Joker-Timestamp` (UTC, RFC 3339) (ref/00 §9, ref/09 §2.5), gerados pela biblioteca, também no socket Unix.
-- **Leituras** (`GET` e subscrições): até 3 novas tentativas com *backoff* exponencial (0,2 s → 1,6 s) em erro de ligação e em 503.
-- **Escritas, métodos, alarmes, gerações:** só se repete um pedido que **não chegou ao nó** (erro de ligação antes de enviar) ou um 503 com `Retry-After`. Cada tentativa leva um `nonce` novo, porque um `nonce` repetido é recusado como replay. Repetir uma escrita manual é seguro: o mesmo escritor, nível e valor só renovam o TTL.
-- **Ações:** a chave de idempotência mantém-se entre tentativas (gerada pela biblioteca se não for dada, e devolvida no resultado), e o nó devolve o resultado anterior dentro do `dedup_window` (16 E9).
-- Nunca se repete um 4xx.
-- **Relógio:** com o relógio do nó `synced`, um `Joker-Timestamp` fora de ±30 s é recusado (`J-E1021`); com `holdover` ou `unsynced`, o nó verifica só o nonce e responde com `Joker-Clock` (D16, ref/09 §2.5). No `connect`, a biblioteca compara o seu relógio com o cabeçalho `Date` da resposta e, acima de 10 s de diferença, emite o aviso `J-E0885` no log; um `J-E1021` leva a mesma dica.
-- Tempos limite por omissão: ligação 5 s, pedido 30 s, histórico e exportação 120 s; todos configuráveis.
+- Each mutating request carries the headers `Joker-Nonce` (ULID) and `Joker-Timestamp` (UTC, RFC 3339) (ref/00 §9, ref/09 §2.5), generated by the library, also on the Unix socket.
+- **Reads** (`GET` and subscriptions): up to 3 retries with exponential *backoff* (0.2 s → 1.6 s) on a connection error and on 503.
+- **Writes, methods, alarms, generations:** a request is only repeated if it **did not reach the node** (connection error before sending) or on a 503 with `Retry-After`. Each attempt carries a new `nonce`, because a repeated `nonce` is refused as a replay. Repeating a manual write is safe: the same writer, level and value only renew the TTL.
+- **Actions:** the idempotency key is kept across attempts (generated by the library if not given, and returned in the result), and the node returns the previous result within the `dedup_window` (16 E9).
+- A 4xx is never repeated.
+- **Clock:** with the node's clock `synced`, a `Joker-Timestamp` outside ±30 s is refused (`J-E1021`); with `holdover` or `unsynced`, the node checks only the nonce and replies with `Joker-Clock` (D16, ref/09 §2.5). On `connect`, the library compares its clock with the response's `Date` header and, above a 10 s difference, emits the warning `J-E0885` in the log; a `J-E1021` carries the same hint.
+- Default timeouts: connection 5 s, request 30 s, history and export 120 s; all configurable.
 
 ---
 
-## 25. Subscrições
+## 25. Subscriptions
 
 ```python
 for msg in jk.subscribe(signals=["meter.**", "pcs.p_set"], alarms=True, generations=True):
@@ -2261,7 +2261,7 @@ for msg in jk.subscribe(signals=["meter.**", "pcs.p_set"], alarms=True, generati
         case SampleMsg(sample=s): ...
         case AlarmMsg(alarm=a): ...
         case GenerationMsg(generation=g): ...
-        case Gap(stream=st, lost=n): ...           # houve perda; o que se perdeu está no historian
+        case Gap(stream=st, lost=n): ...           # there was a drop; what was lost is in the historian
 ```
 
 ```ts
@@ -2270,16 +2270,16 @@ for await (const msg of jk.subscribe({ signals: ["meter.**", "pcs.p_set"], alarm
 }
 ```
 
-- Uma só ligação WebSocket (`websocket`, subprotocolo `joker.v1`, ref/09 §6) com uma subscrição por tópico: `signals`, `alarms`, `events`, `generations`, `intents`, `logs`, e os restantes do §6.4 da ref/09. As mensagens `data`, `resync` e `gap` do servidor chegam como `SampleMsg`, `AlarmMsg`, …, `Resync` e `Gap`.
-- **Reconexão automática** com o `resume` da ref/09 §6.7: a biblioteca guarda a `session` do `welcome` e o último `seq` de cada subscrição, e retoma dentro da `resume_window` (60 s). Se o nó já não tiver o que falta (`resume_unavailable`, `J-E1907`, ou `boot_id` novo), a biblioteca entrega um `Gap` (e não uma exceção) com o número perdido e subscreve de novo, e regista `J-E0886`. A telemetria nunca bloqueia o nó (ADR 0013): um cliente lento perde mensagens, contadas.
-- *Buffer* local de 10 000 mensagens; acima, a biblioteca descarta as mais antigas e entrega um `Gap`.
-- O cliente síncrono do Python devolve um iterador bloqueante (a ligação corre numa thread da biblioteca).
+- A single WebSocket connection (`websocket`, subprotocol `joker.v1`, ref/09 §6) with one subscription per topic: `signals`, `alarms`, `events`, `generations`, `intents`, `logs`, and the others of §6.4 of ref/09. The server's `data`, `resync` and `gap` messages arrive as `SampleMsg`, `AlarmMsg`, …, `Resync` and `Gap`.
+- **Automatic reconnection** with the `resume` of ref/09 §6.7: the library keeps the `session` of the `welcome` and the last `seq` of each subscription, and resumes within the `resume_window` (60 s). If the node no longer has what is missing (`resume_unavailable`, `J-E1907`, or a new `boot_id`), the library delivers a `Gap` (and not an exception) with the number lost and subscribes again, and logs `J-E0886`. Telemetry never blocks the node (ADR 0013): a slow client drops messages, counted.
+- Local *buffer* of 10,000 messages; above that, the library discards the oldest and delivers a `Gap`.
+- The synchronous Python client returns a blocking iterator (the connection runs in a thread of the library).
 
 ---
 
-## 26. Exemplos
+## 26. Examples
 
-### 26.1 Notebook: do historian para pandas
+### 26.1 Notebook: from the historian to pandas
 
 ```python
 from joker_client import Client
@@ -2290,24 +2290,24 @@ print(info.node, info.generation, info.version)
 
 h = jk.history(["meter.p_total", "pcs.p_ac", "bms.soc"],
                start="2026-09-23T00:00:00Z", end="2026-09-24T00:00:00Z", step="1m")
-df = h.to_pandas()                          # índice DatetimeIndex UTC (ns); colunas (caminho, campo)
+df = h.to_pandas()                          # DatetimeIndex index, UTC (ns); columns (path, field)
 power = df.xs("value", axis=1, level="field")
 ok = df.xs("quality", axis=1, level="field") == "good"
-power.where(ok).resample("15min").mean().plot()        # os valores não good ficam NaN, à vista
+power.where(ok).resample("15min").mean().plot()        # the values that are not good become NaN, in plain sight
 
 decisions = jk.decisions.query(output="pcs.p_set", start="2026-09-23T17:00:00Z",
                                end="2026-09-23T19:00:00Z").to_pandas()
 decisions["outcome"].value_counts()
 ```
 
-- `to_pandas()` exige o extra `joker-client[pandas]` (`J-E0888` sem ele). Os campos por caminho são `value`, `quality`, `reason` e `unit` (este como atributo, em `df.attrs["units"]`). `layout="long"` dá uma linha por amostra (`ts`, `path`, `value`, `quality`, `reason`).
-- **A qualidade vem sempre com o valor.** Não há opção para a deitar fora; quem quer só os bons filtra, como acima.
-- A biblioteca pede o histórico em NDJSON (`Accept: application/x-ndjson`, ref/09 §3.5) e constrói o `DataFrame` em blocos; o nó não produz Arrow (ref/09 §12).
-- Guarda de tamanho: acima de 5 000 000 de pontos, `history()` falha com `J-E0889` antes de pedir, com o número estimado e a sugestão de `step` ou `export()` para Parquet. `max_points=` muda o limite.
+- `to_pandas()` requires the `joker-client[pandas]` extra (`J-E0888` without it). The fields per path are `value`, `quality`, `reason` and `unit` (the latter as an attribute, in `df.attrs["units"]`). `layout="long"` gives one row per sample (`ts`, `path`, `value`, `quality`, `reason`).
+- **Quality always comes with the value.** There is no option to throw it away; whoever wants only the good ones filters, as above.
+- The library asks for the history in NDJSON (`Accept: application/x-ndjson`, ref/09 §3.5) and builds the `DataFrame` in chunks; the node does not produce Arrow (ref/09 §12).
+- Size guard: above 5,000,000 points, `history()` fails with `J-E0889` before asking, with the estimated number and the suggestion of `step` or `export()` to Parquet. `max_points=` changes the limit.
 
-### 26.2 Script de comissionamento em TypeScript
+### 26.2 Commissioning script in TypeScript
 
-Testa a limitação de cada inversor em degraus, com escritas manuais com TTL, e confirma a geração pendente só se tudo tiver respondido (exemplo 01, §7).
+It tests the curtailment of each inverter in steps, with manual writes with a TTL, and confirms the pending generation only if everything responded (example 01, §7).
 
 ```ts
 // commission.ts — node --experimental-strip-types commission.ts
@@ -2317,7 +2317,7 @@ import { ApiError, Client } from "@joker/client";
 const jk = await Client.fromConfig("lisboa-01");
 const gen = await jk.generations.current();
 if (gen.state !== "confirming") {
-  throw new Error(`a geração ${gen.gen} está em ${gen.state}; nada a confirmar`);
+  throw new Error(`generation ${gen.gen} is in ${gen.state}; nothing to confirm`);
 }
 
 type Row = { inv: string; pct: number; outcome: string; p_kw: number | null };
@@ -2326,7 +2326,7 @@ try {
   for (const inv of ["inv1", "inv2", "inv3"]) {
     for (const pct of [100, 60, 30, 0]) {
       const w = await jk.write(`${inv}.w_max_lim_pct`, `${pct} %`, {
-        ttl: "5m", level: "manual:4", reason: "comissionamento: degraus de limitação",
+        ttl: "5m", level: "manual:4", reason: "commissioning: curtailment steps",
       });
       await sleep(10_000);
       const [p] = await jk.read(`${inv}.ac.p`);
@@ -2336,21 +2336,21 @@ try {
   }
 } catch (e) {
   if (e instanceof ApiError) console.error(`${e.code}: ${e.detail}`);
-  throw e;                                   // os TTL de 5 min devolvem as saídas às apps sozinhos
+  throw e;                                   // the 5 min TTLs return the outputs to the apps on their own
 }
 
 console.table(rows);
 if (rows.every((r) => r.outcome === "accepted" && r.p_kw !== null)) {
-  await jk.generations.confirm(gen.gen, { reason: "comissionamento: limitação dos inversores OK" });
+  await jk.generations.confirm(gen.gen, { reason: "commissioning: inverter curtailment OK" });
 } else {
-  console.error("não confirmado: a janela de confirmação expira e o nó faz rollback (ADR 0015)");
+  console.error("not confirmed: the confirmation window expires and the node rolls back (ADR 0015)");
   process.exitCode = 5;
 }
 ```
 
-O script não precisa de limpar nada se falhar a meio: cada escrita manual tem TTL (A10) e expira sozinha, e a geração volta atrás se a confirmação não chegar.
+The script does not need to clean anything up if it fails halfway: each manual write has a TTL (A10) and expires on its own, and the generation goes back if the confirmation does not arrive.
 
-### 26.3 Rust, na `jk`
+### 26.3 Rust, in `jk`
 
 ```rust
 use joker_client::{Client, ManualWrite};
@@ -2363,7 +2363,7 @@ let preview = jk
         .reason(&args.reason)
         .dry_run(true))
     .await?;
-render_envelope(&preview);                   // o que a jk mostra antes de pedir confirmação
+render_envelope(&preview);                   // what jk shows before asking for confirmation
 if confirm()? {
     let report = jk.write(preview.into_request().dry_run(false)).await?;
     println!("{}", report.outcome);
@@ -2372,212 +2372,212 @@ if confirm()? {
 
 ---
 
-# Parte C — Comportamento, estresse, decisões
+# Part C — Behavior, stress, decisions
 
-## 27. Comportamento esperado
+## 27. Expected behavior
 
-| Tema | Regra | Fonte |
+| Topic | Rule | Source |
 |---|---|---|
-| qualidade | os acessores seguem a tabela de 16 §3.1 nos SDKs e nas bibliotecas cliente; nenhuma API devolve só o valor de uma amostra não `good` sem ser `get_or`, `get_uncertain` ou `sample` | 16 §3.1, invariante 4 |
-| leitura no ciclo | do latch; estável dentro do tick | 02 §6.1 |
-| leitura em async | do slot; `snapshot` para coerência | 02 §6.4 |
-| escrita no ciclo | proposta; a última do tick vence; `last_outcome` no tick seguinte | 16 A4, 02 §7.1 |
-| escrita em async | proposta para o grupo dono; `await` devolve o resultado final | 01 §5 |
-| ciclo e async da mesma app | o mesmo escritor no árbitro; a proposta de ciclo vence a async no mesmo tick | 16 A1, A4 |
-| erros de tarefa | `JokerError` = `Err` (propostas ficam); outra exceção = `panic` (`J-E0816`: propostas do tick descartadas, conta para o crashloop, sem recriar a instância); trap Wasm = trap | ref/04 §2.6.1, 01 §9; §9.3 |
-| métodos de classe | registo expandido pelo núcleo pela ordem das chamadas; `pending()` = `None` | 17 §4.1 |
-| ações | só async; chave de idempotência; `dedup_window` | 02 §8, 16 E9 |
-| determinismo | no ciclo, relógios = latch, PRNG semeado pelo host, NaN canónicos, sem I/O; o mesmo traço dá as mesmas propostas | ADR 0007, 09 ataque 10 |
-| hot-swap | a instância nova é criada ao lado; o estado passa por `export-state`/`migrate` | 01 §9 |
-| escritas manuais pelos clientes | TTL e motivo obrigatórios; `nonce` e `ts` sempre | 16 A10, ref/00 §9 |
-| compatibilidade | leitores tolerantes nas bibliotecas cliente; ficheiros de pessoas estritos (`[tool.joker]`, `"joker"`) | ref/00 §1 |
+| quality | the accessors follow the table of 16 §3.1 in the SDKs and in the client libraries; no API returns only the value of a sample that is not `good` other than `get_or`, `get_uncertain` or `sample` | 16 §3.1, invariant 4 |
+| read in the cycle | from the latch; stable within the tick | 02 §6.1 |
+| read in async | from the slot; `snapshot` for coherence | 02 §6.4 |
+| write in the cycle | proposal; the last one of the tick wins; `last_outcome` in the next tick | 16 A4, 02 §7.1 |
+| write in async | proposal to the owning group; `await` returns the final result | 01 §5 |
+| cycle and async of the same app | the same writer in the arbiter; the cycle proposal wins over the async one in the same tick | 16 A1, A4 |
+| task errors | `JokerError` = `Err` (proposals remain); another exception = `panic` (`J-E0816`: the tick's proposals discarded, counts towards the crashloop, without recreating the instance); Wasm trap = trap | ref/04 §2.6.1, 01 §9; §9.3 |
+| class methods | record expanded by the core in the order of the calls; `pending()` = `None` | 17 §4.1 |
+| actions | async only; idempotency key; `dedup_window` | 02 §8, 16 E9 |
+| determinism | in the cycle, clocks = latch, PRNG seeded by the host, canonical NaNs, no I/O; the same trace gives the same proposals | ADR 0007, 09 attack 10 |
+| hot swap | the new instance is created alongside; the state goes through `export-state`/`migrate` | 01 §9 |
+| manual writes by the clients | TTL and reason required; `nonce` and `ts` always | 16 A10, ref/00 §9 |
+| compatibility | tolerant readers in the client libraries; strict files written by people (`[tool.joker]`, `"joker"`) | ref/00 §1 |
 
 ---
 
-## 28. Estresse
+## 28. Stress
 
-**E1 — Estado em `self` ou numa global, em Python.** Uma pessoa escreve `self.last_plan = plan` numa tarefa async e lê-o no ciclo. *O que acontece:* `J-E0803` na primeira atribuição, com a explicação das duas instâncias e a indicação de `Internal`. Com `global last_plan`, não há erro em runtime (o ciclo vê sempre o valor inicial); o `jk build` avisa (`J-E0858`). *Quebrou* na primeira versão, em que `self` era um objeto normal: a app "funcionava" nos testes nativos e falhava em produção. **Corrigido:** `self` só de leitura, e o harness corre sempre o `.wasm` real, com as duas instâncias.
+**E1 — State in `self` or in a global, in Python.** Someone writes `self.last_plan = plan` in an async task and reads it in the cycle. *What happens:* `J-E0803` at the first assignment, with the explanation of the two instances and the pointer to `Internal`. With `global last_plan`, there is no error at runtime (the cycle always sees the initial value); `jk build` warns (`J-E0858`). *Broke* in the first version, in which `self` was a normal object: the app "worked" in the native tests and failed in production. **Fixed:** `self` read-only, and the harness always runs the real `.wasm`, with the two instances.
 
-**E2 — Nomes em `camelCase` em TS.** O exemplo do documento 04, §4.1, declara `zoneTemp`. *O que acontece:* `J-E0857` no `jk build`, com a sugestão `zone_temp`. O TS convida ao `camelCase`, mas os nomes do utilizador aparecem no manifesto, na CLI, no historian e nas outras linguagens (ref/00 §2). **Corrigido** no exemplo (achado A1).
+**E2 — Names in `camelCase` in TS.** The example of document 04, §4.1, declares `zoneTemp`. *What happens:* `J-E0857` in `jk build`, with the suggestion `zone_temp`. TS invites `camelCase`, but user names appear in the manifest, in the CLI, in the historian and in the other languages (ref/00 §2). **Fixed** in the example (finding A1).
 
-**E3 — Pausa de GC numa tarefa TS a 100 ms.** Uma tarefa que aloca muito tem uma pausa de 15 ms de vez em quando. *O que acontece:* o `wcet` por omissão é 20 ms e o deadline por epoch é 40 ms, e a pausa cabe. O `jk bench` mede o **máximo** (e não o p99,9) e grava-o no lock, e a admissão usa-o. Uma pausa acima do deadline interrompe a tarefa, as propostas do tick perdem-se e os leases seguem (01 §9). *Quebrou* quando a admissão usava o p99,9 como para Rust: uma cauda de GC fora do p99,9 dava deadlines falhados em campo. **Corrigido:** máximo em tier 2 (§19).
+**E3 — GC pause in a TS task at 100 ms.** A task that allocates a lot has a 15 ms pause now and then. *What happens:* the default `wcet` is 20 ms and the epoch deadline is 40 ms, and the pause fits. `jk bench` measures the **maximum** (and not p99.9) and records it in the lock, and the admission uses it. A pause above the deadline interrupts the task, the tick's proposals are lost and the leases carry on (01 §9). *Broke* when the admission used p99.9 as for Rust: a GC tail outside p99.9 gave missed deadlines in the field. **Fixed:** maximum in tier 2 (§19).
 
-**E4 — `try: … except Exception: pass` à volta do controlo.** A exceção de qualidade é engolida e a tarefa continua com o valor da iteração anterior de uma variável local. *O que acontece:* é código válido, e o SDK não o pode impedir. O `jk build` avisa (`J-E0863`) quando uma tarefa de ciclo tem uma captura genérica à volta de chamadas a `get()`, e a documentação do SDK abre com o caminho certo (`get_or` ou deixar a exceção sair).
+**E4 — `try: … except Exception: pass` around the control.** The quality exception is swallowed and the task continues with the value of a local variable from the previous iteration. *What happens:* it is valid code, and the SDK cannot prevent it. `jk build` warns (`J-E0863`) when a cycle task has a generic catch around calls to `get()`, and the SDK documentation opens with the right path (`get_or` or letting the exception out).
 
-**E5 — Uma exceção qualquer a meio do tick, depois de dois `set()`.** Um `ZeroDivisionError`. *O que acontece:* as duas propostas são descartadas, como num `panic` do Rust (01 §9), e o erro conta para o crashloop. A instância **não** é recriada (§9.3). *Quebrou* na primeira versão, que tratava todas as exceções como `Err` e deixava passar propostas calculadas até meio. **Corrigido:** só os `JokerError` mantêm as propostas.
+**E5 — An arbitrary exception halfway through the tick, after two `set()`s.** A `ZeroDivisionError`. *What happens:* the two proposals are discarded, as in a Rust `panic` (01 §9), and the error counts towards the crashloop. The instance is **not** recreated (§9.3). *Broke* in the first version, which treated every exception as `Err` and let half-computed proposals through. **Fixed:** only `JokerError`s keep the proposals.
 
-**E6 — Números acima de 2⁵³ em TS.** Um contador `u64` de energia em Wh e os instantes em ns. *O que acontece:* chegam como `bigint`, nas apps e na biblioteca cliente, também quando o JSON os traz como número. Um `number` numa porta `i64` é um erro de tipos; em JS sem tipos, `LimitError` (`J-E0806`) se não for um inteiro seguro. Nunca há arredondamento silencioso.
+**E6 — Numbers above 2⁵³ in TS.** A `u64` energy counter in Wh and instants in ns. *What happens:* they arrive as `bigint`, in the apps and in the client library, also when the JSON carries them as a number. A `number` on an `i64` port is a type error; in untyped JS, `LimitError` (`J-E0806`) if it is not a safe integer. There is never silent rounding.
 
-**E7 — Um membro de classe chamado `name`, ou `from`.** *O que acontece:* `name` é recusado pelo `jkc`, porque os nomes da API dos handles são reservados (ref/00 §2; achado A8, resolvido). `from` passa: o gerador Python acrescenta `_` (`p.from_()`) e o `jkc` avisa; o nome do membro no manifesto e no `.jkc` não muda.
+**E7 — A class member called `name`, or `from`.** *What happens:* `name` is rejected by `jkc`, because the names of the handle API are reserved (ref/00 §2; finding A8, resolved). `from` gets through: the Python generator appends `_` (`p.from_()`) and `jkc` warns; the member's name in the manifest and in the `.jkc` does not change.
 
-**E8 — API async no ciclo, em Python.** `self.grid_power.history(...)` dentro de um `def` de ciclo. *O que acontece:* `J-E0859` no `jk build` (análise estática das chamadas conhecidas: `history`, `write`, `invoke`, `kv.*`, `secrets.*`, `snapshot`, `subscribe`, métodos de ação), e `J-E0901` em runtime se escapar ao lint (por exemplo, por `getattr`). Um `await` num `def` nem compila. Em TS, é erro de tipos.
+**E8 — Async API in the cycle, in Python.** `self.grid_power.history(...)` inside a cycle `def`. *What happens:* `J-E0859` in `jk build` (static analysis of the known calls: `history`, `write`, `invoke`, `kv.*`, `secrets.*`, `snapshot`, `subscribe`, action methods), and `J-E0901` at runtime if it escapes the lint (for example, through `getattr`). An `await` in a `def` does not even compile. In TS, it is a type error.
 
-**E9 — Efeitos laterais na importação.** `START = time.time()` no topo do módulo, ou `if os.environ.get("SITE") == "porto": …` à volta de uma porta. *O que acontece:* o relógio na declaração é `J-E0810`. O `os.environ` é diferente entre a execução nativa e a pré-inicialização, e o registo diverge: `J-E0862`. O `random` semeado na importação ficaria igual em todas as instâncias por causa do *snapshot*: o SDK volta a semeá-lo no `init`. *Quebrou* na primeira versão, sem a comparação de digests: a app tinha no `joker:meta` portas diferentes das que o código usava, e os handles ficavam trocados. **Corrigido:** a comparação no passo 5 do §18.4.
+**E9 — Side effects on import.** `START = time.time()` at the top of the module, or `if os.environ.get("SITE") == "porto": …` around a port. *What happens:* the clock in the declaration is `J-E0810`. `os.environ` differs between the native execution and the pre-initialization, and the registry diverges: `J-E0862`. A `random` seeded at import would be the same in every instance because of the *snapshot*: the SDK seeds it again at `init`. *Broke* in the first version, without the digest comparison: the app had ports in `joker:meta` different from those the code used, and the handles got swapped. **Fixed:** the comparison in step 5 of §18.4.
 
-**E10 — Versões cruzadas.** (a) Uma app TS gerada para `joker:runtime@1.0.0` numa runtime 1.3: corre (ADR 0022). (b) Um `@joker/sdk` novo que gera `@1.3.0` enviado para um nó 1.0: recusado **antes** do deploy pelo agente ou pelo `jk apply`, pelo `wit` do `joker:meta` (M21); o `jk build --world joker:runtime@1.0.0` (ou `world` no `[tool.joker]`) gera para o nó antigo, e as funções da 1.3 levantam `UnavailableError`. (c) Um `joker-client` 1.3 contra um nó 1.0: as operações que o nó não tem dão `J-E0883` antes do pedido, e o resto funciona.
+**E10 — Crossed versions.** (a) A TS app generated for `joker:runtime@1.0.0` on a 1.3 runtime: it runs (ADR 0022). (b) A new `@joker/sdk` that generates `@1.3.0` sent to a 1.0 node: rejected **before** the deploy by the agent or by `jk apply`, through the `wit` of `joker:meta` (M21); `jk build --world joker:runtime@1.0.0` (or `world` in `[tool.joker]`) generates for the old node, and the 1.3 functions raise `UnavailableError`. (c) A `joker-client` 1.3 against a 1.0 node: the operations the node does not have give `J-E0883` before the request, and the rest works.
 
-**E11 — Rede instável num script de comissionamento.** A ligação cai a meio de um `write` e de um `invoke`. *O que acontece:* a escrita é repetida com um `nonce` novo (o nó recusaria o antigo como replay), e é segura porque só renova o nível; a ação é repetida com a **mesma** chave, e o nó devolve o resultado da primeira. Com o relógio do portátil 2 minutos adiantado, o nó recusa tudo; o erro traz o código da API e a dica `J-E0885`. *Quebrou* no desenho inicial, que reutilizava o `nonce` nas tentativas.
+**E11 — Unstable network in a commissioning script.** The connection drops in the middle of a `write` and of an `invoke`. *What happens:* the write is repeated with a new `nonce` (the node would refuse the old one as a replay), and it is safe because it only renews the level; the action is repeated with the **same** key, and the node returns the result of the first one. With the laptop's clock 2 minutes ahead, the node refuses everything; the error carries the API code and the hint `J-E0885`. *Broke* in the initial design, which reused the `nonce` across attempts.
 
-**E12 — Um notebook pede uma semana em bruto de 5 000 sinais.** *O que acontece:* a estimativa passa de 5 × 10⁶ pontos e `history()` falha com `J-E0889` antes de pedir, com a sugestão de `step` ou de `export()` para Parquet (a biblioteca lê o NDJSON paginado e escreve o Parquet em blocos, sem guardar tudo em memória; o nó não produz Parquet nem Arrow, ref/09 §5.5). Um pedido grande dentro do limite chega em páginas de NDJSON. O historian e o nó nunca ficam à espera do cliente (ADR 0013).
-
----
-
-## 29. Decisões e alternativas rejeitadas
-
-**D1 — TS: objeto de definição.** Dá os tipos de `io` por domínio sem geração de código e funciona em JS puro. *Rejeitado:* decoradores TC39 (não mudam o tipo de `this` por domínio, e o `this` partilhado esconde as duas instâncias); classes com métodos (o mesmo problema).
-
-**D2 — Python: classe com descritores e `self` como vista só de leitura.** Dá tipos no mypy/pyright e é idiomático. *Rejeitado:* um parâmetro `io` como no documento 04 (sem *mapped types* no Python, `io.x` seria `Any`); funções soltas com um registo global (perde o agrupamento e os tipos).
-
-**D3 — Exceções como `?`.** É a forma idiomática nas duas linguagens, e o comportamento na fronteira da tarefa é o do `Err` do Rust. *Rejeitado:* objetos `Result` em Python (ninguém os usaria); em TS existe `tryGet()` como alternativa, sem ser o caminho principal.
-
-**D4 — Uma exceção não apanhada é um `panic`, mas sem trap.** *Rejeitado:* trap real (recriar uma instância Python custa até 300 ms e perde o estado de todas as tarefas); tratá-la como `Err` (propostas calculadas pela metade).
-
-**D5 — Tier 2 no ciclo, com mínimos de período e admissão pelo máximo.** *Rejeitado:* tier 2 só em async (empurra o controlo lento para tarefas sem latch nem admissão); ciclo sem mínimos (as pausas de GC tornam os grupos rápidos inadmissíveis na prática, e o `jk check` já o diria tarde).
-
-**D6 — A imagem empacotada também em tier 2.** *Rejeitado:* uma chamada `cycle-io.read` por porta, como o documento 09, §2.2, previa (ms por tick num motor JS ou Python).
-
-**D7 — `joker_sdk`, `joker_classes`, `joker_client`, `joker_testing` em Python.** *Rejeitado:* `import joker` (o *namespace* existe no PyPI, e a documentação levaria as pessoas a instalar o pacote errado).
-
-**D8 — `bigint` para `i64`, `u64` e instantes em TS.** *Rejeitado:* `number` (perda silenciosa acima de 2⁵³); `number | bigint` conforme a magnitude (um tipo que muda com o valor parte o código aos 104 dias de *uptime*).
-
-**D9 — Plano B para o async do Component Model.** Se o ComponentizeJS ou o componentize-py não tiverem o async do WASI 0.3 estável quando o SDK sair, a instância async de uma app de tier 2 é servida por uma variante do mundo em que as funções `async` são **bloqueantes**, numa thread dedicada da *pool* `app` (nunca no domínio de ciclo). O SDK mantém a mesma API (`await` resolve de imediato), e perde-se só a concorrência entre tarefas da mesma app: um `history()` lento atrasa as outras tarefas async dessa app. A variante do mundo é o `app-blocking` da ref/04 §2.11, ativada por ADR na Fase 3. *Rejeitado:* adiar o SDK TS para além da v1.0; um SDK sem tarefas async.
-
-**D10 — Harness como extensão nativa (PyO3, napi-rs) da crate `joker-test`.** Um só harness, com o `joker-core` e o wasmtime reais, controlado passo a passo. *Rejeitado:* um subprocesso com protocolo próprio (lento no passo a passo, e mais uma interface para especificar); reimplementar o harness em cada linguagem (três semânticas).
-
-**D11 — Clientes com tipos e operações gerados e ergonomia à mão.** *Rejeitado:* tudo gerado (sem socket Unix, mTLS, WebSocket, anti-replay, nem API idiomática); tudo à mão (deriva silenciosa face ao ref/09).
-
-**D12 — Cliente Python na v1.0, apesar de o SDK Python ser da 1.2.** O cliente é HTTP puro, não depende do componentize-py, e é o que as equipas de dados e de comissionamento pedem primeiro (21 §4). *Rejeitado:* esperar pela 1.2.
-
-**D13 — `health()` calculado no SDK, com vetores de teste partilhados.** A regra é uma função pura das qualidades. *Rejeitado, por agora:* uma consulta implícita `health` avaliada pelo núcleo em cada instância, que mudaria o documento 17 e o registo de sinais. Fica como alternativa se aparecer divergência.
-
-**D14 — Portas ordenadas por nome no `joker:meta`.** *Rejeitado:* ordem de declaração (depende de detalhes do interpretador e muda com uma reorganização inócua do código).
-
-**D15 — `version` opcional no código, `name` obrigatório.** *Rejeitado:* duplicar os dois (ficam dessincronizados); só o pacote (o nome da app é `snake_case` e o do pacote não tem de ser).
+**E12 — A notebook asks for one raw week of 5,000 signals.** *What happens:* the estimate exceeds 5 × 10⁶ points and `history()` fails with `J-E0889` before asking, with the suggestion of `step` or of `export()` to Parquet (the library reads the paginated NDJSON and writes the Parquet in chunks, without keeping everything in memory; the node produces neither Parquet nor Arrow, ref/09 §5.5). A large request within the limit arrives in NDJSON pages. The historian and the node never wait for the client (ADR 0013).
 
 ---
 
-## 30. Marcações de versão
+## 29. Decisions and rejected alternatives
 
-| Coisa | v1.0 | 1.1 | 1.2 | 1.3 |
+**D1 — TS: definition object.** It gives the types of `io` per domain without code generation and works in plain JS. *Rejected:* TC39 decorators (they do not change the type of `this` per domain, and the shared `this` hides the two instances); classes with methods (the same problem).
+
+**D2 — Python: class with descriptors and `self` as a read-only view.** It gives types in mypy/pyright and is idiomatic. *Rejected:* an `io` parameter as in document 04 (without *mapped types* in Python, `io.x` would be `Any`); loose functions with a global registry (it loses the grouping and the types).
+
+**D3 — Exceptions as `?`.** It is the idiomatic form in both languages, and the behavior at the task boundary is that of Rust's `Err`. *Rejected:* `Result` objects in Python (nobody would use them); in TS there is `tryGet()` as an alternative, without being the main path.
+
+**D4 — An uncaught exception is a `panic`, but without a trap.** *Rejected:* a real trap (recreating a Python instance costs up to 300 ms and loses the state of all tasks); treating it as `Err` (half-computed proposals).
+
+**D5 — Tier 2 in the cycle, with period minimums and admission by the maximum.** *Rejected:* tier 2 only in async (it pushes slow control into tasks with neither latch nor admission); cycle without minimums (GC pauses make the fast groups inadmissible in practice, and `jk check` would only say so late).
+
+**D6 — The packed image in tier 2 too.** *Rejected:* one `cycle-io.read` call per port, as document 09, §2.2, foresaw (ms per tick in a JS or Python engine).
+
+**D7 — `joker_sdk`, `joker_classes`, `joker_client`, `joker_testing` in Python.** *Rejected:* `import joker` (the *namespace* exists on PyPI, and the documentation would lead people to install the wrong package).
+
+**D8 — `bigint` for `i64`, `u64` and instants in TS.** *Rejected:* `number` (silent loss above 2⁵³); `number | bigint` depending on the magnitude (a type that changes with the value breaks the code at 104 days of *uptime*).
+
+**D9 — Plan B for Component Model async.** If ComponentizeJS or componentize-py do not have WASI 0.3 async stable when the SDK ships, the async instance of a tier 2 app is served by a variant of the world in which the `async` functions are **blocking**, on a dedicated thread of the `app` *pool* (never in the cycle domain). The SDK keeps the same API (`await` resolves immediately), and only the concurrency between tasks of the same app is lost: a slow `history()` delays the other async tasks of that app. The world variant is the `app-blocking` of ref/04 §2.11, activated by an ADR in Phase 3. *Rejected:* postponing the TS SDK beyond v1.0; an SDK without async tasks.
+
+**D10 — Harness as a native extension (PyO3, napi-rs) of the `joker-test` crate.** A single harness, with the real `joker-core` and wasmtime, controlled step by step. *Rejected:* a subprocess with its own protocol (slow step by step, and one more interface to specify); reimplementing the harness in each language (three semantics).
+
+**D11 — Clients with generated types and operations and hand-written ergonomics.** *Rejected:* everything generated (no Unix socket, mTLS, WebSocket, anti-replay, or idiomatic API); everything by hand (silent drift from ref/09).
+
+**D12 — Python client in v1.0, even though the Python SDK is from 1.2.** The client is pure HTTP, does not depend on componentize-py, and is what the data and commissioning teams ask for first (21 §4). *Rejected:* waiting for 1.2.
+
+**D13 — `health()` computed in the SDK, with shared test vectors.** The rule is a pure function of the qualities. *Rejected, for now:* an implicit `health` query evaluated by the core in each instance, which would change document 17 and the signal registry. It remains as an alternative if divergence appears.
+
+**D14 — Ports ordered by name in `joker:meta`.** *Rejected:* declaration order (it depends on details of the interpreter and changes with a harmless reorganization of the code).
+
+**D15 — `version` optional in the code, `name` required.** *Rejected:* duplicating both (they get out of sync); only the package (the app's name is `snake_case` and the package's need not be).
+
+---
+
+## 30. Version markers
+
+| Thing | v1.0 | 1.1 | 1.2 | 1.3 |
 |---|---|---|---|---|
-| SDK TS (`@joker/sdk`, `@joker/test`, `@joker/classes-*`) | **sim** | | | |
-| SDK Python (`joker-sdk`, `joker-testing`, `joker-classes-*`) | API fechada aqui | | **sim** | |
-| `set_at`, `write_at` (M6) | nos tipos; `J-E0003` em `prod`, `J-E0601` em `dev` | **sim** | | |
-| `propose`, intenções (M18) | nos tipos; `J-E0003` em `prod`, `J-E0601` em `dev` | **sim** | | |
-| `Model`, `infer`, frames, streams, blocos | nos tipos; `unavailable` (11, "Preparado para ML") | **sim** | | |
-| ações longas com progresso (`invoke_long`) | **sim** (ref/04 §2.4) | | | |
-| segredos (`Secret`) | **sim** (ref/04 §2.5.2) | | | |
-| clientes Rust, Python, TS | **sim** | | | |
-| intenções nos clientes | na tabela de operações; `J-E0883` num nó sem elas | **sim** | | |
-| Arrow e Parquet produzidos pelo nó | **não** (NDJSON; conversão no cliente, ref/09 §12) | | | |
-| cliente TS no browser | | | | **sim** (Studio) |
-| `deck://` (túnel do Deck) | reservado | | | **sim** |
-| apps de tier 2 no Joker Micro | **não** (`J0720`) | não | não | não (a 1.4 traz Wasm em MCUs M2, só para Rust) |
+| TS SDK (`@joker/sdk`, `@joker/test`, `@joker/classes-*`) | **yes** | | | |
+| Python SDK (`joker-sdk`, `joker-testing`, `joker-classes-*`) | API closed here | | **yes** | |
+| `set_at`, `write_at` (M6) | in the types; `J-E0003` in `prod`, `J-E0601` in `dev` | **yes** | | |
+| `propose`, intents (M18) | in the types; `J-E0003` in `prod`, `J-E0601` in `dev` | **yes** | | |
+| `Model`, `infer`, frames, streams, blocks | in the types; `unavailable` (11, "Ready for ML") | **yes** | | |
+| long actions with progress (`invoke_long`) | **yes** (ref/04 §2.4) | | | |
+| secrets (`Secret`) | **yes** (ref/04 §2.5.2) | | | |
+| Rust, Python, TS clients | **yes** | | | |
+| intents in the clients | in the operation table; `J-E0883` on a node without them | **yes** | | |
+| Arrow and Parquet produced by the node | **no** (NDJSON; conversion in the client, ref/09 §12) | | | |
+| TS client in the browser | | | | **yes** (Studio) |
+| `deck://` (Deck tunnel) | reserved | | | **yes** |
+| tier 2 apps on Joker Micro | **no** (`J0720`) | no | no | no (1.4 brings Wasm on M2 MCUs, only for Rust) |
 
 ---
 
-## 31. Códigos novos (`J-E0800`–`J-E0899`)
+## 31. New codes (`J-E0800`–`J-E0899`)
 
-| Código | Gravidade | Mensagem | Onde |
+| Code | Severity | Message | Where |
 |---|---|---|---|
-| `J-E0800` | error | leitura com qualidade que o acessor não aceita (`QualityError`) | SDKs, clientes |
-| `J-E0802` | error | API de ciclo chamada em async (`dt`, `pending`, `last_outcome`, `set`, receção de caixa do lado errado) | SDKs |
-| `J-E0803` | error | atribuição à vista da app: o estado é por domínio; usa `st`, `Internal` ou `Mailbox` | SDKs |
-| `J-E0804` | error | `Internal` com campo não escalar ou acima de 64 B codificado | build, runtime |
-| `J-E0805` | error | limite de codificação: `string`/`bytes` de sinal > 64 B, string de registo > 1 KiB, lista > 64, chave de idempotência inválida | SDKs |
-| `J-E0806` | error | valor fora do tipo da porta (gama inteira, inteiro não seguro, literal de duração inválido, contador negativo) | SDKs |
-| `J-E0807` | error | instância desconhecida num `Many` (nome ou posição) | SDKs |
-| `J-E0808` | error | membro de uma capacidade que a instância não tem | SDKs |
-| `J-E0809` | error | API estável de um mundo posterior ao gerado, indisponível nesta runtime (os itens `@unstable` dão `J-E0003`/`J-E0601`, ref/04 §2.9) | SDKs |
-| `J-E0810` | error | chamada ao host durante a declaração da app | build |
-| `J-E0811` | error | `kv`: chave ou valor fora dos limites | SDKs |
-| `J-E0813` | error | tarefa ou handler mal declarado (domínio, assinatura, gatilho, ação sem handler) | build |
-| `J-E0815` | error | estado persistente não codificável, acima de 64 KiB, ou incompatível sem `migrate` | runtime |
-| `J-E0816` | error | exceção não apanhada numa tarefa (tratada como `panic`) | runtime |
-| `J-E0817` | error | segredo não declarado | SDKs |
-| `J-E0818` | error | chamada ao host em modo nativo (fora do Wasm) | SDKs |
-| `J-E0850` | error | ponto de entrada inválido: sem app, mais do que uma, sem herdar de `App`, várias linguagens na mesma pasta | build |
-| `J-E0851` | error | declaração de parâmetro inválida (`range`, `default`) | build |
-| `J-E0852` | error | versão no código diferente da do pacote | build |
-| `J-E0853` | error | empacotamento impossível: dependência nativa sem roda `wasm32-wasi`, import `node:*` | build |
-| `J-E0854` | error-in-prod | tarefa de ciclo de tier 2 abaixo do período mínimo ou com `wcet` acima de 50% do período | build, `jk check` |
-| `J-E0855` | error-in-prod | tier 2 numa arquitetura sem Cranelift (armv7/Pulley) | `jk check`, `jk build --target` |
-| `J-E0856` | error | mundo pedido que o SDK não sabe gerar | build |
-| `J-E0857` | error | nome inválido, reservado ou repetido na declaração | build |
-| `J-E0858` | warning | tarefa escreve numa variável global do módulo (não é partilhada entre ciclo e async) | build |
-| `J-E0859` | error | API async chamada numa tarefa de ciclo (análise estática) | build |
-| `J-E0860` | error | componente ou `include` acima do tamanho máximo | build |
-| `J-E0861` | error | toolchain em falta ou de versão errada (Node, Python, `componentize-py`) | build |
-| `J-E0862` | error | a declaração diverge entre a execução nativa e a pré-inicialização | build |
-| `J-E0863` | warning | captura genérica de exceções à volta de leituras numa tarefa de ciclo | build |
-| `J-E0864` | warning | sem lock do ecossistema: build não reprodutível | build |
-| `J-E0881` | error | nó inacessível ou tempo limite (socket, TCP, SSH, permissões do socket) | clientes |
-| `J-E0882` | error | o nó recusou a identidade do cliente (certificado de utilizador em falta, expirado ou sem papel) | clientes |
-| `J-E0883` | error | operação ou versão da API não suportada pelo nó | clientes |
-| `J-E0884` | error | resposta do nó que não cumpre o esquema | clientes |
-| `J-E0885` | warning | relógio local desfasado do nó (> 10 s); as escritas podem ser recusadas | clientes |
-| `J-E0886` | warning | subscrição com perda (`Gap`) | clientes |
-| `J-E0888` | error | dependência opcional em falta (`joker-client[pandas]`) | clientes |
-| `J-E0889` | error | resultado estimado acima de `max_points` | clientes |
+| `J-E0800` | error | read with a quality the accessor does not accept (`QualityError`) | SDKs, clients |
+| `J-E0802` | error | cycle API called in async (`dt`, `pending`, `last_outcome`, `set`, mailbox receive on the wrong side) | SDKs |
+| `J-E0803` | error | assignment to the app view: state is per domain; use `st`, `Internal` or `Mailbox` | SDKs |
+| `J-E0804` | error | `Internal` with a non-scalar field or above 64 B encoded | build, runtime |
+| `J-E0805` | error | encoding limit: signal `string`/`bytes` > 64 B, record string > 1 KiB, list > 64, invalid idempotency key | SDKs |
+| `J-E0806` | error | value outside the port type (integer range, unsafe integer, invalid duration literal, negative counter) | SDKs |
+| `J-E0807` | error | unknown instance in a `Many` (name or position) | SDKs |
+| `J-E0808` | error | member of a capability the instance does not have | SDKs |
+| `J-E0809` | error | stable API of a world later than the generated one, unavailable in this runtime (the `@unstable` items give `J-E0003`/`J-E0601`, ref/04 §2.9) | SDKs |
+| `J-E0810` | error | host call during the app declaration | build |
+| `J-E0811` | error | `kv`: key or value out of bounds | SDKs |
+| `J-E0813` | error | task or handler declared incorrectly (domain, signature, trigger, action without handler) | build |
+| `J-E0815` | error | persistent state not encodable, above 64 KiB, or incompatible without `migrate` | runtime |
+| `J-E0816` | error | uncaught exception in a task (treated as `panic`) | runtime |
+| `J-E0817` | error | secret not declared | SDKs |
+| `J-E0818` | error | host call in native mode (outside Wasm) | SDKs |
+| `J-E0850` | error | invalid entry point: no app, more than one, not inheriting from `App`, several languages in the same directory | build |
+| `J-E0851` | error | invalid parameter declaration (`range`, `default`) | build |
+| `J-E0852` | error | version in the code differs from the package version | build |
+| `J-E0853` | error | packaging impossible: native dependency without a `wasm32-wasi` wheel, `node:*` import | build |
+| `J-E0854` | error-in-prod | tier 2 cycle task below the minimum period or with `wcet` above 50% of the period | build, `jk check` |
+| `J-E0855` | error-in-prod | tier 2 on an architecture without Cranelift (armv7/Pulley) | `jk check`, `jk build --target` |
+| `J-E0856` | error | requested world that the SDK cannot generate | build |
+| `J-E0857` | error | invalid, reserved or repeated name in the declaration | build |
+| `J-E0858` | warning | task writes to a module global variable (not shared between cycle and async) | build |
+| `J-E0859` | error | async API called in a cycle task (static analysis) | build |
+| `J-E0860` | error | component or `include` above the maximum size | build |
+| `J-E0861` | error | toolchain missing or wrong version (Node, Python, `componentize-py`) | build |
+| `J-E0862` | error | the declaration differs between native execution and pre-initialization | build |
+| `J-E0863` | warning | generic exception catch around reads in a cycle task | build |
+| `J-E0864` | warning | no ecosystem lock: build not reproducible | build |
+| `J-E0881` | error | node unreachable or timeout (socket, TCP, SSH, socket permissions) | clients |
+| `J-E0882` | error | the node refused the client identity (user certificate missing, expired or without a role) | clients |
+| `J-E0883` | error | operation or API version not supported by the node | clients |
+| `J-E0884` | error | node response does not conform to the schema | clients |
+| `J-E0885` | warning | local clock skewed from the node (> 10 s); writes may be refused | clients |
+| `J-E0886` | warning | subscription with loss (`Gap`) | clients |
+| `J-E0888` | error | optional dependency missing (`joker-client[pandas]`) | clients |
+| `J-E0889` | error | estimated result above `max_points` | clients |
 
-`J-E0801`, `J-E0812`, `J-E0814`, `J-E0880`, `J-E0887` e o resto da gama ficam livres. Os erros de configuração e de resolução do nó são os do ref/02 (`J0910`–`J0913`), usados tal como estão. O `J-E0901` (API async no ciclo) é do documento 04 e é usado tal como está.
+`J-E0801`, `J-E0812`, `J-E0814`, `J-E0880`, `J-E0887` and the rest of the range stay free. The configuration and node resolution errors are those of ref/02 (`J0910`–`J0913`), used as they are. `J-E0901` (async API in the cycle) belongs to document 04 and is used as it is.
 
 ---
 
-## 32. Dependências de outras referências (resolvidas)
+## 32. Dependencies on other references (resolved)
 
-O que este documento pedia às outras referências, e como ficou depois da integração (documento 22, §5 e §7).
+What this document asked of the other references, and how it ended up after the integration (document 22, §5 and §7).
 
-| # | Referência | Pedido | Como ficou |
+| # | Reference | Request | Outcome |
 |---|---|---|---|
-| X1 | ref/04 | chaves `tier`, `lang`, `engine`, `sdk` e os tipos de porta de alarmes, publicados, caixas e segredos no `joker:meta` | **resolvido:** `sdk-info` 0, 3, 4, 5; `port-kind` 4, 5, 9, 10; segredos na chave 13 (§3, §5.4) |
-| X2 | ref/04 | handle *i* = posição na lista de portas | **resolvido:** ref/04 §2.6.2, pela ordem que o SDK escreve (§15.1) |
-| X3 | ref/04 | registo de "leitura substituída" e registo de "erro de tarefa" | **resolvido:** `NOTE` (tipo 6, ref/04 §3.3); o erro de tarefa vai em `cycle-result.error`, sem registo no buffer (§9.3) |
-| X4 | ref/04 | `Err` sem propostas, crashloop sem recriar a instância | **resolvido:** `J-E0816` com `proposals` vazio, tratado como trap sem recriar a instância (ref/04 §2.6.1) |
-| X5 | ref/04 | método de classe async com resultado | **resolvido:** `async-io.call` → `list<member-outcome>` (já existia) |
-| X6 | ref/04 | receção de caixas no ciclo | **resolvido:** `cycle-io.mailbox-recv` (já existia) |
-| X7 | ref/04 | interface de segredos | **resolvido:** `secrets.reveal` (ref/04 §2.5.2) |
-| X8 | ref/04 | `run-task` único com subscrição no guest | **substituído:** um `run-task` por disparo, também em `on` e `on_event` (ref/04 §11); §9.2 alinhado |
-| X9 | ref/04 | `write` async com o resultado final | **resolvido** (ref/04 §2.4) |
-| X10 | ref/04 | relógios do latch e aleatoriedade semeada | **resolvido:** ref/04 §2.7; a semente deriva da geração e não é gravada no traço (§9.1 alinhado) |
-| X11 | ref/04 | agregação e qualidade por passo em `history` | **resolvido:** qualidade dominante por passo (ref/04 §2.4); `agg` nos SDKs (§6.2) |
-| X12 | ref/04 | variante bloqueante do mundo (plano B) | **resolvido:** mundo `app-blocking` reservado (ref/04 §2.11) |
-| X13 | ref/04 | nomes Rust de referência para a paridade | **resolvido:** §16 |
-| X14 | ref/09 | `operationId` | **resolvido:** os do OpenAPI (§23); os nomes propostos aqui foram abandonados |
-| X15 | ref/09 | `getInfo` com versão e capacidades | **resolvido:** `features` e `getVersion` (ref/09 §5.1) |
-| X16 | ref/09 | `dry_run` em escritas e métodos | **substituído:** operações de pré-visualização `previewManualWrite` e `previewMethodCall` (§23) |
-| X17 | ref/09 | onde vão `nonce` e `ts`, e o código de recusa | **resolvido:** `Joker-Nonce`, `Joker-Timestamp`, `J-E1021`/`J-E1022` (ref/09 §2.5) |
-| X18 | ref/09 | esquema das mensagens do WebSocket e cursor de retoma | **resolvido:** ref/09 §6 (`resume` com `session` e `last_seq`) |
-| X19 | ref/09 | Arrow no histórico; exportação em Parquet | **recusado pela ref/09:** NDJSON; Arrow e Parquet do lado do cliente (§23, §26.1) |
-| X20 | ref/09 | upload em blocos do *bundle* | **resolvido:** ref/09 §5.13 |
-| X21 | ref/02 | resolução de `--node` e identidades | **resolvido:** ref/02 §3.3.1, seguida tal como está (§22) |
-| X22 | ref/02 | admissão de tier 2 pelo `max` | **resolvido:** D15, ref/02 §2.1.13 |
-| X23 | 17 | nomes de membros reservados | **resolvido:** ref/00 §2 (`name`, `index`, `health`, `read`, `raw`, `has`) |
-| X24 | ref/00 | `J-E08xx` também para as bibliotecas cliente | **resolvido:** ref/00 §8 |
+| X1 | ref/04 | keys `tier`, `lang`, `engine`, `sdk` and the port types for alarms, published signals, mailboxes and secrets in `joker:meta` | **resolved:** `sdk-info` 0, 3, 4, 5; `port-kind` 4, 5, 9, 10; secrets in key 13 (§3, §5.4) |
+| X2 | ref/04 | handle *i* = position in the port list | **resolved:** ref/04 §2.6.2, in the order the SDK writes (§15.1) |
+| X3 | ref/04 | "substituted read" record and "task error" record | **resolved:** `NOTE` (type 6, ref/04 §3.3); the task error goes in `cycle-result.error`, with no record in the buffer (§9.3) |
+| X4 | ref/04 | `Err` without proposals, crashloop without recreating the instance | **resolved:** `J-E0816` with empty `proposals`, treated as a trap without recreating the instance (ref/04 §2.6.1) |
+| X5 | ref/04 | async class method with a result | **resolved:** `async-io.call` → `list<member-outcome>` (it already existed) |
+| X6 | ref/04 | mailbox reception in the cycle | **resolved:** `cycle-io.mailbox-recv` (it already existed) |
+| X7 | ref/04 | secrets interface | **resolved:** `secrets.reveal` (ref/04 §2.5.2) |
+| X8 | ref/04 | single `run-task` with subscription in the guest | **superseded:** one `run-task` per firing, also for `on` and `on_event` (ref/04 §11); §9.2 aligned |
+| X9 | ref/04 | async `write` with the final result | **resolved** (ref/04 §2.4) |
+| X10 | ref/04 | latch clocks and seeded randomness | **resolved:** ref/04 §2.7; the seed derives from the generation and is not recorded in the trace (§9.1 aligned) |
+| X11 | ref/04 | aggregation and quality per step in `history` | **resolved:** dominant quality per step (ref/04 §2.4); `agg` in the SDKs (§6.2) |
+| X12 | ref/04 | blocking variant of the world (plan B) | **resolved:** `app-blocking` world reserved (ref/04 §2.11) |
+| X13 | ref/04 | reference Rust names for parity | **resolved:** §16 |
+| X14 | ref/09 | `operationId` | **resolved:** those of the OpenAPI (§23); the names proposed here were abandoned |
+| X15 | ref/09 | `getInfo` with version and capabilities | **resolved:** `features` and `getVersion` (ref/09 §5.1) |
+| X16 | ref/09 | `dry_run` in writes and methods | **superseded:** preview operations `previewManualWrite` and `previewMethodCall` (§23) |
+| X17 | ref/09 | where `nonce` and `ts` go, and the refusal code | **resolved:** `Joker-Nonce`, `Joker-Timestamp`, `J-E1021`/`J-E1022` (ref/09 §2.5) |
+| X18 | ref/09 | schema of the WebSocket messages and resume cursor | **resolved:** ref/09 §6 (`resume` with `session` and `last_seq`) |
+| X19 | ref/09 | Arrow in the history; export in Parquet | **refused by ref/09:** NDJSON; Arrow and Parquet on the client side (§23, §26.1) |
+| X20 | ref/09 | chunked upload of the *bundle* | **resolved:** ref/09 §5.13 |
+| X21 | ref/02 | resolution of `--node` and identities | **resolved:** ref/02 §3.3.1, followed as it is (§22) |
+| X22 | ref/02 | tier 2 admission by `max` | **resolved:** D15, ref/02 §2.1.13 |
+| X23 | 17 | reserved member names | **resolved:** ref/00 §2 (`name`, `index`, `health`, `read`, `raw`, `has`) |
+| X24 | ref/00 | `J-E08xx` also for the client libraries | **resolved:** ref/00 §8 |
 
 ---
 
-## 33. Achados nos documentos existentes
+## 33. Findings in the existing documents
 
-Todos foram aceites na integração da rodada (documento 22, §7), com as resoluções da §5 onde havia conflito.
+All of them were accepted in the integration of the round (document 22, §7), with the resolutions of §5 where there was a conflict.
 
-| # | Documento | Problema | Mudança proposta | Estado |
+| # | Document | Problem | Proposed change | Status |
 |---|---|---|---|---|
-| A1 | 04 §4.1 | `inputs: { zoneTemp … }` em `camelCase`, contra o ref/00 §2; `io.log.info` | `zone_temp`; `import { log }` e `log.info(…)` | aceite e aplicado (documento 22, §7) |
-| A2 | 04 §4.2 | `from joker import …`; `def control(self, io)`; `sum(v for v in h) / len(h)` sobre amostras; `io.log` | `from joker_sdk import …`; `class Tank(App)`; `def control(self)` com `self.level.get()`; `h.mean()`; `log.info` | aceite e aplicado (documento 22, §7) |
-| A3 | 04 §3.1, §3.3 | a porta chama-se `grid`, e o `bind` do 03 §8 e do exemplo 01 §3 liga `grid_power` (`J0121`/`J0110` no `jk check`) | renomear a porta para `grid_power` no 04 | aceite e aplicado (documento 22, §7) |
-| A4 | 04 §3.2 | `plan.limit_kw.min(io.limit.get())` com `get_or_default()`: antes do primeiro `replan` (até 15 min) ou com o plano expirado, o limite é 0 kW e a bateria descarrega para cobrir toda a importação | `let limit = if stale { io.limit.get() } else { plan.limit_kw.min(io.limit.get()) };` (como no §20.1) | aceite e aplicado (documento 22, §7) |
-| A5 | 04 §3.3 | `watch_soc` usa `s.value` sem ver a qualidade | `if let Ok(v) = s.get() { … }` | aceite e aplicado (documento 22, §7) |
-| A6 | 14 §9.1 | a principal é reescolhida em todos os ticks pela menor contagem de horas: com horas próximas, as bombas trocam de principal com a bomba a trabalhar; `rotate_every` não é usado | escolher a principal no início de cada pedido (como no §20.2) ou usar `rotate_every` | aceite e aplicado (documento 22, §7) |
-| A7 | 14 §6.6 | `@joker/classes/std` contradiz o 17 §6 (`@joker/classes-std`); `from joker.classes.std`; `(self, io)`; `cycle("10ms")` abaixo do mínimo de tier 2 | `@joker/classes-std`; `from joker_classes.std`; `def control(self)`; `"100ms"` em TS e `"500ms"` em Python, com a nota do §14.3 | aceite e aplicado (documento 22, §7) |
-| A8 | 17 §3.2 | nada impede um membro chamado `name`, `index`, `health`, `read`, `raw` ou `has`, que colide com a API dos handles gerados | reservar estes nomes (código novo na gama `JC`, do 17) | resolvido: ref/00 §2 |
-| A9 | 17 §6 | Python `joker.classes.std` | `joker_classes.std` (§3) | aceite e aplicado (documento 22, §7) |
-| A10 | 04 §4.3 | "Python na Fase 4" (não há Fase 4: o SDK Python é da 1.2, documentos 11 e 21); "período mínimo recomendado"; "unidades em runtime" | remeter para o §19 deste documento: mínimos como regra (`J-E0854`), memória 64/128 MiB, unidades validadas no `jk build` | aceite e aplicado (documento 22, §7) |
-| A11 | 09 §2.2 (último ponto), 01 §9 | "as chamadas `cycle-io.read/write` ficam para os SDKs de tier 2" | os SDKs de tier 2 também usam a imagem empacotada; `cycle-io.read/write` só para acesso dinâmico e para valores que não cabem em `u64` | aceite e aplicado (documento 22, §7) |
-| A12 | 01 §9, 09 §2.2 contra 04 §2 | propostas de 12 B (`porta u16, flags u16, valor u64`) contra registos de escrita de 14 B (`kind, flags, porta u32, valor`) | fixar um só layout no ref/04 e corrigir os outros dois | resolvido: um só layout, o da ref/04 §3.3 (registos de 14 B) |
-| A13 | 04 §2 | o mundo não tem segredos, métodos de classe com resultado em async, receção de caixas de correio no ciclo, nem os tipos de porta de alarmes e publicados | acrescentar (X1–X7 do §32) | resolvido: X1–X7 do §32 |
-| A14 | 01 §9, 03 §8 | `memory.max` por omissão de 16/64 MiB para todas as apps | por omissão dependente do tier (o `joker:meta` traz a sugestão, §19) | aceite e aplicado (documento 22, §7) |
-| A15 | 18 §4 (tabela, linha "números dos SDKs") | "Fases 3 e 4" | "Fase 3 (TS) e 1.2 (Python)" | aceite e aplicado (documento 22, §7) |
-| A16 | 04 §3.1 | `#[alarm]` só tem `raise()`/`clear()` nos exemplos | acrescentar `set(bool)` no ref/04 para a paridade com o §7.2 | aceite e aplicado (documento 22, §7) |
-| A17 | 07 §4 | `jk write … --reason "…"` não diz se o motivo é obrigatório | obrigatório, como nas bibliotecas (§23) | aceite e aplicado (documento 22, §7) |
-| A18 | — | a posse da organização `@joker` no npm não foi confirmada (a página devolve 403 a pedidos automáticos) | confirmar antes da primeira publicação; alternativa: `@joker-rt/*` | em aberto: D18 manda confirmar a organização antes da primeira publicação |
+| A1 | 04 §4.1 | `inputs: { zoneTemp … }` in `camelCase`, against ref/00 §2; `io.log.info` | `zone_temp`; `import { log }` and `log.info(…)` | accepted and applied (document 22, §7) |
+| A2 | 04 §4.2 | `from joker import …`; `def control(self, io)`; `sum(v for v in h) / len(h)` over samples; `io.log` | `from joker_sdk import …`; `class Tank(App)`; `def control(self)` with `self.level.get()`; `h.mean()`; `log.info` | accepted and applied (document 22, §7) |
+| A3 | 04 §3.1, §3.3 | the port is called `grid`, and the `bind` of 03 §8 and of example 01 §3 binds `grid_power` (`J0121`/`J0110` in `jk check`) | rename the port to `grid_power` in 04 | accepted and applied (document 22, §7) |
+| A4 | 04 §3.2 | `plan.limit_kw.min(io.limit.get())` with `get_or_default()`: before the first `replan` (up to 15 min) or with the plan expired, the limit is 0 kW and the battery discharges to cover all the import | `let limit = if stale { io.limit.get() } else { plan.limit_kw.min(io.limit.get()) };` (as in §20.1) | accepted and applied (document 22, §7) |
+| A5 | 04 §3.3 | `watch_soc` uses `s.value` without looking at the quality | `if let Ok(v) = s.get() { … }` | accepted and applied (document 22, §7) |
+| A6 | 14 §9.1 | the lead is chosen again in every tick by the lowest hour count: with close hours, the pumps swap the lead while the pump is running; `rotate_every` is not used | choose the lead at the start of each demand (as in §20.2) or use `rotate_every` | accepted and applied (document 22, §7) |
+| A7 | 14 §6.6 | `@joker/classes/std` contradicts 17 §6 (`@joker/classes-std`); `from joker.classes.std`; `(self, io)`; `cycle("10ms")` below the tier 2 minimum | `@joker/classes-std`; `from joker_classes.std`; `def control(self)`; `"100ms"` in TS and `"500ms"` in Python, with the note of §14.3 | accepted and applied (document 22, §7) |
+| A8 | 17 §3.2 | nothing prevents a member called `name`, `index`, `health`, `read`, `raw` or `has`, which collides with the API of the generated handles | reserve these names (new code in the `JC` range, of 17) | resolved: ref/00 §2 |
+| A9 | 17 §6 | Python `joker.classes.std` | `joker_classes.std` (§3) | accepted and applied (document 22, §7) |
+| A10 | 04 §4.3 | "Python in Phase 4" (there is no Phase 4: the Python SDK is from 1.2, documents 11 and 21); "recommended minimum period"; "units at runtime" | refer to §19 of this document: minimums as a rule (`J-E0854`), memory 64/128 MiB, units validated in `jk build` | accepted and applied (document 22, §7) |
+| A11 | 09 §2.2 (last point), 01 §9 | "the `cycle-io.read/write` calls are left to the tier 2 SDKs" | the tier 2 SDKs also use the packed image; `cycle-io.read/write` only for dynamic access and for values that do not fit in `u64` | accepted and applied (document 22, §7) |
+| A12 | 01 §9, 09 §2.2 versus 04 §2 | 12 B proposals (`port u16, flags u16, value u64`) versus 14 B write records (`kind, flags, port u32, value`) | fix a single layout in ref/04 and correct the other two | resolved: a single layout, that of ref/04 §3.3 (14 B records) |
+| A13 | 04 §2 | the world has no secrets, no async class methods with a result, no mailbox reception in the cycle, nor the port types for alarms and published signals | add them (X1–X7 of §32) | resolved: X1–X7 of §32 |
+| A14 | 01 §9, 03 §8 | default `memory.max` of 16/64 MiB for all apps | default dependent on the tier (`joker:meta` carries the suggestion, §19) | accepted and applied (document 22, §7) |
+| A15 | 18 §4 (table, row "SDK figures") | "Phases 3 and 4" | "Phase 3 (TS) and 1.2 (Python)" | accepted and applied (document 22, §7) |
+| A16 | 04 §3.1 | `#[alarm]` only has `raise()`/`clear()` in the examples | add `set(bool)` in ref/04 for parity with §7.2 | accepted and applied (document 22, §7) |
+| A17 | 07 §4 | `jk write … --reason "…"` does not say whether the reason is required | required, as in the libraries (§23) | accepted and applied (document 22, §7) |
+| A18 | — | ownership of the `@joker` organization on npm has not been confirmed (the page returns 403 to automated requests) | confirm before the first publication; alternative: `@joker-rt/*` | open: D18 requires confirming the organization before the first publication |
