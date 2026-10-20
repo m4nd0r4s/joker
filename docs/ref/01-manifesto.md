@@ -1896,6 +1896,7 @@ error[J0151]: número sem unidade numa quantidade
    |
 41 | safe = 0
    |        ^ `pcs.p_set` está em kW
+   |
    = ajuda: escreve `safe = "0 kW"`
 ```
 

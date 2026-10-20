@@ -93,7 +93,7 @@ fn control(io: &mut CycleIo<Level>, _st: &mut ()) -> Result<()> {
 
 ```
 error[J0107]: unidade incompatível na ligação
-  --> joker.toml:42:18
+  --> joker.toml:42:12
    |
 42 | bind.soc = "pcs.p_ac"
    |            ^^^^^^^^^^ `pcs.p_ac` é uma potência (kW); a porta `soc` espera uma fração (%)

@@ -113,7 +113,7 @@ Um `debounce` menor do que o `poll` do sinal é aceite e equivale a duas leitura
 - **Compostas:** produtos e quocientes das anteriores (`kW/s`, `%/s`, `m3/h/%`, `°C/min`).
 - **Grandezas** (tipos de grandeza que distinguem unidades da mesma dimensão): `active_power`, `reactive_power`, `apparent_power`, `energy`, `reactive_energy`, `temperature`, `temperature_difference`.
 
-Uma unidade fora deste catálogo é `J0109`. Acrescentar unidades é uma mudança de patch no `joker-units`.
+Uma unidade fora deste catálogo é `J0109`. Acrescentar unidades é uma mudança de patch no `joker-units`. A sintaxe das compostas, as grandezas das compostas e os códigos dos literais mal formados estão na ADR 0030.
 
 ## 6. Caminhos, aliases e instâncias
 
