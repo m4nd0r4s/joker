@@ -1,47 +1,47 @@
-# Parte 8 — A tua classe: `status_light@1`
+# Part 8 — Your own class: `status_light@1`
 
-**Objetivo:** tirar da `luz` a última coisa que não é negócio (o pisca), transformá-la numa classe tua, `local/status_light@1`, com contrato, casos de conformidade e uma implementação reutilizável, e acabar com uma app de negócio de ~20 linhas que se lê como a especificação do sistema.
+**Goal:** take out of `luz` the last thing that is not business (the blink), turn it into a class of your own, `local/status_light@1`, with a contract, conformance cases and a reusable implementation, and end with a business app of ~20 lines that reads like the specification of the system.
 
-**Vais aprender:** `jk class new` · a IDL `.jkc`: enums, `out`, métodos, métodos atómicos, consultas · o ficheiro de conformidade no esquema único · instâncias **virtuais** e `#[joker::implements]` · comandos virtuais com envelope e `safe` · `order` no grupo · `jk class verify` no simulador e no Pi 3 · segurança em cada camada · as quatro pessoas do documento 14.
+**You will learn:** `jk class new` · the `.jkc` IDL: enums, `out`, methods, atomic methods, queries · the conformance file in the single schema · **virtual** instances and `#[joker::implements]` · virtual commands with envelope and `safe` · `order` in the group · `jk class verify` in the simulator and on the Pi 3 · safety at every layer · the four people of document 14.
 
-**Antes de começar:** a parte 7 feita: `luz` **0.5** sobre classes, as instâncias compostas `led_pi`, `led_esp`, `botao`, `cpu`, `toque` e a implícita `esp`, o `falha_esp` a passar. O Pi 3 com o ESP32 por USB.
+**Before you start:** part 7 done: `luz` **0.5** on top of classes, the composite instances `led_pi`, `led_esp`, `botao`, `cpu`, `toque` and the implicit `esp`, `falha_esp` passing. The Pi 3 with the ESP32 over USB.
 
 ---
 
-## 1. O cheiro
+## 1. The smell
 
-Relê a `pisca` da 0.5. Metade continua a ser sobre **como** mostrar um estado com um LED: `aceso`, `decorrido_ms`, subtrair o meio período, propor a cada tick para não perder o lease. Nada disto é sobre temperatura. Se amanhã outro projeto precisar de uma luz que pisca, vai copiar estas linhas, e cada cópia vai divergir.
+Reread the `pisca` of 0.5. Half of it is still about **how** to show a state with an LED: `aceso`, `decorrido_ms`, subtracting the half period, proposing on every tick so as not to lose the lease. None of this is about temperature. If tomorrow another project needs a light that blinks, it will copy these lines, and each copy will diverge.
 
-A pergunta de desenho: **o que é que a app de negócio quer dizer à luz?** Quatro coisas: apagada, acesa, a piscar com um período, e alerta. Isso é um contrato, e um contrato é uma classe.
+The design question: **what does the business app want to say to the light?** Four things: off, on, blinking with a period, and alert. That is a contract, and a contract is a class.
 
-## 2. Criar a classe
+## 2. Create the class
 
 ```sh
 $ jk class new local/status_light@1
 ```
 
 ```
-criado classes/local/status_light.jkc
-criado classes/local/status_light.conformance.toml
-nota: o pacote `local` é do projeto: não tem `.package.toml` e nunca se publica (ref/03 §2.7)
+created classes/local/status_light.jkc
+created classes/local/status_light.conformance.toml
+note: the package `local` belongs to the project: it has no `.package.toml` and is never published (ref/03 §2.7)
 ```
 
-O ficheiro de conformidade tem o **mesmo nome** do `.jkc` (`status_light.jkc` ↔ `status_light.conformance.toml`, ref/03 §2.7). Escreve a classe:
+The conformance file has the **same name** as the `.jkc` (`status_light.jkc` ↔ `status_light.conformance.toml`, ref/03 §2.7). Write the class:
 
 ```
 // classes/local/status_light.jkc
 package local
 
-/// O que uma luz de estado está a mostrar.
+/// What a status light is showing.
 enum LightMode { off = 0, on = 1, blink = 2, alert = 3 }
 
-/// Luz de estado: apagada, acesa, a piscar com um período, ou em alerta.
-/// Diz o quê, e não como: a implementação pode ser um LED, um sinalizador ou um ecrã.
+/// Status light: off, on, blinking with a period, or in alert.
+/// It says what, and not how: the implementation may be an LED, a beacon or a screen.
 class status_light@1.0.0 {
-    /// O modo pedido.
+    /// The requested mode.
     out mode: LightMode              @safe_hint(LightMode.off)
 
-    /// Período completo do pisca, usado no modo `blink`.
+    /// Full period of the blink, used in `blink` mode.
     out blink_period: f64 ms         @safe_hint(1000 ms) @range_hint(40 ms, 10000 ms)
 
     method off()   { mode = LightMode.off }
@@ -53,39 +53,39 @@ class status_light@1.0.0 {
         mode         = LightMode.blink
     }
 
-    /// A luz está a pedir atenção.
+    /// The light is asking for attention.
     query alerting: bool = mode == LightMode.alert
 }
 ```
 
-As decisões são tuas, como autor da classe, e cada uma tem uma razão no documento 17:
+The decisions are yours, as the class author, and each has a reason in document 17:
 
-- **`blink(period)` não é uma variante do enum.** Um enum da IDL é uma lista de nomes com números, sem dados (17 §3.3), porque os `in`/`out` são sempre escalares ou enums. O período é um membro à parte, e o método escreve os dois.
-- **O método é `atomic`, com `order(blink_period, mode)`.** O período e o modo chegam juntos à implementação: nunca há um tick com `blink` e o período antigo (M20; documento 14, A5). Sem `order`, é `JC0205`.
-- **O modo atual não precisa de uma consulta.** Ler um `out` dá o valor **aplicado**, depois do árbitro e do envelope (17 §11): `io.sinal.mode()` numa app, `jk read sinal.mode` na CLI. A consulta `alerting` é outra coisa: um derivado que um alarme, uma HMI ou uma ponte podem usar sem conhecer o enum.
-- **Só saídas, e nada sobre LEDs.** Quem usa a luz diz-lhe o que mostrar, e não lhe pergunta nada (uma bomba, com retorno, teria `in`). Não há `on: bool`, pinos, nem o desenho do alerta: isso é da implementação.
-- **`@safe_hint` e `@range_hint` são sugestões.** O `safe` é do site (ADR 0006), e vais declará-lo na secção 5.
+- **`blink(period)` is not an enum variant.** An IDL enum is a list of names with numbers, without data (17 §3.3), because the `in`/`out` members are always scalars or enums. The period is a separate member, and the method writes both.
+- **The method is `atomic`, with `order(blink_period, mode)`.** The period and the mode reach the implementation together: there is never a tick with `blink` and the old period (M20; document 14, A5). Without `order`, it is `JC0205`.
+- **The current mode does not need a query.** Reading an `out` gives the **applied** value, after the arbiter and the envelope (17 §11): `io.sinal.mode()` in an app, `jk read sinal.mode` in the CLI. The query `alerting` is something else: a derived value that an alarm, an HMI or a bridge can use without knowing the enum.
+- **Outputs only, and nothing about LEDs.** Whoever uses the light tells it what to show, and does not ask it anything (a pump, with feedback, would have `in`). There is no `on: bool`, no pins, no alert pattern: that belongs to the implementation.
+- **`@safe_hint` and `@range_hint` are suggestions.** The `safe` belongs to the site (ADR 0006), and you will declare it in section 5.
 
-### O que o `jkc check` diz
+### What `jkc check` says
 
-A primeira versão que toda a gente escreve chama ao membro `period`, como ao argumento. O `jk class check classes/local/status_light.jkc` recusa-a:
+The first version everybody writes calls the member `period`, like the argument. `jk class check classes/local/status_light.jkc` rejects it:
 
 ```
-erro[JC0206]: o argumento `period` tem o nome de um membro da classe
+error[JC0206]: the argument `period` has the name of a member of the class
  --> classes/local/status_light.jkc:17:25
    |
 17 |     atomic method blink(period: f64 ms) order(period, mode) {
-   |                         ^^^^^^ membros, argumentos e consultas partilham o espaço de nomes da classe
-   = ajuda: muda o nome do membro (`blink_period`) ou do argumento
+   |                         ^^^^^^ members, arguments and queries share the class namespace
+   = help: rename the member (`blink_period`) or the argument
 ```
 
-Com os nomes da versão acima: `✓ local/status_light@1.0.0 · 2 membros · 4 métodos (1 atómico) · 1 consulta · 1 enum · contrato sha256:5b0e…`.
+With the names of the version above: `✓ local/status_light@1.0.0 · 2 members · 4 methods (1 atomic) · 1 query · 1 enum · contract sha256:5b0e…`.
 
-A partir daqui, `jk class show local/status_light@1` mostra a tua classe como mostrava a `std/button@1`, e o `build.rs` das apps gera `crate::classes::local::{StatusLight, LightMode}` (ref/04 §4.8.1).
+From here on, `jk class show local/status_light@1` shows your class as it showed `std/button@1`, and the apps' `build.rs` generates `crate::classes::local::{StatusLight, LightMode}` (ref/04 §4.8.1).
 
-## 3. O contrato de conformidade
+## 3. The conformance contract
 
-Uma classe só de saídas não tem retorno para observar. Os casos verificam o **contrato**: que os métodos se expandem no que prometem, que o `blink` é atómico e limitado, e que, sem ninguém a mandar, a luz vai para o `safe`. O pisca em si testa-se nos testes da implementação (secção 4), e não aqui (ref/03 §2.6.5).
+A class with outputs only has no feedback to observe. The cases check the **contract**: that the methods expand into what they promise, that `blink` is atomic and bounded, and that, with nobody in control, the light goes to `safe`. The blink itself is tested in the implementation's tests (section 4), and not here (ref/03 §2.6.5).
 
 ```toml
 # classes/local/status_light.conformance.toml
@@ -94,7 +94,7 @@ schema = 1
 [suite]
 kind        = "class"
 class       = "local/status_light@1"
-description = "contrato: expansão dos métodos, blink atómico e limitado, safe depois do lease"
+description = "contract: method expansion, atomic and bounded blink, safe after the lease"
 
 [[case]]
 id     = "on_sets_mode"
@@ -114,16 +114,16 @@ expect = [{ query = "alerting", equals = true, within = "100ms .. 200ms" }]
 
 [[case]]
 id       = "lease_expiry_goes_off"
-sim_only = true          # precisa de posse exclusiva: numa instância real, a app continua a propor
+sim_only = true          # needs exclusive ownership: on a real instance, the app keeps proposing
 do       = [{ at = "100ms", method = "on" }, { at = "1s", lease_expire = "mode" }]
 expect   = [{ member = "mode", equals = "off", level = "none", within = "1s .. 1.1s" }]
 ```
 
-É o **mesmo esquema** dos casos do núcleo e dos drivers (`[suite]`, `[[case]]`, `id`, `do`, `expect`); só a *fixture* muda (ref/03 §2.6). O executor é um escritor único, `test:local/status_light@1`, que mantém as suas propostas em cada tick como faria uma app. Os instantes são múltiplos do período do grupo dono da instância (`main`, 20 ms). O último caso tem duas condições. Está marcado `sim_only = true`: espera `level = "none"`, e isso só se vê com **posse exclusiva** da instância, que só a simulação dá; numa instância real, as apps continuam a propor por baixo do escritor de teste, e o `verify` reporta-o `skipped (sim_only)` (ref/03 §2.6.3, regra 6). E só corre se o `safe` do site coincidir com o `@safe_hint`: senão, é ignorado com `J0846`, porque o `safe` é do site e a suite não o pode presumir.
+It is the **same schema** as the core and driver cases (`[suite]`, `[[case]]`, `id`, `do`, `expect`); only the *fixture* changes (ref/03 §2.6). The runner is a single writer, `test:local/status_light@1`, that keeps its proposals on every tick as an app would. The instants are multiples of the period of the instance's owning group (`main`, 20 ms). The last case has two conditions. It is marked `sim_only = true`: it expects `level = "none"`, and that can only be seen with **exclusive ownership** of the instance, which only simulation gives; on a real instance, the apps keep proposing underneath the test writer, and `verify` reports it `skipped (sim_only)` (ref/03 §2.6.3, rule 6). And it only runs if the site's `safe` coincides with the `@safe_hint`: otherwise, it is skipped with `J0846`, because the `safe` belongs to the site and the suite cannot presume it.
 
-## 4. A implementação: `status_light_ctl`
+## 4. The implementation: `status_light_ctl`
 
-A implementação recebe os **comandos** da classe (`io.cmd.mode`, `io.cmd.blink_period`: os valores aplicados, depois do árbitro e do envelope) e usa um `Led` para os mostrar. É para aqui que vai o código que sai da `luz`.
+The implementation receives the class's **commands** (`io.cmd.mode`, `io.cmd.blink_period`: the applied values, after the arbiter and the envelope) and uses a `Led` to show them. This is where the code that leaves `luz` goes.
 
 ```sh
 $ jk app new status_light_ctl --lang rust
@@ -133,9 +133,9 @@ $ jk app new status_light_ctl --lang rust
 // apps/status_light_ctl/src/lib.rs
 use joker::prelude::*;
 use joker::classes::std::Led;
-use crate::classes::local::{LightMode, StatusLight};   // gerados pelo build.rs a partir de classes/local/
+use crate::classes::local::{LightMode, StatusLight};   // generated by build.rs from classes/local/
 
-/// Implementa local/status_light@1 sobre um LED.
+/// Implements local/status_light@1 on top of an LED.
 #[joker::app(name = "status_light_ctl", version = "1.0.0")]
 #[joker::implements(StatusLight)]
 pub struct StatusLightCtl {
@@ -145,14 +145,14 @@ pub struct StatusLightCtl {
 #[derive(Default)]
 struct Padrao {
     modo: Option<LightMode>,
-    t_ms: f64,        // tempo desde o início do padrão atual
+    t_ms: f64,        // time since the start of the current pattern
     aceso: bool,
 }
 
 #[joker::cycle(period = "20ms", wcet = "5us")]
 fn run(io: &mut CycleIo<StatusLightCtl>, st: &mut Padrao) -> Result<()> {
-    let modo = io.cmd.mode.get()?;                   // sem escritor, o comando está no safe: off
-    if st.modo != Some(modo) {                       // mudou de modo: o padrão recomeça, e o pisca começa aceso
+    let modo = io.cmd.mode.get()?;                   // without a writer, the command is at its safe: off
+    if st.modo != Some(modo) {                       // the mode changed: the pattern restarts, and the blink starts on
         *st = Padrao { modo: Some(modo), aceso: modo == LightMode::Blink, ..Padrao::default() };
     }
     st.t_ms += io.dt().as_secs_f64() * 1000.0;
@@ -165,18 +165,18 @@ fn run(io: &mut CycleIo<StatusLightCtl>, st: &mut Padrao) -> Result<()> {
             if st.t_ms >= meio { st.t_ms -= meio; !st.aceso } else { st.aceso }
         }
         LightMode::Alert => {
-            let t = st.t_ms % 1000.0;                // duplo flash por segundo
+            let t = st.t_ms % 1000.0;                // double flash per second
             t < 100.0 || (200.0..300.0).contains(&t)
         }
     };
-    io.led.set(st.aceso);                            // a cada tick: renova o lease do LED
+    io.led.set(st.aceso);                            // on every tick: renews the LED's lease
     Ok(())
 }
 ```
 
-O `#[joker::implements(StatusLight)]` gera `io.cmd`, com um handle de entrada por cada `out` da classe, e `io.state`, que aqui está vazio porque a classe não tem `in` (ref/04 §4.8.4). Um nome da classe que não exista, ou uma capacidade que ela não tenha, é `J-E0715` no build.
+`#[joker::implements(StatusLight)]` generates `io.cmd`, with an input handle for each `out` of the class, and `io.state`, which is empty here because the class has no `in` (ref/04 §4.8.4). A class name that does not exist, or a capability it does not have, is `J-E0715` at build time.
 
-A implementação tem os seus próprios testes, independentes de quem a usa:
+The implementation has its own tests, independent of whoever uses it:
 
 ```rust
 #[cfg(test)]
@@ -197,17 +197,17 @@ mod tests {
 }
 ```
 
-O `.command(…)` dá à implementação um comando virtual, como se alguém o tivesse mandado (ref/04 §6.2). Um segundo teste, para o `alert`, conta 4 mudanças por segundo (`between(500.ms(), 2500.ms()).toggles() == 8`).
+`.command(…)` gives the implementation a virtual command, as if someone had sent it (ref/04 §6.2). A second test, for `alert`, counts 4 changes per second (`between(500.ms(), 2500.ms()).toggles() == 8`).
 
-## 5. O manifesto: uma instância virtual
+## 5. The manifest: a virtual instance
 
 ```toml
-# joker.toml (acrescentar)
+# joker.toml (add)
 [instances.sinal]
-class          = "local/status_light@1"        # só o std/ se pode omitir
-implemented_by = "app:status_light_ctl"        # instância virtual
+class          = "local/status_light@1"        # only std/ may be omitted
+implemented_by = "app:status_light_ctl"        # virtual instance
 
-# Os comandos virtuais são saídas como as outras: têm árbitro, envelope e safe.
+# Virtual commands are outputs like the others: they have an arbiter, an envelope and a safe.
 [outputs."sinal.mode"]
 safe = "off"
 
@@ -221,7 +221,7 @@ cycles = { run = "main" }
 ```
 
 ```toml
-# joker.toml (a [apps.luz] e o [cycles.main] mudam)
+# joker.toml ([apps.luz] and [cycles.main] change)
 [apps.luz]
 path   = "apps/luz"
 bind   = { sinal = "sinal", led_estado = "led_esp", temp = "cpu", botao = "botao", ajuste = "toque" }
@@ -230,34 +230,34 @@ cycles = { pisca = "main" }
 
 [cycles.main]
 period = "20ms"
-order  = ["luz", "status_light_ctl"]           # quem manda antes de quem executa
+order  = ["luz", "status_light_ctl"]           # who commands before who executes
 ```
 
-- **`implemented_by = "app:status_light_ctl"`** usa o `bind`, os `params` e os `cycles` de `[apps.status_light_ctl]`, e serve uma instância (ref/01 §5.13). Para três luzes com a mesma implementação, a forma em tabela (`{ app, bind }`) cria uma instância da app por instância virtual (documento 17, §5.3).
-- **O `pi.act_led` tem agora outro escritor**: a `status_light_ctl`, pela instância `led_pi`. A `luz` já não lhe toca. Cada saída continua com um só escritor, e o `writer` por omissão chega.
-- **`order`.** Sem ele, as tarefas correm por ordem lexicográfica de `<app>.<tarefa>` (ref/01 §5.11), que por acaso também põe a `luz` primeiro. Com ele, a ordem é uma decisão escrita, e não um acaso dos nomes: o núcleo arbitra e aplica o envelope aos comandos virtuais logo a seguir à `luz`, e a `status_light_ctl` lê-os no mesmo tick. A latência entre as camadas fica nula; ao contrário, seria um tick de 20 ms (documento 14, §7.2). Uma entrada de `order` que não corre no grupo é `J0281`.
+- **`implemented_by = "app:status_light_ctl"`** uses the `bind`, `params` and `cycles` of `[apps.status_light_ctl]`, and serves one instance (ref/01 §5.13). For three lights with the same implementation, the table form (`{ app, bind }`) creates one instance of the app per virtual instance (document 17, §5.3).
+- **`pi.act_led` now has another writer**: `status_light_ctl`, through the instance `led_pi`. `luz` no longer touches it. Each output still has a single writer, and the default `writer` is enough.
+- **`order`.** Without it, tasks run in lexicographic order of `<app>.<task>` (ref/01 §5.11), which by chance also puts `luz` first. With it, the order is a written decision, and not an accident of the names: the core arbitrates and applies the envelope to the virtual commands right after `luz`, and `status_light_ctl` reads them in the same tick. The latency between the layers is zero; the other way round, it would be one 20 ms tick (document 14, §7.2). An `order` entry that does not run in the group is `J0281`.
 
-### O que o `jk check` diz sem o `safe`
+### What `jk check` says without the `safe`
 
-Apaga o `[outputs."sinal.blink_period"]` e verifica:
+Delete `[outputs."sinal.blink_period"]` and check:
 
 ```sh
 $ jk check --env sim
 ```
 
 ```
-erro[J0201]: a saída `sinal.blink_period` não tem `safe`
+error[J0201]: output `sinal.blink_period` has no `safe`
  --> joker.toml:61:1
    |
 61 | [instances.sinal]
-   | ^^^^^^^^^^^^^^^^^ instância virtual: cada `out` da classe é um comando com envelope
-   = nota: sugestão da classe local/status_light@1: @safe_hint(1000 ms)
-   = ajuda: [outputs."sinal.blink_period"] safe = "1000 ms"
+   | ^^^^^^^^^^^^^^^^^ virtual instance: each `out` of the class is a command with an envelope
+   = note: suggestion from the class local/status_light@1: @safe_hint(1000 ms)
+   = help: [outputs."sinal.blink_period"] safe = "1000 ms"
 ```
 
-A classe sugere, o site decide. Repõe a tabela.
+The class suggests, the site decides. Put the table back.
 
-## 6. A app de negócio, versão 0.6
+## 6. The business app, version 0.6
 
 ```rust
 // apps/luz/src/lib.rs
@@ -267,7 +267,7 @@ use crate::classes::local::StatusLight;
 
 #[joker::app(name = "luz", version = "0.6.0")]
 pub struct Luz {
-    #[device] sinal: StatusLight,    // o que mostrar, e não como
+    #[device] sinal: StatusLight,    // what to show, and not how
     #[device] led_estado: Led,
     #[device] temp: TempSensor,
     #[device] botao: Button,
@@ -290,7 +290,7 @@ fn pisca(io: &mut CycleIo<Luz>, st: &mut State) -> Result<()> {
         io.sinal.off();
         return Ok(());
     }
-    let temp = io.temp.temperature()?;           // sem temperatura: o lease do sinal expira → off
+    let temp = io.temp.temperature()?;           // without temperature: the sinal's lease expires → off
     let t_frio = io.t_frio.get();
     let t_quente = io.t_quente.get() - RECUO_K + FAIXA_K * st.ajuste;
     let x = ((temp - t_frio) / (t_quente - t_frio).max(1.0)).clamp(0.0, 1.0);
@@ -300,33 +300,33 @@ fn pisca(io: &mut CycleIo<Luz>, st: &mut State) -> Result<()> {
 }
 ```
 
-As constantes `RECUO_K`, `FAIXA_K` e `AJUSTE_NEUTRO` e o `Default` do `State` são os da 0.5; o `State` perdeu `decorrido_ms` e `aceso`, que foram para o `Padrao` da implementação, e fica `State { ligado, ajuste }`. Lê-se como a especificação da parte 5: *sem temperatura, nada; um clique liga e desliga; o LED do ESP32 mostra se está ligado; o toque ajusta o `t_quente`; ligado, pisca com o meio período da temperatura.* **É isto a camada 3.**
+The constants `RECUO_K`, `FAIXA_K` and `AJUSTE_NEUTRO` and the `Default` of `State` are those of 0.5; `State` lost `decorrido_ms` and `aceso`, which went to the implementation's `Padrao`, and becomes `State { ligado, ajuste }`. It reads like the specification of part 5: *without temperature, nothing; a click turns it on and off; the ESP32's LED shows whether it is on; the touch adjusts `t_quente`; when on, it blinks with the half period of the temperature.* **This is layer 3.**
 
-Repara que `blink()` e `off()` são chamados a cada tick. Propor o mesmo valor renova o lease do comando virtual, e o núcleo não manda nada à implementação quando o valor aplicado não muda. Se a `luz` morrer, o lease de `sinal.mode` expira e a luz vai para `off`.
+Notice that `blink()` and `off()` are called on every tick. Proposing the same value renews the lease of the virtual command, and the core sends nothing to the implementation when the applied value does not change. If `luz` dies, the lease of `sinal.mode` expires and the light goes to `off`.
 
-Os testes de negócio já não falam de LEDs: com `.device("sinal", Sim::of::<StatusLight>())`, a 70 °C e ajuste 0,6 (`t_quente` = 70 °C), verificam que `h.device("sinal").member("mode").last()` é `Some(LightMode::Blink)` e que o `blink_period` é 200 ms. O pisca propriamente dito é testado uma vez, na implementação.
+The business tests no longer talk about LEDs: with `.device("sinal", Sim::of::<StatusLight>())`, at 70 °C and adjustment 0.6 (`t_quente` = 70 °C), they check that `h.device("sinal").member("mode").last()` is `Some(LightMode::Blink)` and that `blink_period` is 200 ms. The blink itself is tested once, in the implementation.
 
-## 7. No simulador
+## 7. In the simulator
 
 ```sh
 $ jk test --env sim
 ```
 
 ```
-apps/luz (cargo test, componente wasm no wasmtime) ............... 5 passed
-apps/status_light_ctl (cargo test, componente wasm no wasmtime) .. 2 passed
+apps/luz (cargo test, wasm component on wasmtime) ............... 5 passed
+apps/status_light_ctl (cargo test, wasm component on wasmtime) .. 2 passed
 sim/scenarios/pisca.scenario.toml (joker.sim.toml) .............................. FAILED
-  error[J0842]: 8.1s pi.act_led: level esperado "none", visto "control:12" (app:status_light_ctl)
+  error[J0842]: 8.1s pi.act_led: level expected "none", seen "control:12" (app:status_light_ctl)
 sim/scenarios/{aquece,botao}.scenario.toml (joker.sim.toml) ..................... 2 passed
 sim/scenarios/falha_esp.scenario.toml (joker.sim.toml) .......................... passed
 ```
 
-O `falha_esp` continua a passar, agora com **duas** apps em camadas entre a `luz` e o `pi.act_led`. Visto de fora, o comportamento é o mesmo desde a 0.4.
+`falha_esp` keeps passing, now with **two** layered apps between `luz` and `pi.act_led`. Seen from outside, the behavior has been the same since 0.4.
 
-O `pisca.scenario.toml` da parte 1 falha, e com razão. Dizia "a `luz` para, e o LED vai para o `safe` sem ninguém a escrever" (`level = "none"`). Agora a `luz` já não escreve no LED: quando para, é o lease de `sinal.mode` que expira, o `safe` aplica-se **uma camada acima** (`off`), e a `status_light_ctl` apaga o LED em `control:12`. O LED apaga-se na mesma; mudou quem o apaga. Corrige a expectativa para dizer isso, e não a app:
+The `pisca.scenario.toml` from part 1 fails, and rightly so. It said "`luz` stops, and the LED goes to `safe` without anybody writing" (`level = "none"`). Now `luz` no longer writes to the LED: when it stops, it is the lease of `sinal.mode` that expires, the `safe` is applied **one layer up** (`off`), and `status_light_ctl` turns the LED off at `control:12`. The LED goes off all the same; what changed is who turns it off. Fix the expectation to say that, and not the app:
 
 ```toml
-# sim/scenarios/pisca.scenario.toml (a última expectativa passa a duas)
+# sim/scenarios/pisca.scenario.toml (the last expectation becomes two)
 [[expect]]
 at     = "8.1s"
 signal = "pi.act_led"
@@ -336,43 +336,43 @@ equals = false
 at     = "8.1s"
 signal = "sinal.mode"
 equals = "off"
-level  = "none"                     # o safe do comando virtual: ninguém manda na luz
+level  = "none"                     # the virtual command's safe: nobody controls the light
 ```
 
-Agora o contrato, contra a instância real do site (em simulação):
+Now the contract, against the site's real instance (in simulation):
 
 ```sh
 $ jk class verify local/status_light@1 --instance sinal --env sim
 ```
 
 ```
-local/status_light@1 · instância sinal (virtual, app:status_light_ctl) · joker.sim.toml · relógio virtual
+local/status_light@1 · instance sinal (virtual, app:status_light_ctl) · joker.sim.toml · virtual clock
   on_sets_mode ...................... ok
   blink_is_atomic_and_clamped ....... ok
   alert_raises_query ................ ok
-  lease_expiry_goes_off ............. ok   (safe = off no site, igual ao @safe_hint)
-4 casos · 4 ok · 0 ignorados · 1,1 s simulados em 22 ms
+  lease_expiry_goes_off ............. ok   (safe = off on the site, equal to the @safe_hint)
+4 cases · 4 ok · 0 skipped · 1.1 simulated s in 22 ms
 ```
 
-Para uma instância virtual, o `verify` corre os casos contra a app que a implementa, com o núcleo real e relógio virtual (ref/04 §6.7). Quem mais escreve na instância (a `luz`) não entra.
+For a virtual instance, `verify` runs the cases against the app that implements it, with the real core and a virtual clock (ref/04 §6.7). Whoever else writes to the instance (`luz`) does not take part.
 
-E a cadeia inteira:
+And the whole chain:
 
 ```sh
 $ jk explain sinal --env sim
 ```
 
 ```
-sinal · local/status_light@1 · instância virtual, implementada por app:status_light_ctl (joker.toml:61)
-  mode           out LightMode   escritores: luz (control:12) · safe = off (joker.toml:66) · safe_hint off ✓
-  blink_period   out f64 ms      escritores: luz (control:12) · safe = 1000 ms (joker.toml:69) · safe_hint 1000 ms ✓
-  grupo atómico  blink → (blink_period, mode)
-  alerting       consulta        mode == LightMode.alert
-  latência       luz → status_light_ctl: 0 ticks (main, order declarada)
-  implementação  status_light_ctl.led → led_pi (std/led@1) → pi.act_led → sim (portátil) / sysfs ACT (placas)
+sinal · local/status_light@1 · virtual instance, implemented by app:status_light_ctl (joker.toml:61)
+  mode           out LightMode   writers: luz (control:12) · safe = off (joker.toml:66) · safe_hint off ✓
+  blink_period   out f64 ms      writers: luz (control:12) · safe = 1000 ms (joker.toml:69) · safe_hint 1000 ms ✓
+  atomic group   blink → (blink_period, mode)
+  alerting       query           mode == LightMode.alert
+  latency        luz → status_light_ctl: 0 ticks (main, order declared)
+  implementation status_light_ctl.led → led_pi (std/led@1) → pi.act_led → sim (laptop) / sysfs ACT (boards)
 ```
 
-## 8. No Pi 3
+## 8. On the Pi 3
 
 ```sh
 $ jk build --target rpi3b-plus
@@ -380,80 +380,80 @@ $ jk apply --env lab --node lab --confirm 5m
 ```
 
 ```
-plano para lab (geração 8 → 9)
-  classes    + local/status_light@1 1.0.0 (contrato sha256:5b0e…)
-  instâncias + sinal (virtual) · saídas + sinal.mode, + sinal.blink_period
-  apps       luz 0.5.0 → 0.6.0 reinicia · + status_light_ctl 1.0.0 · main: order = [luz, status_light_ctl]
+plan for lab (generation 8 → 9)
+  classes    + local/status_light@1 1.0.0 (contract sha256:5b0e…)
+  instances  + sinal (virtual) · outputs + sinal.mode, + sinal.blink_period
+  apps       luz 0.5.0 → 0.6.0 restarts · + status_light_ctl 1.0.0 · main: order = [luz, status_light_ctl]
 ```
 
-Depois do `jk confirm --node lab`, o LED `ACT` pisca como antes. O `joker.lab.toml` não mudou: a classe, a instância, as saídas e as duas apps estão no comum.
+After `jk confirm --node lab`, the `ACT` LED blinks as before. `joker.lab.toml` did not change: the class, the instance, the outputs and the two apps are in the common part.
 
-**O contrato no hardware.** Os mesmos casos, agora com o LED real. O escritor de teste escreve em `manual:3`, e a `luz` continua a correr, `overridden(manual:3)` enquanto a suite dura (como na parte 7):
+**The contract on the hardware.** The same cases, now with the real LED. The test writer writes at `manual:3`, and `luz` keeps running, `overridden(manual:3)` while the suite lasts (as in part 7):
 
 ```sh
 $ jk class verify local/status_light@1 --instance sinal --allow-actuation --env lab --node lab
 ```
 
 ```
-local/status_light@1 · instância sinal (virtual, app:status_light_ctl) · nó lab · mode dev
-aviso: atuação real; escritor test:local/status_light@1 em manual:3 (a luz fica overridden)
+local/status_light@1 · instance sinal (virtual, app:status_light_ctl) · node lab · mode dev
+warning: real actuation; writer test:local/status_light@1 at manual:3 (luz stays overridden)
   on_sets_mode ...................... ok
   blink_is_atomic_and_clamped ....... ok
   alert_raises_query ................ ok
   lease_expiry_goes_off ............. skipped (sim_only)
-4 casos · 3 ok · 1 ignorado (sim_only)
+4 cases · 3 ok · 1 skipped (sim_only)
 ```
 
-Não é preciso parar a `luz`: o único caso que pedia posse exclusiva da instância, o `lease_expiry_goes_off`, está marcado `sim_only` e não corre aqui (no simulador, correu e passou). Durante esses segundos, o LED `ACT` acende fixo, pisca muito depressa e faz o duplo flash; no fim da suite, o `manual:3` liberta-se e o LED volta ao pisca da `luz`. É a implementação a responder ao contrato, e não o teste a mexer no LED. O "sem ninguém a mandar, apaga" vê-se no hardware na primeira experiência a seguir.
+There is no need to stop `luz`: the only case that required exclusive ownership of the instance, `lease_expiry_goes_off`, is marked `sim_only` and does not run here (in the simulator, it ran and passed). During those seconds, the `ACT` LED lights steadily, blinks very fast and does the double flash; at the end of the suite, `manual:3` is released and the LED goes back to `luz`'s blink. It is the implementation responding to the contract, and not the test moving the LED. The "with nobody in control, it turns off" can be seen on the hardware in the first experiment below.
 
-**Partir as camadas uma a uma.** Três experiências que mostram que cada camada é segura por si (documento 14, §7.2):
+**Breaking the layers one by one.** Three experiments that show that each layer is safe on its own (document 14, §7.2):
 
-1. **Para a app de negócio:** `jk app stop luz --node lab`. O lease de `sinal.mode` expira, o árbitro aplica o `safe` (`off`), e a `status_light_ctl` apaga o LED. Quem implementa não precisa de saber que quem manda morreu. `jk app start luz --node lab`.
-2. **Para a implementação:** `jk app stop status_light_ctl --node lab`. Agora é o lease do `pi.act_led` que expira, e o LED apaga-se pelo `safe` da camada 1. A `luz` continua a mandar `blink`, mas ninguém executa, e o `jk status --instances --node lab` mostra `sinal … implementação parada`. `jk app start status_light_ctl --node lab`.
-3. **Mandar na camada do meio.** Força o alerta durante um minuto, para ver se o LED se distingue do outro lado da sala:
+1. **Stop the business app:** `jk app stop luz --node lab`. The lease of `sinal.mode` expires, the arbiter applies the `safe` (`off`), and `status_light_ctl` turns the LED off. The implementer does not need to know that the one in command died. `jk app start luz --node lab`.
+2. **Stop the implementation:** `jk app stop status_light_ctl --node lab`. Now it is the lease of `pi.act_led` that expires, and the LED goes off through the `safe` of layer 1. `luz` keeps sending `blink`, but nobody executes it, and `jk status --instances --node lab` shows `sinal … implementation stopped`. `jk app start status_light_ctl --node lab`.
+3. **Command the middle layer.** Force the alert for one minute, to see whether the LED stands out from across the room:
 
 ```sh
-$ jk call sinal.alert --ttl 1m --reason "teste de visibilidade" --node lab
+$ jk call sinal.alert --ttl 1m --reason "visibility test" --node lab
 ```
 
-O método é chamado como escritor manual (`manual:4`, que ganha ao `control:12` da `luz`) e expandido pelo núcleo como qualquer outro (documento 17, §4.1). O LED faz o duplo flash **verdadeiro**, gerado pela implementação, e passado um minuto volta ao pisca da `luz`. Um `jk write pi.act_led true` só te daria um LED aceso.
+The method is called as a manual writer (`manual:4`, which beats `luz`'s `control:12`) and expanded by the core like any other (document 17, §4.1). The LED does the **real** double flash, generated by the implementation, and after one minute it goes back to `luz`'s blink. A `jk write pi.act_led true` would only give you a lit LED.
 
-## 9. O que aconteceu por baixo
+## 9. What happened underneath
 
-- **A classe é um contrato compilado.** O `jkc` gerou o `status_light@1.0.0.contract.json`, com o hash de contrato que o lock fixa (`[classes."local/status_light@1"]`, ref/02 §2.1.6), e os tipos Rust (`StatusLight`, `LightMode`, `StatusLightCmd`) que as duas apps importam (documento 17, §6). Mudar o corpo de um método ou tirar um membro exige a major 2 (17 §9; `JC0601` se não subires).
-- **Um método é um registo, e não uma chamada.** `io.sinal.blink(…)` põe `(sinal, blink, args)` no buffer de propostas; no passo 5a do tick, o núcleo avalia as atribuições e cria duas propostas num grupo atómico, com a ordem do `order(…)` (documento 17, §4.1). A `jk call` passa pelo mesmo caminho.
-- **Os comandos virtuais são saídas.** Têm árbitro, envelope e `safe`, e duas apps a mandar na mesma luz resolvem-se **antes** de chegarem à implementação. Com o `order`, a arbitragem dos comandos acontece logo a seguir à tarefa que os produz (documento 01, §4, passo 4b). `luz` → `sinal` → `led_pi` é uma camada virtual; o limite é 3 (`J0620`).
+- **The class is a compiled contract.** `jkc` generated `status_light@1.0.0.contract.json`, with the contract hash that the lock pins (`[classes."local/status_light@1"]`, ref/02 §2.1.6), and the Rust types (`StatusLight`, `LightMode`, `StatusLightCmd`) that both apps import (document 17, §6). Changing the body of a method or removing a member requires major 2 (17 §9; `JC0601` if you do not bump it).
+- **A method is a record, and not a call.** `io.sinal.blink(…)` puts `(sinal, blink, args)` in the proposal buffer; in step 5a of the tick, the core evaluates the assignments and creates two proposals in an atomic group, with the order of `order(…)` (document 17, §4.1). `jk call` goes through the same path.
+- **Virtual commands are outputs.** They have an arbiter, an envelope and a `safe`, and two apps commanding the same light are resolved **before** they reach the implementation. With `order`, the arbitration of the commands happens right after the task that produces them (document 01, §4, step 4b). `luz` → `sinal` → `led_pi` is one virtual layer; the limit is 3 (`J0620`).
 
-## 10. Quem fez o quê: as quatro pessoas, na tua bancada
+## 10. Who did what: the four people, on your bench
 
-Sem dares por isso, fizeste os papéis todos do documento 14, §1. Numa equipa, são normalmente pessoas diferentes, e cada uma só precisa de conhecer a sua camada e o contrato da de baixo.
+Without noticing, you played all the roles of document 14, §1. In a team, they are usually different people, and each one only needs to know their own layer and the contract of the one below.
 
-| Quem | Na tua pasta | Precisa de saber | Não precisa de saber |
+| Who | In your directory | Needs to know | Does not need to know |
 |---|---|---|---|
-| **Quem integra** (integrador de hardware) | `joker.lab.toml`, `joker.zero.toml`, `joker.rpi.toml`; o perfil `local/bench-esp32@1` com os seus `[implements]`; as instâncias compostas `led_pi`, `led_esp`, `botao`, `cpu`, `toque` | registos, `sysfs`, calibrações, `safe` | a lógica da `luz` |
-| **Quem cria abstrações** (autor de abstrações) | `classes/local/status_light.jkc` e o seu `.conformance.toml` | o que os programas querem dizer a uma luz | que há um LED `ACT` por baixo |
-| **Quem implementa** (também autor de abstrações, no documento 14) | `apps/status_light_ctl/` e os seus testes | a classe que implementa e a classe que usa (`std/led@1`) | quem a vai mandar, e porquê |
-| **Quem usa** (programador de negócio; e o operador, que só lê e manda por métodos) | `apps/luz/` 0.6; `jk status --instances`, `jk explain`, `jk call sinal.alert` | temperatura, cliques, o que a luz deve mostrar | registos, pinos, protocolos, padrões de pisca |
+| **The integrator** (hardware integrator) | `joker.lab.toml`, `joker.zero.toml`, `joker.rpi.toml`; the profile `local/bench-esp32@1` with its `[implements]`; the composite instances `led_pi`, `led_esp`, `botao`, `cpu`, `toque` | registers, `sysfs`, calibrations, `safe` | the logic of `luz` |
+| **The abstraction creator** (abstraction author) | `classes/local/status_light.jkc` and its `.conformance.toml` | what programs want to say to a light | that there is an `ACT` LED underneath |
+| **The implementer** (also an abstraction author, in document 14) | `apps/status_light_ctl/` and its tests | the class it implements and the class it uses (`std/led@1`) | who will command it, and why |
+| **The user** (business programmer; and the operator, who only reads and commands through methods) | `apps/luz/` 0.6; `jk status --instances`, `jk explain`, `jk call sinal.alert` | temperature, clicks, what the light should show | registers, pins, protocols, blink patterns |
 
-O documento 14 põe "quem implementa" dentro do autor de abstrações (uma classe e as suas implementações ativas costumam andar juntas) e dá ao operador um papel próprio. Na bancada vale a pena separá-los, porque a `status_light_ctl` é a única peça que conhece as duas classes: é a costura entre a camada 2 e a camada 1.
+Document 14 puts "the implementer" inside the abstraction author (a class and its active implementations usually go together) and gives the operator a role of its own. On the bench it is worth separating them, because `status_light_ctl` is the only piece that knows both classes: it is the seam between layer 2 and layer 1.
 
-**Fim do Módulo B.** Tens a camada 1 dominada (Módulo A), e a camada 2 usada e criada: classes padrão, instâncias implícitas, compostas e virtuais, e uma classe tua com contrato, conformidade e implementação. A camada 3 diz o que o sistema faz, e mais nada.
+**End of Module B.** You have mastered layer 1 (Module A), and layer 2 used and created: standard classes, implicit, composite and virtual instances, and a class of your own with a contract, conformance and an implementation. Layer 3 says what the system does, and nothing more.
 
-## 11. Exercícios
+## 11. Exercises
 
-1. Acrescenta um método `blink_once()` à classe (um flash de 200 ms, e depois `off`). Consegues escrevê-lo só com atribuições? Se não, onde vive esse comportamento? Seria um minor ou um major da `status_light@1`?
-2. Escreve uma segunda implementação, `status_light_duo`, que mostra o modo nos **dois** LEDs (`on` no do Pi, `alert` a piscar os dois alternados). Troca só o `implemented_by` e o `bind` da nova app. A `luz` muda? E o `falha_esp`, passa? Porquê?
-3. Tira o `order` do `[cycles.main]` e muda o nome da app para `zz_luz`. O que diz o `jk explain sinal` sobre a latência? Que caso de conformidade ou cenário o apanharia, se algum?
-4. Acrescenta à `luz` o modo `alert` quando o alarme `cpu_quente` está ativo, com uma porta de camada 1 ligada a `alarm.cpu_quente.active`. É a versão 0.7 da parte 11: escreve primeiro o teste.
-5. (Com o extra da secção 12.) Escreve um caso em `bench_io.conformance.toml` que verifica que `online` fica falso quando o `uptime` deixa de ser `good`. É um caso `sim_only`? Porquê?
+1. Add a method `blink_once()` to the class (one 200 ms flash, then `off`). Can you write it with assignments only? If not, where does that behavior live? Would it be a minor or a major of `status_light@1`?
+2. Write a second implementation, `status_light_duo`, that shows the mode on **both** LEDs (`on` on the Pi's, `alert` blinking both alternately). Change only the `implemented_by` and the `bind` of the new app. Does `luz` change? And does `falha_esp` pass? Why?
+3. Remove the `order` from `[cycles.main]` and rename the app to `zz_luz`. What does `jk explain sinal` say about the latency? Which conformance case or scenario would catch it, if any?
+4. Add to `luz` the `alert` mode when the alarm `cpu_quente` is active, with a layer-1 port bound to `alarm.cpu_quente.active`. It is version 0.7 of part 11: write the test first.
+5. (With the extra of section 12.) Write a case in `bench_io.conformance.toml` that checks that `online` becomes false when `uptime` stops being `good`. Is it a `sim_only` case? Why?
 
 ```sh
-$ git add -A && git commit -qm "trilha(08): classe local/status_light@1, status_light_ctl, luz 0.6"
+$ git add -A && git commit -qm "track(08): class local/status_light@1, status_light_ctl, luz 0.6"
 ```
 
-## 12. Extra: o ESP32 inteiro numa classe
+## 12. Extra: the whole ESP32 in a class
 
-Opcional, uns 20 minutos, só no simulador. As partes seguintes não o assumem, e por isso faz-se num ramo à parte, que se deixa no fim.
+Optional, about 20 minutes, in the simulator only. The following parts do not assume it, so it is done on a separate branch, which you leave at the end.
 
 ```sh
 $ git switch -c extra-bench-io
@@ -461,26 +461,26 @@ $ jk class new local/bench_io@1
 ```
 
 ```
-criado classes/local/bench_io.jkc
-criado classes/local/bench_io.conformance.toml
+created classes/local/bench_io.jkc
+created classes/local/bench_io.conformance.toml
 ```
 
-Até aqui, o ESP32 chega às apps como três instâncias soltas (`led_esp`, `botao`, `toque`) e dois sinais crus (`esp.rssi`, `esp.uptime`). Uma **classe composta** junta-os num só equipamento lógico, com membros que são outras classes:
+Up to here, the ESP32 reaches the apps as three loose instances (`led_esp`, `botao`, `toque`) and two raw signals (`esp.rssi`, `esp.uptime`). A **composite class** brings them together into a single logical piece of equipment, with members that are other classes:
 
 ```
 // classes/local/bench_io.jkc
 package local
 
-/// O nó de I/O da bancada: um LED de estado, um botão, um toque, e se está vivo.
-/// Descreve o papel (o nó de I/O), e não o chip: outro nó com as mesmas peças cumpre-a.
+/// The bench I/O node: a status LED, a button, a touch, and whether it is alive.
+/// It describes the role (the I/O node), and not the chip: another node with the same parts fulfills it.
 class bench_io@1.0.0 {
     member status: std/led@1
     member boot:   std/button@1
     member knob:   std/analog_in@1
 
-    /// Intensidade do Wi-Fi, em dBm; 0 sem ligação.
+    /// Wi-Fi strength, in dBm; 0 without connection.
     in rssi:   i64
-    /// Tempo desde o arranque do nó.
+    /// Time since the node booted.
     in uptime: f64 s
 
     query online: bool = good(uptime)
@@ -489,24 +489,24 @@ class bench_io@1.0.0 {
 }
 ```
 
-- **O nome é o papel.** `bench_io` diz para que serve no programa; uma classe `esp32@1` diria a peça, e mentia no dia em que o nó fosse outro (documento 14, §2).
-- **Os membros `member` são classes**, e não sinais. A profundidade é 2 (`bench_io` → `led`), abaixo do máximo de 3 (`JC0501`, documento 17, §8).
-- **A saúde junta as duas coisas** (documento 17, §4.5): `Failed` se o `uptime` não estiver `good`, e a pior das saúdes de `status`, `boot` e `knob`, que são obrigatórios. O `rssi` não conta: na parte 9, sem Wi-Fi, fica `Bad(NotConnected)`, e a bancada continua `Ok`.
+- **The name is the role.** `bench_io` says what it is for in the program; a class `esp32@1` would name the part, and would lie the day the node became another (document 14, §2).
+- **The `member` members are classes**, and not signals. The depth is 2 (`bench_io` → `led`), below the maximum of 3 (`JC0501`, document 17, §8).
+- **Health combines both things** (document 17, §4.5): `Failed` if `uptime` is not `good`, and the worst of the healths of `status`, `boot` and `knob`, which are required. `rssi` does not count: in part 9, without Wi-Fi, it becomes `Bad(NotConnected)`, and the bench stays `Ok`.
 
-O `.conformance.toml` fica com o esqueleto: o `local` nunca se publica (ref/03 §2.7), e o exercício 5 pede-te um caso.
+The `.conformance.toml` keeps the skeleton: `local` is never published (ref/03 §2.7), and exercise 5 asks you for a case.
 
-**A instância.** Os membros de classe ligam-se ao **nome de uma instância** que já existe; os escalares, a sinais, como sempre (ref/01 §5.13):
+**The instance.** Class members are bound to the **name of an instance** that already exists; scalars, to signals, as always (ref/01 §5.13):
 
 ```toml
-# joker.toml (acrescentar, no ramo)
+# joker.toml (add, on the branch)
 [instances.esp_io]
 class = "local/bench_io@1"
 map   = { status = "led_esp", boot = "botao", knob = "toque", rssi = "esp.rssi", uptime = "esp.uptime" }
 ```
 
-O `jk check` verifica que `led_esp`, `botao` e `toque` existem e são das classes certas (`J0650`, `J0651`). As instâncias continuam lá, com os seus nomes: `esp_io.boot.clicked` e `botao.clicked` são o **mesmo sinal**, e `esp_io.status.on`, `led_esp.on` e `esp.led` também (documento 16, P6).
+`jk check` checks that `led_esp`, `botao` and `toque` exist and are of the right classes (`J0650`, `J0651`). The instances are still there, with their names: `esp_io.boot.clicked` and `botao.clicked` are the **same signal**, and so are `esp_io.status.on`, `led_esp.on` and `esp.led` (document 16, P6).
 
-**Uma app de diagnóstico.**
+**A diagnostics app.**
 
 ```rust
 // apps/bench_diag/src/lib.rs
@@ -522,73 +522,73 @@ pub struct BenchDiag {
 #[joker::cycle(period = "20ms", wcet = "10us")]
 fn run(io: &mut CycleIo<BenchDiag>, _st: &mut ()) -> Result<()> {
     if !io.bancada.online()? {
-        return Ok(());                                       // sem ESP32, não propõe nada
+        return Ok(());                                       // without the ESP32, it proposes nothing
     }
-    if io.bancada.boot.clicked()? {                          // handle aninhado: o botao, pela bancada
+    if io.bancada.boot.clicked()? {                          // nested handle: the botao, through the bench
         io.cliques.inc();                                    // app.bench_diag.cliques
     }
-    io.bancada.status.set(io.bancada.knob.value()? > 0.5);   // o LED do ESP32 segue o toque
+    io.bancada.status.set(io.bancada.knob.value()? > 0.5);   // the ESP32's LED follows the touch
     Ok(())
 }
 ```
 
-`io.bancada.boot` é um handle de `Button` como o da `luz` (ref/04 §4.8.6): os membros de classe são campos, e o resto é a API de sempre.
+`io.bancada.boot` is a `Button` handle like the one in `luz` (ref/04 §4.8.6): class members are fields, and the rest is the usual API.
 
 ```toml
-# joker.toml (acrescentar, no ramo)
+# joker.toml (add, on the branch)
 [apps.bench_diag]
 path   = "apps/bench_diag"
 bind   = { bancada = "esp_io" }
 cycles = { run = "main" }
-writer = { level = "control", priority = 14 }     # abaixo da luz, que está em control:12
+writer = { level = "control", priority = 14 }     # below luz, which is at control:12
 ```
 
-### O que o `jk check` diz
+### What `jk check` says
 
-Sem o `writer`, as duas apps ficavam em `control:12` na mesma saída, o `esp.led`: é o `J0210` de sempre. Com ele, passa, com um aviso:
+Without the `writer`, both apps would be at `control:12` on the same output, `esp.led`: it is the usual `J0210`. With it, it passes, with a warning:
 
 ```sh
 $ jk check --env sim
 ```
 
 ```
-aviso[J0655]: a instância `led_esp` chega a duas apps por caminhos diferentes
+warning[J0655]: the instance `led_esp` reaches two apps through different paths
  --> joker.toml:82:1
    |
 82 | [instances.esp_io]
    | ^^^^^^^^^^^^^^^^^^ esp_io.status → led_esp (std/led@1) · out on → esp.led
-   = nota: luz liga led_esp diretamente (led_estado), em control:12
-   = nota: bench_diag chega-lhe por esp_io.status, em control:14
-   = ajuda: é o mesmo `esp.led`, com um só envelope e um só árbitro; a luz ganha enquanto propuser
+   = note: luz binds led_esp directly (led_estado), at control:12
+   = note: bench_diag reaches it through esp_io.status, at control:14
+   = help: it is the same `esp.led`, with a single envelope and a single arbiter; luz wins while it proposes
 ```
 
-É o que o aviso existe para dizer: a partilha não se vê no `bind` de nenhuma das duas apps. Aqui é de propósito.
+That is what the warning exists to say: the sharing cannot be seen in the `bind` of either app. Here it is on purpose.
 
 ```sh
 $ jk explain esp_io --env sim
 ```
 
 ```
-esp_io · local/bench_io@1 · instância composta (joker.toml:82)
-  status        led_esp · std/led@1 · composta · Ok
-  boot          botao · std/button@1 · composta · Ok
-  knob          toque · std/analog_in@1 · composta · Ok
+esp_io · local/bench_io@1 · composite instance (joker.toml:82)
+  status        led_esp · std/led@1 · composite · Ok
+  boot          botao · std/button@1 · composite · Ok
+  knob          toque · std/analog_in@1 · composite · Ok
   rssi          in i64      esp.rssi · -55 good
-  uptime        in f64 s    esp.uptime · 1 204 s good
-  online        consulta    good(uptime) · true
-  saúde         Ok
-  caminhos      esp_io.boot.clicked ≡ botao.clicked · esp_io.status.on ≡ led_esp.on ≡ esp.led
-  profundidade  2: bench_io → led, button, analog_in (JC0501: máximo 3)
+  uptime        in f64 s    esp.uptime · 1,204 s good
+  online        query       good(uptime) · true
+  health        Ok
+  paths         esp_io.boot.clicked ≡ botao.clicked · esp_io.status.on ≡ led_esp.on ≡ esp.led
+  depth         2: bench_io → led, button, analog_in (JC0501: maximum 3)
 ```
 
-No `jk dev --env sim --panel`, carrega no botão do ESP32 e vê o `app.bench_diag.cliques` a subir. O LED não muda, porque a `luz` manda nele. Para a `luz` (`jk app stop luz --node local`, noutro terminal, com o `jk dev` a correr): o lease dela expira, o nível `control:14` passa a ser o ativo, e o LED do ESP32 segue o toque. Com `jk app start luz --node local`, a `luz` volta a ganhar. Os cenários continuam a passar: com o ESP32 em falha, a `bench_diag` também não propõe (`online` é falso), como a `luz` 0.4.1.
+In `jk dev --env sim --panel`, press the ESP32's button and watch `app.bench_diag.cliques` go up. The LED does not change, because `luz` controls it. Stop `luz` (`jk app stop luz --node local`, in another terminal, with `jk dev` running): its lease expires, the level `control:14` becomes the active one, and the ESP32's LED follows the touch. With `jk app start luz --node local`, `luz` wins again. The scenarios keep passing: with the ESP32 failing, `bench_diag` does not propose either (`online` is false), like `luz` 0.4.1.
 
-Quando acabares, volta ao ramo principal. A parte 9 parte do commit da secção 11:
+When you are done, go back to the main branch. Part 9 starts from the commit of section 11:
 
 ```sh
 $ git switch main
 ```
 
-**Estado no fim desta parte:** app `luz` **0.6** e app `status_light_ctl` **1.0.0**. Ficheiros novos: `classes/local/status_light.jkc`, `classes/local/status_light.conformance.toml`, `apps/status_light_ctl/`. Alterados: `joker.toml` (`[instances.sinal]`, `[outputs."sinal.mode"]`, `[outputs."sinal.blink_period"]`, `[apps.status_light_ctl]`, `bind` da `luz`, `order` do `main`), `apps/luz/`, `joker.sim.lock`, `joker.lab.lock`, `joker.zero.lock`, e a última expectativa do `sim/scenarios/pisca.scenario.toml`. O `sim/scenarios/falha_esp.scenario.toml` não mudou. O lab está na geração 9; o zero, parado, ficou na 0.5. O extra da secção 12 (a classe `local/bench_io@1`, a instância `esp_io` e a app `bench_diag`) fica no ramo `extra-bench-io`, e não entra neste estado.
+**State at the end of this part:** app `luz` **0.6** and app `status_light_ctl` **1.0.0**. New files: `classes/local/status_light.jkc`, `classes/local/status_light.conformance.toml`, `apps/status_light_ctl/`. Changed: `joker.toml` (`[instances.sinal]`, `[outputs."sinal.mode"]`, `[outputs."sinal.blink_period"]`, `[apps.status_light_ctl]`, the `bind` of `luz`, the `order` of `main`), `apps/luz/`, `joker.sim.lock`, `joker.lab.lock`, `joker.zero.lock`, and the last expectation of `sim/scenarios/pisca.scenario.toml`. `sim/scenarios/falha_esp.scenario.toml` did not change. Lab is at generation 9; zero, stopped, stayed at 0.5. The extra of section 12 (the class `local/bench_io@1`, the instance `esp_io` and the app `bench_diag`) stays on the branch `extra-bench-io`, and does not enter this state.
 
-**Próximo:** [Parte 9 — O ESP32 passa a Joker Micro: o Joker Link e o `safe` no MCU](09-joker-micro.md).
+**Next:** [Part 9 — The ESP32 becomes a Joker Micro: Joker Link and the `safe` on the MCU](09-joker-micro.md).
