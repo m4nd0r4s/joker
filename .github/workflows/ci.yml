@@ -25,6 +25,15 @@ jobs:
       - run: rustup show
       - run: cargo build --target ${{ matrix.target }} -p joker-units -p joker-expr -p joker-core
 
+  bench-firmware-logic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show
+      - run: cargo fmt --all --check --manifest-path tools/bench/esp32-modbus/Cargo.toml
+      - run: cargo clippy --manifest-path tools/bench/esp32-modbus/logic/Cargo.toml --all-targets -- -D warnings
+      - run: cargo test --manifest-path tools/bench/esp32-modbus/logic/Cargo.toml
+
   deny:
     runs-on: ubuntu-latest
     steps:
