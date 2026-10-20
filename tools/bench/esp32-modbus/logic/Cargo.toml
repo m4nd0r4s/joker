@@ -1,0 +1,14 @@
+[package]
+name = "bench-esp32-logic"
+description = "Register map, Modbus RTU framing and device fallback of the ESP32 bench firmware (no_std, host-testable)"
+version = "1.0.0"
+edition = "2024"
+rust-version = "1.95"
+license = "Apache-2.0 OR MIT"
+repository = "https://github.com/m4nd0r4s/joker"
+publish = false
+
+[dependencies]
+
+[lints]
+workspace = true
