@@ -51,6 +51,9 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 - **Codes**: `J0795`, `J-E0001`, M-numbers (`M15`), C/D/E/X item ids used in the stress documents, ADR numbers.
 - **Section and document numbers**: `docs/16 §3`, `ref/02 §2.1.13`, "document 23", "ADR 0015". Remissions point at numbers, so they survive the translation unchanged.
 - **Text inside code blocks** is code: keep it, except comments and human-readable strings in illustrative examples, which are translated (AGENTS.md rules 11 and 12). A string that is a normative message (a code's `message` in `spec/codes.toml`, an error text quoted from a reference) is taken from its source, never retranslated by hand.
+- **Placeholders** inside code spans and code blocks are translated, because they are prose, not identifiers: `<nome>` → `<name>`, `<tipo>` → `<type>`, `<variante>` → `<variant>`, `<nó>` → `<node>`, `<placa>` → `<board>`, `<janela>` → `<window>`, `<papel>=<chave>` → `<role>=<key>`. Example values that are identifiers (`bancada`, `luz`, `canario`) stay as they are.
+- The marker that `jk` writes in generated drafts, `# REVER`, is `# REVIEW`.
+- Table headers of key references: *Chave*, *Tipo*, *Obr.*, *Omissão*, *Significado* → **Key**, **Type**, **Req.**, **Default**, **Meaning**.
 - English words already used as terms in the Portuguese source stay as they are: lease, latch, tick, snapshot, trip, fallback, overlay, rollout, inbox, watchdog, historian, uplink, bundle, blob, digest, handle, backend, pipeline, stream, replay, commit, deploy, guest, host, harness.
 
 ### 1.5 Remissions and links
@@ -106,6 +109,7 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | anel de traço | **trace ring** | |
 | segmento de estado | **state segment** | in a trace; 16 §7 |
 | gravação, gravar | **recording**, **record** | |
+| gravar (firmware, flash) | **flash** | `espflash` flashes the ESP32; "gravado em flash" → "recorded in flash" when it is data |
 | reproduzir, replay | **replay** | |
 | verdade de fundo | **ground truth** | 12 |
 
@@ -255,6 +259,8 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | troca de geração | **generation swap** | |
 | aplicar, aplicação transacional | **apply**, **transactional apply** | |
 | aplicar com confirmação | **apply with confirmation** | ADR 0015 |
+| trinco de transição de gerações | **generation-transition mutex** | ref/09 §5.13, ref/10 §3.4.2 |
+| ramo (Git) | **branch** | |
 | janela de confirmação | **confirmation window** | |
 | rollback | **rollback** | |
 | estado desejado | **desired state** | |
@@ -314,6 +320,9 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | catálogo | **catalog** | |
 | conformidade de drivers, suite de conformidade | **driver conformance**, **conformance suite** | `joker-drvtest` |
 | sonda | **probe** | debug probe |
+| vez de fala (RS-485 half-duplex) | **turn-taking** | |
+| referência (de chip) | **part number** | `stm32g474re`; 25 §2.3 |
+| ponte USB-série | **USB-serial bridge** | CP2102, CH340; 23 |
 | pinos | **pins** | |
 | periférico | **peripheral** | |
 | rede de campo | **fieldbus** | |
@@ -399,6 +408,10 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | bundle de confiança, cadeia de bundles | **trust bundle**, **bundle chain** | |
 | política de confiança | **trust policy** | |
 | CA local | **local CA** | |
+| emissora (de certificados) | **issuer** | the `[ca]` of `deck.toml` |
+| inquilino, multi-inquilino | **tenant**, **multi-tenant** (noun: **multi-tenancy**) | Deck; 20 §4.1 |
+| armazém de artefactos | **artifact store** | `artifacts.store` |
+| acusar (um relatório) | **acknowledge** | `report-ack` |
 | memória de nonces | **nonce memory** | |
 | proteção de dados | **data protection** | 26 |
 | técnico de campo | **field technician** | persona |
@@ -444,6 +457,7 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | proposta (documento) | **proposal** | directory `proposals/`, non-normative |
 | sensor de toque | **touch sensor** | |
 | LED, pisca, piscar | **LED**, **blinks**, **blink** | |
+| tempo de funcionamento | **uptime** | |
 
 ---
 
@@ -477,6 +491,11 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | custo | **cost** | |
 | lacuna (a fechar) | **gap (to close)** | |
 | refinamento | **refinement** | |
+| funcionalidade de cabeça, cabeça de cartaz | **headline feature**, **headline** | ADR 0022, 21 |
+| pessoas-semana | **person-weeks** | 26 §5 |
+| corte (de âmbito) | **cut** | ADR 0028, 26 §5 |
+| errata | **erratum** (plural **errata**) | |
+| porta de piloto | **pilot gate** | |
 | veredicto | **verdict** | |
 | auditoria | **audit** | |
 | revisão final | **final review** | 26 |
@@ -494,6 +513,7 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | DX | **DX** | developer experience |
 | ADR: Estado, Data, aceite | **Status**, **Date**, **accepted** | ADR header |
 | ADR: Contexto, Decisão, Consequências, Alternativas | **Context**, **Decision**, **Consequences**, **Alternatives** | ADR sections |
+| ADR: Razões, Nota | **Reasons**, **Note** | ADR sections |
 | alterada por, substitui, substituída por | **amended by**, **replaces**, **superseded by** | ADR header |
 | coberta, coberta (1.1) | **covered**, **covered (1.1)** | key coverage tables in ref/01 |
 
@@ -517,6 +537,7 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | inspeção visual | **visual inspection** |
 | manutenção preditiva | **predictive maintenance** |
 | comissionamento | **commissioning** |
+| SGTC (gestão técnica centralizada) | **BMS** (building management system) |
 | piso (de um edifício) | **floor** |
 
 ---
