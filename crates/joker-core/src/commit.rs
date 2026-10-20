@@ -3,16 +3,20 @@
 //! §19; docs/16 §1–§2).
 
 use crate::arbiter::{Intake, LevelEntry, OutputArbiter, Refusal, RemoteWriter, check_writers};
-use crate::envelope::{Applied, Effective, Verdict, check_output, evaluate};
+use joker_expr::{EvalError, Inputs, Program, Reading};
+
+use crate::envelope::{Applied, Context, Effective, Verdict, check_output, evaluate_in};
 use crate::image::{Intent, ProcessImage, Proposal, WriterId};
 use crate::outcome::{Outcome, RejectReason};
 use crate::output::{
-    Band, ClockRequirement, ConfigError, Level, OutputConfig, WriterConfig, WriterKind,
+    Band, Bound, ClockRequirement, ConfigError, Level, OutputConfig, WriterConfig, WriterKind,
 };
 use crate::quality::Quality;
+use crate::quality::{QualityCode, QualityReason};
 use crate::registry::{Direction, Registry, SignalId};
 use crate::slot::Slot;
 use crate::value::NO_TS_SRC;
+use crate::value::Sample;
 
 /// The result of one proposal in one tick (ADR 0033 §1–§3).
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -188,6 +192,8 @@ pub enum CommitError {
     NotManual(WriterId),
     /// The output has already been committed once.
     AlreadyStarted,
+    /// The state arena is missing or smaller than [`Outputs::state_words`].
+    StateArenaTooSmall,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -205,6 +211,9 @@ pub struct OutputState {
     reset_pending: bool,
     expired_now: bool,
     started: bool,
+    arena_offset: usize,
+    bad_since: Option<u64>,
+    last_actuation: Option<u64>,
     output_track: Option<Track>,
     write_tracks: [Option<Track>; Level::COUNT],
 }
@@ -218,6 +227,9 @@ impl OutputState {
         reset_pending: false,
         expired_now: false,
         started: false,
+        arena_offset: 0,
+        bad_since: None,
+        last_actuation: None,
         output_track: None,
         write_tracks: [None; Level::COUNT],
     };
@@ -252,6 +264,8 @@ pub struct OutputsStorage<'a> {
 pub struct Outputs<'a> {
     writers: &'a [WriterConfig],
     remote: &'a [RemoteWriter],
+    arena: &'a mut [u64],
+    state_words: usize,
     configs: &'a [OutputConfig<'a>],
     states: &'a mut [OutputState],
     intakes: &'a mut [Option<Intake>],
@@ -276,6 +290,7 @@ impl<'a> Outputs<'a> {
         if configs.windows(2).any(|w| w[0].signal >= w[1].signal) {
             return Err(CommitError::OutputsNotSorted);
         }
+        let mut state_words = 0usize;
         for (config, state) in configs.iter().zip(states.iter_mut()) {
             let meta = registry
                 .signal(config.signal)
@@ -293,16 +308,37 @@ impl<'a> Outputs<'a> {
             *state = OutputState {
                 arbiter: OutputArbiter::new(period_ns),
                 last: Applied::from_safe(config.safe),
+                arena_offset: state_words,
                 ..OutputState::EMPTY
             };
+            state_words += config.state_words();
         }
         Ok(Self {
             writers,
             remote: &[],
+            arena: &mut [],
+            state_words,
             configs,
             states,
             intakes,
         })
+    }
+
+    /// Words of state arena the outputs need: the state of their expressions
+    /// and their actuation budgets. Zero for outputs without either.
+    pub fn state_words(&self) -> usize {
+        self.state_words
+    }
+
+    /// Hands in the state arena, at least [`Outputs::state_words`] long, and
+    /// zeroes it (the initial state of every expression, ADR 0034).
+    pub fn set_state_arena(&mut self, arena: &'a mut [u64]) -> Result<(), CommitError> {
+        if arena.len() < self.state_words {
+            return Err(CommitError::StateArenaTooSmall);
+        }
+        arena.fill(0);
+        self.arena = arena;
+        Ok(())
     }
 
     /// Sets the remote writers of an MCU's outputs (docs/16 A12), indexed by
@@ -434,8 +470,12 @@ impl<'a> Outputs<'a> {
         if self.intakes.len() < proposals.len() {
             return Err(CommitError::IntakeBufferTooSmall);
         }
+        if self.arena.len() < self.state_words {
+            return Err(CommitError::StateArenaTooSmall);
+        }
         let group = image.group();
         let now = tick.at.mono_ns;
+        let inputs = TickInputs { image, slots };
         for o in 0..self.configs.len() {
             if self.configs[o].group != group {
                 continue;
@@ -548,10 +588,46 @@ impl<'a> Outputs<'a> {
                 .get(config.signal.index())
                 .ok_or(CommitError::MissingSlot(config.signal))?;
             let state = &mut self.states[o];
-            let reset = core::mem::take(&mut state.reset_pending);
+            let words = config.state_words();
+            let arena = &mut self.arena[state.arena_offset..state.arena_offset + words];
+            let facts = facts(&config, &inputs, now, arena);
+            let all_good = config
+                .requires_good
+                .iter()
+                .all(|&s| inputs.sample(s).quality().is_good());
+            state.bad_since = if all_good {
+                None
+            } else {
+                state.bad_since.or(Some(now))
+            };
+            let quality = state
+                .bad_since
+                .is_none_or(|since| now.saturating_sub(since) < config.grace_ns);
+            let reset = core::mem::take(&mut state.reset_pending) || (state.tripped && facts.reset);
             if reset {
                 state.tripped = false;
             }
+            let budget = config.max_actuations.map(|b| {
+                let ring = &arena[facts.words..];
+                let len = ring.first().map_or(0, |w| (*w & 0xFFFF_FFFF) as usize);
+                let used = ring
+                    .iter()
+                    .skip(1)
+                    .take(len)
+                    .filter(|&&t| now.saturating_sub(t) < b.window_ns)
+                    .count();
+                used >= b.count as usize
+            });
+            let ctx = Context {
+                clock: tick.at.clock,
+                dt_ns: tick.dt_ns,
+                now_ns: now,
+                permit: facts.permit,
+                quality,
+                range: facts.range,
+                last_actuation: state.last_actuation,
+                budget_exhausted: budget.unwrap_or(false),
+            };
             let active = state.arbiter.active();
             let effective = match active {
                 None => Effective::Safe,
@@ -564,14 +640,13 @@ impl<'a> Outputs<'a> {
                 applied,
                 outcome: envelope_outcome,
                 tripped,
-            } = evaluate(
-                &config,
-                state.last,
-                state.tripped,
-                effective,
-                tick.at.clock,
-                tick.dt_ns,
-            );
+            } = evaluate_in(&config, state.last, state.tripped, effective, &ctx);
+            if applied != state.last {
+                state.last_actuation = Some(now);
+                if let Some(b) = config.max_actuations {
+                    record_actuation(&mut arena[facts.words..], b.count as usize, now);
+                }
+            }
             let level = active.map(|(l, _)| l);
             let active_writer = active.map(|(_, e)| e.writer);
             let mut output_outcome = None;
@@ -759,6 +834,118 @@ impl<'a> Outputs<'a> {
         }
         Ok(())
     }
+}
+
+/// The latched snapshot of a group, with the slots as fallback, as the
+/// expression VM reads it (docs/02 §6.1).
+struct TickInputs<'x> {
+    image: &'x ProcessImage<'x>,
+    slots: &'x [Slot],
+}
+
+impl TickInputs<'_> {
+    fn sample(&self, signal: SignalId) -> Sample {
+        if let Some(sample) = self.image.sample(signal) {
+            return *sample;
+        }
+        match self.slots.get(signal.index()).map(|s| s.read(0)) {
+            Some(Ok(sample)) => sample,
+            _ => Sample::new(
+                0,
+                Quality::new(QualityCode::Bad, QualityReason::NotConnected),
+                NO_TS_SRC,
+                0,
+                0,
+            ),
+        }
+    }
+}
+
+impl Inputs for TickInputs<'_> {
+    fn read(&self, signal: u32) -> Reading {
+        let sample = self.sample(SignalId(signal));
+        Reading {
+            raw: sample.transport_bits(),
+            quality: joker_expr::Quality::from_bits(sample.quality().to_bits()),
+            acquired: sample.ts_acq(),
+        }
+    }
+}
+
+/// What the expressions of an output say in this tick (ADR 0038 §1–§2).
+struct Facts {
+    permit: bool,
+    range: Option<(f64, f64)>,
+    reset: bool,
+    words: usize,
+}
+
+fn run(
+    program: Option<&Program>,
+    inputs: &dyn Inputs,
+    now: u64,
+    arena: &mut [u64],
+    cursor: &mut usize,
+) -> Option<Result<joker_expr::Output, EvalError>> {
+    let program = program?;
+    let words = program.state_words();
+    let state = arena.get_mut(*cursor..*cursor + words)?;
+    *cursor += words;
+    Some(joker_expr::eval(program, inputs, now, state))
+}
+
+fn facts(config: &OutputConfig<'_>, inputs: &dyn Inputs, now: u64, arena: &mut [u64]) -> Facts {
+    let [interlock, low, high, reset_when] = config.programs();
+    let mut cursor = 0;
+    let interlock = run(interlock, inputs, now, arena, &mut cursor);
+    let low = run(low, inputs, now, arena, &mut cursor);
+    let high = run(high, inputs, now, arena, &mut cursor);
+    let reset_when = run(reset_when, inputs, now, arena, &mut cursor);
+    let usable = |out: Option<Result<joker_expr::Output, EvalError>>| match out {
+        Some(Ok(o)) if config.permit_uncertain => o.get_uncertain().ok().map(|v| v.as_f64()),
+        Some(Ok(o)) => o.get().ok().map(|v| v.as_f64()),
+        _ => None,
+    };
+    let mut permit = match interlock {
+        None => true,
+        Some(Ok(o)) => o.permits(config.permit_uncertain),
+        Some(Err(_)) => false,
+    };
+    let range = match config.range_exprs {
+        None => config.range,
+        Some((lo, hi)) => {
+            let bound = |b: Bound<'_>, value| match b {
+                Bound::Const(c) => Some(c),
+                Bound::Expr(_) => value,
+            };
+            match (bound(lo, usable(low)), bound(hi, usable(high))) {
+                (Some(l), Some(h)) if l <= h => Some((l, h)),
+                _ => {
+                    permit = false;
+                    None
+                }
+            }
+        }
+    };
+    let reset = matches!(reset_when, Some(Ok(o)) if o.get().is_ok_and(|v| v.as_bool()));
+    Facts {
+        permit,
+        range,
+        reset,
+        words: cursor,
+    }
+}
+
+fn record_actuation(ring: &mut [u64], capacity: usize, now: u64) {
+    if capacity == 0 || ring.len() < capacity + 1 {
+        return;
+    }
+    let len = (ring[0] & 0xFFFF_FFFF) as usize;
+    let head = (ring[0] >> 32) as usize % capacity;
+    ring[1 + head] = now;
+    let len = (len + 1).min(capacity);
+    let head = (head + 1) % capacity;
+    ring[0] = ((head as u64) << 32) | len as u64;
 }
 
 fn writer_level(

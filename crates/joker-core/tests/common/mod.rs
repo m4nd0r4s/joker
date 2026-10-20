@@ -100,6 +100,10 @@ impl Harness {
             },
         )
         .unwrap();
+        let mut outputs = outputs;
+        outputs
+            .set_state_arena(leak(vec![0u64; outputs.state_words()]))
+            .unwrap();
         let image = ProcessImage::new(
             registry.resolve_group("fast").unwrap(),
             PERIOD,
@@ -246,4 +250,39 @@ impl Harness {
         self.image.end_tick().unwrap();
         log
     }
+}
+
+struct TestEnv;
+
+impl joker_expr::Env for TestEnv {
+    fn signal(&self, path: &str) -> Option<joker_expr::SignalInfo> {
+        let (id, unit) = match path {
+            "x.f" => (0, "Hz"),
+            "x.p_set" => (1, "kW"),
+            _ => return None,
+        };
+        Some(joker_expr::SignalInfo {
+            id,
+            ty: joker_expr::SignalType::F64,
+            unit: Some(joker_units::Unit::parse(unit).unwrap()),
+        })
+    }
+
+    fn enum_variant(&self, _: &str, _: &str) -> Option<(joker_expr::EnumId, u64)> {
+        None
+    }
+
+    fn select(&self, _: &str, _: &mut dyn FnMut(joker_expr::SignalInfo)) {}
+}
+
+pub fn program(src: &str) -> &'static joker_expr::Program {
+    let checked = joker_expr::check(src, &TestEnv, joker_expr::CheckOptions::default()).unwrap();
+    let program = joker_expr::compile(
+        &checked,
+        joker_expr::CompileOptions {
+            period: joker_units::Duration::from_nanos(PERIOD),
+        },
+    )
+    .unwrap();
+    Box::leak(Box::new(program))
 }

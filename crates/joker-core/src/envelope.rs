@@ -1,14 +1,16 @@
-//! The envelope of one output: the steps of docs/01 §7 that M0 needs (clock,
-//! range, rate, safe state and trips), applied to the effective value on
-//! every tick (docs/16 A7, E1–E2, E5, E7; ADR 0033).
+//! The envelope of one output: the steps of docs/01 §7 applied to the
+//! effective value on every tick (docs/16 A7, E1–E10; ADR 0033, ADR 0038).
 //!
-//! Steps 2–3 (permissive and quality) and 6–7 (deadband, `min_interval`,
-//! actuation budget, atomic groups) need expressions and atomic groups and
-//! come later; the step order leaves their place.
+//! Expressions (permissive, expression range limits, `reset_when`) and the
+//! `requires_good` timer are evaluated by the commit stage, which hands the
+//! results in a [`Context`]. Step 7 (atomic groups) runs across outputs, in
+//! the commit stage.
 
 use crate::image::WriterId;
 use crate::outcome::{Outcome, RejectReason};
-use crate::output::{ClockRequirement, ConfigError, OnRange, OutputConfig, SECOND_NS, SafeValue};
+use crate::output::{
+    Bound, ClockRequirement, ConfigError, OnInterlock, OnRange, OutputConfig, SECOND_NS, SafeValue,
+};
 use crate::time::ClockQuality;
 use crate::value::ValueType;
 
@@ -65,6 +67,45 @@ pub struct Verdict {
     pub tripped: bool,
 }
 
+/// The facts of one tick that the envelope needs besides the output's
+/// configuration (ADR 0038).
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct Context {
+    /// Quality of the node's clock (step 0).
+    pub clock: ClockQuality,
+    /// Step length of ADR 0032, for the rate step.
+    pub dt_ns: u64,
+    /// Latch instant, monotonic ns.
+    pub now_ns: u64,
+    /// The permissive and the expression range limits pass (step 2).
+    pub permit: bool,
+    /// `requires_good` holds, within its grace (step 3).
+    pub quality: bool,
+    /// The range limits of this tick (step 4).
+    pub range: Option<(f64, f64)>,
+    /// Latch instant of the last actuation, if any (step 6).
+    pub last_actuation: Option<u64>,
+    /// The actuation budget is spent (step 6).
+    pub budget_exhausted: bool,
+}
+
+impl Context {
+    /// A context with no expressions, no `requires_good`, the constant range
+    /// and no actuation history.
+    pub fn simple(output: &OutputConfig<'_>, clock: ClockQuality, dt_ns: u64) -> Self {
+        Self {
+            clock,
+            dt_ns,
+            now_ns: 0,
+            permit: true,
+            quality: true,
+            range: output.range,
+            last_actuation: None,
+            budget_exhausted: false,
+        }
+    }
+}
+
 /// True when `clock` meets `requirement` (docs/16 E1, ADR 0033).
 pub const fn clock_meets(requirement: ClockRequirement, clock: ClockQuality) -> bool {
     match requirement {
@@ -74,7 +115,7 @@ pub const fn clock_meets(requirement: ClockRequirement, clock: ClockQuality) -> 
     }
 }
 
-/// Runs the envelope once.
+/// Runs the envelope once with [`Context::simple`].
 ///
 /// `last` is the last applied value (`safe` on the first tick of a
 /// generation, docs/16 A8), `in_trip` whether the output is in trip, and
@@ -87,6 +128,25 @@ pub fn evaluate(
     clock: ClockQuality,
     dt_ns: u64,
 ) -> Verdict {
+    evaluate_in(
+        output,
+        last,
+        in_trip,
+        effective,
+        &Context::simple(output, clock, dt_ns),
+    )
+}
+
+/// Runs the envelope once: steps 0 and 2–6 of docs/01 §7 (step 1 is the
+/// arbiter's intake, step 7 the commit stage's).
+pub fn evaluate_in(
+    output: &OutputConfig<'_>,
+    last: Applied,
+    in_trip: bool,
+    effective: Effective,
+    ctx: &Context,
+) -> Verdict {
+    let dt_ns = ctx.dt_ns;
     let (value, requires_clock) = match effective {
         Effective::Safe => {
             return Verdict {
@@ -105,37 +165,43 @@ pub fn evaluate(
         outcome: Some(outcome),
         tripped,
     };
+    let refuse = |reason| match output.on_interlock {
+        OnInterlock::Safe => safe_with(Outcome::Rejected(reason), false),
+        OnInterlock::Hold => Verdict {
+            applied: last,
+            outcome: Some(Outcome::Rejected(reason)),
+            tripped: false,
+        },
+    };
+    let hold = |outcome| Verdict {
+        applied: last,
+        outcome: Some(outcome),
+        tripped: false,
+    };
     if in_trip {
         return safe_with(Outcome::Tripped, false);
     }
-    if !clock_meets(requires_clock, clock) {
+    if !clock_meets(requires_clock, ctx.clock) {
         return safe_with(Outcome::Rejected(RejectReason::ClockUnsynced), false);
     }
-    let Some(mut x) = output.ty.bits_to_f64(value) else {
-        return Verdict {
-            applied: Applied::Value(value),
-            outcome: Some(Outcome::Accepted),
-            tripped: false,
-        };
-    };
+    if !ctx.permit {
+        return refuse(RejectReason::Interlock);
+    }
+    if !ctx.quality {
+        return refuse(RejectReason::Quality);
+    }
     let mut outcome = None;
     let mut bits = value;
-    if let Some((low, high)) = output.range
+    let number = output.ty.bits_to_f64(value);
+    if let (Some(x), Some((low, high))) = (number, ctx.range)
         && !(low..=high).contains(&x)
     {
         match output.on_range {
             OnRange::Clamp => {
-                x = x.clamp(low, high);
-                bits = encode(output.ty, x).unwrap_or(value);
+                bits = encode(output.ty, x.clamp(low, high)).unwrap_or(value);
                 outcome = Some(Outcome::ClampedRange);
             }
-            OnRange::Reject => {
-                return Verdict {
-                    applied: last,
-                    outcome: Some(Outcome::Rejected(RejectReason::Range)),
-                    tripped: false,
-                };
-            }
+            OnRange::Reject => return hold(Outcome::Rejected(RejectReason::Range)),
             OnRange::Trip => return safe_with(Outcome::Tripped, true),
         }
     }
@@ -144,6 +210,26 @@ pub fn evaluate(
     {
         bits = limited;
         outcome = outcome.or(Some(Outcome::ClampedRate));
+    }
+    if let (Some(deadband), Applied::Value(last_bits)) = (output.deadband, last)
+        && let (Some(to), Some(from)) = (
+            output.ty.bits_to_f64(bits),
+            output.ty.bits_to_f64(last_bits),
+        )
+        && (to - from).abs() < deadband
+    {
+        return hold(Outcome::Suppressed);
+    }
+    if Applied::Value(bits) != last {
+        if ctx
+            .last_actuation
+            .is_some_and(|t| ctx.now_ns.saturating_sub(t) < output.min_interval_ns)
+        {
+            return hold(Outcome::Suppressed);
+        }
+        if ctx.budget_exhausted {
+            return hold(Outcome::Rejected(RejectReason::Budget));
+        }
     }
     Verdict {
         applied: Applied::Value(bits),
@@ -193,10 +279,33 @@ pub fn check_output(output: &OutputConfig<'_>) -> Result<(), ConfigError> {
         writer: None::<WriterId>,
     };
     let numeric = output.ty.is_numeric();
-    if (output.range.is_some() || output.rate.is_some() || output.safe_ramp.is_some()) && !numeric {
+    if (output.range.is_some()
+        || output.range_exprs.is_some()
+        || output.rate.is_some()
+        || output.safe_ramp.is_some()
+        || output.deadband.is_some())
+        && !numeric
+    {
         return Err(err("J0233"));
     }
-    for rate in [output.rate, output.safe_ramp].into_iter().flatten() {
+    if output.range.is_some() && output.range_exprs.is_some() {
+        return Err(err("J0230"));
+    }
+    if let Some((Bound::Const(low), Bound::Const(high))) = output.range_exprs
+        && !(low.is_finite() && high.is_finite() && low < high)
+    {
+        return Err(err("J0230"));
+    }
+    if output
+        .max_actuations
+        .is_some_and(|b| b.count == 0 || b.window_ns == 0)
+    {
+        return Err(err("J0159"));
+    }
+    for rate in [output.rate, output.safe_ramp, output.deadband]
+        .into_iter()
+        .flatten()
+    {
         if !rate.is_finite() || rate < 0.0 {
             return Err(err("J0202"));
         }
