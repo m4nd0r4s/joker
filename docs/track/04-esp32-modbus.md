@@ -1,107 +1,107 @@
-# Parte 4 — O ESP32 como equipamento Modbus: escrever o perfil, o botão e o LED
+# Part 4 — The ESP32 as Modbus equipment: writing the profile, the button and the LED
 
-**Objetivo:** pôr o ESP32 a fazer de equipamento Modbus RTU ligado ao Pi 3, escrever o seu perfil a partir do mapa de registos, e usar o botão `BOOT` para ligar e desligar o sistema, com o LED do ESP32 a mostrar o estado.
+**Goal:** get the ESP32 to act as a piece of Modbus RTU equipment connected to the Pi 3, write its profile from the register map, and use the `BOOT` button to turn the system on and off, with the ESP32's LED showing the state.
 
-**Vais aprender:** Modbus RTU numa ponte USB-série · perfis de equipamento, do CSV ao ficheiro revisto · `jk profile import`, `check` e `test` · readback e `safe_hint` · fallback do equipamento (M1) · flancos e debounce · orçamento do barramento · `jk lock --node`.
+**You will learn:** Modbus RTU over a USB-serial bridge · equipment profiles, from the CSV to the reviewed file · `jk profile import`, `check` and `test` · readback and `safe_hint` · equipment fallback (M1) · edges and debounce · bus budget · `jk lock --node`.
 
-**Antes de começar:** a parte 3 feita (`luz` 0.2 a piscar com a temperatura). O ESP32 ligado por micro-USB a uma porta USB do Pi 3. No portátil, a toolchain Rust para Xtensa (`espup`) e o `espflash`.
+**Before you start:** part 3 done (`luz` 0.2 blinking with the temperature). The ESP32 connected by micro-USB to a USB port of the Pi 3. On the laptop, the Rust toolchain for Xtensa (`espup`) and `espflash`.
 
 ---
 
-## 1. O que o ESP32 vai ser
+## 1. What the ESP32 will be
 
-Nesta parte o ESP32 ainda não corre o Joker (isso é a parte 9). Corre o **firmware de bancada** do documento 23, §4: um equipamento Modbus pequeno, como um medidor ou um relé com comunicação, com esta tabela de registos:
+In this part the ESP32 does not run Joker yet (that is part 9). It runs the **bench firmware** of document 23, §4: a small piece of Modbus equipment, like a meter or a relay with communication, with this register table:
 
-| Registo | FC | Tipo | Sinal |
+| Register | FC | Type | Signal |
 |---|---|---|---|
-| coil 0 | 1 (ler), 5 (escrever) | `bool` | LED da placa (GPIO2) |
-| discrete input 0 | 2 | `bool` | botão `BOOT` (GPIO0), já invertido: 1 = premido |
-| input register 0 | 4 | `u16` | leitura do sensor de toque T0 (GPIO4) |
-| input register 1 | 4 | `i16` | RSSI do Wi-Fi em dBm (0 sem Wi-Fi) |
-| input registers 2–3 | 4 | `u32` | segundos desde o arranque |
-| holding register 0 | 3 | `u16` | versão do firmware de bancada |
+| coil 0 | 1 (read), 5 (write) | `bool` | board LED (GPIO2) |
+| discrete input 0 | 2 | `bool` | `BOOT` button (GPIO0), already inverted: 1 = pressed |
+| input register 0 | 4 | `u16` | reading of the T0 touch sensor (GPIO4) |
+| input register 1 | 4 | `i16` | Wi-Fi RSSI in dBm (0 without Wi-Fi) |
+| input registers 2–3 | 4 | `u32` | seconds since boot |
+| holding register 0 | 3 | `u16` | version of the bench firmware |
 
-E um comportamento que qualquer equipamento sério tem: **sem nenhum pedido Modbus durante 2 s, apaga o LED sozinho.** É o fallback do equipamento (M1, documento 01, §8), e é a lição desta parte.
+And a behavior that any serious piece of equipment has: **with no Modbus request for 2 s, it turns the LED off by itself.** It is the equipment fallback (M1, document 01, §8), and it is the lesson of this part.
 
-A ponte USB-série da placa (CP2102 ou CH340) é uma porta série real para o Pi. Não é preciso transceptor RS-485 nem fios: o cabo micro-USB dá alimentação e o barramento (documento 23, §2).
+The board's USB-serial bridge (CP2102 or CH340) is a real serial port for the Pi. No RS-485 transceiver or wires are needed: the micro-USB cable provides power and the bus (document 23, §2).
 
-## 2. Gravar o firmware
+## 2. Flash the firmware
 
-O firmware está em `tools/bench/esp32-modbus/` no repositório do Joker. Serve Modbus RTU no UART0 (o USB) e Modbus TCP no Wi-Fi (porta 502), com a mesma tabela; o Wi-Fi só vai ser preciso na parte 6, mas grava-se já tudo de uma vez. As credenciais entram no build por variáveis de ambiente e nunca vão para o Git:
+The firmware is in `tools/bench/esp32-modbus/` in the Joker repository. It serves Modbus RTU on UART0 (the USB) and Modbus TCP on Wi-Fi (port 502), with the same table; Wi-Fi will only be needed in part 6, but you flash everything at once now. The credentials go into the build through environment variables and never go into Git:
 
 ```sh
 $ git clone https://git.example.com/joker/joker.git && cd joker/tools/bench/esp32-modbus
 $ export BENCH_WIFI_SSID="bancada"
-$ read -rs BENCH_WIFI_PASSWORD && export BENCH_WIFI_PASSWORD      # sem eco, fora do histórico
+$ read -rs BENCH_WIFI_PASSWORD && export BENCH_WIFI_PASSWORD      # no echo, out of the history
 $ cargo build --release
 $ espflash flash --monitor target/xtensa-esp32-none-elf/release/esp32-modbus
 ```
 
 ```
-esp32-modbus 1.0.0 · Modbus RTU no UART0, 115200 8N1, unidade 1
-wifi: ligado a "bancada", IP 192.168.1.57 · Modbus TCP em :502
-fallback: LED apaga sem pedidos durante 2 s
-uart0: a partir daqui, só Modbus
+esp32-modbus 1.0.0 · Modbus RTU on UART0, 115200 8N1, unit 1
+wifi: connected to "bancada", IP 192.168.1.57 · Modbus TCP on :502
+fallback: LED turns off without requests for 2 s
+uart0: from here on, Modbus only
 ```
 
-A última linha importa: o UART0 é a consola e também o barramento, e depois do arranque o firmware deixa de escrever nele. Aponta o IP (parte 6). O binário tem a palavra-passe do Wi-Fi lá dentro: não o partilhes nem o guardes no projeto.
+The last line matters: UART0 is the console and also the bus, and after boot the firmware stops writing to it. Write down the IP (part 6). The binary has the Wi-Fi password inside it: do not share it or keep it in the project.
 
-## 3. O ESP32 visto do Pi
+## 3. The ESP32 seen from the Pi
 
-Ligado ao Pi, o ESP32 aparece em `/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0` (`lab$ ls /dev/serial/by-id/`). O `/dev/ttyUSB0` também existe, mas o número muda se ligares outro adaptador. Usa-se sempre o caminho por `by-id` (numa placa com CH340 é `usb-1a86_USB_Serial-if00-port0`). O utilizador do `jokerd` tem de poder abrir a porta (grupo `dialout`); o `jk doctor --node lab` verifica-o.
+Connected to the Pi, the ESP32 appears at `/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0` (`lab$ ls /dev/serial/by-id/`). `/dev/ttyUSB0` also exists, but the number changes if you plug in another adapter. Always use the `by-id` path (on a board with a CH340 it is `usb-1a86_USB_Serial-if00-port0`). The `jokerd` user must be able to open the port (group `dialout`); `jk doctor --node lab` checks it.
 
-## 4. O perfil: do mapa de registos ao ficheiro
+## 4. The profile: from the register map to the file
 
-O Modbus não se descreve a si próprio: o que cada registo quer dizer está na ficha técnica, e no Joker essa ficha passa a ser um **perfil** (ref/03 §2.2). Escrever o perfil de um equipamento novo é o trabalho mais comum de um integrador, e faz-se em três passos: importar, rever, testar.
+Modbus does not describe itself: what each register means is in the datasheet, and in Joker that datasheet becomes a **profile** (ref/03 §2.2). Writing the profile of a new piece of equipment is the most common job of an integrator, and it is done in three steps: import, review, test.
 
-### 4.1 Do CSV ao rascunho
+### 4.1 From the CSV to the draft
 
-A tabela do §1, copiada para uma folha de cálculo e exportada para `mapa-esp32.csv`, na raiz do projeto. O cabeçalho é obrigatório e fixo, e as colunas vazias ficam com a omissão:
+The table from §1, copied into a spreadsheet and exported to `mapa-esp32.csv`, at the project root. The header is required and fixed, and empty columns take the default:
 
 ```
 signal,fc,at,type,direction,unit,scale,offset,label,description
 led,5,0,bool,output,,,,,
 led_rb,1,0,bool,,,,,,
 button,2,0,bool,,,,,BOOT,
-touch,4,0,u16,,,,,,valor cru do sensor de toque T0 (GPIO4); desce quando se toca
-rssi,4,1,i16,,,,,,RSSI do Wi-Fi em dBm; 0 sem ligação
+touch,4,0,u16,,,,,,raw value of the T0 touch sensor (GPIO4); drops when touched
+rssi,4,1,i16,,,,,,Wi-Fi RSSI in dBm; 0 without connection
 uptime,4,2,u32,,s,,,,
 fw,3,0,u16,param,,,,,
 ```
 
-- `led` é o coil 0 **escrito** com FC 5; `led_rb` é o mesmo coil **lido** com FC 1. Um perfil separa a escrita da leitura de retorno: é o único caso de dois pontos no mesmo endereço (ref/03 §2.2.5).
-- O `at` é o endereço do protocolo, com base 0. Uma ficha que diga "30001" quer dizer input register 0.
+- `led` is coil 0 **written** with FC 5; `led_rb` is the same coil **read** with FC 1. A profile separates the write from the read-back: it is the only case of two points at the same address (ref/03 §2.2.5).
+- `at` is the protocol address, 0-based. A datasheet that says "30001" means input register 0.
 
 ```sh
 $ jk profile import csv mapa-esp32.csv --name local/bench-esp32 --driver modbus --out profiles/local/bench-esp32@1.profile.toml
 ```
 
 ```
-rascunho escrito em profiles/local/bench-esp32@1.profile.toml: 7 sinais (1 saída, 5 entradas, 1 param)
-rever: [profile] description · [defaults] poll · saída `led` sem readback nem safe_hint ·
-       sem [fallback] · deadband, limits e monotonic não vêm do CSV
+draft written to profiles/local/bench-esp32@1.profile.toml: 7 signals (1 output, 5 inputs, 1 param)
+review: [profile] description · [defaults] poll · output `led` without readback or safe_hint ·
+        no [fallback] · deadband, limits and monotonic do not come from the CSV
 ```
 
-`local/` é o espaço dos perfis do projeto, que nunca se publicam (ref/03 §2.1.2). O importador só sabe o que a tabela diz. O resto é conhecimento sobre o equipamento, e é teu.
+`local/` is the space for the project's profiles, which are never published (ref/03 §2.1.2). The importer only knows what the table says. The rest is knowledge about the equipment, and it is yours.
 
-Repara no nome: `<modelo>@<major>.profile.toml`. É a mesma regra do `joker.sim.toml` e do `sim/pi.sim.toml` da parte 1: o sufixo diz o tipo, e por isso o editor abre o ficheiro já com o esquema de perfil (completação das chaves de `[signals]`, erros enquanto escreves), e o `jk check` recusa com `J0803` um `.profile.toml` que não comece por `[profile]`. O manifesto continua a referi-lo sem sufixo, `profile = "local/bench-esp32@1"`: é a resolução que o acrescenta (ADR 0026).
+Notice the name: `<model>@<major>.profile.toml`. It is the same rule as `joker.sim.toml` and `sim/pi.sim.toml` in part 1: the suffix states the type, so the editor opens the file already with the profile schema (completion of the `[signals]` keys, errors while you type), and `jk check` rejects with `J0803` a `.profile.toml` that does not start with `[profile]`. The manifest keeps referring to it without the suffix, `profile = "local/bench-esp32@1"`: resolution adds it (ADR 0026).
 
-### 4.2 Rever à mão
+### 4.2 Review by hand
 
-O que se acrescenta ao rascunho, e porquê:
+What you add to the draft, and why:
 
-| Onde | O quê | Porquê |
+| Where | What | Why |
 |---|---|---|
-| `[profile]` | `description`, `license` | para quem ler o ficheiro daqui a um ano |
-| `[profile]` | `identity = { firmware = "fw" }` | este Modbus não se descreve a si próprio: o registo `fw` passa a ser a versão do firmware do equipamento, e o lock guarda-a |
-| `[defaults]` | `poll = "100ms"` | um botão lido a 1 s (a omissão) não serve; 100 ms é o ritmo de uma pessoa |
-| `led` | `readback = "led_rb"` | sugere ao manifesto o `verify` da saída (o `jk check` mostra-o) |
-| `led` | `safe_hint = false` | sugestão para o `safe`, mostrada ao lado do `J0201`; **nunca é aplicada** (ADR 0006) |
-| `touch` | `deadband = 5` | o toque é ruidoso: variações de ±5 contagens não são sinal |
-| `uptime` | `monotonic = true` | é um contador: o historian agrega-o pelo último valor, e não pela média |
-| `[fallback]` | `timeout = "2s"`, `value = false` | o que o firmware faz sozinho; o Joker compara-o com o `safe` |
+| `[profile]` | `description`, `license` | for whoever reads the file a year from now |
+| `[profile]` | `identity = { firmware = "fw" }` | this Modbus does not describe itself: the register `fw` becomes the equipment's firmware version, and the lock keeps it |
+| `[defaults]` | `poll = "100ms"` | a button read every 1 s (the default) is no good; 100 ms is the rhythm of a person |
+| `led` | `readback = "led_rb"` | suggests the output's `verify` to the manifest (`jk check` shows it) |
+| `led` | `safe_hint = false` | a suggestion for the `safe`, shown next to `J0201`; **it is never applied** (ADR 0006) |
+| `touch` | `deadband = 5` | touch is noisy: variations of ±5 counts are not signal |
+| `uptime` | `monotonic = true` | it is a counter: the historian aggregates it by the last value, not by the average |
+| `[fallback]` | `timeout = "2s"`, `value = false` | what the firmware does by itself; Joker compares it with the `safe` |
 
-O perfil final:
+The final profile:
 
 ```toml
 # profiles/local/bench-esp32@1.profile.toml
@@ -111,7 +111,7 @@ schema = 1
 name        = "local/bench-esp32"
 version     = "1.0.0"
 driver      = "modbus"
-description = "Firmware de bancada do ESP32 (documento 23, §4): LED, botão, toque, RSSI"
+description = "ESP32 bench firmware (document 23, §4): LED, button, touch, RSSI"
 license     = "Apache-2.0"
 identity    = { firmware = "fw" }
 
@@ -122,8 +122,8 @@ poll = "100ms"
 "led"     = { at = 0, fc = 5, type = "bool", direction = "output", readback = "led_rb", safe_hint = false }
 "led_rb"  = { at = 0, fc = 1, type = "bool" }
 "button"  = { at = 0, fc = 2, type = "bool", label = "BOOT" }
-"touch"   = { at = 0, fc = 4, type = "u16", deadband = 5, description = "valor cru do sensor de toque T0 (GPIO4); desce quando se toca" }
-"rssi"    = { at = 1, fc = 4, type = "i16", description = "RSSI do Wi-Fi em dBm; 0 sem ligação" }
+"touch"   = { at = 0, fc = 4, type = "u16", deadband = 5, description = "raw value of the T0 touch sensor (GPIO4); drops when touched" }
+"rssi"    = { at = 1, fc = 4, type = "i16", description = "Wi-Fi RSSI in dBm; 0 without connection" }
 "uptime"  = { at = 2, fc = 4, type = "u32", unit = "s", monotonic = true }
 "fw"      = { at = 0, fc = 3, type = "u16", direction = "param" }
 
@@ -132,39 +132,39 @@ timeout = "2s"
 value   = false
 ```
 
-É, sinal a sinal, o perfil do documento 23, §4, com o nome do projeto. Repara nos tipos que resultam (ref/03 §2.2.7): `touch` e `fw` ficam `u64`, `rssi` fica `i64`, e `uptime`, por ter unidade, fica `f64` em segundos. O `rssi` é logarítmico e não leva unidade: a descrição diz que é dBm. O `fw` é um `param`, e por isso lê-se só a pedido (`jk read esp.fw --refresh`), e não em cada poll. Sem `applies_to`, o `[fallback]` cobre as saídas do perfil, e aqui há só uma.
+It is, signal by signal, the profile of document 23, §4, with the project's name. Notice the resulting types (ref/03 §2.2.7): `touch` and `fw` become `u64`, `rssi` becomes `i64`, and `uptime`, because it has a unit, becomes `f64` in seconds. `rssi` is logarithmic and takes no unit: the description says it is dBm. `fw` is a `param`, so it is read only on request (`jk read esp.fw --refresh`), and not on every poll. Without `applies_to`, `[fallback]` covers the profile's outputs, and here there is only one.
 
 ### 4.3 `jk profile check`
 
-Um erro clássico ao rever à mão é copiar o FC de leitura para a saída (`"led" = { at = 0, fc = 1, …, direction = "output" }`):
+A classic mistake when reviewing by hand is copying the read FC to the output (`"led" = { at = 0, fc = 1, …, direction = "output" }`):
 
 ```
-error[J0810]: endereço ou código de função inválido para a direção
+error[J0810]: invalid address or function code for the direction
   --> profiles/local/bench-esp32@1.profile.toml:14:13
    |
 14 | "led"     = { at = 0, fc = 1, type = "bool", direction = "output", … }
-   |                       ^^^^^^ FC 1 lê coils; uma saída escreve-se com FC 5 (um coil) ou 15 (vários)
-   = ajuda: fc = 5; para ler o valor de volta, um ponto de entrada no mesmo coil com fc = 1 (`led_rb`)
+   |                       ^^^^^^ FC 1 reads coils; an output is written with FC 5 (one coil) or 15 (several)
+   = help: fc = 5; to read the value back, an input point on the same coil with fc = 1 (`led_rb`)
 ```
 
-Com o `fc = 5`:
+With `fc = 5`:
 
 ```sh
 $ jk profile check profiles/local/bench-esp32@1.profile.toml
 ```
 
 ```
-✓ esquema          7 sinais: 1 saída, 5 entradas, 1 param; [fallback] sobre `led`; identity.firmware = fw
-✓ endereços        coil 0 (escrita e retorno) · discrete 0 · input 0–3 · holding 0; sem sobreposições
-✓ tipos            touch u16→u64 · rssi i16→i64 · uptime u32→f64 s · fw u16→u64
-✓ pedidos (plan)   por poll: FC1 × 1 bit, FC2 × 1 bit, FC4 × 4 registos · a pedido: FC3 × 1 registo
+✓ schema           7 signals: 1 output, 5 inputs, 1 param; [fallback] over `led`; identity.firmware = fw
+✓ addresses        coil 0 (write and read-back) · discrete 0 · input 0–3 · holding 0; no overlaps
+✓ types            touch u16→u64 · rssi i16→i64 · uptime u32→f64 s · fw u16→u64
+✓ requests (plan)  per poll: FC1 × 1 bit, FC2 × 1 bit, FC4 × 4 registers · on request: FC3 × 1 register
 ```
 
-O `check` não precisa do equipamento: valida o esquema, as unidades e o `plan` do driver Modbus, que é puro (ref/03 §3).
+`check` does not need the equipment: it validates the schema, the units and the `plan` of the Modbus driver, which is pure (ref/03 §3).
 
-### 4.4 `jk profile test` no hardware
+### 4.4 `jk profile test` on the hardware
 
-Agora contra o ESP32 real, pelo Pi, só com leituras:
+Now against the real ESP32, through the Pi, with reads only:
 
 ```sh
 $ jk profile test profiles/local/bench-esp32@1.profile.toml --node lab \
@@ -172,61 +172,61 @@ $ jk profile test profiles/local/bench-esp32@1.profile.toml --node lab \
 ```
 
 ```
-sinal    registo    cru      valor     qualidade  latência
+signal   register   raw      value     quality    latency
 led_rb   coil[0]    0        false     good       4 ms
 button   di[0]      0        false     good       4 ms
 touch    in[0]      61       61        good       5 ms
-rssi     in[1]      0xFFCA   -54       good       (mesmo pedido)
-uptime   in[2..3]   1204     1204 s    good       (mesmo pedido)
+rssi     in[1]      0xFFCA   -54       good       (same request)
+uptime   in[2..3]   1204     1204 s    good       (same request)
 fw       hr[0]      1        1         good       4 ms
-led      coil[0]    —        (saída: um teste não escreve)
-3 pedidos por poll + 1 a pedido · latência medida 4–5 ms (o perfil assume a omissão, 10 ms)
+led      coil[0]    —        (output: a test does not write)
+3 requests per poll + 1 on request · measured latency 4–5 ms (the profile assumes the default, 10 ms)
 ```
 
-Corre-o outra vez com o `BOOT` premido (`button` a `true`) e outra com um dedo no pino GPIO4 (`touch` desce para ~15). Os três números batem com o mundo, e o perfil está certo.
+Run it again with `BOOT` pressed (`button` at `true`) and again with a finger on pin GPIO4 (`touch` drops to ~15). The three numbers match the world, and the profile is right.
 
-## 5. O ESP32 no simulador
+## 5. The ESP32 in the simulator
 
-Um modelo de simulação pode reutilizar os sinais de um perfil (`[model] profile = "local/bench-esp32@1"`, ref/03 §2.4). Aqui repetem-se de propósito, com os mesmos nomes e os tipos que o núcleo vê, porque o modelo precisa de dizer mais do que o perfil: o painel, o ruído, o ressalto e a dinâmica.
+A simulation model can reuse the signals of a profile (`[model] profile = "local/bench-esp32@1"`, ref/03 §2.4). Here they are repeated on purpose, with the same names and the types the core sees, because the model needs to say more than the profile: the panel, the noise, the bounce and the dynamics.
 
 ```toml
 # sim/esp.sim.toml
 schema = 1
 
 [model]
-description = "ESP32 com o firmware de bancada (documento 23, §4)"
+description = "ESP32 with the bench firmware (document 23, §4)"
 
 [signals]
-led    = { type = "bool", direction = "output", panel = { label = "LED ESP32", kind = "lamp" } }
+led    = { type = "bool", direction = "output", panel = { label = "ESP32 LED", kind = "lamp" } }
 led_rb = { type = "bool" }
 button = { type = "bool", init = false, bounce = "5ms", panel = { label = "BOOT", kind = "momentary", key = "b" } }
 touch  = { type = "u64", init = 60, noise = 1, resolution = 1,
-           panel = { label = "Toque", kind = "slider", keys = ["down", "up"], step = 5, min = 0, max = 100 } }
+           panel = { label = "Touch", kind = "slider", keys = ["down", "up"], step = 5, min = 0, max = 100 } }
 rssi   = { type = "i64", gen = { kind = "noise", mean = -55, std = 3 } }
 uptime = { type = "f64", unit = "s", init = 0 }
 fw     = { type = "u64", direction = "param", init = 1 }
 
 [dynamics]
-led_rb = "led"                     # o retorno segue o valor aplicado
-uptime = "integrate(1)"            # 1 s por segundo
+led_rb = "led"                     # the read-back follows the applied value
+uptime = "integrate(1)"            # 1 s per second
 
 [faults]
-panel = { key = "d", disconnect = true }   # "d" simula o ESP32 desligado (parte 5)
+panel = { key = "d", disconnect = true }   # "d" simulates the ESP32 disconnected (part 5)
 ```
 
 ```toml
-# joker.sim.toml (acrescentar)
+# joker.sim.toml (add)
 [devices.esp]
 driver = "sim"
 model  = "sim/esp.sim.toml"
 ```
 
-O `bounce = "5ms"` põe o ressalto de um botão real no portátil, para o bug aparecer aqui e não só na bancada.
+`bounce = "5ms"` puts the bounce of a real button on the laptop, so that the bug shows up here and not only on the bench.
 
-## 6. O manifesto comum
+## 6. The common manifest
 
 ```toml
-# joker.toml (acrescentar)
+# joker.toml (add)
 [outputs."esp.led"]
 safe = false
 
@@ -240,30 +240,30 @@ params = { half_period = "500 ms", t_frio = "45 °C", t_quente = "70 °C" }
 cycles = { pisca = "main" }
 ```
 
-Esquece o `[outputs."esp.led"]` e o `jk check` lembra-te, com a sugestão do perfil:
+Forget `[outputs."esp.led"]` and `jk check` reminds you, with the profile's suggestion:
 
 ```
-error[J0201]: saída sem `safe`
+error[J0201]: output without `safe`
   --> joker.toml:26:1
-   = nota: `esp.led` é uma saída do perfil local/bench-esp32@1
-   = ajuda: o perfil sugere `safe = false` (safe_hint); escreve em [outputs."esp.led"] o valor que é seguro neste site
+   = note: `esp.led` is an output of the profile local/bench-esp32@1
+   = help: the profile suggests `safe = false` (safe_hint); write in [outputs."esp.led"] the value that is safe on this site
 ```
 
-O `debounce` fica no comum, para os dois mundos se comportarem igual. O driver Modbus não faz debounce, e por isso é o estágio de aquisição que o faz (ref/06 §2.4): num `bool` lido por poll, o valor só muda depois de leituras consecutivas iguais que cubram pelo menos o `debounce` (ref/01, chave `debounce`; documento 16). No simulador, apaga o ressalto de 5 ms; no hardware, com um poll de 100 ms, são duas leituras seguidas iguais, e uma leitura isolada a meio de um ressalto não passa. O custo é uma leitura de atraso: ~100 ms entre carregar e o sistema ver.
+The `debounce` stays in the common part, so that both worlds behave the same. The Modbus driver does not debounce, so it is the acquisition stage that does it (ref/06 §2.4): on a `bool` read by poll, the value only changes after consecutive equal readings that cover at least the `debounce` (ref/01, key `debounce`; document 16). In the simulator, it erases the 5 ms bounce; on the hardware, with a 100 ms poll, it is two equal readings in a row, and an isolated reading in the middle of a bounce does not get through. The cost is one reading of delay: ~100 ms between pressing and the system seeing it.
 
-## 7. A app, versão 0.3
+## 7. The app, version 0.3
 
-Regra: cada flanco de subida do botão liga ou desliga o sistema; desligado, o `ACT` fica apagado; o LED do ESP32 mostra se está ligado.
+Rule: each rising edge of the button turns the system on or off; when off, the `ACT` stays off; the ESP32's LED shows whether it is on.
 
 ```rust
-// apps/luz/src/lib.rs — o que muda face à 0.2
+// apps/luz/src/lib.rs — what changes compared with 0.2
 #[joker::app(name = "luz", version = "0.3.0")]
 pub struct Luz {
     #[output] led: Output<bool>,
     #[input(unit = "°C")] temp: Input<f64>,
     #[input] botao: Input<bool>,
     #[output] led_estado: Output<bool>,
-    // half_period, t_frio, t_quente: como na 0.2
+    // half_period, t_frio, t_quente: as in 0.2
 }
 
 #[derive(Default)]
@@ -275,20 +275,20 @@ struct Pisca {
 }
 
 fn arranque(_io: &CycleIo<Luz>) -> Pisca {
-    Pisca { ligado: true, ..Default::default() }     // arranca ligado, como a 0.2
+    Pisca { ligado: true, ..Default::default() }     // starts on, like 0.2
 }
 
 #[joker::cycle(period = "20ms", wcet = "5us", init = arranque)]
 fn pisca(io: &mut CycleIo<Luz>, st: &mut Pisca) -> Result<()> {
-    // 1. As duas entradas antes de qualquer proposta: sem elas, nada é proposto neste tick.
+    // 1. Both inputs before any proposal: without them, nothing is proposed in this tick.
     let t = io.temp.get()?;
     let premido = io.botao.get()?;
 
-    // 2. Flanco de subida: premido agora, solto no tick anterior.
+    // 2. Rising edge: pressed now, released in the previous tick.
     if premido && !st.premido_antes {
         st.ligado = !st.ligado;
         st.elapsed_ms = 0.0;
-        st.on = st.ligado;                       // ao ligar, acende logo: feedback imediato
+        st.on = st.ligado;                       // when turning on, light up at once: immediate feedback
     }
     st.premido_antes = premido;
     io.led_estado.set(st.ligado);
@@ -297,7 +297,7 @@ fn pisca(io: &mut CycleIo<Luz>, st: &mut Pisca) -> Result<()> {
         io.led.set(false);
         return Ok(());
     }
-    // 3. O pisca da 0.2, sem mudanças.
+    // 3. The blink from 0.2, unchanged.
     let (frio, quente) = (io.t_frio.get(), io.t_quente.get());
     let x = ((t - frio) / (quente - frio)).clamp(0.0, 1.0);
     let meio = io.half_period.get() + x * (RAPIDO_MS - io.half_period.get());
@@ -314,25 +314,25 @@ fn pisca(io: &mut CycleIo<Luz>, st: &mut Pisca) -> Result<()> {
 }
 ```
 
-- **O flanco vive no estado da tarefa** (`premido_antes`), porque o `ligado` é memória da app. O manifesto também tem `rose(cond)` nas expressões, e serve para alarmes e permissivos (documento 02, §10), mas quem decide o que uma pressão faz é a app.
-- **Arranca ligado** (`init = arranque`), para que o `pisca.scenario.toml` e o `aquece.scenario.toml` passem sem alterações.
-- **`botao` com `get()?`**: sem ESP32, a app deixa de propor nas **duas** saídas, e os dois LEDs vão para `safe`. É uma escolha deliberadamente dura; a parte 5 torna a app tolerante a falhas do ESP32.
+- **The edge lives in the task state** (`premido_antes`), because `ligado` is the app's memory. The manifest also has `rose(cond)` in expressions, and it serves alarms and permissives (document 02, §10), but what a press does is decided by the app.
+- **It starts on** (`init = arranque`), so that `pisca.scenario.toml` and `aquece.scenario.toml` pass unchanged.
+- **`botao` with `get()?`**: without the ESP32, the app stops proposing on **both** outputs, and both LEDs go to `safe`. It is a deliberately harsh choice; part 5 makes the app tolerant of ESP32 faults.
 
-## 8. Cenário `botao.scenario.toml`
+## 8. Scenario `botao.scenario.toml`
 
 ```toml
 # sim/scenarios/botao.scenario.toml
 schema = 1
 
 [scenario]
-name     = "o BOOT liga e desliga o sistema; o LED do ESP32 mostra o estado"
+name     = "BOOT turns the system on and off; the ESP32 LED shows the state"
 manifest = "joker.sim.toml"
 duration = "8s"
 
 [[expect]]
 during = "0.5s .. 1.9s"
 signal = "esp.led"
-equals = true                        # arranca ligado
+equals = true                        # starts on
 [[press]]
 signal = "esp.button"
 at     = "2s"
@@ -344,7 +344,7 @@ equals = false
 [[expect]]
 during = "2.2s .. 3.9s"
 signal = "pi.act_led"
-equals = false                       # desligado: ACT apagado
+equals = false                       # off: ACT off
 [[press]]
 signal = "esp.button"
 at     = "4s"
@@ -352,11 +352,11 @@ for    = "300ms"
 [[expect]]
 during        = "4.5s .. 8s"
 signal        = "pi.act_led"
-toggles_every = "500ms ± 20ms"       # ligado outra vez, a 45 °C
+toggles_every = "500ms ± 20ms"       # on again, at 45 °C
 [[expect]]
 during  = "1s .. 8s"
 signal  = "esp.led"
-toggles = 2                          # duas pressões, dois flancos: o ressalto não conta
+toggles = 2                          # two presses, two edges: the bounce does not count
 ```
 
 ```sh
@@ -366,21 +366,21 @@ $ jk test
 ```
 apps/luz (cargo test) ........................ ok
 sim/scenarios/pisca.scenario.toml ..................... ok
-sim/scenarios/aquece.scenario.toml .................... ok (460 s simulados em 0,5 s)
-sim/scenarios/botao.scenario.toml ..................... ok (8 s simulados em 14 ms)
+sim/scenarios/aquece.scenario.toml .................... ok (460 simulated s in 0.5 s)
+sim/scenarios/botao.scenario.toml ..................... ok (8 simulated s in 14 ms)
 ```
 
-Tira o `debounce` do `joker.toml` e corre outra vez: o `toggles = 2` falha em algumas pressões (`J0842`), com o instante e a cadeia de decisão no relatório. É o ressalto, apanhado no portátil. No `jk dev --env sim --panel`, a tecla `b` é o `BOOT`.
+Remove the `debounce` from `joker.toml` and run again: `toggles = 2` fails on some presses (`J0842`), with the instant and the decision chain in the report. That is the bounce, caught on the laptop. In `jk dev --env sim --panel`, the `b` key is `BOOT`.
 
-## 9. No Pi 3
+## 9. On the Pi 3
 
 ```toml
-# joker.lab.toml (acrescentar)
+# joker.lab.toml (add)
 [buses.esp32]
 kind = "serial"
 port = "/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0"
 baud = 115200
-dtr  = "low"            # a omissão, escrita por extenso: abrir a porta não reinicia o ESP32
+dtr  = "low"            # the default, written out in full: opening the port does not reset the ESP32
 rts  = "low"
 
 [devices.esp]
@@ -390,40 +390,40 @@ unit_id = 1
 profile = "local/bench-esp32@1"
 ```
 
-Nas placas ESP32, o DTR e o RTS da ponte USB-série estão ligados ao `EN` e ao `GPIO0`: é o *auto-reset* que o `espflash` usa para gravar. Com `"low"` (a omissão, ref/01 §5.6), o `jokerd` abre a porta sem os acionar, e o ESP32 não reinicia cada vez que o nó arranca. `"keep"` deixa-os como o kernel os tiver.
+On ESP32 boards, the DTR and RTS of the USB-serial bridge are wired to `EN` and `GPIO0`: it is the *auto-reset* that `espflash` uses to flash. With `"low"` (the default, ref/01 §5.6), `jokerd` opens the port without asserting them, and the ESP32 does not reset every time the node starts. `"keep"` leaves them as the kernel has them.
 
 ```sh
 $ jk check --env lab
 ```
 
 ```
-✓ manifesto          2 dispositivos (sysfs, modbus-rtu), 2 saídas, 1 app, 1 grupo, 1 calc, 1 alarme
-✓ ligações           luz: led → pi.act_led · temp → calc.temp_media (°C) · botao → esp.button · led_estado → esp.led
-✓ perfil             local/bench-esp32@1 · fallback do equipamento: esp.led → false em 2 s (coerente com safe)
-✓ barramento esp32   115200 8N1, poll 100 ms: FC1 (14 B), FC2 (14 B), FC4 (21 B)
-                     4,3 ms no fio + 3 × 0,3 ms de silêncio + 3 × 10 ms de latência (omissão) ≈ 35 ms
-                     + keepalive de esp.led (FC5, 16 B) a cada 400 ms ≈ 3 ms por poll
-                     → ocupação 38 % (máximo 80 %)
-nota: `esp.led` tem readback sugerido pelo perfil: verify = { readback = "esp.led_rb" }
-aviso[W0205]: `pi.act_led` não tem fallback do dispositivo                    (o da parte 2)
-aviso[W0451]: o perfil de `esp` declara [fallback], mas o lock não o tem verificado
-   = ajuda: jk lock --env lab --node lab
+✓ manifest           2 devices (sysfs, modbus-rtu), 2 outputs, 1 app, 1 group, 1 calc, 1 alarm
+✓ bindings           luz: led → pi.act_led · temp → calc.temp_media (°C) · botao → esp.button · led_estado → esp.led
+✓ profile            local/bench-esp32@1 · equipment fallback: esp.led → false in 2 s (consistent with safe)
+✓ bus esp32          115200 8N1, poll 100 ms: FC1 (14 B), FC2 (14 B), FC4 (21 B)
+                     4.3 ms on the wire + 3 × 0.3 ms of silence + 3 × 10 ms of latency (default) ≈ 35 ms
+                     + keepalive of esp.led (FC5, 16 B) every 400 ms ≈ 3 ms per poll
+                     → occupancy 38% (maximum 80%)
+note: `esp.led` has a readback suggested by the profile: verify = { readback = "esp.led_rb" }
+warning[W0205]: `pi.act_led` has no device fallback                           (the one from part 2)
+warning[W0451]: the profile of `esp` declares [fallback], but the lock does not have it verified
+   = help: jk lock --env lab --node lab
 ```
 
-Lê o orçamento com calma (documento 05, §5): o que pesa não são os bytes, é a latência do escravo, que o perfil deixa na omissão de 10 ms; o `jk profile test` mediu 4–5 ms. Com um poll de 20 ms, a mesma conta daria perto de 190 %, e o `jk check` recusava (`J0370`).
+Read the budget calmly (document 05, §5): what weighs is not the bytes, it is the server's latency, which the profile leaves at the 10 ms default; `jk profile test` measured 4–5 ms. With a 20 ms poll, the same calculation would give close to 190%, and `jk check` would reject it (`J0370`).
 
-E repara no que **não** aparece: não há `W0205` para o `esp.led`. Com o `[fallback]` declarado no perfil, essa saída **tem** fallback do equipamento, ao contrário do `ACT` da parte 2. O `W0451` só diz que ainda ninguém o confirmou no nó:
+And notice what does **not** appear: there is no `W0205` for `esp.led`. With `[fallback]` declared in the profile, that output **has** an equipment fallback, unlike the `ACT` of part 2. The `W0451` only says that nobody has confirmed it on the node yet:
 
 ```sh
 $ jk lock --env lab --node lab
 ```
 
 ```
-joker.lab.lock: perfil local/bench-esp32@1 (1.0.0, path:) · fallback.esp capturado (esp.led → false em 2 s) · discovered.esp firmware "1"
+joker.lab.lock: profile local/bench-esp32@1 (1.0.0, path:) · fallback.esp captured (esp.led → false in 2 s) · discovered.esp firmware "1"
 ```
 
 ```toml
-# joker.lab.lock (excerto; o [profiles."local/bench-esp32@1"] tem a forma do [boards] da parte 2)
+# joker.lab.lock (excerpt; [profiles."local/bench-esp32@1"] has the shape of [boards] in part 2)
 [fallback.esp]
 outputs = ["esp.led"]
 timeout = "2s"
@@ -435,7 +435,7 @@ verified = "2026-09-25T11:04:12Z"
 firmware = "1"
 ```
 
-O lock fixa o digest do ficheiro do perfil (mudar um registo sem mudar o lock é `J0420`) e o fallback visto no equipamento; `configured = false` porque o firmware tem o fallback fixo, e o núcleo só o lê e compara (ref/02 §2.1.12). O firmware do equipamento vem do `identity` do perfil: o `jk lock --node` leu o `fw` (`1`) e escreveu-o em `[discovered.esp]` (ref/02 §2.1.11). Se um dia o ESP32 aparecer com outro firmware, é a deriva `J0401 kind=firmware`, sem descoberta nenhuma (ref/03 §2.2.2).
+The lock pins the digest of the profile file (changing a register without changing the lock is `J0420`) and the fallback seen on the equipment; `configured = false` because the firmware has a fixed fallback, and the core only reads it and compares it (ref/02 §2.1.12). The equipment's firmware comes from the profile's `identity`: `jk lock --node` read `fw` (`1`) and wrote it into `[discovered.esp]` (ref/02 §2.1.11). If one day the ESP32 shows up with another firmware, it is the drift `J0401 kind=firmware`, without any discovery (ref/03 §2.2.2).
 
 ```sh
 $ jk build --target rpi3b-plus
@@ -446,40 +446,40 @@ $ jk read 'esp.*' --watch --node lab
 
 ```
 esp.led      true      good    (control:12 · luz)
-esp.led_rb   true      good    idade 0,07 s
-esp.button   false     good    idade 0,07 s
-…            (touch 61, rssi -54, uptime 1 391 s: good, idade 0,07 s; fw 1, param, a pedido)
+esp.led_rb   true      good    age 0.07 s
+esp.button   false     good    age 0.07 s
+…            (touch 61, rssi -54, uptime 1,391 s: good, age 0.07 s; fw 1, param, on request)
 ```
 
-Carrega no `BOOT`: o LED do ESP32 apaga-se, o `ACT` também. Outra vez: voltam os dois.
+Press `BOOT`: the ESP32's LED goes off, and so does the `ACT`. Again: both come back.
 
-**O fallback, a sério.** Com o sistema ligado (LED do ESP32 aceso), mata o `jokerd` sem lhe dar tempo de pôr nada em `safe`, e impede o systemd de o reiniciar:
+**The fallback, for real.** With the system on (ESP32 LED on), kill `jokerd` without giving it time to put anything in `safe`, and prevent systemd from restarting it:
 
 ```sh
 lab$ sudo systemctl kill -s KILL jokerd; sudo systemctl stop jokerd
 ```
 
-Em 2 s, o LED do ESP32 apaga-se. Ninguém lho mandou: o firmware deixou de receber pedidos e aplicou o seu fallback. O `ACT`, esse, fica como estava, porque o LED de uma placa não tem watchdog (parte 2). É a terceira camada do estado seguro, a funcionar num equipamento e a faltar no outro, exatamente como o `jk check` disse. `sudo systemctl start jokerd` repõe tudo.
+Within 2 s, the ESP32's LED goes off. Nobody told it to: the firmware stopped receiving requests and applied its fallback. The `ACT`, on the other hand, stays as it was, because a board's LED has no watchdog (part 2). It is the third layer of the safe state, working on one piece of equipment and missing on the other, exactly as `jk check` said. `sudo systemctl start jokerd` restores everything.
 
-## 10. O que aconteceu por baixo
+## 10. What happened underneath
 
-- **O perfil é do modelo de equipamento; o manifesto é do site.** O perfil diz endereços, tipos, escalas, retorno e fallback; o manifesto diz o `safe`, o debounce e as ligações (ref/03 §2.2; ref/01 §5.8.1). O `safe_hint` só sugere: o `safe` é sempre uma decisão escrita de quem instala (ADR 0006).
-- **Aquisição.** O driver entrega crus; o estágio de aquisição aplica tipo, deadband e debounce pela ordem da ref/03 §3, e a qualidade do link por cima (documento 05, §12).
-- **Barramento.** Um barramento série serializa: um pedido de cada vez, com prioridade às escritas (documento 05, §5). Os quatro input registers leem-se num só pedido, porque são contíguos e do mesmo FC. Uma saída não se lê em ciclo: o seu valor é o aplicado, e o retorno é outro ponto.
-- **Escritas.** A app propõe o `esp.led` a cada 20 ms, mas só vai ao fio quando muda, mais o keepalive (01 §8), que mantém o equipamento a ver pedidos mesmo com o LED parado.
-- **Fallback (M1).** O núcleo compara o fallback do perfil com o `safe` e o `safer` (`J0205`), o lock fixa-o, e a deriva é `J0401 kind=fallback` (ref/02 §3.1.5).
+- **The profile belongs to the equipment model; the manifest belongs to the site.** The profile states addresses, types, scales, read-back and fallback; the manifest states the `safe`, the debounce and the bindings (ref/03 §2.2; ref/01 §5.8.1). `safe_hint` only suggests: the `safe` is always a written decision of whoever installs (ADR 0006).
+- **Acquisition.** The driver delivers raw values; the acquisition stage applies type, deadband and debounce in the order of ref/03 §3, and the link quality on top (document 05, §12).
+- **Bus.** A serial bus serializes: one request at a time, with priority to writes (document 05, §5). The four input registers are read in a single request, because they are contiguous and of the same FC. An output is not read in a cycle: its value is the applied one, and the read-back is another point.
+- **Writes.** The app proposes `esp.led` every 20 ms, but it only goes to the wire when it changes, plus the keepalive (01 §8), which keeps the equipment seeing requests even with the LED unchanged.
+- **Fallback (M1).** The core compares the profile's fallback with the `safe` and the `safer` (`J0205`), the lock pins it, and the drift is `J0401 kind=fallback` (ref/02 §3.1.5).
 
-## 11. Exercícios
+## 11. Exercises
 
-1. Com o sistema desligado, escreve `true` no coil 0 pelo Modbus TCP do Wi-Fi (o firmware serve os dois ao mesmo tempo), com uma ferramenta como o `mbpoll`. O LED do ESP32 acende e volta a apagar: em quanto tempo, e quem o apagou? Acrescenta depois `verify = { readback = "esp.led_rb" }` ao `[outputs."esp.led"]` e repete.
-2. Com a latência medida no `jk profile test`, acrescenta `quirks = { latency = "5ms" }` a uma **cópia** do perfil (`local/bench-esp32-rapido@1`) e compara a ocupação no `jk check`. Qual é o poll mínimo que cabe em 80 %?
-3. Faz com que uma pressão longa (> 2 s) no `BOOT` ponha o sistema em "pisca sempre rápido", até à próxima pressão. Escreve primeiro o cenário.
-4. Repete o teste do fallback com o sistema desligado (LED do ESP32 apagado). O que prova, e o que não prova?
+1. With the system off, write `true` to coil 0 through the Wi-Fi Modbus TCP (the firmware serves both at the same time), with a tool like `mbpoll`. The ESP32's LED turns on and off again: in how long, and who turned it off? Then add `verify = { readback = "esp.led_rb" }` to `[outputs."esp.led"]` and repeat.
+2. With the latency measured in `jk profile test`, add `quirks = { latency = "5ms" }` to a **copy** of the profile (`local/bench-esp32-rapido@1`) and compare the occupancy in `jk check`. What is the minimum poll that fits in 80%?
+3. Make a long press (> 2 s) on `BOOT` put the system into "always blink fast", until the next press. Write the scenario first.
+4. Repeat the fallback test with the system off (ESP32 LED off). What does it prove, and what does it not prove?
 
 ```sh
-$ git add -A && git commit -qm "trilha(04): ESP32 como equipamento Modbus RTU; perfil local/bench-esp32; luz 0.3"
+$ git add -A && git commit -qm "track(04): ESP32 as Modbus RTU equipment; profile local/bench-esp32; luz 0.3"
 ```
 
-**Estado no fim desta parte:** app `luz` 0.3.0, no lab na geração 4; `profiles/local/bench-esp32@1.profile.toml` (e o `mapa-esp32.csv` de onde saiu); `sim/esp.sim.toml` e o `[devices.esp]` no `joker.sim.toml`; `joker.toml` com `[outputs."esp.led"]`, o debounce de `esp.button` e o `bind` novo; `joker.lab.toml` com `[buses.esp32]` (com `dtr`/`rts`) e `[devices.esp]`; `joker.lab.lock` com o perfil, o `[fallback.esp]` e o `[discovered.esp]`; cenário novo `sim/scenarios/botao.scenario.toml`.
+**State at the end of this part:** app `luz` 0.3.0, on lab at generation 4; `profiles/local/bench-esp32@1.profile.toml` (and the `mapa-esp32.csv` it came from); `sim/esp.sim.toml` and `[devices.esp]` in `joker.sim.toml`; `joker.toml` with `[outputs."esp.led"]`, the debounce of `esp.button` and the new `bind`; `joker.lab.toml` with `[buses.esp32]` (with `dtr`/`rts`) and `[devices.esp]`; `joker.lab.lock` with the profile, `[fallback.esp]` and `[discovered.esp]`; new scenario `sim/scenarios/botao.scenario.toml`.
 
-**Próximo:** [Parte 5 — o toque como ajuste, qualidade, falhas, fallback e replay](05-touch-and-faults.md).
+**Next:** [Part 5 — touch as an adjustment, quality, faults, fallback and replay](05-touch-and-faults.md).
