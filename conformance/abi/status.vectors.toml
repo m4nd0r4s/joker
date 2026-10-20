@@ -1,0 +1,396 @@
+schema = 1
+
+[vectors]
+kind        = "abi.status"
+id          = "abi.status"
+spec        = ["ref/08 §2.7"]
+hosts       = ["linux", "mcu"]
+description = "jk_status_t: every value, its macro, its registry code and severity; jk_status_str must name the code"
+
+[[vector]]
+id       = "jk_ok"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_OK"
+value    = 0
+
+[[vector]]
+id       = "jk_empty"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_EMPTY"
+value    = 1
+
+[[vector]]
+id       = "jk_pending"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_PENDING"
+value    = 2
+
+[[vector]]
+id       = "jk_relinquished"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_RELINQUISHED"
+value    = 3
+
+[[vector]]
+id       = "jk_e_arg"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_ARG"
+value    = -1
+code     = "J-E2501"
+severity = "error"
+
+[[vector]]
+id       = "jk_e_state"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_STATE"
+value    = -2
+code     = "J-E2502"
+severity = "error"
+
+[[vector]]
+id       = "jk_e_abi"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_ABI"
+value    = -3
+code     = "J-E2503"
+severity = "error"
+
+[[vector]]
+id       = "jk_e_align"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_ALIGN"
+value    = -4
+code     = "J-E2504"
+severity = "error"
+
+[[vector]]
+id       = "jk_e_unsupported"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_UNSUPPORTED"
+value    = -5
+code     = "J-E2505"
+severity = "error"
+
+[[vector]]
+id       = "jk_e_reentrant"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_REENTRANT"
+value    = -6
+code     = "J-E2506"
+severity = "error"
+
+[[vector]]
+id       = "jk_e_halted"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_HALTED"
+value    = -7
+code     = "J-E2507"
+severity = "error"
+
+[[vector]]
+id       = "jk_e_gen_format"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_GEN_FORMAT"
+value    = -10
+code     = "J-E2510"
+severity = "error"
+
+[[vector]]
+id       = "jk_e_gen_version"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_GEN_VERSION"
+value    = -11
+code     = "J-E2511"
+severity = "error"
+
+[[vector]]
+id       = "jk_e_gen_capacity"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_GEN_CAPACITY"
+value    = -12
+code     = "J-E2512"
+severity = "error"
+
+[[vector]]
+id       = "jk_e_gen_signature"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_GEN_SIGNATURE"
+value    = -13
+code     = "J-E2513"
+severity = "error"
+
+[[vector]]
+id       = "jk_e_gen_trust"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_GEN_TRUST"
+value    = -14
+code     = "J-E2514"
+severity = "error"
+
+[[vector]]
+id       = "jk_e_gen_rollback"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_GEN_ROLLBACK"
+value    = -15
+code     = "J-E2515"
+severity = "error"
+
+[[vector]]
+id       = "jk_e_gen_firmware"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_GEN_FIRMWARE"
+value    = -16
+code     = "J-E2516"
+severity = "error"
+
+[[vector]]
+id       = "jk_e_gen_node"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_GEN_NODE"
+value    = -17
+code     = "J-E2517"
+severity = "error"
+
+[[vector]]
+id       = "jk_e_gen_integrity"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_GEN_INTEGRITY"
+value    = -18
+code     = "J-E2518"
+severity = "error"
+
+[[vector]]
+id       = "jk_e_signal"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_SIGNAL"
+value    = -20
+code     = "J-E2520"
+severity = "error"
+
+[[vector]]
+id       = "jk_e_direction"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_DIRECTION"
+value    = -21
+code     = "J-E2521"
+severity = "error"
+
+[[vector]]
+id       = "jk_e_type"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_TYPE"
+value    = -22
+code     = "J-E2522"
+severity = "error"
+
+[[vector]]
+id       = "jk_e_group"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_GROUP"
+value    = -23
+code     = "J-E2523"
+severity = "error"
+
+[[vector]]
+id       = "jk_e_time"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_TIME"
+value    = -24
+code     = "J-E2524"
+severity = "error"
+
+[[vector]]
+id       = "jk_e_full"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_FULL"
+value    = -25
+code     = "J-E2525"
+severity = "error"
+
+[[vector]]
+id       = "jk_e_not_found"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_NOT_FOUND"
+value    = -26
+code     = "J-E2526"
+severity = "error"
+
+[[vector]]
+id       = "jk_e_args"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_ARGS"
+value    = -27
+code     = "J-E2527"
+severity = "error"
+
+[[vector]]
+id       = "jk_e_value"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_VALUE"
+value    = -28
+code     = "J-E2528"
+severity = "error"
+
+[[vector]]
+id       = "jk_e_quality"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_QUALITY"
+value    = -29
+code     = "J-E2529"
+severity = "error"
+
+[[vector]]
+id       = "jk_e_param"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_PARAM"
+value    = -30
+code     = "J-E2530"
+severity = "error"
+
+[[vector]]
+id       = "jk_e_ttl"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_TTL"
+value    = -31
+code     = "J-E2531"
+severity = "error"
+
+[[vector]]
+id       = "jk_e_level"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_LEVEL"
+value    = -32
+code     = "J-E2532"
+severity = "error"
+
+[[vector]]
+id       = "jk_e_busy"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_BUSY"
+value    = -33
+code     = "J-E2533"
+severity = "error"
+
+[[vector]]
+id       = "jk_e_persist"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_PERSIST"
+value    = -40
+code     = "J-E2540"
+severity = "error"
+
+[[vector]]
+id       = "jk_e_persist_corrupt"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_PERSIST_CORRUPT"
+value    = -41
+code     = "J-E2541"
+severity = "warning"
+
+[[vector]]
+id       = "jk_e_persist_full"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_PERSIST_FULL"
+value    = -42
+code     = "J-E2542"
+severity = "error"
+
+[[vector]]
+id       = "jk_e_link"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_LINK"
+value    = -50
+code     = "J-E2550"
+severity = "warning"
+
+[[vector]]
+id       = "jk_e_link_auth"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_LINK_AUTH"
+value    = -51
+code     = "J-E2551"
+severity = "error"
+
+[[vector]]
+id       = "jk_e_link_version"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_LINK_VERSION"
+value    = -52
+code     = "J-E2552"
+severity = "error"
+
+[[vector]]
+id       = "jk_e_link_down"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_LINK_DOWN"
+value    = -53
+code     = "J-E2553"
+severity = "warning"
+
+[[vector]]
+id       = "jk_e_ota"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_OTA"
+value    = -60
+code     = "J-E2560"
+severity = "error"
+
+[[vector]]
+id       = "jk_e_ota_verify"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_OTA_VERIFY"
+value    = -61
+code     = "J-E2561"
+severity = "error"
+
+[[vector]]
+id       = "jk_e_internal"
+op       = "status"
+spec     = ["ref/08 §2.7"]
+macro    = "JK_E_INTERNAL"
+value    = -99
+code     = "J-E2599"
+severity = "error"
