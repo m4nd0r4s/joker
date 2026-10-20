@@ -201,7 +201,7 @@ A linguagem é a do documento 02, §10, com os casos-limite do documento 16, §4
 - **Referências** (`model:`, `pipe:`, `class:`) não são caminhos (16, P4) e não aparecem em expressões, exceto nas funções de modelo das posições 1.1 (`good(model:m)`, `ood_ratio(model:m, 15m)`, `model_threshold(m)`).
 - **Grupo de avaliação:** as expressões de uma saída correm no grupo dono dela (A11); `calc` e alarmes correm no grupo mais rápido que os consome, ou no grupo implícito `calc` (100 ms), ou no grupo indicado por `group` (§5.13, §5.14).
 - **Dependências entre `calc`** formam um grafo acíclico; um ciclo é `J0190`.
-- Uma expressão com erro de sintaxe é `J0158`; sinal desconhecido `J0302`; variante desconhecida `J0303`; dimensões `J0301`; janela acima do máximo `J0305`.
+- Uma expressão com erro de sintaxe é `J0158`; sinal desconhecido `J0302`; variante desconhecida `J0303`; dimensões `J0301`; tipos `J0304`; janela acima do máximo `J0305`; função ou argumentos `J0307`. As regras de tipos e a semântica das janelas e das funções com estado estão na ADR 0034.
 
 ### 3.8 Caminhos e nomes
 
@@ -1541,7 +1541,7 @@ Depois da fusão (§7), o `jk check` constrói o manifesto efetivo por esta orde
 | 5 | expandir os seletores, materializar as omissões (A9, A11, escritores, leases, grupos implícitos) | `J0155`, `J0156` |
 | 6 | ligações, parâmetros, instâncias | `J0107`–`J0130`, `J018x`, `J019x`, `J06xx` |
 | 7 | envelopes, árbitro, fallback, grupos atómicos | `J02xx` |
-| 8 | expressões (tipos, unidades, janelas) | `J03xx` (0301–0306) |
+| 8 | expressões (tipos, unidades, janelas) | `J03xx` (0301–0307) |
 | 9 | ciclos, admissão RT, barramentos, memória | `J028x`, `J0350`–`J0380` |
 | 10 | regras de `prod` (assinaturas, lock, segredos, TLS) | `error-in-prod` |
 
@@ -1650,8 +1650,10 @@ doc      = "01 §8"
 | `J0301` | error | expressão com dimensões incompatíveis | expressões | 03 §15 |
 | `J0302` | error | sinal desconhecido numa expressão | expressões, `message` | 02 §10 |
 | `J0303` | error | enum sem essa variante | expressões, `Valor` | 02 §10 |
+| `J0304` | error | expressão com tipos incompatíveis (operando, enum de outro tipo, sinal ilegível, resultado de tipo errado) | expressões | ADR 0034 |
 | `J0305` | error | janela acima do máximo (15 min) | expressões | 16 §4 |
 | `J0306` | error | `own()` fora de um método de classe | expressões | 16 §4 |
+| `J0307` | error | função desconhecida, aridade errada, ou argumento que tem de ser caminho, duração ou constante | expressões | ADR 0034 |
 | `J0350` | error | grupo de ciclo não escalonável (M23) | `cycles` | 03 §15 |
 | `J0351` | error | grupo < 10 ms sem `kernel = "preempt_rt"` | `cycles`, `target` | 03 §15 |
 | `J0352` | warning | grupo ≥ 10 ms sem PREEMPT_RT: jitter não garantido | `cycles`, `target` | 16 §9 |
