@@ -1,190 +1,190 @@
-# Trilha de estudo: da bancada à frota
+# Learning track: from the bench to the fleet
 
-Uma trilha em quatro módulos e onze partes. Começa numa pasta vazia no portátil e acaba com dois nós Linux geridos por um Deck, um ESP32 a correr o Joker Micro, uma classe tua e uma versão má de uma app travada no canário. Tudo com o hardware da bancada (documento 23): um Raspberry Pi 3 B+, um Raspberry Pi Zero W, um ESP32 e o portátil.
+A track in four modules and eleven parts. It starts in an empty directory on the laptop and ends with two Linux nodes managed by a Deck, an ESP32 running Joker Micro, a class of your own and a bad version of an app stopped at the canary. All with the bench hardware (document 23): a Raspberry Pi 3 B+, a Raspberry Pi Zero W, an ESP32 and the laptop.
 
-A trilha é três coisas ao mesmo tempo:
+The track is three things at once:
 
-1. **o curso**: quem a termina entende o projeto inteiro, do tick do núcleo ao rollout de uma frota;
-2. **a demonstração da API da v1.0**: cada comando, ficheiro, chave e saída é o que as referências de `../ref/` especificam, e as referências prevalecem quando divergem;
-3. **o teste de aceitação da DX e o plano de testes na bancada real** (documento 11, porta de saída 4; documento 23, §5).
+1. **the course**: whoever finishes it understands the whole project, from the core tick to the rollout of a fleet;
+2. **the demonstration of the v1.0 API**: every command, file, key and output is what the references in `../ref/` specify, and the references prevail when they diverge;
+3. **the DX acceptance test and the test plan on the real bench** (document 11, exit gate 4; document 23, §5).
 
-> O Joker está em fase de desenho. As saídas mostradas são as especificadas; quando a Fase 1 existir, cada parte é corrida na bancada e as saídas reais substituem estas.
+> Joker is in the design phase. The outputs shown are the specified ones; when Phase 1 exists, each part is run on the bench and the real outputs replace these.
 
 ---
 
-## O ritmo
+## The rhythm
 
-A trilha avança sempre do simulado para o real, e sobe de camada em camada:
+The track always moves from the simulated to the real, and climbs layer by layer:
 
 ```
-             sinais (A)                      classes (B)      Joker Micro (C)     frota (D)
- portátil    1 ─ 3a ─ 4a ─ 5a                7a ─ 8a
+             signals (A)                     classes (B)      Joker Micro (C)     fleet (D)
+ laptop      1 ─ 3a ─ 4a ─ 5a                7a ─ 8a
                   │     │     │               │     │
  hardware    2 ─ 3b ─ 4b ─ 5b ─ 6            7b ─ 8b ──────▶  9 ─ 10  ─────────▶  11
              Pi 3   Pi 3+ESP32   Pi Zero      Pi 3             Pi 3 + ESP32        Deck + Pi 3 + Pi Zero
 ```
 
-- **Sim → real.** Cada comportamento novo é primeiro escrito e testado no simulador (com relógio virtual, em milissegundos), e só depois vai para a placa. A passagem para o hardware mexe só em manifestos.
-- **Sinais → classes → MCU → frota.** Primeiro aprende-se o que está por baixo (sinais, qualidade, envelope, árbitro); depois sobe-se para as classes, que tiram trabalho à app; depois o controlo desce para o microcontrolador; e por fim gere-se tudo como uma frota.
+- **Sim → real.** Every new behavior is first written and tested in the simulator (with a virtual clock, in milliseconds), and only then goes to the board. The move to hardware touches only manifests.
+- **Signals → classes → MCU → fleet.** First you learn what is underneath (signals, quality, envelope, arbiter); then you climb to classes, which take work away from the app; then control goes down to the microcontroller; and finally you manage everything as a fleet.
 
 ---
 
-## O percurso
+## The route
 
-### Módulo A — Sinais e o nó Linux
+### Module A — Signals and the Linux node
 
-| Parte | O que constróis | Hardware | Conceitos do Joker |
+| Part | What you build | Hardware | Joker concepts |
 |---|---|---|---|
-| [01](01-hello-bench.md) | um projeto do zero; a app `luz` 0.1 pisca o LED `ACT` **simulado**, com testes e um cenário | portátil | projeto, manifesto e overlays desde o início, driver `sim`, sinal, porta e ligação, saída com `safe`, grupo de ciclo, hot-reload, `jk read`/`jk trace`, `joker-test` com relógio virtual, cenários |
-| [02](02-the-pi-as-a-node.md) | o mesmo LED, agora o `ACT` **real** do Pi 3, com a app sem mudanças | Pi 3 B+ | instalação do `jokerd`, CA e enrolamento, `jk doctor --rt`, perfil de placa, `[resources]`, driver `sysfs`, lock por manifesto, `jk apply --confirm`, gerações e rollback, escrita manual e árbitro, estado seguro em três camadas |
-| [03](03-temperature-sensor.md) | a temperatura do CPU como processo físico: o LED pisca mais depressa quanto mais quente está o Pi; alarme, historian, API (app 0.2) | Pi 3 B+ | entradas e qualidade, `calc` com janelas, alarmes, historian, API HTTP e o cliente Python, `stress-ng` como carga |
-| [04](04-esp32-modbus.md) | o ESP32 como equipamento Modbus RTU: o perfil escrito a partir do mapa de registos, o botão `BOOT` liga e desliga o sistema (app 0.3) | Pi 3 + ESP32 por USB | barramentos (`dtr`/`rts`), `jk profile import csv`, `jk profile test`, `identity` do perfil, flancos e `debounce`, `readback`, fallback do equipamento |
-| [05](05-touch-and-faults.md) | o sensor de toque como botão rotativo; o sistema tolera a perda do ESP32 (app 0.4); um replay prova a correção (app 0.4.1) | Pi 3 + ESP32 | sinais analógicos ruidosos, `deadband`, `get_or` e qualidade substituída, falhas simuladas, `jk device stop`, fallback M1 real, `jk record`/`jk replay` a partir do estado gravado |
-| [06](06-switching-boards.md) | o mesmo projeto no Pi Zero W, com o ESP32 por Wi-Fi; o perfil de uma placa que ainda não existe (app 0.4.1, sem mudar) | Pi Zero W + ESP32 por Wi-Fi | overlays por refatoração (`joker.rpi.toml`), `modbus-tcp`, `jk board probe`/`check`/`new`, nível `dev`, degradação sem RT |
+| [01](01-hello-bench.md) | a project from scratch; the app `luz` 0.1 blinks the **simulated** `ACT` LED, with tests and a scenario | laptop | project, manifest and overlays from the start, `sim` driver, signal, port and binding, output with `safe`, cycle group, hot-reload, `jk read`/`jk trace`, `joker-test` with a virtual clock, scenarios |
+| [02](02-the-pi-as-a-node.md) | the same LED, now the **real** `ACT` of the Pi 3, with the app unchanged | Pi 3 B+ | installing `jokerd`, CA and enrollment, `jk doctor --rt`, board profile, `[resources]`, `sysfs` driver, lock per manifest, `jk apply --confirm`, generations and rollback, manual write and arbiter, three-layer safe state |
+| [03](03-temperature-sensor.md) | the CPU temperature as a physical process: the LED blinks faster the hotter the Pi is; alarm, historian, API (app 0.2) | Pi 3 B+ | inputs and quality, `calc` with windows, alarms, historian, HTTP API and the Python client, `stress-ng` as load |
+| [04](04-esp32-modbus.md) | the ESP32 as Modbus RTU equipment: the profile written from the register map, the `BOOT` button turns the system on and off (app 0.3) | Pi 3 + ESP32 over USB | buses (`dtr`/`rts`), `jk profile import csv`, `jk profile test`, profile `identity`, edges and `debounce`, `readback`, equipment fallback |
+| [05](05-touch-and-faults.md) | the touch sensor as a rotary knob; the system tolerates the loss of the ESP32 (app 0.4); a replay proves the fix (app 0.4.1) | Pi 3 + ESP32 | noisy analog signals, `deadband`, `get_or` and substituted quality, simulated faults, `jk device stop`, real M1 fallback, `jk record`/`jk replay` from the recorded state |
+| [06](06-switching-boards.md) | the same project on the Pi Zero W, with the ESP32 over Wi-Fi; the profile of a board that does not exist yet (app 0.4.1, unchanged) | Pi Zero W + ESP32 over Wi-Fi | overlays by refactoring (`joker.rpi.toml`), `modbus-tcp`, `jk board probe`/`check`/`new`, `dev` level, degradation without RT |
 
-### Módulo B — Classes
+### Module B — Classes
 
-| Parte | O que constróis | Hardware | Conceitos do Joker |
+| Part | What you build | Hardware | Joker concepts |
 |---|---|---|---|
-| [07](07-classes.md) | a mesma app sobre `Led`, `Button`, `TempSensor`, `AnalogIn`; o cenário da parte 5 passa sem alterações (app 0.5) | sim → Pi 3 (e Zero) | classes e instâncias (implícita e compostas), `implements` no perfil, `jk class show`, `jk explain <instância>`, `jk status --instances`, `jk class verify` no hardware |
-| [08](08-your-own-class.md) | uma classe tua, `status_light@1`, e a sua implementação; a app de negócio fica com ~20 linhas (app 0.6) | sim → Pi 3 | `jk class new`, `.jkc`, instâncias virtuais, `#[joker::implements]`, conformidade, as quatro pessoas do documento 14; extra opcional: uma classe composta, `local/bench_io@1` |
+| [07](07-classes.md) | the same app on top of `Led`, `Button`, `TempSensor`, `AnalogIn`; the scenario from part 5 passes unchanged (app 0.5) | sim → Pi 3 (and Zero) | classes and instances (implicit and composite), `implements` in the profile, `jk class show`, `jk explain <instance>`, `jk status --instances`, `jk class verify` on the hardware |
+| [08](08-your-own-class.md) | a class of your own, `status_light@1`, and its implementation; the business app shrinks to ~20 lines (app 0.6) | sim → Pi 3 | `jk class new`, `.jkc`, virtual instances, `#[joker::implements]`, conformance, the four people of document 14; optional extra: a composite class, `local/bench_io@1` |
 
-### Módulo C — Joker Micro
+### Module C — Joker Micro
 
-| Parte | O que constróis | Hardware | Conceitos do Joker |
+| Part | What you build | Hardware | Joker concepts |
 |---|---|---|---|
-| [09](09-joker-micro.md) | o ESP32 passa a correr o Joker Micro; os mesmos sinais chegam pelo Joker Link, e o `safe` do LED vive no MCU (app 0.6, sem mudar) | Pi 3 + ESP32 (firmware Joker) | `jk build --target mcu:esp32-devkit`, `jk flash`, `jk node enroll --link`, `joker.lab-link.toml`, envelope no MCU, matar o `jokerd` com o LED seguro |
-| [10](10-logic-on-the-mcu.md) | uma app nativa no MCU (`reflexo`) e o link por Wi-Fi | ESP32 (+ Pi 3) | apps nativas no MCU, driver `esp32`, `[net.wifi]`, link UDP com cifra, nó autónomo |
+| [09](09-joker-micro.md) | the ESP32 now runs Joker Micro; the same signals arrive over Joker Link, and the LED's `safe` lives on the MCU (app 0.6, unchanged) | Pi 3 + ESP32 (Joker firmware) | `jk build --target mcu:esp32-devkit`, `jk flash`, `jk node enroll --link`, `joker.lab-link.toml`, envelope on the MCU, killing `jokerd` with the LED safe |
+| [10](10-logic-on-the-mcu.md) | a native app on the MCU (`reflexo`) and the link over Wi-Fi | ESP32 (+ Pi 3) | native apps on the MCU, `esp32` driver, `[net.wifi]`, encrypted UDP link, standalone node |
 
-### Módulo D — Frota
+### Module D — Fleet
 
-| Parte | O que constróis | Hardware | Conceitos do Joker |
+| Part | What you build | Hardware | Joker concepts |
 |---|---|---|---|
-| [11](11-production-and-fleet.md) | produção (assinaturas, segredos), o Deck no portátil com dois nós, um rollout em ondas que para no canário (apps 0.7 e 0.7.1) | portátil (Deck) + Pi 3 + Pi Zero W | `mode = "prod"`, chaves e confiança, `secrets.toml.enc`, `joker-deck`, `fleet.toml`, coortes, ondas e `halt_if` |
+| [11](11-production-and-fleet.md) | production (signatures, secrets), the Deck on the laptop with two nodes, a rollout in waves that stops at the canary (apps 0.7 and 0.7.1) | laptop (Deck) + Pi 3 + Pi Zero W | `mode = "prod"`, keys and trust, `secrets.toml.enc`, `joker-deck`, `fleet.toml`, cohorts, waves and `halt_if` |
 
 ---
 
-## Material
+## Materials
 
-**Só o da bancada, e nada se compra.** Nenhuma parte pede uma breadboard, um LED, uma resistência, um fio de jumper, um ADC ou um adaptador RS-485.
+**Only the bench, and nothing is bought.** No part asks for a breadboard, an LED, a resistor, a jumper wire, an ADC or an RS-485 adapter.
 
-| Peça | O que é | Onde entra |
+| Item | What it is | Where it comes in |
 |---|---|---|
-| portátil | macOS, Linux ou Windows com WSL2; Rust estável; a `jk`; SSH | todas |
-| **Raspberry Pi 3 Model B+** | 4× Cortex-A53, 1 GB, aarch64, Wi-Fi; o nó `lab` | 2–11 |
-| **Raspberry Pi Zero W v1** | 1× ARM1176 (ARMv6), 512 MB, só Wi-Fi; o nó `zero` | 6, 7, 11 |
-| **ESP32 original** (placa de desenvolvimento) | Xtensa LX6, ponte USB-série CP2102 ou CH340, LED no GPIO2, botão `BOOT` no GPIO0, sensor de toque T0 no GPIO4, Wi-Fi | 4–11 |
-| cabos e cartões | as fontes das placas, um cabo micro-USB (ESP32 → Pi 3: alimentação e porta série), dois cartões microSD | — |
-| rede | uma rede Wi-Fi local onde estão o portátil e as três placas | 2–11 |
+| laptop | macOS, Linux or Windows with WSL2; stable Rust; `jk`; SSH | all |
+| **Raspberry Pi 3 Model B+** | 4× Cortex-A53, 1 GB, aarch64, Wi-Fi; the `lab` node | 2–11 |
+| **Raspberry Pi Zero W v1** | 1× ARM1176 (ARMv6), 512 MB, Wi-Fi only; the `zero` node | 6, 7, 11 |
+| **original ESP32** (development board) | Xtensa LX6, CP2102 or CH340 USB-serial bridge, LED on GPIO2, `BOOT` button on GPIO0, T0 touch sensor on GPIO4, Wi-Fi | 4–11 |
+| cables and cards | the boards' power supplies, a micro-USB cable (ESP32 → Pi 3: power and serial port), two microSD cards | — |
+| network | a local Wi-Fi network with the laptop and the three boards on it | 2–11 |
 
-Os sinais reais saem todos das próprias placas (documento 23, §3): o LED `ACT` e a temperatura do CPU dos dois Pi, e o LED, o botão, o toque, o RSSI e o tempo de funcionamento do ESP32. **A temperatura do CPU do Pi é o "processo físico" da trilha**: aquece com carga (`stress-ng --cpu 4 --timeout 5m`) e arrefece sozinha, com uma constante de tempo de um minuto. É isso que dá dinâmica real sem componentes.
+The real signals all come from the boards themselves (document 23, §3): the `ACT` LED and the CPU temperature of the two Pis, and the LED, the button, the touch, the RSSI and the uptime of the ESP32. **The Pi's CPU temperature is the "physical process" of the track**: it heats up under load (`stress-ng --cpu 4 --timeout 5m`) and cools down by itself, with a time constant of one minute. That is what gives real dynamics without components.
 
-O ESP32 liga-se ao Pi 3 pelo cabo micro-USB. O Pi Zero W não tem como o ligar por USB (só tem um micro-USB OTG, e não há adaptador), e por isso fala com ele por Wi-Fi, em Modbus TCP (parte 6).
+The ESP32 connects to the Pi 3 with the micro-USB cable. The Pi Zero W has no way to connect it over USB (it only has a micro-USB OTG port, and there is no adapter), so it talks to it over Wi-Fi, in Modbus TCP (part 6).
 
 ---
 
-## A pasta, no fim da trilha
+## The directory, at the end of the track
 
 ```
 joker-bancada/
-  joker.toml                                  manifesto comum: saídas e envelopes, ciclos, calc, alarmes, apps, instâncias
-  joker.sim.toml                              overlay: extends joker.toml → tudo simulado (portátil)
-  joker.rpi.toml                              overlay: extends joker.toml → o dispositivo `pi` (sysfs), comum às duas Raspberry (parte 6)
-  joker.lab.toml                              overlay: extends joker.rpi.toml → nó lab (Pi 3): placa, recursos RT, ESP32 por Modbus RTU
-  joker.zero.toml                             overlay: extends joker.rpi.toml → nó zero (Pi Zero W): placa, ESP32 por Modbus TCP
-  joker.lab-link.toml                         overlay: extends joker.lab.toml → o ESP32 como Joker Micro pelo Joker Link (parte 9)
+  joker.toml                                  common manifest: outputs and envelopes, cycles, calc, alarms, apps, instances
+  joker.sim.toml                              overlay: extends joker.toml → everything simulated (laptop)
+  joker.rpi.toml                              overlay: extends joker.toml → the `pi` device (sysfs), common to both Raspberry Pis (part 6)
+  joker.lab.toml                              overlay: extends joker.rpi.toml → lab node (Pi 3): board, RT resources, ESP32 over Modbus RTU
+  joker.zero.toml                             overlay: extends joker.rpi.toml → zero node (Pi Zero W): board, ESP32 over Modbus TCP
+  joker.lab-link.toml                         overlay: extends joker.lab.toml → the ESP32 as Joker Micro over Joker Link (part 9)
   joker.sim.lock  joker.lab.lock  joker.zero.lock  joker.lab-link.lock
-                                              um lock por manifesto de entrada (o joker.rpi.toml só entra por extends)
-  mapa-esp32.csv                              parte 4 (o mapa de registos de onde saiu o perfil)
-  boards/rpi-zero-w.board.toml                perfil de placa (parte 6)
-  profiles/local/bench-esp32@1.profile.toml   perfil de equipamento (parte 4; implements na parte 7)
-  classes/local/status_light.jkc              classe (parte 8)
-  classes/local/status_light.conformance.toml suite de conformidade da classe (parte 8)
-  micro/esp/joker.toml  micro/esp/joker.lock  manifesto do Joker Micro (partes 9–10) e o seu lock ([wcet] do chip, parte 10)
-  micro/esp/apps/reflexo/                     app nativa do MCU (parte 10)
-  sim/pi.sim.toml  sim/esp.sim.toml           modelos de simulação
-  sim/scenarios/*.scenario.toml               cenários: pisca, aquece, botao, falha_esp
-  apps/luz/                                   a app de negócio, 0.1 → 0.7.1
-  apps/status_light_ctl/                      parte 8
-  secrets.toml.enc                            partes 9–11 (destinatário node:esp, wifi_bancada, mqtt_bancada)
-  keys/*.pub                                  parte 11
-  fleet.toml                                  parte 11 (o que o Deck lê do repositório)
+                                              one lock per input manifest (joker.rpi.toml only comes in through extends)
+  mapa-esp32.csv                              part 4 (the register map the profile came from)
+  boards/rpi-zero-w.board.toml                board profile (part 6)
+  profiles/local/bench-esp32@1.profile.toml   equipment profile (part 4; implements in part 7)
+  classes/local/status_light.jkc              class (part 8)
+  classes/local/status_light.conformance.toml conformance suite of the class (part 8)
+  micro/esp/joker.toml  micro/esp/joker.lock  Joker Micro manifest (parts 9–10) and its lock ([wcet] of the chip, part 10)
+  micro/esp/apps/reflexo/                     native MCU app (part 10)
+  sim/pi.sim.toml  sim/esp.sim.toml           simulation models
+  sim/scenarios/*.scenario.toml               scenarios: pisca, aquece, botao, falha_esp
+  apps/luz/                                   the business app, 0.1 → 0.7.1
+  apps/status_light_ctl/                      part 8
+  secrets.toml.enc                            parts 9–11 (recipient node:esp, wifi_bancada, mqtt_bancada)
+  keys/*.pub                                  part 11
+  fleet.toml                                  part 11 (what the Deck reads from the repository)
 ```
 
-O extra opcional da parte 8 (`classes/local/bench_io.jkc` e o seu `.conformance.toml`, a instância `esp_io` e a app `apps/bench_diag/`) faz-se num ramo à parte, `extra-bench-io`, e não fica nesta pasta.
+The optional extra of part 8 (`classes/local/bench_io.jkc` and its `.conformance.toml`, the instance `esp_io` and the app `apps/bench_diag/`) is done on a separate branch, `extra-bench-io`, and does not stay in this directory.
 
-Cada ficheiro diz o tipo no nome (ADR 0026): `joker.<variante>.toml` é um overlay, e `jk … --env <variante>` escolhe-o; `.board.toml`, `.profile.toml`, `.sim.toml`, `.scenario.toml` e `.conformance.toml` são os outros tipos.
+Every file states its type in its name (ADR 0026): `joker.<variant>.toml` is an overlay, and `jk … --env <variant>` selects it; `.board.toml`, `.profile.toml`, `.sim.toml`, `.scenario.toml` and `.conformance.toml` are the other types.
 
-Até à parte 5, `joker.lab.toml` estende diretamente `joker.toml` e tem o `[devices.pi]`. Na parte 6, quando aparece a segunda placa Raspberry, o `[devices.pi]` sai para `joker.rpi.toml`, e `joker.lab.toml` e `joker.zero.toml` passam a estendê-lo. É uma lição de overlays: refatora-se quando aparece o segundo caso, e não antes.
+Up to part 5, `joker.lab.toml` extends `joker.toml` directly and holds `[devices.pi]`. In part 6, when the second Raspberry board appears, `[devices.pi]` moves out to `joker.rpi.toml`, and `joker.lab.toml` and `joker.zero.toml` extend it instead. It is a lesson in overlays: you refactor when the second case appears, and not before.
 
-## As duas regras
+## The two rules
 
-1. **A app só muda quando muda o comportamento ou a camada.** O comportamento muda nas partes 3, 4, 5 e 11; a camada muda nas partes 7 (classes) e 8 (a tua classe). Passar do simulador para o hardware (parte 2), de uma placa para outra (parte 6) ou do Modbus para o Joker Link (parte 9) mexe só em manifestos.
-2. **Mudar de camada ou de placa não muda o comportamento.** O cenário `sim/scenarios/falha_esp.scenario.toml`, escrito na parte 5, passa sem alterações nas versões 0.4 (e na correção 0.4.1), 0.5 e 0.6 da app, e o mesmo manifesto comum corre no Pi 3 e no Pi Zero W.
+1. **The app changes only when the behavior or the layer changes.** The behavior changes in parts 3, 4, 5 and 11; the layer changes in parts 7 (classes) and 8 (your own class). Moving from the simulator to hardware (part 2), from one board to another (part 6) or from Modbus to Joker Link (part 9) touches only manifests.
+2. **Changing layer or board does not change the behavior.** The scenario `sim/scenarios/falha_esp.scenario.toml`, written in part 5, passes unchanged on versions 0.4 (and the 0.4.1 fix), 0.5 and 0.6 of the app, and the same common manifest runs on the Pi 3 and on the Pi Zero W.
 
-| Versão da `luz` | Parte | O que mudou |
+| Version of `luz` | Part | What changed |
 |---|---|---|
-| 0.1 | 01 | pisca o `led` com `half_period` |
-| 0.2 | 03 | pisca mais depressa quanto mais quente está o CPU; `Err` sem temperatura `good` → `safe` |
-| 0.3 | 04 | o botão do ESP32 liga e desliga o sistema, que arranca ligado; o LED do ESP32 mostra o estado |
-| 0.4 | 05 | o toque ajusta a sensibilidade; tolerante à perda do ESP32 |
-| 0.4.1 | 05 | correção vista no replay: sem ESP32, não propõe o LED dele (fica até à parte 6) |
-| 0.5 | 07 | igual, sobre handles de classe |
-| 0.6 | 08 | igual, sobre a instância `sinal` (`status_light@1`) |
-| 0.7 | 11 | modo `alert` com o alarme `cpu_quente` |
-| 0.7.1 | 11 | "melhoria" má de propósito: overruns no Pi Zero W, travada no canário |
+| 0.1 | 01 | blinks the `led` with `half_period` |
+| 0.2 | 03 | blinks faster the hotter the CPU is; `Err` without a `good` temperature → `safe` |
+| 0.3 | 04 | the ESP32 button turns the system on and off, which starts on; the ESP32 LED shows the state |
+| 0.4 | 05 | the touch adjusts the sensitivity; tolerant of the loss of the ESP32 |
+| 0.4.1 | 05 | fix seen in the replay: without the ESP32, it does not propose its LED (stays until part 6) |
+| 0.5 | 07 | the same, on top of class handles |
+| 0.6 | 08 | the same, on top of the instance `sinal` (`status_light@1`) |
+| 0.7 | 11 | `alert` mode with the alarm `cpu_quente` |
+| 0.7.1 | 11 | a deliberately bad "improvement": overruns on the Pi Zero W, stopped at the canary |
 
-## Convenções
+## Conventions
 
-- **Prompts.** `$` é um comando no portátil; `lab$` no Pi 3 (por SSH, `ssh pi@lab.local`); `zero$` no Pi Zero W (`ssh pi@zero.local`). Quase tudo corre no portátil: a `jk` fala com os nós pela API.
-- **Nós.** `lab` (Pi 3 B+, `lab.local`) e `zero` (Pi Zero W, `zero.local`). A CA local fica em `~/org-ca` (parte 2).
-- **Dispositivos**, com os mesmos nomes no simulador e no hardware, para que os caminhos nunca mudem:
-  - `pi`: o Raspberry Pi. `pi.act_led` (`bool`, saída) e, a partir da parte 3, `pi.cpu_temp` (`f64`, `°C`). Driver `sim` no portátil, `sysfs` nas placas.
-  - `esp`: o ESP32. `esp.led` (saída), `esp.led_rb`, `esp.button`, `esp.touch`, `esp.rssi`, `esp.uptime`, `esp.fw`. Driver `sim` no portátil, `modbus-rtu` no Pi 3 (partes 4–5), `modbus-tcp` no Zero (parte 6), `joker-link` a partir da parte 9.
-- **Grupo de ciclo:** `main`, 20 ms.
-- **Saídas:** blocos sem linguagem, curtos, com os códigos de `spec/codes.toml`. Em `mode = "dev"`, os códigos de gravidade `error-in-prod` aparecem como avisos `W` com o mesmo número (`W0205`); os avisos puros mantêm o `J` (`J0352`).
-- **Versões.** Cada parte termina com um commit (`git commit`; com jj, `jj describe && jj new`) e diz o estado que deixa: a versão da app, os ficheiros novos e a geração de cada nó.
-- **Nomes de exemplo:** o utilizador `dl`, a organização `bancada` (`jk ca init ~/org-ca --org bancada`), domínios `example.com`.
+- **Prompts.** `$` is a command on the laptop; `lab$` on the Pi 3 (over SSH, `ssh pi@lab.local`); `zero$` on the Pi Zero W (`ssh pi@zero.local`). Almost everything runs on the laptop: `jk` talks to the nodes through the API.
+- **Nodes.** `lab` (Pi 3 B+, `lab.local`) and `zero` (Pi Zero W, `zero.local`). The local CA lives in `~/org-ca` (part 2).
+- **Devices**, with the same names in the simulator and on the hardware, so that the paths never change:
+  - `pi`: the Raspberry Pi. `pi.act_led` (`bool`, output) and, from part 3 on, `pi.cpu_temp` (`f64`, `°C`). `sim` driver on the laptop, `sysfs` on the boards.
+  - `esp`: the ESP32. `esp.led` (output), `esp.led_rb`, `esp.button`, `esp.touch`, `esp.rssi`, `esp.uptime`, `esp.fw`. `sim` driver on the laptop, `modbus-rtu` on the Pi 3 (parts 4–5), `modbus-tcp` on the Zero (part 6), `joker-link` from part 9 on.
+- **Cycle group:** `main`, 20 ms.
+- **Outputs:** blocks without a language, short, with the codes from `spec/codes.toml`. In `mode = "dev"`, codes of severity `error-in-prod` appear as `W` warnings with the same number (`W0205`); pure warnings keep the `J` (`J0352`).
+- **Versions.** Each part ends with a commit (`git commit`; with jj, `jj describe && jj new`) and states what it leaves behind: the app version, the new files and the generation of each node.
+- **Example names:** the user `dl`, the organization `bancada` (`jk ca init ~/org-ca --org bancada`), `example.com` domains.
 
-## Tempo estimado
+## Estimated time
 
-| Parte | 01 | 02 | 03 | 04 | 05 | 06 | 07 | 08 | 09 | 10 | 11 |
+| Part | 01 | 02 | 03 | 04 | 05 | 06 | 07 | 08 | 09 | 10 | 11 |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| Tempo | 45 min | 1 h 30 | 1 h 30 | 2 h | 1 h 30 | 1 h 30 | 1 h | 1 h 30 | 2 h | 1 h 30 | 2 h 30 |
+| Time | 45 min | 1 h 30 | 1 h 30 | 2 h | 1 h 30 | 1 h 30 | 1 h | 1 h 30 | 2 h | 1 h 30 | 2 h 30 |
 
-Cerca de 17 horas no total. A parte 2 inclui preparar o cartão SD; a 9 inclui instalar a toolchain Xtensa (`espup`), que demora.
+About 17 hours in total. Part 2 includes preparing the SD card; part 9 includes installing the Xtensa toolchain (`espup`), which takes a while.
 
-## O que fica de fora, e chega na 1.x
+## What is left out, and arrives in 1.x
 
-A trilha usa só funcionalidades da v1.0 (documento 21, §2). Ficam de fora, de propósito:
+The track uses only v1.0 features (document 21, §2). Left out, on purpose:
 
-| Assunto | Versão |
+| Subject | Version |
 |---|---|
-| ML (Burn, ORT, aceleradores), streams e pipelines, sinais em bloco, escritas agendadas, intenções (escritores só-proposta) | 1.1 |
-| Structured Text, SDK de drivers tier W, BACnet e EtherCAT; apps em Python | 1.2 |
-| Joker Studio, modo gateway, sessões remotas pelo Deck | 1.3 |
-| Wasm e ML em microcontroladores, nós de baixo consumo | 1.4 |
-| Hub público com evidência certificada, auditoria da frota em escala | 1.5 |
-| redundância ativo/standby, malha de nós | 2.0 |
+| ML (Burn, ORT, accelerators), streams and pipelines, block signals, scheduled writes, intents (proposal-only writers) | 1.1 |
+| Structured Text, tier W driver SDK, BACnet and EtherCAT; apps in Python | 1.2 |
+| Joker Studio, gateway mode, remote sessions through the Deck | 1.3 |
+| Wasm and ML on microcontrollers, low-power nodes | 1.4 |
+| public Hub with certified evidence, fleet audit at scale | 1.5 |
+| active/standby redundancy, node mesh | 2.0 |
 
-A bancada também não prova tudo (documento 23, §8): RS-485 half-duplex, CAN, um MCU ARM real e TPM ficam declarados como não validados.
+The bench does not prove everything either (document 23, §8): half-duplex RS-485, CAN, a real ARM MCU and TPM are declared as not validated.
 
 ---
 
-## No fim da trilha sabes…
+## At the end of the track you know…
 
-Cada parte liga-se aos documentos e referências que a explicam. Quem termina a trilha e lê esta coluna da direita entende o projeto.
+Each part links to the documents and references that explain it. Whoever finishes the track and reads the right-hand column understands the project.
 
-| Parte | Sabes… | Para ir mais fundo |
+| Part | You know… | To go deeper |
 |---|---|---|
-| 01 | como um projeto se organiza (manifesto comum e overlays), o que é um sinal, uma porta e uma ligação, porque toda a saída tem `safe`, o que acontece num tick, e porque um teste com relógio virtual é exato | documentos 00, 01 §3–§4, 02, 03, 04, 15; ref/01 §4–§5, §7; ref/03 §2.4–§2.5; ref/04 §4, §6; ADR 0003, 0006, 0007 |
-| 02 | como um nó ganha identidade sem abrir portas à rede, o que um perfil de placa promete, como se reservam CPUs para o ciclo, o que o lock fixa, porque se aplica com confirmação, como o árbitro decide entre um humano e uma app (e como se pergunta quem manda numa saída), e o que cada camada do estado seguro cobre e não cobre | documentos 01 §2, §6, §8, §15, §17, 16 §1, 23; ref/02 §2.1–§2.3, §3.2–§3.3; ref/03 §2.3; ref/09 §2.1–§2.3; ADR 0011, 0015, 0025 |
-| 03 | como a qualidade viaja de um driver até à app e às expressões, como se escrevem janelas e alarmes, o que o historian guarda, e como um programa externo lê e escreve pela API | documentos 02 §10–§11, 16 §3; ref/01 §5.14–§5.17; ref/05 (parte B); ref/09; ADR 0013 |
-| 04 | como um equipamento real se descreve num perfil a partir do mapa de registos, como se testa esse perfil antes de o usar, como se conta o orçamento de um barramento, e o que é o fallback M1 | documentos 05, 23 §4; ref/03 §2.2; ref/06; ref/01 anexo A; ADR 0008 |
-| 05 | como uma app tolera falhas sem mentir sobre elas, como se provocam falhas no simulador e na bancada, e como um traço gravado, com o estado das apps, reproduz um incidente e prova uma correção | documentos 01 §20, 04 §7, 16 §3; ref/03 §2.4.8, §2.5; ref/04 §6; ADR 0005 |
-| 06 | como o mesmo projeto muda de placa só com overlays, como se escreve o perfil de uma placa que não existe, e como o `jokerd` se degrada numa placa fraca | documentos 01 §22, 23 §5.2, §7; ref/01 §7; ref/03 §2.3 |
-| 07 | o que uma classe dá a uma app, como um perfil declara que implementa uma classe, porque o cenário de falha passa igual, e como se verifica uma classe no equipamento real | documentos 14, 17; ref/04 §4.8; ADR 0017, 0018 |
-| 08 | como se cria uma abstração com contrato, conformidade e implementação, e quem é dono de cada camada | documentos 14 §6–§7, 17; ref/03 §2.6; ref/04 §4.8.4 |
-| 09 | como o núcleo corre num MCU com os mesmos bytes, o que o Joker Link garante, e porque o `safe` de uma saída do MCU sobrevive à morte do `jokerd` | documentos 19, 16 A12; ref/07; ref/08; ADR 0020 |
-| 10 | como se escreve lógica que corre no próprio MCU, e o que muda num link IP | documentos 19 §4–§6; ref/08 §2.11; ref/07 §3 |
-| 11 | o que muda em `prod`, como se assina e se distribuem segredos sem os expor, e como uma frota se atualiza em ondas com uma paragem automática | documentos 20; ref/02 §2.4–§2.5; ref/10; ADR 0021, 0022, 0024, 0025 |
+| 01 | how a project is organized (common manifest and overlays), what a signal, a port and a binding are, why every output has `safe`, what happens in a tick, and why a test with a virtual clock is exact | documents 00, 01 §3–§4, 02, 03, 04, 15; ref/01 §4–§5, §7; ref/03 §2.4–§2.5; ref/04 §4, §6; ADR 0003, 0006, 0007 |
+| 02 | how a node gains an identity without opening ports to the network, what a board profile promises, how CPUs are reserved for the cycle, what the lock pins, why you apply with confirmation, how the arbiter decides between a human and an app (and how you ask who controls an output), and what each layer of the safe state covers and does not cover | documents 01 §2, §6, §8, §15, §17, 16 §1, 23; ref/02 §2.1–§2.3, §3.2–§3.3; ref/03 §2.3; ref/09 §2.1–§2.3; ADR 0011, 0015, 0025 |
+| 03 | how quality travels from a driver to the app and to the expressions, how windows and alarms are written, what the historian keeps, and how an external program reads and writes through the API | documents 02 §10–§11, 16 §3; ref/01 §5.14–§5.17; ref/05 (part B); ref/09; ADR 0013 |
+| 04 | how a piece of real equipment is described in a profile from its register map, how that profile is tested before use, how a bus budget is counted, and what the M1 fallback is | documents 05, 23 §4; ref/03 §2.2; ref/06; ref/01 appendix A; ADR 0008 |
+| 05 | how an app tolerates faults without lying about them, how faults are provoked in the simulator and on the bench, and how a recorded trace, with the state of the apps, reproduces an incident and proves a fix | documents 01 §20, 04 §7, 16 §3; ref/03 §2.4.8, §2.5; ref/04 §6; ADR 0005 |
+| 06 | how the same project changes board with overlays only, how the profile of a board that does not exist is written, and how `jokerd` degrades on a weak board | documents 01 §22, 23 §5.2, §7; ref/01 §7; ref/03 §2.3 |
+| 07 | what a class gives an app, how a profile declares that it implements a class, why the fault scenario passes the same, and how a class is verified on the real equipment | documents 14, 17; ref/04 §4.8; ADR 0017, 0018 |
+| 08 | how an abstraction with a contract, conformance and an implementation is created, and who owns each layer | documents 14 §6–§7, 17; ref/03 §2.6; ref/04 §4.8.4 |
+| 09 | how the core runs on an MCU with the same bytes, what Joker Link guarantees, and why the `safe` of an MCU output survives the death of `jokerd` | documents 19, 16 A12; ref/07; ref/08; ADR 0020 |
+| 10 | how logic that runs on the MCU itself is written, and what changes on an IP link | documents 19 §4–§6; ref/08 §2.11; ref/07 §3 |
+| 11 | what changes in `prod`, how you sign and distribute secrets without exposing them, and how a fleet is updated in waves with an automatic stop | documents 20; ref/02 §2.4–§2.5; ref/10; ADR 0021, 0022, 0024, 0025 |
