@@ -521,6 +521,77 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 
 ---
 
+## 15. Diagnostics, API and protocol vocabulary (`spec/` and `wit/`)
+
+Terms fixed while translating `spec/codes.toml`, the CDDL files and the OpenAPI document. They also apply to the references that quote those files.
+
+| PT | EN | Notes / source |
+|---|---|---|
+| recusar (ligação, identidade, consentimento) | **refuse** | validation and policy checks **reject** (§1.1) |
+| cancelado, cancelamento | **canceled**, **cancellation** | American spelling; identifiers such as `cancelled` stay as they are |
+| subscrição | **subscription** | ref/09 WebSocket and SSE |
+| tópico | **topic** | WebSocket, MQTT |
+| túnel | **tunnel** | |
+| seletor | **selector** | `GET /v1/values` |
+| pedido mutante | **mutating request** | `x-joker-mutating` |
+| paragem (da API, do processo) | **shutdown** | |
+| trabalho (assíncrono) | **job** | |
+| bloco (de um upload) | **chunk** | not **block**, which names block signals |
+| batimento | **heartbeat** | |
+| retomável | **resumable** | |
+| registo de auditoria | **audit log** | |
+| par (de protocolo) | **peer** | |
+| enquadramento | **framing** | Joker Link L2 |
+| reenvio, remontar | **retransmission**, **reassemble** | |
+| oferta, resposta (HELLO) | **offer**, **answer** | ref/07 |
+| perfil micro | **micro profile** | agent protocol |
+| congelado | **frozen** | trace segments |
+| arquivar, desarquivar (alarme) | **shelve**, **unshelve** | |
+| reconhecer (alarme) | **acknowledge** | |
+| faixa (de níveis) | **band** | the `manual` level band |
+| ocupado, libertar (nível manual) | **held**, **release** | a busy resource is **busy** |
+| permissivo | **permissive** | |
+| bilhete | **ticket** | |
+| em claro | **plaintext**, **in plaintext** | |
+| selado | **sealed** | `SealedSecret` |
+| etiqueta (AEAD) | **tag** | |
+| cofre | **vault** | |
+| âncora (de confiança) | **(trust) anchor** | |
+| folha (de uma cadeia de certificados) | **leaf** | |
+| concorrência otimista | **optimistic concurrency** | `If-Match` |
+| proveniência | **provenance** | |
+| consentimento | **consent** | |
+| religação | **reconnection** | |
+| emissor (de certificados) | **issuer** | |
+| atestação | **attestation** | |
+| elemento seguro | **secure element** | |
+| quarentena | **quarantine** | |
+| impressão de hardware | **hardware fingerprint** | |
+| rodar (uma chave) | **rotate** | |
+| desfasado (relógio) | **skewed** | |
+| fuso horário | **time zone** | |
+| vivacidade | **liveness** | |
+| fixado (no lock) | **pinned** | |
+| desatualizado, obsoleto | **out of date**, **stale** | |
+| alargar (o envelope) | **widen** | |
+| ajuste (de um sinal) | **adjustment** | |
+| justificação | **justification** | |
+| acessor | **accessor** | SDK |
+| gatilho | **trigger** | task triggers |
+| ponto de entrada | **entry point** | |
+| empacotamento, roda (Python) | **packaging**, **wheel** | |
+| pré-inicialização | **pre-initialization** | |
+| tipo cru | **raw type** | |
+| pilha | **stack** | memory |
+| temporizador | **timer** | |
+| desgaste (flash) | **wear** | |
+| ciclo algébrico | **algebraic loop** | |
+| painel (`jk dev --panel`) | **panel** | the Deck UI stays **dashboard** (§10) |
+| ligado, desligado (dispositivo) | **connected**, **disconnected** | a feature is **enabled** / **disabled** |
+| mal formado | **malformed** | |
+
+---
+
 ## Appendix A. File-name map
 
 Every file under `docs/` keeps its number and gets an English slug (ADR 0029, decision 3). The directories `trilha/`, `exemplos/` and `propostas/` become `track/`, `examples/` and `proposals/`. The rename is one commit, and every remission and link in `docs/`, `spec/`, `wit/`, `README.md` and `AGENTS.md` was rewritten with it. Files whose name does not change are omitted.
