@@ -108,6 +108,9 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | gravação, gravar | **recording**, **record** | |
 | reproduzir, replay | **replay** | |
 | verdade de fundo | **ground truth** | 12 |
+| reconhecer (um alarme) | **acknowledge** | `ack`; "não reconhecido" → **not acknowledged** |
+| arquivar (um alarme), arquivado | **shelve**, **shelved** | `shelve`; avoid "archive" |
+| valor de recurso (de `get_or`) | **substitute value** | the value `get_or` returns instead of a sample that is not `Good`; not to be confused with **fallback** (M1) |
 
 ---
 
@@ -154,6 +157,7 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | store-and-forward | **store-and-forward** | |
 | uplink | **uplink** | `joker-link` crate |
 | ponte | **bridge** | API bridges (Home Assistant, OPC UA server) |
+| escuta (da API) | **listener** | `[security.api] listen`; "escutar" → **listen** |
 | API local | **local API** | |
 | observabilidade | **observability** | |
 | saúde | **health** | |
@@ -321,6 +325,8 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | debounce, flanco | **debounce**, **edge** | |
 | integrador de hardware | **hardware integrator** | |
 | fabricante | **vendor** / **manufacturer** | vendor for software and NPUs, manufacturer for equipment |
+| ressalto (de um botão) | **bounce** | `bounce` in a simulation model; debounce removes it |
+| leitura de retorno | **read-back** | the point read back from an output; the key is `readback` |
 
 ---
 
@@ -342,6 +348,7 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | IDL de classes | **class IDL** | `.jkc`, 17 |
 | gramática | **grammar** | |
 | autor de abstrações | **abstraction author** | persona; 24 |
+| quem integra, quem cria abstrações, quem implementa, quem usa | **the integrator**, **the abstraction creator**, **the implementer**, **the user** | the four people of track 8 §10 and document 14 §1 |
 
 ---
 
@@ -404,6 +411,9 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | técnico de campo | **field technician** | persona |
 | operador | **operator** | |
 | operador de rede | **grid operator** | in energy cases; "rede" as computer network stays **network** |
+| emissora (de uma CA) | **issuer** | the P-256 key of `jk ca init` that signs node and user certificates; the root signs trust bundles |
+| em experiência (geração, firmware) | **on trial** | a generation or firmware not yet confirmed |
+| retoma (de um OTA) | **resume** | |
 
 ---
 
@@ -420,6 +430,7 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | negociação | **negotiation** | |
 | em série, por série | **over serial** | |
 | flash, geração em flash | **flash**, **generation in flash** | |
+| pino de arranque (ESP32) | **strapping pin** | GPIO0, GPIO2 and the like, read at reset |
 
 ---
 
@@ -444,6 +455,13 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | proposta (documento) | **proposal** | directory `proposals/`, non-normative |
 | sensor de toque | **touch sensor** | |
 | LED, pisca, piscar | **LED**, **blinks**, **blink** | |
+| Objetivo | **Goal** | standard block in the track |
+| Exercícios | **Exercises** | standard section in the track |
+| (acrescentar), (acrescentar, no ramo) | **(add)**, **(add, on the branch)** | code-block comment after a file name |
+| carga (do CPU) | **load** | `stress-ng` load; the simulated signal stays `carga` |
+| dissipador | **heat sink** | |
+| pen (USB) | **USB stick** | where the root key is kept |
+| `# omissão` (marcador do `jk diff`), `# REVER` (rascunho de `jk board probe`) | `# default`, `# REVIEW` | markers in illustrative CLI output; follow ref/01 §8 when it is translated |
 
 ---
 
