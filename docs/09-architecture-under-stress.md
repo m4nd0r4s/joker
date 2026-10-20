@@ -1,309 +1,309 @@
-# 09 — Arquitetura sob estresse
+# 09 — Architecture under stress
 
-O documento 08 atacou o desenho com casos de uso. Este ataca a **arquitetura em si**: se a abstração aguenta os protocolos reais, se os orçamentos de tempo e memória fecham, o que acontece quando cada peça falha, se o tempo real em Linux é credível, se o sistema se estende sem tocar no núcleo, como sobrevive a versões e a atacantes, e se o "coringa" não se torna um canivete suíço impossível de manter.
+Document 08 attacked the design with use cases. This one attacks the **architecture itself**: whether the abstraction holds up against real protocols, whether the time and memory budgets close, what happens when each piece fails, whether real time on Linux is credible, whether the system extends without touching the core, how it survives versions and attackers, and whether the "wildcard" does not become a Swiss army knife impossible to maintain.
 
-Cada ataque termina com uma de três conclusões: **aguenta**, **aguenta com refinamento** (alteração já incorporada nos documentos 01–07) ou **primitiva nova** (M-n, documento 10).
+Each attack ends with one of three conclusions: **holds**, **holds with refinement** (change already incorporated in documents 01–07) or **new primitive** (M-n, document 10).
 
 ---
 
-## Ataque 1 — Onde a abstração de sinais deixa passar detalhe
+## Attack 1 — Where the signal abstraction lets detail slip through
 
-Pegou-se em cada protocolo do catálogo e perguntou-se: o que é que o protocolo sabe exprimir e o sinal não?
+Each protocol in the catalog was taken and the question asked: what can the protocol express that the signal cannot?
 
-| Semântica do protocolo | Exemplo | Cabe? | Como |
+| Protocol semantics | Example | Fits? | How |
 |---|---|---|---|
-| valor com timestamp e qualidade | OPC UA DataValue | sim | é a origem do modelo |
-| push por mudança | OPC UA subscription, BACnet COV, CAN PDO, GPIO edge | sim | `subscribe` no driver |
-| **comandos** com argumentos e resultado | método OPC UA, reset Modbus por impulso, SDO CANopen, calibração | **não** | **M19 ações** |
-| **escritas multi-registo coerentes e ordenadas** | u32 em 2 registos, modo+setpoint, "escreve parâmetros e depois commit" | **não** | **M20 grupos atómicos e ordem** |
-| leitura com efeitos laterais | registos que limpam alarmes ao serem lidos | sim, com cuidado | `forbidden` no perfil; lidos só como ação |
-| tipos estruturados | ExtensionObject OPC UA, estruturas S7 | parcial | achatados em caminhos com prefixo; os campos lidos juntos partilham `acq_id` |
-| arrays grandes | espetro de um analisador de rede, perfil de temperatura | parcial | como sinal em bloco (M7) com `period` = passo espacial, ou como evento |
-| dicionário de objetos com milhares de parâmetros | CANopen OD, parâmetros de variador | sim, com refinamento | direção `param` com `poll = "on_demand"`: lido no `connect` e quando pedido, não em ciclo |
-| alarmes e eventos do equipamento | OPC UA A&C, eventos BACnet | sim | forma **evento** (documento 02, §1) |
-| histórico no equipamento | OPC UA Historical Access, logs de inversores | não | **fronteira**: o Joker não importa histórico de terceiros no núcleo; uma ação pode ir buscá-lo |
-| transferência de ficheiros, firmware | FTP de inversores, SDO por blocos | sim | ação longa com progresso (M19) |
-| sessões com estado e autenticação por utilizador | OPC UA com utilizador por operador | parcial | o Joker liga-se com uma identidade de serviço; a identidade do operador fica no registo de decisões, e não chega ao equipamento |
-| prioridades no próprio equipamento | BACnet priority array | sim | M15 + `safe = "relinquish"` |
+| value with timestamp and quality | OPC UA DataValue | yes | it is the origin of the model |
+| push on change | OPC UA subscription, BACnet COV, CAN PDO, GPIO edge | yes | `subscribe` in the driver |
+| **commands** with arguments and result | OPC UA method, Modbus reset by pulse, CANopen SDO, calibration | **no** | **M19 actions** |
+| **coherent and ordered multi-register writes** | u32 in 2 registers, mode+setpoint, "write parameters and then commit" | **no** | **M20 atomic groups and order** |
+| read with side effects | registers that clear alarms when read | yes, with care | `forbidden` in the profile; read only as an action |
+| structured types | OPC UA ExtensionObject, S7 structures | partial | flattened into prefixed paths; fields read together share `acq_id` |
+| large arrays | spectrum from a power analyzer, temperature profile | partial | as a block signal (M7) with `period` = spatial step, or as an event |
+| object dictionary with thousands of parameters | CANopen OD, drive parameters | yes, with refinement | `param` direction with `poll = "on_demand"`: read at `connect` and when requested, not in a cycle |
+| equipment alarms and events | OPC UA A&C, BACnet events | yes | **event** form (document 02, §1) |
+| history in the equipment | OPC UA Historical Access, inverter logs | no | **boundary**: Joker does not import third-party history in the core; an action can fetch it |
+| file transfer, firmware | inverter FTP, block SDO | yes | long action with progress (M19) |
+| stateful sessions with per-user authentication | OPC UA with a user per operator | partial | Joker connects with a service identity; the operator's identity stays in the decision log, and does not reach the equipment |
+| priorities in the equipment itself | BACnet priority array | yes | M15 + `safe = "relinquish"` |
 
-**Conclusão: primitivas novas M19 e M20.** O resto cabe, alguns casos com refinamento (`param` com poll a pedido, histórico como ação). A abstração perde detalhe em dois pontos (sessões por utilizador e histórico no equipamento), e ambos ficam declarados no documento 12.
+**Conclusion: new primitives M19 and M20.** The rest fits, some cases with refinement (`param` with on-demand poll, history as an action). The abstraction loses detail at two points (per-user sessions and history in the equipment), and both are declared in document 12.
 
 ---
 
-## Ataque 2 — O orçamento do caminho quente
+## Attack 2 — The hot-path budget
 
-Um site pesado de referência: **5 000 sinais**, 40 dispositivos, 3 grupos de ciclo (1 ms com 1 app, 100 ms com 4 apps, 1 s com 3 apps), 300 saídas, historian a 1 Hz em todos os sinais e a 10 Hz em 500.
+A heavy reference site: **5,000 signals**, 40 devices, 3 cycle groups (1 ms with 1 app, 100 ms with 4 apps, 1 s with 3 apps), 300 outputs, historian at 1 Hz on all signals and at 10 Hz on 500.
 
-### 2.1 Primeira versão, e porque não fechava
+### 2.1 First version, and why it did not close
 
-A primeira versão do contrato WIT tinha só `read(port)` e `write(port, v)` como chamadas ao host. Uma app do grupo de 100 ms com 200 entradas e 50 saídas faz **250 chamadas ao host por tick**. Uma chamada ao host no wasmtime com o ABI canónico custa dezenas a centenas de ns, conforme o tipo (a medir). Com `variant value` e `record sample` a atravessar a fronteira, a estimativa ficava em ~150 ns por chamada, ou seja ~40 µs por tick só em fronteira. Não é mortal a 100 ms, mas é o termo dominante, e a 1 ms com 100 entradas são ~15 µs (1,5% do período), mais do que tudo o resto da infraestrutura junta.
+The first version of the WIT contract had only `read(port)` and `write(port, v)` as host calls. An app in the 100 ms group with 200 inputs and 50 outputs makes **250 host calls per tick**. A host call in wasmtime with the canonical ABI costs tens to hundreds of ns, depending on the type (to measure). With `variant value` and `record sample` crossing the boundary, the estimate came to ~150 ns per call, that is ~40 µs per tick on the boundary alone. It is not fatal at 100 ms, but it is the dominant term, and at 1 ms with 100 inputs it is ~15 µs (1.5% of the period), more than all the rest of the infrastructure combined.
 
-### 2.2 Refinamento: imagem empacotada
+### 2.2 Refinement: packed image
 
-`on-cycle` passa a receber a **imagem de entradas empacotada** da app e a devolver as **propostas empacotadas**:
+`on-cycle` now receives the app's **packed input image** and returns the **packed proposals**:
 
 ```wit
 on-cycle: func(task: u32, image: list<u8>) -> cycle-result;
 ```
 
-- O layout é fixado no `init` (a ordem das portas vem de `joker:meta`): um cabeçalho de 64 B, **24 B por amostra** (valor 8, código e motivo de qualidade 1 + 1, flags 2, `seq` 4 truncado, `ts_acq` 8) e 24 B de resultado por saída, que dão `last_outcome()` sem chamadas ao host.
-- O host escreve a imagem numa arena pré-alocada e o ABI canónico copia-a numa única operação para um buffer do guest reservado no `init`. **No `on-cycle` a app não aloca:** uma alocação é trap `J-E0903` (a primeira versão usava um alocador *bump* reposto a cada tick, que deixava ponteiros pendentes no estado; ref/04 §4.13).
-- As propostas voltam num buffer de **registos com tipo**: `WRITE` de 14 B (`kind u8 · flags u8 · port u32 · value u64`), `METHOD` de 10 B + argumentos, `PUBLISH`, `COUNTER_ADD`, `EMIT` e `NOTE`. A porta é `u32` (uma app não fica limitada a 65 535 portas) e os métodos de classe viajam no mesmo buffer (documento 18, P1).
-- Os SDKs de tier 2 usam a mesma imagem. `cycle-io.read/write` ficam para o acesso dinâmico e para os valores que não cabem em `u64` (strings, bytes, registos).
+- The layout is fixed at `init` (the port order comes from `joker:meta`): a 64 B header, **24 B per sample** (value 8, quality code and reason 1 + 1, flags 2, `seq` 4 truncated, `ts_acq` 8) and 24 B of result per output, which give `last_outcome()` without host calls.
+- The host writes the image into a pre-allocated arena and the canonical ABI copies it in a single operation into a guest buffer reserved at `init`. **In `on-cycle` the app does not allocate:** an allocation is trap `J-E0903` (the first version used a *bump* allocator reset every tick, which left dangling pointers in the state; ref/04 §4.13).
+- Proposals come back in a buffer of **typed records**: `WRITE` of 14 B (`kind u8 · flags u8 · port u32 · value u64`), `METHOD` of 10 B + arguments, `PUBLISH`, `COUNTER_ADD`, `EMIT` and `NOTE`. The port is `u32` (an app is not limited to 65,535 ports) and class methods travel in the same buffer (document 18, P1).
+- Tier 2 SDKs use the same image. `cycle-io.read/write` remain for dynamic access and for values that do not fit in `u64` (strings, bytes, records).
 
-O layout exato, a validação e os erros estão na ref/04, §3.
+The exact layout, the validation and the errors are in ref/04, §3.
 
-### 2.3 Orçamento resultante (estimativas a validar no CM4)
+### 2.3 Resulting budget (estimates to validate on the CM4)
 
-| Etapa | Grupo 1 ms (1 app, 60 in, 12 out) | Grupo 100 ms (4 apps, 800 in, 150 out) |
+| Stage | 1 ms group (1 app, 60 in, 12 out) | 100 ms group (4 apps, 800 in, 150 out) |
 |---|---|---|
-| latch (10 ns/sinal) | 0,6 µs | 8 µs |
-| expressões (permissivos, `calc`) | 1 µs | 15 µs |
-| empacotar e copiar a imagem | 0,5 µs | 6 µs |
-| chamada Wasm (entrada/saída) | 1,5 µs | 4 × 1,5 = 6 µs |
-| lógica da app | 20 µs (declarado) | 4 × 200 µs = 800 µs |
-| árbitro + envelope (300 ns/saída) | 3,6 µs | 45 µs |
-| commit + filas + traço | 1 µs | 10 µs |
-| **total** | **~28 µs (2,8% do período)** | **~890 µs (0,9%)** |
+| latch (10 ns/signal) | 0.6 µs | 8 µs |
+| expressions (permissives, `calc`) | 1 µs | 15 µs |
+| pack and copy the image | 0.5 µs | 6 µs |
+| Wasm call (entry/exit) | 1.5 µs | 4 × 1.5 = 6 µs |
+| app logic | 20 µs (declared) | 4 × 200 µs = 800 µs |
+| arbiter + envelope (300 ns/output) | 3.6 µs | 45 µs |
+| commit + queues + trace | 1 µs | 10 µs |
+| **total** | **~28 µs (2.8% of the period)** | **~890 µs (0.9%)** |
 
-A infraestrutura fica abaixo de 10 µs no grupo de 1 ms, e o custo dominante passa a ser a lógica das apps, que é o que deve ser. **Aguenta com refinamento** (incorporado nos documentos 01, §9, e 04, §2; forma fechada na ref/04, §3).
+The infrastructure stays below 10 µs in the 1 ms group, and the dominant cost becomes the app logic, which is what it should be. **Holds with refinement** (incorporated in documents 01, §9, and 04, §2; closed form in ref/04, §3).
 
 ### 2.4 Throughput
 
-| Fluxo | Taxa | Custo estimado | Núcleo |
+| Flow | Rate | Estimated cost | CPU core |
 |---|---|---|---|
-| ingestão (40 dispositivos, média 50 ms) | ~100 k amostras/s | ~200 ns cada → ~2% de um núcleo `io` | `io` |
-| historian (5 000 × 1 Hz + 500 × 10 Hz) | 10 k/s | desprezável | `bg` |
-| uplink (Sparkplug, 1 min, com alias) | ~83/s | desprezável | `bg` |
-| expressões `calc` a 100 ms | 200 × 10/s | desprezável | `rt` |
+| ingestion (40 devices, 50 ms average) | ~100 k samples/s | ~200 ns each → ~2% of an `io` core | `io` |
+| historian (5,000 × 1 Hz + 500 × 10 Hz) | 10 k/s | negligible | `bg` |
+| uplink (Sparkplug, 1 min, with alias) | ~83/s | negligible | `bg` |
+| `calc` expressions at 100 ms | 200 × 10/s | negligible | `rt` |
 
-O estrangulamento real de um site destes são os **barramentos** (Modbus RTU), e não a CPU. Por isso o orçamento de barramento no `jk check` (documento 05, §5) vale mais do que qualquer otimização do núcleo.
+The real bottleneck of a site like this is the **buses** (Modbus RTU), not the CPU. That is why the bus budget in `jk check` (document 05, §5) is worth more than any optimization of the core.
 
 ---
 
-## Ataque 3 — Memória e footprint
+## Attack 3 — Memory and footprint
 
-### 3.1 Orçamento num CM4 (2 GB) para o site de referência
+### 3.1 Budget on a CM4 (2 GB) for the reference site
 
-| Componente | Estimativa |
+| Component | Estimate |
 |---|---|
-| `.text` do `jokerd` (páginas partilhadas, só leitura) | 20–30 MB |
-| slots (5 000 × 32 B) + imagens + arenas | < 1 MB |
-| filas SPSC e anéis de traço | 4 MB |
-| instâncias Wasm (8 apps × 2 instâncias × 4–16 MiB) | 64–256 MB **virtuais**, ~20 MB residentes |
-| historian: caches de blocos + WAL | 32 MB |
-| uplink e API | 8 MB |
-| modelo TCN pequeno (Burn CPU) | 5–20 MB |
-| **RSS total** | **~100–130 MB** |
+| `jokerd` `.text` (shared pages, read-only) | 20–30 MB |
+| slots (5 000 × 32 B) + images + arenas | < 1 MB |
+| SPSC queues and trace rings | 4 MB |
+| Wasm instances (8 apps × 2 instances × 4–16 MiB) | 64–256 MB **virtual**, ~20 MB resident |
+| historian: block caches + WAL | 32 MB |
+| uplink and API | 8 MB |
+| small TCN model (Burn CPU) | 5–20 MB |
+| **total RSS** | **~100–130 MB** |
 
-### 3.2 O problema que só aparece em 32 bits
+### 3.2 The problem that only shows up on 32 bits
 
-Por omissão, o wasmtime reserva **4 GiB de espaço virtual por memória linear**, com páginas de guarda, para eliminar as verificações de limites. Num processo de 64 bits isso não custa nada. **Num armv7 de 32 bits é impossível**: o espaço de endereçamento inteiro do processo é ~3 GiB. A configuração do motor passa a depender da arquitetura: em 32 bits, memórias com verificação explícita de limites, sem guard pages e com `memory_reservation` igual ao `memory.max` declarado. Custa ~10–20% de desempenho a mais, que se soma ao Pulley. **Aguenta com refinamento** (documento 01, §9).
+By default, wasmtime reserves **4 GiB of virtual space per linear memory**, with guard pages, to eliminate bounds checks. In a 64-bit process that costs nothing. **On a 32-bit armv7 it is impossible**: the whole address space of the process is ~3 GiB. The engine configuration now depends on the architecture: on 32 bits, memories with explicit bounds checking, without guard pages and with `memory_reservation` equal to the declared `memory.max`. It costs ~10–20% more performance, which adds to Pulley. **Holds with refinement** (document 01, §9).
 
 ### 3.3 Streams
 
-O pool de uma câmara 1080p NV12 com 6 buffers ocupa ~19 MB, e uma câmara 4K ocupa ~75 MB. O `jk check` soma os pools e compara-os com a RAM da placa (`J0380`, documento 08, rodada 5).
+The pool of a 1080p NV12 camera with 6 buffers takes ~19 MB, and a 4K camera takes ~75 MB. `jk check` adds up the pools and compares them with the board's RAM (`J0380`, document 08, round 5).
 
 ### 3.4 OOM
 
-- O `jokerd` corre com `oom_score_adj = -900`, e os processos `joker-ml-*` e `joker-drv-*` com `+500`. Numa situação de falta de memória, o kernel mata primeiro o modelo e não o controlo.
-- As instâncias Wasm têm limites rígidos (pooling), e uma app que tenta crescer além do `memory.max` recebe uma falha de `memory.grow` (e normalmente faz trap), sem afetar mais ninguém.
+- `jokerd` runs with `oom_score_adj = -900`, and the `joker-ml-*` and `joker-drv-*` processes with `+500`. In an out-of-memory situation, the kernel kills the model first and not control.
+- Wasm instances have hard limits (pooling), and an app that tries to grow beyond `memory.max` gets a `memory.grow` failure (and usually traps), without affecting anyone else.
 
 ---
 
-## Ataque 4 — Matriz de injeção de falhas
+## Attack 4 — Fault injection matrix
 
-Para cada componente e cada modo de falha: quem deteta, o que acontece, e se o desenho original tinha resposta.
+For each component and each failure mode: who detects it, what happens, and whether the original design had an answer.
 
-| Componente | crash | hang | lento | valor errado | exaustão |
+| Component | crash | hang | slow | wrong value | exhaustion |
 |---|---|---|---|---|---|
-| driver (leitura) | reinício do driver; `Bad(NotConnected)` | timeout por lote | `Degraded` | **sensor congelado com `Good`** → ver (b) | fila de ingestão cheia → perda contada |
-| driver (escrita) | idem | **escrita que nunca volta** → ver (a) | escritas acumuladas → ver (a) | readback (`verify`) | — |
-| app (ciclo) | trap → tick sem a app | epoch | overrun da app | envelope | `memory.max` |
-| app (async) | trap → reinício | sem efeito no ciclo; lease expira | idem | envelope | `memory.max` |
-| modelo | processo isolado reinicia | deadline | fallback de backend | guarda OOD (parcial) | OOM → processo morto primeiro |
-| grupo de ciclo | o grupo é uma thread do `jokerd` | **supervisor** → ver (c) | overrun | — | — |
-| historian | serviço reinicia | não bloqueia o núcleo (filas) | perda contada | — | disco cheio → retenção |
-| uplink | idem | idem | backlog no historian | — | orçamento |
-| `jokerd` | systemd + fallback do dispositivo | watchdog de hardware | — | — | oom_score_adj |
-| placa | watchdog de hardware | idem | throttling térmico → M8, alarme | — | — |
+| driver (read) | driver restart; `Bad(NotConnected)` | timeout per batch | `Degraded` | **frozen sensor with `Good`** → see (b) | full ingestion queue → counted drop |
+| driver (write) | same | **write that never returns** → see (a) | accumulated writes → see (a) | readback (`verify`) | — |
+| app (cycle) | trap → tick without the app | epoch | app overrun | envelope | `memory.max` |
+| app (async) | trap → restart | no effect on the cycle; lease expires | same | envelope | `memory.max` |
+| model | isolated process restarts | deadline | backend fallback | OOD guard (partial) | OOM → process killed first |
+| cycle group | the group is a `jokerd` thread | **supervisor** → see (c) | overrun | — | — |
+| historian | service restarts | does not block the core (queues) | counted drop | — | full disk → retention |
+| uplink | same | same | backlog in the historian | — | budget |
+| `jokerd` | systemd + device fallback | hardware watchdog | — | — | oom_score_adj |
+| board | hardware watchdog | same | thermal throttling → M8, alarm | — | — |
 
-Três respostas que faltavam:
+Three answers that were missing:
 
-**(a) Escrita que encrava.** Um equipamento aceita a ligação TCP e nunca responde ao FC16. Com uma fila FIFO de escritas para o driver, as escritas seguintes acumulam-se e a primeira a sair, quando o equipamento acordar, é a mais velha. **Refinamento:** a fila de saídas para cada driver é uma **caixa por saída com "o último ganha"** (latest-wins), e não uma FIFO. Só as escritas agendadas, os impulsos e os grupos atómicos usam uma fila ordenada, e essa é limitada. Cada escrita tem timeout, e ao fim de N timeouts o dispositivo passa a `Down`, com o fallback do dispositivo a cobrir.
+**(a) Write that hangs.** A piece of equipment accepts the TCP connection and never answers the FC16. With a FIFO queue of writes to the driver, the following writes pile up and the first one to go out, when the equipment wakes up, is the oldest. **Refinement:** the output queue for each driver is a **per-output box with "the last one wins"** (latest-wins), not a FIFO. Only scheduled writes, pulses and atomic groups use an ordered queue, and that one is bounded. Each write has a timeout, and after N timeouts the device goes to `Down`, with the device fallback covering.
 
-**(b) Sensor congelado com qualidade `Good`.** É um transmissor 4–20 mA avariado, ou um PLC intermédio que deixou de atualizar mas continua a responder. O valor não muda durante horas e a qualidade diz `Good`. **Refinamento:** `stuck_detect = "30m"` por sinal (e, nos perfis, para grandezas que variam sempre, como a frequência da rede): um valor bit-a-bit igual durante esse tempo passa a `Uncertain(Frozen)`. Novo motivo de qualidade no documento 02, §4.
+**(b) Frozen sensor with `Good` quality.** It is a failed 4–20 mA transmitter, or an intermediate PLC that stopped updating but keeps responding. The value does not change for hours and the quality says `Good`. **Refinement:** `stuck_detect = "30m"` per signal (and, in profiles, for quantities that always vary, such as grid frequency): a value bit-for-bit identical for that time becomes `Uncertain(Frozen)`. New quality reason in document 02, §4.
 
-**(c) Supervisor e grupo encravado.** O supervisor põe as saídas de um grupo encravado em `safe`, mas quem escreve nas filas dos drivers é o grupo, e o princípio de escritor único impede o supervisor de escrever lá. **Refinamento:** cada caixa de saída tem um bit atómico **`force_safe`**, que só o supervisor pode ativar e que o driver verifica antes de cada envio. O caminho de emergência não passa pelo grupo e não viola o escritor único dos valores.
+**(c) Supervisor and hung group.** The supervisor puts the outputs of a hung group into `safe`, but whoever writes into the driver queues is the group, and the single-writer principle prevents the supervisor from writing there. **Refinement:** each output box has an atomic **`force_safe`** bit, which only the supervisor can set and which the driver checks before each send. The emergency path does not go through the group and does not violate the single writer of the values.
 
-**Aguenta com refinamento** (documentos 01, §3 e §20, e 02, §4).
+**Holds with refinement** (documents 01, §3 and §20, and 02, §4).
 
 ---
 
-## Ataque 5 — Tempo real em Linux: o que pode correr mal
+## Attack 5 — Real time on Linux: what can go wrong
 
-Um p99,9 de 100 µs num grupo de 1 ms só se consegue se nenhuma das seguintes coisas acontecer no núcleo `rt`:
+A p99.9 of 100 µs in a 1 ms group is only achievable if none of the following things happen on the `rt` core:
 
-| Fonte de latência | Mitigação no desenho | Verificação |
+| Latency source | Mitigation in the design | Verification |
 |---|---|---|
-| page faults | `mlockall(MCL_CURRENT\|MCL_FUTURE)`, stacks pré-tocadas, instâncias de ciclo pré-tocadas | `jk doctor --rt` conta os *major faults* durante 60 s |
-| alocação no host durante o tick | invariante 5 do `AGENTS.md` | guarda *no-alloc* em debug e em CI (`assert_no_alloc` no caminho do tick) |
-| locks e inversão de prioridade | nenhum lock no caminho do tick; seqlocks e SPSC | revisão + teste de estresse com carga em `io`/`bg` |
-| escalonamento de frequência | governor `performance` no núcleo `rt` | `jk doctor` |
-| interrupções | afinidade de IRQs fora do núcleo `rt` (exceto a NIC do EtherCAT, que vai *para* o núcleo `rt/drv`) | `jk doctor` lê `/proc/interrupts` |
-| SMIs (x86) | não se mitigam em software | `hwlatdetect` no `jk doctor --rt`; placas com SMIs acima de 50 µs ficam marcadas `rt: unsuitable` |
-| throttling térmico | M8: treino e ML fora do `rt`, alarme de temperatura | sinal `joker.sys.temp` |
-| wasmtime: inicialização preguiçosa | primeira chamada feita no `init`, com a instância aquecida | medição do primeiro tick |
-| wasmtime: traps usam sinais | handler de sinais instalado antes de subir a prioridade | teste de trap sob carga |
-| logs a partir do ciclo | anel lock-free, drenado pela thread `svc` | — |
-| escrita em disco a partir do ciclo | proibida; o traço vai para um anel, drenado em `bg` | — |
+| page faults | `mlockall(MCL_CURRENT\|MCL_FUTURE)`, pre-touched stacks, pre-touched cycle instances | `jk doctor --rt` counts *major faults* for 60 s |
+| allocation in the host during the tick | invariant 5 of `AGENTS.md` | *no-alloc* guard in debug and in CI (`assert_no_alloc` on the tick path) |
+| locks and priority inversion | no lock on the tick path; seqlocks and SPSC | review + stress test with load on `io`/`bg` |
+| frequency scaling | `performance` governor on the `rt` core | `jk doctor` |
+| interrupts | IRQ affinity off the `rt` core (except the EtherCAT NIC, which goes *to* the `rt/drv` core) | `jk doctor` reads `/proc/interrupts` |
+| SMIs (x86) | cannot be mitigated in software | `hwlatdetect` in `jk doctor --rt`; boards with SMIs above 50 µs are marked `rt: unsuitable` |
+| thermal throttling | M8: training and ML off `rt`, temperature alarm | `joker.sys.temp` signal |
+| wasmtime: lazy initialization | first call made at `init`, with the instance warmed up | measurement of the first tick |
+| wasmtime: traps use signals | signal handler installed before raising the priority | trap test under load |
+| logs from the cycle | lock-free ring, drained by the `svc` thread | — |
+| disk writes from the cycle | forbidden; the trace goes to a ring, drained in `bg` | — |
 
-**Conclusão honesta:** num kernel sem PREEMPT_RT, os alvos de 1 ms não se garantem, e o `jk check` recusa grupos abaixo de 10 ms sem `kernel = "preempt_rt"` (`J0351`). Com PREEMPT_RT, que está no kernel principal desde a 6.12, e CPU isolada, o alvo é plausível em CM4/CM5 e x86, mas **tem de ser medido por placa** antes de ser prometido. Por isso o perfil de placa leva o resultado do `jk doctor --rt` de referência. **Aguenta, com a condição de medir.**
+**Honest conclusion:** on a kernel without PREEMPT_RT, the 1 ms targets are not guaranteed, and `jk check` rejects groups below 10 ms without `kernel = "preempt_rt"` (`J0351`). With PREEMPT_RT, which has been in the mainline kernel since 6.12, and an isolated CPU, the target is plausible on CM4/CM5 and x86, but it **must be measured per board** before being promised. That is why the board profile carries the result of the reference `jk doctor --rt`. **Holds, on condition of measuring.**
 
 ---
 
-## Ataque 6 — O modelo de instâncias Wasm
+## Attack 6 — The Wasm instance model
 
-Um `Store` do wasmtime não é `Sync`. Uma app com tarefas de ciclo (thread RT) e tarefas async (tokio) não pode usar a mesma instância em paralelo. As alternativas avaliadas:
+A wasmtime `Store` is not `Sync`. An app with cycle tasks (RT thread) and async tasks (tokio) cannot use the same instance in parallel. The alternatives evaluated:
 
-| Opção | Problema | Decisão |
+| Option | Problem | Decision |
 |---|---|---|
-| uma instância com mutex | uma tarefa async a segurar o `Store` durante uma inferência bloqueia o tick → **inversão de prioridade** no caminho RT | rejeitada |
-| uma instância, com as tarefas async a correr *entre* ticks na thread RT | põe trabalho async no núcleo RT e rebenta o orçamento | rejeitada |
-| threads Wasm com memória partilhada | não estão estabilizadas no Component Model e trariam de volta locks dentro do guest | rejeitada por agora; revisitar quando *shared-everything threads* estabilizarem |
-| **duas instâncias do mesmo componente**, que partilham só sinais internos e caixas de correio | o estado não é partilhado implicitamente, e isso tem custo de DX | **aceite** |
+| one instance with a mutex | an async task holding the `Store` during an inference blocks the tick → **priority inversion** on the RT path | rejected |
+| one instance, with the async tasks running *between* ticks on the RT thread | puts async work on the RT core and blows the budget | rejected |
+| Wasm threads with shared memory | they are not stabilized in the Component Model and would bring locks back inside the guest | rejected for now; revisit when *shared-everything threads* stabilize |
+| **two instances of the same component**, which share only internal signals and mailboxes | state is not shared implicitly, and that has a DX cost | **accepted** |
 
-O custo de DX é real, e o SDK tem de o tornar óbvio:
+The DX cost is real, and the SDK must make it obvious:
 
-- `CycleIo<T>` e `TaskIo<T>` são tipos diferentes, e o estado de uma tarefa de ciclo (`st: &mut Ctl`) não é visível para as tarefas async;
-- `Internal<T>` e `Mailbox<T, N>` são os únicos canais, e a documentação do SDK abre com um diagrama que os mostra;
-- o erro de compilação para `static mut` partilhado explica porquê.
+- `CycleIo<T>` and `TaskIo<T>` are different types, and the state of a cycle task (`st: &mut Ctl`) is not visible to the async tasks;
+- `Internal<T>` and `Mailbox<T, N>` are the only channels, and the SDK documentation opens with a diagram that shows them;
+- the compile error for a shared `static mut` explains why.
 
-A vantagem inesperada: **o isolamento dá robustez**. Um trap numa tarefa async não mata a instância de ciclo, e uma fuga de memória numa tarefa async não mexe no ciclo. **Aguenta**, com o custo de DX assumido (ADR 0004).
+The unexpected advantage: **isolation gives robustness**. A trap in an async task does not kill the cycle instance, and a memory leak in an async task does not touch the cycle. **Holds**, with the DX cost accepted (ADR 0004).
 
 ---
 
-## Ataque 7 — Extensibilidade: acrescentar sem tocar no núcleo
+## Attack 7 — Extensibility: adding without touching the core
 
-| Quero acrescentar… | Ponto de extensão | Toca no `joker-core`? | ABI |
+| I want to add… | Extension point | Touches `joker-core`? | ABI |
 |---|---|---|---|
-| um protocolo novo | trait `Driver` (N), mundo `joker:driver` (W), JDP (X) | não | N: interno (feature de build); W: WIT versionado; X: JDP versionado |
-| um equipamento novo | perfil TOML | não | esquema de perfil versionado |
-| uma placa nova | perfil de placa | não | idem |
-| um acelerador novo | trait `InferenceBackend` | não | interno, ou plugin com C ABI (`joker-ml-abi`) |
-| uma linguagem nova para apps | qualquer toolchain que produza um componente para `joker:runtime` | não | WIT |
-| uma operação de pipeline | trait `PipelineOp` com negociação de formato | não | interno |
-| um tipo de uplink | trait `Uplink` | não | interno |
-| uma ponte | trait `Bridge` (tem de declarar escritor, M11) | não | interno |
-| uma função nas expressões | **sim** | sim | a linguagem de expressões é fechada de propósito |
-| um passo do envelope | **sim** | sim | exige ADR |
+| a new protocol | `Driver` trait (N), `joker:driver` world (W), JDP (X) | no | N: internal (build feature); W: versioned WIT; X: versioned JDP |
+| a new piece of equipment | TOML profile | no | versioned profile schema |
+| a new board | board profile | no | same |
+| a new accelerator | `InferenceBackend` trait | no | internal, or plugin with C ABI (`joker-ml-abi`) |
+| a new language for apps | any toolchain that produces a component for `joker:runtime` | no | WIT |
+| a pipeline operation | `PipelineOp` trait with format negotiation | no | internal |
+| an uplink type | `Uplink` trait | no | internal |
+| a bridge | `Bridge` trait (must declare a writer, M11) | no | internal |
+| a function in expressions | **yes** | yes | the expression language is closed on purpose |
+| an envelope step | **yes** | yes | requires an ADR |
 
-Sobre o ABI nativo: o Rust não tem ABI estável, e plugins nativos em Rust carregados dinamicamente são uma fonte conhecida de falhas subtis. Por isso **os drivers e backends tier N são compilados para dentro** (um build personalizado do `jokerd` com as features escolhidas, `jk runtime build --features ethercat,bacnet`), e a extensão por terceiros faz-se por **Wasm** (W) ou por **processo** (X, JDP). O único plugin nativo dinâmico são os modelos gerados (documento 06, §3.2), com uma ABI C mínima e verificada. **Aguenta.**
+On the native ABI: Rust has no stable ABI, and dynamically loaded native Rust plugins are a known source of subtle failures. That is why **tier N drivers and backends are compiled in** (a custom build of `jokerd` with the chosen features, `jk runtime build --features ethercat,bacnet`), and third-party extension is done through **Wasm** (W) or through a **process** (X, JDP). The only dynamic native plugin is the generated models (document 06, §3.2), with a minimal, verified C ABI. **Holds.**
 
 ---
 
-## Ataque 8 — Versões e compatibilidade (M21)
+## Attack 8 — Versions and compatibility (M21)
 
-Há sete coisas com versão que se cruzam num dispositivo: runtime, mundo WIT das apps, esquema do manifesto, formato do lock, perfis, formato `.jkm` (e a versão do Burn dentro dele) e mundo WIT dos drivers W.
+There are seven versioned things that cross paths on a device: runtime, the apps' WIT world, manifest schema, lock format, profiles, `.jkm` format (and the Burn version inside it) and the W drivers' WIT world.
 
-Cenário que partiu a primeira versão: uma frota com metade dos dispositivos em runtime 0.3 e metade em 0.4, e uma app nova compilada contra `joker:runtime@0.4.0` que usa uma função nova. O que acontece quando o agente de frota a envia para um 0.3?
+The scenario that broke the first version: a fleet with half of the devices on runtime 0.3 and half on 0.4, and a new app compiled against `joker:runtime@0.4.0` that uses a new function. What happens when the fleet agent sends it to a 0.3?
 
-**Política (M21):**
+**Policy (M21):**
 
-| Artefacto | Regra |
+| Artifact | Rule |
 |---|---|
-| mundo WIT `joker:runtime` | semver. Até à 1.0, a runtime suporta o mundo atual e **o minor anterior**, através de um adaptador gerado (composição de componentes). **Depois da 1.0, serve todos os `joker:runtime@1.y` com y ≤ o seu** (regra de ouro, ADR 0022). Um mundo *mais novo* do que a runtime é recusado **antes do deploy** pela `jk` e pelo agente (`J-E0001`, a partir dos metadados). |
-| esquema do manifesto | versionado com a runtime: `joker = "0.4"` no `[project]` é a versão mínima da runtime e, portanto, do esquema. Até à 1.0, `jk migrate` reescreve manifestos entre minors, e a runtime aceita o minor atual e o anterior; na série 1, uma runtime 1.x aceita qualquer manifesto 1.y com y ≤ x (ref/01 §9). |
-| `joker.lock` | `version = 1` em toda a série 1.x; numa minor só se acrescentam secções e campos opcionais, e a `jk` escreve só o subconjunto da versão `joker` do projeto. A v2 lê `version = 1` e escreve `version = 2` depois de `jk migrate` (ref/02 §3.1.6). |
-| perfis | `nome@major`; o lock fixa a versão exata. |
-| `.jkm` | `format = N` no `model.toml`, e `burn = "0.22.x"` no payload Burn. A runtime rejeita um Burn de outra minor (`J0502`) e sugere `jk model migrate`. |
-| mundo `joker:driver` | como o `joker:runtime`, com a mesma versão do `joker:runtime` que importa (ref/06 §4.8). |
-| JDP | negociação de versão no `hello`; o `jokerd` suporta a versão corrente e a anterior (ref/06 §5.4). |
+| `joker:runtime` WIT world | semver. Until 1.0, the runtime supports the current world and **the previous minor**, through a generated adapter (component composition). **After 1.0, it serves every `joker:runtime@1.y` with y ≤ its own** (golden rule, ADR 0022). A world *newer* than the runtime is rejected **before deploy** by `jk` and by the agent (`J-E0001`, from the metadata). |
+| manifest schema | versioned with the runtime: `joker = "0.4"` in `[project]` is the minimum version of the runtime and, therefore, of the schema. Until 1.0, `jk migrate` rewrites manifests between minors, and the runtime accepts the current minor and the previous one; in the 1 series, a 1.x runtime accepts any 1.y manifest with y ≤ x (ref/01 §9). |
+| `joker.lock` | `version = 1` throughout the 1.x series; a minor only adds sections and optional fields, and `jk` writes only the subset of the project's `joker` version. v2 reads `version = 1` and writes `version = 2` after `jk migrate` (ref/02 §3.1.6). |
+| profiles | `name@major`; the lock pins the exact version. |
+| `.jkm` | `format = N` in `model.toml`, and `burn = "0.22.x"` in the Burn payload. The runtime rejects a Burn from another minor (`J0502`) and suggests `jk model migrate`. |
+| `joker:driver` world | like `joker:runtime`, with the same version as the `joker:runtime` it imports (ref/06 §4.8). |
+| JDP | version negotiation in `hello`; `jokerd` supports the current version and the previous one (ref/06 §5.4). |
 
-**Consequência para o roadmap:** até à 1.0, cada minor da runtime pode partir o mundo WIT, mas nunca sem adaptador para o minor anterior. Depois da 1.0, o mundo major é estável durante toda a major, e a janela de adaptadores cobre todas as 1.y. As interfaces reservadas para a 1.1 (`ml`, `frames`, escritas agendadas, intenções) ficam `@unstable` fora do mundo estável, para que a sua forma não fique presa antes de existirem (ref/04 §2.8–§2.9). **Primitiva nova: M21.**
+**Consequence for the roadmap:** until 1.0, each runtime minor may break the WIT world, but never without an adapter for the previous minor. After 1.0, the major world is stable for the whole major, and the adapter window covers every 1.y. The interfaces reserved for 1.1 (`ml`, `frames`, scheduled writes, intents) stay `@unstable` outside the stable world, so that their shape is not frozen before they exist (ref/04 §2.8–§2.9). **New primitive: M21.**
 
 ---
 
-## Ataque 9 — Segurança: modelo de ameaças
+## Attack 9 — Security: threat model
 
-**Ativos:** o processo físico (o mais importante), as credenciais do dispositivo, os dados de processo e os modelos (propriedade intelectual).
+**Assets:** the physical process (the most important), the device credentials, the process data and the models (intellectual property).
 
-| Adversário / falha | Ataque | Mitigação | Resíduo |
+| Adversary / failure | Attack | Mitigation | Residual |
 |---|---|---|---|
-| app com bug ou maliciosa | escapar ao sandbox | Wasm sem ambient authority; só handles ligados; sem FS/rede por omissão | bugs no wasmtime (superfície pequena e auditada) |
-| idem | DoS ao ciclo | epoch, `memory.max`, admissão por WCET | — |
-| idem | **fazer mal dentro do envelope** (p. ex. ciclar a bateria ou um contactor para o desgastar) | taxa, `min_interval` e **orçamento de atuações** (`max_actuations = "20/h"`) | uma app autorizada pode sempre fazer más escolhas dentro dos limites: é o custo de a autorizar |
-| cloud / uplink comprometido | enviar comandos | escritas remotas são escritores declarados com nível e lease; mTLS; nonce + timestamp com janela de ±30 s contra replay | comandos válidos dentro do envelope passam |
-| atacante na rede local | **falar diretamente com o equipamento** (Modbus TCP não tem autenticação) | nenhuma no Joker | **fronteira**: segmentação de rede (VLAN de campo, o Joker como único host com duas NICs); documento 12, §5 |
-| idem | atacar a API local | socket Unix por omissão; TCP só com mTLS; papéis | — |
-| acesso físico | ler a chave, trocar o cartão SD | TPM/elemento seguro quando existe; artefactos assinados | secure boot é do SO (documento 12) |
-| cadeia de fornecimento | artefacto adulterado | assinaturas por tipo de artefacto; SBOM; builds reprodutíveis como objetivo | chaves de assinatura comprometidas |
-| modelo envenenado | treino no dispositivo com dados manipulados | linhagem (M10), validação obrigatória, sombra (M16) | ataques subtis de envenenamento passam na validação |
+| buggy or malicious app | escape the sandbox | Wasm without ambient authority; only bound handles; no FS/network by default | bugs in wasmtime (small, audited surface) |
+| same | DoS on the cycle | epoch, `memory.max`, admission by WCET | — |
+| same | **doing harm inside the envelope** (e.g. cycling the battery or a contactor to wear it out) | rate, `min_interval` and **actuation budget** (`max_actuations = "20/h"`) | an authorized app can always make bad choices within the limits: it is the cost of authorizing it |
+| compromised cloud / uplink | send commands | remote writes are declared writers with level and lease; mTLS; nonce + timestamp with a ±30 s window against replay | valid commands within the envelope pass |
+| attacker on the local network | **talk directly to the equipment** (Modbus TCP has no authentication) | none in Joker | **boundary**: network segmentation (field VLAN, Joker as the only host with two NICs); document 12, §5 |
+| same | attack the local API | Unix socket by default; TCP only with mTLS; roles | — |
+| physical access | read the key, swap the SD card | TPM/secure element when there is one; signed artifacts | secure boot belongs to the OS (document 12) |
+| supply chain | tampered artifact | signatures per artifact type; SBOM; reproducible builds as a goal | compromised signing keys |
+| poisoned model | on-device training with manipulated data | lineage (M10), mandatory validation, shadow (M16) | subtle poisoning attacks pass validation |
 
-Dois refinamentos saíram daqui: o **orçamento de atuações** no envelope (passo 6, documento 01, §7) e a **regra de cliente único** do ataque 11. **Aguenta com refinamento.**
+Two refinements came out of this: the **actuation budget** in the envelope (step 6, document 01, §7) and the **single-client rule** of attack 11. **Holds with refinement.**
 
 ---
 
-## Ataque 10 — Determinismo e replay: onde não chega
+## Attack 10 — Determinism and replay: where it falls short
 
-| Fonte de não determinismo | Tratamento |
+| Source of nondeterminism | Treatment |
 |---|---|
-| relógio | input (ADR 0007) ✓ |
-| entradas do ciclo | snapshot no traço ✓ |
-| parâmetros e config | geração no traço ✓ |
-| saídas de modelos em GPU/NPU | gravadas (M22) ✓ |
-| **aritmética de vírgula flutuante em Wasm** | o Wasm é determinista, exceto nos bits de NaN e no **relaxed SIMD**. **Refinamento:** o relaxed SIMD fica desativado nas instâncias de ciclo e os NaN são canonicalizados (`cranelift_nan_canonicalization`). Custa pouco e garante que o mesmo `.wasm` dá os mesmos bits em aarch64 e x86_64 |
-| aleatoriedade nas apps | `random` com semente vinda do host e gravada ✓ |
-| **tarefas async** | leem slots ao vivo, com ordem e timing que dependem do escalonador. O replay por omissão injeta as **propostas** async gravadas no tick em que chegaram (efeitos na fronteira). Com `trace.async = true`, gravam-se também as leituras das tarefas async e o replay passa a ser exato, a um custo que fica visível |
-| apps nativas | reprodutíveis só na mesma arquitetura |
+| clock | input (ADR 0007) ✓ |
+| cycle inputs | snapshot in the trace ✓ |
+| parameters and config | generation in the trace ✓ |
+| model outputs on GPU/NPU | recorded (M22) ✓ |
+| **floating-point arithmetic in Wasm** | Wasm is deterministic, except in the NaN bits and in **relaxed SIMD**. **Refinement:** relaxed SIMD is disabled in cycle instances and NaNs are canonicalized (`cranelift_nan_canonicalization`). It costs little and guarantees that the same `.wasm` gives the same bits on aarch64 and x86_64 |
+| randomness in apps | `random` with a seed coming from the host and recorded ✓ |
+| **async tasks** | they read live slots, with an order and timing that depend on the scheduler. Replay by default injects the recorded async **proposals** at the tick in which they arrived (effects at the boundary). With `trace.async = true`, the reads of the async tasks are also recorded and replay becomes exact, at a cost that stays visible |
+| native apps | reproducible only on the same architecture |
 
-**Primitiva nova: M22** (saídas não deterministas gravadas; política de replay para async). Com refinamento nas flags do motor Wasm.
+**New primitive: M22** (nondeterministic outputs recorded; replay policy for async). With refinement in the Wasm engine flags.
 
 ---
 
-## Ataque 11 — Escala: onde o desenho encontra limites
+## Attack 11 — Scale: where the design meets limits
 
-| Dimensão | Limite do desenho | O que parte primeiro |
+| Dimension | Design limit | What breaks first |
 |---|---|---|
-| sinais por dispositivo Joker | ~100 k (3,2 MB de slots) | a ingestão e os barramentos, muito antes |
-| grupos de ciclo | ≤ 3 por núcleo `rt` (rate-monotonic) | a admissão (M23) |
-| apps | ~50 (pooling, 2 instâncias cada) | a memória virtual em 32 bits |
-| subscrições na API | ~1 000 clientes WebSocket | a CPU `bg` |
-| **ligações a um equipamento Modbus TCP** | o equipamento aceita 1–4 ligações | **o SCADA e o Joker a disputar ligações**, com timeouts aleatórios de ambos os lados |
+| signals per Joker device | ~100 k (3.2 MB of slots) | ingestion and the buses, long before |
+| cycle groups | ≤ 3 per `rt` core (rate-monotonic) | admission (M23) |
+| apps | ~50 (pooling, 2 instances each) | virtual memory on 32 bits |
+| API subscriptions | ~1,000 WebSocket clients | the `bg` CPU |
+| **connections to a Modbus TCP device** | the equipment accepts 1–4 connections | **SCADA and Joker competing for connections**, with random timeouts on both sides |
 
-A última linha é um problema de campo clássico. **Refinamento — regra de cliente único:** num site com Joker, o Joker deve ser o **único cliente** de cada equipamento de campo, e os outros sistemas leem através das pontes (servidor Modbus e servidor OPC UA, M11). O `jk doctor` deteta ligações concorrentes quando o equipamento o permite (contadores de sessões em alguns perfis), e o documento 12 recomenda a regra explicitamente. **Aguenta com refinamento.**
+The last row is a classic field problem. **Refinement — single-client rule:** on a site with Joker, Joker should be the **only client** of each field device, and the other systems read through the bridges (Modbus server and OPC UA server, M11). `jk doctor` detects concurrent connections when the equipment allows it (session counters in some profiles), and document 12 recommends the rule explicitly. **Holds with refinement.**
 
 ---
 
-## Ataque 12 — Coringa ou canivete suíço? O custo da complexidade
+## Attack 12 — Wildcard or Swiss army knife? The cost of complexity
 
-O documento 10 lista 23 primitivas (24, com as classes de equipamento do documento 14, que são opcionais e compilam para portas). O risco é o Joker tornar-se o que critica: um sistema enorme, difícil de aprender e de manter.
+Document 10 lists 23 primitives (24, with the equipment classes of document 14, which are optional and compile to ports). The risk is that Joker becomes what it criticizes: an enormous system, hard to learn and to maintain.
 
-### 12.1 O custo de cada primitiva
+### 12.1 The cost of each primitive
 
-| Primitiva | Crate | Opcional no build? | Toca no caminho quente? |
+| Primitive | Crate | Optional in the build? | Touches the hot path? |
 |---|---|---|---|
-| M1 fallback do dispositivo, M2 lock | manifest, hal | não | não |
-| M3 rastreio causal | core | não | sim: bitset de leituras por tick (~100 ns) |
-| M4 streams, M5 pipelines | ml, drivers | **sim** (`vision`) | não (domínio ml) |
-| M6 escritas agendadas | core, hal | não | sim, só nas saídas com `schedule_depth > 0` |
-| M7 blocos | core, store | **sim** (`waveforms`) | não |
-| M8 classes de recursos | jokerd | não | não |
-| M9 alarmes | core | não | sim: avaliação por tick (bytecode) |
-| M10 linhagem, M16 sombra, M17 guarda | ml | **sim** (`ml`) | não |
-| M11 pontes | link | **sim** por ponte | não |
-| M12 orçamentos, M13 overlays, M14 relógio | link, manifest, core | não | M14: flag por amostra |
-| M15 árbitro | core | não | sim (~50 ns por saída) |
-| M18 propostas | api | não | não |
-| M19 ações, M20 atómicos | core, hal | não | M20: sim, só nas saídas agrupadas |
-| M21 versões, M22 determinismo, M23 admissão | host, manifest | não | não |
-| M24 classes e instâncias | manifest, sdk, core (consultas) | não | só as consultas, como sinais derivados |
+| M1 device fallback, M2 lock | manifest, hal | no | no |
+| M3 causal tracing | core | no | yes: bitset of reads per tick (~100 ns) |
+| M4 streams, M5 pipelines | ml, drivers | **yes** (`vision`) | no (ml domain) |
+| M6 scheduled writes | core, hal | no | yes, only on outputs with `schedule_depth > 0` |
+| M7 blocks | core, store | **yes** (`waveforms`) | no |
+| M8 resource classes | jokerd | no | no |
+| M9 alarms | core | no | yes: evaluation per tick (bytecode) |
+| M10 lineage, M16 shadow, M17 guard | ml | **yes** (`ml`) | no |
+| M11 bridges | link | **yes** per bridge | no |
+| M12 budgets, M13 overlays, M14 clock | link, manifest, core | no | M14: flag per sample |
+| M15 arbiter | core | no | yes (~50 ns per output) |
+| M18 proposals | api | no | no |
+| M19 actions, M20 atomic | core, hal | no | M20: yes, only on grouped outputs |
+| M21 versions, M22 determinism, M23 admission | host, manifest | no | no |
+| M24 classes and instances | manifest, sdk, core (queries) | no | only the queries, as derived signals |
 
-**O `joker-core` tem de caber em ~15 k linhas** (alvo, a vigiar na revisão). Tudo o que é domínio (visão, formas de onda, ML, pontes) vive em crates opcionais, e um build `minimal` (a lista está na ref/06 §3.8, e o alvo de tamanho no 01 §21) exclui-os.
+**`joker-core` must fit in ~15 k lines** (target, to watch in review). Everything that is domain (vision, waveforms, ML, bridges) lives in optional crates, and a `minimal` build (the list is in ref/06 §3.8, and the size target in 01 §21) excludes them.
 
-### 12.2 Revelação progressiva na DX
+### 12.2 Progressive disclosure in the DX
 
-O manifesto mínimo tem 16 linhas, e quem começa só precisa de 4 conceitos (sinal, porta, ligação, envelope). O `mode = "dev"` é o que o deixa correr sem o fallback do equipamento verificado; em `prod`, a mesma saída GPIO sem fallback é `J0205` (ref/01):
+The minimal manifest has 16 lines, and a beginner only needs 4 concepts (signal, port, binding, envelope). `mode = "dev"` is what lets it run without the equipment fallback verified; in `prod`, the same GPIO output without a fallback is `J0205` (ref/01):
 
 ```toml
 [project]
@@ -325,29 +325,29 @@ path = "apps/level"
 bind = { low = "tank.low", pump = "pump.run" }
 ```
 
-Árbitro, sombra, pipelines, overlays e orçamentos aparecem **quando são precisos**, com valores por omissão seguros e um `jk check` que explica cada um. É a mesma disciplina do Cargo: o `Cargo.toml` mínimo tem 3 linhas, e o máximo tem centenas.
+Arbiter, shadow, pipelines, overlays and budgets show up **when they are needed**, with safe defaults and a `jk check` that explains each one. It is the same discipline as Cargo: the minimal `Cargo.toml` has 3 lines, and the maximal one has hundreds.
 
-### 12.3 Conformidade como contenção
+### 12.3 Conformance as containment
 
-O envelope, o árbitro, a imagem de processo e a semântica de qualidade têm uma **bateria de conformidade em dados** (`conformance/<área>/<suite>.conformance.toml`, com o esquema único da ref/03 §2.6: casos com o esperado escrito à mão a partir da spec) e testes por propriedades. É o que permite acrescentar primitivas sem partir as garantias. **Aguenta, com vigilância permanente.**
+The envelope, the arbiter, the process image and the quality semantics have a **data-driven conformance suite** (`conformance/<area>/<suite>.conformance.toml`, with the single schema of ref/03 §2.6: cases with the expected result written by hand from the spec) and property-based tests. It is what allows adding primitives without breaking the guarantees. **Holds, with permanent vigilance.**
 
 ---
 
-## Resumo
+## Summary
 
-| # | Ataque | Conclusão | Resultado |
+| # | Attack | Conclusion | Result |
 |---|---|---|---|
-| 1 | fugas da abstração | primitiva nova | **M19** ações, **M20** grupos atómicos e ordem; `param` com poll a pedido |
-| 2 | orçamento do caminho quente | refinamento | imagem empacotada em `on-cycle`; registos de proposta com tipo (ref/04 §3) |
-| 3 | memória | refinamento | configuração do wasmtime para 32 bits; `oom_score_adj` |
-| 4 | injeção de falhas | refinamento | caixas latest-wins para drivers; `stuck_detect`/`Frozen`; bit `force_safe` do supervisor |
-| 5 | tempo real | aguenta, com medição | `J0351`; `jk doctor --rt`; guarda no-alloc em CI |
-| 6 | instâncias Wasm | aguenta | duas instâncias por app (ADR 0004) |
-| 7 | extensibilidade | aguenta | tier N compilado para dentro; terceiros por W/X |
-| 8 | versões | primitiva nova | **M21** |
-| 9 | segurança | refinamento | orçamento de atuações; fronteira da rede de campo |
-| 10 | determinismo | primitiva nova | **M22**; relaxed SIMD desligado e NaN canonicalizados |
-| 11 | escala | refinamento | regra de cliente único via pontes |
-| 12 | complexidade | aguenta, com vigilância | builds por features; revelação progressiva; conformidade |
+| 1 | abstraction leaks | new primitive | **M19** actions, **M20** atomic groups and order; `param` with on-demand poll |
+| 2 | hot-path budget | refinement | packed image in `on-cycle`; typed proposal records (ref/04 §3) |
+| 3 | memory | refinement | wasmtime configuration for 32 bits; `oom_score_adj` |
+| 4 | fault injection | refinement | latest-wins boxes for drivers; `stuck_detect`/`Frozen`; supervisor's `force_safe` bit |
+| 5 | real time | holds, with measurement | `J0351`; `jk doctor --rt`; no-alloc guard in CI |
+| 6 | Wasm instances | holds | two instances per app (ADR 0004) |
+| 7 | extensibility | holds | tier N compiled in; third parties via W/X |
+| 8 | versions | new primitive | **M21** |
+| 9 | security | refinement | actuation budget; fieldbus boundary |
+| 10 | determinism | new primitive | **M22**; relaxed SIMD off and NaNs canonicalized |
+| 11 | scale | refinement | single-client rule via bridges |
+| 12 | complexity | holds, with vigilance | builds by features; progressive disclosure; conformance |
 
-A **M23** (admissão de tempo real por WCET) vem dos ataques 2 e 5 juntos e está descrita no documento 01, §4.
+**M23** (real-time admission by WCET) comes from attacks 2 and 5 together and is described in document 01, §4.
