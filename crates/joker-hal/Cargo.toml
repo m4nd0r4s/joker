@@ -1,0 +1,34 @@
+[package]
+name = "joker-hal"
+description = "Joker driver contract: Planner, Driver and RtPart traits, plans, transports, Cx and the committed-write channel (no_std)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[features]
+default = []
+alloc = ["embedded-io/alloc", "embedded-io-async/alloc"]
+std = ["alloc", "embedded-io/std", "embedded-io-async/std", "dep:tokio", "dep:rustix", "dep:joker-serial-sys"]
+plan = ["alloc"]
+testing = ["std", "plan"]
+
+[dependencies]
+joker-core.workspace = true
+portable-atomic.workspace = true
+embedded-io.workspace = true
+embedded-io-async.workspace = true
+tokio = { workspace = true, optional = true, features = ["net", "time"] }
+rustix = { workspace = true, optional = true, features = ["fs", "termios"] }
+joker-serial-sys = { workspace = true, optional = true }
+
+[dev-dependencies]
+joker-hal = { path = ".", features = ["testing"] }
+critical-section = { workspace = true, features = ["std"] }
+tokio = { workspace = true, features = ["net", "time", "rt", "macros"] }
+rustix = { workspace = true, features = ["fs", "termios", "pty"] }
+
+[lints]
+workspace = true

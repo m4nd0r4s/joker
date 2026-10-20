@@ -62,7 +62,7 @@ The conformance front writes its cases from the specification only and never rea
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
-cargo build --target thumbv8m.main-none-eabihf -p joker-units -p joker-expr -p joker-core
+cargo build --target thumbv8m.main-none-eabihf -p joker-units -p joker-expr -p joker-core -p joker-hal
 ```
 
 - If you touched the semantics of the envelope, the arbiter or the process image, a case in `conformance/` covers it.

@@ -23,7 +23,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: rustup show
-      - run: cargo build --target ${{ matrix.target }} -p joker-units -p joker-expr -p joker-core
+      - run: cargo build --target ${{ matrix.target }} -p joker-units -p joker-expr -p joker-core -p joker-hal
+      - run: cargo build --target ${{ matrix.target }} -p joker-hal --features alloc,plan
 
   deny:
     runs-on: ubuntu-latest
