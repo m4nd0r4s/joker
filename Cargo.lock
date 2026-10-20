@@ -73,6 +73,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "joker-serial-sys"
+version = "0.0.0"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "joker-units"
 version = "0.0.0"
 
