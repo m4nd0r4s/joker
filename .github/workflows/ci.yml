@@ -30,3 +30,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: EmbarkStudios/cargo-deny-action@v2
+
+  spec-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python3 tools/spec-lint/spec_lint.py --max-score 0.5
+      - run: python3 -c "import tomllib; tomllib.load(open('spec/codes.toml', 'rb'))"
