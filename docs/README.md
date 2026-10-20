@@ -40,7 +40,8 @@ Status: **design document.** None of this is implemented. The figures attributed
 | `ref/` | **Normative references of all the interfaces** (ADR 0023): `00` conventions · `01` manifest · `02` lock, node, client, secrets · `03` profiles, boards, simulation, scenarios, conformance · `04` WIT and Rust SDK · `05` Python and TypeScript SDKs, clients · `06` N/W/X drivers · `07` Joker Link · `08` Joker Micro C ABI · `09` HTTP API · `10` agent protocol |
 | `proposals/` | Proposals and their reasoning; **not normative** (the IDL one was incorporated into 17) |
 | `adr/` | Architecture decision records |
-| `GLOSSARY.md` | English term for every domain word, translation style, and the file-name map (ADR 0029) |
+| `GLOSSARY.md` | English term for every domain word, translation style, the file-name map (ADR 0029) and the identifier map (ADR 0036) |
+| `errata/` | Errata found while translating the specification, with their status; **not normative** |
 | `examples/` | Guided walkthrough and three complete projects |
 | `track/` | **Learning track** in 11 parts and 4 modules, on the bench of document 23 (laptop, Pi 3 B+, Pi Zero W, ESP32; nothing is bought): signals and the Linux node (the `ACT` LED, the CPU temperature, the ESP32 over Modbus RTU and TCP, faults and replay, switching boards), classes (those of `std/` and your own), Joker Micro on the ESP32 (Joker Link over serial and over Wi-Fi, an app on the MCU) and the fleet (`prod`, secrets, the Deck and a rollout in waves) |
 
