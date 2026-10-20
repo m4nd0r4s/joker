@@ -1,5 +1,5 @@
 //! The Joker manifest front: the `joker.toml` model, its layers and checks,
-//! the lock and the code registry shared by every surface (docs/16 §9,
+//! the `joker.lock` and the code registry shared by every surface (docs/16 §9,
 //! ref/00 §8, ref/01).
 //!
 //! [`check`] runs the steps of ref/01 §8.1 that the M0 subset covers: read
@@ -14,6 +14,7 @@ pub mod diag;
 pub mod effective;
 pub mod grammar;
 pub mod layers;
+pub mod lock;
 pub mod model;
 pub mod source;
 pub mod value;
