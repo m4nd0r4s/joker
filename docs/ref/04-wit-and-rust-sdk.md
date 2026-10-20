@@ -22,7 +22,7 @@ Out of scope: the tier 2 SDKs (ref/05), the world `joker:driver` (ref/06), the C
 
 ### 1.2 Sources
 
-Documents 04 (all), 14 §3 and §6–7, 17 §2 and §4–6, 16 (all), 19 §3 and §5, 02 §4–8, 01 §3–5, §9 and §18, 09 (attacks 2, 6, 8 and 10), 11 ("Ready for ML"), 21 §1 and §3, ADR 0004, 0020 and 0022, and the 34 `rust` blocks of `docs/**/*.md` (§9).
+Documents 04 (all), 14 §3 and §6–7, 17 §2 and §4–6, 16 (all), 19 §3 and §5, 02 §4–8, 01 §3–5, §9 and §18, 09 (attacks 2, 6, 8 and 10), 11 (§"Ready for ML"), 21 §1 and §3, ADR 0004, 0020 and 0022, and the 34 `rust` blocks of `docs/**/*.md` (§9).
 
 ### 1.3 Connections to other references
 
@@ -274,7 +274,7 @@ Any other import makes the host refuse the component at load (`J-E0006`).
 | `intents` | `async-io.propose` | 01 §6.1, M18 |
 
 - An `@unstable` item **is not part of the stable world**: the tools generate the bindings without it, unless the feature is requested (in the Rust SDK, an `unstable-<name>` feature, §4.15). A component that imports an unstable item is refused by `jokerd` in `mode = "prod"` (`J-E0003`). In `mode = "dev"`, the 1.0 runtime binds it to stubs that return `J-E0601`, which allows developing against the planned shape.
-- In 1.1, each stabilized item replaces `@unstable(feature = …)` with `@since(version = 1.1.0)`. The shape may still change before that replacement, and so **an app compiled with an unstable feature is not covered by the golden rule**. This is what allows reserving the interfaces already (document 11, "Ready for ML") without the shape chosen today being locked in for the whole 1 series.
+- In 1.1, each stabilized item replaces `@unstable(feature = …)` with `@since(version = 1.1.0)`. The shape may still change before that replacement, and so **an app compiled with an unstable feature is not covered by the golden rule**. This is what allows reserving the interfaces already (document 11, §"Ready for ML") without the shape chosen today being locked in for the whole 1 series.
 
 ### 2.10 Other packages in `wit/`
 

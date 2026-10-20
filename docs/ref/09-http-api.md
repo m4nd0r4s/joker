@@ -1460,6 +1460,6 @@ $J -X POST http://joker/v1/shadows/apps/peak_shaver/promote $H -H 'If-Match: "sh
 | **1.0** | everything in §2–§11, except what follows |
 | 1.0, empty until 1.1 | `/v1/intents` (proposal-only writers, M18, arrive in 1.1) |
 | 1.0, `skip` until 1.3 | `doctor` with `network` |
-| **1.1** (ML-ready) | `/v1/models/**`, `/v1/training`, `/v1/shadows/models/**`, `/v1/signals/{path}/blocks`, `/v1/streams`; topics `frames` and `blocks`; `shape` `block` and `stream`; `kind` `joker.model.v1+jkm`; `ManualWriteRequest.at` (M6); `Metrics.ml`; `Decision.model_outputs` (M22); `PlanChange.kind = model`. Everything is already in the representation and responds `J-E1017` in 1.0 |
+| **1.1** (document 11, §"Ready for ML") | `/v1/models/**`, `/v1/training`, `/v1/shadows/models/**`, `/v1/signals/{path}/blocks`, `/v1/streams`; topics `frames` and `blocks`; `shape` `block` and `stream`; `kind` `joker.model.v1+jkm`; `ManualWriteRequest.at` (M6); `Metrics.ml`; `Decision.model_outputs` (M22); `PlanChange.kind = model`. Everything is already in the representation and responds `J-E1017` in 1.0 |
 | **1.3** | `tunnel` transport and remote sessions of the Deck (`/v1/agent/sessions`); list of origins (CORS) for the Studio; session tokens, if they are needed; `doctor` `network` (gateway mode) |
 | 2.0 | paths qualified by node (`@<node>.…`, document 21, §8): `/v2` prefix |

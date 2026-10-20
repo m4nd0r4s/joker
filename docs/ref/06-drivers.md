@@ -1681,7 +1681,7 @@ In `mode = "dev"`, the `error-in-prod` codes appear as `W0860` and `W0865` (16 �
 | tier W: `joker:driver` world (version pinned with `joker:runtime`) and `joker-driver-sdk` **unstable** (`@unstable(feature = driver-world)`, only in-tree drivers in `prod`, §4); host with `serial`, `tcp`, `udp` | **1.0** |
 | tier W **stable and open to third parties** (`@since(1.2.0)`): world, Rust and C SDK, `i2c`, `spi`, `can` transports in the host (`w-i2c-spi-can`), mandatory conformance, publication on the Hub | **1.2** (21 §4) |
 | conformance suite: interface, `basic` cases, report | **1.0** (used by the catalog); mandatory for publishing on the Hub in **1.2** |
-| streams of X drivers through `SCM_RIGHTS` (messages 40–42), `streams` capability | **1.1** (M4; already reserved in the CDDL, "Ready for ML") |
+| streams of X drivers through `SCM_RIGHTS` (messages 40–42), `streams` capability | **1.1** (M4; already reserved in the CDDL, document 11, §"Ready for ML") |
 | block signals, `block-read` capability | **1.1** (M7; reserved) |
 | Wasm on Joker Micro (W drivers with `wasmi`) | **1.4** (21 §6); the world is the same |
 | building and energy drivers over this contract (`bacnet-ip` X, `dlms-cosem` W, `iec-104` X) | **1.2** in the catalog (BACnet in any tier, 21 §4); afterwards, new drivers in any minor (ADR 0022, rule 3) |

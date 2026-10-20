@@ -2030,7 +2030,7 @@ instances = { p1 = "pump_a" }
 | `BLOCKS` (`0x30`): block signals (M7), vibration and waveforms of Joker Micro (19 U3) | **reserved 1.1** |
 | `at` in proposals (position 2 of `prop`): scheduled writes (M6) | **reserved 1.1** |
 | types `0x31`–`0x3F` | reserved 1.x |
-| `OTA` type `model` (3): ML on MCUs | **reserved 1.4** (Ready for ML; document 21, §6) |
+| `OTA` type `model` (3): ML on MCUs | **reserved 1.4** (document 11, §"Ready for ML"; document 21, §6) |
 | `OTA` type `app` (4): Wasm apps on M2 MCUs (`wasmi`) | **reserved 1.4** |
 | key 14 of `HELLO`: ephemeral X25519 (forward secrecy) | reserved 1.x |
 | quality reason `out_of_distribution` (6) in samples | already in 1.0 (ref/00 §4.3); only produced with ML on the MCU (1.4) |

@@ -4027,7 +4027,7 @@ components:
       type: string
       enum: [bool, i64, u64, f64, f32, enum, bits, string, bytes]
     Shape:
-      description: block and stream reserved for 1.1 (ML-ready)
+      description: block and stream reserved for 1.1 (document 11, "Ready for ML")
       type: string
       enum: [scalar, event, block, stream]
     Direction:

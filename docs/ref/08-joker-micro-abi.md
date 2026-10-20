@@ -1055,7 +1055,7 @@ The index of a record in a section **is** its identifier in the generation: reco
 | 0x0022 | `SECRETS` | bytes | a `secret-bundle` (ref/02 §2.4, `spec/cddl/secrets.cddl`) with the entries encrypted for the MCU's X25519 key (record 19), only with the MCU's `wrap`; present on standalone MCUs with secrets (ref/04 §4.14) and on any M2 MCU whose `[net.wifi]` has `password` (ref/01 §5.22) |
 | 0x0023 | `TRUST` | bytes | chain of new trust bundles (`trust-chain` in the CDDL), in version order; the MCU installs them (record 18) before verifying the blob's signature (§2.13.5) |
 | 0x0024 | `NET` | bytes | `micro-net` in deterministic CBOR (`spec/cddl/joker-micro.cddl`): the Wi-Fi configuration of `[net.wifi]` (ref/01 §5.22): `ssid`, `country`, `hostname` and the **name** of the password secret, which is looked up in `SECRETS`; never the value. Only on M2 MCUs with `[net.wifi]` |
-| 0x0040–0x0043 | reserved | — | `MODELS`, `BLOCKS`, `STREAMS` (v1.1, "Ready for ML"), `SCHEDULES` (scheduled writes, M6, v1.1) |
+| 0x0040–0x0043 | reserved | — | `MODELS`, `BLOCKS`, `STREAMS` (v1.1, document 11, §"Ready for ML"), `SCHEDULES` (scheduled writes, M6, v1.1) |
 | 0x0044 | reserved | — | `WASM_APPS` (apps in `wasmi`, v1.4) |
 | 0x8000–0xFFFF | private | — | never `REQUIRED`; ignored by `joker-micro` |
 
@@ -1501,7 +1501,7 @@ The returned value is **always admissible**: the integrator applies it without t
 | Element | v1.0 | Reserved |
 |---|---|---|
 | C ABI | 1.0, all the functions of this document | a 1.x only adds (§2.3) |
-| signal types | 0–8 | 16 block, 17 stream (v1.1, "Ready for ML") |
+| signal types | 0–8 | 16 block, 17 stream (v1.1, document 11, §"Ready for ML") |
 | blob sections | 0x0001–0x0024 | 0x0040 `MODELS`, 0x0041 `BLOCKS`, 0x0042 `STREAMS` (v1.1); 0x0043 `SCHEDULES` (scheduled writes, M6, v1.1); 0x0044 `WASM_APPS` (`wasmi`, v1.4) |
 | trace | `n_ml_outputs = 0` always | model outputs on the MCU (v1.4, Burn Flex `no_std`) |
 | scheduled writes (`write_at`, `timed`) | not on the MCU (`J0783`) | v1.1 |

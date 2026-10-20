@@ -1519,7 +1519,7 @@ A Deck of the 2 series speaks `agent/1` with 1.x nodes for the whole series (doc
 | micro profile (standalone MCUs); management at scale by the Deck | 1.0; at scale, 1.5 |
 | MCUs behind the node (`mcu` phase) | 1.0 |
 | offline import (`jk agent import`) | 1.0 |
-| **ML-ready:** type `joker.model.v1+jkm`, role `models`, key 23 of the DSD, `report-body` 20, capability `models` | reserved in 1.0; semantics in **1.1** |
+| **Ready for ML** (document 11): type `joker.model.v1+jkm`, role `models`, key 23 of the DSD, `report-body` 20, capability `models` | reserved in 1.0; semantics in **1.1** |
 | pending intents in the report (`report-body` 19) | reserved; 1.1 (M18) and approval in the Deck in 1.3 |
 | remote sessions (commands 5 and 6, tunnel, `session` events, `[agent.remote]`) | **1.3** (defined now, refused with `unsupported` before) |
 | TPM attestation at enrollment | optional in 1.0; requirable by the Deck from 1.3 on |

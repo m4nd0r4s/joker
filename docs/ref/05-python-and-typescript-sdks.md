@@ -2464,7 +2464,7 @@ if confirm()? {
 | Python SDK (`joker-sdk`, `joker-testing`, `joker-classes-*`) | API closed here | | **yes** | |
 | `set_at`, `write_at` (M6) | in the types; `J-E0003` in `prod`, `J-E0601` in `dev` | **yes** | | |
 | `propose`, intents (M18) | in the types; `J-E0003` in `prod`, `J-E0601` in `dev` | **yes** | | |
-| `Model`, `infer`, frames, streams, blocks | in the types; `unavailable` (11, "Ready for ML") | **yes** | | |
+| `Model`, `infer`, frames, streams, blocks | in the types; `unavailable` (document 11, §"Ready for ML") | **yes** | | |
 | long actions with progress (`invoke_long`) | **yes** (ref/04 §2.4) | | | |
 | secrets (`Secret`) | **yes** (ref/04 §2.5.2) | | | |
 | Rust, Python, TS clients | **yes** | | | |

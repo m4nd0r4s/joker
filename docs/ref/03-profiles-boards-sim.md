@@ -724,7 +724,7 @@ A board profile describes the fixed hardware of a **model** of computer (Linux) 
 | `[serial]` | table `name → path` or `{ path, rs485 = true, max_baud }` | stable serial ports |
 | `[i2c]`, `[spi]`, `[can]` | table `name → path` or interface | buses of the board |
 | `[net]` | table `name → interface` | interfaces with a stable name |
-| `[accel.<name>]` | `kind`, `device` | guaranteed accelerators (`"npu:hailo0"`); **reserved for 1.1** but already accepted (Ready for ML) |
+| `[accel.<name>]` | `kind`, `device` | guaranteed accelerators (`"npu:hailo0"`); **reserved for 1.1** but already accepted (document 11, §"Ready for ML") |
 
 A peripheral name referred to by the manifest that does not exist on the board is `J0828`.
 
@@ -1841,7 +1841,7 @@ In `mode = "dev"`, the `error-in-prod` codes appear as `W08xx` with the same num
 | Topic | 1.0 | Reserved |
 |---|---|---|
 | profiles | everything in §2.2 with the families marked 1.0 | `kind = "block" \| "stream"` (1.1); families `ethercat`, `bacnet`, `iec104`, `iec61850`, `dlms` (1.2); `extends` (1.x); several implicit instances per device (`instances`, 1.x); discovery `canopen_lss`, `opcua_browse` (1.x) |
-| boards | Linux and MCU (§2.3) | `[accel]`: accepted and validated already, used by ML in **1.1** (Ready for ML); Wasm on M2 MCUs (`capacities.wasm`, 1.4) |
+| boards | Linux and MCU (§2.3) | `[accel]`: accepted and validated already, used by ML in **1.1** (document 11, §"Ready for ML"); Wasm on M2 MCUs (`capacities.wasm`, 1.4) |
 | simulation | generators, dynamics, faults, panel, actions, `implements`, `[plant]`, class simulators | `sim-camera` and stream and block sources (1.1); simulator that **serves** the protocol of a profile (`serve = { profile, protocol }`, for `jk profile test` against Hub simulators, 1.5) |
 | scenarios | §2.5 | `metric` (1.1, with the pipelines and ML; example 02); `[[inject]]` on streams (1.1) |
 | conformance | §2.6 | writer `kind = "proposal"` (1.1, M18); expectations on model outputs (1.1, M22) |
