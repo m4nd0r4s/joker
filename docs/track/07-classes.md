@@ -1,48 +1,48 @@
-# Parte 7 — Classes: o mesmo sistema na camada de equipamentos
+# Part 7 — Classes: the same system at the equipment layer
 
-**Módulo B · Classes.** No Módulo A escreveste tudo na camada de **sinais**: `Output<bool>`, `Input<f64>`, flancos detetados à mão, e a tradução de "sinal" para "significado" dentro da app. Agora sobe-se uma camada, e o comportamento não muda.
+**Module B · Classes.** In Module A you wrote everything at the **signal** layer: `Output<bool>`, `Input<f64>`, edges detected by hand, and the translation from "signal" to "meaning" inside the app. Now you climb one layer, and the behavior does not change.
 
-**Objetivo:** reescrever a `luz` sobre **classes de equipamento** (`Led`, `Button`, `TempSensor`, `AnalogIn`), ver as três maneiras de nascer de uma instância na bancada, e provar com o cenário `falha_esp` da parte 5, sem lhe tocar, que o sistema faz exatamente o mesmo.
+**Goal:** rewrite `luz` on top of **equipment classes** (`Led`, `Button`, `TempSensor`, `AnalogIn`), see the three ways an instance is born on the bench, and prove with the scenario `falha_esp` from part 5, without touching it, that the system does exactly the same.
 
-**Vais aprender:** classe, instância e membro · `jk class list` e `jk class show` · instâncias implícitas (`[implements]` num perfil) e o que a v1.0 não deixa fazer · `jk profile diff` · instâncias compostas no manifesto · `#[device]` e handles de classe · métodos e consultas calculadas pelo núcleo · `raw()` · `jk status --instances` e `jk explain <instância>` · `jk class verify` no hardware.
+**You will learn:** class, instance and member · `jk class list` and `jk class show` · implicit instances (`[implements]` in a profile) and what v1.0 does not let you do · `jk profile diff` · composite instances in the manifest · `#[device]` and class handles · methods and queries computed by the core · `raw()` · `jk status --instances` and `jk explain <instance>` · `jk class verify` on the hardware.
 
-**Antes de começar:** a parte 6 feita: `joker.rpi.toml`, `joker.lab.toml`, `joker.zero.toml`, a `luz` **0.4.1** a correr no zero, o lab na geração 3 (sem o `esp`), e o cenário `sim/scenarios/falha_esp.scenario.toml` a passar. O ESP32 ligado por USB ao Pi 3 (partes 4–5) e visível do Pi Zero por Wi-Fi (parte 6).
+**Before you start:** part 6 done: `joker.rpi.toml`, `joker.lab.toml`, `joker.zero.toml`, `luz` **0.4.1** running on zero, lab at generation 3 (without `esp`), and the scenario `sim/scenarios/falha_esp.scenario.toml` passing. The ESP32 connected by USB to the Pi 3 (parts 4–5) and visible from the Pi Zero over Wi-Fi (part 6).
 
 ---
 
-**Primeiro, repor o lab.** Um mestre de cada vez (parte 6, §7): para o zero, e volta a pôr o lab no `joker.lab.toml` completo, com a `luz` 0.4.1 e o ESP32 por RTU (geração 7). O resto da parte começa no simulador.
+**First, restore lab.** One client at a time (part 6, §7): stop zero, and put lab back on the complete `joker.lab.toml`, with `luz` 0.4.1 and the ESP32 over RTU (generation 7). The rest of the part starts in the simulator.
 
 ```sh
 zero$ sudo systemctl stop jokerd
 $ jk apply --env lab --node lab --confirm 5m && jk confirm --node lab
 ```
 
-## 1. Porquê, se já funciona?
+## 1. Why, if it already works?
 
-Relê a tarefa `pisca` da 0.4.1 e separa as linhas em dois montes. Num, **o que o sistema faz**: ligado ou desligado, o meio período em função da temperatura, o toque a mexer no `t_quente`, o que fazer quando o ESP32 desaparece. No outro, **como se fala com as coisas**: guardar o valor anterior do botão para ver o flanco, saber que `esp.touch` a 60 é "sem dedo", saber que `pi.act_led` é um `bool`. O segundo monte repete-se em todas as apps com um botão ou um LED. As classes tiram-no da tua app.
+Reread the task `pisca` of 0.4.1 and sort its lines into two piles. In one, **what the system does**: on or off, the half period as a function of the temperature, the touch moving `t_quente`, what to do when the ESP32 disappears. In the other, **how you talk to things**: keeping the button's previous value to see the edge, knowing that `esp.touch` at 60 is "no finger", knowing that `pi.act_led` is a `bool`. The second pile repeats itself in every app with a button or an LED. Classes take it out of your app.
 
 ```
- camada 3   a tua app: "um clique liga, quanto mais quente mais depressa"
- camada 2   classes: std/led@1, std/button@1, std/temp_sensor@1, std/analog_in@1   ← esta parte
- camada 1   sinais: pi.act_led, pi.cpu_temp, esp.led, esp.button, esp.touch      ← Módulo A
+ layer 3   your app: "one click turns it on, the hotter the faster"
+ layer 2   classes: std/led@1, std/button@1, std/temp_sensor@1, std/analog_in@1   ← this part
+ layer 1   signals: pi.act_led, pi.cpu_temp, esp.led, esp.button, esp.touch      ← Module A
 ```
 
-As classes são uma camada **por cima** dos sinais, e não em vez deles (documento 14, §1 e §3). Compilam para portas: o envelope, o árbitro, a qualidade, o historian e o replay continuam iguais, e a camada 1 continua lá para quem precisar.
+Classes are a layer **on top of** signals, and not instead of them (document 14, §1 and §3). They compile to ports: the envelope, the arbiter, quality, the historian and replay stay the same, and layer 1 is still there for whoever needs it.
 
-## 2. Conhecer as classes
+## 2. Get to know the classes
 
 ```sh
 $ jk class list --std
 ```
 
 ```
-std/led@1              1.0.0   Indicador luminoso
-std/button@1           1.0.0   Botão de pressão momentâneo
-std/analog_in@1        1.0.0   Entrada analógica normalizada (0..1)
-std/temp_sensor@1      1.0.0   Sensor de temperatura
-std/humidity_sensor@1  1.0.0   Sensor de humidade
-std/relay@1            1.0.0   Relé
-std/pump@1             1.2.0   Bomba com arranque/paragem e retorno de estado
+std/led@1              1.0.0   Light indicator
+std/button@1           1.0.0   Momentary push button
+std/analog_in@1        1.0.0   Normalized analog input (0..1)
+std/temp_sensor@1      1.0.0   Temperature sensor
+std/humidity_sensor@1  1.0.0   Humidity sensor
+std/relay@1            1.0.0   Relay
+std/pump@1             1.2.0   Pump with start/stop and state feedback
 std/meter.ac3@1, std/inverter.pv@2, std/battery.bess@1, …
 ```
 
@@ -51,49 +51,49 @@ $ jk class show std/button@1
 ```
 
 ```
-std/button@1 (1.0.0) — Botão de pressão momentâneo
-  membros     pressed     in     bool
-  consultas   clicked     bool   rose(pressed)        verdadeiro durante um único tick do grupo que a lê
+std/button@1 (1.0.0) — Momentary push button
+  members     pressed     in     bool
+  queries     clicked     bool   rose(pressed)        true for a single tick of the group that reads it
               released    bool   fell(pressed)
               long_hold   bool   held(pressed, 1 s)
 ```
 
-Repara na consulta `clicked`. É o `premido && !st.premido` da tua 0.4.1, com o `premido` guardado no estado da tarefa. Aqui quem guarda o valor anterior é o **núcleo**: as consultas são sinais derivados, avaliados no latch de cada grupo que as lê, com o mesmo avaliador das expressões do manifesto (documento 14, A7). A tua app deixa de ter `premido`, e o Rust, o TypeScript e a CLI veem o mesmo flanco.
+Notice the query `clicked`. It is the `premido && !st.premido` of your 0.4.1, with `premido` kept in the task state. Here what keeps the previous value is the **core**: queries are derived signals, evaluated at the latch of each group that reads them, with the same evaluator as the manifest expressions (document 14, A7). Your app no longer has `premido`, and Rust, TypeScript and the CLI see the same edge.
 
-O `jk class show std/led@1` mostra o outro lado: um membro `out on: bool @safe_hint(false)`, os métodos `on()`, `off()`, `set(v)` e `toggle()`, e a capacidade opcional `dimmable`. Quando um método tem o nome de um membro, o handle dá o método e o membro fica em `raw().on` (documento 17, §3.2). Duas coisas para a secção 6: um **método** não é código, é uma atribuição que o núcleo expande numa proposta (documento 17, §4.1); e o `@safe_hint` é só uma sugestão. O `safe` do `pi.act_led` e do `esp.led` continua a ser o do teu `joker.toml` (ADR 0006).
+`jk class show std/led@1` shows the other side: a member `out on: bool @safe_hint(false)`, the methods `on()`, `off()`, `set(v)` and `toggle()`, and the optional capability `dimmable`. When a method has the name of a member, the handle gives the method and the member stays in `raw().on` (document 17, §3.2). Two things for section 6: a **method** is not code, it is an assignment that the core expands into a proposal (document 17, §4.1); and `@safe_hint` is only a suggestion. The `safe` of `pi.act_led` and `esp.led` is still the one in your `joker.toml` (ADR 0006).
 
-## 3. Três maneiras de nascer
+## 3. Three ways to be born
 
-Uma **instância** diz "este equipamento é, para os programas, um `std/led@1`". Na bancada vais usar as três maneiras (documento 14, §5):
+An **instance** says "this equipment is, for programs, a `std/led@1`". On the bench you will use all three ways (document 14, §5):
 
-| Maneira | Quem a declara | Quando | Na bancada |
+| Way | Who declares it | When | On the bench |
 |---|---|---|---|
-| **implícita** | o perfil do equipamento, com `[implements]` | o dispositivo **é** o equipamento | `esp`, pelo perfil `local/bench-esp32@1` |
-| **composta** | o manifesto, com `[instances.<i>] map` | o equipamento é feito de sinais soltos, o dispositivo não tem perfil, ou o site quer um nome e uma calibração seus | `led_pi` e `cpu` (o driver `sysfs` não tem perfil); `led_esp`, `botao` e `toque` |
-| **virtual** | uma app, com `#[joker::implements]` | a classe precisa de comportamento | `sinal`, na parte 8 |
+| **implicit** | the equipment profile, with `[implements]` | the device **is** the equipment | `esp`, through the profile `local/bench-esp32@1` |
+| **composite** | the manifest, with `[instances.<i>] map` | the equipment is made of loose signals, the device has no profile, or the site wants a name and a calibration of its own | `led_pi` and `cpu` (the `sysfs` driver has no profile); `led_esp`, `botao` and `toque` |
+| **virtual** | an app, with `#[joker::implements]` | the class needs behavior | `sinal`, in part 8 |
 
-## 4. Implícita: o perfil diz o que o ESP32 é
+## 4. Implicit: the profile says what the ESP32 is
 
-Quem sabe o que o firmware de bancada é, é o perfil que escreveste na parte 4: um LED numa coil, um botão num discrete input, uma leitura analógica num input register. Acrescenta-lhe as classes que ele cumpre:
+What knows what the bench firmware is, is the profile you wrote in part 4: an LED on a coil, a button on a discrete input, an analog reading on an input register. Add to it the classes it fulfills:
 
 ```toml
-# profiles/local/bench-esp32@1.profile.toml (acrescentar no fim)
+# profiles/local/bench-esp32@1.profile.toml (add at the end)
 [implements."std/led@1"]
 map = { on = "led" }
 
 [implements."std/button@1"]
 map = { pressed = "button" }
 
-# value = 1 − cru/100: a escala nominal do firmware (0 a 100), e não a calibração desta bancada
+# value = 1 − raw/100: the firmware's nominal scale (0 to 100), and not the calibration of this bench
 [implements."std/analog_in@1"]
 map = { value = { signal = "touch", scale = -0.01, offset = 1 } }
 ```
 
-**Vários `[implements]`, uma só instância.** A chave de cada tabela é a classe, e um perfil pode cumprir até 16 (ref/03 §2.1.5). Mas cada dispositivo com o perfil é **uma** instância implícita, com o nome do dispositivo (ref/03 §2.2.14): o teu `esp` passa a ser, ao mesmo tempo, um `std/led@1`, um `std/button@1` e um `std/analog_in@1`. Os membros ganham caminhos na instância (`esp.on` é um alias de `esp.led`, `esp.pressed` de `esp.button`), e é por isso que três classes cabem na mesma instância: não há dois membros com o mesmo nome, nem um membro com o nome de outro sinal do dispositivo (documento 16, P3; senão, `J0604`). A direção é verificada contra o perfil (um `out` só vai para uma `output`: `J0824`), e o `scale`/`offset` do `value` é o adaptador de 17 §5.2.
+**Several `[implements]`, a single instance.** The key of each table is the class, and a profile may fulfill up to 16 (ref/03 §2.1.5). But each device with the profile is **one** implicit instance, with the device's name (ref/03 §2.2.14): your `esp` becomes, at the same time, a `std/led@1`, a `std/button@1` and a `std/analog_in@1`. The members get paths in the instance (`esp.on` is an alias of `esp.led`, `esp.pressed` of `esp.button`), and that is why three classes fit in the same instance: there are no two members with the same name, nor a member with the name of another signal of the device (document 16, P3; otherwise, `J0604`). The direction is checked against the profile (an `out` only goes to an `output`: `J0824`), and the `scale`/`offset` of `value` is the adapter of 17 §5.2.
 
-### O que o `jk check` diz se quiseres outro nome
+### What `jk check` says if you want another name
 
-A tentação é dar ao botão um nome próprio, `botao`, logo no perfil:
+The temptation is to give the button a name of its own, `botao`, right in the profile:
 
 ```toml
 [implements."std/button@1"]
@@ -102,20 +102,20 @@ instances = { botao = { pressed = "button" } }
 ```
 
 ```
-erro[J0807]: a chave `instances` está reservada para uma versão futura (1.x)
+error[J0807]: the key `instances` is reserved for a future version (1.x)
  --> profiles/local/bench-esp32@1.profile.toml:24:1
    |
 24 | instances = { botao = { pressed = "button" } }
-   | ^^^^^^^^^ várias instâncias implícitas por dispositivo chegam na 1.x
-   = nota: na 1.0, cada dispositivo com este perfil é uma instância implícita com o nome do dispositivo (`esp`)
-   = ajuda: um nome diferente é uma instância composta no manifesto (ref/03 §2.2.14)
+   | ^^^^^^^^^ several implicit instances per device arrive in 1.x
+   = note: in 1.0, each device with this profile is an implicit instance with the device's name (`esp`)
+   = help: a different name is a composite instance in the manifest (ref/03 §2.2.14)
 ```
 
-Apaga a linha. O perfil diz **o que o equipamento é**, para qualquer site que o use; os nomes do teu site vêm na secção 5.
+Delete the line. The profile says **what the equipment is**, for any site that uses it; your site's names come in section 5.
 
-### A versão do perfil sobe
+### The profile version goes up
 
-Um `implements` novo é uma mudança **minor** (ref/03 §2.2.17). Pergunta à `jk`, contra a versão que está no Git:
+A new `implements` is a **minor** change (ref/03 §2.2.17). Ask `jk`, against the version that is in Git:
 
 ```sh
 $ git show HEAD:profiles/local/bench-esp32@1.profile.toml > /tmp/bench-esp32-antes.profile.toml
@@ -127,19 +127,19 @@ local/bench-esp32   1.0.0 → 1.0.0
   + implements std/led@1          minor
   + implements std/button@1       minor
   + implements std/analog_in@1    minor
-exige: minor (≥ 1.1.0); o ficheiro continua em 1.0.0
+requires: minor (≥ 1.1.0); the file is still at 1.0.0
 ```
 
-Muda `version = "1.1.0"` em `[profile]` e repete: `1.0.0 → 1.1.0 ✓ minor`. Um perfil `local/` nunca se publica (`J0848`), mas a versão importa na mesma: o `joker.lab.lock` e o `joker.zero.lock` fixam o perfil pela versão e pelo digest dos bytes do ficheiro (ref/02 §2.1.5), e o `jk check` em `dev` atualiza-os com uma nota.
+Change to `version = "1.1.0"` in `[profile]` and repeat: `1.0.0 → 1.1.0 ✓ minor`. A `local/` profile is never published (`J0848`), but the version matters all the same: `joker.lab.lock` and `joker.zero.lock` pin the profile by its version and by the digest of the file's bytes (ref/02 §2.1.5), and `jk check` in `dev` updates them with a note.
 
-**No simulador, o mesmo.** O driver `sim` não tem perfil (ref/01, anexo A): o modelo declara os seus sinais, e também as suas classes. Acrescenta ao `sim/esp.sim.toml` as mesmas três tabelas (ref/03 §2.4.9), para o `esp` ser a mesma instância nos dois mundos.
+**In the simulator, the same.** The `sim` driver has no profile (ref/01, appendix A): the model declares its signals, and its classes too. Add the same three tables to `sim/esp.sim.toml` (ref/03 §2.4.9), so that `esp` is the same instance in both worlds.
 
-## 5. Compostas: os nomes e as calibrações do site
+## 5. Composite: the site's names and calibrations
 
-O dispositivo `pi` usa o driver `sysfs`, que lê os sinais diretamente do manifesto (`led = "ACT"`, `thermal = "thermal_zone0"`), sem perfil. Sem perfil não há `[implements]`, e as instâncias do Pi escrevem-se no manifesto. As do ESP32 também, por três razões que a secção 4 já deixou ver. Como os caminhos `pi.*`, `esp.*` e `calc.*` existem no simulador e nas duas placas, vão todas para o **comum**:
+The device `pi` uses the `sysfs` driver, which reads the signals directly from the manifest (`led = "ACT"`, `thermal = "thermal_zone0"`), without a profile. Without a profile there is no `[implements]`, and the Pi's instances are written in the manifest. So are the ESP32's, for three reasons that section 4 already hinted at. Since the paths `pi.*`, `esp.*` and `calc.*` exist in the simulator and on both boards, they all go into the **common** part:
 
 ```toml
-# joker.toml (acrescentar)
+# joker.toml (add)
 [instances.led_pi]
 class = "std/led@1"
 map   = { on = "pi.act_led" }
@@ -161,14 +161,14 @@ class = "std/analog_in@1"
 map   = { value = "calc.toque_nivel" }
 ```
 
-- **Os nomes são do site.** Na 1.0, a instância implícita chama-se `esp` e é as três coisas ao mesmo tempo. O site quer falar de `botao` e de `led_esp`, e isso é uma composta (a ajuda do `J0807`).
-- **Os nomes sobrevivem ao transporte.** Na parte 9, o ESP32 passa a Joker Micro e o dispositivo `esp` deixa de usar este perfil: o `joker-link` gera o seu a partir do firmware (ref/03 §2.2.16), e a instância implícita `esp` vai-se com o perfil. Os caminhos `esp.led` e `esp.button` ficam, e com eles as compostas, a `luz` e os cenários.
-- **`toque` e `cpu` têm a calibração desta bancada.** O `esp` já é uma `analog_in@1`, com a escala nominal do firmware; mas "60 sem dedo, 15 com o dedo" é deste ESP32 e deste dedo, e fica no `calc.toque_nivel` da parte 5. É a regra do documento 14, §4.3: a normalização é do perfil ou da instância, e aqui cada um diz o que sabe. Do mesmo modo, o `cpu` aponta para `calc.temp_media` (`avg(pi.cpu_temp, 10s)`), que é o que a 0.4 lia: uma composta liga membros a **qualquer** caminho, e um `calc` é um sinal com a qualidade de quem o alimenta (documento 16, §3).
-- **Nada do resto muda.** O `safe = false` de `pi.act_led` e de `esp.led`, os `calc` e os alarmes ficam onde estavam. O envelope declara-se por **um** dos caminhos de um sinal (`esp.led`, `esp.on` ou `led_esp.on`), nunca por dois (`J0215`); deixa-o no do sinal.
+- **The names belong to the site.** In 1.0, the implicit instance is called `esp` and is all three things at once. The site wants to talk about `botao` and `led_esp`, and that is a composite (the help of `J0807`).
+- **The names survive the transport.** In part 9, the ESP32 becomes a Joker Micro and the device `esp` stops using this profile: `joker-link` generates its own from the firmware (ref/03 §2.2.16), and the implicit instance `esp` goes away with the profile. The paths `esp.led` and `esp.button` stay, and with them the composites, `luz` and the scenarios.
+- **`toque` and `cpu` have this bench's calibration.** `esp` is already an `analog_in@1`, with the firmware's nominal scale; but "60 without a finger, 15 with the finger" belongs to this ESP32 and this finger, and it stays in the `calc.toque_nivel` of part 5. It is the rule of document 14, §4.3: normalization belongs to the profile or to the instance, and here each says what it knows. In the same way, `cpu` points to `calc.temp_media` (`avg(pi.cpu_temp, 10s)`), which is what 0.4 read: a composite binds members to **any** path, and a `calc` is a signal with the quality of whatever feeds it (document 16, §3).
+- **Nothing else changes.** The `safe = false` of `pi.act_led` and `esp.led`, the `calc`s and the alarms stay where they were. The envelope is declared through **one** of a signal's paths (`esp.led`, `esp.on` or `led_esp.on`), never through two (`J0215`); leave it on the signal's own path.
 
-A instância implícita fica na mesma: é o que o perfil promete a quem o use, e é o que um `jk class verify` contra `esp` confirmaria antes de o publicares num registo.
+The implicit instance stays all the same: it is what the profile promises to whoever uses it, and it is what a `jk class verify` against `esp` would confirm before you publish it in a registry.
 
-## 6. A app, versão 0.5
+## 6. The app, version 0.5
 
 ```rust
 // apps/luz/src/lib.rs
@@ -181,7 +181,7 @@ pub struct Luz {
     #[device] led_estado: Led,       // led_esp
     #[device] temp: TempSensor,      // cpu
     #[device] botao: Button,         // botao
-    /// 0 = sem dedo, 1 = dedo em cima.
+    /// 0 = no finger, 1 = finger on it.
     #[device] ajuste: AnalogIn,      // toque
 
     #[param(unit = "ms", default = 500.0)] half_period: Param<f64>,
@@ -194,28 +194,28 @@ const FAIXA_K: f64 = 25.0;
 const AJUSTE_NEUTRO: f64 = RECUO_K / FAIXA_K; // 0.6
 
 #[joker::state(persist)]
-struct State { ligado: bool, ajuste: f64, decorrido_ms: f64, aceso: bool }   // o `premido` saiu
+struct State { ligado: bool, ajuste: f64, decorrido_ms: f64, aceso: bool }   // `premido` is gone
 
 impl Default for State {
     fn default() -> Self {
-        State { ligado: true, ajuste: AJUSTE_NEUTRO, decorrido_ms: 0.0, aceso: false }   // arranca ligado
+        State { ligado: true, ajuste: AJUSTE_NEUTRO, decorrido_ms: 0.0, aceso: false }   // starts on
     }
 }
 
 #[joker::cycle(period = "20ms", wcet = "20us")]
 fn pisca(io: &mut CycleIo<Luz>, st: &mut State) -> Result<()> {
-    // 1. Botão. O flanco é a consulta `clicked`, do núcleo. Sem qualidade é Err: não premido.
+    // 1. Button. The edge is the query `clicked`, from the core. Without quality it is Err: not pressed.
     if io.botao.clicked().unwrap_or(false) {
         st.ligado = !st.ligado;
         st.decorrido_ms = 0.0;
         st.aceso = st.ligado;
     }
-    // O LED do ESP32 só se propõe quando se vê o ESP32 (a correção da 0.4.1).
+    // The ESP32's LED is only proposed when the ESP32 is seen (the 0.4.1 fix).
     if io.botao.pressed().is_ok() {
         io.led_estado.set(st.ligado);
     }
 
-    // 2. Ajuste. A classe não tem get_or; o membro cru tem, e a substituição fica no traço.
+    // 2. Adjustment. The class has no get_or; the raw member has, and the substitution stays in the trace.
     st.ajuste = io.ajuste.raw().value.get_or(st.ajuste);
 
     if !st.ligado {
@@ -223,7 +223,7 @@ fn pisca(io: &mut CycleIo<Luz>, st: &mut State) -> Result<()> {
         return Ok(());
     }
 
-    // 3. Temperatura. `?` → Err → o lease do led expira → safe (como na 0.2).
+    // 3. Temperature. `?` → Err → the led's lease expires → safe (as in 0.2).
     let temp = io.temp.temperature()?;
     let t_frio = io.t_frio.get();
     let t_quente = io.t_quente.get() - RECUO_K + FAIXA_K * st.ajuste;
@@ -235,13 +235,13 @@ fn pisca(io: &mut CycleIo<Luz>, st: &mut State) -> Result<()> {
         st.decorrido_ms -= meio_ms;
         st.aceso = !st.aceso;
     }
-    io.led.set(st.aceso);                   // a cada tick: renova o lease
+    io.led.set(st.aceso);                   // on every tick: renews the lease
     Ok(())
 }
 ```
 
 ```toml
-# joker.toml (a [apps.luz] muda só no bind)
+# joker.toml ([apps.luz] changes only in the bind)
 [apps.luz]
 path   = "apps/luz"
 bind   = { led = "led_pi", led_estado = "led_esp", temp = "cpu", botao = "botao", ajuste = "toque" }
@@ -249,25 +249,25 @@ params = { half_period = "500 ms", t_frio = "45 °C", t_quente = "70 °C" }
 cycles = { pisca = "main" }
 ```
 
-Tudo o resto é a 0.4.1 linha a linha: as constantes, o `Default`, as contas do meio período. As portas têm os **mesmos nomes**; mudam os tipos (de `Input<bool>` para `Button`) e, no `bind`, os valores (de caminhos de sinais para nomes de instâncias). O `jk check` confirma que cada instância cumpre a classe que a porta pede, com a mesma major (`J0630`). O nome da porta é o **papel** na app (`led_estado`: o LED que mostra se está ligado); o nome da instância é o **equipamento** no site (`led_esp`).
+Everything else is 0.4.1 line by line: the constants, the `Default`, the half-period arithmetic. The ports have the **same names**; what changes are the types (from `Input<bool>` to `Button`) and, in the `bind`, the values (from signal paths to instance names). `jk check` confirms that each instance fulfills the class the port asks for, with the same major (`J0630`). The port name is the **role** in the app (`led_estado`: the LED that shows whether it is on); the instance name is the **equipment** on the site (`led_esp`).
 
-Comparado com a 0.4.1:
+Compared with 0.4.1:
 
-| Saiu da app | Para onde foi |
+| Left the app | Where it went |
 |---|---|
-| `premido` no estado e o `premido && !st.premido` | consulta `clicked` da `std/button@1`, calculada pelo núcleo |
-| `botao.sample().quality.is_good()` | `botao.pressed().is_ok()`: ler um membro dá `Ok` só com qualidade `good` (ref/04 §4.8.2) |
-| `botao.get_or(false)` | `clicked()` devolve `Err` quando `pressed` não está `good`; o `unwrap_or(false)` é a mesma regra: sem botão, não há flancos |
-| `temp.get()?` | `temperature()?`: `Err` (`J-E0101`) sem qualidade `good`, como antes |
-| `ajuste.get_or(st.ajuste)` | `raw().value.get_or(st.ajuste)`: a classe não tem `get_or`, o membro cru tem (documento 14, §3) |
-| `led.set(false)` | `led.off()`, um método da classe |
-| caminhos de sinais nas ligações | nomes de instâncias |
+| `premido` in the state and the `premido && !st.premido` | query `clicked` of `std/button@1`, computed by the core |
+| `botao.sample().quality.is_good()` | `botao.pressed().is_ok()`: reading a member gives `Ok` only with `good` quality (ref/04 §4.8.2) |
+| `botao.get_or(false)` | `clicked()` returns `Err` when `pressed` is not `good`; `unwrap_or(false)` is the same rule: without a button, there are no edges |
+| `temp.get()?` | `temperature()?`: `Err` (`J-E0101`) without `good` quality, as before |
+| `ajuste.get_or(st.ajuste)` | `raw().value.get_or(st.ajuste)`: the class has no `get_or`, the raw member has (document 14, §3) |
+| `led.set(false)` | `led.off()`, a method of the class |
+| signal paths in the bindings | instance names |
 
-**Porque não `io.led.toggle()`?** Era a tentação, e seria um erro. Propor é renovar o lease (parte 1): um `toggle()` a cada meio período deixava a app centenas de milissegundos sem propor, o lease de 60 ms expirava, e o árbitro aplicava o `safe` entre duas mudanças. O `toggle()` serve para "inverter a pedido", como num clique, e não para um sinal que se mantém a cada tick. A app continua a guardar `aceso` e a chamar `set` sempre.
+**Why not `io.led.toggle()`?** It was the temptation, and it would be a mistake. Proposing is renewing the lease (part 1): a `toggle()` every half period would leave the app hundreds of milliseconds without proposing, the 60 ms lease would expire, and the arbiter would apply the `safe` between two changes. `toggle()` is for "invert on request", as on a click, and not for a signal that is held on every tick. The app keeps storing `aceso` and always calling `set`.
 
-Os **testes da app** mudam, porque as portas mudaram de tipo: onde a 0.4 fazia `.input("temp", 70.0)`, a 0.5 faz `.device("temp", Sim::temp_sensor().constant(70.0))`, e as asserções leem membros (`h.device("led").member("on")`) em vez de portas (ref/04 §6.6). Os **cenários** não mudam, e isso é a secção seguinte.
+The **app tests** change, because the ports changed type: where 0.4 did `.input("temp", 70.0)`, 0.5 does `.device("temp", Sim::temp_sensor().constant(70.0))`, and the assertions read members (`h.device("led").member("on")`) instead of ports (ref/04 §6.6). The **scenarios** do not change, and that is the next section.
 
-## 7. A prova: o cenário da parte 5, sem alterações
+## 7. The proof: the scenario from part 5, unchanged
 
 ```sh
 $ git status --short sim/scenarios/
@@ -275,31 +275,31 @@ $ jk test --env sim
 ```
 
 ```
-apps/luz (cargo test, componente wasm no wasmtime) ... 6 passed
-sim/scenarios/pisca.scenario.toml (joker.sim.toml, 10 s virtuais) ...... passed
+apps/luz (cargo test, wasm component on wasmtime) ... 6 passed
+sim/scenarios/pisca.scenario.toml (joker.sim.toml, 10 virtual s) ...... passed
 sim/scenarios/aquece.scenario.toml (joker.sim.toml) .................... passed
 sim/scenarios/botao.scenario.toml (joker.sim.toml) ..................... passed
 sim/scenarios/falha_esp.scenario.toml (joker.sim.toml) ................. passed
 ```
 
-O `git status` não mostra nada: nenhum cenário foi tocado. O `falha_esp` desliga o ESP32 simulado aos 20 s, verifica que o `pi.act_led` continua a piscar a 200 ms, que o `esp_offline` dispara, que a pressão aos 30 s não conta e que, aos 41 s, o sistema ainda está ligado, e passa. Ele não sabe que a app mudou de camada, porque só olha para sinais, alarmes e qualidades do site. É o melhor teste de uma refatoração: **o comportamento observável é o mesmo**.
+`git status` shows nothing: no scenario was touched. `falha_esp` disconnects the simulated ESP32 at 20 s, checks that `pi.act_led` keeps blinking at 200 ms, that `esp_offline` goes off, that the press at 30 s does not count and that, at 41 s, the system is still on, and it passes. It does not know that the app changed layer, because it only looks at the site's signals, alarms and qualities. It is the best test of a refactoring: **the observable behavior is the same**.
 
-O `jk inspect apps/luz` mostra porquê: depois de expandidas as classes, a app tem as mesmas cinco portas da 0.4 (`led.on`, `temp.temperature`, `botao.pressed`, `led_estado.on`, `ajuste.value`) mais a consulta `botao.clicked`, e é essa lista plana que o host, o árbitro e o traço veem (documento 14, §3). O `jk inspect` lista os métodos e consultas que cada handle **conhece**, e não os que o código chama: isso pediria análise estática do Wasm (ref/04 §5 e §9).
+`jk inspect apps/luz` shows why: once the classes are expanded, the app has the same five ports as 0.4 (`led.on`, `temp.temperature`, `botao.pressed`, `led_estado.on`, `ajuste.value`) plus the query `botao.clicked`, and it is that flat list that the host, the arbiter and the trace see (document 14, §3). `jk inspect` lists the methods and queries each handle **knows**, and not the ones the code calls: that would require static analysis of the Wasm (ref/04 §5 and §9).
 
-## 8. No Pi 3 e no Zero
+## 8. On the Pi 3 and on the Zero
 
-Nada muda no `joker.rpi.toml`, no `joker.lab.toml` nem no `joker.zero.toml`. As instâncias compostas estão no comum, e a implícita vem do perfil, que os dois nós usam (Modbus RTU no Pi 3, Modbus TCP no Zero). O zero está parado desde o início da parte: primeiro o lab.
+Nothing changes in `joker.rpi.toml`, `joker.lab.toml` or `joker.zero.toml`. The composite instances are in the common part, and the implicit one comes from the profile, which both nodes use (Modbus RTU on the Pi 3, Modbus TCP on the Zero). Zero has been stopped since the beginning of the part: lab first.
 
 ```sh
 $ jk check --env lab
 ```
 
 ```
-✓ manifesto     joker.lab.toml ← joker.rpi.toml ← joker.toml · 2 dispositivos, 2 saídas, 1 app, 1 grupo
-✓ instâncias    esp (std/led@1 + std/button@1 + std/analog_in@1, implícita pelo perfil local/bench-esp32@1)
-                led_pi, led_esp (std/led@1) · botao (std/button@1) · cpu (std/temp_sensor@1) · toque (std/analog_in@1): compostas
-✓ ligações      luz.led → led_pi · luz.led_estado → led_esp · luz.temp → cpu · luz.botao → botao · luz.ajuste → toque
-nota: joker.lab.lock atualizado (profiles."local/bench-esp32@1" 1.1.0; classes std/led@1, std/button@1, std/analog_in@1, std/temp_sensor@1)
+✓ manifest      joker.lab.toml ← joker.rpi.toml ← joker.toml · 2 devices, 2 outputs, 1 app, 1 group
+✓ instances     esp (std/led@1 + std/button@1 + std/analog_in@1, implicit through the profile local/bench-esp32@1)
+                led_pi, led_esp (std/led@1) · botao (std/button@1) · cpu (std/temp_sensor@1) · toque (std/analog_in@1): composite
+✓ bindings      luz.led → led_pi · luz.led_estado → led_esp · luz.temp → cpu · luz.botao → botao · luz.ajuste → toque
+note: joker.lab.lock updated (profiles."local/bench-esp32@1" 1.1.0; classes std/led@1, std/button@1, std/analog_in@1, std/temp_sensor@1)
 ```
 
 ```sh
@@ -308,11 +308,11 @@ $ jk apply --env lab --node lab --confirm 5m
 ```
 
 ```
-plano para lab (geração 7 → 8)
-  perfil     local/bench-esp32@1   1.0.0 → 1.1.0   (só implements: o driver não reinicia)
-  instâncias + esp (implícita) · + led_pi, + led_esp, + botao, + cpu, + toque (compostas)
-  apps       luz 0.4.1 → 0.5.0     reinicia (portas mudaram de tipo)
-  confirmação pedida: sem `jk confirm` em 5 min, volta à geração 7
+plan for lab (generation 7 → 8)
+  profile    local/bench-esp32@1   1.0.0 → 1.1.0   (implements only: the driver does not restart)
+  instances  + esp (implicit) · + led_pi, + led_esp, + botao, + cpu, + toque (composite)
+  apps       luz 0.4.1 → 0.5.0     restarts (ports changed type)
+  confirmation requested: without `jk confirm` within 5 min, back to generation 7
 ```
 
 ```sh
@@ -321,107 +321,107 @@ $ jk status --instances --node lab
 ```
 
 ```
-instância  classes                                      origem                              saúde
-botao      std/button@1                                 manifesto (joker.toml:49)           Ok
-cpu        std/temp_sensor@1                            manifesto (joker.toml:41)           Ok
-esp        std/led@1 + std/button@1 + std/analog_in@1   perfil local/bench-esp32@1.1.0      Ok
-led_esp    std/led@1                                    manifesto (joker.toml:45)           Ok
-led_pi     std/led@1                                    manifesto (joker.toml:37)           Ok
-toque      std/analog_in@1                              manifesto (joker.toml:53)           Ok
+instance   classes                                      origin                              health
+botao      std/button@1                                 manifest (joker.toml:49)            Ok
+cpu        std/temp_sensor@1                            manifest (joker.toml:41)            Ok
+esp        std/led@1 + std/button@1 + std/analog_in@1   profile local/bench-esp32@1.1.0     Ok
+led_esp    std/led@1                                    manifest (joker.toml:45)            Ok
+led_pi     std/led@1                                    manifest (joker.toml:37)            Ok
+toque      std/analog_in@1                              manifest (joker.toml:53)            Ok
 ```
 
-O LED `ACT` pisca como antes, o `BOOT` liga e desliga, o toque mexe no ritmo. A cadeia completa de uma instância:
+The `ACT` LED blinks as before, `BOOT` turns it on and off, the touch changes the rhythm. The complete chain of an instance:
 
 ```sh
 $ jk explain botao --node lab
 ```
 
 ```
-botao · std/button@1 · instância composta (joker.toml:49)
-  pressed    in bool    botao.pressed → esp.button · perfil local/bench-esp32@1: discrete input 0 (FC 2)
-                        dispositivo esp, modbus-rtu, unit 1 (joker.lab.toml:18) · debounce 20 ms (joker.toml:15)
-                        poll 100 ms · false, good, idade 38 ms
-  clicked    consulta   rose(pressed), no latch de main · lida por luz.botao
-  released   consulta   fell(pressed) · sem leitores
-  long_hold  consulta   held(pressed, 1 s) · sem leitores
-  saúde      Ok
-  também     esp.pressed (instância implícita esp) é o mesmo sinal
+botao · std/button@1 · composite instance (joker.toml:49)
+  pressed    in bool    botao.pressed → esp.button · profile local/bench-esp32@1: discrete input 0 (FC 2)
+                        device esp, modbus-rtu, unit 1 (joker.lab.toml:18) · debounce 20 ms (joker.toml:15)
+                        poll 100 ms · false, good, age 38 ms
+  clicked    query      rose(pressed), at the latch of main · read by luz.botao
+  released   query      fell(pressed) · no readers
+  long_hold  query      held(pressed, 1 s) · no readers
+  health     Ok
+  also       esp.pressed (implicit instance esp) is the same signal
 ```
 
-O `jk explain cpu --node lab` faz o mesmo: `cpu.temperature → calc.temp_media = avg(pi.cpu_temp, 10s) → sysfs thermal_zone0 (joker.rpi.toml)`, com o valor e a qualidade de cada elo; e o `jk explain esp` mostra as três classes da implícita, com as linhas do perfil que as mapeiam. É isto que o `jk explain` dá: cada membro até ao registo ou ao ficheiro do `sysfs`, a origem de cada linha (perfil, manifesto, overlay), as consultas e quem as lê.
+`jk explain cpu --node lab` does the same: `cpu.temperature → calc.temp_media = avg(pi.cpu_temp, 10s) → sysfs thermal_zone0 (joker.rpi.toml)`, with the value and the quality of each link; and `jk explain esp` shows the three classes of the implicit instance, with the profile lines that map them. That is what `jk explain` gives: each member down to the register or the `sysfs` file, the origin of each line (profile, manifest, overlay), the queries and who reads them.
 
-No Zero é igual, com outro transporte. Troca de mestre (`lab$ sudo systemctl stop jokerd`, `zero$ sudo systemctl start jokerd`) e:
+On the Zero it is the same, with another transport. Switch clients (`lab$ sudo systemctl stop jokerd`, `zero$ sudo systemctl start jokerd`) and:
 
 ```sh
 $ jk build --target rpi-zero-w
 $ jk apply --env zero --node zero --confirm 5m && jk confirm --node zero
 ```
 
-O `jk status --instances --node zero` dá a mesma lista, e o `jk explain botao --node zero` mostra `modbus-tcp` onde o Pi 3 mostrava `modbus-rtu`. O resto é igual. Volta ao lab para o resto da parte e para a parte 8 (`zero$ sudo systemctl stop jokerd`, `lab$ sudo systemctl start jokerd`).
+`jk status --instances --node zero` gives the same list, and `jk explain botao --node zero` shows `modbus-tcp` where the Pi 3 showed `modbus-rtu`. The rest is the same. Go back to lab for the rest of the part and for part 8 (`zero$ sudo systemctl stop jokerd`, `lab$ sudo systemctl start jokerd`).
 
-## 9. Verificar uma classe no hardware
+## 9. Verify a class on the hardware
 
-As classes da `std/` trazem casos de conformidade (`classes/std/led.conformance.toml`, no esquema da ref/03 §2.6) que qualquer instância tem de passar. Correr esses casos no `led_esp` prova que a instância, o perfil e o envelope do site fazem o que a classe promete, com o ESP32 a sério. No simulador corre-se sem pensar; no hardware, os casos acendem e apagam o LED a sério:
+The `std/` classes bring conformance cases (`classes/std/led.conformance.toml`, in the schema of ref/03 §2.6) that any instance must pass. Running those cases on `led_esp` proves that the instance, the profile and the site's envelope do what the class promises, with the real ESP32. In the simulator you run it without a second thought; on the hardware, the cases turn the LED on and off for real:
 
 ```sh
 $ jk class verify std/led@1 --instance led_esp --env lab --node lab
 ```
 
 ```
-error[J0640]: `jk class verify` numa instância não simulada sem `--allow-actuation`
-  = nota: `led_esp` é modbus-rtu no nó lab: os casos vão atuar no equipamento
-  = ajuda: --allow-actuation (só num nó com mode = "dev"; o escritor de teste passa pelo envelope do site)
+error[J0640]: `jk class verify` on a non-simulated instance without `--allow-actuation`
+  = note: `led_esp` is modbus-rtu on node lab: the cases will actuate the equipment
+  = help: --allow-actuation (only on a node with mode = "dev"; the test writer goes through the site's envelope)
 ```
 
-Numa instância real, o escritor de teste não é o `control:12` do simulador: escreve como `manual:3`, com um TTL igual à duração da suite, e ganha às apps sem as parar. A `luz` continua a correr e fica `overridden(manual:3)` enquanto o teste dura. Se já houvesse um nível `safety` ou `manual` ativo nas saídas da instância (um `jk write` teu, por exemplo), o `verify` recusava com `J0641`: não se testa por cima de uma decisão de alguém.
+On a real instance, the test writer is not the simulator's `control:12`: it writes as `manual:3`, with a TTL equal to the duration of the suite, and beats the apps without stopping them. `luz` keeps running and stays `overridden(manual:3)` while the test lasts. If a `safety` or `manual` level were already active on the instance's outputs (a `jk write` of yours, for example), `verify` would refuse with `J0641`: you do not test on top of someone's decision.
 
 ```sh
 $ jk class verify std/led@1 --instance led_esp --allow-actuation --env lab --node lab
 ```
 
 ```
-std/led@1 · instância led_esp (composta: on → esp.led, modbus-rtu) · nó lab · mode dev
-aviso: atuação real; escritor test:std/led@1 em manual:3, TTL 2,5 s (a duração da suite)
+std/led@1 · instance led_esp (composite: on → esp.led, modbus-rtu) · node lab · mode dev
+warning: real actuation; writer test:std/led@1 at manual:3, TTL 2.5 s (the duration of the suite)
   on_sets_on ......................... ok
   off_clears_on ...................... ok
   toggle_inverts_own ................. ok
   lease_expiry_goes_safe ............. skipped (sim_only)
-4 casos · 3 ok · 1 ignorado (sim_only) · 1,4 s
+4 cases · 3 ok · 1 skipped (sim_only) · 1.4 s
 ```
 
-O último caso está marcado `sim_only = true` no `led.conformance.toml`: espera que, sem ninguém a mandar, o LED vá para o `safe`, e isso pede **posse exclusiva** da instância. Aqui a `luz` continua a propor por baixo do `manual:3`, e quando o lease do teste expira o `esp.led` volta ao valor da `luz`, e não ao `safe`. Em vez de o deixar falhar, o `verify` ignora-o e não o conta no código de saída (ref/03 §2.6.3, regra 6); por isso já não é preciso parar a `luz` para obter essa posse: o único caso que dela precisava não corre no hardware.
+The last case is marked `sim_only = true` in `led.conformance.toml`: it expects that, with nobody in control, the LED goes to `safe`, and that requires **exclusive ownership** of the instance. Here `luz` keeps proposing underneath `manual:3`, and when the test's lease expires `esp.led` goes back to `luz`'s value, and not to `safe`. Instead of letting it fail, `verify` skips it and does not count it in the exit code (ref/03 §2.6.3, rule 6); that is why it is no longer necessary to stop `luz` to obtain that ownership: the only case that needed it does not run on the hardware.
 
-No simulador, o mesmo caso corre como os outros: `jk class verify std/led@1 --instance led_esp --env sim` dá `4 casos · 4 ok · 0 ignorados`. Aí o caso só passa porque o `safe` do site coincide com o `@safe_hint` da classe (`false`). Se o teu `esp.led` tivesse `safe = true`, seria ignorado com `J0846`: o `safe` é do site, e a suite não o pode presumir. Com `--instance esp`, os mesmos casos verificam o mapeamento do próprio perfil, e com `--report bench-esp32.cbor` guardam o relatório que a publicação de um perfil com `implements` exige (ref/03 §2.8).
+In the simulator, the same case runs like the others: `jk class verify std/led@1 --instance led_esp --env sim` gives `4 cases · 4 ok · 0 skipped`. There the case only passes because the site's `safe` coincides with the class's `@safe_hint` (`false`). If your `esp.led` had `safe = true`, it would be skipped with `J0846`: the `safe` belongs to the site, and the suite cannot presume it. With `--instance esp`, the same cases verify the mapping of the profile itself, and with `--report bench-esp32.cbor` they keep the report that publishing a profile with `implements` requires (ref/03 §2.8).
 
-## 10. Trocar os LEDs: uma linha
+## 10. Swapping the LEDs: one line
 
-Queres que o LED do ESP32 pisque e o do Pi mostre o estado? Ou tens uma placa ESP32 sem LED no GPIO2 (algumas não têm, documento 23 §3)? A app não sabe de que LED se trata: sabe que tem um que pisca e um que mostra o estado. Troca-se a linha do `bind`:
+Do you want the ESP32's LED to blink and the Pi's to show the state? Or do you have an ESP32 board without an LED on GPIO2 (some do not, document 23 §3)? The app does not know which LED it is: it knows it has one that blinks and one that shows the state. You change the `bind` line:
 
 ```toml
 bind = { led = "led_esp", led_estado = "led_pi", temp = "cpu", botao = "botao", ajuste = "toque" }
 ```
 
-Com o `jk dev --env sim --panel` a correr, grava: a lâmpada do ESP32 começa a piscar e a do Pi fica acesa fixa. Nenhuma linha de Rust mudou, nenhum envelope mudou (o `esp.led` já tinha `safe`), e o `jk check` não tem nada a dizer.
+With `jk dev --env sim --panel` running, save: the ESP32 lamp starts blinking and the Pi's stays steadily on. No line of Rust changed, no envelope changed (`esp.led` already had `safe`), and `jk check` has nothing to say.
 
-Agora corre `jk test`: o `falha_esp` **falha**, com `J0842` no `pi.act_led`. E deve falhar. O cenário verifica o comportamento do **site** ("com o ESP32 em baixo, o Pi continua a piscar"), e tu mudaste o comportamento do site, embora não tenhas mudado a app. Volta a pôr a linha como estava.
+Now run `jk test`: `falha_esp` **fails**, with `J0842` on `pi.act_led`. And it should fail. The scenario checks the behavior of the **site** ("with the ESP32 down, the Pi keeps blinking"), and you changed the site's behavior, even though you did not change the app. Put the line back as it was.
 
-## 11. O que aconteceu por baixo
+## 11. What happened underneath
 
-- **As classes resolvem-se no build e no `jk check`** (documento 14, A12). Cada membro é uma porta; cada método é um registo de ~16 B no buffer de propostas, que o núcleo expande no passo 5a do tick (documento 17, §4.1); cada consulta é um sinal derivado. Não há dispatch dinâmico no tick.
-- **A instância implícita vem do perfil, e a sua forma é fixa na 1.0**: um dispositivo, uma instância, com o nome do dispositivo e as classes que o perfil declara (ref/03 §2.2.14). Os `.contract.json` das classes vão dentro da geração, e o lock fixa a versão e o hash de contrato de cada uma (ref/02 §2.1.6; `J0422` se o hash mudar sem a versão).
-- **A qualidade continua a ser do sinal.** `clicked()` e `temperature()` devolvem `Err` pela mesma razão que o `get()` da 0.4: a entrada não está `good`. A saúde de uma instância (`health()`, documento 17 §4.5) junta a dos membros obrigatórios, sem inventar médias. O `jk trace pi.act_led` continua a mostrar `app:luz.pisca` a propor: as ligações mudaram de camada, os sinais não.
+- **Classes are resolved at build time and in `jk check`** (document 14, A12). Each member is a port; each method is a record of ~16 B in the proposal buffer, which the core expands in step 5a of the tick (document 17, §4.1); each query is a derived signal. There is no dynamic dispatch in the tick.
+- **The implicit instance comes from the profile, and its shape is fixed in 1.0**: one device, one instance, with the device's name and the classes the profile declares (ref/03 §2.2.14). The classes' `.contract.json` files go inside the generation, and the lock pins the version and the contract hash of each one (ref/02 §2.1.6; `J0422` if the hash changes without the version).
+- **Quality still belongs to the signal.** `clicked()` and `temperature()` return `Err` for the same reason as 0.4's `get()`: the input is not `good`. The health of an instance (`health()`, document 17 §4.5) combines that of the required members, without inventing averages. `jk trace pi.act_led` still shows `app:luz.pisca` proposing: the bindings changed layer, the signals did not.
 
-## 12. Exercícios
+## 12. Exercises
 
-1. Usa `io.botao.long_hold()` para que uma pressão de 1 s desligue sempre o sistema, esteja ele ligado ou não. Com o código atual, uma pressão longa também dispara `clicked` no início: como é que evitas que ela ligue o sistema antes de o desligar? Escreve primeiro o teste, com `Sim::button().press_at(1.s(), 1200.ms())`.
-2. Muda `ajuste = "toque"` para `ajuste = "esp"` no `bind` (a implícita também é uma `analog_in@1`). O que muda no ritmo do pisca quando tocas? Porquê? Qual das duas normalizações devia ir para um perfil publicado?
-3. Muda o `cpu` para `temperature = "pi.cpu_temp"` e corre o `aquece.scenario.toml`. O que acontece ao ritmo do LED, e que parte do cenário falha?
-4. Desliga o cabo USB do ESP32 com o sistema a correr no Pi 3 e olha para o `jk status --instances --node lab` e para o `jk explain botao`. Que membros ficam `bad(comm_failure)`, e o que continua `Ok`?
+1. Use `io.botao.long_hold()` so that a 1 s press always turns the system off, whether it is on or not. With the current code, a long press also fires `clicked` at the start: how do you prevent it from turning the system on before turning it off? Write the test first, with `Sim::button().press_at(1.s(), 1200.ms())`.
+2. Change `ajuste = "toque"` to `ajuste = "esp"` in the `bind` (the implicit instance is also an `analog_in@1`). What changes in the blink rhythm when you touch? Why? Which of the two normalizations should go into a published profile?
+3. Change `cpu` to `temperature = "pi.cpu_temp"` and run `aquece.scenario.toml`. What happens to the LED's rhythm, and which part of the scenario fails?
+4. Unplug the ESP32's USB cable with the system running on the Pi 3 and look at `jk status --instances --node lab` and at `jk explain botao`. Which members become `bad(comm_failure)`, and what stays `Ok`?
 
 ```sh
-$ git add -A && git commit -qm "trilha(07): luz 0.5 sobre classes; implements no perfil do ESP32; instâncias compostas"
+$ git add -A && git commit -qm "track(07): luz 0.5 on top of classes; implements in the ESP32 profile; composite instances"
 ```
 
-**Estado no fim desta parte:** app `luz` **0.5**, no lab (geração 8) e no zero (geração 2, parado). Instâncias: `led_pi`, `led_esp`, `botao`, `cpu`, `toque` (compostas, no `joker.toml`) e `esp` (implícita, pelo perfil). Ficheiros alterados: `joker.toml` (as cinco `[instances.*]` e o `bind` da `luz`), `profiles/local/bench-esp32@1.profile.toml` (três `[implements]`, versão 1.1.0), `sim/esp.sim.toml` (os mesmos `[implements]`), `apps/luz/`, `joker.sim.lock`, `joker.lab.lock`, `joker.zero.lock`. Os cenários em `sim/scenarios/` não mudaram.
+**State at the end of this part:** app `luz` **0.5**, on lab (generation 8) and on zero (generation 2, stopped). Instances: `led_pi`, `led_esp`, `botao`, `cpu`, `toque` (composite, in `joker.toml`) and `esp` (implicit, through the profile). Files changed: `joker.toml` (the five `[instances.*]` and the `bind` of `luz`), `profiles/local/bench-esp32@1.profile.toml` (three `[implements]`, version 1.1.0), `sim/esp.sim.toml` (the same `[implements]`), `apps/luz/`, `joker.sim.lock`, `joker.lab.lock`, `joker.zero.lock`. The scenarios in `sim/scenarios/` did not change.
 
-**Próximo:** [Parte 8 — A tua classe: `status_light@1`](08-your-own-class.md).
+**Next:** [Part 8 — Your own class: `status_light@1`](08-your-own-class.md).
