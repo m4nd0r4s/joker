@@ -1,31 +1,31 @@
-# ADR 0018 — Um formato por tipo de coisa: TOML, `.jkc` e código
+# ADR 0018 — One format per kind of thing: TOML, `.jkc` and code
 
-**Estado:** aceite (v1) · **Data:** 2026-09
+**Status:** accepted (v1) · **Date:** 2026-09
 
-## Contexto
+## Context
 
-O projeto acumulou vários tipos de ficheiro (documento 15). As classes de equipamento (ADR 0017) começaram em TOML e expuseram o problema: expressões dentro de strings, métodos em inline tables, erros maus. Havia três caminhos: TOML/YAML para tudo, uma DSL, ou código (Rust, TS, Python) como fonte.
+The project has accumulated several file types (document 15). Equipment classes (ADR 0017) started in TOML and exposed the problem: expressions inside strings, methods in inline tables, bad errors. There were three paths: TOML/YAML for everything, a DSL, or code (Rust, TS, Python) as the source.
 
-## Decisão
+## Decision
 
-Cada ficheiro tem o formato do **tipo de coisa** que descreve:
+Each file has the format of the **kind of thing** it describes:
 
-| Tipo | Formato | Exemplos |
+| Kind | Format | Examples |
 |---|---|---|
-| configuração (dados que o `jk check` analisa, fundidos por overlays, revistos em PR) | **TOML** | manifesto, overlays, lock, perfis, placas, modelos de simulação, cenários, conformidade |
-| contratos (interfaces partilhadas entre linguagens e ferramentas) | **`.jkc`** (documento 17) | classes de equipamento |
-| comportamento | **código** (Rust tier 1; TS e Python tier 2), sempre em Wasm | apps, implementações ativas, extension traits, classes locais |
+| configuration (data that `jk check` analyzes, merged by overlays, reviewed in a PR) | **TOML** | manifest, overlays, lock, profiles, boards, simulation models, scenarios, conformance |
+| contracts (interfaces shared between languages and tools) | **`.jkc`** (document 17) | equipment classes |
+| behavior | **code** (Rust tier 1; TS and Python tier 2), always in Wasm | apps, active implementations, extension traits, local classes |
 
-YAML não é usado em lado nenhum. Configuração em código é recusada: o que o Joker tem de analisar tem de ser dados. Para gerar configurações em escala, usa-se qualquer linguagem que **emita** TOML.
+YAML is not used anywhere. Configuration in code is rejected: what Joker must analyze must be data. To generate configurations at scale, any language that **emits** TOML is used.
 
-## Razões
+## Reasons
 
-- A configuração tem de ser analisável, fundível e legível por quem não programa.
-- Um contrato tem de ser neutro (várias linguagens, perfis, CLI, HMI, OPC UA) e ter sintaxe para métodos, ações e consultas; a `.jkc` reutiliza o parser de expressões que já existe.
-- O comportamento precisa de liberdade total, e o sandbox Wasm torna-a segura.
+- Configuration must be analyzable, mergeable and readable by those who do not program.
+- A contract must be neutral (several languages, profiles, CLI, HMI, OPC UA) and have syntax for methods, actions and queries; `.jkc` reuses the expression parser that already exists.
+- Behavior needs total freedom, and the Wasm sandbox makes it safe.
 
-## Consequências
+## Consequences
 
-- Um parser, um formatador e um LSP para `.jkc` (`jk class fmt|check`), e um LSP para os TOML com suporte às expressões embebidas.
-- As classes locais em crates Rust continuam válidas para uso dentro de apps; publicá-las no registo exige escrever o `.jkc` (sem extração automática na v1).
-- Validação obrigatória na Fase 1: escrever as classes de `std/` em `.jkc`; se a DX não for claramente melhor, a decisão é revista numa ADR nova.
+- A parser, a formatter and an LSP for `.jkc` (`jk class fmt|check`), and an LSP for the TOML files with support for the embedded expressions.
+- Local classes in Rust crates remain valid for use inside apps; publishing them to the registry requires writing the `.jkc` (no automatic extraction in v1).
+- Required validation in Phase 1: write the `std/` classes in `.jkc`; if the DX is not clearly better, the decision is revised in a new ADR.

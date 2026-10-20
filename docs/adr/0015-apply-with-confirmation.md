@@ -1,26 +1,26 @@
-# ADR 0015 — Aplicar configuração com confirmação e rollback automático
+# ADR 0015 — Apply configuration with confirmation and automatic rollback
 
-**Estado:** aceite (v1) · **Data:** 2026-09
+**Status:** accepted (v1) · **Date:** 2026-09
 
-## Contexto
+## Context
 
-Uma configuração nova pode cortar a ligação ao próprio dispositivo (uma rede, uma rota, um certificado), e num site remoto isso significa uma deslocação.
+A new configuration can cut the connection to the device itself (a network, a route, a certificate), and at a remote site that means a trip on site.
 
-## Decisão
+## Decision
 
-`jk apply --confirm <janela>` aplica a nova geração e espera um `jk confirm`. Sem confirmação dentro da janela, a geração anterior é reposta automaticamente. Em `prod`, a janela é obrigatória para gerações que mexem em rede, segurança, uplinks ou na própria API local.
+`jk apply --confirm <window>` applies the new generation and waits for a `jk confirm`. Without confirmation within the window, the previous generation is restored automatically. In `prod`, the window is required for generations that touch networking, security, uplinks or the local API itself.
 
-## Razões
+## Reasons
 
-- É o `commit confirmed` dos equipamentos de rede, aplicado ao edge.
-- Gerações imutáveis tornam o rollback trivial.
+- It is the `commit confirmed` of network equipment, applied to the edge.
+- Immutable generations make rollback trivial.
 
-## Consequências
+## Consequences
 
-- Um segundo passo em cada deploy. Automatizável pelo agente de frota com verificação de saúde.
+- A second step in every deploy. It can be automated by the fleet agent with a health check.
 
-## Nota (rodada da API, 2026-09)
+## Note (API round, 2026-09)
 
-- **Razões de confirmação.** O plano da API diz porque pede confirmação (`confirm_reasons`: `network`, `security`, `uplinks`, `api`). A razão `api` é nova: uma geração que muda as escutas ou os papéis da API pode cortar a própria `jk confirm`. Em `prod`, ativar sem janela uma geração com alguma destas razões é `J-E1610` (ref/09 §5.13, S7).
-- **Rollback reativa.** A geração reposta é a anterior, com o mesmo hash e o mesmo número; o histórico regista a ativação com a sua origem (documento 22, D9).
-- **Confirmação no agente.** Com o Deck, a política de confirmação vai no estado desejado (ref/10 §2.6.4): `auto` (o nó confirma-se pela saúde local), `deck` (espera um comando `confirm`) ou `manual` (espera um `jk confirm`). Em `auto`, a saúde local não chega: a confirmação exige também uma troca autenticada com o Deck depois da troca (`require_uplink`, H7). Uma geração que isolou o nó nunca se confirma a si própria, e a janela expira com rollback (ref/10 §3.5). A API e o agente partilham o mesmo trinco de transição de gerações.
+- **Confirmation reasons.** The API plan says why it asks for confirmation (`confirm_reasons`: `network`, `security`, `uplinks`, `api`). The `api` reason is new: a generation that changes the API's listeners or roles can cut off the very `jk confirm`. In `prod`, activating without a window a generation with any of these reasons is `J-E1610` (ref/09 §5.13, S7).
+- **Rollback reactivates.** The restored generation is the previous one, with the same hash and the same number; the history records the activation with its origin (document 22, D9).
+- **Confirmation in the agent.** With the Deck, the confirmation policy goes in the desired state (ref/10 §2.6.4): `auto` (the node confirms itself from local health), `deck` (waits for a `confirm` command) or `manual` (waits for a `jk confirm`). In `auto`, local health is not enough: confirmation also requires an authenticated exchange with the Deck after the swap (`require_uplink`, H7). A generation that isolated the node never confirms itself, and the window expires with rollback (ref/10 §3.5). The API and the agent share the same generation-transition mutex.

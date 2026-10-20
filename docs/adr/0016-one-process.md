@@ -1,20 +1,20 @@
-# ADR 0016 — Um processo, não microserviços
+# ADR 0016 — One process, not microservices
 
-**Estado:** aceite (v1) · **Alterada por ADR 0019 (ML na 1.1)**: os processos de modelos (`isolation = "process"`) são da 1.1 · **Data:** 2026-09
+**Status:** accepted (v1) · **Amended by ADR 0019 (ML in 1.1)**: model processes (`isolation = "process"`) are in 1.1 · **Date:** 2026-09
 
-## Contexto
+## Context
 
-Plataformas como a EdgeX dividem a runtime em vários serviços em containers. Isso dá isolamento, mas custa memória, latência e complexidade de operação num dispositivo pequeno.
+Platforms such as EdgeX split the runtime into several services in containers. That gives isolation, but it costs memory, latency and operational complexity on a small device.
 
-## Decisão
+## Decision
 
-Um processo `jokerd` com threads por domínio; isolamento por sandbox Wasm (apps e drivers W) e por processos auxiliares apenas onde o código não é de confiança ou pode encravar (drivers X, modelos com `isolation = "process"`).
+One `jokerd` process with threads per domain; isolation through the Wasm sandbox (apps and W drivers) and through auxiliary processes only where the code is not trusted or can hang (X drivers, models with `isolation = "process"`).
 
-## Razões
+## Reasons
 
-- Uma leitura vai do driver à app sem IPC.
-- Um só artefacto para atualizar, monitorizar e depurar.
+- A read goes from the driver to the app without IPC.
+- A single artifact to update, monitor and debug.
 
-## Consequências
+## Consequences
 
-- Um bug de memória num driver N derruba o processo. Mitigado por Rust sem `unsafe` fora de `*-sys`, pelo supervisor do systemd, pelo watchdog de hardware e pelo fallback do dispositivo.
+- A memory bug in an N driver brings the process down. Mitigated by Rust without `unsafe` outside `*-sys`, by the systemd supervisor, by the hardware watchdog and by the device fallback.
