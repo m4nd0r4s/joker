@@ -1,141 +1,141 @@
-# 13 — Plano de implementação
+# 13 — Implementation plan
 
-Como sair do papel: o workspace, as dependências entre crates, as frentes de trabalho e as primeiras tarefas da Fase 0 por ordem.
+How to get off the drawing board: the workspace, the dependencies between crates, the work fronts and the first Phase 0 tasks, in order.
 
 ---
 
 ## 1. Workspace
 
 ```
-Cargo.toml                 workspace; edition 2024; MSRV fixado em rust-toolchain.toml (um por família de alvo, §5.1)
+Cargo.toml                 workspace; edition 2024; MSRV pinned in rust-toolchain.toml (one per target family, §5.1)
 crates/
-  joker-units/             unidades, dimensões, grandezas, parsing de "125 kW"      (sem deps)
-  joker-core/              registo, slots, imagem, árbitro, envelope, alarmes, traço (← units, expr)
-  joker-expr/              linguagem de expressões → bytecode                       (← units)
-  joker-manifest/          joker.toml, joker.lock, overlays, J-codes, codes.toml, admissão RT  (← core, units, expr)
-  joker-hal/               traits Planner, Driver e RtPart, planos, transportes, Cx (ref/06 §3)  (← core)
-  joker-drivers/sim/       planta simulada                                          (← hal)
+  joker-units/             units, dimensions, quantities, parsing of "125 kW"       (no deps)
+  joker-core/              registry, slots, image, arbiter, envelope, alarms, trace (← units, expr)
+  joker-expr/              expression language → bytecode                           (← units)
+  joker-manifest/          joker.toml, joker.lock, overlays, J-codes, codes.toml, RT admission  (← core, units, expr)
+  joker-hal/               Planner, Driver and RtPart traits, plans, transports, Cx (ref/06 §3)  (← core)
+  joker-drivers/sim/       simulated plant                                          (← hal)
   joker-drivers/modbus/    tcp + rtu + sunspec                                      (← hal)
   joker-drivers/gpio/      chardev v2                                               (← hal)
   joker-drivers/revpi/     piControl                                                (← hal)
-  joker-drivers/mqtt/      entrada MQTT                                             (← hal)
-  joker-driver-sdk/        SDK de drivers tier W em Rust (export_driver!)           (← hal)
-  joker-jdp/               JDP: protocolo, anéis, cliente e SDK de drivers tier X   (← hal)
-  joker-drvtest/           suite de conformidade de drivers e duplos de equipamento (← hal)
-  joker-host/              wasmtime, mundo WIT, capacidades, AOT                    (← core)
-  joker-sdk/               SDK Rust (guest), macros em joker-sdk-macros             (← WIT)
-  joker-test/              harness com relógio virtual                              (← core, host, sim)
-  joker-store/             historian e cursores                                     (← core)
-  joker-link/              MQTT/Sparkplug, depois Zenoh e OTLP                      (← core, store)
+  joker-drivers/mqtt/      MQTT input                                               (← hal)
+  joker-driver-sdk/        SDK for tier W drivers in Rust (export_driver!)          (← hal)
+  joker-jdp/               JDP: protocol, rings, client and SDK for tier X drivers  (← hal)
+  joker-drvtest/           driver conformance suite and equipment doubles           (← hal)
+  joker-host/              wasmtime, WIT world, capabilities, AOT                   (← core)
+  joker-sdk/               Rust SDK (guest), macros in joker-sdk-macros             (← WIT)
+  joker-test/              harness with virtual clock                               (← core, host, sim)
+  joker-store/             historian and cursors                                    (← core)
+  joker-link/              MQTT/Sparkplug, then Zenoh and OTLP                      (← core, store)
   joker-api/               HTTP + WebSocket (ref/09)                                (← core)
-  joker-client/            biblioteca cliente Rust da API; a jk usa-a (ref/05)      (← spec/openapi)
-  joker-agent/             agente nó ↔ Deck, agent/1 (ref/10)                       (← agent-proto, core)  (Fase 3)
-  joker-agent-proto/       mensagens do agente em CBOR, no_std, partilhadas com o Micro e o Deck  (Fase 3)
-  joker-micro/             runtime para MCUs (Embassy): hospedeiro no_std do núcleo, modos firmware/lib C/crate; módulo ffi com a ABI C  (Fase 2)
-  joker-link-proto/        protocolo Joker Link, no_std, partilhado por jokerd e joker-micro  (Fase 2)
-  joker-jkc/               compilador de classes .jkc (parser, verificação, forma canónica, codegen)  (← expr, units)
+  joker-client/            Rust client library for the API; jk uses it (ref/05)     (← spec/openapi)
+  joker-agent/             node ↔ Deck agent, agent/1 (ref/10)                      (← agent-proto, core)  (Phase 3)
+  joker-agent-proto/       agent messages in CBOR, no_std, shared with Micro and the Deck  (Phase 3)
+  joker-micro/             runtime for MCUs (Embassy): no_std host of the core, firmware/C lib/crate modes; ffi module with the C ABI  (Phase 2)
+  joker-link-proto/        Joker Link protocol, no_std, shared by jokerd and joker-micro  (Phase 2)
+  joker-jkc/               .jkc class compiler (parser, checking, canonical form, codegen)  (← expr, units)
   joker-ml/ joker-ml-burn/ joker-ml-ort/ joker-ml-hailo/                            (1.1)
-  joker-spec-tests/        tarefa 0a: compila e valida as referências contra o código (documento 22, §8)
-  jokerd/                  binário do daemon
-  joker-cli/               crate da CLI; o binário chama-se `jk` (o nome `jk` está ocupado no crates.io)
+  joker-spec-tests/        task 0a: compiles and validates the references against the code (document 22, §8)
+  jokerd/                  daemon binary
+  joker-cli/               CLI crate; the binary is called `jk` (the name `jk` is taken on crates.io)
 wit/                       joker-runtime.wit, joker-driver.wit, joker-sim.wit
-spec/                      cddl/, openapi/, c/: os ficheiros máquina-legíveis das referências (ADR 0023)
-conformance/               casos em dados (TOML), um ficheiro por suite: conformance/<área>/<suite>.conformance.toml
+spec/                      cddl/, openapi/, c/: the machine-readable files of the references (ADR 0023)
+conformance/               cases as data (TOML), one file per suite: conformance/<area>/<suite>.conformance.toml
 xtask/                     rt-bench, conformance runner, release
 ```
 
-**Regra `no_std`** (ADR 0020; **esta é a lista normativa**, e a ADR 0020, o documento 19 e o AGENTS.md remetem para ela): `joker-units`, `joker-expr`, `joker-core`, `joker-link-proto` e `joker-agent-proto` são `#![no_std]`, sem alocação no caminho do tick; o CI compila-os para `thumbv8m.main-none-eabihf` e `riscv32imac-unknown-none-elf` em cada commit (e para Xtensa, sem bloquear; §5). `joker-hal`, `joker-driver-sdk` e `joker-micro` também são `no_std`, com `alloc` e `std` como features (ref/06 §3.1, ref/08 §2.11). A sincronização do núcleo é só por `critical-section` e `portable-atomic` (ref/08 §2.4, regra 8).
+**`no_std` rule** (ADR 0020; **this is the normative list**, and ADR 0020, document 19 and AGENTS.md refer to it): `joker-units`, `joker-expr`, `joker-core`, `joker-link-proto` and `joker-agent-proto` are `#![no_std]`, with no allocation on the tick path; CI builds them for `thumbv8m.main-none-eabihf` and `riscv32imac-unknown-none-elf` on every commit (and for Xtensa, without blocking; §5). `joker-hal`, `joker-driver-sdk` and `joker-micro` are also `no_std`, with `alloc` and `std` as features (ref/06 §3.1, ref/08 §2.11). Synchronization in the core is only through `critical-section` and `portable-atomic` (ref/08 §2.4, rule 8).
 
-**Referências e código mudam juntos** (ADR 0023): cada frente é dona das referências da sua superfície (§2), e a CI da tarefa 0a falha se um bloco de uma referência ou um ficheiro de `wit/` ou `spec/` divergir do código.
+**References and code change together** (ADR 0023): each front owns the references of its surface (§2), and the CI of task 0a fails if a block of a reference or a file in `wit/` or `spec/` diverges from the code.
 
-**Regra de dependências** verificada em CI (`cargo deny` + um teste que lê o grafo): `joker-core` só depende de `joker-units` e `joker-expr`; nenhum crate de domínio depende de `jokerd`.
+**Dependency rule** checked in CI (`cargo deny` + a test that reads the graph): `joker-core` depends only on `joker-units` and `joker-expr`; no domain crate depends on `jokerd`.
 
 ---
 
-## 2. Frentes
+## 2. Fronts
 
-| Frente | Crates | Referências de que é dona | Primeiro marco |
+| Front | Crates | References it owns | First milestone |
 |---|---|---|---|
-| Núcleo | `joker-units`, `joker-expr`, `joker-core` | 16 e ref/00 (com todas as frentes a rever) | envelope + árbitro com conformidade |
-| Manifesto | `joker-manifest` | ref/01; ref/02 §2.1 e §3.1 (lock) | `jk check` sobre os exemplos deste repositório |
-| Host | `joker-host`, `joker-sdk`, `wit/` | ref/04; ref/05 parte A (SDKs de tier 2) | app de exemplo a correr no harness |
-| Drivers | `joker-hal`, `joker-drivers/*`, `joker-driver-sdk`, `joker-jdp`, `joker-drvtest` | ref/06; ref/03 §2.2–§2.4 (perfis, placas, simulação) | Modbus TCP contra um simulador |
-| Serviços | `joker-store`, `joker-link` | — (documento 01, §12–§13) | historian com WAL e retenção |
-| Daemon, API e CLI | `jokerd`, `joker-api`, `joker-client`, `joker-cli` | ref/09; ref/02 §2.2–§2.5 (nó, cliente, segredos, confiança); ref/05 parte B (clientes) | `jk dev` com planta simulada |
-| Joker Micro e Link (Fase 2) | `joker-micro`, `joker-link-proto` | ref/07, ref/08 | núcleo + link num RP2350 |
-| Agente (Fase 3) | `joker-agent`, `joker-agent-proto` | ref/10 | enrolamento e estado desejado contra um Deck de teste |
-| Classes | `joker-jkc`, `classes/std/` | 17; ref/03 §2.7 (pacotes) | a `std/` inicial (documento 14, §10) a passar a sua conformidade |
-| Conformidade | `conformance/`, `joker-spec-tests` | ref/03 §2.5–§2.6 (cenários e esquema de conformidade); tarefas 0a e 0c | 150 casos, escritos por quem não escreve o núcleo |
+| Core | `joker-units`, `joker-expr`, `joker-core` | 16 and ref/00 (with all fronts reviewing) | envelope + arbiter with conformance |
+| Manifest | `joker-manifest` | ref/01; ref/02 §2.1 and §3.1 (lock) | `jk check` over the examples in this repository |
+| Host | `joker-host`, `joker-sdk`, `wit/` | ref/04; ref/05 part A (tier 2 SDKs) | example app running in the harness |
+| Drivers | `joker-hal`, `joker-drivers/*`, `joker-driver-sdk`, `joker-jdp`, `joker-drvtest` | ref/06; ref/03 §2.2–§2.4 (profiles, boards, simulation) | Modbus TCP against a simulator |
+| Services | `joker-store`, `joker-link` | — (document 01, §12–§13) | historian with WAL and retention |
+| Daemon, API and CLI | `jokerd`, `joker-api`, `joker-client`, `joker-cli` | ref/09; ref/02 §2.2–§2.5 (node, client, secrets, trust); ref/05 part B (clients) | `jk dev` with simulated plant |
+| Joker Micro and Link (Phase 2) | `joker-micro`, `joker-link-proto` | ref/07, ref/08 | core + link on an RP2350 |
+| Agent (Phase 3) | `joker-agent`, `joker-agent-proto` | ref/10 | enrollment and desired state against a test Deck |
+| Classes | `joker-jkc`, `classes/std/` | 17; ref/03 §2.7 (packages) | the initial `std/` (document 14, §10) passing its conformance |
+| Conformance | `conformance/`, `joker-spec-tests` | ref/03 §2.5–§2.6 (scenarios and conformance schema); tasks 0a and 0c | 150 cases, written by people who do not write the core |
 
-A frente de conformidade escreve os casos **a partir da spec**, sem ler o código do núcleo. É a regra do Cravo: partilhar código é partilhar bugs.
-
----
-
-## 3. Formato dos casos de conformidade
-
-O esquema é um só para o núcleo e para as classes (`[suite]`, `[[case]]`, `do`, `expect`, `at`, `equals`, com os literais canónicos em minúsculas), definido na ref/03, §2.6, a partir das regras do documento 16, §8. Há **um ficheiro por suite**, `conformance/<área>/<suite>.conformance.toml`, com `schema = 1` como primeiro par. O executor (`cargo xtask conformance`) corre cada caso contra o `joker-core` com relógio virtual e compara resultado a resultado. Os valores esperados são escritos à mão a partir da especificação. Os mesmos ficheiros correm num MCU pelo firmware de conformidade (ref/08 §3.2, tarefa 22).
+The conformance front writes the cases **from the spec**, without reading the core's code. This is the Cravo rule: sharing code is sharing bugs.
 
 ---
 
-## 4. As primeiras tarefas da Fase 0
+## 3. Format of the conformance cases
 
-| # | Tarefa | Frente | Depende de |
+There is a single schema for the core and for the classes (`[suite]`, `[[case]]`, `do`, `expect`, `at`, `equals`, with the canonical literals in lowercase), defined in ref/03 §2.6, from the rules of document 16, §8. There is **one file per suite**, `conformance/<area>/<suite>.conformance.toml`, with `schema = 1` as the first pair. The runner (`cargo xtask conformance`) runs each case against `joker-core` with a virtual clock and compares result by result. The expected values are written by hand from the specification. The same files run on an MCU through the conformance firmware (ref/08 §3.2, task 22).
+
+---
+
+## 4. The first Phase 0 tasks
+
+| # | Task | Front | Depends on |
 |---|---|---|---|
-| 0a | `joker-spec-tests`: doctests dos blocos Rust das referências, `tsc` nos blocos TypeScript, CDDL validado contra os exemplos, esquema JSON do manifesto gerado dos tipos e validado contra todos os blocos TOML, OpenAPI validado, contagens da prosa verificadas contra as fontes (§5.1); falha a CI se referência e código divergirem | Conformidade | — |
-| 0b | `codes.toml`: todos os códigos das referências (a semente `spec/codes.toml`, que é a fonte das contagens) num registo único, e o teste de CI que o verifica | Manifesto | — |
-| 0c | vetores de teste do Joker Link (ref/07 §4.8), da ABI C (ref/08) e casos de conformidade do núcleo como ficheiros em `conformance/`, corridos em Linux e num MCU | Conformidade | — |
-| 1 | `joker-units`: o catálogo do documento 16, §5 (dimensões, prefixos, `°C`/`K` afim, grandezas), parse de literais | Núcleo | — |
-| 2 | Tabela de conversões e testes com casos de UCUM | Núcleo | 1 |
-| 3 | `joker-expr`: léxico e parser com spans (para erros ao estilo rustc) | Núcleo | 1 |
-| 4 | `joker-expr`: verificação de tipos e unidades (`J0301`…) | Núcleo | 3 |
-| 5 | `joker-expr`: bytecode e VM de pilha sem alocação; funções de janela | Núcleo | 4 |
-| 6 | `joker-core`: `Slot`, seqlock e testes com loom | Núcleo | — |
-| 7 | `joker-core`: registo imutável e `SignalId` densos | Núcleo | 6 |
-| 8 | `joker-core`: imagem por grupo (latch, staging) | Núcleo | 7 |
-| 9 | `joker-core`: árbitro de 16 níveis com leases e TTL manual | Núcleo | 8 |
-| 10 | `joker-core`: envelope (passos 0–8) e trips | Núcleo | 5, 9 |
-| 11 | `joker-core`: grupos atómicos com taxa proporcional | Núcleo | 10 |
-| 12 | `joker-core`: alarmes (máquina de estados, delay, shelving) | Núcleo | 5 |
-| 13 | `joker-core`: traço no formato do documento 16, §7, e rastreio causal (bitset de leituras) | Núcleo | 8 |
-| 14 | `conformance/`: executor do esquema da ref/03 §2.6, e os primeiros 50 casos (árbitro A1–A14, envelope E1–E10, qualidade §3) | Conformidade | spec |
-| 15 | `joker-manifest`: parse, modelo, J-codes com spans | Manifesto | 1, 4 |
-| 16 | `joker-manifest`: overlays (`extends`) e envelope que só aperta | Manifesto | 15 |
-| 17 | `joker-manifest`: admissão RT (rate-monotonic) e orçamento de barramento | Manifesto | 15 |
-| 18 | `joker-drivers/sim`: geradores, dinâmicas, falhas | Drivers | 7 |
-| 19 | `joker-test`: harness com relógio virtual (ainda sem Wasm: tarefas nativas de teste) | Host | 10, 18 |
-| 20 | `xtask rt-bench` e guarda no-alloc no caminho do tick | Núcleo | 10 |
-| 21 | `codes.toml`: carregado pelo `joker-manifest`, com os J-codes do documento 16, §9, e os da tarefa 0b | Manifesto | 0b, 15 |
-| 22 | CI: build `no_std` para `thumbv8m.main-none-eabihf` e `riscv32imac-unknown-none-elf` com conformidade em QEMU (bloqueia), para `xtensa-esp32-none-elf` com conformidade no ESP32 da bancada (não bloqueia), e num RP2350 por sonda quando houver placa (§5) | Núcleo | 6, 14 |
+| 0a | `joker-spec-tests`: doctests of the Rust blocks of the references, `tsc` on the TypeScript blocks, CDDL validated against the examples, JSON schema of the manifest generated from the types and validated against every TOML block, OpenAPI validated, counts in the prose checked against the sources (§5.1); fails CI if reference and code diverge | Conformance | — |
+| 0b | `codes.toml`: all the codes of the references (the seed `spec/codes.toml`, which is the source of the counts) in a single registry, and the CI test that checks it | Manifest | — |
+| 0c | test vectors for Joker Link (ref/07 §4.8), for the C ABI (ref/08) and core conformance cases as files in `conformance/`, run on Linux and on an MCU | Conformance | — |
+| 1 | `joker-units`: the catalog of document 16, §5 (dimensions, prefixes, affine `°C`/`K`, quantities), parsing of literals | Core | — |
+| 2 | Conversion table and tests with UCUM cases | Core | 1 |
+| 3 | `joker-expr`: lexer and parser with spans (for rustc-style errors) | Core | 1 |
+| 4 | `joker-expr`: type and unit checking (`J0301`…) | Core | 3 |
+| 5 | `joker-expr`: bytecode and allocation-free stack VM; window functions | Core | 4 |
+| 6 | `joker-core`: `Slot`, seqlock and tests with loom | Core | — |
+| 7 | `joker-core`: immutable registry and dense `SignalId`s | Core | 6 |
+| 8 | `joker-core`: per-group image (latch, staging) | Core | 7 |
+| 9 | `joker-core`: 16-level arbiter with leases and manual TTL | Core | 8 |
+| 10 | `joker-core`: envelope (steps 0–8) and trips | Core | 5, 9 |
+| 11 | `joker-core`: atomic groups with proportional rate | Core | 10 |
+| 12 | `joker-core`: alarms (state machine, delay, shelving) | Core | 5 |
+| 13 | `joker-core`: trace in the format of document 16, §7, and causal tracing (bitset of reads) | Core | 8 |
+| 14 | `conformance/`: runner for the schema of ref/03 §2.6, and the first 50 cases (arbiter A1–A14, envelope E1–E10, quality §3) | Conformance | spec |
+| 15 | `joker-manifest`: parsing, model, J-codes with spans | Manifest | 1, 4 |
+| 16 | `joker-manifest`: overlays (`extends`) and an envelope that only tightens | Manifest | 15 |
+| 17 | `joker-manifest`: RT admission (rate-monotonic) and bus budget | Manifest | 15 |
+| 18 | `joker-drivers/sim`: generators, dynamics, faults | Drivers | 7 |
+| 19 | `joker-test`: harness with virtual clock (still without Wasm: native test tasks) | Host | 10, 18 |
+| 20 | `xtask rt-bench` and no-alloc guard on the tick path | Core | 10 |
+| 21 | `codes.toml`: loaded by `joker-manifest`, with the J-codes of document 16, §9, and those of task 0b | Manifest | 0b, 15 |
+| 22 | CI: `no_std` build for `thumbv8m.main-none-eabihf` and `riscv32imac-unknown-none-elf` with conformance in QEMU (blocking), for `xtensa-esp32-none-elf` with conformance on the bench ESP32 (non-blocking), and on an RP2350 via probe once a board is available (§5) | Core | 6, 14 |
 
 ---
 
 ## 5. CI
 
-| Job | Onde | Quando | Bloqueia |
+| Job | Where | When | Blocks |
 |---|---|---|---|
-| fmt, clippy, testes | x86_64 | cada commit | sim |
-| referências (`joker-spec-tests`: doctests, `tsc`, CDDL, esquema do manifesto, OpenAPI, contagens do §5.1) | x86_64 | cada commit | sim |
-| conformidade | x86_64 | cada commit | sim |
-| proptest longo (10⁶) | x86_64 | noturno | — |
-| cross-build aarch64, armv7, `arm-unknown-linux-gnueabihf` (ARMv6), riscv64 | x86_64 (cross) | cada commit | sim |
-| cross-build `no_std` **`thumbv8m.main-none-eabihf`** e **`riscv32imac-unknown-none-elf`**, e conformidade em QEMU (`mps2-an505`, `virt` riscv32) | x86_64 (cross) | cada commit | **sim** |
-| tamanho do `jokerd` (`minimal` e completo, `cargo bloat`, 01 §21) | x86_64 (cross aarch64) | cada commit | sim |
-| cross-build **Xtensa** (`xtensa-esp32-none-elf`, toolchain `esp`) e conformidade no ESP32 da bancada | runner com a toolchain `esp` | cada commit no núcleo | **não**: o resultado aparece no PR e abre um alerta, mas não impede o merge |
-| conformidade num RP2350 (HIL) | runner com sonda | cada commit no núcleo, quando houver placa | sim |
-| testes em hardware (CM4, CM5, RevPi Connect 5, x86 IPC) | runners próprios | noturno, e em PR com a etiqueta `hw` | — |
-| `rt-bench` com PREEMPT_RT | runners próprios | noturno; regressão > 5% no p99,9 falha | sim |
-| bancada HIL (Fase 1+) | bancada BESS | noturno | — |
+| fmt, clippy, tests | x86_64 | every commit | yes |
+| references (`joker-spec-tests`: doctests, `tsc`, CDDL, manifest schema, OpenAPI, counts from §5.1) | x86_64 | every commit | yes |
+| conformance | x86_64 | every commit | yes |
+| long proptest (10⁶) | x86_64 | nightly | — |
+| cross-build aarch64, armv7, `arm-unknown-linux-gnueabihf` (ARMv6), riscv64 | x86_64 (cross) | every commit | yes |
+| `no_std` cross-build **`thumbv8m.main-none-eabihf`** and **`riscv32imac-unknown-none-elf`**, and conformance in QEMU (`mps2-an505`, `virt` riscv32) | x86_64 (cross) | every commit | **yes** |
+| size of `jokerd` (`minimal` and full, `cargo bloat`, 01 §21) | x86_64 (cross aarch64) | every commit | yes |
+| **Xtensa** cross-build (`xtensa-esp32-none-elf`, `esp` toolchain) and conformance on the bench ESP32 | runner with the `esp` toolchain | every commit in the core | **no**: the result shows up in the PR and opens an alert, but does not prevent the merge |
+| conformance on an RP2350 (HIL) | runner with probe | every commit in the core, once a board is available | yes |
+| hardware tests (CM4, CM5, RevPi Connect 5, x86 IPC) | dedicated runners | nightly, and on PRs with the `hw` label | — |
+| `rt-bench` with PREEMPT_RT | dedicated runners | nightly; regression > 5% in p99.9 fails | yes |
+| HIL bench (Phase 1+) | BESS bench | nightly | — |
 
-**Porque o Xtensa não bloqueia.** A toolchain `esp` (`espup`) está fora do LLVM oficial e segue o Rust estável com atraso; um atraso dela não pode parar o núcleo. A conformidade de referência corre em Cortex-M33 e RISC-V com toolchains oficiais, e o Xtensa é um alvo a mais, nunca o único (documento 25, §5). Uma falha no Xtensa corrige-se antes do fim da fase.
+**Why Xtensa does not block.** The `esp` toolchain (`espup`) is outside official LLVM and follows stable Rust with a lag; a delay on its side must not stop the core. Reference conformance runs on Cortex-M33 and RISC-V with official toolchains, and Xtensa is one more target, never the only one (document 25, §5). A failure on Xtensa is fixed before the end of the phase.
 
-### 5.1 Toolchains e MSRV
+### 5.1 Toolchains and MSRV
 
-| Regra | Porquê |
+| Rule | Why |
 |---|---|
-| **Um `rust-toolchain.toml` por família de alvo:** o da raiz (toolchain oficial: Linux, `thumbv8m`, `riscv32`) e um em `crates/joker-micro/esp/` (toolchain `esp`, instalada pelo `espup` com versão fixada numa imagem de CI) | as duas famílias têm calendários diferentes; com um só ficheiro, a mais lenta travava a outra |
-| **O MSRV do núcleo** (`joker-units`, `joker-expr`, `joker-core`, `joker-link-proto`, `joker-agent-proto`) é **≤ à versão de Rust da toolchain Xtensa mais recente**; os outros crates podem exigir mais | o núcleo tem de compilar para o ESP32 da bancada com a mesma fonte |
-| **As dependências 0.x** (Embassy, `embedded-io`, `esp-hal` `unstable`, `esp-radio`, `probe-rs`) têm versão exata no `Cargo.lock` do workspace, e só aparecem nos hospedeiros e nas ferramentas, nunca no núcleo | uma quebra a montante não chega ao núcleo nem à ABI C |
-| **Atualizar toolchains e dependências 0.x é uma tarefa explícita, uma vez por fase**, com a conformidade (Linux, QEMU e placas) como porta de entrada | atualizações a conta-gotas partem um alvo sem ninguém ver |
-| **O Xtensa nunca é o único alvo** de uma verificação de conformidade | é a toolchain de terceiros; ver o parágrafo anterior |
+| **One `rust-toolchain.toml` per target family:** the root one (official toolchain: Linux, `thumbv8m`, `riscv32`) and one in `crates/joker-micro/esp/` (`esp` toolchain, installed by `espup` with a version pinned in a CI image) | the two families have different release schedules; with a single file, the slower one would hold back the other |
+| **The MSRV of the core** (`joker-units`, `joker-expr`, `joker-core`, `joker-link-proto`, `joker-agent-proto`) is **≤ the Rust version of the most recent Xtensa toolchain**; the other crates may require more | the core must build for the bench ESP32 from the same source |
+| **The 0.x dependencies** (Embassy, `embedded-io`, `esp-hal` `unstable`, `esp-radio`, `probe-rs`) have an exact version in the workspace `Cargo.lock`, and appear only in the hosts and in the tools, never in the core | an upstream breakage reaches neither the core nor the C ABI |
+| **Updating toolchains and 0.x dependencies is an explicit task, once per phase**, with conformance (Linux, QEMU and boards) as the gate | drip-fed updates break a target without anyone noticing |
+| **Xtensa is never the only target** of a conformance check | it is the third-party toolchain; see the previous paragraph |
 
-As contagens que a prosa ainda repete (códigos, operações da API, mensagens do Joker Link) são verificadas pelo `joker-spec-tests` (tarefa 0a) contra as fontes: `spec/codes.toml`, o OpenAPI e o CDDL. Onde é fácil, a prosa remete para a fonte em vez de repetir o número.
+The counts that the prose still repeats (codes, API operations, Joker Link messages) are checked by `joker-spec-tests` (task 0a) against the sources: `spec/codes.toml`, the OpenAPI and the CDDL. Where it is easy, the prose refers to the source instead of repeating the number.
