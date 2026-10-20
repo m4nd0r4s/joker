@@ -2,22 +2,22 @@ openapi: 3.1.0
 info:
   title: Joker local API (jokerd)
   version: 1.0.0
-  summary: API HTTP local e WebSocket do jokerd. A CLI jk é apenas um cliente desta API.
+  summary: Local HTTP and WebSocket API of jokerd. The jk CLI is only a client of this API.
   description: >-
-    Referência normativa: docs/ref/09-http-api.md. Convenções transversais: docs/ref/00-conventions.md.
-    Transportes: socket Unix /run/joker/api.sock (omissão; autenticação pelas permissões do ficheiro
-    e pelas credenciais do par, SO_PEERCRED) e TCP com TLS 1.3 e mTLS obrigatório (porta de omissão 7443).
-    HTTP/1.1 e HTTP/2. Todos os caminhos começam por /v1 (ADR 0022). Erros em application/problem+json
-    (RFC 9457) com o membro code (J-code). Extensões usadas neste documento -
-    x-joker-role (papel mínimo), x-joker-mutating (exige Joker-Nonce e Joker-Timestamp em TCP e em túnel),
-    x-joker-cli (comandos jk que usam a operação), x-joker-since (versão da API em que a operação existe).
+    Normative reference: docs/ref/09-http-api.md. Cross-cutting conventions: docs/ref/00-conventions.md.
+    Transports: Unix socket /run/joker/api.sock (default; authentication by the file permissions
+    and by the peer credentials, SO_PEERCRED) and TCP with TLS 1.3 and mandatory mTLS (default port 7443).
+    HTTP/1.1 and HTTP/2. All paths start with /v1 (ADR 0022). Errors in application/problem+json
+    (RFC 9457) with the code member (J-code). Extensions used in this document -
+    x-joker-role (minimum role), x-joker-mutating (requires Joker-Nonce and Joker-Timestamp over TCP and over a tunnel),
+    x-joker-cli (jk commands that use the operation), x-joker-since (API version in which the operation exists).
   license:
-    name: a definir (documento 18, §5)
+    name: to be defined (document 18, §5)
 servers:
   - url: http://joker
-    description: Socket Unix /run/joker/api.sock (o Host é ignorado). curl --unix-socket /run/joker/api.sock http://joker/v1/info
+    description: Unix socket /run/joker/api.sock (the Host is ignored). curl --unix-socket /run/joker/api.sock http://joker/v1/info
   - url: https://{node}:{port}
-    description: TCP com TLS 1.3 e mTLS obrigatório
+    description: TCP with TLS 1.3 and mandatory mTLS
     variables:
       node:
         default: node.example.com
@@ -51,7 +51,7 @@ tags:
   - name: audit
   - name: streaming
   - name: agent
-    description: agente do nó (ref/10) e confiança do nó (ref/09 §5.21)
+    description: node agent (ref/10) and node trust (ref/09 §5.21)
   - name: reserved
 paths:
   # ------------------------------------------------------------------ meta
@@ -59,9 +59,9 @@ paths:
     get:
       tags: [meta]
       operationId: getInfo
-      summary: Identidade do nó, versões, geração, relógio, limites e capacidades
+      summary: Node identity, versions, generation, clock, limits and capabilities
       x-joker-role: viewer
-      x-joker-cli: [jk status, jk top, todos (arranque de sessão)]
+      x-joker-cli: [jk status, jk top, all (session startup)]
       x-joker-since: '1.0'
       responses:
         '200':
@@ -76,9 +76,9 @@ paths:
     get:
       tags: [meta]
       operationId: getVersion
-      summary: Versões de todas as superfícies suportadas (negociação de compatibilidade)
+      summary: Versions of all supported surfaces (compatibility negotiation)
       x-joker-role: viewer
-      x-joker-cli: [jk (verificação de compatibilidade)]
+      x-joker-cli: [jk (compatibility check)]
       x-joker-since: '1.0'
       responses:
         '200':
@@ -91,7 +91,7 @@ paths:
     get:
       tags: [meta]
       operationId: getHealth
-      summary: Saúde agregada (200 para ok e degraded, 503 para failed)
+      summary: Aggregate health (200 for ok and degraded, 503 for failed)
       x-joker-role: viewer
       x-joker-since: '1.0'
       parameters:
@@ -100,12 +100,12 @@ paths:
           schema: {type: string, enum: [live, ready, full], default: full}
       responses:
         '200':
-          description: ok ou degraded
+          description: ok or degraded
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Health'}
         '503':
-          description: failed, ou ainda não pronto (probe=ready)
+          description: failed, or not ready yet (probe=ready)
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Health'}
@@ -114,7 +114,7 @@ paths:
     get:
       tags: [meta]
       operationId: whoAmI
-      summary: Identidade e papel de quem chama
+      summary: Identity and role of the caller
       x-joker-role: viewer
       x-joker-since: '1.0'
       responses:
@@ -128,7 +128,7 @@ paths:
     get:
       tags: [meta]
       operationId: getStatus
-      summary: Resumo de operação (jk status)
+      summary: Operational summary (jk status)
       x-joker-role: viewer
       x-joker-cli: [jk status]
       x-joker-since: '1.0'
@@ -149,7 +149,7 @@ paths:
     get:
       tags: [meta]
       operationId: getOpenApiJson
-      summary: Este documento em JSON
+      summary: This document in JSON
       x-joker-role: viewer
       x-joker-since: '1.0'
       responses:
@@ -162,7 +162,7 @@ paths:
     get:
       tags: [meta]
       operationId: getOpenApiYaml
-      summary: Este documento em YAML
+      summary: This document in YAML
       x-joker-role: viewer
       x-joker-since: '1.0'
       responses:
@@ -176,7 +176,7 @@ paths:
     get:
       tags: [node]
       operationId: getNode
-      summary: Identidade do nó e estado do enrolamento
+      summary: Node identity and enrollment state
       x-joker-role: viewer
       x-joker-since: '1.0'
       responses:
@@ -190,7 +190,7 @@ paths:
     post:
       tags: [node]
       operationId: createEnrollmentCsr
-      summary: Gera (ou roda) a chave do nó e, no primeiro enrolamento, a chave KEM X25519; devolve um CSR PKCS#10 (só pelo canal de arranque)
+      summary: Generates (or rotates) the node key and, on the first enrollment, the X25519 KEM key; returns a PKCS#10 CSR (only over the bootstrap channel)
       x-joker-role: admin
       x-joker-mutating: true
       x-joker-transports: [unix]
@@ -207,7 +207,7 @@ paths:
             schema: {$ref: '#/components/schemas/EnrollmentCsrRequest'}
       responses:
         '200':
-          description: CSR gerado
+          description: CSR generated
           content:
             application/json:
               schema: {$ref: '#/components/schemas/EnrollmentCsr'}
@@ -218,7 +218,7 @@ paths:
     put:
       tags: [node]
       operationId: installEnrollmentCertificate
-      summary: Instala a cadeia emitida pela CA da organização, as âncoras e o primeiro bundle (só pelo canal de arranque)
+      summary: Installs the chain issued by the organization CA, the anchors and the first bundle (only over the bootstrap channel)
       x-joker-role: admin
       x-joker-mutating: true
       x-joker-transports: [unix]
@@ -235,7 +235,7 @@ paths:
             schema: {$ref: '#/components/schemas/EnrollmentCertificate'}
       responses:
         '200':
-          description: Instalado
+          description: Installed
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Node'}
@@ -247,7 +247,7 @@ paths:
     post:
       tags: [node]
       operationId: enrollWithDeck
-      summary: Enrola o nó num Deck com um token (ref/10 §3.1.2); o nó faz o POST /enroll
+      summary: Enrolls the node in a Deck with a token (ref/10 §3.1.2); the node makes the POST /enroll
       x-joker-role: admin
       x-joker-mutating: true
       x-joker-transports: [unix]
@@ -271,7 +271,7 @@ paths:
     post:
       tags: [node]
       operationId: renewNode
-      summary: Renova já o certificado do nó (a chave KEM mantém-se)
+      summary: Renews the node certificate now (the KEM key is kept)
       x-joker-role: admin
       x-joker-mutating: true
       x-joker-cli: [jk node renew]
@@ -292,13 +292,13 @@ paths:
     get:
       tags: [node]
       operationId: getNodeHardware
-      summary: Inventário do hardware do nó, só com leituras de /proc, /sys e /dev
+      summary: Inventory of the node hardware, using only reads from /proc, /sys and /dev
       description: >-
-        Arquitetura, modelo, CPUs, memória, kernel, linha de arranque, chips GPIO (com as linhas já
-        ocupadas), LEDs, zonas térmicas, watchdogs, portas série (com os caminhos by-id), I2C, SPI,
-        interfaces de rede, dispositivos USB e TPM. Lido a cada pedido; nada é aberto para escrita e
-        nenhuma linha GPIO é reservada. Um campo ilegível vem null e aparece em unreadable.
-        Referência - docs/ref/09-http-api.md §5.2; uso - jk board probe e jk board check --node (ref/03 §2.3.7).
+        Architecture, model, CPUs, memory, kernel, boot command line, GPIO chips (with the lines already
+        in use), LEDs, thermal zones, watchdogs, serial ports (with the by-id paths), I2C, SPI,
+        network interfaces, USB devices and TPM. Read on every request; nothing is opened for writing and
+        no GPIO line is reserved. An unreadable field comes as null and appears in unreadable.
+        Reference - docs/ref/09-http-api.md §5.2; usage - jk board probe and jk board check --node (ref/03 §2.3.7).
       x-joker-role: viewer
       x-joker-cli: [jk board probe, jk board check --node]
       x-joker-since: '1.0'
@@ -313,7 +313,7 @@ paths:
     get:
       tags: [agent]
       operationId: getNodeTrust
-      summary: Âncoras, bundle de confiança ativo, pisos e chaves revogadas
+      summary: Anchors, active trust bundle, floors and revoked keys
       x-joker-role: viewer
       x-joker-cli: [jk node trust show]
       x-joker-since: '1.0'
@@ -328,7 +328,7 @@ paths:
     put:
       tags: [agent]
       operationId: pushTrustBundle
-      summary: Instala um bundle de confiança (COSE_Sign1 assinado por uma âncora, version maior)
+      summary: Installs a trust bundle (COSE_Sign1 signed by an anchor, higher version)
       x-joker-role: admin
       x-joker-mutating: true
       x-joker-cli: [jk node trust push]
@@ -343,7 +343,7 @@ paths:
             schema: {type: string, contentMediaType: application/cose}
       responses:
         '200':
-          description: Instalado
+          description: Installed
           content:
             application/json:
               schema: {$ref: '#/components/schemas/TrustState'}
@@ -353,7 +353,7 @@ paths:
     put:
       tags: [agent]
       operationId: setTrustAnchors
-      summary: Troca as âncoras de confiança (documento assinado por uma âncora atual; ref/02 §3.2.3)
+      summary: Replaces the trust anchors (document signed by a current anchor; ref/02 §3.2.3)
       x-joker-role: admin
       x-joker-mutating: true
       x-joker-cli: [jk node trust set]
@@ -368,7 +368,7 @@ paths:
             schema: {type: string, contentMediaType: application/cose}
       responses:
         '200':
-          description: Âncoras trocadas; node.toml reescrito
+          description: Anchors replaced; node.toml rewritten
           content:
             application/json:
               schema: {$ref: '#/components/schemas/TrustState'}
@@ -378,7 +378,7 @@ paths:
     get:
       tags: [node]
       operationId: listGroups
-      summary: Grupos de ciclo com estatísticas
+      summary: Cycle groups with statistics
       x-joker-role: viewer
       x-joker-cli: [jk status, jk top]
       x-joker-since: '1.0'
@@ -415,7 +415,7 @@ paths:
     get:
       tags: [node]
       operationId: getMetrics
-      summary: Instantâneo das métricas da runtime, incluindo histogramas (jk top)
+      summary: Snapshot of the runtime metrics, including histograms (jk top)
       x-joker-role: viewer
       x-joker-cli: [jk top]
       x-joker-since: '1.0'
@@ -430,7 +430,7 @@ paths:
     get:
       tags: [node]
       operationId: listLogs
-      summary: Logs estruturados do anel da API (jk logs); para seguir, tópico logs em /v1/ws ou /v1/stream
+      summary: Structured logs from the API ring (jk logs); to follow, logs topic on /v1/ws or /v1/stream
       x-joker-role: viewer
       x-joker-cli: [jk logs, jk app logs, jk dev]
       x-joker-since: '1.0'
@@ -471,7 +471,7 @@ paths:
     get:
       tags: [audit]
       operationId: listAudit
-      summary: Registo de auditoria da API (pedidos que mudam estado, sessões, recusas)
+      summary: API audit log (requests that change state, sessions, refusals)
       x-joker-role: admin
       x-joker-since: '1.0'
       parameters:
@@ -512,7 +512,7 @@ paths:
     get:
       tags: [audit]
       operationId: listSessions
-      summary: Sessões ativas (ligações HTTP persistentes, WebSocket, SSE, túnel)
+      summary: Active sessions (persistent HTTP connections, WebSocket, SSE, tunnel)
       x-joker-role: admin
       x-joker-since: '1.0'
       responses:
@@ -532,7 +532,7 @@ paths:
     delete:
       tags: [audit]
       operationId: closeSession
-      summary: Fecha uma sessão (WebSocket fechado com 4009)
+      summary: Closes a session (WebSocket closed with 4009)
       x-joker-role: admin
       x-joker-mutating: true
       x-joker-since: '1.0'
@@ -541,14 +541,14 @@ paths:
         - $ref: '#/components/parameters/JokerNonce'
         - $ref: '#/components/parameters/JokerTimestamp'
       responses:
-        '204': {description: Fechada}
+        '204': {description: Closed}
         '404': {$ref: '#/components/responses/NotFound'}
         default: {$ref: '#/components/responses/Problem'}
   /v1/secrets:
     get:
       tags: [node]
       operationId: listSecrets
-      summary: Nomes dos segredos e metadados; nunca os valores
+      summary: Secret names and metadata; never the values
       x-joker-role: admin
       x-joker-since: '1.0'
       responses:
@@ -567,10 +567,10 @@ paths:
     post:
       tags: [node]
       operationId: pushSecrets
-      summary: Recebe um secret-bundle (joker.secrets.v1) com as entradas cifradas para este nó
+      summary: Receives a secret-bundle (joker.secrets.v1) with the encrypted entries for this node
       description: >-
-        Cada entrada é verificada sozinha (ref/02 §3.4.3): assinatura do papel secrets, wrap para este nó,
-        decifração de teste e rev. O valor em claro nunca atravessa a API (ref/00 §9).
+        Each entry is verified on its own (ref/02 §3.4.3): signature of the secrets role, wrap for this node,
+        test decryption and rev. The plaintext value never crosses the API (ref/00 §9).
       x-joker-role: admin
       x-joker-mutating: true
       x-joker-cli: [jk secret push, jk apply]
@@ -585,7 +585,7 @@ paths:
             schema: {type: string, contentMediaType: application/vnd.joker.secrets.v1+cbor}
       responses:
         '200':
-          description: Resultado por entrada
+          description: Result per entry
           content:
             application/json:
               schema: {$ref: '#/components/schemas/SecretPushResult'}
@@ -595,7 +595,7 @@ paths:
     put:
       tags: [node]
       operationId: putSecret
-      summary: Define um segredo a partir de uma entrada cifrada por HPKE para a chave KEM do nó (nunca em claro)
+      summary: Sets a secret from an entry encrypted with HPKE for the node KEM key (never in plaintext)
       x-joker-role: admin
       x-joker-mutating: true
       x-joker-since: '1.0'
@@ -610,7 +610,7 @@ paths:
             schema: {$ref: '#/components/schemas/SealedSecret'}
       responses:
         '200':
-          description: Guardado
+          description: Stored
           content:
             application/json:
               schema: {$ref: '#/components/schemas/SecretEntry'}
@@ -628,7 +628,7 @@ paths:
         - $ref: '#/components/parameters/JokerNonce'
         - $ref: '#/components/parameters/JokerTimestamp'
       responses:
-        '204': {description: Apagado}
+        '204': {description: Deleted}
         '404': {$ref: '#/components/responses/NotFound'}
         default: {$ref: '#/components/responses/Problem'}
   # ------------------------------------------------------------------ signals
@@ -636,7 +636,7 @@ paths:
     get:
       tags: [signals]
       operationId: listSignals
-      summary: Registo de sinais da geração em execução (metadados; valores com values=true)
+      summary: Signal registry of the running generation (metadata; values with values=true)
       x-joker-role: viewer
       x-joker-cli: [jk read, jk explain, jk dev]
       x-joker-since: '1.0'
@@ -686,7 +686,7 @@ paths:
     get:
       tags: [signals]
       operationId: getSignal
-      summary: Metadados e amostra atual de um sinal (caminho canónico ou alias)
+      summary: Metadata and current sample of a signal (canonical path or alias)
       x-joker-role: viewer
       x-joker-cli: [jk read, jk explain]
       x-joker-since: '1.0'
@@ -705,7 +705,7 @@ paths:
     get:
       tags: [signals]
       operationId: getSignalLineage
-      summary: Grafo estático de um sinal - driver, aquisição, leitores, escritores, envelope, readback (jk trace)
+      summary: Static graph of a signal - driver, acquisition, readers, writers, envelope, readback (jk trace)
       x-joker-role: viewer
       x-joker-cli: [jk trace]
       x-joker-since: '1.0'
@@ -723,7 +723,7 @@ paths:
     get:
       tags: [signals]
       operationId: readValues
-      summary: Amostras atuais dos sinais que correspondem aos seletores (jk read)
+      summary: Current samples of the signals that match the selectors (jk read)
       x-joker-role: viewer
       x-joker-cli: [jk read]
       x-joker-since: '1.0'
@@ -731,7 +731,7 @@ paths:
         - $ref: '#/components/parameters/SelRequired'
         - name: coherent
           in: query
-          description: Leitura coerente (snapshot, documento 02, §6.4); no máximo 256 sinais
+          description: Coherent read (snapshot, document 02, §6.4); at most 256 signals
           schema: {type: boolean, default: false}
         - $ref: '#/components/parameters/Mono'
       responses:
@@ -749,7 +749,7 @@ paths:
     post:
       tags: [signals]
       operationId: queryValues
-      summary: Igual a GET /v1/values, com os seletores no corpo (listas longas)
+      summary: Same as GET /v1/values, with the selectors in the body (long lists)
       x-joker-role: viewer
       x-joker-since: '1.0'
       requestBody:
@@ -770,7 +770,7 @@ paths:
     post:
       tags: [signals]
       operationId: refreshValues
-      summary: Força a leitura de sinais param com poll = on_demand e devolve as amostras novas (jk read --refresh)
+      summary: Forces the read of param signals with poll = on_demand and returns the new samples (jk read --refresh)
       x-joker-role: operator
       x-joker-mutating: true
       x-joker-cli: [jk read --refresh]
@@ -796,7 +796,7 @@ paths:
     get:
       tags: [history]
       operationId: getHistory
-      summary: Consulta ao historian, crua ou agregada (jk history, jk export)
+      summary: Historian query, raw or aggregated (jk history, jk export)
       x-joker-role: viewer
       x-joker-cli: [jk history, jk export]
       x-joker-since: '1.0'
@@ -840,7 +840,7 @@ paths:
     post:
       tags: [history]
       operationId: queryHistory
-      summary: Igual a GET /v1/history, com a consulta no corpo
+      summary: Same as GET /v1/history, with the query in the body
       x-joker-role: viewer
       x-joker-since: '1.0'
       requestBody:
@@ -865,7 +865,7 @@ paths:
     get:
       tags: [history]
       operationId: listEvents
-      summary: Ocorrências gravadas de sinais com forma evento
+      summary: Recorded occurrences of signals with event shape
       x-joker-role: viewer
       x-joker-since: '1.0'
       parameters:
@@ -897,7 +897,7 @@ paths:
     get:
       tags: [outputs]
       operationId: listOutputs
-      summary: Saídas com valor efetivo, nível ativo, último resultado e trip
+      summary: Outputs with effective value, active level, last result and trip
       x-joker-role: viewer
       x-joker-cli: [jk status, jk top]
       x-joker-since: '1.0'
@@ -908,7 +908,7 @@ paths:
           schema: {type: boolean}
         - name: manual
           in: query
-          description: só saídas com um nível manual ativo
+          description: only outputs with an active manual level
           schema: {type: boolean}
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
@@ -930,9 +930,9 @@ paths:
     get:
       tags: [outputs]
       operationId: getOutput
-      summary: Estado completo do árbitro e do envelope de uma saída
+      summary: Full arbiter and envelope state of an output
       x-joker-role: viewer
-      x-joker-cli: [jk write (antes de pedir confirmação), jk trace, jk explain <saída>]
+      x-joker-cli: [jk write (before asking for confirmation), jk trace, jk explain <output>]
       x-joker-since: '1.0'
       parameters:
         - $ref: '#/components/parameters/SignalPath'
@@ -950,7 +950,7 @@ paths:
     post:
       tags: [outputs]
       operationId: previewManualWrite
-      summary: Pré-visualização de uma escrita manual - envelope, nível ativo e resultado previsto; não escreve
+      summary: Preview of a manual write - envelope, active level and predicted result; does not write
       x-joker-role: viewer
       x-joker-cli: [jk write]
       x-joker-since: '1.0'
@@ -978,7 +978,7 @@ paths:
     post:
       tags: [outputs]
       operationId: manualWrite
-      summary: Escrita manual com TTL obrigatório (A10); renova se o mesmo principal já ocupa o nível
+      summary: Manual write with mandatory TTL (A10); renews if the same principal already holds the level
       x-joker-role: operator
       x-joker-mutating: true
       x-joker-cli: [jk write]
@@ -996,12 +996,12 @@ paths:
             schema: {$ref: '#/components/schemas/ManualWriteRequest'}
       responses:
         '200':
-          description: Aplicada no tick do grupo dono; o resultado do envelope vem no corpo (um rejected é uma resposta 200)
+          description: Applied on the owning group tick; the envelope result comes in the body (a rejected write is a 200 response)
           content:
             application/json:
               schema: {$ref: '#/components/schemas/WriteTicket'}
         '202':
-          description: Na inbox do grupo dono; resultado em Location (wait=false ou timeout)
+          description: In the owning group inbox; result in Location (wait=false or timeout)
           headers:
             Location: {$ref: '#/components/headers/Location'}
           content:
@@ -1019,7 +1019,7 @@ paths:
     post:
       tags: [outputs]
       operationId: releaseManual
-      summary: Liberta um nível manual (relinquish) - jk release
+      summary: Releases a manual level (relinquish) - jk release
       x-joker-role: operator
       x-joker-mutating: true
       x-joker-cli: [jk release]
@@ -1036,7 +1036,7 @@ paths:
             schema: {$ref: '#/components/schemas/ReleaseRequest'}
       responses:
         '200':
-          description: Libertado
+          description: Released
           content:
             application/json:
               schema: {$ref: '#/components/schemas/WriteTicket'}
@@ -1047,7 +1047,7 @@ paths:
     post:
       tags: [outputs]
       operationId: resetTrip
-      summary: Reset explícito de um trip (documento 16, E7) - jk reset
+      summary: Explicit reset of a trip (document 16, E7) - jk reset
       x-joker-role: operator
       x-joker-mutating: true
       x-joker-cli: [jk reset]
@@ -1064,7 +1064,7 @@ paths:
             schema: {$ref: '#/components/schemas/ResetRequest'}
       responses:
         '200':
-          description: Resultado depois do tick seguinte do grupo dono
+          description: Result after the next tick of the owning group
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ResetResult'}
@@ -1075,7 +1075,7 @@ paths:
     get:
       tags: [outputs]
       operationId: listManualOverrides
-      summary: Todos os níveis manuais ativos no nó
+      summary: All active manual levels on the node
       x-joker-role: viewer
       x-joker-cli: [jk status]
       x-joker-since: '1.0'
@@ -1098,7 +1098,7 @@ paths:
     get:
       tags: [outputs]
       operationId: getWrite
-      summary: Bilhete de uma escrita manual, de uma chamada de método ou de uma intenção aprovada (guardado 10 min)
+      summary: Ticket of a manual write, a method call or an approved intent (kept for 10 min)
       x-joker-role: viewer
       x-joker-since: '1.0'
       parameters:
@@ -1118,7 +1118,7 @@ paths:
     get:
       tags: [outputs]
       operationId: listTrips
-      summary: Saídas em trip (jk trips)
+      summary: Tripped outputs (jk trips)
       x-joker-role: viewer
       x-joker-cli: [jk trips, jk status]
       x-joker-since: '1.0'
@@ -1141,7 +1141,7 @@ paths:
     post:
       tags: [outputs]
       operationId: resetTrips
-      summary: Reset de várias saídas em trip (por exemplo, depois do trip de um grupo)
+      summary: Reset of several tripped outputs (for example, after the trip of a group)
       x-joker-role: operator
       x-joker-mutating: true
       x-joker-cli: [jk reset]
@@ -1157,7 +1157,7 @@ paths:
             schema: {$ref: '#/components/schemas/BulkResetRequest'}
       responses:
         '200':
-          description: Resultados por saída
+          description: Results per output
           content:
             application/json:
               schema:
@@ -1172,7 +1172,7 @@ paths:
     get:
       tags: [outputs]
       operationId: listDecisions
-      summary: Registo de decisões (M3) - jk decisions
+      summary: Decision log (M3) - jk decisions
       x-joker-role: viewer
       x-joker-cli: [jk decisions]
       x-joker-since: '1.0'
@@ -1187,7 +1187,7 @@ paths:
             items: {$ref: '#/components/schemas/Selector'}
         - name: cause
           in: query
-          description: só as decisões cujo conjunto causal contém este sinal
+          description: only the decisions whose causal set contains this signal
           schema: {$ref: '#/components/schemas/SignalPath'}
         - name: writer
           in: query
@@ -1235,7 +1235,7 @@ paths:
     get:
       tags: [alarms]
       operationId: listAlarms
-      summary: Alarmes (jk alarms)
+      summary: Alarms (jk alarms)
       x-joker-role: viewer
       x-joker-cli: [jk alarms, jk status]
       x-joker-since: '1.0'
@@ -1244,7 +1244,7 @@ paths:
           in: query
           style: form
           explode: true
-          description: seletores sobre o id do alarme
+          description: selectors over the alarm id
           schema:
             type: array
             maxItems: 64
@@ -1254,7 +1254,7 @@ paths:
           schema: {type: string, enum: [active, unacked, shelved, suppressed, all], default: all}
         - name: severity
           in: query
-          description: gravidade mínima
+          description: minimum severity
           schema: {$ref: '#/components/schemas/Severity'}
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
@@ -1292,7 +1292,7 @@ paths:
     post:
       tags: [alarms]
       operationId: ackAlarm
-      summary: Reconhece um alarme (jk alarm ack)
+      summary: Acknowledges an alarm (jk alarm ack)
       x-joker-role: operator
       x-joker-mutating: true
       x-joker-cli: [jk alarm ack]
@@ -1309,7 +1309,7 @@ paths:
             schema: {$ref: '#/components/schemas/AckRequest'}
       responses:
         '200':
-          description: Estado depois do ack
+          description: State after the ack
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Alarm'}
@@ -1320,7 +1320,7 @@ paths:
     post:
       tags: [alarms]
       operationId: shelveAlarm
-      summary: Arquiva temporariamente um alarme, com TTL e motivo obrigatórios (jk alarm shelve)
+      summary: Temporarily shelves an alarm, with mandatory TTL and reason (jk alarm shelve)
       x-joker-role: operator
       x-joker-mutating: true
       x-joker-cli: [jk alarm shelve]
@@ -1337,7 +1337,7 @@ paths:
             schema: {$ref: '#/components/schemas/ShelveRequest'}
       responses:
         '200':
-          description: Arquivado
+          description: Shelved
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Alarm'}
@@ -1364,7 +1364,7 @@ paths:
             schema: {$ref: '#/components/schemas/AckRequest'}
       responses:
         '200':
-          description: Desarquivado
+          description: Unshelved
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Alarm'}
@@ -1375,7 +1375,7 @@ paths:
     get:
       tags: [alarms]
       operationId: listAlarmEvents
-      summary: Histórico de transições, reconhecimentos e arquivamentos
+      summary: History of transitions, acknowledgments and shelvings
       x-joker-role: viewer
       x-joker-cli: [jk alarms]
       x-joker-since: '1.0'
@@ -1418,7 +1418,7 @@ paths:
     get:
       tags: [intents]
       operationId: listIntents
-      summary: Intenções de escritores só-proposta (M18) - jk intents
+      summary: Intents of proposal-only writers (M18) - jk intents
       x-joker-role: viewer
       x-joker-cli: [jk intents]
       x-joker-since: '1.0'
@@ -1455,7 +1455,7 @@ paths:
         - $ref: '#/components/parameters/IntentId'
         - name: preview
           in: query
-          description: acrescenta a pré-visualização da escrita que a aprovação faria agora
+          description: adds the preview of the write that the approval would make now
           schema: {type: boolean, default: false}
       responses:
         '200':
@@ -1469,7 +1469,7 @@ paths:
     post:
       tags: [intents]
       operationId: approveIntent
-      summary: Aprova e executa como escrita manual (escritor intent:<id>, em nome de quem aprovou)
+      summary: Approves and executes as a manual write (writer intent:<id>, on behalf of the approver)
       x-joker-role: operator
       x-joker-mutating: true
       x-joker-cli: [jk intent approve]
@@ -1486,12 +1486,12 @@ paths:
             schema: {$ref: '#/components/schemas/ApproveIntentRequest'}
       responses:
         '200':
-          description: Aprovada e aplicada
+          description: Approved and applied
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Intent'}
         '202':
-          description: Aprovada; escrita na inbox do grupo dono
+          description: Approved; write in the owning group inbox
           headers:
             Location: {$ref: '#/components/headers/Location'}
           content:
@@ -1521,7 +1521,7 @@ paths:
             schema: {$ref: '#/components/schemas/RejectIntentRequest'}
       responses:
         '200':
-          description: Rejeitada
+          description: Rejected
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Intent'}
@@ -1533,7 +1533,7 @@ paths:
     get:
       tags: [actions]
       operationId: listActions
-      summary: Catálogo de ações invocáveis (dispositivos e instâncias)
+      summary: Catalog of invocable actions (devices and instances)
       x-joker-role: viewer
       x-joker-cli: [jk action]
       x-joker-since: '1.0'
@@ -1558,7 +1558,7 @@ paths:
     post:
       tags: [actions]
       operationId: invokeAction
-      summary: Invoca uma ação de um dispositivo ou de uma instância (jk action). Idempotency-Key obrigatório.
+      summary: Invokes an action of a device or of an instance (jk action). Idempotency-Key required.
       x-joker-role: operator
       x-joker-mutating: true
       x-joker-cli: [jk action]
@@ -1576,14 +1576,14 @@ paths:
             schema: {$ref: '#/components/schemas/InvokeRequest'}
       responses:
         '200':
-          description: Ação curta terminada (succeeded ou failed), ou reinvocação dentro de dedup_window
+          description: Short action finished (succeeded or failed), or reinvocation within dedup_window
           headers:
             Joker-Idempotent-Replay: {$ref: '#/components/headers/IdempotentReplay'}
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Invocation'}
         '202':
-          description: Ação longa, ou curta ainda a correr ao fim de wait_timeout
+          description: Long action, or a short one still running at the end of wait_timeout
           headers:
             Location: {$ref: '#/components/headers/Location'}
           content:
@@ -1649,10 +1649,10 @@ paths:
     post:
       tags: [actions]
       operationId: cancelInvocation
-      summary: Cancela uma ação longa (ActionHandle)
+      summary: Cancels a long action (ActionHandle)
       x-joker-role: operator
       x-joker-mutating: true
-      x-joker-cli: [jk action (Ctrl-C numa ação longa)]
+      x-joker-cli: [jk action (Ctrl-C on a long action)]
       x-joker-since: '1.0'
       parameters:
         - $ref: '#/components/parameters/InvocationId'
@@ -1665,7 +1665,7 @@ paths:
             schema: {$ref: '#/components/schemas/ReasonBody'}
       responses:
         '200':
-          description: Cancelamento pedido ou concluído
+          description: Cancellation requested or completed
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Invocation'}
@@ -1677,7 +1677,7 @@ paths:
     get:
       tags: [instances]
       operationId: listInstances
-      summary: Instâncias de classes, origem e saúde (jk status --instances)
+      summary: Class instances, origin and health (jk status --instances)
       x-joker-role: viewer
       x-joker-cli: [jk status --instances]
       x-joker-since: '1.0'
@@ -1711,9 +1711,9 @@ paths:
     get:
       tags: [instances]
       operationId: getInstance
-      summary: Membros, mapeamento, valores, consultas, saúde, árvore de membros de classe e camadas (jk explain <instância>)
+      summary: Members, mapping, values, queries, health, class member tree and layers (jk explain <instance>)
       x-joker-role: viewer
-      x-joker-cli: [jk explain <instância>, jk status --instances]
+      x-joker-cli: [jk explain <instance>, jk status --instances]
       x-joker-since: '1.0'
       parameters:
         - $ref: '#/components/parameters/InstanceName'
@@ -1722,7 +1722,7 @@ paths:
           schema: {type: boolean, default: true}
         - name: explain
           in: query
-          description: acrescenta origem de cada mapeamento e latência das camadas virtuais
+          description: adds the origin of each mapping and the latency of the virtual layers
           schema: {type: boolean, default: false}
       responses:
         '200':
@@ -1736,7 +1736,7 @@ paths:
     post:
       tags: [instances]
       operationId: previewMethodCall
-      summary: Expansão prevista de um método e resultados previstos no envelope; não escreve
+      summary: Predicted expansion of a method and predicted results in the envelope; does not write
       x-joker-role: viewer
       x-joker-cli: [jk call]
       x-joker-since: '1.0'
@@ -1764,7 +1764,7 @@ paths:
     post:
       tags: [instances]
       operationId: callMethod
-      summary: Chama um método de classe como escritor manual (documento 17, §4.1) - jk call
+      summary: Calls a class method as a manual writer (document 17, §4.1) - jk call
       x-joker-role: operator
       x-joker-mutating: true
       x-joker-cli: [jk call]
@@ -1783,12 +1783,12 @@ paths:
             schema: {$ref: '#/components/schemas/MethodCallRequest'}
       responses:
         '200':
-          description: Expandido e aplicado
+          description: Expanded and applied
           content:
             application/json:
               schema: {$ref: '#/components/schemas/MethodCallResult'}
         '202':
-          description: Na inbox do grupo dono
+          description: In the owning group's inbox
           headers:
             Location: {$ref: '#/components/headers/Location'}
           content:
@@ -1804,7 +1804,7 @@ paths:
     post:
       tags: [instances]
       operationId: verifyInstance
-      summary: Corre os testes de conformidade da classe contra uma instância real (jk class verify --instance)
+      summary: Runs the class conformance tests against a real instance (jk class verify --instance)
       x-joker-role: admin
       x-joker-mutating: true
       x-joker-cli: [jk class verify]
@@ -1827,7 +1827,7 @@ paths:
     get:
       tags: [instances]
       operationId: listClasses
-      summary: Classes usadas pela geração em execução
+      summary: Classes used by the running generation
       x-joker-role: viewer
       x-joker-cli: [jk class list --node]
       x-joker-since: '1.0'
@@ -1848,7 +1848,7 @@ paths:
     get:
       tags: [instances]
       operationId: getClass
-      summary: Contrato canónico (contract.json, documento 17, §6) de uma classe da geração
+      summary: Canonical contract (contract.json, document 17, §6) of a class of the generation
       x-joker-role: viewer
       x-joker-cli: [jk class show --node]
       x-joker-since: '1.0'
@@ -1860,7 +1860,7 @@ paths:
         - name: class
           in: path
           required: true
-          description: nome@major, por exemplo pump@1
+          description: name@major, for example pump@1
           schema: {type: string, pattern: '^[a-z][a-z0-9_.]*@[0-9]+$'}
       responses:
         '200':
@@ -1875,7 +1875,7 @@ paths:
     get:
       tags: [devices]
       operationId: listDevices
-      summary: Dispositivos, estado do link e deriva
+      summary: Devices, link state and drift
       x-joker-role: viewer
       x-joker-cli: [jk status, jk top]
       x-joker-since: '1.0'
@@ -1919,7 +1919,7 @@ paths:
     post:
       tags: [devices]
       operationId: stopDevice
-      summary: Para o driver do dispositivo (volátil até ao próximo arranque do jokerd ou à próxima geração); o link fica stopped e as saídas ficam com o fallback do dispositivo
+      summary: Stops the device driver (volatile until the next jokerd startup or the next generation); the link becomes stopped and the outputs take the device fallback
       x-joker-role: operator
       x-joker-mutating: true
       x-joker-cli: [jk device stop]
@@ -1935,7 +1935,7 @@ paths:
             schema: {$ref: '#/components/schemas/ReasonRequired'}
       responses:
         '200':
-          description: Estado depois da operação
+          description: State after the operation
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Device'}
@@ -1946,7 +1946,7 @@ paths:
     post:
       tags: [devices]
       operationId: startDevice
-      summary: Volta a arrancar o driver de um dispositivo parado com stop (connect, deriva e resync como numa religação)
+      summary: Starts the driver of a device stopped with stop again (connect, drift and resync as on a reconnection)
       x-joker-role: operator
       x-joker-mutating: true
       x-joker-cli: [jk device start]
@@ -1962,7 +1962,7 @@ paths:
             schema: {$ref: '#/components/schemas/ReasonBody'}
       responses:
         '200':
-          description: Estado depois da operação
+          description: State after the operation
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Device'}
@@ -1973,7 +1973,7 @@ paths:
     get:
       tags: [devices]
       operationId: getLockFacts
-      summary: Factos da geração em execução com a forma do joker.lock (descobertos, firmware, fallbacks)
+      summary: Facts of the running generation in the shape of joker.lock (discovered, firmware, fallbacks)
       x-joker-role: viewer
       x-joker-cli: [jk lock --node, jk lock --update]
       x-joker-since: '1.0'
@@ -1988,7 +1988,7 @@ paths:
     get:
       tags: [devices]
       operationId: getLockDrift
-      summary: Deriva face ao joker.lock (J0401)
+      summary: Drift against joker.lock (J0401)
       x-joker-role: viewer
       x-joker-cli: [jk status, jk doctor]
       x-joker-since: '1.0'
@@ -2009,7 +2009,7 @@ paths:
     post:
       tags: [devices]
       operationId: probeLockFacts
-      summary: Recolhe, só com leituras, os factos de dispositivos de um manifesto ainda não aplicado (jk lock --node)
+      summary: Collects, with reads only, the device facts of a manifest not yet applied (jk lock --node)
       x-joker-role: admin
       x-joker-mutating: true
       x-joker-cli: [jk lock --node, jk lock --update]
@@ -2083,7 +2083,7 @@ paths:
             schema: {$ref: '#/components/schemas/ReasonBody'}
       responses:
         '200':
-          description: Estado depois da operação
+          description: State after the operation
           content:
             application/json:
               schema: {$ref: '#/components/schemas/App'}
@@ -2094,7 +2094,7 @@ paths:
     post:
       tags: [apps]
       operationId: stopApp
-      summary: Para a app (volátil até ao próximo arranque do jokerd ou à próxima geração); as saídas seguem o lease
+      summary: Stops the app (volatile until the next jokerd startup or the next generation); the outputs follow the lease
       x-joker-role: operator
       x-joker-mutating: true
       x-joker-cli: [jk app stop]
@@ -2110,7 +2110,7 @@ paths:
             schema: {$ref: '#/components/schemas/ReasonRequired'}
       responses:
         '200':
-          description: Estado depois da operação
+          description: State after the operation
           content:
             application/json:
               schema: {$ref: '#/components/schemas/App'}
@@ -2121,7 +2121,7 @@ paths:
     post:
       tags: [apps]
       operationId: restartApp
-      summary: Recria as duas instâncias da app (sai também de crashloop)
+      summary: Recreates both instances of the app (also leaves crashloop)
       x-joker-role: operator
       x-joker-mutating: true
       x-joker-cli: [jk app restart]
@@ -2137,7 +2137,7 @@ paths:
             schema: {$ref: '#/components/schemas/ReasonBody'}
       responses:
         '200':
-          description: Estado depois da operação
+          description: State after the operation
           content:
             application/json:
               schema: {$ref: '#/components/schemas/App'}
@@ -2148,14 +2148,14 @@ paths:
     get:
       tags: [apps]
       operationId: readAppKv
-      summary: Leitura do kv da app (só leitura; não há escrita pela API)
+      summary: Reads the app kv (read-only; there is no write through the API)
       x-joker-role: admin
       x-joker-since: '1.0'
       parameters:
         - $ref: '#/components/parameters/AppName'
         - name: key
           in: query
-          description: chave exata; sem ela, lista as chaves
+          description: exact key; without it, lists the keys
           schema: {type: string, maxLength: 256}
         - name: prefix
           in: query
@@ -2194,7 +2194,7 @@ paths:
     post:
       tags: [shadows]
       operationId: startShadow
-      summary: Põe um candidato em sombra, através de uma geração derivada da atual (jk shadow start)
+      summary: Puts a candidate in shadow, through a generation derived from the current one (jk shadow start)
       x-joker-role: admin
       x-joker-mutating: true
       x-joker-cli: [jk shadow start]
@@ -2210,7 +2210,7 @@ paths:
             schema: {$ref: '#/components/schemas/ShadowStartRequest'}
       responses:
         '201':
-          description: Geração derivada preparada e ativada
+          description: Derived generation prepared and activated
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Shadow'}
@@ -2239,7 +2239,7 @@ paths:
     get:
       tags: [shadows]
       operationId: getAppShadowDiff
-      summary: Divergência entre o que a sombra propôs e o que foi aplicado (jk shadow diff)
+      summary: Divergence between what the shadow proposed and what was applied (jk shadow diff)
       x-joker-role: viewer
       x-joker-cli: [jk shadow diff]
       x-joker-since: '1.0'
@@ -2268,7 +2268,7 @@ paths:
     post:
       tags: [shadows]
       operationId: promoteAppShadow
-      summary: Promove o candidato, total ou parcialmente por saídas (geração derivada)
+      summary: Promotes the candidate, fully or partially by outputs (derived generation)
       x-joker-role: admin
       x-joker-mutating: true
       x-joker-cli: [jk shadow promote]
@@ -2285,7 +2285,7 @@ paths:
             schema: {$ref: '#/components/schemas/ShadowPromoteRequest'}
       responses:
         '200':
-          description: Promovido
+          description: Promoted
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Shadow'}
@@ -2313,7 +2313,7 @@ paths:
             schema: {$ref: '#/components/schemas/ReasonRequired'}
       responses:
         '200':
-          description: Abortado
+          description: Aborted
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Shadow'}
@@ -2325,7 +2325,7 @@ paths:
     post:
       tags: [blobs]
       operationId: findMissingBlobs
-      summary: Diz quais dos digests ainda não estão no armazém do nó
+      summary: Says which of the digests are not yet in the node's store
       x-joker-role: admin
       x-joker-cli: [jk apply, jk runtime upgrade, jk dev --node]
       x-joker-since: '1.0'
@@ -2365,12 +2365,12 @@ paths:
       parameters:
         - $ref: '#/components/parameters/BlobDigest'
       responses:
-        '200': {description: Existe}
-        '404': {description: Não existe}
+        '200': {description: Exists}
+        '404': {description: Does not exist}
     get:
       tags: [blobs]
       operationId: getBlob
-      summary: Descarrega um blob do armazém (suporta Range)
+      summary: Downloads a blob from the store (supports Range)
       x-joker-role: admin
       x-joker-since: '1.0'
       parameters:
@@ -2381,14 +2381,14 @@ paths:
           content:
             application/octet-stream:
               schema: {type: string, contentMediaType: application/octet-stream}
-        '206': {description: Conteúdo parcial}
+        '206': {description: Partial content}
         '404': {$ref: '#/components/responses/NotFound'}
         default: {$ref: '#/components/responses/Problem'}
   /v1/blobs/uploads:
     post:
       tags: [blobs]
       operationId: startBlobUpload
-      summary: Inicia um upload em blocos, ou faz um upload monolítico (≤ 8 MiB) com ?digest= e corpo
+      summary: Starts a chunked upload, or does a monolithic upload (≤ 8 MiB) with ?digest= and a body
       x-joker-role: admin
       x-joker-mutating: true
       x-joker-cli: [jk apply, jk runtime upgrade, jk dev --node]
@@ -2396,7 +2396,7 @@ paths:
       parameters:
         - name: digest
           in: query
-          description: só no upload monolítico
+          description: only in the monolithic upload
           schema: {$ref: '#/components/schemas/Digest'}
         - name: kind
           in: query
@@ -2412,14 +2412,14 @@ paths:
             schema: {type: string, contentMediaType: application/octet-stream}
       responses:
         '201':
-          description: Upload monolítico concluído, ou blob já existente
+          description: Monolithic upload completed, or blob already exists
           headers:
             Location: {$ref: '#/components/headers/Location'}
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Blob'}
         '202':
-          description: Sessão de upload criada
+          description: Upload session created
           headers:
             Location: {$ref: '#/components/headers/Location'}
           content:
@@ -2432,7 +2432,7 @@ paths:
     get:
       tags: [blobs]
       operationId: getBlobUpload
-      summary: Estado de um upload (para retomar)
+      summary: State of an upload (to resume it)
       x-joker-role: admin
       x-joker-since: '1.0'
       parameters:
@@ -2448,7 +2448,7 @@ paths:
     patch:
       tags: [blobs]
       operationId: uploadBlobChunk
-      summary: Envia um bloco (≤ 8 MiB) com Content-Range; os blocos têm de ser contíguos
+      summary: Sends a chunk (≤ 8 MiB) with Content-Range; chunks must be contiguous
       x-joker-role: admin
       x-joker-mutating: true
       x-joker-since: '1.0'
@@ -2467,7 +2467,7 @@ paths:
             schema: {type: string, contentMediaType: application/octet-stream}
       responses:
         '202':
-          description: Bloco aceite
+          description: Chunk accepted
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Upload'}
@@ -2478,7 +2478,7 @@ paths:
     put:
       tags: [blobs]
       operationId: finishBlobUpload
-      summary: Fecha o upload (com um último bloco opcional) e verifica o digest
+      summary: Closes the upload (with an optional last chunk) and verifies the digest
       x-joker-role: admin
       x-joker-mutating: true
       x-joker-since: '1.0'
@@ -2497,7 +2497,7 @@ paths:
             schema: {type: string, contentMediaType: application/octet-stream}
       responses:
         '201':
-          description: Blob guardado
+          description: Blob stored
           headers:
             Location: {$ref: '#/components/headers/Location'}
           content:
@@ -2517,7 +2517,7 @@ paths:
         - $ref: '#/components/parameters/JokerNonce'
         - $ref: '#/components/parameters/JokerTimestamp'
       responses:
-        '204': {description: Cancelado}
+        '204': {description: Canceled}
         '404': {$ref: '#/components/responses/NotFound'}
         default: {$ref: '#/components/responses/Problem'}
   # ------------------------------------------------------------------ generations
@@ -2525,7 +2525,7 @@ paths:
     get:
       tags: [generations]
       operationId: listGenerations
-      summary: Histórico de gerações (jk generations)
+      summary: Generation history (jk generations)
       x-joker-role: viewer
       x-joker-cli: [jk generations]
       x-joker-since: '1.0'
@@ -2552,7 +2552,7 @@ paths:
     post:
       tags: [generations]
       operationId: createGeneration
-      summary: Valida e planeia (dry_run) ou prepara uma geração pendente (jk apply, jk check --node, jk dev --node)
+      summary: Validates and plans (dry_run) or prepares a pending generation (jk apply, jk check --node, jk dev --node)
       x-joker-role: admin
       x-joker-mutating: true
       x-joker-cli: [jk apply, jk apply --dry-run, jk check --node, jk dev --node]
@@ -2571,12 +2571,12 @@ paths:
             schema: {$ref: '#/components/schemas/GenerationProposal'}
       responses:
         '200':
-          description: dry_run - plano e diagnósticos, nada fica guardado
+          description: dry_run - plan and diagnostics, nothing is stored
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Generation'}
         '201':
-          description: Geração pendente preparada (AOT, registo, plano)
+          description: Pending generation prepared (AOT, registry, plan)
           headers:
             Location: {$ref: '#/components/headers/Location'}
           content:
@@ -2589,7 +2589,7 @@ paths:
     post:
       tags: [generations]
       operationId: rollbackGeneration
-      summary: Volta a uma geração anterior guardada (jk rollback)
+      summary: Returns to a previous stored generation (jk rollback)
       x-joker-role: admin
       x-joker-mutating: true
       x-joker-cli: [jk rollback]
@@ -2606,7 +2606,7 @@ paths:
             schema: {$ref: '#/components/schemas/RollbackRequest'}
       responses:
         '200':
-          description: Geração nova (origin rollback) ativa
+          description: New generation (origin rollback) active
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Generation'}
@@ -2636,7 +2636,7 @@ paths:
     delete:
       tags: [generations]
       operationId: discardGeneration
-      summary: Descarta uma geração pendente não ativada
+      summary: Discards a pending generation that was not activated
       x-joker-role: admin
       x-joker-mutating: true
       x-joker-since: '1.0'
@@ -2645,7 +2645,7 @@ paths:
         - $ref: '#/components/parameters/JokerNonce'
         - $ref: '#/components/parameters/JokerTimestamp'
       responses:
-        '204': {description: Descartada}
+        '204': {description: Discarded}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
         default: {$ref: '#/components/responses/Problem'}
@@ -2653,7 +2653,7 @@ paths:
     get:
       tags: [generations]
       operationId: getGenerationManifest
-      summary: Manifesto efetivo da geração (jk diff --against)
+      summary: Effective manifest of the generation (jk diff --against)
       x-joker-role: viewer
       x-joker-cli: [jk diff]
       x-joker-since: '1.0'
@@ -2688,15 +2688,15 @@ paths:
     get:
       tags: [generations]
       operationId: getGenerationProvenance
-      summary: Proveniência de cada chave do manifesto efetivo (overlay, ficheiro, linha), enviada pelo jk
+      summary: Provenance of each key of the effective manifest (overlay, file, line), sent by jk
       x-joker-role: viewer
-      x-joker-cli: [jk explain <chave> --node, jk diff]
+      x-joker-cli: [jk explain <key> --node, jk diff]
       x-joker-since: '1.0'
       parameters:
         - $ref: '#/components/parameters/GenRef'
         - name: key
           in: query
-          description: chave em notação com pontos (outputs."pcs.p_set".range); sem ela, todas
+          description: key in dot notation (outputs."pcs.p_set".range); without it, all
           schema: {type: string, maxLength: 512}
       responses:
         '200':
@@ -2710,7 +2710,7 @@ paths:
     post:
       tags: [generations]
       operationId: activateGeneration
-      summary: Troca para a geração pendente, num limite de tick de cada grupo afetado (jk apply)
+      summary: Swaps to the pending generation, at a tick boundary of each affected group (jk apply)
       x-joker-role: admin
       x-joker-mutating: true
       x-joker-cli: [jk apply, jk dev --node]
@@ -2728,12 +2728,12 @@ paths:
             schema: {$ref: '#/components/schemas/ActivateRequest'}
       responses:
         '200':
-          description: Ativada (confirming ou confirmed), ou failed com a geração base reposta
+          description: Activated (confirming or confirmed), or failed with the base generation restored
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Generation'}
         '202':
-          description: Troca em curso (wait=false)
+          description: Swap in progress (wait=false)
           headers:
             Location: {$ref: '#/components/headers/Location'}
           content:
@@ -2749,7 +2749,7 @@ paths:
     post:
       tags: [generations]
       operationId: confirmGeneration
-      summary: Confirma a geração em confirming (jk confirm)
+      summary: Confirms the generation in confirming (jk confirm)
       x-joker-role: admin
       x-joker-mutating: true
       x-joker-cli: [jk confirm]
@@ -2766,7 +2766,7 @@ paths:
             schema: {$ref: '#/components/schemas/ReasonBody'}
       responses:
         '200':
-          description: Confirmada
+          description: Confirmed
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Generation'}
@@ -2778,7 +2778,7 @@ paths:
     get:
       tags: [runtime]
       operationId: getRuntime
-      summary: Slots A/B da runtime e estado da última atualização
+      summary: Runtime A/B slots and state of the last update
       x-joker-role: viewer
       x-joker-cli: [jk runtime upgrade, jk status]
       x-joker-since: '1.0'
@@ -2793,7 +2793,7 @@ paths:
     post:
       tags: [runtime]
       operationId: upgradeRuntime
-      summary: OTA da runtime a partir de um blob assinado já carregado (jk runtime upgrade)
+      summary: Runtime OTA from a signed blob already uploaded (jk runtime upgrade)
       x-joker-role: admin
       x-joker-mutating: true
       x-joker-cli: [jk runtime upgrade]
@@ -2816,7 +2816,7 @@ paths:
     get:
       tags: [runtime]
       operationId: listRuntimeDrivers
-      summary: Manifesto de drivers do binário e drivers tier W e X carregados pela geração (ref/06 §3.8)
+      summary: Driver manifest of the binary and tier W and X drivers loaded by the generation (ref/06 §3.8)
       x-joker-role: viewer
       x-joker-cli: [jk lock, jk status]
       x-joker-since: '1.0'
@@ -2837,7 +2837,7 @@ paths:
     post:
       tags: [runtime]
       operationId: rollbackRuntime
-      summary: Volta ao outro slot (reinicia o jokerd)
+      summary: Returns to the other slot (restarts jokerd)
       x-joker-role: admin
       x-joker-mutating: true
       x-joker-since: '1.0'
@@ -2881,7 +2881,7 @@ paths:
     post:
       tags: [traces]
       operationId: createTrace
-      summary: Grava (record), extrai do anel contínuo (ring), reconstrói do historian (history) ou pede a um MCU (micro)
+      summary: Records (record), extracts from the continuous ring (ring), rebuilds from the historian (history) or requests from an MCU (micro)
       x-joker-role: operator
       x-joker-mutating: true
       x-joker-cli: [jk record, jk trace-dump, jk trace-from-history]
@@ -2897,7 +2897,7 @@ paths:
             schema: {$ref: '#/components/schemas/TraceRequest'}
       responses:
         '201':
-          description: Traço criado (a gravar ou a construir)
+          description: Trace created (recording or building)
           headers:
             Location: {$ref: '#/components/headers/Location'}
           content:
@@ -2934,14 +2934,14 @@ paths:
         - $ref: '#/components/parameters/JokerNonce'
         - $ref: '#/components/parameters/JokerTimestamp'
       responses:
-        '204': {description: Apagado}
+        '204': {description: Deleted}
         '404': {$ref: '#/components/responses/NotFound'}
         default: {$ref: '#/components/responses/Problem'}
   /v1/traces/{trace}/stop:
     post:
       tags: [traces]
       operationId: stopTrace
-      summary: Termina uma gravação antes do fim (o ficheiro fica válido)
+      summary: Ends a recording early (the file stays valid)
       x-joker-role: operator
       x-joker-mutating: true
       x-joker-since: '1.0'
@@ -2962,7 +2962,7 @@ paths:
     get:
       tags: [traces]
       operationId: downloadTrace
-      summary: Descarrega o .jktrace (documento 16, §7); suporta Range
+      summary: Downloads the .jktrace (document 16, §7); supports Range
       x-joker-role: viewer
       x-joker-cli: [jk record --out, jk trace-dump --out, jk trace-from-history --out]
       x-joker-since: '1.0'
@@ -2974,7 +2974,7 @@ paths:
           content:
             application/vnd.joker.trace.v1:
               schema: {type: string, contentMediaType: application/vnd.joker.trace.v1}
-        '206': {description: Conteúdo parcial}
+        '206': {description: Partial content}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
         default: {$ref: '#/components/responses/Problem'}
@@ -3028,7 +3028,7 @@ paths:
     post:
       tags: [jobs]
       operationId: cancelJob
-      summary: Cancela um trabalho (o papel exigido é o que o criou)
+      summary: Cancels a job (the required role is the one that created it)
       x-joker-role: operator
       x-joker-mutating: true
       x-joker-since: '1.0'
@@ -3049,7 +3049,7 @@ paths:
     get:
       tags: [diagnostics]
       operationId: getLastDoctorReport
-      summary: Último relatório do jk doctor guardado no nó
+      summary: Last jk doctor report stored on the node
       x-joker-role: viewer
       x-joker-cli: [jk doctor]
       x-joker-since: '1.0'
@@ -3064,7 +3064,7 @@ paths:
     post:
       tags: [diagnostics]
       operationId: runDoctor
-      summary: Corre as verificações (jk doctor [--ml] [--rt])
+      summary: Runs the checks (jk doctor [--ml] [--rt])
       x-joker-role: admin
       x-joker-mutating: true
       x-joker-cli: [jk doctor]
@@ -3085,7 +3085,7 @@ paths:
     post:
       tags: [diagnostics]
       operationId: runDiscovery
-      summary: Descoberta só de leitura (jk discover)
+      summary: Read-only discovery (jk discover)
       x-joker-role: admin
       x-joker-mutating: true
       x-joker-cli: [jk discover]
@@ -3107,7 +3107,7 @@ paths:
     post:
       tags: [diagnostics]
       operationId: runProfileTest
-      summary: Lê todos os sinais de um perfil a partir de um equipamento real (jk profile test --node)
+      summary: Reads all signals of a profile from real equipment (jk profile test --node)
       x-joker-role: admin
       x-joker-mutating: true
       x-joker-cli: [jk profile test]
@@ -3129,7 +3129,7 @@ paths:
     post:
       tags: [diagnostics]
       operationId: runBench
-      summary: Mede o WCET das tarefas de ciclo no alvo (jk bench --node); não atua
+      summary: Measures the WCET of the cycle tasks on the target (jk bench --node); does not actuate
       x-joker-role: admin
       x-joker-mutating: true
       x-joker-cli: [jk bench]
@@ -3152,7 +3152,7 @@ paths:
     get:
       tags: [uplinks]
       operationId: listUplinks
-      summary: Uplinks - ligação, lag do cursor, orçamento (M12), perdas (jk link status)
+      summary: Uplinks - connection, cursor lag, budget (M12), drops (jk link status)
       x-joker-role: viewer
       x-joker-cli: [jk link status]
       x-joker-since: '1.0'
@@ -3214,7 +3214,7 @@ paths:
     get:
       tags: [micros]
       operationId: listMicros
-      summary: MCUs ligados por Joker Link
+      summary: MCUs connected over Joker Link
       x-joker-role: viewer
       x-joker-cli: [jk status]
       x-joker-since: '1.0'
@@ -3251,7 +3251,7 @@ paths:
     post:
       tags: [micros]
       operationId: otaMicro
-      summary: OTA de firmware ou de blob de geração de um MCU (A/B, assinado) pelo Joker Link
+      summary: Firmware or generation blob OTA of an MCU (A/B, signed) over Joker Link
       x-joker-role: admin
       x-joker-mutating: true
       x-joker-since: '1.0'
@@ -3277,7 +3277,7 @@ paths:
     get:
       tags: [agent]
       operationId: getAgent
-      summary: Estado do agente (ligação, autoridade, seq, fila, pausa, hold, sessões)
+      summary: Agent state (connection, authority, seq, queue, pause, hold, sessions)
       x-joker-role: viewer
       x-joker-cli: [jk agent status]
       x-joker-since: '1.0'
@@ -3292,7 +3292,7 @@ paths:
     get:
       tags: [agent]
       operationId: getAgentDesired
-      summary: O estado desejado atual, descodificado, e o estado da aplicação
+      summary: The current desired state, decoded, and the apply state
       x-joker-role: viewer
       x-joker-cli: [jk agent desired]
       x-joker-since: '1.0'
@@ -3308,7 +3308,7 @@ paths:
     post:
       tags: [agent]
       operationId: pauseAgent
-      summary: Suspende as trocas do agente (downloads, relatórios e rollbacks continuam)
+      summary: Suspends the agent's exchanges (downloads, reports and rollbacks continue)
       x-joker-role: admin
       x-joker-mutating: true
       x-joker-cli: [jk agent pause]
@@ -3323,7 +3323,7 @@ paths:
             schema: {$ref: '#/components/schemas/AgentPauseRequest'}
       responses:
         '200':
-          description: Em pausa
+          description: Paused
           content:
             application/json:
               schema: {$ref: '#/components/schemas/AgentState'}
@@ -3333,7 +3333,7 @@ paths:
     post:
       tags: [agent]
       operationId: resumeAgent
-      summary: Retoma as trocas; termina também um hold de alterações locais
+      summary: Resumes the exchanges; also ends a local-changes hold
       x-joker-role: admin
       x-joker-mutating: true
       x-joker-cli: [jk agent resume]
@@ -3343,7 +3343,7 @@ paths:
         - $ref: '#/components/parameters/JokerTimestamp'
       responses:
         '200':
-          description: Retomado
+          description: Resumed
           content:
             application/json:
               schema: {$ref: '#/components/schemas/AgentState'}
@@ -3353,7 +3353,7 @@ paths:
     post:
       tags: [agent]
       operationId: importAgentBundle
-      summary: Aplica um estado desejado trazido à mão, com os artefactos já carregados (ref/10 §3.7.3)
+      summary: Applies a desired state brought by hand, with the artifacts already uploaded (ref/10 §3.7.3)
       x-joker-role: admin
       x-joker-mutating: true
       x-joker-cli: [jk agent import]
@@ -3375,7 +3375,7 @@ paths:
     get:
       tags: [agent]
       operationId: listAgentSessions
-      summary: Sessões remotas do Deck, abertas e à espera de consentimento (1.3)
+      summary: Remote Deck sessions, open and awaiting consent (1.3)
       x-joker-role: operator
       x-joker-cli: [jk session list]
       x-joker-since: '1.3'
@@ -3397,7 +3397,7 @@ paths:
     post:
       tags: [agent]
       operationId: acceptAgentSession
-      summary: Consentimento local a uma sessão remota (consent = local; 1.3)
+      summary: Local consent to a remote session (consent = local; 1.3)
       x-joker-role: operator
       x-joker-mutating: true
       x-joker-cli: [jk session accept]
@@ -3408,7 +3408,7 @@ paths:
         - $ref: '#/components/parameters/JokerTimestamp'
       responses:
         '200':
-          description: Aceite
+          description: Accepted
           content:
             application/json:
               schema: {$ref: '#/components/schemas/RemoteSession'}
@@ -3419,7 +3419,7 @@ paths:
     delete:
       tags: [agent]
       operationId: closeAgentSession
-      summary: Fecha uma sessão remota (1.3)
+      summary: Closes a remote session (1.3)
       x-joker-role: operator
       x-joker-mutating: true
       x-joker-cli: [jk session close]
@@ -3429,7 +3429,7 @@ paths:
         - $ref: '#/components/parameters/JokerNonce'
         - $ref: '#/components/parameters/JokerTimestamp'
       responses:
-        '204': {description: Fechada}
+        '204': {description: Closed}
         '404': {$ref: '#/components/responses/NotFound'}
         '501': {$ref: '#/components/responses/NotImplemented'}
         default: {$ref: '#/components/responses/Problem'}
@@ -3437,7 +3437,7 @@ paths:
     get:
       tags: [sim]
       operationId: getSim
-      summary: Dispositivos simulados, descritores de painel e entradas forçadas (jk dev --panel)
+      summary: Simulated devices, panel descriptors and forced inputs (jk dev --panel)
       x-joker-role: viewer
       x-joker-cli: [jk dev --panel]
       x-joker-since: '1.0'
@@ -3453,7 +3453,7 @@ paths:
     put:
       tags: [sim]
       operationId: forceSimInput
-      summary: Força o valor de um sinal de um dispositivo sim (qualidade Good(overridden)); só em mode = dev
+      summary: Forces the value of a signal of a sim device (quality Good(overridden)); only in mode = dev
       x-joker-role: operator
       x-joker-mutating: true
       x-joker-cli: [jk dev --panel]
@@ -3488,7 +3488,7 @@ paths:
         - $ref: '#/components/parameters/JokerNonce'
         - $ref: '#/components/parameters/JokerTimestamp'
       responses:
-        '204': {description: Libertado; o modelo de simulação volta a mandar}
+        '204': {description: Released; the simulation model takes control again}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
         default: {$ref: '#/components/responses/Problem'}
@@ -3497,7 +3497,7 @@ paths:
     get:
       tags: [streaming]
       operationId: websocket
-      summary: WebSocket de subscrições (subprotocolo joker.v1); mensagens em WsClientMessage e WsServerMessage
+      summary: Subscription WebSocket (subprotocol joker.v1); messages in WsClientMessage and WsServerMessage
       x-joker-role: viewer
       x-joker-cli: [jk read --watch, jk top, jk trace, jk logs --follow, jk dev]
       x-joker-since: '1.0'
@@ -3515,7 +3515,7 @@ paths:
     get:
       tags: [streaming]
       operationId: sse
-      summary: Server-Sent Events - uma subscrição por pedido, com as mesmas mensagens JSON do WebSocket
+      summary: Server-Sent Events - one subscription per request, with the same JSON messages as the WebSocket
       x-joker-role: viewer
       x-joker-cli: [curl, scripts]
       x-joker-since: '1.0'
@@ -3541,14 +3541,14 @@ paths:
         - $ref: '#/components/parameters/Mono'
         - name: filter
           in: query
-          description: filtros do tópico em JSON (os mesmos campos do subscribe)
+          description: topic filters in JSON (the same fields as subscribe)
           schema: {type: string, maxLength: 4096}
         - name: Last-Event-ID
           in: header
           schema: {type: string}
       responses:
         '200':
-          description: Fluxo text/event-stream
+          description: text/event-stream stream
           content:
             text/event-stream:
               schema: {type: string}
@@ -3560,7 +3560,7 @@ paths:
     get:
       tags: [reserved]
       operationId: listModels
-      summary: Reservado para a 1.1 (ML); na 1.0 responde 501 J-E1017
+      summary: Reserved for 1.1 (ML); in 1.0 responds 501 J-E1017
       x-joker-role: viewer
       x-joker-since: '1.1'
       responses:
@@ -3569,7 +3569,7 @@ paths:
     get:
       tags: [reserved]
       operationId: getModel
-      summary: Reservado para a 1.1 (backends, guarda, linhagem - jk model lineage --node)
+      summary: Reserved for 1.1 (backends, guard, lineage - jk model lineage --node)
       x-joker-role: viewer
       x-joker-since: '1.1'
       parameters:
@@ -3583,7 +3583,7 @@ paths:
     post:
       tags: [reserved]
       operationId: benchModel
-      summary: Reservado para a 1.1 (jk model bench --node)
+      summary: Reserved for 1.1 (jk model bench --node)
       x-joker-role: admin
       x-joker-mutating: true
       x-joker-since: '1.1'
@@ -3598,7 +3598,7 @@ paths:
     get:
       tags: [reserved]
       operationId: listTraining
-      summary: Reservado para a 1.1 (jk train status)
+      summary: Reserved for 1.1 (jk train status)
       x-joker-role: viewer
       x-joker-since: '1.1'
       responses:
@@ -3606,7 +3606,7 @@ paths:
     post:
       tags: [reserved]
       operationId: startTraining
-      summary: Reservado para a 1.1 (jk train <job> --now)
+      summary: Reserved for 1.1 (jk train <job> --now)
       x-joker-role: admin
       x-joker-mutating: true
       x-joker-since: '1.1'
@@ -3616,7 +3616,7 @@ paths:
     get:
       tags: [reserved]
       operationId: getModelShadow
-      summary: Reservado para a 1.1 (sombra de modelos; promote e abort com a mesma forma das apps)
+      summary: Reserved for 1.1 (model shadow; promote and abort with the same shape as for apps)
       x-joker-role: viewer
       x-joker-since: '1.1'
       parameters:
@@ -3630,7 +3630,7 @@ paths:
     get:
       tags: [reserved]
       operationId: getSignalBlocks
-      summary: Reservado para a 1.1 (sinais em bloco, M7)
+      summary: Reserved for 1.1 (block signals, M7)
       x-joker-role: viewer
       x-joker-since: '1.1'
       parameters:
@@ -3641,7 +3641,7 @@ paths:
     get:
       tags: [reserved]
       operationId: listStreams
-      summary: Reservado para a 1.1 (streams, M4, e pipelines, M5)
+      summary: Reserved for 1.1 (streams, M4, and pipelines, M5)
       x-joker-role: viewer
       x-joker-since: '1.1'
       responses:
@@ -3651,25 +3651,25 @@ components:
     mtls:
       type: mutualTLS
       description: >-
-        TCP exige TLS 1.3 com certificado de cliente emitido pela CA da organização. No socket Unix
-        não há esquema HTTP - o papel vem das credenciais do par (SO_PEERCRED) e de [security.roles].
+        TCP requires TLS 1.3 with a client certificate issued by the organization CA. On the Unix socket
+        there is no HTTP scheme - the role comes from the peer credentials (SO_PEERCRED) and from [security.roles].
   headers:
     JokerGeneration:
-      description: Geração em execução quando o pedido foi servido, "<gen> sha256:<hex>"
+      description: Generation running when the request was served, "<gen> sha256:<hex>"
       schema: {type: string, pattern: '^[0-9]+ sha256:[0-9a-f]{64}$'}
     ETag:
-      description: Hash da geração ("sha256:<hex>" entre aspas); usado em If-Match
+      description: Generation hash ("sha256:<hex>" in quotes); used in If-Match
       schema: {type: string}
     Location:
       schema: {type: string}
     IdempotentReplay:
-      description: true quando a resposta é a guardada de um pedido anterior com a mesma chave
+      description: true when the response is the stored one from an earlier request with the same key
       schema: {type: boolean}
   parameters:
     Sel:
       name: sel
       in: query
-      description: Seletor de caminhos (documento 02, §9); repetível; até 64
+      description: Path selector (document 02, §9); repeatable; up to 64
       style: form
       explode: true
       schema:
@@ -3690,7 +3690,7 @@ components:
     Mono:
       name: mono
       in: query
-      description: acrescenta os instantes monotónicos (strings decimais em ns) e o boot_id
+      description: adds the monotonic instants (decimal strings in ns) and the boot_id
       schema: {type: boolean, default: false}
     Limit:
       name: limit
@@ -3699,7 +3699,7 @@ components:
     Cursor:
       name: cursor
       in: query
-      description: opaco; devolvido em next_cursor
+      description: opaque; returned in next_cursor
       schema: {type: string, maxLength: 512}
     Order:
       name: order
@@ -3716,7 +3716,7 @@ components:
     Since:
       name: since
       in: query
-      description: equivalente a from=-<duração>; exclusivo com from
+      description: equivalent to from=-<duration>; exclusive with from
       schema: {$ref: '#/components/schemas/Duration'}
     IdempotencyKey:
       name: Idempotency-Key
@@ -3730,32 +3730,32 @@ components:
     JokerNonce:
       name: Joker-Nonce
       in: header
-      description: ULID; obrigatório em TCP e em túnel nas operações x-joker-mutating (ref/00, §9)
+      description: ULID; required over TCP and over the tunnel on x-joker-mutating operations (ref/00, §9)
       schema: {$ref: '#/components/schemas/Ulid'}
     JokerTimestamp:
       name: Joker-Timestamp
       in: header
-      description: RFC 3339 UTC; tem de estar a ±30 s do relógio do nó
+      description: RFC 3339 UTC; must be within ±30 s of the node clock
       schema: {type: string, format: date-time}
     JokerEnrollCode:
       name: Joker-Enroll-Code
       in: header
       required: false
       description: >-
-        código de enrolamento de uso único mostrado pelo nó (jokerd enroll-code); com ele, qualquer
-        principal que chegue ao socket pode enrolar; sem ele, root ou joker-admin. Só no socket Unix:
-        nunca há uma porta de enrolamento aberta à rede (ref/09 §2.1, ref/02 §3.2.3; J-E1913)
+        single-use enrollment code shown by the node (jokerd enroll-code); with it, any
+        principal that reaches the socket may enroll; without it, root or joker-admin. Only on the Unix socket:
+        there is never an enrollment port open to the network (ref/09 §2.1, ref/02 §3.2.3; J-E1913)
       schema: {type: string, pattern: '^[A-Z2-7]{16}$'}
     IfMatch:
       name: If-Match
       in: header
-      description: '"sha256:<hex>" da geração vista na pré-visualização'
+      description: '"sha256:<hex>" of the generation seen in the preview'
       schema: {type: string}
     IfMatchRequired:
       name: If-Match
       in: header
       required: true
-      description: '"sha256:<hex>" da geração atual (concorrência otimista)'
+      description: '"sha256:<hex>" of the current generation (optimistic concurrency)'
       schema: {type: string}
     SignalPath:
       name: path
@@ -3781,7 +3781,7 @@ components:
       name: target
       in: path
       required: true
-      description: dispositivo ou instância (partilham o espaço de nomes, documento 16, P3)
+      description: device or instance (they share the namespace, document 16, P3)
       schema: {$ref: '#/components/schemas/Name'}
     ActionName:
       name: action
@@ -3850,57 +3850,57 @@ components:
       schema: {$ref: '#/components/schemas/Name'}
   responses:
     Problem:
-      description: Erro (RFC 9457)
+      description: Error (RFC 9457)
       content:
         application/problem+json:
           schema: {$ref: '#/components/schemas/Problem'}
     BadRequest:
-      description: Pedido mal formado (J-E101x, J-E103x)
+      description: Malformed request (J-E101x, J-E103x)
       content:
         application/problem+json:
           schema: {$ref: '#/components/schemas/Problem'}
     Forbidden:
-      description: Papel insuficiente, origem recusada ou transporte não permitido
+      description: Insufficient role, origin refused or transport not allowed
       content:
         application/problem+json:
           schema: {$ref: '#/components/schemas/Problem'}
     NotFound:
-      description: Recurso inexistente
+      description: Resource does not exist
       content:
         application/problem+json:
           schema: {$ref: '#/components/schemas/Problem'}
     Conflict:
-      description: Estado não permite a operação
+      description: State does not allow the operation
       content:
         application/problem+json:
           schema: {$ref: '#/components/schemas/Problem'}
     PreconditionFailed:
-      description: If-Match não corresponde à geração atual (J-E1026)
+      description: If-Match does not match the current generation (J-E1026)
       content:
         application/problem+json:
           schema: {$ref: '#/components/schemas/Problem'}
     PreconditionRequired:
-      description: If-Match em falta (J-E1027)
+      description: If-Match missing (J-E1027)
       content:
         application/problem+json:
           schema: {$ref: '#/components/schemas/Problem'}
     TooLarge:
-      description: Corpo ou bloco acima do limite (J-E1009, J-E1606)
+      description: Body or chunk above the limit (J-E1009, J-E1606)
       content:
         application/problem+json:
           schema: {$ref: '#/components/schemas/Problem'}
     RangeNotSatisfiable:
-      description: Content-Range inválido ou fora de ordem (J-E1605)
+      description: Content-Range invalid or out of order (J-E1605)
       content:
         application/problem+json:
           schema: {$ref: '#/components/schemas/Problem'}
     Unprocessable:
-      description: Semanticamente inválido (validação, J-codes, limites)
+      description: Semantically invalid (validation, J-codes, limits)
       content:
         application/problem+json:
           schema: {$ref: '#/components/schemas/Problem'}
     TooManyRequests:
-      description: Limite de taxa (J-E1014); ver Retry-After
+      description: Rate limit (J-E1014); see Retry-After
       headers:
         Retry-After:
           schema: {type: integer}
@@ -3908,7 +3908,7 @@ components:
         application/problem+json:
           schema: {$ref: '#/components/schemas/Problem'}
     Unavailable:
-      description: Indisponível (arranque, fila cheia, MCU desligado)
+      description: Unavailable (startup, full queue, MCU disconnected)
       headers:
         Retry-After:
           schema: {type: integer}
@@ -3916,22 +3916,22 @@ components:
         application/problem+json:
           schema: {$ref: '#/components/schemas/Problem'}
     Timeout:
-      description: Tempo esgotado (J-E1016)
+      description: Timed out (J-E1016)
       content:
         application/problem+json:
           schema: {$ref: '#/components/schemas/Problem'}
     InsufficientStorage:
-      description: Quota de traços esgotada (J-E1703)
+      description: Trace quota exhausted (J-E1703)
       content:
         application/problem+json:
           schema: {$ref: '#/components/schemas/Problem'}
     NotImplemented:
-      description: Funcionalidade reservada ou fora deste build (J-E1017)
+      description: Feature reserved or not in this build (J-E1017)
       content:
         application/problem+json:
           schema: {$ref: '#/components/schemas/Problem'}
     JobAccepted:
-      description: Trabalho criado; acompanhar em Location ou no tópico jobs
+      description: Job created; follow it at Location or on the jobs topic
       headers:
         Location:
           schema: {type: string}
@@ -3950,12 +3950,12 @@ components:
       type: string
       pattern: '^[a-z][a-z0-9_]{0,31}(\.[a-z][a-z0-9_]{0,31}){0,7}$'
     Selector:
-      description: '* casa com um pedaço de um segmento ([a-z0-9_]*); ** casa com um ou mais segmentos inteiros'
+      description: '* matches part of one segment ([a-z0-9_]*); ** matches one or more whole segments'
       type: string
       maxLength: 288
       pattern: '^(\*\*|[a-z*][a-z0-9_*]{0,31})(\.(\*\*|[a-z*][a-z0-9_*]{0,31})){0,7}$'
     AlarmId:
-      description: nome do alarme do manifesto (grid_overfreq), da runtime (joker.device.pcs.offline) ou de uma app (app.<app>.<nome>)
+      description: alarm name from the manifest (grid_overfreq), the runtime (joker.device.pcs.offline) or an app (app.<app>.<name>)
       type: string
       pattern: '^[a-z][a-z0-9_]{0,31}(\.[a-z][a-z0-9_]{0,31}){0,7}$'
     Ulid:
@@ -3968,24 +3968,24 @@ components:
       type: string
       pattern: '^[\x20-\x7E]{1,64}$'
     Duration:
-      description: literal de duração (ref/00, §3.1)
+      description: duration literal (ref/00, §3.1)
       type: string
       pattern: '^[0-9]+(\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$'
     Timestamp:
       type: string
       format: date-time
     TimeParam:
-      description: RFC 3339 (com Z ou deslocamento), "now", ou relativo "-<duração>"
+      description: RFC 3339 (with Z or offset), "now", or relative "-<duration>"
       type: string
       pattern: '^(now|-[0-9]+(\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)|[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+(Z|[+-][0-9]{2}:[0-9]{2}))$'
     MonoNs:
-      description: instante monotónico em ns, string decimal (ref/00, §3)
+      description: monotonic instant in ns, decimal string (ref/00, §3)
       type: string
       pattern: '^[0-9]{1,20}$'
     NextCursor:
       type: [string, 'null']
     Level:
-      description: '"<faixa>:<nível>" (ref/00, §5)'
+      description: '"<band>:<level>" (ref/00, §5)'
       type: string
       pattern: '^(safety:[1-2]|manual:[3-5]|supervisor:[6-8]|control:(9|1[0-2])|optimizer:1[3-5]|schedule:16)$'
     LevelOrNone:
@@ -4020,14 +4020,14 @@ components:
       type: string
       enum: [cycle, async, manual, bridge, impl, proposal]
     GenerationState:
-      description: generation_state (ref/00 §6); discarded = pendente descartada, substituída ou expirada
+      description: generation_state (ref/00 §6); discarded = pending one discarded, superseded or expired
       type: string
       enum: [pending, confirming, confirmed, rolled_back, failed, discarded]
     SignalType:
       type: string
       enum: [bool, i64, u64, f64, f32, enum, bits, string, bytes]
     Shape:
-      description: block e stream reservados para a 1.1 (Preparado para ML)
+      description: block and stream reserved for 1.1 (ML-ready)
       type: string
       enum: [scalar, event, block, stream]
     Direction:
@@ -4044,13 +4044,13 @@ components:
       enum: [wrong_type, interlock, quality, range, atomic_group, not_owner, clock_unsynced, budget]
     Value:
       description: >-
-        Valor em JSON (ref/00, §4.1). Números na unidade do sinal; i64/u64 fora de ±2^53 como string decimal;
-        enum pelo nome da variante; bytes em base64; null só com qualidade bad(nan) ou sem valor.
+        Value in JSON (ref/00, §4.1). Numbers in the signal unit; i64/u64 outside ±2^53 as a decimal string;
+        enum by variant name; bytes in base64; null only with quality bad(nan) or no value.
       type: [boolean, number, string, 'null']
     ValueInput:
       description: >-
-        Valor de entrada. Número na unidade do sinal, literal de quantidade ("50 kW", convertido; dimensão
-        errada é J0107), booleano, nome de variante, string decimal para inteiros grandes, base64 para bytes.
+        Input value. Number in the signal unit, quantity literal ("50 kW", converted; wrong dimension
+        is J0107), boolean, variant name, decimal string for large integers, base64 for bytes.
       type: [boolean, number, string]
     GenSelector:
       type: string
@@ -4068,7 +4068,7 @@ components:
       properties:
         id:
           description: >-
-            identificador do escritor (user:<principal>, ref/00 §5); no túnel, o principal pré-autenticado
+            writer identifier (user:<principal>, ref/00 §5); over the tunnel, the pre-authenticated principal
             deck:<deck_id>/user:<id> (ref/10 §3.10)
           type: string
           pattern: '^user:([A-Za-z0-9._@-]{1,64}|deck:[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?/user:[A-Za-z0-9._@-]{1,64})$'
@@ -4076,10 +4076,10 @@ components:
           type: string
           enum: [unix, tcp, tunnel]
         subject:
-          description: DN do certificado (tcp), utilizador Unix (unix) ou utilizador do Deck (tunnel)
+          description: certificate DN (tcp), Unix user (unix) or Deck user (tunnel)
           type: string
         fingerprint:
-          description: SHA-256 do certificado do cliente (tcp)
+          description: SHA-256 of the client certificate (tcp)
           type: string
         uid: {type: integer}
         deck: {$ref: '#/components/schemas/NodeName'}
@@ -4089,7 +4089,7 @@ components:
       required: [type, title, status, code]
       properties:
         type:
-          description: urn:joker:code:<código>
+          description: urn:joker:code:<code>
           type: string
           format: uri
         title: {type: string}
@@ -4099,7 +4099,7 @@ components:
           description: urn:joker:request:<ULID>
           type: string
         code:
-          description: J-code do registo (codes.toml)
+          description: J-code from the registry (codes.toml)
           type: string
           pattern: '^(J[0-9]{4}|JC[0-9]{4}|JW[0-9]{4}|W[0-9]{4}|J-E[0-9]{4})$'
         severity:
@@ -4107,16 +4107,16 @@ components:
           enum: [error, warning]
         help: {type: string}
         pointer:
-          description: JSON Pointer (RFC 6901) para o campo do pedido em causa
+          description: JSON Pointer (RFC 6901) to the request field concerned
           type: string
         param:
-          description: parâmetro de query ou cabeçalho em causa
+          description: query parameter or header concerned
           type: string
         spans:
           type: array
           items: {$ref: '#/components/schemas/Span'}
         errors:
-          description: diagnósticos individuais (validação de geração, vários campos)
+          description: individual diagnostics (generation validation, several fields)
           type: array
           items: {$ref: '#/components/schemas/Diagnostic'}
         suggestions:
@@ -4146,7 +4146,7 @@ components:
         message: {type: string}
         help: {type: string}
         key:
-          description: chave do manifesto efetivo em notação com pontos
+          description: effective manifest key in dotted notation
           type: string
         spans:
           type: array
@@ -4190,7 +4190,7 @@ components:
         limits: {$ref: '#/components/schemas/Limits'}
         features:
           description: >-
-            capacidades da API neste nó (sse, intents, shadow.apps, micro, sim, agent, enroll.code; 1.1 models,
+            API capabilities on this node (sse, intents, shadow.apps, micro, sim, agent, enroll.code; 1.1 models,
             blocks, streams, schedule; 1.3 tunnel)
           type: array
           items: {type: string}
@@ -4250,7 +4250,7 @@ components:
           type: array
           items: {type: integer}
         manifest:
-          description: versões de [project] joker aceites (atual e anterior)
+          description: accepted [project] joker versions (current and previous)
           type: array
           items: {type: string}
         lock:
@@ -4300,7 +4300,7 @@ components:
         role: {$ref: '#/components/schemas/Role'}
         session: {$ref: '#/components/schemas/Ulid'}
         matched:
-          description: regras de [security.roles] que deram o papel
+          description: '[security.roles] rules that granted the role'
           type: array
           items: {type: string}
     Status:
@@ -4353,7 +4353,7 @@ components:
             active: {type: integer}
             unacked: {type: integer}
             items:
-              description: até 20, por gravidade e antiguidade
+              description: up to 20, by severity and age
               type: array
               items: {$ref: '#/components/schemas/Alarm'}
         trips:
@@ -4447,7 +4447,7 @@ components:
               reconnects: {type: integer}
               bytes_rx: {type: integer}
               bytes_tx: {type: integer}
-              coalescing: {type: number, description: registos úteis / lidos}
+              coalescing: {type: number, description: useful / read registers}
         envelope:
           type: array
           items:
@@ -4496,7 +4496,7 @@ components:
             memory_used: {type: string}
             disk_free: {type: string}
         ml:
-          description: reservado para a 1.1; null na 1.0
+          description: reserved for 1.1; null in 1.0
           type: ['null', object]
     # ---------------------------------------------------------------- node, audit, sessions, secrets, logs
     Node:
@@ -4517,29 +4517,29 @@ components:
               type: string
               enum: [tpm, secure_element, file]
             chain_pem:
-              description: cadeia do certificado do nó (folha primeiro), com a chave KEM no SAN URI urn:joker:kem:x25519:… (ref/02 §3.4.2)
+              description: node certificate chain (leaf first), with the KEM key in the SAN URI urn:joker:kem:x25519:… (ref/02 §3.4.2)
               type: string
             kem_key:
-              description: chave pública X25519 de segredos (x25519:<base64>), a mesma do SAN
+              description: X25519 public key for secrets (x25519:<base64>), the same as in the SAN
               type: string
         board: {type: string}
         arch: {type: string}
         os: {type: string}
     NodeHardware:
-      description: inventário do hardware do nó (ref/09 §5.2); só leituras
+      description: node hardware inventory (ref/09 §5.2); reads only
       type: object
       required: [collected_at, arch, machine, cpus, memory, kernel, cmdline, gpio_chips, leds, thermal_zones, watchdogs, serial, i2c, spi, net, usb, tpm, unreadable]
       properties:
         collected_at: {$ref: '#/components/schemas/Timestamp'}
         arch:
-          description: normalizado para os valores de [board] arch (ref/03 §2.3.1); other se não corresponder
+          description: normalized to the [board] arch values (ref/03 §2.3.1); other if none matches
           type: string
           enum: [aarch64, x86_64, armv7, armv6, riscv64, other]
         machine:
-          description: valor cru de uname -m (armv6l, aarch64)
+          description: raw value of uname -m (armv6l, aarch64)
           type: string
         model:
-          description: /proc/device-tree/model sem o NUL final; em x86, /sys/class/dmi/id/product_name
+          description: /proc/device-tree/model without the trailing NUL; on x86, /sys/class/dmi/id/product_name
           type: ['string', 'null']
           examples: ['Raspberry Pi Zero W Rev 1.1']
         compatible:
@@ -4553,7 +4553,7 @@ components:
             count: {type: integer, minimum: 1, description: CPUs online}
             possible: {type: integer, minimum: 1}
             model: {type: ['string', 'null'], description: /proc/cpuinfo}
-            max_freq: {type: ['string', 'null'], description: 'quantidade, p. ex. "1 GHz" (cpufreq/cpuinfo_max_freq)'}
+            max_freq: {type: ['string', 'null'], description: 'quantity, e.g. "1 GHz" (cpufreq/cpuinfo_max_freq)'}
             isolated:
               description: /sys/devices/system/cpu/isolated
               type: array
@@ -4565,7 +4565,7 @@ components:
           type: object
           required: [total]
           properties:
-            total: {type: string, description: 'MemTotal em IEC, p. ex. "427 MiB"'}
+            total: {type: string, description: 'MemTotal in IEC, e.g. "427 MiB"'}
             available: {type: string}
         kernel:
           type: object
@@ -4573,16 +4573,16 @@ components:
           properties:
             release: {type: string, examples: ['6.12.25+rpt-rpi-v6']}
             version: {type: string, description: uname -v}
-            preempt_rt: {type: boolean, description: '/sys/kernel/realtime = 1, ou PREEMPT_RT em uname -v'}
+            preempt_rt: {type: boolean, description: '/sys/kernel/realtime = 1, or PREEMPT_RT in uname -v'}
             preempt:
               type: ['string', 'null']
               enum: [none, voluntary, full, rt, null]
         cmdline:
-          description: /proc/cmdline, separado em linhas de arranque
+          description: /proc/cmdline, split into boot lines
           type: array
           items: {type: string}
         boot_params:
-          description: as linhas de arranque que o jk doctor --rt conhece, por nome
+          description: the boot lines that jk doctor --rt knows, by name
           type: object
           properties:
             isolcpus: {type: ['string', 'null']}
@@ -4599,9 +4599,9 @@ components:
               name: {type: string, examples: [gpiochip0]}
               label: {type: string, examples: [pinctrl-bcm2835]}
               lines: {type: integer, minimum: 0}
-              named: {type: integer, minimum: 0, description: linhas com nome}
+              named: {type: integer, minimum: 0, description: named lines}
               used:
-                description: linhas já pedidas pelo kernel ou por outro processo (GPIO_V2_GET_LINEINFO_IOCTL, sem as reservar)
+                description: lines already requested by the kernel or by another process (GPIO_V2_GET_LINEINFO_IOCTL, without reserving them)
                 type: array
                 items:
                   type: object
@@ -4632,7 +4632,7 @@ components:
             properties:
               name: {type: string, examples: [thermal_zone0]}
               type: {type: string, examples: [cpu-thermal]}
-              temp: {type: ['string', 'null'], description: 'quantidade em °C, lida agora'}
+              temp: {type: ['string', 'null'], description: 'quantity in °C, read now'}
         watchdogs:
           type: array
           items:
@@ -4645,7 +4645,7 @@ components:
               min_timeout: {oneOf: [{$ref: '#/components/schemas/Duration'}, {type: 'null'}]}
               max_timeout: {oneOf: [{$ref: '#/components/schemas/Duration'}, {type: 'null'}]}
               nowayout: {type: boolean}
-              active: {type: boolean, description: já armado por alguém}
+              active: {type: boolean, description: already armed by someone}
         serial:
           type: array
           items:
@@ -4654,11 +4654,11 @@ components:
             properties:
               path: {type: string, examples: [/dev/ttyUSB0]}
               aliases:
-                description: ligações estáveis que apontam para a porta (/dev/serial0, /dev/serial/by-id/…)
+                description: stable links pointing to the port (/dev/serial0, /dev/serial/by-id/…)
                 type: array
                 items: {type: string}
               driver: {type: ['string', 'null'], examples: [cp210x]}
-              soc: {type: boolean, description: 'UART da placa (true) ou adaptador (false)'}
+              soc: {type: boolean, description: 'board UART (true) or adapter (false)'}
               usb:
                 type: ['object', 'null']
                 properties:
@@ -4694,7 +4694,7 @@ components:
                 enum: [ethernet, wifi, loopback, virtual, other]
               mac: {type: ['string', 'null']}
               up: {type: boolean}
-              usb: {type: boolean, description: a interface está atrás de USB}
+              usb: {type: boolean, description: the interface is behind USB}
               addresses:
                 type: array
                 items: {type: string}
@@ -4735,7 +4735,7 @@ components:
       properties:
         node: {$ref: '#/components/schemas/NodeName'}
         rotate:
-          description: gera uma chave nova mesmo que já exista (rotação)
+          description: generates a new key even if one already exists (rotation)
           type: boolean
           default: false
         key_storage:
@@ -4757,21 +4757,21 @@ components:
       additionalProperties: false
       properties:
         chain_pem:
-          description: cadeia PEM, folha primeiro; a folha tem a chave KEM no SAN URI urn:joker:kem:x25519:<base64url>
+          description: PEM chain, leaf first; the leaf has the KEM key in the SAN URI urn:joker:kem:x25519:<base64url>
           type: string
         client_ca_pem:
-          description: CA que o nó passa a aceitar para os clientes da API em TCP
+          description: CA that the node starts accepting for API clients over TCP
           type: string
         anchors:
-          description: âncoras de confiança (chaves públicas Ed25519 em PEM), escritas em trust.anchors do node.toml
+          description: trust anchors (Ed25519 public keys in PEM), written to trust.anchors in node.toml
           type: array
           items: {type: string}
         trust:
-          description: primeiro bundle de confiança (COSE_Sign1 em base64), assinado por uma das âncoras
+          description: first trust bundle (COSE_Sign1 in base64), signed by one of the anchors
           type: string
           contentEncoding: base64
         allow_dev:
-          description: '[policy] allow_dev do node.toml (ref/02); true com uma CA de desenvolvimento'
+          description: '[policy] allow_dev in node.toml (ref/02); true with a development CA'
           type: boolean
     DeckEnrollRequest:
       type: object
@@ -4780,10 +4780,10 @@ components:
       properties:
         deck_url: {type: string, format: uri}
         token:
-          description: token de enrolamento jkt1_… (ref/10 §2.5.1); nunca aparece em logs nem na auditoria
+          description: enrollment token jkt1_… (ref/10 §2.5.1); never appears in logs or in the audit
           type: string
         force:
-          description: enrola de novo um nó já enrolado (chave nova)
+          description: re-enrolls a node already enrolled (new key)
           type: boolean
           default: false
     RenewRequest:
@@ -4797,7 +4797,7 @@ components:
       properties:
         anchors:
           type: array
-          items: {type: string, description: 'id da chave (ed25519:<32 hex>)'}
+          items: {type: string, description: 'key id (ed25519:<32 hex>)'}
         bundle:
           type: ['null', object]
           properties:
@@ -4825,7 +4825,7 @@ components:
                   not_after: {$ref: '#/components/schemas/Timestamp'}
                   deck: {type: string}
         floors:
-          description: seq do piso aplicado, por papel e âmbito
+          description: seq of the applied floor, by role and scope
           type: object
           additionalProperties: {type: integer}
         revoked:
@@ -4850,7 +4850,7 @@ components:
         status: {type: integer}
         code: {type: string}
         summary:
-          description: resumo do pedido; nunca segredos
+          description: request summary; never secrets
           type: object
         nonce: {$ref: '#/components/schemas/Ulid'}
         idempotency_key: {$ref: '#/components/schemas/IdempotencyKey'}
@@ -4879,13 +4879,13 @@ components:
         name: {$ref: '#/components/schemas/Name'}
         set: {type: boolean}
         rev:
-          description: revisão da entrada guardada (nunca desce; ref/02 §3.4.4)
+          description: revision of the stored entry (never decreases; ref/02 §3.4.4)
           type: integer
         type:
           type: string
           enum: [string, bytes]
         signer:
-          description: id da chave do papel secrets que assinou a entrada
+          description: id of the secrets-role key that signed the entry
           type: string
         declared: {type: boolean}
         updated_at: {$ref: '#/components/schemas/Timestamp'}
@@ -4899,16 +4899,16 @@ components:
       additionalProperties: false
       properties:
         scheme:
-          description: a suite HPKE da ref/02 §2.4.4
+          description: the HPKE suite of ref/02 §2.4.4
           type: string
           enum: [hpke-x25519-sha256-chacha20poly1305]
         key_id:
-          description: id da chave KEM X25519 do nó (x25519:<32 hex>)
+          description: id of the node X25519 KEM key (x25519:<32 hex>)
           type: string
         sealed:
           description: >-
-            o CBOR determinístico de uma secret-entry (spec/cddl/secrets.cddl), com o wrap para este nó, em
-            base64; o valor em claro nunca atravessa a API
+            the deterministic CBOR of a secret-entry (spec/cddl/secrets.cddl), with the wrap for this node, in
+            base64; the plaintext value never crosses the API
           type: string
           contentEncoding: base64
     SecretPushResult:
@@ -4925,7 +4925,7 @@ components:
               rev: {type: integer}
               accepted: {type: boolean}
               code:
-                description: J0922–J0926 (ref/02) quando recusada
+                description: J0922–J0926 (ref/02) when refused
                 type: string
     LogLevel:
       type: string
@@ -4944,7 +4944,7 @@ components:
           additionalProperties: {type: string}
     # ---------------------------------------------------------------- signals
     Sample:
-      description: Amostra em JSON (ref/00, §4.2), mais campos opcionais desta API
+      description: Sample in JSON (ref/00, §4.2), plus optional fields of this API
       type: object
       required: [path, value, quality, reason, ts_acq, seq]
       properties:
@@ -4959,12 +4959,12 @@ components:
         seq:
           type: [integer, string]
         bits:
-          description: bits ativos nomeados (tipo bits)
+          description: named active bits (bits type)
           type: array
           items: {type: string}
         age: {$ref: '#/components/schemas/Duration'}
         acq_id:
-          description: id de aquisição (só em leituras coerentes)
+          description: acquisition id (only in coherent reads)
           type: integer
         ts_acq_mono_ns: {$ref: '#/components/schemas/MonoNs'}
         ts_hw_mono_ns: {$ref: '#/components/schemas/MonoNs'}
@@ -5013,15 +5013,15 @@ components:
           type: array
           items: {$ref: '#/components/schemas/SignalPath'}
         signal_id:
-          description: SignalId, válido só com o registry da resposta
+          description: SignalId, valid only with the response registry
           type: integer
         type: {$ref: '#/components/schemas/SignalType'}
         enum:
-          description: variantes (tipo enum), nome → valor numérico
+          description: variants (enum type), name → numeric value
           type: object
           additionalProperties: {type: integer}
         bits:
-          description: bits nomeados (tipo bits), nome → posição
+          description: named bits (bits type), name → position
           type: object
           additionalProperties: {type: integer}
         unit: {type: string}
@@ -5039,20 +5039,20 @@ components:
         max_age: {$ref: '#/components/schemas/Duration'}
         poll:
           type: string
-          description: período de poll, ou on_demand
+          description: poll period, or on_demand
         limits:
           type: array
           items: {type: string}
         stuck_detect: {$ref: '#/components/schemas/Duration'}
         record:
-          description: política de gravação no historian (null = não gravado)
+          description: historian recording policy (null = not recorded)
           type: ['null', object]
         writable: {type: boolean}
         group:
-          description: grupo dono (saídas e derivados)
+          description: owning group (outputs and derived signals)
           type: string
         members:
-          description: membros de instância que são aliases deste sinal
+          description: instance members that are aliases of this signal
           type: array
           items: {type: string}
         sample: {$ref: '#/components/schemas/Sample'}
@@ -5080,7 +5080,7 @@ components:
                 unit_to: {type: string}
                 deadband: {type: string}
         expression:
-          description: expressão de um calc
+          description: expression of a calc
           type: string
         readers:
           type: array
@@ -5185,7 +5185,7 @@ components:
           items: {$ref: '#/components/schemas/HistorySeries'}
         next_cursor: {$ref: '#/components/schemas/NextCursor'}
     HistoryLine:
-      description: Uma linha NDJSON - um ponto com o caminho
+      description: One NDJSON line - one point with the path
       allOf:
         - $ref: '#/components/schemas/HistoryPoint'
       properties:
@@ -5199,7 +5199,7 @@ components:
         ts_src: {$ref: '#/components/schemas/Timestamp'}
         seq: {type: [integer, string]}
         record:
-          description: registo do evento (ref/00, §4.1 - objeto com as mesmas chaves do CBOR)
+          description: event record (ref/00, §4.1 - object with the same keys as the CBOR)
           type: object
     # ---------------------------------------------------------------- outputs and writes
     WriteOutcome:
@@ -5216,13 +5216,13 @@ components:
       required: [writer, level, kind]
       properties:
         writer:
-          description: app:<nome>, user:<id>, bridge:<nome>, impl:<instância>, intent:<id>
+          description: app:<name>, user:<id>, bridge:<name>, impl:<instance>, intent:<id>
           type: string
         level: {$ref: '#/components/schemas/Level'}
         kind: {$ref: '#/components/schemas/WriterKind'}
         lease: {$ref: '#/components/schemas/Duration'}
     Envelope:
-      description: Envelope declarado (documento 01, §7; documento 03, §6); quantidades como literais, expressões como strings
+      description: Declared envelope (document 01, §7; document 03, §6); quantities as literals, expressions as strings
       type: object
       properties:
         range:
@@ -5231,7 +5231,7 @@ components:
           maxItems: 2
           items: {type: string}
         range_now:
-          description: gama avaliada no último tick (expressões)
+          description: range evaluated on the last tick (expressions)
           type: array
           minItems: 2
           maxItems: 2
@@ -5285,10 +5285,10 @@ components:
         remaining: {$ref: '#/components/schemas/Duration'}
         last_proposal: {$ref: '#/components/schemas/Timestamp'}
         active:
-          description: lease não expirado
+          description: lease not expired
           type: boolean
         reason:
-          description: motivo (escritas manuais e intenções)
+          description: reason (manual writes and intents)
           type: string
     OutputState:
       type: object
@@ -5300,26 +5300,26 @@ components:
         group: {type: string}
         safe: {type: [string, number, boolean]}
         effective:
-          description: valor do nível ativo de maior prioridade, ou safe (A5, A6)
+          description: value of the highest-priority active level, or safe (A5, A6)
           $ref: '#/components/schemas/Value'
         applied:
-          description: último valor aplicado pelo envelope
+          description: last value applied by the envelope
           $ref: '#/components/schemas/Value'
         active_level: {$ref: '#/components/schemas/LevelOrNone'}
         active_writer: {type: string}
         last_outcome: {$ref: '#/components/schemas/WriteOutcome'}
         last_commit: {$ref: '#/components/schemas/Timestamp'}
         levels:
-          description: níveis ocupados, por prioridade
+          description: occupied levels, by priority
           type: array
           items: {$ref: '#/components/schemas/ArbiterLevel'}
         tripped: {type: boolean}
         trip: {$ref: '#/components/schemas/Trip'}
         force_safe:
-          description: bit do supervisor (só leitura)
+          description: supervisor bit (read-only)
           type: boolean
         confirmed:
-          description: estado da verificação por readback, se declarada
+          description: state of the readback check, if declared
           type: ['boolean', 'null']
         envelope: {$ref: '#/components/schemas/Envelope'}
         writers:
@@ -5332,27 +5332,27 @@ components:
       properties:
         value: {$ref: '#/components/schemas/ValueInput'}
         ttl:
-          description: obrigatório (A10); 1 s ≤ ttl ≤ max_manual da saída
+          description: required (A10); 1 s ≤ ttl ≤ max_manual of the output
           $ref: '#/components/schemas/Duration'
         level:
-          description: omissão manual:4
+          description: default manual:4
           $ref: '#/components/schemas/ManualLevel'
         reason:
           type: string
           minLength: 1
           maxLength: 1024
         takeover:
-          description: substitui outro principal que ocupe o mesmo nível (J-E1105 sem isto)
+          description: replaces another principal occupying the same level (J-E1105 without this)
           type: boolean
           default: false
         wait:
           type: boolean
           default: true
         wait_timeout:
-          description: omissão 5s, máximo 30s
+          description: default 5s, maximum 30s
           $ref: '#/components/schemas/Duration'
         at:
-          description: reservado para a 1.1 (escrita agendada, M6); J-E1017 na 1.0
+          description: reserved for 1.1 (scheduled write, M6); J-E1017 in 1.0
           $ref: '#/components/schemas/Timestamp'
     WritePreview:
       type: object
@@ -5368,15 +5368,15 @@ components:
           properties:
             level: {$ref: '#/components/schemas/ManualLevel'}
             value:
-              description: valor convertido para a unidade da saída
+              description: value converted to the output unit
               $ref: '#/components/schemas/Value'
             ttl: {$ref: '#/components/schemas/Duration'}
             lease_until: {$ref: '#/components/schemas/Timestamp'}
             renews:
-              description: o principal já ocupa este nível; a escrita renova-o
+              description: the principal already occupies this level; the write renews it
               type: boolean
         conflict:
-          description: outro principal ocupa o nível pedido
+          description: another principal occupies the requested level
           type: ['null', object]
           properties:
             writer: {type: string}
@@ -5388,19 +5388,19 @@ components:
           required: [wins, outcome]
           properties:
             wins:
-              description: o nível pedido passa a ser o ativo
+              description: the requested level becomes the active one
               type: boolean
             outcome: {$ref: '#/components/schemas/WriteOutcome'}
             overrides:
-              description: níveis ativos de menor prioridade que deixam de mandar
+              description: lower-priority active levels that stop being in control
               type: array
               items: {$ref: '#/components/schemas/Level'}
             first_applied: {$ref: '#/components/schemas/Value'}
             time_to_target:
-              description: estimativa com a taxa declarada; null se não houver taxa ou não chegar
+              description: estimate with the declared rate; null if there is no rate or it is not reached
               type: ['null', string]
             inputs:
-              description: amostras usadas no permissivo, requires_good e gama
+              description: samples used in the permissive, requires_good and range
               type: array
               items: {$ref: '#/components/schemas/Sample'}
             notes:
@@ -5442,10 +5442,10 @@ components:
       additionalProperties: false
       properties:
         level:
-          description: omissão - o nível que o principal ocupa nesta saída (se for só um)
+          description: default - the level the principal holds on this output (if there is only one)
           $ref: '#/components/schemas/ManualLevel'
         force:
-          description: liberta um nível de outro principal (fica na auditoria)
+          description: releases a level held by another principal (recorded in the audit)
           type: boolean
           default: false
         reason:
@@ -5508,7 +5508,7 @@ components:
             writer: {type: string}
         reset_when: {type: string}
         reset_when_now:
-          description: valor atual da condição reset_when
+          description: current value of the reset_when condition
           type: ['boolean', 'null']
     ManualOverride:
       type: object
@@ -5525,15 +5525,15 @@ components:
         until: {$ref: '#/components/schemas/Timestamp'}
         remaining: {$ref: '#/components/schemas/Duration'}
         effective:
-          description: é o nível ativo da saída
+          description: is the active level of the output
           type: boolean
         restored:
           description: >-
-            reposto num arranque sem relógio synced, pelo TTL restante (16 A14); alarme
-            joker.output.<saída>.manual_restored até ser renovado ou libertado
+            restored on a startup without a synced clock, for the remaining TTL (16 A14); alarm
+            joker.output.<output>.manual_restored until renewed or released
           type: boolean
         event:
-          description: só nos itens do tópico manual do WebSocket
+          description: only in the items of the WebSocket manual topic
           type: string
           enum: [set, renewed, expiring, expired, released, taken_over, restored]
         last_outcome: {$ref: '#/components/schemas/WriteOutcome'}
@@ -5561,14 +5561,14 @@ components:
         applied: {$ref: '#/components/schemas/Value'}
         active_level: {$ref: '#/components/schemas/LevelOrNone'}
         repeats:
-          description: ticks seguidos com o mesmo (applied, outcome, active_level) depois desta entrada (01 §19); 0 enquanto a entrada é a corrente
+          description: consecutive ticks with the same (applied, outcome, active_level) after this entry (01 §19); 0 while the entry is the current one
           type: integer
           minimum: 0
         last_ts:
-          description: instante do último tick com o mesmo triplo (01 §19)
+          description: instant of the last tick with the same triple (01 §19)
           $ref: '#/components/schemas/Timestamp'
         inputs:
-          description: conjunto causal (M3) - o que o escritor leu nesse tick
+          description: causal set (M3) - what the writer read in that tick
           type: array
           items:
             type: object
@@ -5600,7 +5600,7 @@ components:
             args: {type: object}
         intent: {$ref: '#/components/schemas/Ulid'}
         model_outputs:
-          description: reservado para a 1.1 (M22)
+          description: reserved for 1.1 (M22)
           type: ['null', array]
     # ---------------------------------------------------------------- alarms
     Alarm:
@@ -5615,10 +5615,10 @@ components:
         state: {$ref: '#/components/schemas/AlarmState'}
         active: {type: boolean}
         uncertain:
-          description: condição avaliada com entradas Uncertain (documento 16, §3.2)
+          description: condition evaluated with Uncertain inputs (document 16, §3.2)
           type: boolean
         suppressed:
-          description: suppress_when verdadeiro
+          description: suppress_when true
           type: boolean
         shelved:
           type: ['null', object]
@@ -5653,7 +5653,7 @@ components:
       additionalProperties: false
       properties:
         ttl:
-          description: obrigatório; ≤ max_shelve do alarme (omissão 24h)
+          description: required; ≤ the alarm's max_shelve (default 24h)
           $ref: '#/components/schemas/Duration'
         reason:
           type: string
@@ -5683,7 +5683,7 @@ components:
       properties:
         id: {$ref: '#/components/schemas/Ulid'}
         writer:
-          description: app:<nome> do escritor só-proposta
+          description: app:<name> of the proposal-only writer
           type: string
         output: {$ref: '#/components/schemas/SignalPath'}
         value: {$ref: '#/components/schemas/Value'}
@@ -5692,7 +5692,7 @@ components:
         ttl: {$ref: '#/components/schemas/Duration'}
         created_at: {$ref: '#/components/schemas/Timestamp'}
         expires_at:
-          description: created_at + ttl; uma intenção pendente não aprovada até lá passa a expired
+          description: created_at + ttl; a pending intent not approved by then becomes expired
           $ref: '#/components/schemas/Timestamp'
         state:
           type: string
@@ -5707,10 +5707,10 @@ components:
       additionalProperties: false
       properties:
         level:
-          description: omissão manual:4
+          description: default manual:4
           $ref: '#/components/schemas/ManualLevel'
         ttl:
-          description: pode encurtar, nunca alongar, o TTL da intenção
+          description: may shorten, never lengthen, the intent's TTL
           $ref: '#/components/schemas/Duration'
         reason:
           type: string
@@ -5737,7 +5737,7 @@ components:
           enum: [device, instance]
         action: {$ref: '#/components/schemas/Name'}
         args:
-          description: esquema dos argumentos (nome → tipo e unidade)
+          description: schema of the arguments (name → type and unit)
           type: object
           additionalProperties:
             type: object
@@ -5759,11 +5759,11 @@ components:
       additionalProperties: false
       properties:
         args:
-          description: argumentos por nome (quantidades aceitam literais)
+          description: arguments by name (quantities accept literals)
           type: object
           default: {}
         timeout:
-          description: pode encurtar, nunca alongar, o timeout configurado
+          description: may shorten, never lengthen, the configured timeout
           $ref: '#/components/schemas/Duration'
         reason:
           type: string
@@ -5804,11 +5804,11 @@ components:
               type: string
               enum: [denied, timeout, device, invalid, cancelled]
             code:
-              description: J-E1406–J-E1409 ou J-E1415; o par do código da app (ref/04 §7.1)
+              description: J-E1406–J-E1409 or J-E1415; the counterpart of the app's code (ref/04 §7.1)
               type: string
             message: {type: string}
         replay:
-          description: resultado anterior devolvido por deduplicação (dedup_window)
+          description: previous result returned by deduplication (dedup_window)
           type: boolean
     # ---------------------------------------------------------------- instances and classes
     ClassRef:
@@ -5830,7 +5830,7 @@ components:
         contract: {$ref: '#/components/schemas/Digest'}
         origin: {$ref: '#/components/schemas/InstanceOrigin'}
         source:
-          description: dispositivo (implícita), manifesto (composta) ou app:<nome> (virtual)
+          description: device (implicit), manifest (composite) or app:<name> (virtual)
           type: string
         capabilities:
           type: array
@@ -5853,7 +5853,7 @@ components:
           type: array
           items: {$ref: '#/components/schemas/InstanceMember'}
         member_of:
-          description: composições de que esta instância é membro (documento 16, P6)
+          description: compositions of which this instance is a member (document 16, P6)
           type: array
           items:
             type: object
@@ -5862,12 +5862,12 @@ components:
               instance: {$ref: '#/components/schemas/Name'}
               member: {$ref: '#/components/schemas/Name'}
         depth:
-          description: profundidade da composição da classe (documento 17, §8; máximo 3)
+          description: depth of the class composition (document 17, §8; maximum 3)
           type: integer
           minimum: 1
           maximum: 3
         layers:
-          description: latência de cada camada virtual (explain)
+          description: latency of each virtual layer (explain)
           type: array
           items:
             type: object
@@ -5887,7 +5887,7 @@ components:
         unit: {type: string}
         path: {$ref: '#/components/schemas/SignalPath'}
         mapped_to:
-          description: caminho ou descrição do adaptador (scale, edge, on_rise, const:, enum_map)
+          description: path or description of the adapter (scale, edge, on_rise, const:, enum_map)
           type: string
         origin:
           type: object
@@ -5898,33 +5898,33 @@ components:
             ref: {type: string}
         sample: {$ref: '#/components/schemas/Sample'}
         signature:
-          description: métodos e ações - argumentos e retorno
+          description: methods and actions - arguments and return
           type: string
         class:
-          description: kind member - a classe do membro de classe
+          description: kind member - the class of the class member
           $ref: '#/components/schemas/ClassRef'
         bounds:
-          description: kind member numa coleção - [min, max]
+          description: kind member in a collection - [min, max]
           type: array
           items: {type: integer, minimum: 0}
           minItems: 2
           maxItems: 2
         elements:
-          description: kind member - a instância ligada (um elemento) ou as da coleção, pela ordem da coleção, cada uma com os seus membros
+          description: kind member - the bound instance (one element) or those of the collection, in collection order, each with its members
           type: array
           items: {$ref: '#/components/schemas/InstanceNode'}
     InstanceNode:
-      description: um nó da árvore de membros de classe de uma instância composta (ref/09 §5.11)
+      description: a node of the class-member tree of a composite instance (ref/09 §5.11)
       type: object
       required: [path, class, health]
       properties:
         instance:
-          description: nome da instância ligada; null num submembro sem nome (perfil, ref/03 §2.2.14)
+          description: name of the bound instance; null in an unnamed submember (profile, ref/03 §2.2.14)
           oneOf:
             - {$ref: '#/components/schemas/Name'}
             - {type: 'null'}
         path:
-          description: caminho aninhado deste nó (esp_io.boot, station.pumps.p1)
+          description: nested path of this node (esp_io.boot, station.pumps.p1)
           type: string
         class: {$ref: '#/components/schemas/ClassRef'}
         origin: {$ref: '#/components/schemas/InstanceOrigin'}
@@ -5981,19 +5981,19 @@ components:
         conformance:
           $ref: '#/components/schemas/ContentRef'
         cases:
-          description: ids dos casos; omissão - todos
+          description: case ids; default - all
           type: array
           items: {type: string}
         level:
-          description: nível manual usado pelo harness numa instância real (omissão manual:3; o TTL é a duração da suite, ref/03 §2.6.3)
+          description: manual level used by the harness on a real instance (default manual:3; the TTL is the suite's duration, ref/03 §2.6.3)
           $ref: '#/components/schemas/ManualLevel'
         allow_actuation:
-          description: obrigatório (true) numa instância não simulada - J0640 sem ele; com um nível safety ou manual ativo nas saídas da instância, J0641 (409)
+          description: required (true) on a non-simulated instance - J0640 without it; with a safety or manual level active on the instance's outputs, J0641 (409)
           type: boolean
           default: false
         max_duration: {$ref: '#/components/schemas/Duration'}
         allow_prod:
-          description: obrigatório em mode = prod; o harness escreve no equipamento
+          description: required in mode = prod; the harness writes to the equipment
           type: boolean
           default: false
         reason:
@@ -6011,11 +6011,11 @@ components:
           type: array
           items: {$ref: '#/components/schemas/Name'}
     ClassContract:
-      description: forma canónica contract.json (documento 17, §6)
+      description: canonical form contract.json (document 17, §6)
       type: object
     # ---------------------------------------------------------------- devices and lock
     LinkState:
-      description: link_state (ref/00 §6); drift e stopped são do núcleo
+      description: link_state (ref/00 §6); drift and stopped belong to the core
       type: string
       enum: [connecting, up, degraded, down, drift, stopped]
     Device:
@@ -6031,7 +6031,7 @@ components:
           enum: [n, w, x]
         bus: {type: string}
         address:
-          description: endereço sem credenciais
+          description: address without credentials
           type: string
         profile: {type: string}
         link: {$ref: '#/components/schemas/LinkState'}
@@ -6047,7 +6047,7 @@ components:
           type: array
           items: {$ref: '#/components/schemas/Name'}
         stopped_by:
-          description: quem parou o driver com POST /v1/devices/{device}/stop (link = stopped); null se não foi parado à mão
+          description: who stopped the driver with POST /v1/devices/{device}/stop (link = stopped); null if it was not stopped by hand
           type: ['null', object]
           properties:
             principal: {type: string}
@@ -6085,10 +6085,10 @@ components:
           type: object
           additionalProperties: {$ref: '#/components/schemas/DeviceFacts'}
         restart_time:
-          description: tempo de reinício do jokerd medido (documento 01, §8)
+          description: measured jokerd restart time (document 01, §8)
           $ref: '#/components/schemas/Duration'
         lock_toml:
-          description: excerto TOML com as secções [discovered.*] e [fallback.*]
+          description: TOML excerpt with the [discovered.*] and [fallback.*] sections
           type: string
     DriftEntry:
       type: object
@@ -6102,24 +6102,24 @@ components:
         outputs_blocked: {type: boolean}
     ProbeRequest:
       description: >-
-        Factos para o lock de dispositivos que o nó ainda não tem numa geração (ref/02 §3.1.3). Só leituras:
-        nunca liga saídas nem escreve no equipamento.
+        Facts for the lock of devices the node does not yet have in a generation (ref/02 §3.1.3). Reads only:
+        never switches on outputs nor writes to the equipment.
       type: object
       additionalProperties: false
       properties:
         manifest: {$ref: '#/components/schemas/ContentRef'}
         lock: {$ref: '#/components/schemas/ContentRef'}
         devices:
-          description: com manifest, os dispositivos a recolher (omissão - todos)
+          description: with manifest, the devices to collect (default - all)
           type: array
           items: {$ref: '#/components/schemas/Name'}
         sections:
           description: >-
-            sem manifest, as secções [devices.<d>] em JSON (com os [buses.*] que usam), por nome de dispositivo
+            without manifest, the [devices.<d>] sections in JSON (with the [buses.*] they use), by device name
           type: object
           additionalProperties: {type: object}
         what:
-          description: o que recolher (omissão - tudo o que se aplica a cada dispositivo)
+          description: what to collect (default - everything that applies to each device)
           type: array
           items:
             type: string
@@ -6180,7 +6180,7 @@ components:
           type: array
           items: {$ref: '#/components/schemas/Name'}
         meta:
-          description: metadados joker:meta (portas, tarefas, alarmes, equipamentos) em JSON
+          description: joker:meta metadata (ports, tasks, alarms, equipment) in JSON
           type: object
     AppInstance:
       type: object
@@ -6220,7 +6220,7 @@ components:
               key: {type: string}
               size: {type: integer}
               value:
-                description: base64; só com key=
+                description: base64; only with key=
                 type: string
                 contentEncoding: base64
         next_cursor: {$ref: '#/components/schemas/NextCursor'}
@@ -6230,7 +6230,7 @@ components:
       required: [target, candidate, state]
       properties:
         target:
-          description: app:<nome> (model:<nome> na 1.1)
+          description: app:<name> (model:<name> in 1.1)
           type: string
         candidate:
           type: object
@@ -6287,7 +6287,7 @@ components:
             duration: {$ref: '#/components/schemas/Duration'}
             max_divergence: {type: string}
         promote:
-          description: promoção automática quando os critérios passam
+          description: automatic promotion when the criteria pass
           type: boolean
           default: false
         reason:
@@ -6300,11 +6300,11 @@ components:
       additionalProperties: false
       properties:
         outputs:
-          description: promoção parcial (só estas saídas); omissão - todas
+          description: partial promotion (only these outputs); default - all
           type: array
           items: {$ref: '#/components/schemas/Selector'}
         force:
-          description: promove mesmo sem os critérios cumpridos
+          description: promotes even without the criteria met
           type: boolean
           default: false
         confirm_window: {$ref: '#/components/schemas/Duration'}
@@ -6337,8 +6337,8 @@ components:
     # ---------------------------------------------------------------- blobs and generations
     ArtifactKind:
       description: >-
-        Tipos de artefacto na forma curta da tabela única da ref/00 §7.1 (D13).
-        joker.model.v1+jkm está reservado para a 1.1 (J-E1017 na 1.0).
+        Artifact types in the short form of the single table of ref/00 §7.1 (D13).
+        joker.model.v1+jkm is reserved for 1.1 (J-E1017 in 1.0).
       type: string
       enum:
         - joker.config.v1+cbor
@@ -6379,7 +6379,7 @@ components:
         kind: {$ref: '#/components/schemas/ArtifactKind'}
         size: {type: integer}
         received:
-          description: bytes contíguos recebidos (próximo offset)
+          description: contiguous bytes received (next offset)
           type: integer
         chunk_max: {type: integer, examples: [8388608]}
         expires_at: {$ref: '#/components/schemas/Timestamp'}
@@ -6392,7 +6392,7 @@ components:
         kind: {$ref: '#/components/schemas/ArtifactKind'}
         existed: {type: boolean}
     ContentRef:
-      description: um blob já carregado (digest) ou conteúdo em linha (texto ≤ 1 MiB)
+      description: an already uploaded blob (digest) or inline content (text ≤ 1 MiB)
       type: object
       additionalProperties: false
       properties:
@@ -6411,12 +6411,12 @@ components:
         digest: {$ref: '#/components/schemas/Digest'}
         kind: {$ref: '#/components/schemas/ArtifactKind'}
         name:
-          description: nome pelo qual o manifesto o refere (caminho, apps.<a>, profiles.<p>, keys/…)
+          description: name by which the manifest refers to it (path, apps.<a>, profiles.<p>, keys/…)
           type: string
           maxLength: 512
         size: {type: integer}
         signature:
-          description: COSE_Sign1 em base64, quando o artefacto não traz a sua própria assinatura
+          description: COSE_Sign1 in base64, when the artifact does not carry its own signature
           type: string
     GenerationProposal:
       type: object
@@ -6432,11 +6432,11 @@ components:
           items: {$ref: '#/components/schemas/ArtifactRef'}
         config:
           description: >-
-            o artefacto joker.config.v1+cbor: COSE_Sign1 do papel config cuja carga útil é o descritor da geração
-            (ref/10 §2.6.2); obrigatório em prod. O nó reconstrói o descritor e compara (J-E1607)
+            the joker.config.v1+cbor artifact: COSE_Sign1 of the config role whose payload is the generation descriptor
+            (ref/10 §2.6.2); required in prod. The node rebuilds the descriptor and compares (J-E1607)
           $ref: '#/components/schemas/ContentRef'
         base:
-          description: hash da geração sobre a qual o plano é feito; null só em mode = dev
+          description: hash of the generation the plan is made against; null only in mode = dev
           oneOf:
             - $ref: '#/components/schemas/Digest'
             - type: 'null'
@@ -6524,13 +6524,13 @@ components:
       required: [gen, hash, state, created_at, created_by, origin]
       properties:
         gen:
-          description: inteiro crescente por nó (0 em respostas de dry_run)
+          description: increasing integer per node (0 in dry_run responses)
           type: integer
           minimum: 0
         hash: {$ref: '#/components/schemas/Digest'}
         state: {$ref: '#/components/schemas/GenerationState'}
         origin:
-          description: origem da criação (a das ativações está em activations)
+          description: origin of the creation (that of the activations is in activations)
           $ref: '#/components/schemas/GenOrigin'
         derived_from: {$ref: '#/components/schemas/GenerationRef'}
         base: {$ref: '#/components/schemas/GenerationRef'}
@@ -6564,7 +6564,7 @@ components:
           type: array
           items: {$ref: '#/components/schemas/Diagnostic'}
         failure:
-          description: com state = failed ou rolled_back
+          description: with state = failed or rolled_back
           type: ['null', object]
           properties:
             reason:
@@ -6573,15 +6573,15 @@ components:
             code: {type: string}
             detail: {type: string}
         discard_reason:
-          description: com state = discarded
+          description: with state = discarded
           type: string
           enum: [deleted, superseded, expired]
         activations:
-          description: as ativações desta geração, da mais recente para a mais antiga (D9)
+          description: the activations of this generation, from the most recent to the oldest (D9)
           type: array
           items: {$ref: '#/components/schemas/Activation'}
         retained:
-          description: os blobs ainda estão no nó (rollback possível)
+          description: the blobs are still on the node (rollback possible)
           type: boolean
     GenOrigin:
       description: gen-origin (ref/10 §2.2)
@@ -6599,14 +6599,14 @@ components:
         from: {$ref: '#/components/schemas/GenerationRef'}
         reason: {type: string}
         desired_seq:
-          description: seq do estado desejado, com origin = agent
+          description: seq of the desired state, with origin = agent
           type: integer
     ActivateRequest:
       type: object
       additionalProperties: false
       properties:
         confirm_window:
-          description: 30s–24h; obrigatória em prod quando plan.requires_confirm (ADR 0015)
+          description: 30s–24h; required in prod when plan.requires_confirm (ADR 0015)
           $ref: '#/components/schemas/Duration'
         reason:
           type: string
@@ -6619,7 +6619,7 @@ components:
       properties:
         to:
           description: >-
-            omissão - a última geração confirmada anterior à atual. Reativa-a com o mesmo gen e o mesmo hash (D9)
+            default - the last confirmed generation before the current one. Reactivates it with the same gen and the same hash (D9)
           $ref: '#/components/schemas/GenSelector'
         confirm_window: {$ref: '#/components/schemas/Duration'}
         reason:
@@ -6635,7 +6635,7 @@ components:
           type: object
           additionalProperties:
             type: array
-            description: da origem mais antiga para a efetiva
+            description: from the oldest origin to the effective one
             items:
               type: object
               properties:
@@ -6684,7 +6684,7 @@ components:
       additionalProperties: false
       properties:
         artifact:
-          description: digest de um blob joker.runtime.v1 já carregado
+          description: digest of an already uploaded joker.runtime.v1 blob
           $ref: '#/components/schemas/Digest'
         version: {type: string}
         signature: {type: string}
@@ -6704,26 +6704,26 @@ components:
           type: string
           enum: [record, ring, history, micro]
         duration:
-          description: record - duração da gravação
+          description: record - duration of the recording
           $ref: '#/components/schemas/Duration'
         groups:
-          description: record, ring - grupos (omissão - todos; ring exige um)
+          description: record, ring - groups (default - all; ring requires one)
           type: array
           items: {$ref: '#/components/schemas/Name'}
         async:
-          description: record - grava também as leituras async (trace.async)
+          description: record - also records the async reads (trace.async)
           type: boolean
           default: false
         last:
-          description: ring - janela até agora
+          description: ring - window up to now
           $ref: '#/components/schemas/Duration'
         from: {$ref: '#/components/schemas/TimeParam'}
         to: {$ref: '#/components/schemas/TimeParam'}
         app:
-          description: history - app cujas entradas se reconstroem
+          description: history - app whose inputs are reconstructed
           $ref: '#/components/schemas/Name'
         device:
-          description: micro - dispositivo joker-link
+          description: micro - joker-link device
           $ref: '#/components/schemas/Name'
         label:
           type: string
@@ -6747,7 +6747,7 @@ components:
         ends_at: {$ref: '#/components/schemas/Timestamp'}
         size_bytes: {type: integer}
         approximate:
-          description: reconstruído do historian - não é exato ao ritmo do grupo
+          description: reconstructed from the historian - not exact at the group's rate
           type: boolean
         generations:
           type: array
@@ -6760,7 +6760,7 @@ components:
         created_by: {type: string}
         label: {type: string}
         file:
-          description: caminho de descarga (/v1/traces/<id>/file)
+          description: download path (/v1/traces/<id>/file)
           type: string
     # ---------------------------------------------------------------- jobs and diagnostics
     JobKind:
@@ -6786,7 +6786,7 @@ components:
             fraction: {type: ['number', 'null'], minimum: 0, maximum: 1}
             message: {type: string}
         result:
-          description: DoctorReport, DiscoveryResult, ProfileTestResult, BenchResult, LockFacts, VerifyResult, RuntimeState ou Micro, conforme kind
+          description: DoctorReport, DiscoveryResult, ProfileTestResult, BenchResult, LockFacts, VerifyResult, RuntimeState or Micro, depending on kind
           type: ['null', object]
         error: {$ref: '#/components/schemas/Problem'}
     DoctorRequest:
@@ -6794,16 +6794,16 @@ components:
       additionalProperties: false
       properties:
         checks:
-          description: base está sempre incluído
+          description: base is always included
           type: array
           items:
             type: string
             enum: [base, rt, ml, network]
         rt_duration:
-          description: omissão 60s
+          description: default 60s
           $ref: '#/components/schemas/Duration'
         allow_live:
-          description: permite --rt com saídas ativas em prod (hwlatdetect e cyclictest perturbam o rt)
+          description: allows --rt with active outputs in prod (hwlatdetect and cyclictest disturb rt)
           type: boolean
           default: false
     DoctorReport:
@@ -6843,11 +6843,11 @@ components:
           type: string
           maxLength: 512
         unit:
-          description: gama de unit ids Modbus (1..10)
+          description: range of Modbus unit ids (1..10)
           type: string
           pattern: '^[0-9]{1,3}(\.\.[0-9]{1,3})?$'
         rate:
-          description: pedidos por segundo (omissão 10/s)
+          description: requests per second (default 10/s)
           type: string
         timeout: {$ref: '#/components/schemas/Duration'}
     ProfileTestRequest:
@@ -6858,12 +6858,12 @@ components:
         profile: {$ref: '#/components/schemas/ContentRef'}
         uri:
           description: >-
-            URI de equipamento (ref/03 §2.2.20), p. ex. modbus-rtu:/dev/serial/by-id/…?baud=115200&unit=1
-            ou modbus-tcp://192.168.1.50:502?unit=1; inválida - J-E1708
+            Equipment URI (ref/03 §2.2.20), e.g. modbus-rtu:/dev/serial/by-id/…?baud=115200&unit=1
+            or modbus-tcp://192.168.1.50:502?unit=1; invalid - J-E1708
           type: string
           maxLength: 512
         unit:
-          description: equivale ao ?unit= da URI; os dois, diferentes, J-E1708
+          description: equivalent to the URI's ?unit=; both, if different, J-E1708
           type: integer
           minimum: 0
           maximum: 255
@@ -6879,7 +6879,7 @@ components:
           minItems: 1
           items: {$ref: '#/components/schemas/ArtifactRef'}
         tasks:
-          description: app.tarefa; omissão - todas as tarefas de ciclo
+          description: app.task; default - all cycle tasks
           type: array
           items: {type: string}
         iterations: {type: integer, minimum: 100, maximum: 1000000, default: 10000}
@@ -6897,7 +6897,7 @@ components:
           type: string
           enum: [connected, connecting, down, disabled]
         endpoint:
-          description: sem credenciais
+          description: without credentials
           type: string
         cursor_lag: {$ref: '#/components/schemas/Duration'}
         backlog_bytes: {type: integer}
@@ -6950,12 +6950,12 @@ components:
           description: link_state (ref/00 §6)
           $ref: '#/components/schemas/LinkState'
         session_mode:
-          description: session_mode (ref/00 §6), com o motivo (status e código do HELLO) quando não é full
+          description: session_mode (ref/00 §6), with the reason (HELLO status and code) when it is not full
           type: string
           enum: [full, observe, maintenance, refused]
         session_reason: {type: string}
         link_version:
-          description: versão negociada ("1.0")
+          description: negotiated version ("1.0")
           type: string
         auth: {type: boolean}
         board: {type: string}
@@ -6968,13 +6968,13 @@ components:
               enum: [a, b]
             digest: {$ref: '#/components/schemas/Digest'}
             descriptor:
-              description: o descritor de firmware (firmware.jkfw, ref/08 §2.14) em JSON
+              description: the firmware descriptor (firmware.jkfw, ref/08 §2.14) in JSON
               type: object
             descriptor_digest: {$ref: '#/components/schemas/Digest'}
             capabilities_hash: {$ref: '#/components/schemas/Digest'}
             security_version: {type: integer}
             trial:
-              description: firmware em experiência, à espera de confirmação
+              description: firmware on trial, awaiting confirmation
               type: boolean
         abi:
           type: object
@@ -6986,11 +6986,11 @@ components:
           properties:
             gen_seq: {type: integer}
             hash:
-              description: o source_hash do blob (hash da geração, ref/10 §2.6.2)
+              description: the blob's source_hash (generation hash, ref/10 §2.6.2)
               $ref: '#/components/schemas/Digest'
             state: {$ref: '#/components/schemas/GenerationState'}
             confirm_left:
-              description: tempo que falta na janela de confirmação, se confirming
+              description: time left in the confirmation window, if confirming
               $ref: '#/components/schemas/Duration'
             delivery:
               type: string
@@ -6998,14 +6998,14 @@ components:
         registry: {$ref: '#/components/schemas/Digest'}
         catalog: {$ref: '#/components/schemas/Digest'}
         drivers:
-          description: resumo dos descritores dos drivers planeados (HELLO chave 15)
+          description: summary of the descriptors of the planned drivers (HELLO key 15)
           $ref: '#/components/schemas/Digest'
         params_changed:
-          description: parâmetros de apps alterados localmente no MCU (deriva face ao Git)
+          description: app parameters changed locally on the MCU (drift from Git)
           type: array
           items: {type: string}
         hello:
-          description: o último HELLO (oferta), descodificado em JSON (ref/07 §6.4)
+          description: the last HELLO (offer), decoded to JSON (ref/07 §6.4)
           type: object
         classes:
           type: array
@@ -7046,10 +7046,10 @@ components:
         artifact: {$ref: '#/components/schemas/Digest'}
         signature:
           description: >-
-            COSE_Sign1 do manifesto de OTA (ref/07 §9.1), em base64; numa geração já vem no trailer do blob
+            COSE_Sign1 of the OTA manifest (ref/07 §9.1), in base64; for a generation it already comes in the blob trailer
           type: string
         confirm_window:
-          description: janela de confirmação no MCU (confirm_ms do activate; omissão 5m)
+          description: confirmation window on the MCU (confirm_ms of activate; default 5m)
           $ref: '#/components/schemas/Duration'
         reason:
           type: string
@@ -7096,11 +7096,11 @@ components:
       properties:
         value: {$ref: '#/components/schemas/ValueInput'}
         ttl:
-          description: omissão - até ser libertado ou até à próxima geração
+          description: default - until released or until the next generation
           $ref: '#/components/schemas/Duration'
     # ---------------------------------------------------------------- streaming
     Topic:
-      description: frames e blocks reservados para a 1.1
+      description: frames and blocks reserved for 1.1
       type: string
       enum: [signals, outputs, alarms, events, decisions, logs, jobs, invocations, generations, intents,
              manual, status, metrics, signal_trace, audit, frames, blocks]
@@ -7111,7 +7111,7 @@ components:
       properties:
         op: {type: string, const: subscribe}
         id:
-          description: id escolhido pelo cliente, devolvido nas respostas
+          description: id chosen by the client, returned in the responses
           type: string
           maxLength: 64
         topic: {$ref: '#/components/schemas/Topic'}
@@ -7120,10 +7120,10 @@ components:
           maxItems: 64
           items: {$ref: '#/components/schemas/Selector'}
         min_interval:
-          description: estado - omissão 100ms (signals), 1s (status, metrics); mínimo 10ms
+          description: state - default 100ms (signals), 1s (status, metrics); minimum 10ms
           $ref: '#/components/schemas/Duration'
         mode:
-          description: change - só amostras novas (coalescidas); interval - todas a cada min_interval
+          description: change - only new samples (coalesced); interval - all of them every min_interval
           type: string
           enum: [change, interval]
           default: change
@@ -7132,11 +7132,11 @@ components:
           default: true
         mono: {type: boolean, default: false}
         fields:
-          description: campos da amostra a enviar (path e seq vão sempre)
+          description: sample fields to send (path and seq are always sent)
           type: array
           items: {type: string}
         buffer:
-          description: eventos - itens em fila por subscrição (64–4096, omissão 1024)
+          description: events - queued items per subscription (64–4096, default 1024)
           type: integer
           minimum: 64
           maximum: 4096
@@ -7155,7 +7155,7 @@ components:
         job: {$ref: '#/components/schemas/Ulid'}
         invocation: {$ref: '#/components/schemas/Ulid'}
         path:
-          description: signal_trace - o sinal a seguir
+          description: signal_trace - the signal to follow
           $ref: '#/components/schemas/SignalPath'
     WsUnsubscribe:
       type: object
@@ -7220,11 +7220,11 @@ components:
         id: {type: string}
         sub: {type: string}
         seq:
-          description: data e resync - contador de mensagens por subscrição, a começar em 1
+          description: data and resync - message counter per subscription, starting at 1
           type: integer
         topic: {$ref: '#/components/schemas/Topic'}
         items:
-          description: amostras (Sample), estados de saída (OutputState) ou eventos do tópico
+          description: samples (Sample), output states (OutputState) or topic events
           type: array
           items: {type: object}
         session: {$ref: '#/components/schemas/Ulid'}
@@ -7244,20 +7244,20 @@ components:
           type: array
           items: {$ref: '#/components/schemas/SignalPath'}
         lost:
-          description: gap - itens perdidos
+          description: gap - lost items
           type: integer
         reason:
           type: string
           enum: [overflow, intake_overflow, resume_unavailable, generation, role_changed]
         skipped_ticks:
-          description: signal_trace - ticks sem alterações ou coalescidos
+          description: signal_trace - ticks without changes or coalesced
           type: integer
         subs:
           type: array
           items: {type: object}
         ts: {$ref: '#/components/schemas/Timestamp'}
         code:
-          description: closing - código de fecho WebSocket
+          description: closing - WebSocket close code
           type: integer
         problem: {$ref: '#/components/schemas/Problem'}
     # ---------------------------------------------------------------- runtime drivers and agent
@@ -7278,7 +7278,7 @@ components:
           items: {type: string}
         descriptor: {$ref: '#/components/schemas/Digest'}
         source:
-          description: builtin (tier N no binário) ou generation (tier W e X carregados pela geração)
+          description: builtin (tier N in the binary) or generation (tier W and X loaded by the generation)
           type: string
           enum: [builtin, generation]
     AgentState:
@@ -7287,7 +7287,7 @@ components:
       properties:
         enabled: {type: boolean}
         authority:
-          description: deck_id da autoridade; ausente sem Deck
+          description: deck_id of the authority; absent without a Deck
           type: string
         transport:
           type: string
@@ -7307,12 +7307,12 @@ components:
             oldest: {$ref: '#/components/schemas/Timestamp'}
         paused_until: {$ref: '#/components/schemas/Timestamp'}
         hold:
-          description: estado desejado em espera por alterações locais (local_changes = hold)
+          description: desired state on hold due to local changes (local_changes = hold)
           type: boolean
         sessions:
           type: integer
     AgentDesired:
-      description: o estado desejado descodificado (a vista JSON da ref/10 §2.6.7) e o estado da aplicação
+      description: the decoded desired state (the JSON view of ref/10 §2.6.7) and the state of the apply
       type: object
       required: [desired, apply]
       properties:
@@ -7343,7 +7343,7 @@ components:
       additionalProperties: false
       properties:
         ttl:
-          description: até 7d
+          description: up to 7d
           $ref: '#/components/schemas/Duration'
         reason: {type: string, minLength: 1, maxLength: 1024}
     AgentImportRequest:
@@ -7352,11 +7352,11 @@ components:
       additionalProperties: false
       properties:
         desired:
-          description: o estado desejado (COSE_Sign1) em base64
+          description: the desired state (COSE_Sign1) in base64
           type: string
           contentEncoding: base64
         artifacts:
-          description: os digests dos artefactos já carregados por /v1/blobs/uploads
+          description: the digests of the artifacts already uploaded via /v1/blobs/uploads
           type: array
           items: {$ref: '#/components/schemas/Digest'}
     RemoteSession:
