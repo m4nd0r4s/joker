@@ -12,9 +12,20 @@ mod diag;
 pub mod lexer;
 pub mod limits;
 mod parser;
+mod program;
+mod quality;
 mod types;
+mod value;
+mod vm;
 
 pub use check::{CheckOptions, Checked, Const, Detail, Element, Func, NodeInfo, check};
 pub use diag::{Diagnostic, ErrorKind, Expected};
 pub use parser::parse;
+pub use program::{
+    CmpOp, CompileOptions, Input, MAX_CODE, MAX_CONSTS, MAX_CONVERSIONS, MAX_INPUTS, MAX_STACK,
+    MAX_STATEFUL, Op, Program, Stateful, WindowKind, compile,
+};
+pub use quality::{Quality, QualityCode, Reason};
 pub use types::{EnumId, Env, Repr, SignalInfo, SignalType, Ty};
+pub use value::{Output, QualityError, Value};
+pub use vm::{EvalError, Inputs, Reading, eval};
