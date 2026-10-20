@@ -1,74 +1,74 @@
-# Parte 9 — O ESP32 passa a Joker Micro: o Joker Link e o `safe` no MCU
+# Part 9 — The ESP32 becomes a Joker Micro: Joker Link and the `safe` on the MCU
 
-**Objetivo:** trocar o firmware de bancada do ESP32 pelo Joker Micro, ligá-lo ao Pi 3 pelo Joker Link no mesmo cabo USB, e passar o envelope e o `safe` do LED do ESP32 para dentro do próprio MCU, sem mudar uma linha da app `luz` 0.6.
+**Goal:** replace the ESP32's bench firmware with Joker Micro, connect it to the Pi 3 over Joker Link on the same USB cable, and move the envelope and the `safe` of the ESP32's LED into the MCU itself, without changing a line of the app `luz` 0.6.
 
-**Vais aprender:** o manifesto de um Joker Micro · os drivers `gpio` e `esp32` num MCU · firmware genérico e blob de geração · `jk flash` por série · a chave do link (`jk node enroll --link`) · como o nó Linux nomeia os sinais de um MCU (catálogo, aliases) · `J0234` · níveis delegados ao link · OTA com A/B, janela de confirmação e retoma · a porta de saída mais importante da ADR 0020.
+**You will learn:** the manifest of a Joker Micro · the `gpio` and `esp32` drivers on an MCU · generic firmware and generation blob · `jk flash` over serial · the link key (`jk node enroll --link`) · how the Linux node names the signals of an MCU (catalog, aliases) · `J0234` · levels delegated to the link · OTA with A/B, confirmation window and resume · the most important exit gate of ADR 0020.
 
-**Antes de começar:** partes 1–8 feitas (app `luz` 0.6, instâncias `led_esp`, `botao`, `toque` e `sinal`, o cenário `falha_esp` a passar). O nó `lab` enrolado e na última geração confirmada do `joker.lab.toml`. O ESP32 ligado ao Pi 3 por micro-USB, ainda com o firmware de bancada Modbus. O cabo micro-USB do ESP32 vai passar uma vez pelo portátil, para gravar e enrolar.
+**Before you start:** parts 1–8 done (app `luz` 0.6, instances `led_esp`, `botao`, `toque` and `sinal`, the scenario `falha_esp` passing). The node `lab` enrolled and at the last confirmed generation of `joker.lab.toml`. The ESP32 connected to the Pi 3 by micro-USB, still with the Modbus bench firmware. The ESP32's micro-USB cable will go through the laptop once, to flash and enroll.
 
 ---
 
-## 1. O que muda, e o que não muda
+## 1. What changes, and what does not
 
-Até aqui o ESP32 era um **equipamento**: servia registos Modbus, e quem decidia o LED era o árbitro e o envelope do Pi 3. O `safe` do LED do ESP32 dependia do fallback do próprio firmware de bancada (apaga ao fim de 2 s sem pedidos), que o `jk lock` verificava contra o perfil.
+Up to now the ESP32 was a **piece of equipment**: it served Modbus registers, and what decided the LED was the arbiter and the envelope of the Pi 3. The `safe` of the ESP32's LED depended on the fallback of the bench firmware itself (turns off after 2 s without requests), which `jk lock` checked against the profile.
 
-A partir de agora o ESP32 corre **o mesmo núcleo** do `jokerd`, compilado `no_std` para Xtensa (documento 19, §2):
+From now on the ESP32 runs **the same core** as `jokerd`, built `no_std` for Xtensa (document 19, §2):
 
 ```
-          parte 5                                        parte 9
+          part 5                                         part 9
  ┌─ Pi 3 (jokerd) ───────────────┐              ┌─ Pi 3 (jokerd) ──────────┐
- │ luz → árbitro → envelope ─────┼─ Modbus ─▶   │ luz ── PROPOSE (nível,   │
+ │ luz → arbiter → envelope ─────┼─ Modbus ─▶   │ luz ── PROPOSE (level,   │
  │        (esp.led, safe=false)  │   coil 0     │         lease) ──────────┼─ Joker Link ─▶
- └───────────────────────────────┘              └──────────────────────────┘   (mesmo cabo)
-                          ESP32: firmware de bancada          ESP32: Joker Micro
-                          fallback fixo de 2 s                árbitro → envelope → safe=false
+ └───────────────────────────────┘              └──────────────────────────┘   (same cable)
+                          ESP32: bench firmware               ESP32: Joker Micro
+                          fixed 2 s fallback                  arbiter → envelope → safe=false
 ```
 
-- **Muda:** o firmware do ESP32, o dispositivo `esp` no Pi 3 (de `modbus-rtu` para `joker-link`), e **quem manda** no LED do ESP32: o MCU. O `jokerd` passa a ser um escritor remoto, com nível e lease (documento 16, A12).
-- **Não muda:** a `luz` 0.6, o `joker.toml`, as instâncias, o `joker.sim.toml` e os cenários. Os caminhos `esp.led`, `esp.button`, `esp.touch`, `esp.rssi` e `esp.uptime` continuam a existir no Pi 3 (secção 8). É o antes e depois mais claro da ADR 0020 (documento 23, §4).
+- **Changes:** the ESP32's firmware, the device `esp` on the Pi 3 (from `modbus-rtu` to `joker-link`), and **who controls** the ESP32's LED: the MCU. `jokerd` becomes a remote writer, with a level and a lease (document 16, A12).
+- **Does not change:** `luz` 0.6, `joker.toml`, the instances, `joker.sim.toml` and the scenarios. The paths `esp.led`, `esp.button`, `esp.touch`, `esp.rssi` and `esp.uptime` keep existing on the Pi 3 (section 8). It is the clearest before and after of ADR 0020 (document 23, §4).
 
-## 2. A toolchain Xtensa
+## 2. The Xtensa toolchain
 
-O ESP32 original é Xtensa LX6. O Rust para Xtensa não está no LLVM oficial: vem da Espressif, pelo `espup` (documento 23, §5.1).
+The original ESP32 is Xtensa LX6. Rust for Xtensa is not in mainline LLVM: it comes from Espressif, through `espup` (document 23, §5.1).
 
 ```sh
 $ cargo install espup espflash
-$ espup install                      # toolchain "esp" + LLVM com Xtensa
-$ . ~/export-esp.sh                  # põe-na no PATH desta shell (acrescenta ao teu perfil)
+$ espup install                      # "esp" toolchain + LLVM with Xtensa
+$ . ~/export-esp.sh                  # puts it on the PATH of this shell (add it to your profile)
 $ rustup toolchain list | grep esp
 esp
 ```
 
-O `espflash` já o usaste na parte 4 para gravar o firmware de bancada; agora é a `jk` que o chama, porque a placa o declara.
+You already used `espflash` in part 4 to flash the bench firmware; now it is `jk` that calls it, because the board declares it.
 
-## 3. O manifesto do Joker Micro
+## 3. The Joker Micro manifest
 
-O MCU tem o seu próprio manifesto, numa pasta à parte: `micro/esp/joker.toml`. É um `joker.toml` como os outros, validado pelo mesmo `jk check` e **compilado** para um blob, porque um MCU não interpreta TOML (ref/01 §5.22).
+The MCU has its own manifest, in a separate directory: `micro/esp/joker.toml`. It is a `joker.toml` like the others, validated by the same `jk check` and **compiled** into a blob, because an MCU does not interpret TOML (ref/01 §5.22).
 
 ```toml
-# micro/esp/joker.toml — o ESP32 como Joker Micro (parte 9)
+# micro/esp/joker.toml — the ESP32 as Joker Micro (part 9)
 [project]
 name  = "bancada-esp"
 joker = "1.0"
 mode  = "dev"
 
 [target]
-board = "esp32-devkit@1"      # já existe no registo (documento 23, §7): não se escreve
+board = "esp32-devkit@1"      # already exists in the registry (document 23, §7): you do not write it
 
 [clock]
-sync = "link"                 # o relógio vem das mensagens TIME do Joker Link
+sync = "link"                 # the clock comes from the Joker Link TIME messages
 
 [buses.uart0]
 kind = "serial"
-port = "uart0"                # o UART0 da placa, pela ponte USB (gpio1/gpio3)
-baud = 921600                 # o max_baud da placa
+port = "uart0"                # the board's UART0, through the USB bridge (gpio1/gpio3)
+baud = 921600                 # the board's max_baud
 
 [link]
 bus  = "uart0"
-peer = "lab"                  # só aceita o nó lab
+peer = "lab"                  # only accepts the node lab
 auth = "required"
 
-# O LED e o botão: o driver gpio, com os pinos da placa
+# The LED and the button: the gpio driver, with the board's pins
 [devices.io]
 driver = "gpio"
 
@@ -76,35 +76,35 @@ driver = "gpio"
 led    = { line = "gpio2", direction = "output" }
 button = { line = "gpio0", bias = "pull-up", active_low = true, debounce = "20ms" }
 
-# Toque, RSSI e tempo de funcionamento: o driver esp32 (só Joker Micro)
+# Touch, RSSI and uptime: the esp32 driver (Joker Micro only)
 [devices.chip]
 driver = "esp32"
 
 [devices.chip.signals]
-touch  = { touch = 0, unit = "1", deadband = 5 }   # T0 = GPIO4; o deadband passa a ser no MCU
-rssi   = { rssi = true, unit = "1" }               # dBm; sem unidade no catálogo (logarítmica)
+touch  = { touch = 0, unit = "1", deadband = 5 }   # T0 = GPIO4; the deadband now happens on the MCU
+rssi   = { rssi = true, unit = "1" }               # dBm; no unit in the catalog (logarithmic)
 uptime = { uptime = true, unit = "s" }
 
 [cycles.main]
 period = "10ms"
 
-# O envelope e o safe do LED vivem aqui, e já não no Pi 3
+# The LED's envelope and safe live here, and no longer on the Pi 3
 [outputs."io.led"]
 safe          = false
 group         = "main"
 remote_levels = ["manual:3", "manual:4", "manual:5", "control:12"]
 ```
 
-Linha a linha, o que é novo:
+Line by line, what is new:
 
-- **`[target] board`** aponta para um perfil de placa com `os = "none"`: `mcu_class = "m2"`, `fpu = "sp"`, `reset_safe = false`, as áreas de flash, o `[probe] tool = "espflash"` e as `[capacities]` (256 sinais, 64 saídas, 4 grupos). O `jk check` verifica a geração contra estas capacidades (`J0710`).
-- **Dois drivers do MCU.** O `gpio` é o mesmo driver dos nós Linux; num MCU, `line` é o nome do pino da placa. O `esp32` só existe no Joker Micro, em placas ESP32: `touch = 0` é o pad T0, `rssi = true` e `uptime = true` são o rádio e o temporizador. O `deadband` do toque, que na parte 5 vinha do perfil e era aplicado no Pi, passa a ser aplicado na aquisição do MCU: uma variação abaixo de 5 nem chega ao fio.
-- **`[outputs."io.led"]`**: o envelope, com o `safe`, é do MCU. O grupo `main` de 10 ms é o **grupo dono** da saída: é no latch dele que as propostas do Pi 3 entram e que os leases expiram.
-- **`remote_levels`**: os níveis do árbitro do MCU que o link pode ocupar (16 A12, ref/07 §8.1). Por omissão seriam todos os que nenhum escritor local usa, isto é, os 16, incluindo `safety`. Aqui delegamos só o que o Pi 3 precisa: a faixa `manual` (para um `jk write`, que por omissão é `manual:4`) e o `control:12` da `luz`. Menos níveis delegados é menos coisas que um nó Linux pode fazer a este MCU.
+- **`[target] board`** points to a board profile with `os = "none"`: `mcu_class = "m2"`, `fpu = "sp"`, `reset_safe = false`, the flash areas, `[probe] tool = "espflash"` and the `[capacities]` (256 signals, 64 outputs, 4 groups). `jk check` checks the generation against these capacities (`J0710`).
+- **Two MCU drivers.** `gpio` is the same driver as on the Linux nodes; on an MCU, `line` is the name of the board's pin. `esp32` only exists in Joker Micro, on ESP32 boards: `touch = 0` is the T0 pad, `rssi = true` and `uptime = true` are the radio and the timer. The touch `deadband`, which in part 5 came from the profile and was applied on the Pi, is now applied in the MCU's acquisition: a variation below 5 does not even reach the wire.
+- **`[outputs."io.led"]`**: the envelope, with the `safe`, belongs to the MCU. The 10 ms group `main` is the **owning group** of the output: it is at its latch that the Pi 3's proposals come in and that the leases expire.
+- **`remote_levels`**: the levels of the MCU's arbiter that the link may occupy (16 A12, ref/07 §8.1). By default they would be all those that no local writer uses, that is, all 16, including `safety`. Here we delegate only what the Pi 3 needs: the `manual` band (for a `jk write`, which by default is `manual:4`) and `luz`'s `control:12`. Fewer delegated levels means fewer things a Linux node can do to this MCU.
 
-## 4. O firmware genérico
+## 4. The generic firmware
 
-Um firmware por cada configuração não escala (documento 19, §4.1). Por isso compila-se um **firmware genérico** por placa e conjunto de apps e drivers, e a configuração do site vai num **blob de geração** à parte, em flash.
+One firmware per configuration does not scale (document 19, §4.1). So you build one **generic firmware** per board and set of apps and drivers, and the site configuration goes in a separate **generation blob**, in flash.
 
 ```sh
 $ cd micro/esp
@@ -112,104 +112,104 @@ $ jk build --target mcu:esp32-devkit --generic
 ```
 
 ```
-a compilar joker-micro 1.0.0 para xtensa-esp32-none-elf (toolchain esp)
+compiling joker-micro 1.0.0 for xtensa-esp32-none-elf (toolchain esp)
   drivers   gpio, esp32, extern                 (features: drv-gpio, chip-esp; chip esp32)
-  apps      nenhuma
+  apps      none
   link      uart, udp, tcp · link-crypto · gen-flash · ota · persist · trace
-✓ target/joker/firmware.bin    912 KiB   (área firmware: 1536 KiB)
-✓ target/joker/firmware.jkfw   descritor de firmware · sha256:7f30…
+✓ target/joker/firmware.bin    912 KiB   (firmware area: 1536 KiB)
+✓ target/joker/firmware.jkfw   firmware descriptor · sha256:7f30…
 ```
 
-O `jk inspect target/joker/firmware.jkfw` mostra o descritor: placa e `board_id`, formato de blob e ISA, capacidades (com o hash delas), apps (nenhuma), drivers, transportes, `fpu = "sp"`, áreas de flash e `security_version`. É o **contrato** entre este firmware e os blobs que aceita: um blob feito para outras capacidades é recusado antes de gastar flash (ref/08 §2.14).
+`jk inspect target/joker/firmware.jkfw` shows the descriptor: board and `board_id`, blob format and ISA, capacities (with their hash), apps (none), drivers, transports, `fpu = "sp"`, flash areas and `security_version`. It is the **contract** between this firmware and the blobs it accepts: a blob made for other capacities is rejected before it uses up flash (ref/08 §2.14).
 
-## 5. Gravar por série
+## 5. Flash over serial
 
-O `jk flash` é local: fala com a placa pela porta série de quem o corre. Desliga o micro-USB do ESP32 do Pi 3 e liga-o ao portátil, como na parte 4.
+`jk flash` is local: it talks to the board through the serial port of whoever runs it. Unplug the ESP32's micro-USB from the Pi 3 and plug it into the laptop, as in part 4.
 
 ```sh
 $ jk flash
 ```
 
 ```
-placa esp32-devkit@1 · [probe] tool = espflash, protocol = serial
-porta /dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0 (detetada)
+board esp32-devkit@1 · [probe] tool = espflash, protocol = serial
+port /dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0 (detected)
   bootloader  0x001000   esp-idf, 2 slots
-  firmware    0x010000   912 KiB   ✓ verificado
-  gen_a/gen_b vazias: o MCU arranca em modo de manutenção
+  firmware    0x010000   912 KiB   ✓ verified
+  gen_a/gen_b empty: the MCU boots in maintenance mode
 ```
 
-Sem geração, o MCU está em **modo de manutenção** (ref/08 §2.12.3): pinos no estado de reset, nenhum sinal, e o link sobe com a configuração por omissão da placa (`uart0` a 115 200 baud), só para `HELLO`, `OTA`, tempo e catálogo. O LED do ESP32 fica como o reset o deixa.
+Without a generation, the MCU is in **maintenance mode** (ref/08 §2.12.3): pins in the reset state, no signals, and the link comes up with the board's default configuration (`uart0` at 115,200 baud), only for `HELLO`, `OTA`, time and catalog. The ESP32's LED stays as the reset leaves it.
 
-## 6. A chave do link
+## 6. The link key
 
-O Joker Link é cifrado com ChaCha20-Poly1305 e uma chave por MCU, a `K_link`, que nasce no enrolamento (ref/07 §4.7). Com o ESP32 ainda no portátil:
+Joker Link is encrypted with ChaCha20-Poly1305 and one key per MCU, the `K_link`, which is born at enrollment (ref/07 §4.7). With the ESP32 still on the laptop:
 
 ```sh
 $ jk node enroll esp --link esp --node lab --ca ~/org-ca
 ```
 
 ```
-→ lab (dev) · de --node · lab.local:7443
-MCU em manutenção na porta …CP2102…-port0 · placa esp32-devkit@1 · id de hardware 240ac45e913c
-  K_link gerada (256 bits) · kid 9a1f3c07d2b84e61
-  MCU: área IDENTITY, registo 16 (nome "esp") e registo 17 (chave do link "esp")
-  MCU: registo 19 (chave X25519 de segredos) · certificado CN=esp da CA bancada, com essa chave no SAN
-  secrets.toml.enc: + destinatário node:esp (ainda sem entradas; parte 10)
-  nó lab: segredo secret:link.esp (cifrado para o nó)
-enrolado. o nó lab reconhece o MCU "esp" no dispositivo joker-link "esp"
+→ lab (dev) · from --node · lab.local:7443
+MCU in maintenance on port …CP2102…-port0 · board esp32-devkit@1 · hardware id 240ac45e913c
+  K_link generated (256 bits) · kid 9a1f3c07d2b84e61
+  MCU: IDENTITY area, record 16 (name "esp") and record 17 (link key "esp")
+  MCU: record 19 (X25519 secrets key) · certificate CN=esp from CA bancada, with that key in the SAN
+  secrets.toml.enc: + recipient node:esp (no entries yet; part 10)
+  node lab: secret secret:link.esp (encrypted for the node)
+enrolled. node lab recognizes the MCU "esp" on the joker-link device "esp"
 ```
 
-O primeiro `esp` é o **nome do MCU** (vai no `HELLO`); o `--link esp` é o **dispositivo** do nó Linux que o vai usar. O `--ca` é o que dá ao MCU uma chave X25519 atestada pela tua CA: sem ele, o link funcionava, mas nenhum segredo (a palavra-passe do Wi-Fi, na parte 10) poderia ser cifrado para o MCU (ref/02 §2.4.8). A chave nunca aparece em logs, na API nem no `jk doctor`; o `kid` pode aparecer (ref/07 §4.7). Volta a ligar o ESP32 ao Pi 3.
+The first `esp` is the **name of the MCU** (it goes in the `HELLO`); `--link esp` is the **device** of the Linux node that will use it. `--ca` is what gives the MCU an X25519 key attested by your CA: without it, the link would work, but no secret (the Wi-Fi password, in part 10) could be encrypted for the MCU (ref/02 §2.4.8). The key never appears in logs, in the API or in `jk doctor`; the `kid` may appear (ref/07 §4.7). Plug the ESP32 back into the Pi 3.
 
-## 7. A geração do MCU
+## 7. The MCU generation
 
 ```sh
 $ jk build --target mcu:esp32-devkit --generation --firmware target/joker/firmware.jkfw && cd ../..
 ```
 
 ```
-✓ micro/esp/joker.toml     2 dispositivos (gpio, esp32), 5 sinais, 1 saída, 1 grupo, 1 link
-✓ capacidades              5/256 sinais · 1/64 saídas · 1/4 grupos (J0710: cabe)
-aviso[W0786]: a placa esp32-devkit não tem saídas seguras no reset (`reset_safe = false`)
-  = nota: até o firmware configurar os pinos, o GPIO2 é uma entrada com o pull-down interno de pino de arranque (o LED fica apagado), mas a placa não garante isso para os outros pinos; na bancada não há carga
-aviso[W0788]: geração em flash não ligada a um nó
-aviso[W0779]: blob de geração sem assinatura
-  = ajuda: os três são erros em `mode = "prod"`; a parte 11 trata das assinaturas
-✓ target/joker/bancada-esp.jkgen   6,1 KiB · gen 1 · geração sha256:5d21… · catálogo sha256:3b9e…
+✓ micro/esp/joker.toml     2 devices (gpio, esp32), 5 signals, 1 output, 1 group, 1 link
+✓ capacities               5/256 signals · 1/64 outputs · 1/4 groups (J0710: fits)
+warning[W0786]: the board esp32-devkit has no safe outputs at reset (`reset_safe = false`)
+  = note: until the firmware configures the pins, GPIO2 is an input with the internal pull-down of a strapping pin (the LED stays off), but the board does not guarantee this for the other pins; on the bench there is no load
+warning[W0788]: generation in flash not bound to a node
+warning[W0779]: unsigned generation blob
+  = help: all three are errors in `mode = "prod"`; part 11 deals with signatures
+✓ target/joker/bancada-esp.jkgen   6.1 KiB · gen 1 · generation sha256:5d21… · catalog sha256:3b9e…
 ```
 
-O blob tem as tabelas do núcleo tal como ele as usa em memória (registo de sinais, envelopes, árbitros, bytecode das expressões) e o **catálogo** do Joker Link: a lista do que o MCU exporta, com um hash (ref/08 §2.13; ref/07 §6.3). O MCU usa-o no sítio, sem o copiar.
+The blob has the core's tables just as it uses them in memory (signal registry, envelopes, arbiters, expression bytecode) and the Joker Link **catalog**: the list of what the MCU exports, with a hash (ref/08 §2.13; ref/07 §6.3). The MCU uses it in place, without copying it.
 
-## 8. Como ficam os caminhos no Pi 3
+## 8. What the paths look like on the Pi 3
 
-Esta é a decisão de desenho da parte. O nó Linux não escreve o perfil de um MCU: gera-o a partir do catálogo (`joker/link-3b9e…`, ref/03 §2.2.16), e o driver `joker-link` põe cada sinal exportado em **`<dispositivo>.<caminho no MCU>`** (ref/07 §8.3). No MCU, os caminhos são `io.led`, `io.button`, `chip.touch`, `chip.rssi` e `chip.uptime`, porque todo o sinal de um dispositivo tem o prefixo do dispositivo (ref/01 §3.8). Por isso, no Pi 3, os caminhos canónicos passam a ser `esp.io.led`, `esp.chip.touch`, e assim por diante.
+This is the design decision of the part. The Linux node does not write the profile of an MCU: it generates it from the catalog (`joker/link-3b9e…`, ref/03 §2.2.16), and the `joker-link` driver puts each exported signal at **`<device>.<path on the MCU>`** (ref/07 §8.3). On the MCU, the paths are `io.led`, `io.button`, `chip.touch`, `chip.rssi` and `chip.uptime`, because every signal of a device has the device's prefix (ref/01 §3.8). So, on the Pi 3, the canonical paths become `esp.io.led`, `esp.chip.touch`, and so on.
 
-Três formas de manter `esp.led`:
+Three ways to keep `esp.led`:
 
-| Opção | Onde | Porque não, ou porque sim |
+| Option | Where | Why not, or why |
 |---|---|---|
-| aliases no MCU | `micro/esp/joker.toml` | não serve: o catálogo leva só o caminho canónico de cada sinal (chave 1.2), e os aliases do MCU não saem dele |
-| mudar os `bind` e as instâncias para `esp.io.led` | `joker.lab-link.toml` | funciona, mas reescreve a `luz`, as instâncias e os alarmes num overlay, e o `joker.sim.toml` passava a ter outros caminhos |
-| **aliases no nó Linux** | `joker.lab-link.toml`, em `[devices.esp.signals]` | **escolhida**: um alias é um segundo caminho para o mesmo `SignalId` (documento 16, P1), e é um ajuste permitido num sinal de perfil (ref/01 §5.8.1). O `joker.toml`, as apps e as instâncias continuam a usar `esp.led` |
+| aliases on the MCU | `micro/esp/joker.toml` | does not work: the catalog only carries the canonical path of each signal (key 1.2), and the MCU's aliases do not leave it |
+| change the `bind`s and the instances to `esp.io.led` | `joker.lab-link.toml` | works, but rewrites `luz`, the instances and the alarms in an overlay, and `joker.sim.toml` would end up with other paths |
+| **aliases on the Linux node** | `joker.lab-link.toml`, in `[devices.esp.signals]` | **chosen**: an alias is a second path to the same `SignalId` (document 16, P1), and it is an adjustment allowed on a profile signal (ref/01 §5.8.1). `joker.toml`, the apps and the instances keep using `esp.led` |
 
-`esp.led_rb` e `esp.fw` desaparecem, e não fazem falta: o valor **aplicado** vem na própria amostra de `esp.led` (quem aplica é o MCU), e a versão do firmware vem no `HELLO` (secção 10). Se algum manifesto os referisse, o `jk check` dava `J0101`, com a sugestão.
+`esp.led_rb` and `esp.fw` disappear, and they are not missed: the **applied** value comes in the sample of `esp.led` itself (what applies it is the MCU), and the firmware version comes in the `HELLO` (section 10). If some manifest referred to them, `jk check` would give `J0101`, with the suggestion.
 
-## 9. O `joker.lab-link.toml`
+## 9. The `joker.lab-link.toml`
 
 ```toml
-# joker.lab-link.toml — o ESP32 como Joker Micro pelo Joker Link (parte 9)
+# joker.lab-link.toml — the ESP32 as Joker Micro over Joker Link (part 9)
 extends = ["joker.lab.toml"]
 
 [buses.esp32]
-baud = 921600                     # o mesmo cabo, mais depressa
+baud = 921600                     # the same cable, faster
 
 [devices.esp]
 driver  = "joker-link"
-micro   = "micro/esp/joker.toml"  # o manifesto do MCU que este dispositivo corre
+micro   = "micro/esp/joker.toml"  # the MCU manifest that this device runs
 unit_id = { unset = true }
-profile = { unset = true }        # o perfil é gerado do catálogo
+profile = { unset = true }        # the profile is generated from the catalog
 auth    = "required"
-node    = "esp"                   # o nome que o HELLO tem de trazer
+node    = "esp"                   # the name the HELLO must carry
 report  = "20ms"
 refresh = "1s"
 
@@ -221,105 +221,105 @@ refresh = "1s"
 "chip.uptime" = { alias = "esp.uptime" }
 
 [apps.luz]
-writer = { lease = "100ms" }      # folga para uma renovação perdida pelo link (ver abaixo)
+writer = { lease = "100ms" }      # slack for one renewal lost over the link (see below)
 ```
 
-Falta de propósito uma coisa. Corre o `jk check`:
+One thing is missing on purpose. Run `jk check`:
 
 ```sh
 $ jk check --env lab-link
 ```
 
 ```
-erro[J0234]: envelope num caminho que não é uma saída deste nó
+error[J0234]: envelope on a path that is not an output of this node
  --> joker.toml:14:1
    |
 14 | [outputs."esp.led"]
-   | ^^^^^^^^^^^^^^^^^^^ `esp.led` é um alias de `esp.io.led`, uma saída do Joker Micro `esp`
-   = nota: as saídas de um dispositivo joker-link são governadas pelo envelope do MCU
-           (micro/esp/joker.toml:44, safe = false); o nó Linux não as arbitra (ref/07 §8.1)
-   = ajuda: em joker.lab-link.toml, `[outputs]` com `"esp.led" = { unset = true }`
+   | ^^^^^^^^^^^^^^^^^^^ `esp.led` is an alias of `esp.io.led`, an output of the Joker Micro `esp`
+   = note: the outputs of a joker-link device are governed by the MCU's envelope
+           (micro/esp/joker.toml:44, safe = false); the Linux node does not arbitrate them (ref/07 §8.1)
+   = help: in joker.lab-link.toml, `[outputs]` with `"esp.led" = { unset = true }`
 ```
 
-Dois envelopes para a mesma saída, um em cada lado do cabo, seriam duas verdades. O Joker recusa. Acrescenta ao `joker.lab-link.toml`:
+Two envelopes for the same output, one on each side of the cable, would be two truths. Joker refuses. Add to `joker.lab-link.toml`:
 
 ```toml
 [outputs]
-"esp.led" = { unset = true }      # o envelope desta saída passa a viver no MCU
+"esp.led" = { unset = true }      # the envelope of this output now lives on the MCU
 ```
 
-Não é um alargamento que peça `widen`: o envelope não desaparece, muda de dono, e o do MCU tem o mesmo `safe = false`.
+It is not a widening that needs `widen`: the envelope does not disappear, it changes owner, and the MCU's has the same `safe = false`.
 
 ```sh
 $ jk check --env lab-link
 ```
 
 ```
-✓ manifesto          2 dispositivos (sysfs, joker-link) · 1 barramento (serial 921600)
-✓ esp (joker-link)   micro/esp/joker.toml · catálogo sha256:3b9e… · 5 sinais, 1 saída
+✓ manifest           2 devices (sysfs, joker-link) · 1 bus (serial 921600)
+✓ esp (joker-link)   micro/esp/joker.toml · catalog sha256:3b9e… · 5 signals, 1 output
 ✓ aliases            esp.led → esp.io.led · esp.button → esp.io.button · … (5)
-✓ ligações           led_esp (std/led@1) → esp.led · escritor luz control:12 (delegado ao link)
-✓ vivacidade         lease 100 ms ≥ 54,7 ms = 2 × 20 ms (renovação) + 10 ms (grupo main do MCU)
-                     + 3,1 ms (bloco de 256 B a 921 600 baud) + 0,6 ms (PROPOSE) + 1 ms   (J0730)
-✓ tráfego do link    D→H 7 % · H→D 4 %   (J0732 acima de 70 %)
+✓ bindings           led_esp (std/led@1) → esp.led · writer luz control:12 (delegated to the link)
+✓ liveness           lease 100 ms ≥ 54.7 ms = 2 × 20 ms (renewal) + 10 ms (MCU group main)
+                     + 3.1 ms (256 B block at 921,600 baud) + 0.6 ms (PROPOSE) + 1 ms   (J0730)
+✓ link traffic       D→H 7% · H→D 4%   (J0732 above 70%)
 ```
 
-Duas verificações que só existem porque há um link. **Níveis delegados:** a `luz` escreve em `control:12`, que o MCU delega; com a `luz` em `optimizer`, seria `J0731`. **A condição de vivacidade** (ref/07 §11.6): o lease tem de aguentar uma renovação perdida, o período do grupo dono no MCU, um bloco de OTA a meio no mesmo sentido e o tempo no fio. O lease por omissão de um escritor Linux numa saída de MCU é 3 × o período do grupo Linux do escritor (60 ms), limitado pelo `max_lease` do link (ref/07 §8.1): passava por pouco; com 100 ms há folga. O custo: o `safe` chega, no pior caso, 100 ms depois de o Pi 3 morrer. Também a instância `sinal`, do Pi, fica com leases de 100 ms, porque uma app tem um só escritor (ref/01 §5.12).
+Two checks that only exist because there is a link. **Delegated levels:** `luz` writes at `control:12`, which the MCU delegates; with `luz` at `optimizer`, it would be `J0731`. **The liveness condition** (ref/07 §11.6): the lease must survive one lost renewal, the period of the owning group on the MCU, an OTA block midway in the same direction and the time on the wire. The default lease of a Linux writer on an MCU output is 3 × the period of the writer's Linux group (60 ms), capped by the link's `max_lease` (ref/07 §8.1): it would pass by a small margin; with 100 ms there is slack. The cost: the `safe` arrives, in the worst case, 100 ms after the Pi 3 dies. The instance `sinal`, on the Pi, also gets 100 ms leases, because an app has a single writer (ref/01 §5.12).
 
-## 10. Aplicar: o nó leva o blob ao MCU
+## 10. Apply: the node takes the blob to the MCU
 
 ```sh
 $ jk apply --env lab-link --node lab --confirm 5m
 ```
 
 ```
-→ lab (dev) · de --node · lab.local:7443
-plano da geração 10
-  ~ barramento esp32: 115200 → 921600 baud
-  ~ dispositivo esp: modbus-rtu → joker-link (auth required, kid 9a1f…, catálogo sha256:3b9e…)
-  - envelope esp.led (passa para o MCU esp)
-  ~ app luz: lease 60 ms → 100 ms (recarrega, sem reiniciar)
-  + MCU esp: geração 1 (bancada-esp.jkgen, 6,1 KiB) pelo link · área gen_a · janela 5 min
-aplicado. confirmação pendente: `jk confirm` em 5 min, ou rollback automático
+→ lab (dev) · from --node · lab.local:7443
+plan of generation 10
+  ~ bus esp32: 115200 → 921600 baud
+  ~ device esp: modbus-rtu → joker-link (auth required, kid 9a1f…, catalog sha256:3b9e…)
+  - envelope esp.led (moves to the MCU esp)
+  ~ app luz: lease 60 ms → 100 ms (reloads, without restarting)
+  + MCU esp: generation 1 (bancada-esp.jkgen, 6.1 KiB) over the link · area gen_a · window 5 min
+applied. confirmation pending: `jk confirm` within 5 min, or automatic rollback
 ```
 
-O que acontece no cabo: o `jokerd` abre a porta a 921 600 baud; o MCU, em manutenção, oferece um `HELLO` cifrado com a `K_link`; o nó responde `maintenance` (não há geração válida); o nó envia o blob por `OTA`; o MCU verifica-o **antes** de apagar a área, grava-o em `gen_a`, ativa-o num limite de tick e fecha a sessão (`BYE generation_change`); novo `HELLO`, agora com geração, e o nó responde `full`.
+What happens on the cable: `jokerd` opens the port at 921,600 baud; the MCU, in maintenance, offers a `HELLO` encrypted with the `K_link`; the node answers `maintenance` (there is no valid generation); the node sends the blob through `OTA`; the MCU verifies it **before** erasing the area, writes it to `gen_a`, activates it at a tick boundary and closes the session (`BYE generation_change`); new `HELLO`, now with a generation, and the node answers `full`.
 
 ```sh
 $ jk status --node lab
 ```
 
 ```
-dispositivos
+devices
   pi    sysfs        up
-  esp   joker-link   up · sessão full · Joker Link 1.0 · série 921600 · cifrado (kid 9a1f…)
-        MCU esp · esp32-devkit@1 · firmware 1.0.0 (slot A) · arranques 3 (último: power_on)
-        geração 1 (flash, gen_a, confirming, faltam 4 min 31 s) · relógio synced (TIME, δ 0,4 ms)
-        tramas rx 1 882 · tx 1 907 · COBS/CRC 2 · autenticação 0 · replay 0 · retransmissões 0
-        RTT 1,6 ms · lease_expired 0
+  esp   joker-link   up · session full · Joker Link 1.0 · serial 921600 · encrypted (kid 9a1f…)
+        MCU esp · esp32-devkit@1 · firmware 1.0.0 (slot A) · boots 3 (last: power_on)
+        generation 1 (flash, gen_a, confirming, 4 min 31 s left) · clock synced (TIME, δ 0.4 ms)
+        frames rx 1,882 · tx 1,907 · COBS/CRC 2 · authentication 0 · replay 0 · retransmissions 0
+        RTT 1.6 ms · lease_expired 0
 ```
 
-Os dois erros de enquadramento são o lixo do ROM de arranque do ESP32 a 115 200 baud, que o COBS descarta até ao primeiro `0x00` (documento 23, §2). Ficam em contadores separados dos de autenticação, e é essa separação que permite distinguir ruído de ataque (ref/07 §3.1). Os contadores do próprio MCU também são sinais: `jk read 'joker.device.esp.**'`.
+The two framing errors are the garbage from the ESP32's boot ROM at 115,200 baud, which COBS discards until the first `0x00` (document 23, §2). They are in counters separate from the authentication ones, and it is that separation that lets you tell noise from attack (ref/07 §3.1). The MCU's own counters are also signals: `jk read 'joker.device.esp.**'`.
 
-O LED do ESP32 volta a mostrar `ligado`, e o `BOOT` liga e desliga como na parte 4. `jk confirm --node lab` confirma a geração 10 do nó e, pelo link, a geração 1 do MCU (`OTA confirm`).
+The ESP32's LED shows `ligado` again, and `BOOT` turns it on and off as in part 4. `jk confirm --node lab` confirms the node's generation 10 and, over the link, the MCU's generation 1 (`OTA confirm`).
 
-Fixa no lock o que o `HELLO` disse, com `jk lock --env lab-link --node lab`. O `[mcu.esp]` guarda o alvo (`mcu:esp32-devkit`), o modo (`generation`), as versões do Joker Micro e do Joker Link, as features, as capacidades e o digest do firmware genérico; o `[discovered.esp]` guarda o id de hardware (`240ac45e913c`), a versão do firmware e, em `digest`, o hash do catálogo (ref/02 §2.1.10–§2.1.11). O lock nunca fixa o digest da geração compilada, que é função do próprio lock. O `joker.lab-link.lock` já não tem o perfil `local/bench-esp32@1` nem o `[fallback.esp]`: esses continuam no `joker.lab.lock`, porque cada manifesto de entrada tem o seu lock. Em `prod`, um MCU que não bata com isto fica em `observe`: o nó lê, não escreve, e dispara o alarme de deriva (ref/07 §7.3, `J-E2202`).
+Pin in the lock what the `HELLO` said, with `jk lock --env lab-link --node lab`. `[mcu.esp]` keeps the target (`mcu:esp32-devkit`), the mode (`generation`), the Joker Micro and Joker Link versions, the features, the capacities and the digest of the generic firmware; `[discovered.esp]` keeps the hardware id (`240ac45e913c`), the firmware version and, in `digest`, the catalog hash (ref/02 §2.1.10–§2.1.11). The lock never pins the digest of the compiled generation, which is a function of the lock itself. `joker.lab-link.lock` no longer has the profile `local/bench-esp32@1` or `[fallback.esp]`: those stay in `joker.lab.lock`, because each input manifest has its own lock. In `prod`, an MCU that does not match this stays in `observe`: the node reads, does not write, and raises the drift alarm (ref/07 §7.3, `J-E2202`).
 
-## 11. As provas
+## 11. The proofs
 
-**(a) Matar o `jokerd`.** Com o sistema ligado (o LED do ESP32 aceso):
+**(a) Kill `jokerd`.** With the system on (the ESP32's LED on):
 
 ```sh
 lab$ sudo systemctl kill -s KILL jokerd
 ```
 
-O LED do ESP32 **apaga-se em cerca de 100 ms**. Ninguém lhe disse nada: o último `PROPOSE` da `luz` foi consumido pelo MCU num tick, o lease de 100 ms contou a partir desse tick (A2: a latência do link não o come), expirou no latch do grupo `main` do MCU, e o árbitro do MCU, sem nenhum nível ativo, aplicou o `safe` (A6). O link só é dado como perdido 200 ms depois (`link_timeout`), e isso não interfere com a saída (ref/07 §7.4).
+The ESP32's LED **goes off in about 100 ms**. Nobody told it anything: `luz`'s last `PROPOSE` was consumed by the MCU in a tick, the 100 ms lease counted from that tick (A2: the link latency does not eat into it), expired at the latch of the MCU's group `main`, and the MCU's arbiter, with no active level, applied the `safe` (A6). The link is only declared lost 200 ms later (`link_timeout`), and that does not interfere with the output (ref/07 §7.4).
 
-Compara com a parte 2 (c): lá, o LED `ACT` ficava aceso, porque o `sysfs` não tem fallback. E com a parte 5: lá, o firmware de bancada apagava o LED ao fim de 2 s, por uma regra fixa no firmware que o Joker só podia verificar. **Aqui o `safe` é o próprio desenho**, e é a mesma regra que protege uma saída no Linux. É a porta de saída mais importante da ADR 0020 (documento 23, §5.3).
+Compare with part 2 (c): there, the `ACT` LED stayed on, because `sysfs` has no fallback. And with part 5: there, the bench firmware turned the LED off after 2 s, through a rule fixed in the firmware that Joker could only check. **Here the `safe` is the design itself**, and it is the same rule that protects an output on Linux. It is the most important exit gate of ADR 0020 (document 23, §5.3).
 
-O systemd reinicia o `jokerd` em 1–2 s. O nó envia `HELLO(pedido)`, o MCU obedece depois de 2 × `keepalive` em silêncio, a sessão sobe em poucos milissegundos, e a `luz` volta a propor. O `jk status` mostra `arranques 3`: o MCU não reiniciou, só a sessão é nova. O LED volta a acender: a `luz` arrancou de novo, com o estado inicial, `ligado = true`.
+systemd restarts `jokerd` within 1–2 s. The node sends `HELLO(request)`, the MCU obeys after 2 × `keepalive` of silence, the session comes up in a few milliseconds, and `luz` proposes again. `jk status` shows `boots 3`: the MCU did not restart, only the session is new. The LED lights up again: `luz` started again, with the initial state, `ligado = true`.
 
-**(b) Uma geração nova por OTA.** Muda o `deadband` do toque no MCU de 5 para 3 e volta a construir e a aplicar:
+**(b) A new generation over OTA.** Change the touch `deadband` on the MCU from 5 to 3 and build and apply again:
 
 ```sh
 $ (cd micro/esp && jk build --target mcu:esp32-devkit --generation --firmware target/joker/firmware.jkfw)
@@ -327,24 +327,24 @@ $ jk apply --env lab-link --node lab --confirm 5m
 ```
 
 ```
-plano da geração 11
-  ~ MCU esp: geração 1 → 2 (sha256:5d21… → sha256:a07c…) · 6,1 KiB pelo link · área gen_b
+plan of generation 11
+  ~ MCU esp: generation 1 → 2 (sha256:5d21… → sha256:a07c…) · 6.1 KiB over the link · area gen_b
       ~ chip.touch.deadband 5 → 3
-    troca a quente num limite de tick; janela de confirmação 5 min, contada no MCU
-  sem mudanças no nó
+    hot swap at a tick boundary; confirmation window 5 min, counted on the MCU
+  no changes on the node
 ```
 
-O blob novo vai para a **outra** área (`gen_b`), enquanto o MCU continua a correr a geração 1 em `gen_a`. Verificado, troca num limite de tick: o LED mantém o valor aplicado, os leases e os trips (A8), e o `HELLO` seguinte mostra a geração 2 em experiência. `jk confirm --node lab` confirma as duas.
+The new blob goes to the **other** area (`gen_b`), while the MCU keeps running generation 1 in `gen_a`. Once verified, it swaps at a tick boundary: the LED keeps its applied value, the leases and the trips (A8), and the next `HELLO` shows generation 2 on trial. `jk confirm --node lab` confirms both.
 
-Agora repete com `deadband = 8` e **não confirmes**. Passados 5 min:
+Now repeat with `deadband = 8` and **do not confirm**. After 5 min:
 
 ```
-esp   … geração 3 rolled_back → geração 2 (gen_b) · J-E2409: a atualização não foi confirmada na janela
+esp   … generation 3 rolled_back → generation 2 (gen_b) · J-E2409: the update was not confirmed within the window
 ```
 
-O MCU voltou sozinho, sem ninguém lhe dizer nada. A janela conta **no MCU**, porque o nó Linux pode ser a causa do problema (ref/07 §9.4; ADR 0015). O nó também volta à geração 11. Repõe o `deadband = 3` no ficheiro.
+The MCU went back by itself, without anybody telling it anything. The window counts **on the MCU**, because the Linux node may be the cause of the problem (ref/07 §9.4; ADR 0015). The node also goes back to generation 11. Put `deadband = 3` back in the file.
 
-**(c) Desligar o cabo a meio de um OTA.** O blob é pequeno demais para o apanhar a meio (menos de 0,1 s), mas o firmware não é. E há uma razão boa para um firmware novo: o anel de traço de 16 KiB guarda poucos segundos, e queres o dobro. As capacidades são do **firmware**, e não da geração: acrescenta ao `micro/esp/joker.toml` uma tabela `[target.capacity]` com `trace_bytes = "32 KiB"`, e reconstrói os dois, pela ordem certa:
+**(c) Unplug the cable in the middle of an OTA.** The blob is too small to catch midway (less than 0.1 s), but the firmware is not. And there is a good reason for a new firmware: the 16 KiB trace ring keeps only a few seconds, and you want twice that. Capacities belong to the **firmware**, and not to the generation: add to `micro/esp/joker.toml` a table `[target.capacity]` with `trace_bytes = "32 KiB"`, and rebuild both, in the right order:
 
 ```sh
 $ cd micro/esp && jk build --target mcu:esp32-devkit --generic
@@ -352,55 +352,55 @@ $ jk build --target mcu:esp32-devkit --generation --firmware target/joker/firmwa
 $ jk apply --env lab-link --node lab --confirm 5m
 ```
 
-O blob novo leva o hash das capacidades do firmware novo; enviado ao firmware antigo, seria recusado com `J-E2410`. O plano mostra primeiro o firmware (912 KiB, com reinício) e depois a geração. Quando a barra passar dos 40 %, **desliga o micro-USB do ESP32**:
+The new blob carries the capacities hash of the new firmware; sent to the old firmware, it would be rejected with `J-E2410`. The plan shows the firmware first (912 KiB, with a restart) and then the generation. When the bar passes 40%, **unplug the ESP32's micro-USB**:
 
 ```
 MCU esp: OTA firmware   ███████░░░░░░░░░░░   372 / 912 KiB
-MCU esp: link perdido (J-E2205) · a transferência fica guardada no MCU
-MCU esp: à espera do HELLO …
-                        (o ESP32 ficou sem energia: é o mesmo cabo. Volta a ligá-lo.)
-MCU esp: sessão nova · arranques 3 → 4 (power_on) · firmware 1.0.0 (slot A), inalterado
-MCU esp: OTA begin com o mesmo manifesto → ready em 376 832 B (último setor completo)
+MCU esp: link lost (J-E2205) · the transfer stays saved on the MCU
+MCU esp: waiting for HELLO …
+                        (the ESP32 lost power: it is the same cable. Plug it back in.)
+MCU esp: new session · boots 3 → 4 (power_on) · firmware 1.0.0 (slot A), unchanged
+MCU esp: OTA begin with the same manifest → ready at 376,832 B (last complete sector)
 MCU esp: OTA firmware   ██████████████████   912 / 912 KiB · verified
-MCU esp: activate → reinício (BYE ota_activate) · firmware novo em experiência (slot B)
-MCU esp: OTA geração 4 → gen_a · activate · sessão full
+MCU esp: activate → restart (BYE ota_activate) · new firmware on trial (slot B)
+MCU esp: OTA generation 4 → gen_a · activate · session full
 ```
 
-O MCU guardou em `PERSIST` o par (digest, offset confirmado), arredondado ao último setor, e o `begin` com o mesmo manifesto retomou dali (ref/07 §9.3). Enquanto o firmware antigo corria sem link, o LED estava em `safe`; durante o reinício de ativação, esteve no estado de reset do hardware, que nesta placa não é garantido (o `W0786` da secção 7). O firmware novo só se marca como bom depois de ticks limpos e do `HELLO`; `jk confirm --node lab` fecha as duas experiências.
+The MCU kept in `PERSIST` the pair (digest, confirmed offset), rounded down to the last sector, and the `begin` with the same manifest resumed from there (ref/07 §9.3). While the old firmware ran without a link, the LED was in `safe`; during the activation restart, it was in the hardware reset state, which on this board is not guaranteed (the `W0786` of section 7). The new firmware only marks itself as good after clean ticks and the `HELLO`; `jk confirm --node lab` closes both trials.
 
-## 12. Parte 5 contra parte 9
+## 12. Part 5 versus part 9
 
-| | Parte 5 (Modbus RTU) | Parte 9 (Joker Link) |
+| | Part 5 (Modbus RTU) | Part 9 (Joker Link) |
 |---|---|---|
-| quem arbitra e aplica o envelope do LED | o `jokerd` no Pi 3 | o MCU |
-| `safe` quando o Pi morre | fallback fixo do firmware, 2 s, verificado pelo `jk lock` (`J0205`) | o `safe` do envelope do MCU, no fim do lease (≈ 100 ms) |
-| leituras | *polling* a 100 ms, o Pi pergunta | o MCU envia as alterações (`report` 20 ms) e um `refresh` a cada 1 s |
-| qualidade | feita no Pi (timeout, CRC) | feita no MCU, e transportada tal e qual; `Bad(CommFailure)` no Pi se o link cair |
-| confirmação da escrita | `led_rb` (coil lido de volta) | o valor aplicado na amostra de `esp.led` e o `OUTCOMES` |
-| segurança no cabo | nenhuma | ChaCha20-Poly1305, anti-replay, `K_link` por MCU |
-| mudar o comportamento do ESP32 | regravar o firmware à mão | uma geração por OTA, com A/B e confirmação |
+| who arbitrates and applies the LED's envelope | `jokerd` on the Pi 3 | the MCU |
+| `safe` when the Pi dies | fixed firmware fallback, 2 s, checked by `jk lock` (`J0205`) | the `safe` of the MCU's envelope, at the end of the lease (≈ 100 ms) |
+| reads | *polling* at 100 ms, the Pi asks | the MCU sends the changes (`report` 20 ms) and a `refresh` every 1 s |
+| quality | made on the Pi (timeout, CRC) | made on the MCU, and carried as is; `Bad(CommFailure)` on the Pi if the link drops |
+| write confirmation | `led_rb` (coil read back) | the applied value in the sample of `esp.led` and the `OUTCOMES` |
+| security on the cable | none | ChaCha20-Poly1305, anti-replay, `K_link` per MCU |
+| changing the ESP32's behavior | reflash the firmware by hand | a generation over OTA, with A/B and confirmation |
 
-E no simulador nada mudou, porque o `joker.sim.toml` estende o `joker.toml`, e não o `joker.lab-link.toml`: `jk test --env sim sim/scenarios/falha_esp.scenario.toml` continua a dar `ok` com a `luz` 0.6.0. O comportamento visto de fora é o mesmo desde a parte 5; mudou quem o garante.
+And in the simulator nothing changed, because `joker.sim.toml` extends `joker.toml`, and not `joker.lab-link.toml`: `jk test --env sim sim/scenarios/falha_esp.scenario.toml` keeps giving `ok` with `luz` 0.6.0. The behavior seen from outside has been the same since part 5; what changed is who guarantees it.
 
-## 13. O que aconteceu por baixo
+## 13. What happened underneath
 
-- **Um núcleo, dois hospedeiros.** O árbitro e o envelope do MCU são o mesmo `joker-core` do `jokerd`, `no_std`, sem alocação no tick, e com a mesma bateria de conformidade, byte a byte (documento 19, §2; ADR 0020).
-- **O firmware diz o que sabe fazer, a geração diz o que fazer.** O descritor `.jkfw` e o blob `.jkgen`, verificado no arranque e em cada OTA: formato, integridade, capacidades, anti-rollback (ref/08 §2.12–§2.14).
-- **O `HELLO` decide o modo** (`maintenance`, `observe`, `full`), e o catálogo viaja por hash (ref/07 §6.3, §7.3).
-- **Escritores remotos.** Cada bloco de um `PROPOSE` é um escritor (link, nível) do MCU; o lease conta no tick do MCU que o consome; os resultados voltam num `OUTCOMES` fiável, porque são decisões (16 A12; ref/07 §8).
-- **OTA sem medo.** Manifesto COSE antes da imagem, retoma por offset persistido, confirmação contada no MCU (ref/07 §9).
+- **One core, two hosts.** The MCU's arbiter and envelope are the same `joker-core` as in `jokerd`, `no_std`, with no allocation in the tick, and with the same conformance suite, byte for byte (document 19, §2; ADR 0020).
+- **The firmware says what it can do, the generation says what to do.** The `.jkfw` descriptor and the `.jkgen` blob, verified at boot and on every OTA: format, integrity, capacities, anti-rollback (ref/08 §2.12–§2.14).
+- **The `HELLO` decides the mode** (`maintenance`, `observe`, `full`), and the catalog travels by hash (ref/07 §6.3, §7.3).
+- **Remote writers.** Each block of a `PROPOSE` is a writer (link, level) of the MCU; the lease counts from the MCU tick that consumes it; the results come back in a reliable `OUTCOMES`, because they are decisions (16 A12; ref/07 §8).
+- **OTA without fear.** COSE manifest before the image, resume from a persisted offset, confirmation counted on the MCU (ref/07 §9).
 
-## 14. Exercícios
+## 14. Exercises
 
-1. Muda a `luz` para `writer = { level = "optimizer", lease = "100ms" }` no `joker.lab-link.toml`. Que código dá o `jk check`, e porquê? Onde se corrige: no Pi ou no MCU?
-2. Baixa o lease da `luz` para `"40ms"`. Lê o `J0730` e refaz a conta da secção 9 à mão. O que acontece à conta se subires o `bulk_max` do link para 1024?
-3. Faz um `jk write esp.led true --ttl 30s --reason "…" --node lab` e mata o `jokerd` a meio. Quanto tempo fica o LED aceso? Relaciona a resposta com o `max_lease` do link (ref/07 §7.4, A10).
-4. Tira a faixa `manual` de `remote_levels` e repete o `jk write`. Que resultado aparece, e onde o vês?
+1. Change `luz` to `writer = { level = "optimizer", lease = "100ms" }` in `joker.lab-link.toml`. Which code does `jk check` give, and why? Where is it fixed: on the Pi or on the MCU?
+2. Lower `luz`'s lease to `"40ms"`. Read `J0730` and redo the calculation of section 9 by hand. What happens to the calculation if you raise the link's `bulk_max` to 1024?
+3. Do a `jk write esp.led true --ttl 30s --reason "…" --node lab` and kill `jokerd` midway. How long does the LED stay on? Relate the answer to the link's `max_lease` (ref/07 §7.4, A10).
+4. Remove the `manual` band from `remote_levels` and repeat the `jk write`. What result appears, and where do you see it?
 
 ```sh
-$ git add -A && git commit -qm "trilha(09): o ESP32 como Joker Micro pelo Joker Link; safe no MCU"
+$ git add -A && git commit -qm "track(09): the ESP32 as Joker Micro over Joker Link; safe on the MCU"
 ```
 
-**Estado no fim desta parte:** app `luz` **0.6, sem mudanças**. Ficheiros novos: `micro/esp/joker.toml`, `joker.lab-link.toml`, `joker.lab-link.lock`, e `secrets.toml.enc`, por agora só com o destinatário `node:esp`. O `micro/esp/target/` fica fora do Git. Fora do projeto: a toolchain `esp`; o ESP32 com o Joker Micro (firmware com traço de 32 KiB, geração 4) e enrolado no nó `lab` (`secret:link.esp`); o nó `lab` na geração 13 (a do `joker.lab-link.toml` com o firmware novo), confirmada.
+**State at the end of this part:** app `luz` **0.6, unchanged**. New files: `micro/esp/joker.toml`, `joker.lab-link.toml`, `joker.lab-link.lock`, and `secrets.toml.enc`, for now with only the recipient `node:esp`. `micro/esp/target/` stays out of Git. Outside the project: the `esp` toolchain; the ESP32 with Joker Micro (firmware with a 32 KiB trace, generation 4) and enrolled on the node `lab` (`secret:link.esp`); the node `lab` at generation 13 (the one of `joker.lab-link.toml` with the new firmware), confirmed.
 
-**Próximo:** [Parte 10 — Lógica no MCU: uma app nativa e o link por Wi-Fi](10-logic-on-the-mcu.md).
+**Next:** [Part 10 — Logic on the MCU: a native app and the link over Wi-Fi](10-logic-on-the-mcu.md).
