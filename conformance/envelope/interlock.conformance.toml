@@ -1,0 +1,189 @@
+schema = 1
+
+[suite]
+kind        = "core"
+id          = "envelope.interlock"
+spec        = ["01 §7 step 2", "16 E3", "16 A3", "16 §3.2"]
+period      = "100ms"
+hosts       = ["linux", "mcu"]
+description = "Permissive step: only Good true permits, on_interlock safe or hold, permit_uncertain, lease renewal on rejection"
+
+[[signals]]
+path = "x.ok"
+type = "bool"
+
+[[signals]]
+path = "x.u"
+type = "bool"
+
+[[signals]]
+path = "x.f"
+type = "f64"
+unit = "Hz"
+
+[[outputs]]
+path      = "x.p_set"
+type      = "f64"
+unit      = "kW"
+range     = ["-100 kW", "100 kW"]
+interlock = "x.ok"
+safe      = "0 kW"
+
+[[outputs]]
+path         = "x.h_set"
+type         = "f64"
+unit         = "kW"
+range        = ["-100 kW", "100 kW"]
+interlock    = "x.ok"
+on_interlock = "hold"
+safe         = "0 kW"
+
+[[outputs]]
+path             = "x.u_set"
+type             = "f64"
+unit             = "kW"
+range            = ["-100 kW", "100 kW"]
+interlock        = "x.u"
+permit_uncertain = true
+safe             = "0 kW"
+
+[[outputs]]
+path      = "x.f_set"
+type      = "f64"
+unit      = "kW"
+range     = ["-100 kW", "100 kW"]
+interlock = "x.f > 49.8 Hz && x.f < 50.2 Hz"
+safe      = "0 kW"
+
+[[writers]]
+id    = "a"
+level = "control:10"
+lease = "1s"
+kind  = "cycle"
+
+[[writers]]
+id    = "b"
+level = "control:9"
+lease = "300ms"
+kind  = "cycle"
+
+[[case]]
+id   = "permitted_proposal_accepted"
+name = "A Good true permissive lets the proposal through"
+spec = ["01 §7 step 2"]
+do   = [
+  { at = "0ms", input = "x.ok", value = true },
+  { at = "0ms", propose = "x.p_set", writer = "a", value = "10 kW" },
+]
+expect = [{ at = "0ms", output = "x.p_set", outcome = "accepted", equals = "10 kW", level = "control:10" }]
+
+[[case]]
+id   = "blocked_goes_to_safe"
+name = "A false permissive rejects with reason interlock and on_interlock = safe (the default) applies safe"
+spec = ["01 §7 step 2", "16 E3"]
+do   = [
+  { at = "0ms",   input = "x.ok", value = true },
+  { at = "0ms",   propose = "x.p_set", writer = "a", value = "10 kW" },
+  { at = "100ms", input = "x.ok", value = false },
+  { at = "100ms", propose = "x.p_set", writer = "a", value = "20 kW" },
+]
+expect = [
+  { at = "0ms",   output = "x.p_set", outcome = "accepted", equals = "10 kW" },
+  { at = "100ms", output = "x.p_set", outcome = "rejected(interlock)", equals = "0 kW", level = "control:10" },
+]
+
+[[case]]
+id   = "blocked_holds_last_applied"
+name = "on_interlock = hold keeps the last applied value"
+spec = ["16 E3"]
+do   = [
+  { at = "0ms",   input = "x.ok", value = true },
+  { at = "0ms",   propose = "x.h_set", writer = "a", value = "10 kW" },
+  { at = "100ms", input = "x.ok", value = false },
+  { at = "100ms", propose = "x.h_set", writer = "a", value = "20 kW" },
+]
+expect = [{ at = "100ms", output = "x.h_set", outcome = "rejected(interlock)", equals = "10 kW", level = "control:10" }]
+
+[[case]]
+id   = "bad_permissive_blocks"
+name = "A Bad operand counts as false in a permissive"
+spec = ["01 §7 step 2", "02 §4", "16 §3.2"]
+do   = [
+  { at = "0ms", input = "x.ok", value = true, quality = "bad(comm_failure)" },
+  { at = "0ms", propose = "x.p_set", writer = "a", value = "10 kW" },
+]
+expect = [{ at = "0ms", output = "x.p_set", outcome = "rejected(interlock)", equals = "0 kW" }]
+
+[[case]]
+id   = "uncertain_permissive_blocks"
+name = "Without permit_uncertain, an Uncertain true does not permit"
+spec = ["16 §3.2", "ref/01 §5.10"]
+do   = [
+  { at = "0ms", input = "x.ok", value = true, quality = "uncertain(substituted)" },
+  { at = "0ms", propose = "x.p_set", writer = "a", value = "10 kW" },
+]
+expect = [{ at = "0ms", output = "x.p_set", outcome = "rejected(interlock)", equals = "0 kW" }]
+
+[[case]]
+id   = "permit_uncertain_allows_uncertain"
+name = "permit_uncertain = true lets an Uncertain true permit"
+spec = ["16 §3.2", "ref/01 §5.10"]
+do   = [
+  { at = "0ms", input = "x.u", value = true, quality = "uncertain(substituted)" },
+  { at = "0ms", propose = "x.u_set", writer = "a", value = "10 kW" },
+]
+expect = [{ at = "0ms", output = "x.u_set", outcome = "accepted", equals = "10 kW" }]
+
+[[case]]
+id   = "permit_uncertain_still_blocks_bad"
+name = "permit_uncertain does not let a Bad operand permit"
+spec = ["01 §7 step 2", "ref/01 §5.10"]
+do   = [
+  { at = "0ms", input = "x.u", value = true, quality = "bad(device_fault)" },
+  { at = "0ms", propose = "x.u_set", writer = "a", value = "10 kW" },
+]
+expect = [{ at = "0ms", output = "x.u_set", outcome = "rejected(interlock)", equals = "0 kW" }]
+
+[[case]]
+id   = "no_sample_yet_blocks"
+name = "A signal without any sample is Uncertain(Initial) and does not permit"
+spec = ["02 §4", "16 §3.2"]
+do   = [{ at = "0ms", propose = "x.p_set", writer = "a", value = "10 kW" }]
+expect = [{ at = "0ms", output = "x.p_set", outcome = "rejected(interlock)", equals = "0 kW" }]
+
+[[case]]
+id   = "compound_expression_permits"
+name = "A frequency window permissive permits inside the window"
+spec = ["01 §7 step 2", "02 §10"]
+do   = [
+  { at = "0ms", input = "x.f", value = "50 Hz" },
+  { at = "0ms", propose = "x.f_set", writer = "a", value = "10 kW" },
+]
+expect = [{ at = "0ms", output = "x.f_set", outcome = "accepted", equals = "10 kW" }]
+
+[[case]]
+id   = "compound_expression_blocks"
+name = "A frequency window permissive blocks outside the window"
+spec = ["01 §7 step 2", "16 E3"]
+do   = [
+  { at = "0ms", input = "x.f", value = "50.3 Hz" },
+  { at = "0ms", propose = "x.f_set", writer = "a", value = "10 kW" },
+]
+expect = [{ at = "0ms", output = "x.f_set", outcome = "rejected(interlock)", equals = "0 kW" }]
+
+[[case]]
+id   = "interlock_rejection_renews_lease"
+name = "A proposal rejected by the permissive renews the writer's lease"
+spec = ["16 A3", "16 E1"]
+do   = [
+  { at = "0ms",   input = "x.ok", value = true },
+  { at = "0ms",   propose = "x.p_set", writer = "b", value = "10 kW" },
+  { at = "200ms", input = "x.ok", value = false },
+  { at = "200ms", propose = "x.p_set", writer = "b", value = "20 kW" },
+  { at = "300ms", input = "x.ok", value = true },
+]
+expect = [
+  { at = "200ms", output = "x.p_set", outcome = "rejected(interlock)", equals = "0 kW", level = "control:9" },
+  { at = "400ms", output = "x.p_set", level = "control:9" },
+  { at = "500ms", output = "x.p_set", equals = "0 kW", level = "none" },
+]
