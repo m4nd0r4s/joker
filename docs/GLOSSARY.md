@@ -420,6 +420,27 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | negociação | **negotiation** | |
 | em série, por série | **over serial** | |
 | flash, geração em flash | **flash**, **generation in flash** | |
+| anfitrião, dispositivo (papéis de uma sessão, H e D) | **host**, **device** | ref/07 §1 |
+| sessão | **session** | |
+| trama L2, pacote, mensagem | **L2 frame**, **packet**, **message** | ref/07 §2; a bus frame stays **frame** (§7) |
+| confirmação, confirmar (de um pacote) | **acknowledgment**, **acknowledge** | ref/07 §5.3; confirming a generation or firmware stays **confirmation**, **confirm** |
+| classe de entrega: efémera, estado, fiável | **delivery class**: **ephemeral**, **state**, **reliable** | E, S, F; ref/07 §5.4 |
+| reenviar (verbo) | **resend** | the noun is **retransmission** |
+| remontagem | **reassembly** | |
+| vez (em half-duplex) | **turn** | ref/07 §3.3 |
+| sujo (sinal por enviar) | **dirty** | |
+| sonda, eco, acerto (fases do `TIME`) | **probe**, **echo**, **set** | ref/07 §6.23 |
+| em experiência (firmware, geração) | **on trial** | before `confirm` |
+| retoma, retomar | **resume** | OTA transfer |
+| interface externa, escritor externo, dispositivo externo | **external interface**, **external writer**, **external device** | ref/08 §2.1 |
+| contexto de chamada | **call context** | `[any]`, `[group g]`, `[service]`, `[excl]`, `[pure]` |
+| modo de entrega | **delivery mode** | firmware, C library, Rust crate |
+| firmware genérico | **generic firmware** | ref/08 §2.12.1 |
+| área (de flash), partição | **area**, **partition** | `JK_AREA_*` |
+| diário (de persistência), lápide, compactação | **journal**, **tombstone**, **compaction** | ref/08 §2.10.2 |
+| caixa (de propostas, de uma saída) | **box** | "caixa de propostas" → **proposal box** |
+| tabela de pinos | **pin table** | ref/08 §2.11.3 |
+| verificador (de bytecode) | **verifier** | |
 
 ---
 
