@@ -3,12 +3,15 @@
 //! - `conformance`: runs the core suites of `conformance/` against
 //!   `joker-core` with a virtual clock (docs/13 §3, ref/03 §2.6);
 //! - `rt-bench`: tick jitter and envelope + arbiter cost per output, with
-//!   the no-alloc guard on the tick path (docs/13 §4 task 20, AGENTS.md §5).
+//!   the no-alloc guard on the tick path (docs/13 §4 task 20, AGENTS.md §5);
+//! - `msrv`: the MSRV of the core crates against the Xtensa toolchain
+//!   (docs/13 §5.1).
 
 extern crate alloc;
 
 mod conformance;
 mod guard;
+mod msrv;
 mod rt_bench;
 
 use std::path::PathBuf;
@@ -32,6 +35,10 @@ tasks:
       (defaults: 64 outputs, 1ms, 10000 paced ticks, 20000 cost ticks).
       With --compare, exits 1 when a p99.9 regresses by more than the
       threshold (default 5%).
+
+  msrv --max VERSION
+      Checks that the rust-version of the core crates is at most VERSION,
+      the Rust version of the esp toolchain (`rustc +esp --version`).
 ";
 
 fn parse<T: std::str::FromStr>(name: &str, text: &str) -> Result<T, String> {
@@ -113,6 +120,10 @@ fn main() -> ExitCode {
     let result = match args.first().map(String::as_str) {
         Some("conformance") => conformance(&args[1..]),
         Some("rt-bench") => rt_bench(&args[1..]),
+        Some("msrv") => match &args[1..] {
+            [flag, max] if flag == "--max" => msrv::run(max),
+            _ => Err(format!("msrv needs --max VERSION\n{USAGE}")),
+        },
         Some("help" | "--help" | "-h") | None => {
             print!("{USAGE}");
             return ExitCode::SUCCESS;
