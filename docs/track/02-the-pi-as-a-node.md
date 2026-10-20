@@ -1,31 +1,31 @@
-# Parte 2 — O Pi 3 como nó: instalar, enrolar, a placa, o LED real
+# Part 2 — The Pi 3 as a node: install, enroll, the board, the real LED
 
-**Objetivo:** transformar o Raspberry Pi 3 B+ num nó Joker (`lab`) e pôr **a mesma app, sem mudar uma linha**, a piscar o LED `ACT` real da placa. Depois, ver o árbitro a decidir entre ti e a app, e descobrir o que acontece quando as coisas correm mal.
+**Goal:** turn the Raspberry Pi 3 B+ into a Joker node (`lab`) and get **the same app, without changing a line**, to blink the board's real `ACT` LED. Then watch the arbiter decide between you and the app, and find out what happens when things go wrong.
 
-**Vais aprender:** instalar o `jokerd` · a CA da organização e o enrolamento sem portas abertas · `jk doctor --rt` · o perfil de placa e `[resources]` · o driver `sysfs` · um lock por manifesto · `jk apply --confirm`, gerações e rollback · escrita manual e árbitro · o estado seguro em três camadas, e o que ele não cobre.
+**You will learn:** installing `jokerd` · the organization CA and enrollment without open ports · `jk doctor --rt` · the board profile and `[resources]` · the `sysfs` driver · one lock per manifest · `jk apply --confirm`, generations and rollback · manual write and arbiter · the three-layer safe state, and what it does not cover.
 
-**Antes de começar:** a parte 1 feita (app `luz` 0.1). O Pi 3 B+ com um cartão microSD e a fonte, na mesma rede Wi-Fi que o portátil. Nenhum fio além da alimentação.
+**Before you start:** part 1 done (app `luz` 0.1). The Pi 3 B+ with a microSD card and its power supply, on the same Wi-Fi network as the laptop. No wire besides the power.
 
 ---
 
-## 1. Preparar o Pi 3
+## 1. Prepare the Pi 3
 
-Com o Raspberry Pi Imager, grava o **Raspberry Pi OS Lite (64 bits)**. Nas opções do Imager: nome de host `lab`, utilizador `pi`, a tua rede Wi-Fi, SSH com a tua chave pública. Arranca o Pi e confirma:
+With Raspberry Pi Imager, write **Raspberry Pi OS Lite (64-bit)**. In the Imager options: host name `lab`, user `pi`, your Wi-Fi network, SSH with your public key. Boot the Pi and confirm:
 
 ```sh
 $ ssh pi@lab.local uname -m
 aarch64
 ```
 
-## 2. Instalar o `jokerd`
+## 2. Install `jokerd`
 
 ```sh
 lab$ sudo apt install ./jokerd_1.0.0_arm64.deb
-lab$ sudo usermod -aG joker-admin pi          # para poderes enrolar o nó por SSH (secção 4)
-lab$ exit                                     # volta a entrar para o grupo novo contar
+lab$ sudo usermod -aG joker-admin pi          # so you can enroll the node over SSH (section 4)
+lab$ exit                                     # log in again for the new group to count
 ```
 
-O pacote cria o utilizador `joker` (com acesso aos grupos dos dispositivos), os grupos `joker-admin` e `joker-ops`, a unidade systemd, a regra udev que dá ao grupo `joker` escrita nos LEDs de `/sys/class/leds` e um `/etc/joker/node.toml` só com `version = 1`.
+The package creates the user `joker` (with access to the device groups), the groups `joker-admin` and `joker-ops`, the systemd unit, the udev rule that gives the `joker` group write access to the LEDs in `/sys/class/leds`, and an `/etc/joker/node.toml` with only `version = 1`.
 
 ```sh
 lab$ systemctl status jokerd
@@ -34,31 +34,31 @@ lab$ systemctl status jokerd
 ```
 ● jokerd.service - Joker runtime
      Active: active (running)
-jokerd[612]: aviso[J0902]: nó sem identidade: em modo de enrolamento
-jokerd[612]: a escutar só em unix:/run/joker/api.sock (sem identidade não há TCP)
+jokerd[612]: warning[J0902]: node without identity: in enrollment mode
+jokerd[612]: listening only on unix:/run/joker/api.sock (no identity, no TCP)
 ```
 
-Sem identidade, o `jokerd` escuta **só** o socket Unix, mesmo que lhe peças TCP: não há nenhuma porta de enrolamento aberta à rede (ref/02 §3.2.1).
+Without an identity, `jokerd` listens **only** on the Unix socket, even if you ask it for TCP: no enrollment port is open to the network (ref/02 §3.2.1).
 
-## 3. A CA da organização
+## 3. The organization CA
 
-No portátil, cria a CA que vai assinar os certificados dos nós e o teu. Uma vez, e fora do projeto:
+On the laptop, create the CA that will sign the nodes' certificates and yours. Once, and outside the project:
 
 ```sh
 $ jk ca init ~/org-ca --org bancada
 ```
 
 ```
-criado ~/org-ca/root.key        raiz Ed25519 (assina bundles de confiança; guarda-a bem)
-criado ~/org-ca/ca.key, ca.crt  emissora P-256 (assina certificados de nós e de utilizadores)
-criado ~/org-ca/org             bancada
-certificado de utilizador       admin-dl → ~/.local/share/joker/certs/admin-dl.{crt,key}
-registado em [user] de ~/.config/joker/config.toml
+created ~/org-ca/root.key        Ed25519 root (signs trust bundles; keep it safe)
+created ~/org-ca/ca.key, ca.crt  P-256 issuer (signs node and user certificates)
+created ~/org-ca/org             bancada
+user certificate                 admin-dl → ~/.local/share/joker/certs/admin-dl.{crt,key}
+recorded in [user] of ~/.config/joker/config.toml
 ```
 
-A raiz e a emissora são chaves diferentes de propósito: a emissora assina todos os dias; a raiz só assina a política de confiança (ref/10 §3.1.1; ADR 0025). Na parte 11 a raiz vai assinar mais coisas.
+The root and the issuer are different keys on purpose: the issuer signs every day; the root only signs the trust policy (ref/10 §3.1.1; ADR 0025). In part 11 the root will sign more things.
 
-## 4. Enrolar o nó
+## 4. Enroll the node
 
 ```sh
 $ jk node enroll ssh://pi@lab.local --ca ~/org-ca --name lab --allow-dev
@@ -66,21 +66,21 @@ $ jk node enroll ssh://pi@lab.local --ca ~/org-ca --name lab --allow-dev
 
 ```
 → ssh://pi@lab.local · socket /run/joker/api.sock · principal unix:pi (joker-admin)
-CSR recebido          lab · chave P-256 em ficheiro (sem TPM) · KEM x25519
-certificado emitido   CN=lab · SAN DNS:lab · CA bancada (~/org-ca)
-confiança             âncora ed25519:5e0c… (raiz bancada) · bundle sem Deck
-política              allow_dev = true (--allow-dev)
-cliente               [nodes.lab] acrescentado a ~/.config/joker/config.toml
-nó enrolado. escutas: unix:/run/joker/api.sock
+CSR received          lab · P-256 key in a file (no TPM) · KEM x25519
+certificate issued    CN=lab · SAN DNS:lab · CA bancada (~/org-ca)
+trust                 anchor ed25519:5e0c… (root bancada) · bundle without Deck
+policy                allow_dev = true (--allow-dev)
+client                [nodes.lab] added to ~/.config/joker/config.toml
+node enrolled. listeners: unix:/run/joker/api.sock
 ```
 
-O que aconteceu, pela ordem da ref/02 §3.2.3:
+What happened, in the order of ref/02 §3.2.3:
 
-1. **O canal de arranque é o socket local, por SSH.** A `jk` abriu um túnel SSH até `/run/joker/api.sock`. Quem enrola prova que tem acesso ao nó por ser do grupo `joker-admin` (ou, sem isso, com o código de uso único do `jokerd enroll-code`, `--code`). Um endereço TCP não serve: `J-E1912`.
-2. O `jokerd` gerou as chaves no próprio nó (a de identidade e a KEM, para os segredos da parte 11). **A chave privada nunca saiu do Pi.** Não há TPM no Pi 3, e por isso a chave fica em ficheiro; o `jk doctor` di-lo (`J0933`).
-3. A `jk` assinou o CSR com a emissora de `~/org-ca` e instalou o certificado e o primeiro bundle de confiança.
-4. O `jokerd` escreveu o `node.toml`. **`--allow-dev` é obrigatório aqui:** a CA de `jk ca init` não é de desenvolvimento, e sem ele o nó recusaria as gerações `mode = "dev"` do projeto com `J0906`.
-5. A `jk` acrescentou o contexto `lab` à tua configuração.
+1. **The bootstrap channel is the local socket, over SSH.** `jk` opened an SSH tunnel to `/run/joker/api.sock`. Whoever enrolls proves they have access to the node by being in the group `joker-admin` (or, without that, with the one-time code from `jokerd enroll-code`, `--code`). A TCP address does not do: `J-E1912`.
+2. `jokerd` generated the keys on the node itself (the identity key and the KEM key, for the secrets of part 11). **The private key never left the Pi.** There is no TPM on the Pi 3, so the key stays in a file; `jk doctor` says so (`J0933`).
+3. `jk` signed the CSR with the issuer from `~/org-ca` and installed the certificate and the first trust bundle.
+4. `jokerd` wrote `node.toml`. **`--allow-dev` is required here:** the CA from `jk ca init` is not a development CA, and without it the node would refuse the project's `mode = "dev"` generations with `J0906`.
+5. `jk` added the `lab` context to your configuration.
 
 ```toml
 # ~/.config/joker/config.toml
@@ -99,7 +99,7 @@ address = "ssh://pi@lab.local"
 ca      = "~/org-ca/ca.crt"
 ```
 
-O `address` do contexto é o **endereço de arranque**, `ssh://…`: a `jk` não adivinha uma escuta TCP que o nó ainda não tem (ref/02 §3.2.3, passo 5). **A escuta TCP com mTLS não vem do enrolamento: vem de uma geração** (secção 7), porque escutar na rede é política do site, e o `node.toml` só guarda o mínimo que tem de sobreviver a uma geração má (ref/02 §2.2.1). Tudo o que segue funciona já pelo SSH.
+The context's `address` is the **bootstrap address**, `ssh://…`: `jk` does not guess a TCP listener that the node does not have yet (ref/02 §3.2.3, step 5). **The TCP listener with mTLS does not come from enrollment: it comes from a generation** (section 7), because listening on the network is site policy, and `node.toml` only keeps the minimum that has to survive a bad generation (ref/02 §2.2.1). Everything that follows already works over SSH.
 
 ## 5. `jk doctor --rt`
 
@@ -108,30 +108,30 @@ $ jk doctor --rt --node lab
 ```
 
 ```
-→ lab · sem geração · de --node
-placa            Raspberry Pi 3 Model B Plus Rev 1.3 → rpi3b-plus@1 (nível 2)
-kernel.preempt_rt    não     6.12.25-v8 (PREEMPT_DYNAMIC)
-   aviso[J0352]: grupos ≥ 10 ms correm sem jitter garantido; < 10 ms serão recusados (J0351)
-cpu.isolcpus         —       a placa sugere: isolcpus=3 nohz_full=3 rcu_nocbs=3
-cpu.governor         ondemand   sugestão: performance
+→ lab · no generation · from --node
+board            Raspberry Pi 3 Model B Plus Rev 1.3 → rpi3b-plus@1 (level 2)
+kernel.preempt_rt    no      6.12.25-v8 (PREEMPT_DYNAMIC)
+   warning[J0352]: groups ≥ 10 ms run without guaranteed jitter; < 10 ms will be rejected (J0351)
+cpu.isolcpus         —       the board suggests: isolcpus=3 nohz_full=3 rcu_nocbs=3
+cpu.governor         ondemand   suggestion: performance
 watchdog             /dev/watchdog0 · 15 s · ok
-clock                NTP sincronizado (systemd-timesyncd)
+clock                NTP synchronized (systemd-timesyncd)
 permissions, groups  ok
-disk                 22 GiB livres
-aviso[J0933]: chave de identidade em ficheiro, sem TPM nem elemento seguro
-rt.cyclictest        60 s em cpu 3 · p99 118 µs · máx 2,4 ms   (registado; sem alvo nesta placa)
-device_fallbacks     —   (nenhuma geração)
+disk                 22 GiB free
+warning[J0933]: identity key in a file, without TPM or secure element
+rt.cyclictest        60 s on cpu 3 · p99 118 µs · max 2.4 ms   (recorded; no target on this board)
+device_fallbacks     —   (no generation)
 ```
 
-- **PREEMPT_RT.** O kernel do Raspberry Pi OS não tem `PREEMPT_RT`. O código de preempção RT está no kernel oficial desde a 6.12, mas é uma opção de compilação, e este kernel vem sem ela. Consequência: o grupo `main`, de 20 ms, corre com o aviso `J0352`, e um grupo abaixo de 10 ms seria recusado (`J0351`). Para piscar um LED e ler uma temperatura, 20 ms sem RT chegam. Compilar um kernel RT é um exercício opcional, e as medições com e sem ele ficam registadas na bancada (documento 23, §5.2).
-- **`isolcpus=3`.** Isto já vale a pena: tira o núcleo 3 ao escalonador geral, para o grupo `rt` o ter só para si. Acrescenta `isolcpus=3 nohz_full=3 rcu_nocbs=3` ao fim da linha única de `/boot/firmware/cmdline.txt` e reinicia (`lab$ sudo reboot`). O `jk doctor --rt` passa a mostrar `cpu.isolcpus  3 · ok`.
-- **Números sem alvo.** Os alvos de jitter do documento 01, §21 são para CM4/CM5. No Pi 3 ficam registados como referência pessimista: a Ethernet e o Wi-Fi passam pelo USB e geram interrupções.
+- **PREEMPT_RT.** The Raspberry Pi OS kernel does not have `PREEMPT_RT`. The RT preemption code has been in the mainline kernel since 6.12, but it is a build option, and this kernel comes without it. Consequence: the group `main`, at 20 ms, runs with the warning `J0352`, and a group below 10 ms would be rejected (`J0351`). To blink an LED and read a temperature, 20 ms without RT is enough. Building an RT kernel is an optional exercise, and the measurements with and without it are recorded on the bench (document 23, §5.2).
+- **`isolcpus=3`.** This one is already worth it: it takes CPU core 3 away from the general scheduler, so that the `rt` group has it to itself. Add `isolcpus=3 nohz_full=3 rcu_nocbs=3` to the end of the single line of `/boot/firmware/cmdline.txt` and reboot (`lab$ sudo reboot`). `jk doctor --rt` then shows `cpu.isolcpus  3 · ok`.
+- **Figures without a target.** The jitter targets of document 01, §21 are for CM4/CM5. On the Pi 3 they are recorded as a pessimistic reference: Ethernet and Wi-Fi go through USB and generate interrupts.
 
-Não declares `kernel = "preempt_rt"` no manifesto enquanto o nó não o tiver: o manifesto diz o que o nó tem, e o `jk doctor` verifica-o.
+Do not declare `kernel = "preempt_rt"` in the manifest while the node does not have it: the manifest says what the node has, and `jk doctor` checks it.
 
-## 6. A placa
+## 6. The board
 
-Um **perfil de placa** descreve o hardware fixo de um modelo de computador: CPUs, memória, kernel suportado, watchdog, IO fixo, portas e barramentos (ref/03 §2.3). O do Pi 3 B+ já existe no registo:
+A **board profile** describes the fixed hardware of a computer model: CPUs, memory, supported kernel, watchdog, fixed IO, ports and buses (ref/03 §2.3). The one for the Pi 3 B+ already exists in the registry:
 
 ```sh
 $ jk board show rpi3b-plus
@@ -139,103 +139,103 @@ $ jk board show rpi3b-plus
 
 ```
 rpi3b-plus 1.0.0 · Raspberry Pi 3 Model B+ · Raspberry Pi
-  arch aarch64 · 4 CPUs · 1 GiB · 1.4 GHz · nível 2 (sem CI com hardware)
-  kernel suportado   preempt_rt   (boot_cmdline: isolcpus=3 nohz_full=3 rcu_nocbs=3)
+  arch aarch64 · 4 CPUs · 1 GiB · 1.4 GHz · level 2 (no CI with hardware)
+  supported kernel   preempt_rt   (boot_cmdline: isolcpus=3 nohz_full=3 rcu_nocbs=3)
   recommended        rt [3] · io [2] · bg [0, 1]
   watchdog           /dev/watchdog0 · 15 s
   gpio               pinctrl-bcm2835
-  IO fixo            board.act_led    sysfs led ACT, saída    fallback: —
+  fixed IO           board.act_led    sysfs led ACT, output    fallback: —
                      board.cpu_temp   sysfs thermal_zone0
   i2c                i2c1 → /dev/i2c-1
   spi                spi0 → /dev/spidev0.0
   serial             uart0 → /dev/serial0
   net                eth → eth0 · wifi → wlan0
-  fonte              oci://hub.example.com/joker/boards/rpi3b-plus:1.0.0
+  source             oci://hub.example.com/joker/boards/rpi3b-plus:1.0.0
 ```
 
-O que isto te diz, e porque importa:
+What this tells you, and why it matters:
 
-- **`recommended`** é a divisão das CPUs que a placa sugere: o núcleo 3 para o ciclo, o 2 para os drivers, 0 e 1 para o resto. É a omissão de `[resources]` (ref/01 §5.4).
-- **`memory`** é a base do `J0380` (memória estimada acima de 70% da RAM).
-- **`watchdog`** é a segunda camada do estado seguro (secção 12).
-- **`IO fixo … fallback: —`**: o LED `ACT` **não tem fallback de hardware**. Um perfil de placa diz o estado que o hardware impõe quando o `jokerd` para (a chave `fallback` de `[io.*]`), e aqui não há nenhum. Guarda isto para a secção 12.
+- **`recommended`** is the CPU split the board suggests: CPU core 3 for the cycle, 2 for the drivers, 0 and 1 for the rest. It is the default of `[resources]` (ref/01 §5.4).
+- **`memory`** is the basis of `J0380` (estimated memory above 70% of RAM).
+- **`watchdog`** is the second layer of the safe state (section 12).
+- **`fixed IO … fallback: —`**: the `ACT` LED **has no hardware fallback**. A board profile states the state that the hardware imposes when `jokerd` stops (the `fallback` key of `[io.*]`), and here there is none. Keep this in mind for section 12.
 
-## 7. `joker.lab.toml`: o Pi 3 real
+## 7. `joker.lab.toml`: the real Pi 3
 
 ```toml
-# joker.lab.toml — nó lab (Raspberry Pi 3 B+)
+# joker.lab.toml — lab node (Raspberry Pi 3 B+)
 extends = ["joker.toml"]
 
 [target]
 board = "rpi3b-plus@1"
 
-# A recomendação da placa, escrita por extenso.
+# The board's recommendation, written out in full.
 [resources]
 rt = { cpus = [3] }
 io = { cpus = [2] }
 bg = { cpus = [0, 1] }
 
-# O LED ACT da placa, pelo driver sysfs.
+# The board's ACT LED, through the sysfs driver.
 [devices.pi]
 driver = "sysfs"
 
 [devices.pi.signals]
 act_led = { led = "ACT", direction = "output" }
 
-# A API também em TCP, sempre com mTLS, para a jk chegar do portátil sem SSH.
+# The API on TCP as well, always with mTLS, so jk can reach it from the laptop without SSH.
 [security.api]
 listen = ["tcp:[::]:7443"]
 ```
 
-- **`[target] board`** com a major (`@1`): o lock vai fixar a versão exata e o digest (ref/02 §2.1.4). Uma placa que não existe é `J0172`.
-- **`[resources]`** repete o `recommended`. Podias omiti-lo e o efeito era o mesmo (o `jk diff` mostrá-lo-ia como `# omissão`); escrevê-lo torna a decisão visível. O grupo `main` vai para a classe `rt` sozinho, porque `[resources.rt]` existe, e o `jk check` põe-no na CPU 3. Sobrepor `rt` a outra classe é `J0360`.
-- **`[devices.pi]`** tem o mesmo nome do dispositivo simulado, e o sinal `act_led` o mesmo nome do sinal do modelo. Por isso o caminho `pi.act_led` existe nos dois mundos, e **nem a app nem o `joker.toml` mudam**. A placa oferece o mesmo LED como `board.act_led`, mas o prefixo `board.` é reservado ao IO fixo e não existe no simulador; um dispositivo com nome próprio mantém o caminho igual em todo o lado. O `board.act_led` só existe se o manifesto o referir, e referi-lo **e** ter um `[devices.pi]` com `led = "ACT"` seria o mesmo recurso do kernel duas vezes (`J0178`, ref/03 §2.3.2). Consequência: o `fallback` de um `[io]` da placa só conta pelo caminho `board.<nome>`.
-- **`[security.api] listen`** acrescenta uma escuta às do `node.toml`, e nunca as retira (ref/02 §3.2.2). TCP é sempre TLS 1.3 com mTLS: não há chave para o desligar (ref/09 §2.1).
+- **`[target] board`** with the major (`@1`): the lock will pin the exact version and the digest (ref/02 §2.1.4). A board that does not exist is `J0172`.
+- **`[resources]`** repeats `recommended`. You could omit it and the effect would be the same (`jk diff` would show it as `# default`); writing it makes the decision visible. The group `main` goes to the `rt` class by itself, because `[resources.rt]` exists, and `jk check` puts it on CPU 3. Overlapping `rt` with another class is `J0360`.
+- **`[devices.pi]`** has the same name as the simulated device, and the signal `act_led` the same name as the model's signal. That is why the path `pi.act_led` exists in both worlds, and **neither the app nor `joker.toml` changes**. The board offers the same LED as `board.act_led`, but the prefix `board.` is reserved for fixed IO and does not exist in the simulator; a device with its own name keeps the path the same everywhere. `board.act_led` only exists if the manifest refers to it, and referring to it **and** having a `[devices.pi]` with `led = "ACT"` would be the same kernel resource twice (`J0178`, ref/03 §2.3.2). Consequence: the `fallback` of a board `[io]` only counts through the path `board.<name>`.
+- **`[security.api] listen`** adds a listener to those of `node.toml`, and never removes them (ref/02 §3.2.2). TCP is always TLS 1.3 with mTLS: there is no key to turn it off (ref/09 §2.1).
 
-**Porque `sysfs`, e não `gpio`?** O LED `ACT` está ligado a uma linha GPIO do SoC, mas essa linha **já tem dono**: o driver `leds-gpio` do kernel, que a expõe como `/sys/class/leds/ACT` e lhe liga um *trigger* (por omissão, a atividade do cartão SD). O driver `gpio` do Joker pede as linhas ao kernel pelo chardev, e o kernel recusa uma linha que outro driver já pediu. O driver `sysfs` fala com o LED pela interface que o kernel oferece para isso: escreve `max_brightness` ou `0` em `brightness`. Ao abrir o LED, guarda o *trigger* atual e põe-no a `none`, para a atividade do SD não piscar por cima da app; ao fechar (paragem ordenada, `jk device stop`, uma geração que retira o sinal) repõe-no (ref/01, anexo A; documento 05, §10).
+**Why `sysfs`, and not `gpio`?** The `ACT` LED is wired to a GPIO line of the SoC, but that line **already has an owner**: the kernel's `leds-gpio` driver, which exposes it as `/sys/class/leds/ACT` and attaches a *trigger* to it (by default, SD card activity). Joker's `gpio` driver requests lines from the kernel through the chardev, and the kernel refuses a line that another driver has already requested. The `sysfs` driver talks to the LED through the interface the kernel offers for that: it writes `max_brightness` or `0` to `brightness`. When it opens the LED, it saves the current *trigger* and sets it to `none`, so that SD activity does not blink over the app; when it closes (orderly stop, `jk device stop`, a generation that removes the signal) it restores it (ref/01, appendix A; document 05, §10).
 
-## 8. Verificar
+## 8. Check
 
 ```sh
 $ jk check --env lab
 ```
 
 ```
-✓ manifesto          joker.lab.toml ← joker.toml · placa rpi3b-plus@1 · 1 dispositivo (sysfs), 1 saída, 1 app, 1 grupo
-✓ ligações           luz.led → pi.act_led (bool)
-✓ recursos           rt [3] · io [2] · bg [0, 1]
-✓ admissão RT        main 20ms → cpu 3: 5 µs declarados (0,03%)
-✓ memória            estimada 38 MiB de 1 GiB
-aviso[J0352]: o grupo `main` (20 ms) não tem kernel PREEMPT_RT neste alvo; jitter não garantido
-aviso[W0205]: `pi.act_led` não tem fallback do dispositivo
-   = nota: um LED em sysfs não tem watchdog próprio; se o jokerd morrer, fica no último valor
-   = ajuda: em `mode = "prod"` isto é um erro; aceita-o com `accept_missing_fallback = "<justificação>"`,
-            ou usa hardware com fallback
-nota: joker.lab.lock atualizado (boards, apps.luz)
+✓ manifest           joker.lab.toml ← joker.toml · board rpi3b-plus@1 · 1 device (sysfs), 1 output, 1 app, 1 group
+✓ bindings           luz.led → pi.act_led (bool)
+✓ resources          rt [3] · io [2] · bg [0, 1]
+✓ RT admission       main 20ms → cpu 3: 5 µs declared (0.03%)
+✓ memory             estimated 38 MiB of 1 GiB
+warning[J0352]: group `main` (20 ms) has no PREEMPT_RT kernel on this target; jitter not guaranteed
+warning[W0205]: `pi.act_led` has no device fallback
+   = note: an LED in sysfs has no watchdog of its own; if jokerd dies, it stays at the last value
+   = help: in `mode = "prod"` this is an error; accept it with `accept_missing_fallback = "<justification>"`,
+            or use hardware with a fallback
+note: joker.lab.lock updated (boards, apps.luz)
 ```
 
-Guarda o `W0205`: vais vê-lo acontecer na secção 12.
+Keep the `W0205` in mind: you will see it happen in section 12.
 
-### O que o `jk check` diz em produção
+### What `jk check` says in production
 
-Muda `mode = "prod"` no `joker.toml` e volta a verificar:
+Change to `mode = "prod"` in `joker.toml` and check again:
 
 ```
-erro[J0205]: `pi.act_led` não tem fallback do dispositivo
+error[J0205]: `pi.act_led` has no device fallback
  --> joker.lab.toml:14:1
    |
 14 | [devices.pi]
-   | ^^^^^^^^^^^^ driver sysfs: sem fallback; a placa rpi3b-plus não declara fallback para o LED ACT
-   = ajuda: `accept_missing_fallback = "<justificação ≥ 10 caracteres>"` em [outputs."pi.act_led"];
-            o `jk lock` copia-a para [accepted]
+   | ^^^^^^^^^^^^ sysfs driver: no fallback; the board rpi3b-plus declares no fallback for the ACT LED
+   = help: `accept_missing_fallback = "<justification ≥ 10 characters>"` in [outputs."pi.act_led"];
+            `jk lock` copies it into [accepted]
 ```
 
-O mesmo aviso passou a erro, com o mesmo número. É a regra de `dev` e `prod` (documento 03, §15). Repõe `mode = "dev"`.
+The same warning became an error, with the same number. That is the `dev` and `prod` rule (document 03, §15). Put back `mode = "dev"`.
 
-## 9. O lock
+## 9. The lock
 
 ```sh
-$ jk build --env lab                    # compila a app e pré-compila o AOT para aarch64
+$ jk build --env lab                    # builds the app and precompiles the AOT for aarch64
 $ jk lock --env lab --node lab
 ```
 
@@ -265,42 +265,42 @@ wit = "joker:runtime@1.0.0"
 source = "path:apps/luz"
 ```
 
-Um lock por manifesto de entrada (`joker.lab.toml` → `joker.lab.lock`, ao lado do `joker.sim.lock` da parte 1), porque o simulador e a placa resolvem coisas diferentes (ref/02 §2.1.1). Com `--node`, a `jk` pergunta ao nó, só com leituras, os factos que dependem dele e escreve `runtime` e `node`; aplicar este lock noutro nó dá `J0480`. Aqui não há descoberta nem fallback a capturar: o `sysfs` não tem nenhum. Versiona o `joker.lab.lock`.
+One lock per input manifest (`joker.lab.toml` → `joker.lab.lock`, next to the `joker.sim.lock` from part 1), because the simulator and the board resolve different things (ref/02 §2.1.1). With `--node`, `jk` asks the node, with reads only, for the facts that depend on it and writes `runtime` and `node`; applying this lock on another node gives `J0480`. Here there is no discovery and no fallback to capture: `sysfs` has none. Put `joker.lab.lock` under version control.
 
-## 10. Aplicar, confirmar, gerações
+## 10. Apply, confirm, generations
 
 ```sh
 $ jk apply --env lab --node lab --confirm 5m
 ```
 
 ```
-→ lab (dev) · de --node · ssh://pi@lab.local
-plano da geração 1
-  + placa rpi3b-plus@1 · recursos rt [3] io [2] bg [0, 1]
-  + dispositivo pi (sysfs, 1 sinal)
+→ lab (dev) · from --node · ssh://pi@lab.local
+plan of generation 1
+  + board rpi3b-plus@1 · resources rt [3] io [2] bg [0, 1]
+  + device pi (sysfs, 1 signal)
   + app luz 0.1.0 (aarch64 AOT, 208 KiB)
-  + grupo main 20ms (rt, cpu 3)
-  + api tcp:[::]:7443 (mTLS)                       ← mexe na API: pede confirmação
-aplicado. confirmação pendente: `jk confirm` em 5 min, ou rollback automático
+  + group main 20ms (rt, cpu 3)
+  + api tcp:[::]:7443 (mTLS)                       ← touches the API: asks for confirmation
+applied. confirmation pending: `jk confirm` within 5 min, or automatic rollback
 ```
 
-O LED `ACT` do Pi pisca a 1 Hz. **A app é a mesma da parte 1, com o mesmo digest.**
+The Pi's `ACT` LED blinks at 1 Hz. **The app is the same as in part 1, with the same digest.**
 
-O `--confirm` parece exagerado para um LED, mas é o hábito certo, e aqui tem uma razão concreta: esta geração mexe na API. Numa instalação remota, uma geração que corta o acesso desfaz-se sozinha se ninguém a confirmar (ADR 0015). Por isso, **confirma pelo caminho novo**: muda o contexto `lab` para TCP e confirma por lá. Se a escuta TCP não funcionasse, não conseguias confirmar, e a geração voltava atrás sozinha.
+`--confirm` seems excessive for an LED, but it is the right habit, and here it has a concrete reason: this generation touches the API. On a remote installation, a generation that cuts off access undoes itself if nobody confirms it (ADR 0015). So **confirm through the new path**: switch the `lab` context to TCP and confirm through it. If the TCP listener did not work, you could not confirm, and the generation would roll back by itself.
 
 ```sh
-$ jk config set nodes.lab.address lab.local:7443      # ou à mão, em [nodes.lab] do config.toml
+$ jk config set nodes.lab.address lab.local:7443      # or by hand, in [nodes.lab] of config.toml
 $ jk confirm --node lab
 ```
 
 ```
-→ lab (dev) · de --node · lab.local:7443 (mTLS, cert:admin-dl)
-geração 1 confirmada
+→ lab (dev) · from --node · lab.local:7443 (mTLS, cert:admin-dl)
+generation 1 confirmed
 ```
 
-O certificado do nó verificou pela tua CA e tem o nome `lab` no SAN; o teu certificado verificou pela CA de clientes do nó. Em `dev`, sem `[security.roles]`, qualquer principal autenticado é `admin` (ref/01 §5.20).
+The node's certificate verified against your CA and has the name `lab` in the SAN; your certificate verified against the node's client CA. In `dev`, without `[security.roles]`, any authenticated principal is `admin` (ref/01 §5.20).
 
-Agora uma segunda geração. Muda `half_period` para `"250 ms"` no `joker.toml` e aplica:
+Now a second generation. Change `half_period` to `"250 ms"` in `joker.toml` and apply:
 
 ```sh
 $ jk apply --env lab --node lab --confirm 5m && jk confirm --node lab
@@ -308,118 +308,118 @@ $ jk generations --node lab
 ```
 
 ```
-gen  estado       origem   quem            quando                hash
+gen  state        origin   who             when                  hash
   2  confirmed    local    cert:admin-dl   2026-09-25 10:31:07   sha256:9e41…   ~ apps.luz.params.half_period 500 ms → 250 ms
   1  confirmed    local    cert:admin-dl   2026-09-25 10:24:52   sha256:3b0c…
 ```
 
-A geração 2 só recarregou um parâmetro: a app não reiniciou. Volta atrás:
+Generation 2 only reloaded a parameter: the app did not restart. Roll back:
 
 ```sh
 $ jk rollback 1 --node lab
 ```
 
 ```
-→ lab (dev) · de --node · lab.local:7443
-geração 1 reativada (sha256:3b0c…) · origem rollback
+→ lab (dev) · from --node · lab.local:7443
+generation 1 reactivated (sha256:3b0c…) · origin rollback
 ```
 
-Um rollback **reativa** a geração anterior, com o mesmo número e o mesmo hash, e o histórico regista a ativação com a origem `rollback` (ref/00 §5). Mas o teu `joker.toml` ainda diz 250 ms: o nó e o repositório divergem. O rollback é para emergências; a verdade está no Git. Repõe o ficheiro (`git checkout joker.toml`).
+A rollback **reactivates** the previous generation, with the same number and the same hash, and the history records the activation with the origin `rollback` (ref/00 §5). But your `joker.toml` still says 250 ms: the node and the repository diverge. Rollback is for emergencies; the truth is in Git. Restore the file (`git checkout joker.toml`).
 
-## 11. Escrita manual e árbitro
+## 11. Manual write and arbiter
 
-Com a app a piscar, força o LED aceso durante 30 s:
+With the app blinking, force the LED on for 30 s:
 
 ```sh
-$ jk write pi.act_led true --ttl 30s --reason "teste do árbitro" --node lab
+$ jk write pi.act_led true --ttl 30s --reason "arbiter test" --node lab
 ```
 
 ```
-→ lab (dev) · de --node · lab.local:7443
-pi.act_led: escrita manual (manual:4) durante 30 s
-  envelope: safe = false · sem gama, taxa nem interlock
-  prevalece sobre: control:12 (app:luz)
-confirmar? [s/N] s
-aceite · manual:4 · até 10:42:37
+→ lab (dev) · from --node · lab.local:7443
+pi.act_led: manual write (manual:4) for 30 s
+  envelope: safe = false · no range, rate or interlock
+  prevails over: control:12 (app:luz)
+confirm? [y/N] y
+accepted · manual:4 · until 10:42:37
 ```
 
-O LED fica aceso. A app continua a propor o pisca, mas o nível `manual:4` tem prioridade maior (1 é a mais alta). Passados 30 s, o nível manual expira sozinho e o pisca volta (documento 16, A5 e A10). O `--ttl` e o `--reason` são obrigatórios e não têm variável de ambiente, de propósito (documento 07, §1).
+The LED stays on. The app keeps proposing the blink, but the level `manual:4` has higher priority (1 is the highest). After 30 s, the manual level expires by itself and the blink comes back (document 16, A5 and A10). `--ttl` and `--reason` are required and have no environment variable, on purpose (document 07, §1).
 
-Enquanto dura, pergunta ao Joker quem manda nesta saída:
+While it lasts, ask Joker who controls this output:
 
 ```sh
 $ jk explain pi.act_led --node lab
 ```
 
 ```
-pi.act_led   bool · saída · dispositivo pi (sysfs, led ACT)             joker.lab.toml:18
+pi.act_led   bool · output · device pi (sysfs, led ACT)                  joker.lab.toml:18
   envelope   safe = false                                                joker.toml:9
-  grupo dono main 20ms (a app de maior prioridade que a escreve em ciclo, A11)
-  níveis     manual:4     true    user:cert:admin-dl · "teste do árbitro" · até 10:42:37   ← ativo
-             control:12   false   app:luz · lease 60 ms (omissão, 3 × 20 ms)
-  aplicado   true   (overridden: control:12 perde para manual:4)
-  último     control:12 → overridden(manual:4) · manual:4 → accepted
+  owning group main 20ms (the highest-priority app that writes it in a cycle, A11)
+  levels     manual:4     true    user:cert:admin-dl · "arbiter test" · until 10:42:37   ← active
+             control:12   false   app:luz · lease 60 ms (default, 3 × 20 ms)
+  applied    true   (overridden: control:12 loses to manual:4)
+  last       control:12 → overridden(manual:4) · manual:4 → accepted
 ```
 
-E o registo de decisões, que guarda cada escrita com o resultado e o motivo:
+And the decision log, which keeps every write with its result and its reason:
 
 ```sh
 $ jk decisions --output pi.act_led --since 1m --node lab
 ```
 
 ```
-10:42:07.300  manual:4     true   accepted              (user:cert:admin-dl, "teste do árbitro")
+10:42:07.300  manual:4     true   accepted              (user:cert:admin-dl, "arbiter test")
 10:42:07.320  control:12   false  overridden(manual:4)
 …
-10:42:37.300  manual:4     —      expirado (ttl 30 s)
+10:42:37.300  manual:4     —      expired (ttl 30 s)
 10:42:37.320  control:12   true   accepted
 ```
 
-## 12. Quando as coisas correm mal: o estado seguro em três camadas
+## 12. When things go wrong: the three-layer safe state
 
-Três experiências, pela ordem certa (documento 01, §8).
+Three experiments, in the right order (document 01, §8).
 
-**(a) A app para.**
+**(a) The app stops.**
 
 ```sh
 $ jk app stop luz --node lab
 ```
 
-O LED apaga-se em ≤ 60 ms. Ninguém escreveu `false`: o lease da app expirou, não ficou nenhum nível ativo, e o árbitro aplicou o `safe` (documento 16, A6). **Primeira camada: o lease.** Cobre a app morta, encravada ou num *crashloop*. Volta a ligá-la com `jk app start luz --node lab`.
+The LED goes off within ≤ 60 ms. Nobody wrote `false`: the app's lease expired, no level was left active, and the arbiter applied the `safe` (document 16, A6). **First layer: the lease.** It covers the app that is dead, stuck or in a *crashloop*. Turn it back on with `jk app start luz --node lab`.
 
-**(b) O `jokerd` encrava.** Não o vais provocar, mas está lá: a thread supervisora do `jokerd` arma o watchdog de hardware da placa (`/dev/watchdog0`, 15 s, o que o `jk board show` mostrou) e o `WatchdogSec` do systemd. Se um grupo encravar, o supervisor reinicia a runtime; se o processo inteiro deixar de responder, o watchdog reinicia a placa. **Segunda camada: o supervisor.** Cobre o que a primeira não cobre, porque um lease só expira se houver quem o conte.
+**(b) `jokerd` gets stuck.** You will not provoke it, but it is there: the `jokerd` supervisor thread arms the board's hardware watchdog (`/dev/watchdog0`, 15 s, what `jk board show` showed) and systemd's `WatchdogSec`. If a group gets stuck, the supervisor restarts the runtime; if the whole process stops responding, the watchdog reboots the board. **Second layer: the supervisor.** It covers what the first does not, because a lease only expires if there is someone to count it.
 
-**(c) O `jokerd` morre.** Espera que o LED esteja aceso e mata o processo:
+**(c) `jokerd` dies.** Wait until the LED is on and kill the process:
 
 ```sh
 lab$ sudo systemctl kill -s KILL jokerd
 ```
 
-**O LED fica aceso.** Morto o processo, ninguém escreve no `brightness` nem repõe o *trigger*, e o kernel mantém o último valor. O systemd reinicia o `jokerd` em 1–2 s; o `jokerd` arranca com todas as saídas em `safe` (documento 16, A8), o LED apaga-se, e a `luz` volta a piscar. Com o LED apagado no instante do `kill`, não verias diferença nenhuma: faz as duas vezes.
+**The LED stays on.** With the process dead, nobody writes to `brightness` or restores the *trigger*, and the kernel keeps the last value. systemd restarts `jokerd` within 1–2 s; `jokerd` starts with every output in `safe` (document 16, A8), the LED goes off, and `luz` blinks again. With the LED off at the instant of the `kill`, you would see no difference at all: do it both ways.
 
-Esta é a **lição honesta da parte 2: o LED `ACT` não tem fallback de hardware.** A terceira camada do estado seguro é o **fallback do dispositivo** (M1): o próprio equipamento vai para um valor seguro quando deixa de ouvir o Joker, e é a única camada que cobre o `jokerd` morto, a placa sem energia e o cabo cortado. Um LED em `sysfs` não tem nada disso, e a placa não declara nenhum. É exatamente o `W0205` da secção 8, e em `prod` seria o erro `J0205`.
+This is the **honest lesson of part 2: the `ACT` LED has no hardware fallback.** The third layer of the safe state is the **device fallback** (M1): the equipment itself goes to a safe value when it stops hearing from Joker, and it is the only layer that covers a dead `jokerd`, a board without power and a cut cable. An LED in `sysfs` has none of that, and the board declares none. It is exactly the `W0205` of section 8, and in `prod` it would be the error `J0205`.
 
-Num LED não faz mal. Num aquecedor ou num motor, "fica como estava" pode ser "fica ligado". É por isto que o Joker, em produção, exige equipamentos com watchdog próprio, ou uma justificação escrita (`accept_missing_fallback`) que fica no lock com quem a deu e quando. Na parte 4 vais ter um equipamento que se protege sozinho: o firmware de bancada do ESP32 apaga o LED dele se não ouvir nada durante 2 s.
+On an LED it does no harm. On a heater or a motor, "stays as it was" can mean "stays on". That is why Joker, in production, requires equipment with its own watchdog, or a written justification (`accept_missing_fallback`) that stays in the lock with who gave it and when. In part 4 you will have a piece of equipment that protects itself: the ESP32 bench firmware turns its LED off if it hears nothing for 2 s.
 
-## 13. O que aconteceu por baixo
+## 13. What happened underneath
 
-- **Identidade sem portas abertas.** O nó sem identidade só escuta o socket Unix; o enrolamento corre por esse socket (por SSH); a chave nasce e fica no nó; a escuta TCP só existe depois, com mTLS obrigatório, e porque uma geração a pediu (ref/02 §3.2; ref/09 §2.1; ADR 0025).
-- **A geração** é o manifesto efetivo, o lock e os artefactos, com um hash. O `jk apply` envia-a, o nó verifica cada artefacto pelo digest do lock, ativa-a, e espera pela confirmação dentro da janela; sem ela, volta à última confirmada (documento 01, §15; ADR 0015).
-- **A placa** entrou no lock pelo digest dos bytes do ficheiro. Dela vieram a omissão de `[resources]`, a memória do `J0380` e o watchdog do supervisor. O `jokerd` pôs o grupo `main` num cpuset só com a CPU 3, que o `isolcpus` tirou ao escalonador geral (documento 01, §2).
-- **O mesmo núcleo, outro driver.** O tick é o da parte 1; a diferença é que o commit vai para o driver `sysfs` em vez do `sim`. O árbitro e o envelope não sabem, nem precisam de saber, de onde vem o LED.
-- **O árbitro** decide por nível e por lease, e nunca por quem chegou primeiro: um humano em `manual:4` ganha a uma app em `control:12` até ao fim do TTL, e tudo fica no registo de decisões (documento 16, §1; ADR 0011).
+- **Identity without open ports.** The node without an identity only listens on the Unix socket; enrollment runs over that socket (over SSH); the key is born on the node and stays there; the TCP listener only exists afterwards, with mandatory mTLS, and because a generation asked for it (ref/02 §3.2; ref/09 §2.1; ADR 0025).
+- **The generation** is the effective manifest, the lock and the artifacts, with a hash. `jk apply` sends it, the node verifies each artifact by the lock digest, activates it, and waits for the confirmation within the window; without it, it goes back to the last confirmed one (document 01, §15; ADR 0015).
+- **The board** entered the lock by the digest of the file's bytes. From it came the default of `[resources]`, the memory for `J0380` and the supervisor's watchdog. `jokerd` put the group `main` in a cpuset with only CPU 3, which `isolcpus` took away from the general scheduler (document 01, §2).
+- **The same core, another driver.** The tick is the one from part 1; the difference is that the commit goes to the `sysfs` driver instead of `sim`. The arbiter and the envelope do not know, and do not need to know, where the LED comes from.
+- **The arbiter** decides by level and by lease, and never by who arrived first: a human at `manual:4` beats an app at `control:12` until the end of the TTL, and everything stays in the decision log (document 16, §1; ADR 0011).
 
-## 14. Exercícios
+## 14. Exercises
 
-1. Com `jk dev --env lab --node lab`, muda o `half_period` e vê o LED real mudar sem `jk apply`. O que aparece no `jk generations` depois?
-2. Faz `rt = { cpus = [2] }` no `joker.lab.toml`, sem mexer no `io`. Lê o que o `jk check` diz e explica porquê.
-3. Escreve `jk write pi.act_led false --ttl 10m --reason "…"` e, noutro terminal, uma segunda escrita com o mesmo nível a partir de outro utilizador (`ssh pi@lab.local jk write … --node local`). O que responde a segunda? E com `--takeover`?
-4. Faz a experiência 12(c) com o LED apagado e depois aceso. Explica a diferença a alguém, usando as palavras "lease", "supervisor" e "fallback do dispositivo".
+1. With `jk dev --env lab --node lab`, change `half_period` and watch the real LED change without `jk apply`. What appears in `jk generations` afterwards?
+2. Set `rt = { cpus = [2] }` in `joker.lab.toml`, without touching `io`. Read what `jk check` says and explain why.
+3. Write `jk write pi.act_led false --ttl 10m --reason "…"` and, in another terminal, a second write at the same level from another user (`ssh pi@lab.local jk write … --node local`). What does the second one answer? And with `--takeover`?
+4. Do experiment 12(c) with the LED off and then on. Explain the difference to someone, using the words "lease", "supervisor" and "device fallback".
 
 ```sh
-$ git add -A && git commit -qm "trilha(02): o Pi 3 como nó lab; LED ACT real com a luz 0.1"
+$ git add -A && git commit -qm "track(02): the Pi 3 as node lab; real ACT LED with luz 0.1"
 ```
 
-**Estado no fim desta parte:** app `luz` **0.1, sem mudanças**: só os manifestos mudaram. Ficheiros novos: `joker.lab.toml`, `joker.lab.lock`. Fora do projeto: `~/org-ca/`, o contexto `lab` em `~/.config/joker/config.toml`, e o nó `lab` enrolado, na geração 1 confirmada.
+**State at the end of this part:** app `luz` **0.1, unchanged**: only the manifests changed. New files: `joker.lab.toml`, `joker.lab.lock`. Outside the project: `~/org-ca/`, the `lab` context in `~/.config/joker/config.toml`, and the node `lab` enrolled, at confirmed generation 1.
 
-**Próximo:** [Parte 3 — Um sensor real: a temperatura do CPU, alarmes, historian e a API](03-temperature-sensor.md).
+**Next:** [Part 3 — A real sensor: the CPU temperature, alarms, historian and the API](03-temperature-sensor.md).
