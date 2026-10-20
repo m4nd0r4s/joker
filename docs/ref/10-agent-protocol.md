@@ -1,420 +1,420 @@
-# ref/10 — Protocolo do agente (nó ↔ Joker Deck), `agent/1`
+# ref/10 — Agent protocol (node ↔ Joker Deck), `agent/1`
 
-Referência normativa do protocolo entre um nó (`jokerd` em Linux, ou um Joker Micro autónomo) e um plano de controlo da frota (o Joker Deck, ou qualquer outro que cumpra este documento). Aplica a ref/00 sem a repetir. Os esquemas máquina-legíveis estão em `spec/cddl/agent.cddl`.
+Normative reference of the protocol between a node (`jokerd` on Linux, or a standalone Joker Micro) and a fleet control plane (the Joker Deck, or any other that complies with this document). It applies ref/00 without repeating it. The machine-readable schemas are in `spec/cddl/agent.cddl`.
 
-Cinco regras que atravessam o documento inteiro (documento 20, §2):
+Five rules that run through the whole document (document 20, §2):
 
-1. **O nó funciona sem o Deck, para sempre.** Nada do que está aqui é necessário para o nó controlar. Um Deck em baixo, um certificado expirado ou um nó revogado nunca param uma saída.
-2. **O protocolo não tem nenhuma mensagem de escrita em sinais.** O Deck muda configuração (gerações) e abre sessões; as escritas remotas só existem dentro de uma sessão, através da API local do nó, com o envelope, o árbitro e o TTL de sempre.
-3. **O nó decide.** Cada documento e cada comando é verificado no nó contra chaves que o Deck não consegue mudar.
-4. **Estado desejado completo e idempotente.** O Deck diz "onde o nó deve estar", nunca "o que fazer a seguir". Receber o mesmo documento duas vezes não faz nada.
-5. **O Git é a fonte da verdade.** O protocolo transporta gerações identificadas por hash e por commit; não transporta edições.
-
----
-
-## 1. Âmbito e fontes
-
-### 1.1 O que cobre
-
-| Superfície | Secção |
-|---|---|
-| identidade do nó, certificados, bundle de confiança, pisos de segurança | 2.4, 3.1, 3.2 |
-| enrolamento (`jk node enroll`), renovação, revogação, nós clonados | 2.5, 3.1, 3.2 |
-| estado desejado (Deck → nó), validação, aplicação por gerações, MCUs atrás do nó | 2.6, 3.3–3.7 |
-| comandos (Deck → nó): confirmar, rejeitar, pedir relatório completo, renovar, carregar registos, sessões | 2.7 |
-| estado reportado (nó → Deck) | 2.10, 3.8 |
-| eventos (nó → Deck) | 2.11, 3.9 |
-| sessão remota (túnel para a `jk` e o Studio) | 2.12, 3.10 |
-| transportes: HTTPS com long-poll, MQTT, CoAP (perfil micro) | 2.13–2.15, 3.11 |
-| perfil reduzido para MCUs autónomos | 2.15, 3.13 |
-| chaves `[agent]` do `node.toml` (acolhidas na ref/02) | 2.17 |
-| versões e compatibilidade | 3.14, 6 |
-
-Não cobre: a telemetria (Sparkplug B, Zenoh, OTLP; documento 20, §3.3), a API do Hub, o formato interno dos artefactos (ref/02, ref/08), o Joker Link (ref/07) nem o desenho interno do Deck.
-
-### 1.2 Fontes
-
-Documento 20 (§2, §3.1, §4), documento 21 (§1, §7, §8), ADR 0015, 0021 e 0022, documento 01 (§12, §13, §15–§18), documento 12 (§7, §11), documento 19 (§3, §4.1, §6), documento 09 (ataques 8, 9 e 11), documento 08 (rodada 5), documento 07 (§3), documento 15 (§2.5) e a ref/00.
-
-### 1.3 Ligações a outras referências
-
-| Referência | O que partilha com esta |
-|---|---|
-| ref/00 | versões, tempo, identificadores, enums partilhados, codificações, erros, segurança |
-| ref/01 | `[security]` do manifesto: `trust` (só restringe, §2.4.3) e os principais `deck:` em `[security.roles]` (§3.10); o hash do manifesto efetivo (ref/01 §8.3), que entra no descritor da geração (§2.6.2) |
-| ref/02 | `node.toml` (as âncoras de confiança, `[policy] allow_dev` e `apply_from`, e a secção `[agent]` do §2.17), o digest canónico do lock (§2.6.2), os segredos por destinatário e o `secret-bundle` (chave 22 do estado desejado), a chave KEM do nó |
-| ref/07 | mensagem `OTA` e `HELLO` do Joker Link, usadas na fase `mcu` (§3.6) |
-| ref/08 | formato e assinatura do blob `joker.generation.v1` e do firmware do Joker Micro |
-| ref/09 | endpoints locais `/v1/agent/*` e `/v1/node/*` (§2.18), o trinco de transição de gerações partilhado com a API (§3.4.2), principais pré-autenticados e auditoria das sessões remotas (§3.10) |
-
-### 1.4 Vocabulário
-
-| Termo | Significado |
-|---|---|
-| **autoridade** | o Deck (`deck_id`) com que o nó está enrolado. Um nó tem no máximo uma autoridade de cada vez |
-| **DSD** | documento de estado desejado: `desired-state` assinado em COSE_Sign1 |
-| **bundle** | bundle de confiança: as chaves públicas que o nó aceita, por papel, assinado pela raiz da organização |
-| **piso** | *floor statement*: versão mínima e digests revogados de um tipo de artefacto |
-| **fase** | uma das três partes de uma aplicação: `runtime`, `mcu`, `generation` (§3.4) |
-| **núcleo mínimo** | as mensagens `hello`, `poll`/`desired`, `report`, `events` e `renew` na forma `agent/1.0`; nunca mudam na série 1 (§3.14) |
+1. **The node works without the Deck, forever.** Nothing here is needed for the node to control. A Deck that is down, an expired certificate or a revoked node never stop an output.
+2. **The protocol has no message for writing to signals.** The Deck changes configuration (generations) and opens sessions; remote writes only exist inside a session, through the local API of the node, with the usual envelope, arbiter and TTL.
+3. **The node decides.** Each document and each command is verified on the node against keys that the Deck cannot change.
+4. **Complete and idempotent desired state.** The Deck says "where the node should be", never "what to do next". Receiving the same document twice does nothing.
+5. **Git is the source of truth.** The protocol carries generations identified by hash and by commit; it does not carry edits.
 
 ---
 
-## 2. A referência
+## 1. Scope and sources
 
-### 2.1 Codificação e forma dupla
+### 1.1 What it covers
 
-| Onde | Codificação |
+| Surface | Section |
 |---|---|
-| DSD, comandos, bundles, pisos, provas | CBOR determinístico (RFC 8949, §4.2.1) dentro de COSE_Sign1 (RFC 9052). **Sempre**, também em HTTPS: um documento assinado é opaco para o transporte |
-| mensagens em HTTPS | JSON (RFC 8259), UTF-8, com chaves de texto; CBOR com chaves inteiras se o nó anunciar `cbor_https` e o Deck o aceitar (`Accept: application/cbor`) |
-| mensagens em MQTT e CoAP | CBOR com chaves inteiras; em MQTT, cada mensagem vai em COSE_Sign1 (§2.14, §3.11.2) |
+| node identity, certificates, trust bundle, security floors | 2.4, 3.1, 3.2 |
+| enrollment (`jk node enroll`), renewal, revocation, cloned nodes | 2.5, 3.1, 3.2 |
+| desired state (Deck → node), validation, apply by generations, MCUs behind the node | 2.6, 3.3–3.7 |
+| commands (Deck → node): confirm, reject, request a full report, renew, upload logs, sessions | 2.7 |
+| reported state (node → Deck) | 2.10, 3.8 |
+| events (node → Deck) | 2.11, 3.9 |
+| remote session (tunnel for `jk` and the Studio) | 2.12, 3.10 |
+| transports: HTTPS with long-poll, MQTT, CoAP (micro profile) | 2.13–2.15, 3.11 |
+| reduced profile for standalone MCUs | 2.15, 3.13 |
+| `[agent]` keys of `node.toml` (hosted in ref/02) | 2.17 |
+| versions and compatibility | 3.14, 6 |
 
-**Forma dupla do CDDL.** Cada membro escreve-se `("nome" / n)`. Em CBOR usa-se só `n` e as formas binárias; em JSON só `"nome"` e as formas de texto. Misturar as duas numa mensagem é `bad_request` (`J0978`).
+It does not cover: telemetry (Sparkplug B, Zenoh, OTLP; document 20, §3.3), the Hub API, the internal format of the artifacts (ref/02, ref/08), Joker Link (ref/07) or the internal design of the Deck.
 
-| Tipo CDDL | CBOR | JSON |
+### 1.2 Sources
+
+Document 20 (§2, §3.1, §4), document 21 (§1, §7, §8), ADR 0015, 0021 and 0022, document 01 (§12, §13, §15–§18), document 12 (§7, §11), document 19 (§3, §4.1, §6), document 09 (attacks 8, 9 and 11), document 08 (round 5), document 07 (§3), document 15 (§2.5) and ref/00.
+
+### 1.3 Links to other references
+
+| Reference | What it shares with this one |
+|---|---|
+| ref/00 | versions, time, identifiers, shared enums, encodings, errors, security |
+| ref/01 | `[security]` of the manifest: `trust` (it only restricts, §2.4.3) and the `deck:` principals in `[security.roles]` (§3.10); the hash of the effective manifest (ref/01 §8.3), which enters the descriptor of the generation (§2.6.2) |
+| ref/02 | `node.toml` (the trust anchors, `[policy] allow_dev` and `apply_from`, and the `[agent]` section of §2.17), the canonical digest of the lock (§2.6.2), per-recipient secrets and the `secret-bundle` (key 22 of the desired state), the KEM key of the node |
+| ref/07 | `OTA` and `HELLO` messages of Joker Link, used in the `mcu` phase (§3.6) |
+| ref/08 | format and signature of the `joker.generation.v1` blob and of the Joker Micro firmware |
+| ref/09 | local endpoints `/v1/agent/*` and `/v1/node/*` (§2.18), the generation-transition mutex shared with the API (§3.4.2), pre-authenticated principals and audit of remote sessions (§3.10) |
+
+### 1.4 Vocabulary
+
+| Term | Meaning |
+|---|---|
+| **authority** | the Deck (`deck_id`) with which the node is enrolled. A node has at most one authority at a time |
+| **DSD** | desired state document: `desired-state` signed in COSE_Sign1 |
+| **bundle** | trust bundle: the public keys that the node accepts, per role, signed by the root of the organization |
+| **floor** | *floor statement*: minimum version and revoked digests of an artifact type |
+| **phase** | one of the three parts of an apply: `runtime`, `mcu`, `generation` (§3.4) |
+| **minimal core** | the `hello`, `poll`/`desired`, `report`, `events` and `renew` messages in the `agent/1.0` form; they never change in the 1 series (§3.14) |
+
+---
+
+## 2. The reference
+
+### 2.1 Encoding and dual form
+
+| Where | Encoding |
+|---|---|
+| DSD, commands, bundles, floors, proofs | deterministic CBOR (RFC 8949, §4.2.1) inside COSE_Sign1 (RFC 9052). **Always**, also over HTTPS: a signed document is opaque to the transport |
+| messages over HTTPS | JSON (RFC 8259), UTF-8, with text keys; CBOR with integer keys if the node announces `cbor_https` and the Deck accepts it (`Accept: application/cbor`) |
+| messages over MQTT and CoAP | CBOR with integer keys; over MQTT, each message goes in COSE_Sign1 (§2.14, §3.11.2) |
+
+**Dual form of the CDDL.** Each member is written `("name" / n)`. In CBOR only `n` and the binary forms are used; in JSON only `"name"` and the text forms. Mixing the two in one message is `bad_request` (`J0978`).
+
+| CDDL type | CBOR | JSON |
 |---|---|---|
-| `time` | `int`, ns UTC desde 1970 | RFC 3339 com `Z` (ref/00, §3) |
-| `duration` | `uint`, ns | literal de duração (`"10m"`) |
-| `digest` | `bstr` de 32 B | `"sha256:<64 hex>"` |
-| `ulid` | `bstr` de 16 B | 26 caracteres Crockford base32 |
-| `kid` | `bstr` de 16 B: os 16 primeiros bytes do SHA-256 da chave pública crua | 32 hex |
-| `enum` | valor numérico (§2.2) | nome `snake_case` |
-| `bytes`, `cose` | `bstr` | base64 (RFC 4648, §4, com `=`) |
-| `seq` | `uint` < 2⁵³ | número |
+| `time` | `int`, ns UTC since 1970 | RFC 3339 with `Z` (ref/00, §3) |
+| `duration` | `uint`, ns | duration literal (`"10m"`) |
+| `digest` | `bstr` of 32 B | `"sha256:<64 hex>"` |
+| `ulid` | `bstr` of 16 B | 26 Crockford base32 characters |
+| `kid` | `bstr` of 16 B: the first 16 bytes of the SHA-256 of the raw public key | 32 hex |
+| `enum` | numeric value (§2.2) | `snake_case` name |
+| `bytes`, `cose` | `bstr` | base64 (RFC 4648, §4, with `=`) |
+| `seq` | `uint` < 2⁵³ | number |
 
-**Chaves inteiras.** 1–99: v1. 100–119: reservadas para a v2 (sites, §6). Negativas em CBOR, e de texto começadas por `x_` em JSON: extensões privadas, sempre ignoradas. Uma chave removida nunca se reutiliza (ref/00, §1).
+**Integer keys.** 1–99: v1. 100–119: reserved for v2 (sites, §6). Negative ones in CBOR, and text ones starting with `x_` in JSON: private extensions, always ignored. A removed key is never reused (ref/00, §1).
 
-**Leitura tolerante.** Um leitor ignora membros desconhecidos e mapeia um valor de enum desconhecido para a categoria indicada em §2.2 (ou `unknown`). A exceção é o DSD: uma chave listada em `crit` (chave 20) que o nó não conheça faz recusar o documento (`J0946`). É o mecanismo que impede um nó antigo de aplicar metade de um estado desejado novo.
+**Tolerant reading.** A reader ignores unknown members and maps an unknown enum value to the category indicated in §2.2 (or `unknown`). The exception is the DSD: a key listed in `crit` (key 20) that the node does not know makes it refuse the document (`J0946`). It is the mechanism that prevents an old node from applying half of a new desired state.
 
-**COSE.** Cabeçalho protegido: `alg` (1) = −8 (EdDSA) ou −7 (ES256); `kid` (4); `content type` (3) com um dos valores:
+**COSE.** Protected header: `alg` (1) = −8 (EdDSA) or −7 (ES256); `kid` (4); `content type` (3) with one of the values:
 
-| Documento | `content type` | Assinado por (papel) |
+| Document | `content type` | Signed by (role) |
 |---|---|---|
 | `desired-state` | `application/joker-desired+cbor` | `deck` |
 | `command` | `application/joker-command+cbor` | `deck` |
 | `trust-bundle` | `application/joker-trust+cbor` | `root` |
-| `floor-statement` | `application/joker-floor+cbor` | o papel do tipo de artefacto |
-| `renew-proof` | `application/joker-renew+cbor` | chave de identidade do nó (antiga) |
-| mensagens em MQTT (nó → Deck) | `application/joker-agent+cbor` | chave de identidade do nó |
-| mensagens em MQTT (Deck → nó, sem DSD nem comando) | `application/joker-agent+cbor` | `deck` |
+| `floor-statement` | `application/joker-floor+cbor` | the role of the artifact type |
+| `renew-proof` | `application/joker-renew+cbor` | identity key of the node (the old one) |
+| messages over MQTT (node → Deck) | `application/joker-agent+cbor` | identity key of the node |
+| messages over MQTT (Deck → node, neither DSD nor command) | `application/joker-agent+cbor` | `deck` |
 
-Sem `external_aad`. Não há contra-assinaturas nem assinaturas múltiplas na v1.
+No `external_aad`. There are no countersignatures or multiple signatures in v1.
 
-### 2.2 Enumerações
+### 2.2 Enumerations
 
-As partilhadas vêm da ref/00, §6: `clock_quality`, `alarm_state`, `severity`, `role`, `generation_state`, e os resultados e motivos de escrita da ref/00, §4.4. As próprias do protocolo:
+The shared ones come from ref/00, §6: `clock_quality`, `alarm_state`, `severity`, `role`, `generation_state`, and the write results and reasons of ref/00, §4.4. Those specific to the protocol:
 
-| Enum | Valores | Desconhecido lê-se como |
+| Enum | Values | Unknown reads as |
 |---|---|---|
 | `agent-status` | `ok` 0, `retry` 1, `need_full` 2, `bad_request` 3, `unauthorized` 4, `forbidden` 5, `conflict` 6, `unsupported` 7, `revoked` 8, `too_large` 9, `rate_limited` 10, `quarantined` 11, `not_found` 12 | `retry` |
-| `trust-role` | `root` 0 (âncora: assina bundles; as `trust.anchors` do `node.toml`, ref/02 §2.5.4), `deck` 1, `runtime` 2, `apps` 3, `config` 4, `profiles` 5, `boards` 6, `classes` 7, `firmware` 8, `models` 9 (reservado 1.1), `drivers` 10, `secrets` 11. Os nomes são os papéis da ref/02 §2.5.3 e da ref/00 §7.1 | ignorado (a chave não serve para nada) |
+| `trust-role` | `root` 0 (anchor: signs bundles; the `trust.anchors` of `node.toml`, ref/02 §2.5.4), `deck` 1, `runtime` 2, `apps` 3, `config` 4, `profiles` 5, `boards` 6, `classes` 7, `firmware` 8, `models` 9 (reserved 1.1), `drivers` 10, `secrets` 11. The names are the roles of ref/02 §2.5.3 and of ref/00 §7.1 | ignored (the key is good for nothing) |
 | `key_storage` | `tpm` 0, `secure_element` 1, `file` 2 | `file` |
-| `node-kind` | `linux` 0, `micro` 1 | — (recusa) |
+| `node-kind` | `linux` 0, `micro` 1 | — (refuses) |
 | `mode` | `dev` 0, `prod` 1 | `prod` |
-| `capability` | `mqtt` 0, `long_poll` 1, `sessions` 2, `cbor_https` 3, `import` 4, `mcus` 5, `models` 6 (1.1), `attestation` 7 | ignorada |
-| `source-kind` | `oci` 0, `deck` 1, `mirror` 2 | fonte ignorada |
-| `source-auth` | `mtls` 0, `token` 1, `none` 2 | fonte ignorada |
-| `confirm-mode` | `auto` 0, `deck` 1, `manual` 2 | recusa (`J0979`) |
-| `phase` | `runtime` 0, `mcu` 1, `generation` 2 | recusa |
+| `capability` | `mqtt` 0, `long_poll` 1, `sessions` 2, `cbor_https` 3, `import` 4, `mcus` 5, `models` 6 (1.1), `attestation` 7 | ignored |
+| `source-kind` | `oci` 0, `deck` 1, `mirror` 2 | source ignored |
+| `source-auth` | `mtls` 0, `token` 1, `none` 2 | source ignored |
+| `confirm-mode` | `auto` 0, `deck` 1, `manual` 2 | refuses (`J0979`) |
+| `phase` | `runtime` 0, `mcu` 1, `generation` 2 | refuses |
 | `apply-state` | `accepted` 0, `validating` 1, `fetching` 2, `staging` 3, `waiting` 4, `applying` 5, `confirming` 6, `confirmed` 7, `rolled_back` 8, `failed` 9, `refused` 10, `superseded` 11, `noop` 12 | — |
 | `wait-reason` | `not_before` 0, `window` 1, `jitter` 2, `clock` 3, `paused` 4, `local_hold` 5, `confirmation` 6, `rate_limit` 7, `mcu_link` 8 | — |
 | `command-kind` | `confirm` 0, `reject` 1, `report_full` 2, `renew` 3, `upload` 4, `session_open` 5 (1.3), `session_close` 6 (1.3) | `unsupported` |
 | `upload-kind` | `decisions` 0, `logs` 1, `trace` 2, `events` 3 | `unsupported` |
 | `health` | `ok` 0, `degraded` 1, `failed` 2, `unknown` 3 | `unknown` |
 | `group-state` | `ok` 0, `degraded` 1, `overrun` 2, `tripped` 3, `stopped` 4 | `degraded` |
-| `link-state` | `connecting` 0, `up` 1, `degraded` 2, `down` 3, `drift` 4, `stopped` 5 (o `link_state` da ref/00 §6) | `degraded` |
-| `instance-health` | `ok` 0, `degraded` 1, `failed` 2 (documento 14, A8) | `degraded` |
-| `app-state` | `starting` 0, `running` 1, `crashloop` 2, `stopped` 3, `failed` 4, `shadow` 5, `updating` 6 (o `app_state` da ref/00 §6) | `failed` |
-| `gen-origin` | `agent` 0, `local` 1, `import` 2, `session` 3, `shadow` 4, `rollback` 5, `boot` 6 (a origem de cada **ativação**, a mesma da API, ref/09 §5.13) | `local` |
+| `link-state` | `connecting` 0, `up` 1, `degraded` 2, `down` 3, `drift` 4, `stopped` 5 (the `link_state` of ref/00 §6) | `degraded` |
+| `instance-health` | `ok` 0, `degraded` 1, `failed` 2 (document 14, A8) | `degraded` |
+| `app-state` | `starting` 0, `running` 1, `crashloop` 2, `stopped` 3, `failed` 4, `shadow` 5, `updating` 6 (the `app_state` of ref/00 §6) | `failed` |
+| `gen-origin` | `agent` 0, `local` 1, `import` 2, `session` 3, `shadow` 4, `rollback` 5, `boot` 6 (the origin of each **activation**, the same as the API's, ref/09 §5.13) | `local` |
 | `transport` | `https` 0, `mqtt` 1, `coap` 2 | — |
 | `slot` | `a` 0, `b` 1 | — |
-| `event-type` | `alarm` 0, `decision` 1, `apply` 2, `trip` 3, `security` 4, `session` 5, `gap` 6, `clock` 7, `command_result` 8, `cert` 9, `agent` 10 | guardado tal qual |
+| `event-type` | `alarm` 0, `decision` 1, `apply` 2, `trip` 3, `security` 4, `session` 5, `gap` 6, `clock` 7, `command_result` 8, `cert` 9, `agent` 10 | stored as is |
 | `trip-action` | `tripped` 0, `reset` 1 | — |
-| `security-kind` | `desired_refused` 0, `command_refused` 1, `trust_refused` 2, `floor_refused` 3, `artifact_refused` 4, `clone_suspected` 5, `session_refused` 6, `tls_pin` 7 | guardado tal qual |
+| `security-kind` | `desired_refused` 0, `command_refused` 1, `trust_refused` 2, `floor_refused` 3, `artifact_refused` 4, `clone_suspected` 5, `session_refused` 6, `tls_pin` 7 | stored as is |
 | `session-action` | `requested` 0, `opened` 1, `closed` 2, `refused` 3, `expired` 4 | — |
 | `cert-action` | `renewed` 0, `expiring` 1, `expired` 2, `revoked` 3 | — |
 | `agent-action` | `paused` 0, `resumed` 1, `hold` 2, `imported` 3, `offline` 4, `online` 5 | — |
-| `tunnel-kind` | `open` 0, `data` 1, `close` 2, `reset` 3, `credit` 4, `ping` 5 | fecha o túnel |
+| `tunnel-kind` | `open` 0, `data` 1, `close` 2, `reset` 3, `credit` 4, `ping` 5 | closes the tunnel |
 
-### 2.3 Respostas e erros
+### 2.3 Responses and errors
 
-Uma resposta de erro é um `status-reply`:
+An error response is a `status-reply`:
 
-| # | Nome | Tipo | Obr. | Significado |
+| # | Name | Type | Req. | Meaning |
 |---|---|---|---|---|
-| 1 | `status` | `agent-status` | sim | categoria (decide o que o cliente faz) |
-| 2 | `code` | J-code | não | a causa, do registo (§2.20, ref/00, §8) |
-| 3 | `detail` | tstr ≤ 1 KiB | não | texto para pessoas, em inglês |
-| 4 | `retry_after` | duração | não | espera mínima antes de repetir |
+| 1 | `status` | `agent-status` | yes | category (decides what the client does) |
+| 2 | `code` | J-code | no | the cause, from the registry (§2.20, ref/00, §8) |
+| 3 | `detail` | tstr ≤ 1 KiB | no | text for people, in English |
+| 4 | `retry_after` | duration | no | minimum wait before retrying |
 
-Em HTTPS, o `status` acompanha o código HTTP:
+Over HTTPS, the `status` accompanies the HTTP code:
 
-| `agent-status` | HTTP | O cliente |
+| `agent-status` | HTTP | The client |
 |---|---|---|
 | `ok` | 200 | — |
-| `retry` | 503 | repete com backoff (§3.11.4) |
-| `need_full` | 409 | envia um relatório completo |
-| `bad_request` | 400 | não repete a mesma mensagem; regista `J0978` localmente |
-| `unauthorized` | 401 | renova o certificado (§3.2) |
-| `forbidden` | 403 | não repete; alarme local |
-| `conflict` | 409 | relê o estado (hello) |
-| `unsupported` | 501 | desiste da funcionalidade |
-| `revoked` | 410 | pára o agente; alarme `joker.agent.revoked` |
-| `too_large` | 413 | parte ou trunca (§3.8) |
-| `rate_limited` | 429 | espera `retry_after` |
-| `quarantined` | 403 | continua a reportar, não espera estado desejado (§3.2.3) |
+| `retry` | 503 | retries with backoff (§3.11.4) |
+| `need_full` | 409 | sends a full report |
+| `bad_request` | 400 | does not retry the same message; logs `J0978` locally |
+| `unauthorized` | 401 | renews the certificate (§3.2) |
+| `forbidden` | 403 | does not retry; local alarm |
+| `conflict` | 409 | rereads the state (hello) |
+| `unsupported` | 501 | gives up on the feature |
+| `revoked` | 410 | stops the agent; alarm `joker.agent.revoked` |
+| `too_large` | 413 | splits or truncates (§3.8) |
+| `rate_limited` | 429 | waits `retry_after` |
+| `quarantined` | 403 | keeps reporting, does not expect desired state (§3.2.3) |
 | `not_found` | 404 | — |
 
-### 2.4 Identidade e confiança
+### 2.4 Identity and trust
 
-#### 2.4.1 Chaves
+#### 2.4.1 Keys
 
-| Chave | Algoritmo | Onde vive | Para quê |
+| Key | Algorithm | Where it lives | What for |
 |---|---|---|---|
-| **identidade do nó** | ECDSA P-256 (ES256) | TPM 2.0 ou elemento seguro quando existe; senão ficheiro `0600` em `/var/lib/joker/identity/` (aviso `J0933`); num MCU, elemento seguro ou flash protegida | mTLS com o Deck e o broker; assinatura das mensagens em MQTT; prova de renovação |
-| **raiz da organização** (`root`) | Ed25519 | fora de linha (HSM, cartão, cerimónia) | assina bundles de confiança (as âncoras, ref/02 §2.5.4) |
-| **Deck** (`deck`) | Ed25519 | no Deck, de preferência em KMS/HSM | assina DSD, comandos e mensagens Deck → nó em MQTT |
-| **artefactos** (`runtime`, `apps`, `config`, `profiles`, `boards`, `classes`, `drivers`, `firmware`, `secrets`, `models`) | Ed25519 | **fora do Deck**: pipeline de release, KMS, assinatura fora de linha | assinam artefactos OCI (cosign/notation), pisos e, `secrets`, as entradas de segredos (ref/02 §2.4) |
+| **node identity** | ECDSA P-256 (ES256) | TPM 2.0 or secure element when there is one; otherwise a `0600` file in `/var/lib/joker/identity/` (warning `J0933`); on an MCU, secure element or protected flash | mTLS with the Deck and the broker; signature of the messages over MQTT; renewal proof |
+| **organization root** (`root`) | Ed25519 | offline (HSM, card, ceremony) | signs trust bundles (the anchors, ref/02 §2.5.4) |
+| **Deck** (`deck`) | Ed25519 | in the Deck, preferably in KMS/HSM | signs DSD, commands and Deck → node messages over MQTT |
+| **artifacts** (`runtime`, `apps`, `config`, `profiles`, `boards`, `classes`, `drivers`, `firmware`, `secrets`, `models`) | Ed25519 | **outside the Deck**: release pipeline, KMS, offline signing | sign OCI artifacts (cosign/notation), floors and, `secrets`, the secret entries (ref/02 §2.4) |
 
-D7 e ADR 0025: a identidade dos nós é **P-256**, porque é o que os TPM, os elementos seguros (ATECC608 e afins) e as pilhas TLS de MCU (mbedTLS) suportam; as chaves da organização são **Ed25519**. No COSE, `EdDSA` (−8) é o algoritmo das chaves da organização e `ES256` (−7) o das assinaturas feitas pelo próprio nó (mensagens MQTT, prova de renovação). Um `trust-key` com `alg` ≠ −8 é recusado (`J0939`).
+D7 and ADR 0025: the identity of nodes is **P-256**, because that is what TPMs, secure elements (ATECC608 and the like) and MCU TLS stacks (mbedTLS) support; the organization keys are **Ed25519**. In COSE, `EdDSA` (−8) is the algorithm of the organization keys and `ES256` (−7) that of the signatures made by the node itself (MQTT messages, renewal proof). A `trust-key` with `alg` ≠ −8 is refused (`J0939`).
 
-#### 2.4.2 Certificado do nó
+#### 2.4.2 Node certificate
 
-| Campo | Valor |
+| Field | Value |
 |---|---|
-| versão | X.509 v3 |
-| sujeito | `CN=<nó>, O=<org>` |
-| SAN | `URI:urn:joker:<org>:node:<nó>` (Linux) ou `URI:urn:joker:<org>:micro:<nó>` (MCU autónomo); `DNS:<nó>`; e a chave KEM X25519 de segredos em `URI:urn:joker:kem:x25519:<base64url>` (ref/02 §3.2.3, §3.4.2) |
+| version | X.509 v3 |
+| subject | `CN=<node>, O=<org>` |
+| SAN | `URI:urn:joker:<org>:node:<node>` (Linux) or `URI:urn:joker:<org>:micro:<node>` (standalone MCU); `DNS:<node>`; and the X25519 KEM key for secrets in `URI:urn:joker:kem:x25519:<base64url>` (ref/02 §3.2.3, §3.4.2) |
 | EKU | `clientAuth` |
-| chave | P-256 |
-| validade | omissão 365 d; entre 30 d e 5 anos (política do Deck) |
-| emissor | CA emissora da organização (pode viver no Deck; a sua compromissão não dá acesso aos nós, §4, S1) |
+| key | P-256 |
+| validity | default 365 d; between 30 d and 5 years (policy of the Deck) |
+| issuer | issuing CA of the organization (it may live in the Deck; its compromise does not give access to the nodes, §4, S1) |
 
-#### 2.4.3 Bundle de confiança (`trust-bundle`)
+#### 2.4.3 Trust bundle (`trust-bundle`)
 
-Assinado por uma chave `root`. É o que o nó usa para verificar tudo o resto.
+Signed by a `root` key. It is what the node uses to verify everything else.
 
-| # | Nome | Tipo | Obr. | Omissão | Validação | Erro |
+| # | Name | Type | Req. | Default | Validation | Error |
 |---|---|---|---|---|---|---|
-| 1 | `v` | `1` | sim | — | = 1 | `J0939` |
-| 2 | `org` | nome | sim | — | = org do nó | `J0939` |
-| 3 | `version` | seq | sim | — | > versão instalada | `J0939` |
-| 4 | `issued` | tempo | sim | — | — | — |
-| 5 | `authority` | nome | não | sem Deck | uma chave `deck` com esse `deck` | `J0939` |
-| 6 | `keys` | `[+ trust-key]` | sim | — | ≤ 32; pelo menos uma `root` | `J0939` |
-| 7 | `deck_urls` | `[+ tstr]` | não | — | `https://`, ≤ 4 | `J0939` |
-| 8 | `deck_tls` | `[+ digest]` | não | WebPKI | SHA-256 do SPKI aceite para o Deck e o broker | — |
-| 9 | `mqtt` | `[+ tstr]` | não | — | `mqtts://`, ≤ 4 | `J0939` |
-| 10 | `coap` | `[+ tstr]` | não | — | `coaps://`, ≤ 4 | `J0939` |
-| 11 | `scope` | `[+ tstr]` | não | `["*"]` | nomes de nós ou `site:<s>`; o nó tem de estar incluído | `J0939` |
-| 12 | `min_mode` | `mode` | não | `dev` | o nó recusa gerações com `mode` abaixo deste; combina-se com `[policy] allow_dev` do `node.toml` (ref/02 §3.5.1): uma geração `dev` precisa das duas coisas | `J0956`, `J0906` |
+| 1 | `v` | `1` | yes | — | = 1 | `J0939` |
+| 2 | `org` | name | yes | — | = org of the node | `J0939` |
+| 3 | `version` | seq | yes | — | > installed version | `J0939` |
+| 4 | `issued` | time | yes | — | — | — |
+| 5 | `authority` | name | no | no Deck | a `deck` key with that `deck` | `J0939` |
+| 6 | `keys` | `[+ trust-key]` | yes | — | ≤ 32; at least one `root` | `J0939` |
+| 7 | `deck_urls` | `[+ tstr]` | no | — | `https://`, ≤ 4 | `J0939` |
+| 8 | `deck_tls` | `[+ digest]` | no | WebPKI | SHA-256 of the SPKI accepted for the Deck and the broker | — |
+| 9 | `mqtt` | `[+ tstr]` | no | — | `mqtts://`, ≤ 4 | `J0939` |
+| 10 | `coap` | `[+ tstr]` | no | — | `coaps://`, ≤ 4 | `J0939` |
+| 11 | `scope` | `[+ tstr]` | no | `["*"]` | node names or `site:<s>`; the node must be included | `J0939` |
+| 12 | `min_mode` | `mode` | no | `dev` | the node refuses generations with a `mode` below this; it combines with `[policy] allow_dev` of `node.toml` (ref/02 §3.5.1): a `dev` generation needs both | `J0956`, `J0906` |
 
 `trust-key`:
 
-| # | Nome | Tipo | Obr. | Validação |
+| # | Name | Type | Req. | Validation |
 |---|---|---|---|---|
-| 1 | `kid` | kid | sim | = SHA-256(`key`)[0..16]; único no bundle |
-| 2 | `alg` | int | sim | −8 (Ed25519, D7) |
-| 3 | `key` | bytes | sim | 32 B |
-| 4 | `roles` | `[+ trust-role]` | sim | `root` não se combina com outros papéis |
-| 5 | `not_after` | tempo | não | verificada só com relógio `synced` |
-| 6 | `deck` | nome | se `deck` ∈ `roles` | o `deck_id` que a chave representa |
+| 1 | `kid` | kid | yes | = SHA-256(`key`)[0..16]; unique in the bundle |
+| 2 | `alg` | int | yes | −8 (Ed25519, D7) |
+| 3 | `key` | bytes | yes | 32 B |
+| 4 | `roles` | `[+ trust-role]` | yes | `root` is not combined with other roles |
+| 5 | `not_after` | time | no | checked only with the clock `synced` |
+| 6 | `deck` | name | if `deck` ∈ `roles` | the `deck_id` that the key represents |
 
-**Regra de atualização.** Um bundle novo só é aceite se for assinado por uma chave `root` **do bundle instalado** e tiver `version` maior. Uma rotação da raiz é um bundle assinado pela raiz antiga que já inclui a nova. Um nó que esteve fora durante várias rotações recebe a **cadeia** de bundles e verifica-os um a um (`renew-reply.trust`, `hello-reply.trust`, `GET /trust`).
+**Update rule.** A new bundle is only accepted if it is signed by a `root` key **of the installed bundle** and has a higher `version`. A root rotation is a bundle signed by the old root that already includes the new one. A node that was away during several rotations receives the **chain** of bundles and verifies them one by one (`renew-reply.trust`, `hello-reply.trust`, `GET /trust`).
 
-**Manifesto.** O `[security] trust` do manifesto (documento 03, §13) **só restringe**: cada chave lá referida tem de estar no bundle com o papel correspondente. Uma chave que não esteja é `J0292`, a validação do manifesto (ref/01), no `jk check` e no V20 do staging. Assim, quem assina configuração não consegue alargar quem assina runtime ou apps.
+**Manifest.** The `[security] trust` of the manifest (document 03, §13) **only restricts**: each key referred to there must be in the bundle with the corresponding role. A key that is not is `J0292`, from manifest validation (ref/01), in `jk check` and in V20 of staging. Thus, whoever signs configuration cannot widen who signs runtime or apps.
 
-#### 2.4.4 Pisos de segurança (`floor-statement`)
+#### 2.4.4 Security floors (`floor-statement`)
 
-Assinado por uma chave com o papel do tipo de artefacto (o piso da runtime pela chave `runtime`, e assim por diante).
+Signed by a key with the role of the artifact type (the floor of the runtime by the `runtime` key, and so on).
 
-| # | Nome | Tipo | Obr. | Validação |
+| # | Name | Type | Req. | Validation |
 |---|---|---|---|---|
-| 1 | `v` | `1` | sim | = 1 |
-| 2 | `role` | `trust-role` | sim | ≠ `root`, ≠ `deck` |
-| 3 | `seq` | seq | sim | > último piso aceite para (`role`, `scope`) |
-| 4 | `issued` | tempo | sim | — |
-| 5 | `min_version` | semver | não | versão mínima admissível |
-| 6 | `revoked` | `[* digest]` | não | ≤ 256 digests proibidos |
-| 7 | `scope` | tstr | não, `"*"` | placa, arquitetura (`arch:aarch64`) ou `*` |
-| 8 | `min_counter` | uint | não | contador de segurança mínimo (firmware de MCU) |
+| 1 | `v` | `1` | yes | = 1 |
+| 2 | `role` | `trust-role` | yes | ≠ `root`, ≠ `deck` |
+| 3 | `seq` | seq | yes | > last floor accepted for (`role`, `scope`) |
+| 4 | `issued` | time | yes | — |
+| 5 | `min_version` | semver | no | minimum admissible version |
+| 6 | `revoked` | `[* digest]` | no | ≤ 256 forbidden digests |
+| 7 | `scope` | tstr | no, `"*"` | board, architecture (`arch:aarch64`) or `*` |
+| 8 | `min_counter` | uint | no | minimum security counter (MCU firmware) |
 
-O nó guarda o piso de maior `seq` por (`role`, `scope`), com fsync. Um piso inválido faz recusar o DSD inteiro (`J0939`).
+The node keeps the floor with the highest `seq` per (`role`, `scope`), with fsync. An invalid floor makes the whole DSD be refused (`J0939`).
 
-### 2.5 Enrolamento e renovação
+### 2.5 Enrollment and renewal
 
-#### 2.5.1 Token de enrolamento
+#### 2.5.1 Enrollment token
 
 ```
-jkt1_<org>_<kid-da-raiz, 32 hex>_<segredo, 32 caracteres base32>
+jkt1_<org>_<root-kid, 32 hex>_<secret, 32 base32 characters>
 ```
 
-O `_` separa sem ambiguidade, porque não existe em nomes (ref/00, §5). O token é de uso único, expira (omissão 24 h, máximo 7 d) e pode estar preso a um nome de nó ou a um site. O `kid` da raiz permite ao nó verificar o bundle que recebe sem confiar no canal: é o único *trust on first use* do protocolo, e é explícito.
+The `_` separates without ambiguity, because it does not exist in names (ref/00, §5). The token is single-use, expires (default 24 h, maximum 7 d) and may be bound to a node name or to a site. The `kid` of the root lets the node verify the bundle it receives without trusting the channel: it is the only *trust on first use* of the protocol, and it is explicit.
 
-#### 2.5.2 `enroll-request` (nó → Deck, `POST /enroll`, sem mTLS)
+#### 2.5.2 `enroll-request` (node → Deck, `POST /enroll`, without mTLS)
 
-| # | Nome | Tipo | Obr. | Validação | Erro |
+| # | Name | Type | Req. | Validation | Error |
 |---|---|---|---|---|---|
-| 1 | `token` | tstr | sim | válido, por usar, não expirado | `J0930` |
-| 2 | `node` | nome | sim | gramática da ref/00, §5; livre na org ou igual ao do token | `J0932` |
-| 3 | `csr` | bytes | sim | PKCS#10 DER, P-256, assinado pela própria chave; `CN` = `node`; com a chave KEM X25519 no SAN URI `urn:joker:kem:x25519:<base64url>` (ref/02 §3.2.3) | `J0932` |
-| 4 | `hw` | digest | sim | impressão do hardware (§3.2.3) | — |
-| 5 | `key_storage` | enum | sim | o Deck pode exigir `tpm`/`secure_element` | `J0933` |
-| 6 | `kind` | `node-kind` | sim | — | — |
-| 7 | `board` | tstr | não | — | — |
-| 8 | `runtime` | semver | não | — | — |
-| 9 | `attestation` | `attestation` | não | reservado; o Deck pode exigi-lo a partir da 1.3 | `J0933` |
+| 1 | `token` | tstr | yes | valid, unused, not expired | `J0930` |
+| 2 | `node` | name | yes | grammar of ref/00, §5; free in the org or equal to that of the token | `J0932` |
+| 3 | `csr` | bytes | yes | PKCS#10 DER, P-256, signed by its own key; `CN` = `node`; with the X25519 KEM key in the SAN URI `urn:joker:kem:x25519:<base64url>` (ref/02 §3.2.3) | `J0932` |
+| 4 | `hw` | digest | yes | hardware fingerprint (§3.2.3) | — |
+| 5 | `key_storage` | enum | yes | the Deck may require `tpm`/`secure_element` | `J0933` |
+| 6 | `kind` | `node-kind` | yes | — | — |
+| 7 | `board` | tstr | no | — | — |
+| 8 | `runtime` | semver | no | — | — |
+| 9 | `attestation` | `attestation` | no | reserved; the Deck may require it from 1.3 on | `J0933` |
 
-`attestation` (TPM 2.0): `kind` (1, `tpm2` 0), `ek_cert` (2, certificado da *endorsement key*, DER), `ak` (3, chave pública da *attestation key*), `quote` (4, `TPM2_Quote` sobre os PCR 0–7 e o `nonce`), `nonce` (5, obtido em `GET /enroll/nonce`, válido 5 min). A verificação é do Deck; o formato fica fixado já para não mudar na 1.3.
+`attestation` (TPM 2.0): `kind` (1, `tpm2` 0), `ek_cert` (2, certificate of the *endorsement key*, DER), `ak` (3, public key of the *attestation key*), `quote` (4, `TPM2_Quote` over PCRs 0–7 and the `nonce`), `nonce` (5, obtained from `GET /enroll/nonce`, valid for 5 min). The verification belongs to the Deck; the format is fixed now so that it does not change in 1.3.
 
 #### 2.5.3 `enroll-reply`
 
-| # | Nome | Tipo | Obr. | Significado |
+| # | Name | Type | Req. | Meaning |
 |---|---|---|---|---|
-| 1 | `cert` | `[+ bytes]` | sim | cadeia DER, folha primeiro, até à CA emissora |
-| 2 | `trust` | cose | sim | bundle assinado; o nó verifica que a raiz tem o `kid` do token (`J0931`) |
-| 3 | `deck` | nome | não | `deck_id` da autoridade (= `trust.authority`) |
-| 4 | `settings` | `agent-settings` | não | valores iniciais (§2.9) |
-| 5 | `anchors` | `[+ trust-key]` | sim | as chaves `root` da organização: o nó escreve-as em `trust.anchors` do `node.toml` (ref/02 §3.2.3, passo 4); uma delas tem o `kid` do token, e o bundle da chave 2 tem de estar assinado por uma delas |
+| 1 | `cert` | `[+ bytes]` | yes | DER chain, leaf first, up to the issuing CA |
+| 2 | `trust` | cose | yes | signed bundle; the node verifies that the root has the `kid` of the token (`J0931`) |
+| 3 | `deck` | name | no | `deck_id` of the authority (= `trust.authority`) |
+| 4 | `settings` | `agent-settings` | no | initial values (§2.9) |
+| 5 | `anchors` | `[+ trust-key]` | yes | the `root` keys of the organization: the node writes them to `trust.anchors` of `node.toml` (ref/02 §3.2.3, step 4); one of them has the `kid` of the token, and the bundle of key 2 must be signed by one of them |
 
-#### 2.5.4 Renovação (`POST /renew`, mTLS)
+#### 2.5.4 Renewal (`POST /renew`, mTLS)
 
-`renew-request`: `csr` (1, chave de identidade **nova** em cada renovação, com a **mesma** chave KEM no SAN, que só muda num novo enrolamento, ref/02 §3.2.3), `proof` (2, COSE_Sign1 da chave antiga sobre `renew-proof`), `hw` (3). `renew-proof`: `node` (1), `csr` (2, SHA-256 do CSR), `ts` (3), `nonce` (4, ULID). `renew-reply`: `cert` (1) e, se o nó estiver atrasado, a cadeia de bundles (2).
+`renew-request`: `csr` (1, a **new** identity key at each renewal, with the **same** KEM key in the SAN, which only changes at a new enrollment, ref/02 §3.2.3), `proof` (2, COSE_Sign1 of the old key over `renew-proof`), `hw` (3). `renew-proof`: `node` (1), `csr` (2, SHA-256 of the CSR), `ts` (3), `nonce` (4, ULID). `renew-reply`: `cert` (1) and, if the node is behind, the chain of bundles (2).
 
-O Deck aceita o mTLS com o certificado antigo **mesmo expirado**, até `renew_grace` depois do fim (política do Deck, omissão 730 d), desde que não esteja revogado e a prova confira (`J0936` se não).
+The Deck accepts mTLS with the old certificate **even if expired**, up to `renew_grace` after its end (policy of the Deck, default 730 d), provided it is not revoked and the proof checks out (`J0936` if not).
 
-### 2.6 Estado desejado (`desired-state`)
+### 2.6 Desired state (`desired-state`)
 
-| # | Nome | Tipo | Obr. | Omissão | Validação | Erro |
+| # | Name | Type | Req. | Default | Validation | Error |
 |---|---|---|---|---|---|---|
-| 1 | `v` | `1` | sim | — | = 1 | `J0946` |
-| 2 | `node` | nome | sim | — | = nome do nó | `J0944` |
-| 3 | `org` | nome | sim | — | = org do nó | `J0944` |
-| 4 | `deck` | nome | sim | — | = `authority` do bundle e = `deck` da chave | `J0941` |
-| 5 | `seq` | seq | sim | — | > último aceite (§3.3) | `J0942`, `J0943` |
-| 6 | `issued` | tempo | sim | — | ≤ agora + 5 min (só com relógio `synced`) | `J0945` |
-| 7 | `expires` | tempo | não | sem expiração | > agora (só com relógio `synced`) | `J0945` |
-| 8 | `runtime` | `runtime-target` | não | manter a atual | §2.6.1 | `J0947`, `J0948` |
-| 9 | `generation` | `generation-target` | não | manter a atual | §2.6.2 | `J0954`, `J0955` |
-| 10 | `artifacts` | `[* artifact]` | sim | — | ≤ 256; todos os digests referidos, e só esses (§3.3, V12 e V18) | `J0949` |
-| 11 | `sources` | `[+ source]` | não | `[{url = <deck>/agent/v1/blobs, kind = deck}]` | ≤ 8 | `J0946` |
-| 12 | `confirm` | `confirm-policy` | não | §2.6.4 | §2.6.4 | `J0979` |
-| 13 | `rollout` | `rollout-info` | não | — | informativo; volta nos eventos | — |
-| 14 | `schedule` | `schedule` | não | aplicar já | §2.6.5 | `J0979` |
-| 15 | `mcus` | `[* mcu-target]` | não | manter os atuais | ≤ 32; `device` existe na geração alvo com o driver `joker-link` | `J0949` |
-| 16 | `trust` | `[+ cose]` | não | — | bundles novos, por ordem de versão | `J0939` |
-| 17 | `floors` | `[+ cose]` | não | — | pisos novos | `J0939` |
-| 18 | `settings` | `agent-settings` | não | — | limitadas às margens do nó (§2.9) | — |
-| 19 | `override_local` | bool | não | `false` | se `true`, substitui uma geração alterada localmente (§3.7) | — |
-| 20 | `crit` | `[+ uint]` | não | — | chaves que o nó tem de conhecer | `J0946` |
-| 21 | `note` | tstr ≤ 1 KiB | não | — | texto para pessoas (aparece no `jk agent desired`) | — |
-| 22 | `secrets` | bytes | não | — | o `secret-bundle` deste nó (tipo de media `joker.secrets.v1`, `spec/cddl/secrets.cddl`, ref/02 §2.4): as entradas cifradas para a chave KEM do nó, cada uma assinada pelo papel `secrets`. O Deck entrega-as sem as conseguir ler (D6, ADR 0024). Verificadas entrada a entrada no V10b (§3.3) | `J0922`–`J0926` (por entrada) |
-| 23 | — | — | — | — | reservado: modelos (1.1) | — |
-| 100–119 | — | — | — | — | reservado: v2 (sites) | — |
+| 1 | `v` | `1` | yes | — | = 1 | `J0946` |
+| 2 | `node` | name | yes | — | = name of the node | `J0944` |
+| 3 | `org` | name | yes | — | = org of the node | `J0944` |
+| 4 | `deck` | name | yes | — | = `authority` of the bundle and = `deck` of the key | `J0941` |
+| 5 | `seq` | seq | yes | — | > last accepted (§3.3) | `J0942`, `J0943` |
+| 6 | `issued` | time | yes | — | ≤ now + 5 min (only with the clock `synced`) | `J0945` |
+| 7 | `expires` | time | no | no expiration | > now (only with the clock `synced`) | `J0945` |
+| 8 | `runtime` | `runtime-target` | no | keep the current one | §2.6.1 | `J0947`, `J0948` |
+| 9 | `generation` | `generation-target` | no | keep the current one | §2.6.2 | `J0954`, `J0955` |
+| 10 | `artifacts` | `[* artifact]` | yes | — | ≤ 256; all the digests referred to, and only those (§3.3, V12 and V18) | `J0949` |
+| 11 | `sources` | `[+ source]` | no | `[{url = <deck>/agent/v1/blobs, kind = deck}]` | ≤ 8 | `J0946` |
+| 12 | `confirm` | `confirm-policy` | no | §2.6.4 | §2.6.4 | `J0979` |
+| 13 | `rollout` | `rollout-info` | no | — | informative; comes back in the events | — |
+| 14 | `schedule` | `schedule` | no | apply now | §2.6.5 | `J0979` |
+| 15 | `mcus` | `[* mcu-target]` | no | keep the current ones | ≤ 32; `device` exists in the target generation with the `joker-link` driver | `J0949` |
+| 16 | `trust` | `[+ cose]` | no | — | new bundles, in version order | `J0939` |
+| 17 | `floors` | `[+ cose]` | no | — | new floors | `J0939` |
+| 18 | `settings` | `agent-settings` | no | — | bounded by the margins of the node (§2.9) | — |
+| 19 | `override_local` | bool | no | `false` | if `true`, replaces a locally changed generation (§3.7) | — |
+| 20 | `crit` | `[+ uint]` | no | — | keys that the node must know | `J0946` |
+| 21 | `note` | tstr ≤ 1 KiB | no | — | text for people (appears in `jk agent desired`) | — |
+| 22 | `secrets` | bytes | no | — | the `secret-bundle` of this node (media type `joker.secrets.v1`, `spec/cddl/secrets.cddl`, ref/02 §2.4): the entries encrypted to the KEM key of the node, each signed by the `secrets` role. The Deck delivers them without being able to read them (D6, ADR 0024). Verified entry by entry in V10b (§3.3) | `J0922`–`J0926` (per entry) |
+| 23 | — | — | — | — | reserved: models (1.1) | — |
+| 100–119 | — | — | — | — | reserved: v2 (sites) | — |
 
-Um `runtime`, `generation` ou `mcus` ausente quer dizer "sem opinião": o nó mantém o que tem. Presente, é o alvo completo dessa parte.
+An absent `runtime`, `generation` or `mcus` means "no opinion": the node keeps what it has. When present, it is the complete target for that part.
 
 #### 2.6.1 `runtime-target`
 
-| # | Nome | Tipo | Obr. | Omissão | Validação | Erro |
+| # | Name | Type | Req. | Default | Validation | Error |
 |---|---|---|---|---|---|---|
-| 1 | `version` | semver | sim | — | = `org.joker.version` do artefacto | `J0948` |
-| 2 | `artifact` | digest | sim | — | em `artifacts`, tipo `joker.runtime.v1` | `J0949` |
-| 3 | `allow_downgrade` | bool | não | `false` | necessário se `version` < atual | `J0947` |
-| 4 | `health_window` | duração | não | `5m` | 1 min–1 h | `J0979` |
+| 1 | `version` | semver | yes | — | = `org.joker.version` of the artifact | `J0948` |
+| 2 | `artifact` | digest | yes | — | in `artifacts`, type `joker.runtime.v1` | `J0949` |
+| 3 | `allow_downgrade` | bool | no | `false` | required if `version` < current | `J0947` |
+| 4 | `health_window` | duration | no | `5m` | 1 min–1 h | `J0979` |
 
-O manifesto OCI da runtime leva as anotações `org.joker.version`, `org.joker.arch`, `org.joker.boards` (lista, ou `*`), `org.joker.agent` (minor do protocolo), `org.joker.state_min` (versão mínima do formato de `/var/lib/joker` que lê) e `org.joker.worlds` (mundos WIT aceites). O nó lê-as antes de descarregar o binário.
+The OCI manifest of the runtime carries the annotations `org.joker.version`, `org.joker.arch`, `org.joker.boards` (list, or `*`), `org.joker.agent` (minor of the protocol), `org.joker.state_min` (minimum version of the `/var/lib/joker` format that it reads) and `org.joker.worlds` (accepted WIT worlds). The node reads them before downloading the binary.
 
 #### 2.6.2 `generation-target`
 
-| # | Nome | Tipo | Obr. | Validação | Erro |
+| # | Name | Type | Req. | Validation | Error |
 |---|---|---|---|---|---|
-| 1 | `hash` | digest | sim | = hash calculado no staging (§3.4.3) | `J0955` |
-| 2 | `config` | digest | sim | em `artifacts`, tipo `joker.config.v1` | `J0949` |
-| 3 | `label` | tstr ≤ 128 B | não | — | — |
-| 4 | `source` | `git-ref` | não | `repo` (1), `commit` (2), `path` (3): de onde veio, para auditoria | — |
+| 1 | `hash` | digest | yes | = hash computed in staging (§3.4.3) | `J0955` |
+| 2 | `config` | digest | yes | in `artifacts`, type `joker.config.v1` | `J0949` |
+| 3 | `label` | tstr ≤ 128 B | no | — | — |
+| 4 | `source` | `git-ref` | no | `repo` (1), `commit` (2), `path` (3): where it came from, for audit | — |
 
-**Descritor e hash da geração.** Esta secção é a dona da definição (documento 22, §5). Uma geração de um nó é descrita por um **descritor** em CBOR determinístico (`generation-descriptor` no CDDL):
+**Descriptor and hash of the generation.** This section owns the definition (document 22, §5). A generation of a node is described by a **descriptor** in deterministic CBOR (`generation-descriptor` in the CDDL):
 
-| # | Nome | Tipo | Obr. | Conteúdo |
+| # | Name | Type | Req. | Content |
 |---|---|---|---|---|
-| 1 | `v` | `1` | sim | versão do descritor |
-| 2 | `kind` | `node-kind` | sim | `linux` ou `micro` |
-| 3 | `manifest` | mapa CBOR | sim | o manifesto efetivo **com as omissões materializadas e sem as chaves `x_*`** (ref/01 §8.3), em CBOR determinístico com as chaves TOML como `tstr` |
-| 4 | `lock` | digest | sim | o **digest canónico** do `joker.lock` (ref/02 §2.1: SHA-256 da serialização canónica, e não dos bytes do ficheiro) |
-| 5 | `contracts` | `[* digest]` | sim | os hashes dos contratos das classes usadas (documento 17, §6), por ordem de bytes |
-| 6 | `artifacts` | `[* gen-artifact]` | sim | cada ficheiro que a geração refere e que muda o comportamento (apps, drivers, perfis, placas, modelos de simulação, chaves de confiança, EDS, …; ref/01 §8.3, ponto 4): `name` (1, como o manifesto o refere: `apps.peak_shaver`, `profiles/local/xy-md02@1.profile.toml`), `media_type` (2, forma curta da ref/00 §7.1), `digest` (3); por ordem de `name` |
-| 7 | `mode` | `mode` | sim | o `mode` do manifesto (para o V19 sem abrir o manifesto) |
+| 1 | `v` | `1` | yes | version of the descriptor |
+| 2 | `kind` | `node-kind` | yes | `linux` or `micro` |
+| 3 | `manifest` | CBOR map | yes | the effective manifest **with the defaults materialized and without the `x_*` keys** (ref/01 §8.3), in deterministic CBOR with the TOML keys as `tstr` |
+| 4 | `lock` | digest | yes | the **canonical digest** of `joker.lock` (ref/02 §2.1: SHA-256 of the canonical serialization, and not of the bytes of the file) |
+| 5 | `contracts` | `[* digest]` | yes | the hashes of the contracts of the classes used (document 17, §6), in byte order |
+| 6 | `artifacts` | `[* gen-artifact]` | yes | each file that the generation refers to and that changes behavior (apps, drivers, profiles, boards, simulation models, trust keys, EDS, …; ref/01 §8.3, point 4): `name` (1, as the manifest refers to it: `apps.peak_shaver`, `profiles/local/xy-md02@1.profile.toml`), `media_type` (2, short form of ref/00 §7.1), `digest` (3); in order of `name` |
+| 7 | `mode` | `mode` | yes | the `mode` of the manifest (for V19 without opening the manifest) |
 
 ```
 gen_hash = SHA-256( det-CBOR( generation-descriptor ) )
 ```
 
-- A **proveniência** (ficheiro e linha de cada chave, ref/09 §5.13) não entra: não muda o comportamento.
-- Reordenar chaves, mudar comentários ou partir um ficheiro em overlays não muda o manifesto efetivo, e por isso não muda o hash; mudar o conteúdo de um perfil local ou de uma chave de confiança muda-o (ponto 6).
-- A **API local** (ref/09 §5.13) e o **Joker Micro** (o `source_hash` do blob, ref/08 §2.13.2, com `kind = micro`) usam este mesmo cálculo. O `jk`, o `jokerd`, o Deck e o MCU mostram todos o mesmo hash.
+- **Provenance** (file and line of each key, ref/09 §5.13) does not enter: it does not change behavior.
+- Reordering keys, changing comments or splitting a file into overlays does not change the effective manifest, and therefore does not change the hash; changing the content of a local profile or of a trust key changes it (point 6).
+- The **local API** (ref/09 §5.13) and **Joker Micro** (the `source_hash` of the blob, ref/08 §2.13.2, with `kind = micro`) use this same computation. `jk`, `jokerd`, the Deck and the MCU all show the same hash.
 
-**`config` e `hash`.** O artefacto `joker.config.v1+cbor` (ref/00 §7.1) é um COSE_Sign1 assinado pelo papel `config` cuja carga útil é o descritor. `generation-target.config` é o **digest desse artefacto** (com a assinatura, para o descarregar e verificar); `generation-target.hash` é o **hash do descritor** (sem a assinatura), que identifica a geração em todo o lado. No staging (V21), o nó reconstrói o descritor a partir do manifesto, do lock e dos artefactos descarregados, e compara o seu hash com `hash` e com a carga útil do artefacto `config` (`J0955`). O manifesto efetivo vai dentro do descritor; o lock viaja como artefacto do DSD (`joker.lock.v1+toml`), e o nó verifica o seu digest canónico contra a chave 4; os outros ficheiros, pelos digests da chave 6.
+**`config` and `hash`.** The `joker.config.v1+cbor` artifact (ref/00 §7.1) is a COSE_Sign1 signed by the `config` role whose payload is the descriptor. `generation-target.config` is the **digest of that artifact** (with the signature, to download and verify it); `generation-target.hash` is the **hash of the descriptor** (without the signature), which identifies the generation everywhere. In staging (V21), the node rebuilds the descriptor from the manifest, the lock and the downloaded artifacts, and compares its hash with `hash` and with the payload of the `config` artifact (`J0955`). The effective manifest goes inside the descriptor; the lock travels as an artifact of the DSD (`joker.lock.v1+toml`), and the node verifies its canonical digest against key 4; the other files, by the digests of key 6.
 
-#### 2.6.3 `artifact` e `source`
+#### 2.6.3 `artifact` and `source`
 
 `artifact`:
 
-| # | Nome | Tipo | Obr. | Validação | Erro |
+| # | Name | Type | Req. | Validation | Error |
 |---|---|---|---|---|---|
-| 1 | `digest` | digest | sim | único na lista | `J0949` |
-| 2 | `media_type` | tstr | sim | da tabela do §2.16 | `J0957` |
-| 3 | `size` | uint | sim | bytes; o nó recusa a descarga se exceder | `J0950` |
-| 4 | `ref` | tstr | não | referência OCI legível, para pessoas | — |
-| 5 | `signatures` | `[+ digest]` | não | manifestos de assinatura, para registos sem a API *referrers* | — |
+| 1 | `digest` | digest | yes | unique in the list | `J0949` |
+| 2 | `media_type` | tstr | yes | from the table of §2.16 | `J0957` |
+| 3 | `size` | uint | yes | bytes; the node refuses the download if it exceeds it | `J0950` |
+| 4 | `ref` | tstr | no | readable OCI reference, for people | — |
+| 5 | `signatures` | `[+ digest]` | no | signature manifests, for registries without the *referrers* API | — |
 
 `source`:
 
-| # | Nome | Tipo | Obr. | Omissão | Significado |
+| # | Name | Type | Req. | Default | Meaning |
 |---|---|---|---|---|---|
-| 1 | `url` | tstr | sim | — | base de um registo OCI (`https://registry.example.com`) ou do proxy do Deck |
-| 2 | `kind` | `source-kind` | não | `oci` | `deck`: `GET /agent/v1/blobs/{digest}`; `mirror`: registo local do site |
-| 3 | `auth` | `source-auth` | não | `mtls` para `deck`, `token` para `oci` | `token`: o nó pede um `registry-token` ao Deck (§2.13) |
+| 1 | `url` | tstr | yes | — | base of an OCI registry (`https://registry.example.com`) or of the proxy of the Deck |
+| 2 | `kind` | `source-kind` | no | `oci` | `deck`: `GET /agent/v1/blobs/{digest}`; `mirror`: local registry of the site |
+| 3 | `auth` | `source-auth` | no | `mtls` for `deck`, `token` for `oci` | `token`: the node requests a `registry-token` from the Deck (§2.13) |
 
-Os espelhos da configuração do nó (`[agent] mirrors`) são tentados **antes** das fontes do DSD. A origem não importa: o conteúdo é verificado por digest e por assinatura.
+The mirrors of the node configuration (`[agent] mirrors`) are tried **before** the sources of the DSD. The origin does not matter: the content is verified by digest and by signature.
 
 #### 2.6.4 `confirm-policy`
 
-| # | Nome | Tipo | Omissão | Validação | Significado |
+| # | Name | Type | Default | Validation | Meaning |
 |---|---|---|---|---|---|
-| 1 | `mode` | `confirm-mode` | `auto` | — | `auto`: o nó confirma-se a si próprio pela saúde (§3.5); `deck`: espera um comando `confirm`; `manual`: espera um `jk confirm` local (ou por sessão) |
-| 2 | `window` | duração | `10m` | 1 min–24 h; ≥ `stable_for` + 1 min | janela de confirmação da ADR 0015 |
-| 3 | `require_uplink` | bool | `true` | — | a confirmação exige uma troca autenticada com o Deck depois da troca de geração |
-| 4 | `stable_for` | duração | `60s` | 10 s–1 h | tempo seguido de saúde exigido em `auto` |
-| 5 | `alarm_severity` | `severity` | `critical` | — | um alarme novo desta gravidade ou maior falha a saúde |
+| 1 | `mode` | `confirm-mode` | `auto` | — | `auto`: the node confirms itself by health (§3.5); `deck`: waits for a `confirm` command; `manual`: waits for a local `jk confirm` (or one through a session) |
+| 2 | `window` | duration | `10m` | 1 min–24 h; ≥ `stable_for` + 1 min | confirmation window of ADR 0015 |
+| 3 | `require_uplink` | bool | `true` | — | the confirmation requires an authenticated exchange with the Deck after the generation swap |
+| 4 | `stable_for` | duration | `60s` | 10 s–1 h | continuous time of health required in `auto` |
+| 5 | `alarm_severity` | `severity` | `critical` | — | a new alarm of this severity or higher fails the health |
 
-Uma política inválida é `J0979`. O `confirm` do DSD aplica-se às fases `runtime` e `generation`; cada `mcu-target` pode ter o seu.
+An invalid policy is `J0979`. The `confirm` of the DSD applies to the `runtime` and `generation` phases; each `mcu-target` may have its own.
 
-`rollout-info` é só informação para o Deck, devolvida nos eventos `apply` e em `desired.rollout`: `id` (1, ULID do rollout, obrigatório), `wave` (2, número da onda), `cohort` (3, nome da coorte, ≤ 64 B). O nó não decide nada com ela.
+`rollout-info` is only information for the Deck, returned in the `apply` events and in `desired.rollout`: `id` (1, ULID of the rollout, required), `wave` (2, number of the wave), `cohort` (3, name of the cohort, ≤ 64 B). The node decides nothing with it.
 
-#### 2.6.5 `schedule` e `window`
+#### 2.6.5 `schedule` and `window`
 
-| # | Nome | Tipo | Omissão | Validação | Significado |
+| # | Name | Type | Default | Validation | Meaning |
 |---|---|---|---|---|---|
-| 1 | `not_before` | tempo | — | — | não trocar antes deste instante (o download pode começar já) |
-| 2 | `windows` | `[+ window]` | sempre | ≤ 16 | só trocar dentro de uma destas janelas, intersetadas com as do nó (§3.4.4) |
-| 3 | `jitter` | duração | `0s` | ≤ 24 h | atraso aleatório uniforme, sorteado uma vez por DSD e guardado |
-| 4 | `fetch_deadline` | duração | `72h` | 1 h–30 d | prazo para descarregar tudo, contado da aceitação |
+| 1 | `not_before` | time | — | — | do not swap before this instant (the download may start now) |
+| 2 | `windows` | `[+ window]` | always | ≤ 16 | only swap within one of these windows, intersected with those of the node (§3.4.4) |
+| 3 | `jitter` | duration | `0s` | ≤ 24 h | uniform random delay, drawn once per DSD and stored |
+| 4 | `fetch_deadline` | duration | `72h` | 1 h–30 d | deadline to download everything, counted from acceptance |
 
-`window`: `days` (1, `[+ 1..7]`, ISO 8601, 1 = segunda), `start` (2, `"HH:MM"`), `length` (3, duração ≤ 24 h), `tz` (4, IANA, omissão `"UTC"`). Uma janela que atravessa a meia-noite pertence ao dia em que começa. Nas mudanças de hora, conta a hora local de parede; uma hora que não existe começa na seguinte.
+`window`: `days` (1, `[+ 1..7]`, ISO 8601, 1 = Monday), `start` (2, `"HH:MM"`), `length` (3, duration ≤ 24 h), `tz` (4, IANA, default `"UTC"`). A window that crosses midnight belongs to the day on which it starts. On clock changes, the local wall-clock time counts; a time that does not exist starts at the next one.
 
-#### 2.6.6 `mcu-target` (MCUs atrás do nó)
+#### 2.6.6 `mcu-target` (MCUs behind the node)
 
-| # | Nome | Tipo | Obr. | Validação | Erro |
+| # | Name | Type | Req. | Validation | Error |
 |---|---|---|---|---|---|
-| 1 | `device` | caminho | sim | dispositivo com driver `joker-link` na geração alvo | `J0949` |
-| 2 | `firmware` | `mcu-firmware` | não | `version` (1), `artifact` (2, tipo `joker.micro-firmware.v1`), `allow_downgrade` (3, omissão `false`) | `J0963` |
-| 3 | `generation` | `mcu-generation` | não | `hash` (1), `artifact` (2, tipo `joker.generation.v1`) | `J0964` |
-| 4 | `confirm` | `confirm-policy` | não | omissão: `auto`, `window = "5m"`, `stable_for = "30s"`, `require_uplink = false` | `J0979` |
-| 5 | `order` | uint | não, 0 | ordem de atualização; empates por `device` | — |
+| 1 | `device` | path | yes | device with the `joker-link` driver in the target generation | `J0949` |
+| 2 | `firmware` | `mcu-firmware` | no | `version` (1), `artifact` (2, type `joker.micro-firmware.v1`), `allow_downgrade` (3, default `false`) | `J0963` |
+| 3 | `generation` | `mcu-generation` | no | `hash` (1), `artifact` (2, type `joker.generation.v1`) | `J0964` |
+| 4 | `confirm` | `confirm-policy` | no | default: `auto`, `window = "5m"`, `stable_for = "30s"`, `require_uplink = false` | `J0979` |
+| 5 | `order` | uint | no, 0 | update order; ties by `device` | — |
 
-#### 2.6.7 Exemplo (vista JSON, como a mostra `jk agent desired --json`)
+#### 2.6.7 Example (JSON view, as `jk agent desired --json` shows it)
 
 ```json
 {
@@ -428,7 +428,7 @@ Uma política inválida é `J0979`. O `confirm` do DSD aplica-se às fases `runt
   "generation": {
     "hash": "sha256:4c1d0e8f6a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5",
     "config": "sha256:9a0b1c2d3e4f5061728394a5b6c7d8e9f0a1b2c3d4e5f60718293a4b5c6d7e8f",
-    "label": "hp-v3 tarifa epex",
+    "label": "hp-v3 epex tariff",
     "source": { "repo": "https://git.example.com/fleet/sites.git", "commit": "e3b1f07", "path": "sites/joker.hb-01234.toml" }
   },
   "artifacts": [
@@ -442,166 +442,166 @@ Uma política inválida é `J0979`. O `confirm` do DSD aplica-se às fases `runt
 }
 ```
 
-### 2.7 Comandos (`command`, Deck → nó)
+### 2.7 Commands (`command`, Deck → node)
 
-Um comando é um pedido pontual, assinado pela chave `deck`, **idempotente e preso ao seu alvo**. Não há comandos de escrita em sinais, de reinício do nó, nem de mudança de confiança.
+A command is a one-off request, signed by the `deck` key, **idempotent and bound to its target**. There are no commands for writing to signals, for restarting the node, or for changing trust.
 
-| # | Nome | Tipo | Obr. | Validação | Erro |
+| # | Name | Type | Req. | Validation | Error |
 |---|---|---|---|---|---|
-| 1 | `id` | ULID | sim | um `id` repetido devolve o resultado anterior (sem erro) | — |
-| 2 | `node` | nome | sim | = nó | `J0944` |
-| 3 | `deck` | nome | sim | = autoridade | `J0941` |
-| 4 | `ts` | tempo | sim | com relógio `synced`: \|ts − agora\| ≤ 30 s (ref/00, §9) | `J0968` |
-| 5 | `kind` | `command-kind` | sim | — | `unsupported` |
-| 6 | `args` | por `kind` | conforme | — | `J0967` |
-| 7 | `expires` | tempo | não | com relógio `synced`: > agora | `J0968` |
+| 1 | `id` | ULID | yes | a repeated `id` returns the previous result (without error) | — |
+| 2 | `node` | name | yes | = node | `J0944` |
+| 3 | `deck` | name | yes | = authority | `J0941` |
+| 4 | `ts` | time | yes | with the clock `synced`: \|ts − now\| ≤ 30 s (ref/00, §9) | `J0968` |
+| 5 | `kind` | `command-kind` | yes | — | `unsupported` |
+| 6 | `args` | per `kind` | depending | — | `J0967` |
+| 7 | `expires` | time | no | with the clock `synced`: > now | `J0968` |
 
-| `kind` | `args` | Faz | Papel equivalente | Versão |
+| `kind` | `args` | Does | Equivalent role | Version |
 |---|---|---|---|---|
-| `confirm` | `confirm-args`: `seq` (1), `phase` (2), `hash` (3), `device` (4, fase `mcu`) | confirma a fase pendente, se for exatamente esta (seq, fase, hash) | `admin` | 1.0 |
-| `reject` | `confirm-args` | rollback imediato da fase em confirmação (`J0969`) | `admin` | 1.0 |
-| `report_full` | — | envia um relatório completo no próximo envio | `viewer` | 1.0 |
-| `renew` | `renew-args`: `reason` (1) | renova o certificado já (§3.2) | — | 1.0 |
-| `upload` | `upload-args` (§2.7.1) | carrega registos locais para o Deck | `viewer` | 1.0 |
-| `session_open` | `session-open-args` (§2.12) | abre uma sessão remota | segundo a política | 1.3 |
-| `session_close` | `session-close-args`: `id` (1), `reason` (2) | fecha uma sessão | — | 1.3 |
+| `confirm` | `confirm-args`: `seq` (1), `phase` (2), `hash` (3), `device` (4, `mcu` phase) | confirms the pending phase, if it is exactly this one (seq, phase, hash) | `admin` | 1.0 |
+| `reject` | `confirm-args` | immediate rollback of the phase being confirmed (`J0969`) | `admin` | 1.0 |
+| `report_full` | — | sends a full report at the next send | `viewer` | 1.0 |
+| `renew` | `renew-args`: `reason` (1) | renews the certificate now (§3.2) | — | 1.0 |
+| `upload` | `upload-args` (§2.7.1) | uploads local records to the Deck | `viewer` | 1.0 |
+| `session_open` | `session-open-args` (§2.12) | opens a remote session | according to the policy | 1.3 |
+| `session_close` | `session-close-args`: `id` (1), `reason` (2) | closes a session | — | 1.3 |
 
-Um `confirm` ou `reject` cujo alvo não esteja em `confirming` responde `conflict` com `J0967` e não faz nada. Por isso um comando repetido, atrasado ou reordenado nunca estraga nada.
+A `confirm` or `reject` whose target is not in `confirming` responds `conflict` with `J0967` and does nothing. That is why a repeated, delayed or reordered command never breaks anything.
 
 #### 2.7.1 `upload-args`
 
-| # | Nome | Tipo | Obr. | Omissão | Validação |
+| # | Name | Type | Req. | Default | Validation |
 |---|---|---|---|---|---|
-| 1 | `upload` | ULID | sim | — | destino `PUT /agent/v1/uploads/{upload}` |
-| 2 | `what` | `upload-kind` | sim | — | em `[agent.upload] allow` do nó, senão `forbidden` |
-| 3 | `from` | tempo | não | início do registo | — |
-| 4 | `to` | tempo | não | agora | — |
-| 5 | `filter` | tstr | não | tudo | seletor de caminhos (documento 02, §9) |
-| 6 | `max_bytes` | uint | não | `[agent.upload] max_bytes` | ≤ esse valor |
+| 1 | `upload` | ULID | yes | — | destination `PUT /agent/v1/uploads/{upload}` |
+| 2 | `what` | `upload-kind` | yes | — | in `[agent.upload] allow` of the node, otherwise `forbidden` |
+| 3 | `from` | time | no | start of the record | — |
+| 4 | `to` | time | no | now | — |
+| 5 | `filter` | tstr | no | everything | path selector (document 02, §9) |
+| 6 | `max_bytes` | uint | no | `[agent.upload] max_bytes` | ≤ that value |
 
-Formato do corpo: `decisions` e `events` em NDJSON (uma decisão ou evento por linha, na forma JSON deste documento), `logs` em NDJSON dos logs estruturados, `trace` no formato `.jktrace` (documento 16, §7). O carregamento vai na classe `bulk` do orçamento de uplink (documento 01, §13).
+Format of the body: `decisions` and `events` in NDJSON (one decision or event per line, in the JSON form of this document), `logs` in NDJSON of the structured logs, `trace` in the `.jktrace` format (document 16, §7). The upload goes in the `bulk` class of the uplink budget (document 01, §13).
 
-### 2.8 Hello e long-poll
+### 2.8 Hello and long-poll
 
-`hello` (nó → Deck), no início de cada ligação:
+`hello` (node → Deck), at the start of each connection:
 
-| # | Nome | Tipo | Obr. | Significado |
+| # | Name | Type | Req. | Meaning |
 |---|---|---|---|---|
-| 1 | `v` | `1` | sim | — |
-| 2 | `node` | nome | sim | — |
-| 3 | `org` | nome | sim | — |
-| 4 | `proto` | `[major, minor]` | sim | `[1, N]`: a minor mais alta que o nó fala |
-| 5 | `runtime` | semver | sim | versão em execução |
-| 6 | `boot` | ULID | sim | gerado a cada arranque do `jokerd` |
-| 7 | `uptime` | duração | sim | — |
-| 8 | `hw` | digest | sim | impressão do hardware |
-| 9 | `key_storage` | enum | sim | — |
-| 10 | `time` | tempo | sim | relógio do nó |
-| 11 | `clock` | `clock_quality` | sim | — |
-| 12 | `desired_seq` | seq | sim | último DSD aceite (0 = nenhum) |
-| 13 | `report_seq` | seq | sim | último relatório enviado |
-| 14 | `event_seq` | seq | sim | último evento emitido |
-| 15 | `trust_version` | seq | sim | versão do bundle instalado |
-| 16 | `capabilities` | `[* capability]` | não | — |
-| 17 | `kind` | `node-kind` | não, `linux` | — |
+| 1 | `v` | `1` | yes | — |
+| 2 | `node` | name | yes | — |
+| 3 | `org` | name | yes | — |
+| 4 | `proto` | `[major, minor]` | yes | `[1, N]`: the highest minor that the node speaks |
+| 5 | `runtime` | semver | yes | running version |
+| 6 | `boot` | ULID | yes | generated at each startup of `jokerd` |
+| 7 | `uptime` | duration | yes | — |
+| 8 | `hw` | digest | yes | hardware fingerprint |
+| 9 | `key_storage` | enum | yes | — |
+| 10 | `time` | time | yes | clock of the node |
+| 11 | `clock` | `clock_quality` | yes | — |
+| 12 | `desired_seq` | seq | yes | last DSD accepted (0 = none) |
+| 13 | `report_seq` | seq | yes | last report sent |
+| 14 | `event_seq` | seq | yes | last event emitted |
+| 15 | `trust_version` | seq | yes | version of the installed bundle |
+| 16 | `capabilities` | `[* capability]` | no | — |
+| 17 | `kind` | `node-kind` | no, `linux` | — |
 
-`hello-reply`: `proto_minor` (1, = min(nó, Deck)), `deck` (2), `time` (3, relógio do Deck), `event_ack` (4, último evento guardado), `need_full` (5), `settings` (6), `trust` (7, cadeia de bundles mais novos), `status` (8, `quarantined` ou `revoked`), `code` (9).
+`hello-reply`: `proto_minor` (1, = min(node, Deck)), `deck` (2), `time` (3, clock of the Deck), `event_ack` (4, last event stored), `need_full` (5), `settings` (6), `trust` (7, chain of newer bundles), `status` (8, `quarantined` or `revoked`), `code` (9).
 
-**`desired_seq` no hello** serve ao Deck para nunca emitir um `seq` que o nó recusaria: o próximo `seq` é sempre > max(o do Deck, o do nó). É o que salva um Deck reposto de uma cópia de segurança antiga (§4, S10).
+**`desired_seq` in the hello** lets the Deck never issue a `seq` that the node would reject: the next `seq` is always > max(that of the Deck, that of the node). It is what saves a Deck restored from an old backup (§4, S10).
 
-`poll-reply` (resposta do long-poll, §3.11.1): `time` (1), `desired` (2, o DSD atual se `seq` > o pedido), `commands` (3, ≤ 16), `cursor` (4, opaco, para o próximo pedido), `event_ack` (5), `need_full` (6), `backoff` (7, espera imposta pelo Deck).
+`poll-reply` (response of the long-poll, §3.11.1): `time` (1), `desired` (2, the current DSD if `seq` > the requested one), `commands` (3, ≤ 16), `cursor` (4, opaque, for the next request), `event_ack` (5), `need_full` (6), `backoff` (7, wait imposed by the Deck).
 
-### 2.9 `agent-settings` e margens do nó
+### 2.9 `agent-settings` and node margins
 
-O Deck sugere; o nó aplica o valor limitado às margens abaixo (e às do `[agent]` local, que ganham).
+The Deck suggests; the node applies the value bounded by the margins below (and by those of the local `[agent]`, which win).
 
-| # | Nome | Omissão | Margem | Significado |
+| # | Name | Default | Margin | Meaning |
 |---|---|---|---|---|
-| 1 | `poll_wait` | `55s` | 10 s–300 s | duração máxima de um long-poll |
-| 2 | `poll_interval` | `0s` (long-poll contínuo) | 0 ou 1 min–24 h | intervalo entre polls curtos (LTE) |
-| 3 | `report_min_interval` | `10s` | 1 s–1 h | intervalo mínimo entre deltas |
-| 4 | `full_interval` | `6h` | 10 min–7 d | relatório completo periódico |
-| 5 | `heartbeat` | `5m` | 30 s–1 h | delta mínimo com `resources` se nada mudou |
-| 6 | `event_batch` | `100` | 1–1 000 | eventos por lote |
-| 7 | `drain_rate` | `50` | 1–1 000 | eventos/s ao esvaziar uma fila acumulada |
+| 1 | `poll_wait` | `55s` | 10 s–300 s | maximum duration of a long-poll |
+| 2 | `poll_interval` | `0s` (continuous long-poll) | 0 or 1 min–24 h | interval between short polls (LTE) |
+| 3 | `report_min_interval` | `10s` | 1 s–1 h | minimum interval between deltas |
+| 4 | `full_interval` | `6h` | 10 min–7 d | periodic full report |
+| 5 | `heartbeat` | `5m` | 30 s–1 h | minimum delta with `resources` if nothing changed |
+| 6 | `event_batch` | `100` | 1–1,000 | events per batch |
+| 7 | `drain_rate` | `50` | 1–1,000 | events/s when draining an accumulated queue |
 
-### 2.10 Estado reportado (`report`)
+### 2.10 Reported state (`report`)
 
-| # | Nome | Tipo | Obr. | Significado |
+| # | Name | Type | Req. | Meaning |
 |---|---|---|---|---|
-| 1 | `v` | `1` | sim | — |
-| 2 | `node` | nome | sim | — |
-| 3 | `seq` | seq | sim | crescente por nó, persistido |
-| 4 | `base` | seq | não | presente: é um **delta** (merge patch, RFC 7386) sobre o relatório `base`; ausente: completo |
-| 5 | `time` | tempo | sim | — |
-| 6 | `clock` | `clock_quality` | sim | — |
-| 7 | `body` | `report-body` | sim | — |
+| 1 | `v` | `1` | yes | — |
+| 2 | `node` | name | yes | — |
+| 3 | `seq` | seq | yes | increasing per node, persisted |
+| 4 | `base` | seq | no | present: it is a **delta** (merge patch, RFC 7386) over the `base` report; absent: full |
+| 5 | `time` | time | yes | — |
+| 6 | `clock` | `clock_quality` | yes | — |
+| 7 | `body` | `report-body` | yes | — |
 
-`report-ack`: `ack` (1, o `seq` aceite) e `need_full` (2).
+`report-ack`: `ack` (1, the accepted `seq`) and `need_full` (2).
 
 #### 2.10.1 `report-body`
 
-Os mapas por nome (`devices`, `alarms`…) são chaveados pelo caminho ou nome do documento 02, §9, para que o merge patch funcione. Num delta, `null` apaga.
+The maps by name (`devices`, `alarms`…) are keyed by the path or name of document 02, §9, so that the merge patch works. In a delta, `null` deletes.
 
-| # | Nome | Conteúdo | Completo inclui | Perfil micro |
+| # | Name | Content | Full includes | Micro profile |
 |---|---|---|---|---|
-| 1 | `node` | `board` (1), `arch` (2), `os` (3), `mode` (4), `site` (5), `tz` (6), `kind` (7), `boot` (8), `booted` (9) | tudo | `board`, `kind`, `boot` |
-| 2 | `runtime` | `version` (1), `slot` (2), `previous` (3), `state` (4, `generation_state` da fase runtime), `proto_minor` (5), `worlds` (6) | tudo | `version` (= firmware), `state` |
-| 3 | `generation` | `confirmed` (1), `running` (2), `state` (3), `previous` (4), `origin` (5, `gen-origin`), `confirm_by` (6) | tudo | `confirmed`, `running`, `state` |
-| 4 | `desired` | `seq` (1), `state` (2, `apply-state`), `phase` (3), `wait` (4), `code` (5), `causes` (6, ≤ 16), `fetched` (7, `[feito, total]` em bytes), `next` (8), `rollout` (9) | tudo | `seq`, `state`, `code` |
-| 5 | `drift` | nome → `code` (1), `since` (2), `detail` (3): deriva do lock (`J0401`), geração alterada localmente (`J0966`), ficheiros alterados em `/var/lib/joker` | tudo | — |
-| 6 | `health` | `overall` (1, `health`), `codes` (2) | tudo | tudo |
-| 7 | `groups` | grupo → `state` (1), `period` (2), `jitter_p999` (3), `overruns` (4, desde o início da geração) | tudo | `state` |
-| 8 | `devices` | dispositivo → `link` (1, `link-state`, os seis valores da ref/00 §6), `since` (2), `driver` (3), `firmware` (4) | tudo | `link` |
-| 9 | `instances` | instância → `health` (1), `class` (2), `failed` (3, membros) | tudo | — |
-| 10 | `apps` | app → `state` (1), `version` (2), `digest` (3), `restarts` (4) | tudo | `state` |
-| 11 | `alarms` | alarme → `state` (1), `severity` (2), `since` (3), `shelved_until` (4), `message` (5, ≤ 256 B); só alarmes com estado ≠ `normal` | tudo | ≤ 8, por gravidade |
-| 12 | `trips` | saída → `since` (1), `cause` (2) | tudo | tudo |
-| 13 | `overrides` | saída → `level` (1), `by` (2), `until` (3), `reason` (4): escritas manuais ativas | tudo | — |
-| 14 | `resources` | §2.10.2 | tudo | micro |
-| 15 | `mcus` | dispositivo → `link` (1), `board` (2), `firmware` (3), `firmware_digest` (4), `generation` (5, o `source_hash`), `state` (6, `generation_state`, com o estado de confirmação), `abi` (7), `link_version` (8, a negociada), `boot_count` (9), `reset_reason` (10), `counter` (11, `security_version`), `descriptor` (12, digest do `firmware.jkfw`), `gen_seq` (13), `session_mode` (14, ref/00 §6), `confirm_left` (15, tempo que falta na janela de confirmação), `params` (16, parâmetros alterados localmente: deriva, ref/07 §6.4 chave 16), `drivers` (17, o resumo dos descritores dos drivers, ref/07 §6.4 chave 15) | tudo | — |
-| 16 | `identity` | `serial` (1), `not_after` (2), `key_storage` (3), `trust_version` (4), `floors` (5, papel → seq) | tudo | `not_after`, `trust_version` |
-| 17 | `agent` | `transport` (1), `queue` (2), `queue_bytes` (3), `dropped` (4), `oldest` (5), `paused_until` (6), `hold` (7) | tudo | `queue`, `dropped` |
-| 18 | `truncated` | chaves de `report-body` que foram cortadas (§3.8.3) | se houver | se houver |
-| 19 | — | reservado: intenções pendentes (M18) | — | — |
-| 20 | — | reservado: modelos e sombra (1.1) | — | — |
-| 21 | `secrets` | segredo → `rev` (1), `ok` (2, decifrado e verificado) — nomes e revisões, **nunca** valores (ref/00 §9) | tudo | tudo |
-| 22 | `drivers` | o manifesto de drivers do binário (ref/06 §3.8): driver → `version` (1), `tier` (2), `descriptor` (3, digest do descritor) | tudo | — |
+| 1 | `node` | `board` (1), `arch` (2), `os` (3), `mode` (4), `site` (5), `tz` (6), `kind` (7), `boot` (8), `booted` (9) | everything | `board`, `kind`, `boot` |
+| 2 | `runtime` | `version` (1), `slot` (2), `previous` (3), `state` (4, `generation_state` of the runtime phase), `proto_minor` (5), `worlds` (6) | everything | `version` (= firmware), `state` |
+| 3 | `generation` | `confirmed` (1), `running` (2), `state` (3), `previous` (4), `origin` (5, `gen-origin`), `confirm_by` (6) | everything | `confirmed`, `running`, `state` |
+| 4 | `desired` | `seq` (1), `state` (2, `apply-state`), `phase` (3), `wait` (4), `code` (5), `causes` (6, ≤ 16), `fetched` (7, `[done, total]` in bytes), `next` (8), `rollout` (9) | everything | `seq`, `state`, `code` |
+| 5 | `drift` | name → `code` (1), `since` (2), `detail` (3): drift of the lock (`J0401`), generation changed locally (`J0966`), files changed in `/var/lib/joker` | everything | — |
+| 6 | `health` | `overall` (1, `health`), `codes` (2) | everything | everything |
+| 7 | `groups` | group → `state` (1), `period` (2), `jitter_p999` (3), `overruns` (4, since the start of the generation) | everything | `state` |
+| 8 | `devices` | device → `link` (1, `link-state`, the six values of ref/00 §6), `since` (2), `driver` (3), `firmware` (4) | everything | `link` |
+| 9 | `instances` | instance → `health` (1), `class` (2), `failed` (3, members) | everything | — |
+| 10 | `apps` | app → `state` (1), `version` (2), `digest` (3), `restarts` (4) | everything | `state` |
+| 11 | `alarms` | alarm → `state` (1), `severity` (2), `since` (3), `shelved_until` (4), `message` (5, ≤ 256 B); only alarms with a state ≠ `normal` | everything | ≤ 8, by severity |
+| 12 | `trips` | output → `since` (1), `cause` (2) | everything | everything |
+| 13 | `overrides` | output → `level` (1), `by` (2), `until` (3), `reason` (4): active manual writes | everything | — |
+| 14 | `resources` | §2.10.2 | everything | micro |
+| 15 | `mcus` | device → `link` (1), `board` (2), `firmware` (3), `firmware_digest` (4), `generation` (5, the `source_hash`), `state` (6, `generation_state`, with the confirmation state), `abi` (7), `link_version` (8, the negotiated one), `boot_count` (9), `reset_reason` (10), `counter` (11, `security_version`), `descriptor` (12, digest of the `firmware.jkfw`), `gen_seq` (13), `session_mode` (14, ref/00 §6), `confirm_left` (15, time left in the confirmation window), `params` (16, parameters changed locally: drift, ref/07 §6.4 key 16), `drivers` (17, the summary of the driver descriptors, ref/07 §6.4 key 15) | everything | — |
+| 16 | `identity` | `serial` (1), `not_after` (2), `key_storage` (3), `trust_version` (4), `floors` (5, role → seq) | everything | `not_after`, `trust_version` |
+| 17 | `agent` | `transport` (1), `queue` (2), `queue_bytes` (3), `dropped` (4), `oldest` (5), `paused_until` (6), `hold` (7) | everything | `queue`, `dropped` |
+| 18 | `truncated` | keys of `report-body` that were cut (§3.8.3) | if any | if any |
+| 19 | — | reserved: pending intents (M18) | — | — |
+| 20 | — | reserved: models and shadow (1.1) | — | — |
+| 21 | `secrets` | secret → `rev` (1), `ok` (2, decrypted and verified) — names and revisions, **never** values (ref/00 §9) | everything | everything |
+| 22 | `drivers` | the driver manifest of the binary (ref/06 §3.8): driver → `version` (1), `tier` (2), `descriptor` (3, digest of the descriptor) | everything | — |
 
-`gen-ref`, usado em `generation` e nos eventos `apply`: `gen` (1, o inteiro do nó), `hash` (2), `at` (3, quando foi trocada ou confirmada), `by` (4, principal: `agent`, `user:<id>`, `deck:<deck_id>/user:<id>`), `label` (5).
+`gen-ref`, used in `generation` and in the `apply` events: `gen` (1, the integer of the node), `hash` (2), `at` (3, when it was swapped or confirmed), `by` (4, principal: `agent`, `user:<id>`, `deck:<deck_id>/user:<id>`), `label` (5).
 
-**`health.overall`**, calculado pelo nó:
+**`health.overall`**, computed by the node:
 
-| Valor | Quando |
+| Value | When |
 |---|---|
-| `failed` | um grupo `stopped` ou `tripped` por overrun; uma app em `crashloop` ou `failed`; a última aplicação terminou em `failed`; o nó não arrancou a geração confirmada |
-| `degraded` | um dispositivo `down`, `degraded` ou `drift`; uma instância não `ok`; um trip ativo; um alarme `critical` ativo; relógio `unsynced`; deriva |
-| `ok` | nenhum dos anteriores |
-| `unknown` | ainda a arrancar |
+| `failed` | a group `stopped` or `tripped` by overrun; an app in `crashloop` or `failed`; the last apply ended in `failed`; the node did not start the confirmed generation |
+| `degraded` | a device `down`, `degraded` or `drift`; an instance not `ok`; an active trip; an active `critical` alarm; clock `unsynced`; drift |
+| `ok` | none of the above |
+| `unknown` | still starting |
 
-`health.codes` lista os J-codes que justificam o valor (por exemplo `J0401`).
+`health.codes` lists the J-codes that justify the value (for example `J0401`).
 
 #### 2.10.2 `resources`
 
-| # | Nome | Tipo | Unidade | Perfil |
+| # | Name | Type | Unit | Profile |
 |---|---|---|---|---|
-| 1 | `cpu` | pct | % média de 1 min | Linux |
+| 1 | `cpu` | pct | % 1 min average | Linux |
 | 2 | `mem_used` | uint | B | Linux |
 | 3 | `mem_total` | uint | B | Linux |
-| 4 | `disk_free` | uint | B, em `/var/lib/joker` | Linux |
+| 4 | `disk_free` | uint | B, in `/var/lib/joker` | Linux |
 | 5 | `disk_total` | uint | B | Linux |
-| 6 | `wear` | pct | desgaste estimado do eMMC (documento 08, rodada 5 (e)) | Linux |
-| 7 | `temp` | float | °C | ambos |
+| 6 | `wear` | pct | estimated eMMC wear (document 08, round 5 (e)) | Linux |
+| 7 | `temp` | float | °C | both |
 | 8 | `throttled` | bool | — | Linux |
-| 9 | `store_lag` | duração | atraso do cursor mais lento do historian | Linux |
+| 9 | `store_lag` | duration | lag of the slowest cursor of the historian | Linux |
 | 10 | `heap_free` | uint | B | micro |
-| 11 | `heap_min` | uint | B, mínimo desde o arranque | micro |
+| 11 | `heap_min` | uint | B, minimum since boot | micro |
 | 12 | `rssi` | int | dBm | micro |
-| 13 | `boot_count` | uint | — | ambos |
+| 13 | `boot_count` | uint | — | both |
 | 14 | `reset_reason` | tstr | — | micro |
 | 15 | `uplinks` | uplink → `lag` (1), `budget_used` (2, %) | — | Linux |
 
-#### 2.10.3 Exemplo de relatório completo (JSON)
+#### 2.10.3 Example of a full report (JSON)
 
 ```json
 {
@@ -634,208 +634,208 @@ Os mapas por nome (`devices`, `alarms`…) são chaveados pelo caminho ou nome d
 }
 ```
 
-### 2.11 Eventos
+### 2.11 Events
 
 `event-batch`: `node` (1), `events` (2, ≤ `event_batch`). `event-ack`: `ack` (1).
 
 `event`:
 
-| # | Nome | Tipo | Obr. | Significado |
+| # | Name | Type | Req. | Meaning |
 |---|---|---|---|---|
-| 1 | `seq` | seq | sim | crescente, contíguo, persistido; um evento perdido mantém o seu `seq` (§3.9.3) |
-| 2 | `id` | ULID | sim | identificador global, estável entre reenvios |
-| 3 | `ts` | tempo | sim | UTC do nó no momento do evento |
-| 4 | `clock` | `clock_quality` | sim | qualidade do relógio nesse momento |
-| 5 | `boot` | ULID | sim | arranque em que o evento aconteceu |
-| 6 | `mono` | uint | sim | ns monotónicos desde esse arranque (par de `ts`, ref/00, §3) |
-| 7 | `type` | `event-type` | sim | — |
-| 8 | `body` | por `type` | sim | — |
+| 1 | `seq` | seq | yes | increasing, contiguous, persisted; a lost event keeps its `seq` (§3.9.3) |
+| 2 | `id` | ULID | yes | global identifier, stable across resends |
+| 3 | `ts` | time | yes | UTC of the node at the moment of the event |
+| 4 | `clock` | `clock_quality` | yes | quality of the clock at that moment |
+| 5 | `boot` | ULID | yes | boot in which the event happened |
+| 6 | `mono` | uint | yes | monotonic ns since that boot (pair of `ts`, ref/00, §3) |
+| 7 | `type` | `event-type` | yes | — |
+| 8 | `body` | per `type` | yes | — |
 
-| `type` | Corpo | Classe na fila (§3.9.3) |
+| `type` | Body | Class in the queue (§3.9.3) |
 |---|---|---|
 | `alarm` | `name` (1), `from` (2), `to` (3), `severity` (4), `message` (5), `by` (6), `shelved_until` (7) | A |
 | `decision` | `output` (1), `writer` (2), `outcome` (3), `reason` (4), `level` (5), `value` (6), `applied` (7), `ttl` (8), `why` (9), `session` (10), `count` (11), `tick` (12) | B |
-| `apply` | `seq` (1, do DSD), `state` (2), `phase` (3), `gen` (4), `device` (5), `code` (6), `causes` (7), `rollout` (8) | A |
+| `apply` | `seq` (1, of the DSD), `state` (2), `phase` (3), `gen` (4), `device` (5), `code` (6), `causes` (7), `rollout` (8) | A |
 | `trip` | `output` (1), `action` (2, `trip-action`), `cause` (3), `by` (4) | A |
 | `security` | `kind` (1), `code` (2), `detail` (3), `kid` (4), `seq` (5) | A |
 | `session` | `id` (1), `action` (2), `user` (3), `role` (4), `code` (5), `requests` (6), `writes` (7) | A |
-| `gap` | `ranges` (1, `[[de, até], …]`, ≤ 64), `counts` (2, `event-type` → n) | nunca se perde |
+| `gap` | `ranges` (1, `[[from, to], …]`, ≤ 64), `counts` (2, `event-type` → n) | never lost |
 | `clock` | `boot` (1), `mono` (2), `utc` (3), `quality` (4), `source` (5) | B |
 | `command_result` | `id` (1), `status` (2), `code` (3) | B |
 | `cert` | `action` (1), `not_after` (2), `serial` (3) | A |
 | `agent` | `action` (1), `by` (2), `until` (3), `detail` (4) | C |
 
-Os valores em `decision.value`/`applied` seguem a ref/00, §4.1, na unidade do sinal. `writer` usa as formas da ref/00, §5, mais `user:deck:<deck_id>/user:<id>` para escritas em sessões remotas (o escritor `user:<principal>` da ref/00 §5, com o principal da sessão).
+The values in `decision.value`/`applied` follow ref/00, §4.1, in the unit of the signal. `writer` uses the forms of ref/00, §5, plus `user:deck:<deck_id>/user:<id>` for writes in remote sessions (the writer `user:<principal>` of ref/00 §5, with the principal of the session).
 
-**Que decisões vão para o Deck** (`[agent.audit] decisions`, §2.17). O registo de decisões local guarda **todas** (M3); o Deck só recebe as marcadas:
+**Which decisions go to the Deck** (`[agent.audit] decisions`, §2.17). The local decision log keeps **all** of them (M3); the Deck only receives the marked ones:
 
-| Valor | O que envia |
+| Value | What it sends |
 |---|---|
-| `manual` | todas as escritas, libertações e chamadas de métodos de escritores `manual` |
-| `session` | todas as escritas feitas em sessões remotas (**sempre ativo**, não se desliga) |
-| `trip`, `reset` | trips e resets (também como eventos `trip`) |
-| `rejected` | transições para `rejected` ou `tripped` por (saída, escritor, motivo): a primeira, e depois uma com `count` quando o resultado muda ou a cada hora |
-| `bridge` | escritas de pontes, agregadas como `rejected` |
-| `action` | ações de dispositivos e instâncias (M19) |
-| `intent` | reservado (M18, 1.1) |
+| `manual` | all writes, releases and method calls of `manual` writers |
+| `session` | all writes made in remote sessions (**always on**, it cannot be turned off) |
+| `trip`, `reset` | trips and resets (also as `trip` events) |
+| `rejected` | transitions to `rejected` or `tripped` per (output, writer, reason): the first one, and then one with `count` when the result changes or every hour |
+| `bridge` | writes from bridges, aggregated like `rejected` |
+| `action` | actions of devices and instances (M19) |
+| `intent` | reserved (M18, 1.1) |
 
-Omissão: `["manual", "session", "trip", "reset", "rejected", "action"]`.
+Default: `["manual", "session", "trip", "reset", "rejected", "action"]`.
 
-### 2.12 Sessão remota (agent/1.3)
+### 2.12 Remote session (agent/1.3)
 
 `session-open-args`:
 
-| # | Nome | Tipo | Obr. | Validação | Erro |
+| # | Name | Type | Req. | Validation | Error |
 |---|---|---|---|---|---|
-| 1 | `id` | ULID | sim | nova | — |
-| 2 | `user` | `user-claim`: `id` (1), `name` (2), `groups` (3, ≤ 32), `mfa` (4) | sim | o Deck atesta a identidade; o nó decide o papel | — |
-| 3 | `role` | `role` | sim | ≤ papel concedido (§3.10) | `J0981` |
-| 4 | `reason` | tstr 1–256 B | sim | — | — |
-| 5 | `ttl` | duração | sim | ≤ `[agent.remote] max_ttl` | `J0983` |
-| 6 | `tunnel` | tstr | não | `wss://` de um dos `deck_urls`; omissão `<deck>/agent/v1/sessions/{id}/tunnel` | `J0985` |
+| 1 | `id` | ULID | yes | new | — |
+| 2 | `user` | `user-claim`: `id` (1), `name` (2), `groups` (3, ≤ 32), `mfa` (4) | yes | the Deck attests the identity; the node decides the role | — |
+| 3 | `role` | `role` | yes | ≤ granted role (§3.10) | `J0981` |
+| 4 | `reason` | tstr 1–256 B | yes | — | — |
+| 5 | `ttl` | duration | yes | ≤ `[agent.remote] max_ttl` | `J0983` |
+| 6 | `tunnel` | tstr | no | `wss://` of one of the `deck_urls`; default `<deck>/agent/v1/sessions/{id}/tunnel` | `J0985` |
 
-**Túnel.** Uma ligação WebSocket (RFC 6455) **aberta pelo nó**, com mTLS. Cada mensagem binária é um `tunnel-frame` em CBOR: `[stream, kind, payload?]`.
+**Tunnel.** A WebSocket connection (RFC 6455) **opened by the node**, with mTLS. Each binary message is a `tunnel-frame` in CBOR: `[stream, kind, payload?]`.
 
-| `kind` | `payload` | Sentido | Significado |
+| `kind` | `payload` | Direction | Meaning |
 |---|---|---|---|
-| `open` | uint: destino (0 = API local; outros reservados) | Deck → nó | abre um fluxo de bytes para a API local |
-| `data` | bstr ≤ 64 KiB | ↔ | bytes do fluxo |
-| `close` | — | ↔ | fecho ordenado |
-| `reset` | uint: `agent-status` | ↔ | fecho abrupto |
-| `credit` | uint: bytes | ↔ | controlo de fluxo por crédito (inicial: 256 KiB por fluxo) |
-| `ping` | — | ↔ | vida; sem resposta em 30 s fecha o túnel |
+| `open` | uint: destination (0 = local API; others reserved) | Deck → node | opens a byte stream to the local API |
+| `data` | bstr ≤ 64 KiB | ↔ | bytes of the stream |
+| `close` | — | ↔ | orderly close |
+| `reset` | uint: `agent-status` | ↔ | abrupt close |
+| `credit` | uint: bytes | ↔ | credit-based flow control (initial: 256 KiB per stream) |
+| `ping` | — | ↔ | liveness; no response within 30 s closes the tunnel |
 
-Cada fluxo é **uma ligação à API local** (ref/09), como se viesse do socket Unix, mas com o principal pré-autenticado `deck:<deck_id>/user:<user.id>` (ref/00 §5) e o papel efetivo da sessão. HTTP/1.1, HTTP/2 e o WebSocket da API passam tal qual. A `jk --node deck:<nó>` e o Studio são clientes desta API.
+Each stream is **one connection to the local API** (ref/09), as if it came from the Unix socket, but with the pre-authenticated principal `deck:<deck_id>/user:<user.id>` (ref/00 §5) and the effective role of the session. HTTP/1.1, HTTP/2 and the WebSocket of the API pass through as they are. `jk --node deck:<node>` and the Studio are clients of this API.
 
-### 2.13 HTTPS: endpoints do Deck
+### 2.13 HTTPS: Deck endpoints
 
-Base: um dos `deck_urls` do bundle, com o sufixo `/agent/v1`. TLS 1.3 (1.2 aceite no perfil micro), HTTP/2 preferido, mTLS em tudo exceto `/enroll`. `Content-Type: application/json` por omissão; `application/cbor` se negociado; `application/cose` para um documento assinado isolado.
+Base: one of the `deck_urls` of the bundle, with the suffix `/agent/v1`. TLS 1.3 (1.2 accepted in the micro profile), HTTP/2 preferred, mTLS on everything except `/enroll`. `Content-Type: application/json` by default; `application/cbor` if negotiated; `application/cose` for a standalone signed document.
 
-| Método e caminho | Autenticação | Pedido | Resposta | Notas |
+| Method and path | Authentication | Request | Response | Notes |
 |---|---|---|---|---|
-| `POST /enroll` | token no corpo | `enroll-request` | `enroll-reply` | sem mTLS |
-| `GET /enroll/nonce` | nenhuma | — | `{"nonce": <bytes>}` | nonce de 32 B para a atestação (1.3); sem mTLS |
-| `POST /renew` | mTLS, aceita certificado expirado até `renew_grace` | `renew-request` | `renew-reply` | — |
-| `GET /trust?from=<versão>` | mTLS | — | `[+ cose]` | cadeia de bundles a partir de `from` |
-| `POST /hello` | mTLS | `hello` | `hello-reply` | no início de cada ligação |
-| `GET /poll?desired=<seq>&cursor=<c>&wait=<d>` | mTLS | — | `poll-reply` | long-poll (§3.11.1); responde logo se houver novidade |
-| `POST /report` | mTLS | `report` | `report-ack` | `409 need_full` se a base não existir |
+| `POST /enroll` | token in the body | `enroll-request` | `enroll-reply` | without mTLS |
+| `GET /enroll/nonce` | none | — | `{"nonce": <bytes>}` | 32 B nonce for attestation (1.3); without mTLS |
+| `POST /renew` | mTLS, accepts an expired certificate up to `renew_grace` | `renew-request` | `renew-reply` | — |
+| `GET /trust?from=<version>` | mTLS | — | `[+ cose]` | chain of bundles from `from` on |
+| `POST /hello` | mTLS | `hello` | `hello-reply` | at the start of each connection |
+| `GET /poll?desired=<seq>&cursor=<c>&wait=<d>` | mTLS | — | `poll-reply` | long-poll (§3.11.1); responds at once if there is something new |
+| `POST /report` | mTLS | `report` | `report-ack` | `409 need_full` if the base does not exist |
 | `POST /events` | mTLS | `event-batch` | `event-ack` | — |
-| `POST /registry-token` | mTLS | `{"scope": [...]}` | `registry-token`: `token` (1), `expires` (2), `scope` (3) | token *bearer* para as fontes `auth = token` |
-| `GET /blobs/{digest}` | mTLS | — | bytes | proxy de artefactos (`kind = deck`); aceita `Range` |
-| `PUT /uploads/{id}` | mTLS | corpo do §2.7.1, `Content-Encoding: zstd` opcional | `status-reply` | só para um `upload` pedido e ainda aberto |
+| `POST /registry-token` | mTLS | `{"scope": [...]}` | `registry-token`: `token` (1), `expires` (2), `scope` (3) | *bearer* token for the `auth = token` sources |
+| `GET /blobs/{digest}` | mTLS | — | bytes | artifact proxy (`kind = deck`); accepts `Range` |
+| `PUT /uploads/{id}` | mTLS | body of §2.7.1, `Content-Encoding: zstd` optional | `status-reply` | only for an `upload` requested and still open |
 | `GET /sessions/{id}/tunnel` | mTLS + WebSocket | — | `tunnel-frame` | 1.3 |
 
-Cabeçalhos: o nó envia `User-Agent: jokerd/<versão> agent/1.<minor>`; o Deck responde com `Date` e, nos erros, `Retry-After`.
+Headers: the node sends `User-Agent: jokerd/<version> agent/1.<minor>`; the Deck responds with `Date` and, on errors, `Retry-After`.
 
-### 2.14 MQTT: tópicos
+### 2.14 MQTT: topics
 
-MQTT 5 (3.1.1 aceite no perfil micro), sobre TLS com mTLS. Identificador de cliente: `<org>.<nó>`. Prefixo: `jk/1/<org>/<nó>/`.
+MQTT 5 (3.1.1 accepted in the micro profile), over TLS with mTLS. Client identifier: `<org>.<node>`. Prefix: `jk/1/<org>/<node>/`.
 
-| Sufixo | Sentido | QoS | Retain | Conteúdo |
+| Suffix | Direction | QoS | Retain | Content |
 |---|---|---|---|---|
-| `hello` | nó → Deck | 1 | não | COSE(`hello`) |
-| `hello/reply` | Deck → nó | 1 | não | COSE(`hello-reply`) |
-| `desired` | Deck → nó | 1 | **sim** | o DSD (já é COSE) |
-| `cmd` | Deck → nó | 1 | não | comando (já é COSE); *message expiry* = `expires` |
-| `report` | nó → Deck | 1 | não | COSE(`report`) |
-| `ack/report` | Deck → nó | 1 | não | COSE(`report-ack`) |
-| `events` | nó → Deck | 1 | não | COSE(`event-batch`) |
-| `ack/events` | Deck → nó | 1 | não | COSE(`event-ack`) |
-| `status` | nó → Deck | 1 | **sim** | COSE(`{1: online bool, 2: boot, 3: time}`); também como *will* com `online = false`, assinado no momento da ligação |
-| `blob/req` | nó → Deck | 1 | não | COSE(`blob-request`), só perfil micro |
-| `blob/data` | Deck → nó | 1 | não | `blob-chunk` em CBOR, sem assinatura (a integridade vem do digest) |
+| `hello` | node → Deck | 1 | no | COSE(`hello`) |
+| `hello/reply` | Deck → node | 1 | no | COSE(`hello-reply`) |
+| `desired` | Deck → node | 1 | **yes** | the DSD (already COSE) |
+| `cmd` | Deck → node | 1 | no | command (already COSE); *message expiry* = `expires` |
+| `report` | node → Deck | 1 | no | COSE(`report`) |
+| `ack/report` | Deck → node | 1 | no | COSE(`report-ack`) |
+| `events` | node → Deck | 1 | no | COSE(`event-batch`) |
+| `ack/events` | Deck → node | 1 | no | COSE(`event-ack`) |
+| `status` | node → Deck | 1 | **yes** | COSE(`{1: online bool, 2: boot, 3: time}`); also as the *will* with `online = false`, signed at connection time |
+| `blob/req` | node → Deck | 1 | no | COSE(`blob-request`), micro profile only |
+| `blob/data` | Deck → node | 1 | no | `blob-chunk` in CBOR, unsigned (integrity comes from the digest) |
 
-| Parâmetro | Linux | Micro |
+| Parameter | Linux | Micro |
 |---|---|---|
 | `clean start` | `false` | `false` |
 | *session expiry* | `7d` (`[agent.mqtt] session_expiry`) | `1d` |
-| *keepalive* | `60s`; `5m`–`20m` em LTE | `120s` |
-| tamanho máximo de pacote | 256 KiB | 4 KiB |
+| *keepalive* | `60s`; `5m`–`20m` on LTE | `120s` |
+| maximum packet size | 256 KiB | 4 KiB |
 | *receive maximum* | 16 | 2 |
 
-**ACL do broker** (obrigatória, verificada pelo `jk doctor` quando possível): um nó só publica em `jk/1/<org>/<nó>/{hello,report,events,status,blob/req}` e só subscreve `jk/1/<org>/<nó>/{hello/reply,desired,cmd,ack/#,blob/data}`, com `<nó>` igual ao `CN` do certificado. Uma publicação recusada pelo broker aparece localmente como `J0977`.
+**Broker ACL** (required, checked by `jk doctor` when possible): a node only publishes on `jk/1/<org>/<node>/{hello,report,events,status,blob/req}` and only subscribes to `jk/1/<org>/<node>/{hello/reply,desired,cmd,ack/#,blob/data}`, with `<node>` equal to the `CN` of the certificate. A publication refused by the broker appears locally as `J0977`.
 
-As sessões remotas não passam por MQTT (`J0985`).
+Remote sessions do not go over MQTT (`J0985`).
 
-### 2.15 Perfil micro
+### 2.15 Micro profile
 
-Para um Joker Micro autónomo (M2, com rede). O mesmo CDDL, com as restrições:
+For a standalone Joker Micro (M2, with network). The same CDDL, with these restrictions:
 
-| Mensagem | Chaves permitidas | Tamanho máximo |
+| Message | Allowed keys | Maximum size |
 |---|---|---|
-| `desired-state` | 1–10, 12, 14 (sem `tz` ≠ `UTC`), 16, 17, 18, 20, 22 | 2 KiB |
-| `runtime-target` | 1–4; `artifact` do tipo `joker.micro-firmware.v1` | — |
-| `generation-target` | 1, 2; `config` do tipo `joker.generation.v1` | — |
+| `desired-state` | 1–10, 12, 14 (no `tz` ≠ `UTC`), 16, 17, 18, 20, 22 | 2 KiB |
+| `runtime-target` | 1–4; `artifact` of type `joker.micro-firmware.v1` | — |
+| `generation-target` | 1, 2; `config` of type `joker.generation.v1` | — |
 | `command` | `confirm`, `reject`, `report_full`, `renew` | 512 B |
-| `report` | as da coluna "perfil micro" do §2.10.1 | 1 KiB |
-| `event-batch` | tipos `alarm`, `apply`, `trip`, `security`, `gap`, `clock`, `cert` | 1 KiB, ≤ 8 eventos |
-| `hello`, `hello-reply` | todas | 512 B |
+| `report` | those of the "micro profile" column of §2.10.1 | 1 KiB |
+| `event-batch` | types `alarm`, `apply`, `trip`, `security`, `gap`, `clock`, `cert` | 1 KiB, ≤ 8 events |
+| `hello`, `hello-reply` | all | 512 B |
 
-Uma chave fora do subconjunto listada em `crit` é `J0990`; fora de `crit`, é ignorada. Uma janela com `tz` ≠ `UTC` é `J0991`.
+A key outside the subset listed in `crit` is `J0990`; outside `crit`, it is ignored. A window with `tz` ≠ `UTC` is `J0991`.
 
-**CoAP** (RFC 7252) sobre DTLS 1.2 com certificado, base `coaps://<host>/a1/`:
+**CoAP** (RFC 7252) over DTLS 1.2 with a certificate, base `coaps://<host>/a1/`:
 
-| Recurso | Método | Pedido | Resposta | Notas |
+| Resource | Method | Request | Response | Notes |
 |---|---|---|---|---|
 | `/a1/h` | POST | `hello` | `hello-reply` | — |
-| `/a1/d?s=<seq>` | GET + Observe (RFC 7641) | — | DSD (Content-Format 18, COSE_Sign1) | notificação a cada DSD novo |
-| `/a1/c?k=<cursor>` | GET + Observe | — | `[* cose]` | comandos |
+| `/a1/d?s=<seq>` | GET + Observe (RFC 7641) | — | DSD (Content-Format 18, COSE_Sign1) | notification at each new DSD |
+| `/a1/c?k=<cursor>` | GET + Observe | — | `[* cose]` | commands |
 | `/a1/r` | POST | `report` | `report-ack` | — |
 | `/a1/e` | POST | `event-batch` | `event-ack` | — |
-| `/a1/b/<digest em hex>` | GET + Block2 (RFC 7959), blocos de 512 B ou 1 KiB | — | bytes | artefactos |
+| `/a1/b/<digest in hex>` | GET + Block2 (RFC 7959), blocks of 512 B or 1 KiB | — | bytes | artifacts |
 | `/a1/k` | POST | `renew-request` | `renew-reply` | — |
 
-Content-Format 60 (`application/cbor`) para as mensagens não assinadas. Com DTLS terminado no Deck, as mensagens do nó não vão em COSE (como em HTTPS).
+Content-Format 60 (`application/cbor`) for the unsigned messages. With DTLS terminated at the Deck, the messages of the node do not go in COSE (as over HTTPS).
 
-**Artefactos no perfil micro**, por ordem de preferência: HTTPS com `Range` (OTA HTTPS do ESP-IDF ou equivalente), CoAP Block2, ou MQTT `blob/req` + `blob/data` em pedaços de ≤ 2 KiB. O MCU pede um pedaço de cada vez; a descarga retoma pelo `offset`.
+**Artifacts in the micro profile**, in order of preference: HTTPS with `Range` (ESP-IDF HTTPS OTA or equivalent), CoAP Block2, or MQTT `blob/req` + `blob/data` in pieces of ≤ 2 KiB. The MCU requests one piece at a time; the download resumes by `offset`.
 
-| Mensagem | Chaves |
+| Message | Keys |
 |---|---|
-| `blob-request` | `digest` (1), `offset` (2, bytes), `length` (3, ≤ 2 048) |
-| `blob-chunk` | `digest` (1), `offset` (2), `data` (3, ≤ `length` pedido), `total` (4, tamanho do artefacto, no primeiro pedaço) |
+| `blob-request` | `digest` (1), `offset` (2, bytes), `length` (3, ≤ 2,048) |
+| `blob-chunk` | `digest` (1), `offset` (2), `data` (3, ≤ requested `length`), `total` (4, size of the artifact, in the first piece) |
 
-Um pedaço com `digest` ou `offset` que o MCU não pediu é ignorado. O digest do artefacto inteiro é verificado no fim, e a assinatura antes de gravar a imagem como arrancável.
+A piece with a `digest` or `offset` that the MCU did not request is ignored. The digest of the whole artifact is verified at the end, and the signature before the image is recorded as bootable.
 
-`status` (MQTT): `online` (1, bool), `boot` (2), `time` (3). `registry-token` é pedido com `{"scope": ["repository:<nome>:pull", …]}` (`registry-token-request`, `scope` (1)).
+`status` (MQTT): `online` (1, bool), `boot` (2), `time` (3). `registry-token` is requested with `{"scope": ["repository:<name>:pull", …]}` (`registry-token-request`, `scope` (1)).
 
-### 2.16 Tipos de artefacto e papéis de assinatura
+### 2.16 Artifact types and signing roles
 
-| Tipo de media (forma curta da ref/00) | Papel que assina | Fase | Versão |
+| Media type (short form of ref/00) | Signing role | Phase | Version |
 |---|---|---|---|
-| `joker.runtime.v1` | `runtime` | `runtime` | 1.0 (tipo novo, §5, D11) |
-| `joker.config.v1+cbor` | `config` | `generation` | 1.0 (tipo novo, §5, D11) |
+| `joker.runtime.v1` | `runtime` | `runtime` | 1.0 (new type, §5, D11) |
+| `joker.config.v1+cbor` | `config` | `generation` | 1.0 (new type, §5, D11) |
 | `joker.app.v1+wasm` | `apps` | `generation` | 1.0 |
 | `joker.profile.v1+toml` | `profiles` | `generation` | 1.0 |
 | `joker.board.v1+toml` | `boards` | `generation` | 1.0 |
 | `joker.class.v1+jkc` | `classes` | `generation` | 1.0 |
-| `joker.micro-firmware.v1` | `firmware` | `mcu` ou `runtime` (micro) | 1.0 |
-| `joker.generation.v1` | `config` | `mcu` ou `generation` (micro) | 1.0 |
+| `joker.micro-firmware.v1` | `firmware` | `mcu` or `runtime` (micro) | 1.0 |
+| `joker.generation.v1` | `config` | `mcu` or `generation` (micro) | 1.0 |
 | `joker.driver.v1+wasm`, `joker.driver.v1+tar` | `drivers` | `generation` | 1.0 |
-| `joker.lock.v1+toml` | (dentro da geração: coberto pelo `config`) | `generation` | 1.0 |
-| `joker.secrets.v1` | `secrets` (por entrada) | chave 22; não é uma fase | 1.0 |
-| `joker.model.v1+jkm` | `models` | `generation` | **reservado 1.1**: um nó 1.0 recusa com `J0957` |
+| `joker.lock.v1+toml` | (inside the generation: covered by `config`) | `generation` | 1.0 |
+| `joker.secrets.v1` | `secrets` (per entry) | key 22; it is not a phase | 1.0 |
+| `joker.model.v1+jkm` | `models` | `generation` | **reserved 1.1**: a 1.0 node rejects it with `J0957` |
 
-Um artefacto é aceite se tiver pelo menos uma assinatura válida de uma chave do bundle com o papel da tabela, e se o manifesto `[security] trust` não o excluir. Um artefacto sem assinatura só é aceite se a geração alvo tiver `mode = "dev"`, o bundle tiver `min_mode = dev` **e** o `node.toml` tiver `[policy] allow_dev = true` (§3.3, V19; ref/02 §3.5.1). O DSD, os comandos, os bundles e os pisos são sempre assinados, em qualquer modo.
+An artifact is accepted if it has at least one valid signature from a key of the bundle with the role of the table, and if the `[security] trust` of the manifest does not exclude it. An unsigned artifact is only accepted if the target generation has `mode = "dev"`, the bundle has `min_mode = dev` **and** `node.toml` has `[policy] allow_dev = true` (§3.3, V19; ref/02 §3.5.1). The DSD, the commands, the bundles and the floors are always signed, in any mode.
 
-Os tipos de media e os papéis são os da tabela única da ref/00 §7.1 (D13); esta tabela só diz em que fase entram. No registo OCI, o `mediaType`/`artifactType` completo é `application/vnd.joker.<resto>` (por exemplo `application/vnd.joker.app.v1+wasm`).
+The media types and the roles are those of the single table of ref/00 §7.1 (D13); this table only says in which phase they come in. In the OCI registry, the full `mediaType`/`artifactType` is `application/vnd.joker.<rest>` (for example `application/vnd.joker.app.v1+wasm`).
 
-### 2.17 Configuração do agente no nó
+### 2.17 Agent configuration on the node
 
-A configuração de arranque do nó é da ref/02 (`/etc/joker/node.toml`), que acolhe esta secção `[agent]` tal qual; o significado das chaves define-se aqui:
+The startup configuration of the node belongs to ref/02 (`/etc/joker/node.toml`), which hosts this `[agent]` section as is; the meaning of the keys is defined here:
 
 ```toml
 [agent]
-enabled             = true                 # omissão: true se o bundle tiver authority
+enabled             = true                 # default: true if the bundle has an authority
 transport           = "https"              # https | mqtt | coap (micro)
-urls                = []                   # sobrepõe deck_urls do bundle (mesma org)
-poll                = "long"               # long | duração (p. ex. "15m" em LTE)
+urls                = []                   # overrides deck_urls of the bundle (same org)
+poll                = "long"               # long | duration (e.g. "15m" on LTE)
 backoff_max         = "15m"
 offline_warn        = "7d"
 local_changes       = "hold"               # hold | overwrite
 max_applies_per_day = 6
 mirrors             = ["https://mirror.example.com"]
-cbor                = false                # CBOR sobre HTTPS (poupança em LTE)
+cbor                = false                # CBOR over HTTPS (savings on LTE)
 maintenance         = [{ days = [1, 2, 3, 4, 5], start = "01:00", length = "4h", tz = "Europe/Lisbon" }]
 
 [agent.queue]
@@ -861,9 +861,9 @@ session_expiry = "7d"
 [agent.remote]                              # agent/1.3
 allow           = false
 max_role        = "operator"                # viewer | operator | admin
-default_role    = ""                        # papel para utilizadores do Deck sem mapeamento; vazio = recusar
+default_role    = ""                        # role for Deck users without a mapping; empty = refuse
 consent         = "none"                    # none | local
-consent_signal  = ""                        # sinal bool que autoriza (p. ex. um comutador "manutenção remota")
+consent_signal  = ""                        # bool signal that authorizes (e.g. a "remote maintenance" switch)
 consent_timeout = "5m"
 max_sessions    = 2
 max_ttl         = "8h"
@@ -871,657 +871,657 @@ idle            = "15m"
 max_rate        = "1 MiB/s"
 ```
 
-| Chave | Tipo | Omissão | Validação | Significado |
+| Key | Type | Default | Validation | Meaning |
 |---|---|---|---|---|
-| `enabled` | bool | ver acima | — | desliga o agente sem desenrolar |
-| `transport` | enum | `https` | `coap` só em micro | — |
-| `urls` | lista de URLs | `[]` | mesmo esquema do bundle | — |
-| `poll` | `long` ou duração | `long` | 1 min–24 h | `poll_interval` local (ganha ao do Deck) |
-| `backoff_max` | duração | `15m` | 1 min–6 h | teto do backoff (§3.11.4) |
-| `offline_warn` | duração | `7d` | ≥ 1 h | alarme `joker.agent.offline` |
+| `enabled` | bool | see above | — | turns the agent off without unenrolling |
+| `transport` | enum | `https` | `coap` only on micro | — |
+| `urls` | list of URLs | `[]` | same scheme as the bundle | — |
+| `poll` | `long` or duration | `long` | 1 min–24 h | local `poll_interval` (wins over that of the Deck) |
+| `backoff_max` | duration | `15m` | 1 min–6 h | ceiling of the backoff (§3.11.4) |
+| `offline_warn` | duration | `7d` | ≥ 1 h | alarm `joker.agent.offline` |
 | `local_changes` | enum | `hold` | — | §3.7 |
-| `max_applies_per_day` | uint | 6 | 1–100 | trocas por 24 h deslizantes, de qualquer fase |
-| `mirrors` | lista | `[]` | ≤ 4 | fontes tentadas antes das do DSD |
+| `max_applies_per_day` | uint | 6 | 1–100 | swaps per sliding 24 h, of any phase |
+| `mirrors` | list | `[]` | ≤ 4 | sources tried before those of the DSD |
 | `cbor` | bool | `false` | — | — |
-| `maintenance` | lista de janelas | sem restrição | ≤ 16 | interseção com as do DSD |
-| `queue.max_disk` | tamanho | `64 MiB` | 1 MiB–4 GiB | teto da fila de eventos |
-| `report.*` | durações | §2.9 | margens do §2.9 | ganham às do Deck |
-| `audit.decisions` | lista | acima | valores do §2.11 | `session` é sempre incluído |
-| `upload.allow` | lista | `["decisions", "logs", "events"]` | `upload-kind` | `trace` tem de ser pedido explicitamente |
-| `upload.max_bytes` | tamanho | `64 MiB` | ≤ 1 GiB | — |
-| `mqtt.*` | — | acima | — | §2.14 |
-| `remote.*` | — | acima | §3.10 | — |
+| `maintenance` | list of windows | no restriction | ≤ 16 | intersection with those of the DSD |
+| `queue.max_disk` | size | `64 MiB` | 1 MiB–4 GiB | ceiling of the event queue |
+| `report.*` | durations | §2.9 | margins of §2.9 | win over those of the Deck |
+| `audit.decisions` | list | above | values of §2.11 | `session` is always included |
+| `upload.allow` | list | `["decisions", "logs", "events"]` | `upload-kind` | `trace` must be requested explicitly |
+| `upload.max_bytes` | size | `64 MiB` | ≤ 1 GiB | — |
+| `mqtt.*` | — | above | — | §2.14 |
+| `remote.*` | — | above | §3.10 | — |
 
-As chaves são de ficheiro escrito por pessoas: uma chave desconhecida é `J0140` (ref/00, §1). Nenhuma chave `[agent]` chega pelo protocolo: o Deck não a consegue mudar.
+The keys belong to a file written by people: an unknown key is `J0140` (ref/00, §1). No `[agent]` key arrives through the protocol: the Deck cannot change it.
 
-### 2.18 Sinais, alarmes e comandos locais
+### 2.18 Local signals, alarms and commands
 
-Sinais do nó (prefixo reservado `joker.`, gravados e alarmáveis como os outros):
+Signals of the node (reserved prefix `joker.`, recorded and alarmable like the others):
 
-| Sinal | Tipo | Unidade | Significado |
+| Signal | Type | Unit | Meaning |
 |---|---|---|---|
-| `joker.agent.connected` | bool | — | última troca com o Deck bem-sucedida há menos de 3 × `poll_wait` |
-| `joker.agent.offline_for` | f64 | s | tempo desde a última troca bem-sucedida |
-| `joker.agent.queue` | u64 | — | eventos por confirmar |
-| `joker.agent.dropped` | u64 | — | eventos perdidos desde o enrolamento |
-| `joker.agent.desired_seq` | u64 | — | último DSD aceite |
-| `joker.agent.cert_days` | f64 | d | dias até ao fim do certificado |
+| `joker.agent.connected` | bool | — | last successful exchange with the Deck less than 3 × `poll_wait` ago |
+| `joker.agent.offline_for` | f64 | s | time since the last successful exchange |
+| `joker.agent.queue` | u64 | — | events awaiting acknowledgment |
+| `joker.agent.dropped` | u64 | — | events lost since enrollment |
+| `joker.agent.desired_seq` | u64 | — | last DSD accepted |
+| `joker.agent.cert_days` | f64 | d | days until the end of the certificate |
 
-Alarmes do nó:
+Alarms of the node:
 
-| Alarme | Gravidade | Quando |
+| Alarm | Severity | When |
 |---|---|---|
 | `joker.agent.offline` | `medium` | `offline_for` > `offline_warn` (`J0974`) |
-| `joker.agent.cert_expiring` | `medium` | menos de 1/3 da validade e renovação falhada (`J0935`) |
-| `joker.agent.cert_expired` | `high` | certificado expirado |
-| `joker.agent.revoked` | `high` | Deck respondeu `revoked` (`J0934`) |
-| `joker.agent.quarantined` | `high` | Deck respondeu `quarantined` (`J0937`, `J0938`) |
-| `joker.agent.refused` | `high` | DSD, comando, bundle ou piso recusado por segurança (`J0939`–`J0945`, `J0951`) |
-| `joker.agent.revoked_artifact` | `high` | um artefacto em execução está num piso `revoked` |
-| `joker.agent.queue_overflow` | `medium` | eventos perdidos (`J0970`) |
-| `joker.agent.hold` | `low` | desejado em espera por alterações locais ou pausa |
-| `joker.agent.session` | `low` | há uma sessão remota aberta |
-| `joker.agent.session_request` | `medium` | pedido de sessão à espera de consentimento local |
+| `joker.agent.cert_expiring` | `medium` | less than 1/3 of the validity left and renewal failed (`J0935`) |
+| `joker.agent.cert_expired` | `high` | certificate expired |
+| `joker.agent.revoked` | `high` | the Deck answered `revoked` (`J0934`) |
+| `joker.agent.quarantined` | `high` | the Deck answered `quarantined` (`J0937`, `J0938`) |
+| `joker.agent.refused` | `high` | DSD, command, bundle or floor refused for security (`J0939`–`J0945`, `J0951`) |
+| `joker.agent.revoked_artifact` | `high` | a running artifact is in a `revoked` floor |
+| `joker.agent.queue_overflow` | `medium` | events lost (`J0970`) |
+| `joker.agent.hold` | `low` | desired state on hold because of local changes or a pause |
+| `joker.agent.session` | `low` | there is an open remote session |
+| `joker.agent.session_request` | `medium` | session request awaiting local consent |
 
-Comandos `jk` (documento 07; todos falam com a API local, ref/09 §5.21):
+`jk` commands (document 07; all talk to the local API, ref/09 §5.21):
 
-| Comando | Papel | Faz | API local (ref/09 §5.2, §5.21) |
+| Command | Role | Does | Local API (ref/09 §5.2, §5.21) |
 |---|---|---|---|
-| `jk node enroll <alvo> --ca <dir>` | `admin` | enrola sem Deck, com uma CA local (§3.1.1) | `createEnrollmentCsr`, `installEnrollmentCertificate` |
-| `jk node enroll <alvo> --deck <url> --token <t>` | `admin` | enrola num Deck (§3.1.2) | `enrollWithDeck` |
-| `jk node enroll <mcu> --link <dispositivo>` | `admin` | enrola um MCU atrás do nó e provisiona a `K_link` (ref/07 §4.7) | — (local, por sonda ou USB; o nó recebe o segredo por `pushSecrets`) |
-| `jk node renew` | `admin` | renova o certificado já | `renewNode` |
-| `jk node trust [show \| push <ficheiro.cose> \| set --anchors …]` | `viewer` / `admin` | mostra o bundle e as âncoras, instala um bundle, troca as âncoras (verificados como os outros) | `getNodeTrust`, `pushTrustBundle`, `setTrustAnchors` |
-| `jk agent status` | `viewer` | ligação, autoridade, seq, fila, pausa, hold, sessões | `getAgent` |
-| `jk agent desired [--json]` | `viewer` | o DSD atual, descodificado, e o estado da aplicação | `getAgentDesired` |
-| `jk agent pause --ttl <d> --reason "…"` / `jk agent resume` | `admin` | suspende as trocas (o download e os relatórios continuam) | `pauseAgent`, `resumeAgent` |
-| `jk agent import <dir>` | `admin` | aplica um DSD e artefactos trazidos à mão (§3.7.3) | uploads de blobs, `importAgentBundle` |
-| `jk session list \| accept <id> \| close <id>` | `operator` | sessões remotas (1.3) | `listAgentSessions`, `acceptAgentSession`, `closeAgentSession` |
+| `jk node enroll <target> --ca <dir>` | `admin` | enrolls without a Deck, with a local CA (§3.1.1) | `createEnrollmentCsr`, `installEnrollmentCertificate` |
+| `jk node enroll <target> --deck <url> --token <t>` | `admin` | enrolls in a Deck (§3.1.2) | `enrollWithDeck` |
+| `jk node enroll <mcu> --link <device>` | `admin` | enrolls an MCU behind the node and provisions the `K_link` (ref/07 §4.7) | — (local, through a probe or USB; the node receives the secret through `pushSecrets`) |
+| `jk node renew` | `admin` | renews the certificate now | `renewNode` |
+| `jk node trust [show \| push <file.cose> \| set --anchors …]` | `viewer` / `admin` | shows the bundle and the anchors, installs a bundle, replaces the anchors (verified like the others) | `getNodeTrust`, `pushTrustBundle`, `setTrustAnchors` |
+| `jk agent status` | `viewer` | connection, authority, seq, queue, pause, hold, sessions | `getAgent` |
+| `jk agent desired [--json]` | `viewer` | the current DSD, decoded, and the state of the apply | `getAgentDesired` |
+| `jk agent pause --ttl <d> --reason "…"` / `jk agent resume` | `admin` | suspends the swaps (download and reports continue) | `pauseAgent`, `resumeAgent` |
+| `jk agent import <dir>` | `admin` | applies a DSD and artifacts brought by hand (§3.7.3) | blob uploads, `importAgentBundle` |
+| `jk session list \| accept <id> \| close <id>` | `operator` | remote sessions (1.3) | `listAgentSessions`, `acceptAgentSession`, `closeAgentSession` |
 
-Nenhum destes endpoints se pode usar **dentro** de uma sessão remota (§3.10, `J0986`), exceto as leituras `getAgent` e `getAgentDesired`.
+None of these endpoints can be used **inside** a remote session (§3.10, `J0986`), except the reads `getAgent` and `getAgentDesired`.
 
-### 2.19 Limites
+### 2.19 Limits
 
-| Coisa | Linux | Micro |
+| Thing | Linux | Micro |
 |---|---|---|
 | DSD | 64 KiB | 2 KiB |
-| artefactos por DSD | 256 | 4 |
-| MCUs por DSD | 32 | — |
-| comando | 4 KiB | 512 B |
-| comandos por `poll-reply` | 16 | 4 |
-| bundle de confiança | 16 KiB, 32 chaves | 2 KiB, 8 chaves |
-| relatório completo | 256 KiB (forma JSON) | 1 KiB |
+| artifacts per DSD | 256 | 4 |
+| MCUs per DSD | 32 | — |
+| command | 4 KiB | 512 B |
+| commands per `poll-reply` | 16 | 4 |
+| trust bundle | 16 KiB, 32 keys | 2 KiB, 8 keys |
+| full report | 256 KiB (JSON form) | 1 KiB |
 | delta | 32 KiB | 512 B |
-| lote de eventos | 256 KiB, ≤ 1 000 eventos | 1 KiB, ≤ 8 |
-| corpo de um evento | 4 KiB | 256 B |
-| `message` de alarme | 256 B | 64 B |
-| fila de eventos | `queue.max_disk` (omissão 64 MiB) | 32 eventos em RAM (+ flash, se houver) |
-| sessões simultâneas | `max_sessions` (≤ 4) | — |
-| fluxos por túnel | 16 | — |
+| event batch | 256 KiB, ≤ 1,000 events | 1 KiB, ≤ 8 |
+| body of an event | 4 KiB | 256 B |
+| alarm `message` | 256 B | 64 B |
+| event queue | `queue.max_disk` (default 64 MiB) | 32 events in RAM (+ flash, if any) |
+| simultaneous sessions | `max_sessions` (≤ 4) | — |
+| streams per tunnel | 16 | — |
 | upload | `upload.max_bytes` (≤ 1 GiB) | — |
-| mensagem MQTT | 256 KiB | 4 KiB |
+| MQTT message | 256 KiB | 4 KiB |
 
-Uma mensagem acima do limite é `too_large` com `J0976`.
+A message above the limit is `too_large` with `J0976`.
 
-### 2.20 Códigos
+### 2.20 Codes
 
-Gama `J0930`–`J0999` (ref/00, §8: `J09xx`, frota). Gravidades do documento 16, §9.
+Range `J0930`–`J0999` (ref/00, §8: `J09xx`, fleet). Severities of document 16, §9.
 
-| Código | Gravidade | Mensagem |
+| Code | Severity | Message |
 |---|---|---|
-| `J0930` | error | token de enrolamento inválido, expirado ou já usado |
-| `J0931` | error | o bundle recebido no enrolamento não é assinado pela raiz indicada no token |
-| `J0932` | error | nome de nó inválido, já usado na organização, ou diferente do CSR |
-| `J0933` | warning | chave de identidade em ficheiro, sem TPM nem elemento seguro (ou atestação exigida em falta) |
-| `J0934` | error | certificado do nó revogado |
-| `J0935` | warning | certificado do nó perto do fim ou expirado; renovação pendente |
-| `J0936` | error | renovação recusada: fora de `renew_grace` ou prova inválida |
-| `J0937` | error | impressão de hardware diferente da do enrolamento: nó em quarentena |
-| `J0938` | error | a mesma identidade está ligada a partir de dois nós: clone suspeito |
-| `J0939` | error | bundle de confiança ou piso inválido: assinatura, raiz desconhecida ou versão não crescente |
-| `J0940` | error | assinatura COSE inválida, algoritmo não aceite ou `kid` desconhecido |
-| `J0941` | error | o documento não é da autoridade do nó (papel `deck` em falta ou outro Deck) |
-| `J0942` | error | `seq` do estado desejado não é maior do que o último aceite |
-| `J0943` | error | `seq` repetido com conteúdo diferente (dois emissores) |
-| `J0944` | error | documento ou comando destinado a outro nó ou organização |
-| `J0945` | error | documento expirado ou emitido no futuro (relógio sincronizado) |
-| `J0946` | error | formato não suportado: versão, chave crítica desconhecida ou fonte inválida |
-| `J0947` | error | downgrade não autorizado ou abaixo do piso de segurança |
-| `J0948` | error | runtime incompatível com a placa, a arquitetura ou o estado local |
-| `J0949` | error | lista de artefactos incoerente com a geração, o lock ou os MCUs |
-| `J0950` | error | artefacto descarregado não confere com o digest ou o tamanho |
-| `J0951` | error | estado desejado ou artefacto sem nenhuma assinatura aceite para o seu tipo (uma assinatura inválida é `J0940`) |
-| `J0952` | error | artefacto não descarregado dentro de `fetch_deadline` |
-| `J0953` | error | espaço em disco insuficiente para preparar a aplicação |
-| `J0954` | error | geração recusada pela validação (causas em `causes`) |
-| `J0955` | error | hash da geração calculado diferente do declarado |
-| `J0956` | error | geração `mode = "dev"` recusada num nó `prod` |
-| `J0957` | error | tipo de artefacto ou funcionalidade não suportado nesta versão |
-| `J0958` | error | app compilada para um mundo WIT que a runtime alvo não aceita |
-| `J0959` | warning | aplicação adiada (janela, relógio, pausa, alterações locais) |
-| `J0960` | error | janela de confirmação expirou: rollback |
-| `J0961` | error | saúde falhou durante a confirmação: rollback |
-| `J0962` | warning | limite local de aplicações por dia atingido |
-| `J0963` | error | firmware de MCU incompatível (placa, ABI, contador de segurança) |
-| `J0964` | error | blob de geração do MCU recusado (causa em `causes`, p. ex. `J0710`) |
-| `J0965` | error | atualização do MCU pelo Joker Link falhou ou não confirmou |
-| `J0966` | warning | geração em execução alterada localmente: estado desejado em espera |
-| `J0967` | error | comando sem alvo válido (fase não pendente ou hash diferente) |
-| `J0968` | error | comando fora da janela de tempo ou expirado |
-| `J0969` | error | geração rejeitada pelo Deck durante a confirmação: rollback |
-| `J0970` | warning | fila de eventos cheia: eventos perdidos |
-| `J0971` | warning | relatório truncado por exceder o limite |
-| `J0972` | warning | relógio do nó desalinhado face ao Deck em mais de 5 min |
-| `J0973` | warning | minor do protocolo do nó fora das suportadas pelo Deck (só núcleo mínimo) |
-| `J0974` | warning | Deck inacessível há mais de `offline_warn` |
-| `J0975` | error | certificado do Deck ou do broker não confere com os pinos do bundle |
-| `J0976` | error | mensagem acima do limite do transporte ou do perfil |
-| `J0977` | error | publicação MQTT recusada pelo broker (ACL) |
-| `J0978` | error | mensagem mal formada ou com formas de chave misturadas |
-| `J0979` | error | política de confirmação, calendário ou janela inválidos |
-| `J0980` | error | sessões remotas desativadas neste nó |
-| `J0981` | error | papel pedido acima do que o nó concede a este utilizador do Deck |
-| `J0982` | error | limite de sessões simultâneas atingido |
-| `J0983` | error | sessão expirada, fechada, ou `ttl` acima de `max_ttl` |
-| `J0984` | error | consentimento local recusado ou não dado a tempo |
-| `J0985` | error | transporte sem suporte a sessões remotas |
-| `J0986` | error | pedido no túnel a um endpoint proibido em sessões remotas |
-| `J0990` | error | perfil micro: chave crítica fora do subconjunto |
-| `J0991` | error | perfil micro: janela com fuso horário diferente de UTC |
-| `J0992` | error | estado desejado com geração recusado: `[policy] apply_from` do nó não inclui `deck` |
+| `J0930` | error | enrollment token invalid, expired or already used |
+| `J0931` | error | the bundle received at enrollment is not signed by the root given in the token |
+| `J0932` | error | node name invalid, already used in the organization, or different from the CSR |
+| `J0933` | warning | identity key in a file, without a TPM or secure element (or required attestation missing) |
+| `J0934` | error | node certificate revoked |
+| `J0935` | warning | node certificate near its end or expired; renewal pending |
+| `J0936` | error | renewal refused: outside `renew_grace` or invalid proof |
+| `J0937` | error | hardware fingerprint differs from the one at enrollment: node in quarantine |
+| `J0938` | error | the same identity is connected from two nodes: suspected clone |
+| `J0939` | error | invalid trust bundle or floor: signature, unknown root or non-increasing version |
+| `J0940` | error | invalid COSE signature, algorithm not accepted or unknown `kid` |
+| `J0941` | error | the document is not from the node's authority (`deck` role missing or another Deck) |
+| `J0942` | error | desired state `seq` is not greater than the last accepted one |
+| `J0943` | error | `seq` repeated with different content (two issuers) |
+| `J0944` | error | document or command addressed to another node or organization |
+| `J0945` | error | document expired or issued in the future (clock synchronized) |
+| `J0946` | error | unsupported format: version, unknown critical key or invalid source |
+| `J0947` | error | unauthorized downgrade, or downgrade below the security floor |
+| `J0948` | error | runtime incompatible with the board, the architecture or the local state |
+| `J0949` | error | artifact list inconsistent with the generation, the lock or the MCUs |
+| `J0950` | error | downloaded artifact does not match the digest or the size |
+| `J0951` | error | desired state or artifact without any accepted signature for its type (an invalid signature is `J0940`) |
+| `J0952` | error | artifact not downloaded within `fetch_deadline` |
+| `J0953` | error | insufficient disk space to prepare the apply |
+| `J0954` | error | generation rejected by validation (causes in `causes`) |
+| `J0955` | error | computed generation hash differs from the declared one |
+| `J0956` | error | `mode = "dev"` generation rejected on a `prod` node |
+| `J0957` | error | artifact type or feature not supported in this version |
+| `J0958` | error | app compiled for a WIT world that the target runtime does not accept |
+| `J0959` | warning | apply deferred (window, clock, pause, local changes) |
+| `J0960` | error | confirmation window expired: rollback |
+| `J0961` | error | health failed during confirmation: rollback |
+| `J0962` | warning | local limit of applies per day reached |
+| `J0963` | error | incompatible MCU firmware (board, ABI, security counter) |
+| `J0964` | error | MCU generation blob rejected (cause in `causes`, e.g. `J0710`) |
+| `J0965` | error | MCU update over Joker Link failed or did not confirm |
+| `J0966` | warning | running generation changed locally: desired state on hold |
+| `J0967` | error | command without a valid target (phase not pending or different hash) |
+| `J0968` | error | command outside the time window or expired |
+| `J0969` | error | generation rejected by the Deck during confirmation: rollback |
+| `J0970` | warning | event queue full: events dropped |
+| `J0971` | warning | report truncated for exceeding the limit |
+| `J0972` | warning | node clock skewed against the Deck by more than 5 min |
+| `J0973` | warning | node protocol minor outside the ones supported by the Deck (minimal core only) |
+| `J0974` | warning | Deck unreachable for more than `offline_warn` |
+| `J0975` | error | Deck or broker certificate does not match the bundle pins |
+| `J0976` | error | message above the transport or profile limit |
+| `J0977` | error | MQTT publish rejected by the broker (ACL) |
+| `J0978` | error | malformed message, or message with mixed key forms |
+| `J0979` | error | invalid confirmation policy, calendar or window |
+| `J0980` | error | remote sessions disabled on this node |
+| `J0981` | error | requested role above what the node grants to this Deck user |
+| `J0982` | error | limit of concurrent sessions reached |
+| `J0983` | error | session expired, closed, or `ttl` above `max_ttl` |
+| `J0984` | error | local consent refused or not given in time |
+| `J0985` | error | transport without support for remote sessions |
+| `J0986` | error | tunnel request to an endpoint forbidden in remote sessions |
+| `J0990` | error | micro profile: critical key outside the subset |
+| `J0991` | error | micro profile: window with a time zone other than UTC |
+| `J0992` | error | desired state with a generation rejected: the node's `[policy] apply_from` does not include `deck` |
 
-`J0988`–`J0989` e `J0993`–`J0999` ficam livres (o `J0987` foi atribuído pela ref/02, §2.6). Os códigos das entradas de segredos (`J0922`–`J0926`) e da política de modo (`J0906`) são os da ref/02.
+`J0988`–`J0989` and `J0993`–`J0999` stay free (`J0987` was assigned by ref/02, §2.6). The codes of the secret entries (`J0922`–`J0926`) and of the mode policy (`J0906`) are those of ref/02.
 
 ---
 
-## 3. Comportamento esperado
+## 3. Expected behavior
 
-### 3.1 Enrolamento
+### 3.1 Enrollment
 
-#### 3.1.1 Sem Deck: `jk node enroll <alvo> --ca <dir>`
+#### 3.1.1 Without a Deck: `jk node enroll <target> --ca <dir>`
 
-Para desenvolvimento, para a trilha e para quem não quer Deck (documento 20, D5).
+For development, for the track and for those who do not want a Deck (document 20, D5).
 
 ```
-jk (portátil)                              nó (jokerd)
-  │ ssh + socket local /run/joker/api.sock   │
-  │── pedir CSR ────────────────────────────▶│ gera a chave P-256 (TPM se existir)
+jk (laptop)                                node (jokerd)
+  │ ssh + local socket /run/joker/api.sock   │
+  │── request CSR ──────────────────────────▶│ generates the P-256 key (TPM if present)
   │◀─ CSR, hw, key_storage ─────────────────│
-  │ assina o CSR com a CA de <dir>            │
-  │ assina um bundle sem authority com a raiz de <dir>
-  │── instalar cert + bundle ──────────────▶│ verifica: bundle assinado pela raiz; cert = chave
-  │◀─ ok ───────────────────────────────────│ agente desligado (sem authority)
+  │ signs the CSR with the CA of <dir>        │
+  │ signs a bundle without authority with the root of <dir>
+  │── install cert + bundle ───────────────▶│ verifies: bundle signed by the root; cert = key
+  │◀─ ok ───────────────────────────────────│ agent off (no authority)
 ```
 
-O diretório da CA tem `root.key` (Ed25519, a raiz), `ca.key`/`ca.crt` (P-256, a emissora), `org` (nome), `dev` (ficheiro vazio, só numa CA de desenvolvimento) e, depois do `jk ca bundle`, `trust.cose` (o bundle de confiança, ref/02 §2.5.5). O `jk` cria-o com `jk ca init <dir> --org <org>`, ou no `jk node enroll --ca <dir>` se não existir (com `--dev`). Se a pasta tiver `trust.cose` (o bundle do `jk ca bundle`, ref/02 §2.5.5), é esse que o enrolamento instala, em vez do bundle sem `authority` do diagrama. O `jk ca init` cria também o certificado de utilizador `admin-<utilizador>` (SAN `urn:joker:role:admin`) e regista-o em `[user]` do `config.toml` do cliente (ref/02 §3.3.3). O canal de arranque até ao nó é o da ref/02 §3.2.3: o socket local, com acesso físico ou por SSH (`--node ssh://…`; `createEnrollmentCsr` e `installEnrollmentCertificate`, ref/09 §5.2), com o código de uso único (`--code`) pelo mesmo socket quando o nó o mostra. **Nunca há uma porta de enrolamento aberta à rede**; no enrolamento pelo Deck (§3.1.2) é o nó que liga para fora, com o token. O CSR leva a chave KEM no SAN (§2.4.2), e a instalação escreve as âncoras e o primeiro bundle.
+The CA directory has `root.key` (Ed25519, the root), `ca.key`/`ca.crt` (P-256, the issuer), `org` (name), `dev` (empty file, only in a development CA) and, after `jk ca bundle`, `trust.cose` (the trust bundle, ref/02 §2.5.5). `jk` creates it with `jk ca init <dir> --org <org>`, or in `jk node enroll --ca <dir>` if it does not exist (with `--dev`). If the directory has `trust.cose` (the bundle from `jk ca bundle`, ref/02 §2.5.5), that is the one the enrollment installs, instead of the bundle without `authority` of the diagram. `jk ca init` also creates the user certificate `admin-<user>` (SAN `urn:joker:role:admin`) and registers it in `[user]` of the `config.toml` of the client (ref/02 §3.3.3). The bootstrap channel to the node is that of ref/02 §3.2.3: the local socket, with physical access or over SSH (`--node ssh://…`; `createEnrollmentCsr` and `installEnrollmentCertificate`, ref/09 §5.2), with the single-use code (`--code`) over the same socket when the node shows it. **There is never an enrollment port open to the network**; in enrollment through the Deck (§3.1.2) it is the node that connects outward, with the token. The CSR carries the KEM key in the SAN (§2.4.2), and the installation writes the anchors and the first bundle.
 
-#### 3.1.2 Com Deck: `jk node enroll <alvo> --deck <url> --token <t>`, ou `jokerd enroll`
+#### 3.1.2 With a Deck: `jk node enroll <target> --deck <url> --token <t>`, or `jokerd enroll`
 
 ```
-nó                                                     Deck
- │ gera a chave; CSR; hw                                 │
- │── POST /enroll {token, node, csr, hw, key_storage} ──▶│ valida o token (J0930), o nome (J0932)
- │                                                       │ emite o certificado; marca o token usado
+node                                                   Deck
+ │ generates the key; CSR; hw                            │
+ │── POST /enroll {token, node, csr, hw, key_storage} ──▶│ validates the token (J0930), the name (J0932)
+ │                                                       │ issues the certificate; marks the token used
  │◀─ {cert, trust, deck, settings} ─────────────────────│
- │ verifica: raiz do bundle tem o kid do token (J0931)   │
- │           cert é da chave gerada; scope inclui o nó   │
- │ instala; hello; relatório completo                    │
+ │ verifies: root of the bundle has the kid of the token (J0931)
+ │           cert is of the generated key; scope includes the node
+ │ installs; hello; full report                          │
 ```
 
-- A chave **nunca sai do nó**: é o nó que fala com o Deck, e o `jk` só lhe passa o URL e o token.
-- **Sem toque** (*zero-touch*): a imagem do nó leva `jokerd enroll --deck <url> --token-file <f>` no primeiro arranque, com um token preso ao site. O token é um segredo e é apagado depois de usado.
-- Um nó já enrolado recusa um novo enrolamento sem `--force`; com `--force`, gera uma chave nova (a identidade antiga fica órfã e o Deck revoga-a).
-- Mudar de Deck é um bundle novo com outra `authority`, assinado pela raiz (§3.2.4), ou um novo enrolamento.
+- The key **never leaves the node**: it is the node that talks to the Deck, and `jk` only passes it the URL and the token.
+- **Zero-touch**: the image of the node carries `jokerd enroll --deck <url> --token-file <f>` at first boot, with a token bound to the site. The token is a secret and is deleted after use.
+- A node already enrolled refuses a new enrollment without `--force`; with `--force`, it generates a new key (the old identity is orphaned and the Deck revokes it).
+- Changing Deck is a new bundle with another `authority`, signed by the root (§3.2.4), or a new enrollment.
 
-#### 3.1.3 MCU autónomo
+#### 3.1.3 Standalone MCU
 
-O MCU gera a chave de identidade (elemento seguro, se houver) e a chave X25519 de segredos no primeiro arranque. O enrolamento é feito pela ferramenta ligada por USB ou pelo Joker Link (`jk node enroll mcu:<porta> --deck <url> --token <t>`): a `jk` pede o CSR ao MCU (com a chave KEM no SAN), faz o `POST /enroll` com `kind = micro`, e devolve ao MCU o certificado, as âncoras e o bundle, que o MCU verifica como no §3.1.2 e guarda na área `IDENTITY` (registos 18 e 19, ref/08 §2.10.2; bundle ≤ 2 KiB). Um MCU com HTTPS pode enrolar-se sozinho.
+The MCU generates the identity key (secure element, if there is one) and the X25519 secrets key at first boot. Enrollment is done by the tool connected over USB or by Joker Link (`jk node enroll mcu:<port> --deck <url> --token <t>`): `jk` requests the CSR from the MCU (with the KEM key in the SAN), makes the `POST /enroll` with `kind = micro`, and returns to the MCU the certificate, the anchors and the bundle, which the MCU verifies as in §3.1.2 and stores in the `IDENTITY` area (registers 18 and 19, ref/08 §2.10.2; bundle ≤ 2 KiB). An MCU with HTTPS can enroll on its own.
 
-Um MCU **atrás de um nó** não tem certificado: fala com o nó pelo Joker Link, com a `K_link`, que `jk node enroll <mcu> --link <dispositivo>` gera e provisiona (ref/07 §4.7): no MCU, os registos 16 e 17 da área `IDENTITY`; no nó, o segredo `secret:link.<dispositivo>`.
+An MCU **behind a node** has no certificate: it talks to the node over Joker Link, with the `K_link`, which `jk node enroll <mcu> --link <device>` generates and provisions (ref/07 §4.7): on the MCU, registers 16 and 17 of the `IDENTITY` area; on the node, the secret `secret:link.<device>`.
 
-### 3.2 Renovação, revogação e nós clonados
+### 3.2 Renewal, revocation and cloned nodes
 
-#### 3.2.1 Renovação
+#### 3.2.1 Renewal
 
-- A partir de **2/3 da validade**, o nó tenta renovar uma vez por dia, com chave nova (`renew-request`). Sucesso: evento `cert` `renewed`; o certificado antigo deixa de ser usado.
-- Um comando `renew` antecipa a renovação.
-- A renovação é atómica: a chave e o certificado novos só substituem os antigos depois do `renew-reply` guardado com fsync. Uma falha a meio deixa o par antigo.
-- Com o certificado **expirado**, o nó continua a tentar `POST /renew` (o único endpoint que o Deck aceita nessas condições), até `renew_grace`. Depois disso, `J0936`: é preciso um novo enrolamento no local.
-- Nada disto afeta o controlo. O nó controla com o certificado expirado, revogado ou sem nenhum.
+- From **2/3 of the validity** on, the node tries to renew once a day, with a new key (`renew-request`). Success: event `cert` `renewed`; the old certificate stops being used.
+- A `renew` command brings the renewal forward.
+- Renewal is atomic: the new key and certificate only replace the old ones after the `renew-reply` is stored with fsync. A failure halfway leaves the old pair.
+- With the certificate **expired**, the node keeps trying `POST /renew` (the only endpoint that the Deck accepts under those conditions), up to `renew_grace`. After that, `J0936`: a new on-site enrollment is needed.
+- None of this affects control. The node controls with the certificate expired, revoked or with none at all.
 
-#### 3.2.2 Revogação
+#### 3.2.2 Revocation
 
-- É uma decisão do Deck (a CA é dele). O Deck recusa o TLS ou responde `revoked` (`J0934`) em qualquer endpoint. O broker MQTT tem de consultar a lista de revogação do Deck (CRL ou OCSP da CA emissora); o `jk doctor` avisa se o broker não o fizer.
-- O nó revogado pára o agente, levanta `joker.agent.revoked` e continua a funcionar no último estado confirmado. Um nó revogado nunca é "desligado" pelo Deck: o princípio 1 vale também aqui.
-- Revogar uma **chave do bundle** (por exemplo, uma chave `deck` comprometida) é um bundle novo sem essa chave, assinado pela raiz. O Deck entrega-o, mas não o consegue fabricar.
+- It is a decision of the Deck (the CA is its own). The Deck refuses the TLS or responds `revoked` (`J0934`) on any endpoint. The MQTT broker must consult the revocation list of the Deck (CRL or OCSP of the issuing CA); `jk doctor` warns if the broker does not.
+- The revoked node stops the agent, raises `joker.agent.revoked` and keeps working in the last confirmed state. A revoked node is never "switched off" by the Deck: principle 1 holds here too.
+- Revoking a **key of the bundle** (for example, a compromised `deck` key) is a new bundle without that key, signed by the root. The Deck delivers it, but cannot forge it.
 
-#### 3.2.3 Nó clonado
+#### 3.2.3 Cloned node
 
-| Caso | Deteção | Reação |
+| Case | Detection | Reaction |
 |---|---|---|
-| chave em TPM ou elemento seguro | impossível clonar a chave; o clone não faz TLS | — |
-| chave em ficheiro, cartão copiado para outra placa | `hello.hw` ≠ impressão do enrolamento | o Deck responde `quarantined` (`J0937`): aceita relatórios e eventos, marcados, e não entrega DSD nem comandos |
-| duas placas com a mesma identidade ligadas ao mesmo tempo | dois `boot` diferentes com ligações sobrepostas, ou `event_seq` a andar para trás | as duas em quarentena (`J0938`) |
+| key in TPM or secure element | impossible to clone the key; the clone does not do TLS | — |
+| key in a file, card copied to another board | `hello.hw` ≠ enrollment fingerprint | the Deck responds `quarantined` (`J0937`): it accepts reports and events, marked, and delivers neither DSD nor commands |
+| two boards with the same identity connected at the same time | two different `boot`s with overlapping connections, or `event_seq` going backward | both in quarantine (`J0938`) |
 
-A **impressão do hardware** (`hw`) é o SHA-256 de `serial da placa ‖ serial do SoC ‖ MAC da interface primária ‖ chave pública EK do TPM (se houver)`, cada campo em UTF-8 e separado por `\n`. Uma troca legítima de hardware (reparação) resolve-se no Deck (aceitar a nova impressão) ou com um novo enrolamento. A quarentena nunca mexe no controlo do nó.
+The **hardware fingerprint** (`hw`) is the SHA-256 of `board serial ‖ SoC serial ‖ MAC of the primary interface ‖ EK public key of the TPM (if any)`, each field in UTF-8 and separated by `\n`. A legitimate hardware swap (repair) is resolved in the Deck (accepting the new fingerprint) or with a new enrollment. Quarantine never touches the control of the node.
 
-#### 3.2.4 Bundle e pisos
+#### 3.2.4 Bundle and floors
 
-- O nó aceita bundles de três sítios: `enroll-reply`, `hello-reply`/`renew-reply`/`GET /trust` e o campo `trust` do DSD. A regra é sempre a do §2.4.3.
-- Um bundle que muda a `authority` faz o nó esquecer o `seq` do Deck anterior: o próximo DSD da nova autoridade pode começar em 1. É a única forma de o `seq` recomeçar.
-- Um piso novo aplica-se de imediato ao que ainda não foi trocado. Se o que **está em execução** estiver revogado, o nó levanta `joker.agent.revoked_artifact` e **continua a correr**: parar seria pior do que o risco, e a correção é um DSD novo.
+- The node accepts bundles from three places: `enroll-reply`, `hello-reply`/`renew-reply`/`GET /trust` and the `trust` field of the DSD. The rule is always that of §2.4.3.
+- A bundle that changes the `authority` makes the node forget the `seq` of the previous Deck: the next DSD from the new authority may start at 1. It is the only way for the `seq` to restart.
+- A new floor applies immediately to what has not been swapped yet. If what **is running** is revoked, the node raises `joker.agent.revoked_artifact` and **keeps running**: stopping would be worse than the risk, and the fix is a new DSD.
 
-### 3.3 Validação do estado desejado
+### 3.3 Validation of the desired state
 
-O nó valida por esta ordem. O primeiro passo que falha decide o resultado.
+The node validates in this order. The first step that fails decides the result.
 
-| # | Passo | Falha | O `seq` fica consumido? |
+| # | Step | Failure | Is the `seq` consumed? |
 |---|---|---|---|
-| V1 | COSE bem formado, `alg` ∈ {−8, −7}, `content type` certo | `J0940` | não |
-| V2 | `kid` no bundle instalado; `not_after` (se relógio `synced`) | `J0940` | não |
-| V3 | a chave tem o papel `deck` e o seu `deck` = `authority` | `J0941` | não |
-| V4 | assinatura válida | `J0940` | não |
-| V5 | CBOR determinístico, `v` = 1, todas as chaves de `crit` conhecidas, limites do §2.19 | `J0946`, `J0976` | não |
-| V6 | `node` e `org` são os deste nó | `J0944` | não |
-| V7 | `seq` > último aceite. Igual e com o mesmo conteúdo: `noop`. Igual com conteúdo diferente: `J0943`. Menor: `J0942` | `J0942`, `J0943` | não |
-| V8 | `issued` e `expires`, só com relógio `synced` | `J0945` | não |
-| — | **aceite:** o DSD é guardado com fsync, o `seq` passa a ser o último aceite, evento `apply` `accepted`; um DSD anterior ainda não trocado passa a `superseded` | — | — |
-| V9 | cada bundle em `trust`, por ordem (§2.4.3) | `J0939` | sim |
-| V10 | cada piso em `floors` (§2.4.4) | `J0939` | sim |
-| V10b | cada entrada de `secrets` (chave 22), pela ordem da ref/02 §3.4.3: assinatura do papel `secrets`, `wrap` para este nó, decifração de teste, `rev` ≥ à guardada; uma entrada que falha é recusada sozinha (evento `security`), as outras guardam-se, e um segredo rodado não cria geração | `J0922`–`J0926` | sim |
-| V11 | todos os `media_type` conhecidos e suportados nesta versão | `J0957` | sim |
-| V12 | `artifacts` coerente: sem duplicados; `runtime.artifact`, `generation.config` e os artefactos dos `mcus` presentes e com o tipo certo | `J0949` | sim |
-| V13 | `confirm`, `schedule` e `window` válidos | `J0979` | sim |
-| V14 | runtime: anotações do manifesto OCI (arquitetura, placa, `state_min`) | `J0948` | sim |
-| V15 | runtime e firmwares: downgrade só com `allow_downgrade`; nunca abaixo de `min_version` nem num digest `revoked` | `J0947` | sim |
-| V16 | espaço: soma dos `size` dos artefactos que faltam + reserva (max(10% do disco, 256 MiB)) ≤ livre | `J0953` | sim |
-| V17 | **descarga** (estado `fetching`): o `joker.config.v1` primeiro; depois os outros, no máximo 2 em paralelo; cada um com tamanho e digest (`J0950`) e assinatura do papel certo (`J0951`) | `J0950`, `J0951`, `J0952` | sim |
-| V18 | **staging**: os digests do lock, os dos `mcus` e os de `artifacts` coincidem (exceto runtime e configuração); cada `mcu-target.device` existe com o driver `joker-link` | `J0949` | sim |
-| V19 | a origem `deck` está em `[policy] apply_from` (ref/02 §3.5.1); `mode` da geração ≥ `min_mode` do bundle e, se for `dev`, `[policy] allow_dev = true`; em `prod`, todos os artefactos assinados | `J0992`, `J0956`, `J0906`, `J0951` | sim |
-| V20 | a validação do `jk check`, com os mesmos crates, para a runtime **alvo** (a nova, se houver fase `runtime`), incluindo o `[security] trust` do manifesto (§2.4.3) | `J0954` + causas | sim |
-| V21 | hash da geração calculado = `generation.hash` | `J0955` | sim |
-| V22 | mundo WIT de cada app aceite pela runtime alvo (`org.joker.worlds`; M21; a causa é o `J-E0001` da ref/04) e, num nó `prod`, nenhuma app com funcionalidades instáveis (chave 10 do `joker:meta`; causa `J-E0003`) | `J0958` + causa | sim |
-| V23 | MCUs: placa, ABI e contador do firmware; o blob cabe nas capacidades do firmware alvo (`J0710` como causa) | `J0963`, `J0964` | sim |
-| V24 | pré-compilação AOT das apps para a runtime alvo (`.cwasm`) | `J0954` + causa | sim |
+| V1 | well-formed COSE, `alg` ∈ {−8, −7}, correct `content type` | `J0940` | no |
+| V2 | `kid` in the installed bundle; `not_after` (if the clock is `synced`) | `J0940` | no |
+| V3 | the key has the `deck` role and its `deck` = `authority` | `J0941` | no |
+| V4 | valid signature | `J0940` | no |
+| V5 | deterministic CBOR, `v` = 1, all keys of `crit` known, limits of §2.19 | `J0946`, `J0976` | no |
+| V6 | `node` and `org` are those of this node | `J0944` | no |
+| V7 | `seq` > last accepted. Equal and with the same content: `noop`. Equal with different content: `J0943`. Lower: `J0942` | `J0942`, `J0943` | no |
+| V8 | `issued` and `expires`, only with the clock `synced` | `J0945` | no |
+| — | **accepted:** the DSD is stored with fsync, the `seq` becomes the last accepted, event `apply` `accepted`; a previous DSD not yet swapped becomes `superseded` | — | — |
+| V9 | each bundle in `trust`, in order (§2.4.3) | `J0939` | yes |
+| V10 | each floor in `floors` (§2.4.4) | `J0939` | yes |
+| V10b | each entry of `secrets` (key 22), in the order of ref/02 §3.4.3: signature of the `secrets` role, `wrap` for this node, test decryption, `rev` ≥ the stored one; an entry that fails is rejected on its own (`security` event), the others are stored, and a rotated secret does not create a generation | `J0922`–`J0926` | yes |
+| V11 | all `media_type`s known and supported in this version | `J0957` | yes |
+| V12 | `artifacts` consistent: no duplicates; `runtime.artifact`, `generation.config` and the artifacts of the `mcus` present and with the right type | `J0949` | yes |
+| V13 | `confirm`, `schedule` and `window` valid | `J0979` | yes |
+| V14 | runtime: annotations of the OCI manifest (architecture, board, `state_min`) | `J0948` | yes |
+| V15 | runtime and firmwares: downgrade only with `allow_downgrade`; never below `min_version` nor to a `revoked` digest | `J0947` | yes |
+| V16 | space: sum of the `size` of the missing artifacts + reserve (max(10% of the disk, 256 MiB)) ≤ free | `J0953` | yes |
+| V17 | **download** (state `fetching`): the `joker.config.v1` first; then the others, at most 2 in parallel; each with size and digest (`J0950`) and signature of the right role (`J0951`) | `J0950`, `J0951`, `J0952` | yes |
+| V18 | **staging**: the digests of the lock, those of the `mcus` and those of `artifacts` match (except runtime and configuration); each `mcu-target.device` exists with the `joker-link` driver | `J0949` | yes |
+| V19 | the `deck` origin is in `[policy] apply_from` (ref/02 §3.5.1); `mode` of the generation ≥ `min_mode` of the bundle and, if it is `dev`, `[policy] allow_dev = true`; in `prod`, all artifacts signed | `J0992`, `J0956`, `J0906`, `J0951` | yes |
+| V20 | the validation of `jk check`, with the same crates, for the **target** runtime (the new one, if there is a `runtime` phase), including the `[security] trust` of the manifest (§2.4.3) | `J0954` + causes | yes |
+| V21 | computed generation hash = `generation.hash` | `J0955` | yes |
+| V22 | WIT world of each app accepted by the target runtime (`org.joker.worlds`; M21; the cause is the `J-E0001` of ref/04) and, on a `prod` node, no app with unstable features (key 10 of `joker:meta`; cause `J-E0003`) | `J0958` + cause | yes |
+| V23 | MCUs: board, ABI and counter of the firmware; the blob fits the capabilities of the target firmware (`J0710` as cause) | `J0963`, `J0964` | yes |
+| V24 | AOT precompilation of the apps for the target runtime (`.cwasm`) | `J0954` + cause | yes |
 
-Um DSD que falha em V1–V8 **não existe** para o nó: não muda nada, gera um evento `security` e o alarme `joker.agent.refused`. Um que falha em V9–V24 fica `refused` (V9–V16, V18–V24) ou `failed` (V17), com o código e as causas no relatório; o nó continua exatamente como estava. O V10b é a exceção: uma entrada de segredo recusada não recusa o DSD (a geração só falha, no V20, se precisar dela).
+A DSD that fails at V1–V8 **does not exist** for the node: it changes nothing, generates a `security` event and the alarm `joker.agent.refused`. One that fails at V9–V24 becomes `refused` (V9–V16, V18–V24) or `failed` (V17), with the code and the causes in the report; the node stays exactly as it was. V10b is the exception: a rejected secret entry does not reject the DSD (the generation only fails, at V20, if it needs it).
 
-O artefacto de configuração vem primeiro porque é ele que diz o `mode` (V19) e o `[security] trust` (V20), que decidem as assinaturas dos outros.
+The configuration artifact comes first because it is the one that says the `mode` (V19) and the `[security] trust` (V20), which decide the signatures of the others.
 
-### 3.4 Aplicação
+### 3.4 Apply
 
-#### 3.4.1 Máquina de estados
+#### 3.4.1 State machine
 
 ```
              V1–V8                V9–V16          V17              V18–V24
- (recebido) ───────▶ accepted ──▶ validating ──▶ fetching ──▶ staging ──▶ waiting ──▶ applying ──▶ confirming ──▶ confirmed
+ (received) ───────▶ accepted ──▶ validating ──▶ fetching ──▶ staging ──▶ waiting ──▶ applying ──▶ confirming ──▶ confirmed
      │                  │            │             │             │           │            ▲               │
-     └─ recusa          └─ noop      └─ refused    └─ failed     └─ refused  │            └── fase seguinte ─┤
-        (não existe)                                                        └─ superseded                  └─ rolled_back
+     └─ refusal         └─ noop      └─ refused    └─ failed     └─ refused  │            └── next phase ────┤
+        (does not exist)                                                    └─ superseded                  └─ rolled_back
 ```
 
-`applying` e `confirming` repetem-se por fase, pela ordem **runtime → mcu → generation**. Cada fase confirmada fica confirmada: se a fase `generation` fizer rollback, a runtime nova e os MCUs já confirmados ficam; o estado final é `rolled_back`, com a fase no evento. Uma fase sem mudanças (alvo igual ao atual) é saltada.
+`applying` and `confirming` repeat per phase, in the order **runtime → mcu → generation**. Each confirmed phase stays confirmed: if the `generation` phase rolls back, the new runtime and the MCUs already confirmed stay; the final state is `rolled_back`, with the phase in the event. A phase without changes (target equal to current) is skipped.
 
-**Porquê esta ordem.** A runtime nova arranca primeiro com a geração **atual** (a regra de ouro da 1.x garante que a lê), e só depois recebe a nova, que pode precisar dela (V20 e V22 validam contra a runtime alvo). Os MCUs vêm antes da geração do nó porque o lock do nó fixa o que cada MCU exporta no `HELLO` (documento 19, §6): a geração nova do nó pode depender do firmware novo, e nunca o contrário.
+**Why this order.** The new runtime starts first with the **current** generation (the golden rule of 1.x guarantees that it reads it), and only then receives the new one, which may need it (V20 and V22 validate against the target runtime). The MCUs come before the generation of the node because the lock of the node pins what each MCU exports in the `HELLO` (document 19, §6): the new generation of the node may depend on the new firmware, and never the other way around.
 
-#### 3.4.2 Concorrência entre DSDs
+#### 3.4.2 Concurrency between DSDs
 
-- Um DSD novo aceite substitui (`superseded`) o anterior se este ainda não começou a trocar (`accepted` a `waiting`). Os artefactos já descarregados ficam na cache por digest.
-- Se o anterior está em `applying` ou `confirming`, o novo vai até `staging` e espera (`wait = confirmation`) que a fase em curso termine. Nesse momento, o que falta do anterior é abandonado (`superseded`) e o plano do novo é recalculado contra o estado real.
-- **Um rollback nunca espera:** não conta para `max_applies_per_day`, ignora janelas, pausas e `hold`.
-- **O mesmo trinco da API.** O agente e a API local (ref/09 §5.13) partilham o trinco de transição de gerações: no máximo uma geração `pending` e uma `confirming` por nó, venha de onde vier. Uma troca do agente espera (`wait = confirmation`) por uma transição local em curso; um `POST /v1/generations` durante uma troca do agente recebe `J-E1608`.
+- A new accepted DSD replaces (`superseded`) the previous one if the latter has not yet started swapping (`accepted` to `waiting`). The artifacts already downloaded stay in the cache by digest.
+- If the previous one is in `applying` or `confirming`, the new one goes up to `staging` and waits (`wait = confirmation`) for the phase in progress to end. At that moment, what is left of the previous one is abandoned (`superseded`) and the plan of the new one is recomputed against the real state.
+- **A rollback never waits:** it does not count toward `max_applies_per_day`, and it ignores windows, pauses and `hold`.
+- **The same mutex as the API.** The agent and the local API (ref/09 §5.13) share the generation-transition mutex: at most one `pending` generation and one `confirming` per node, wherever it comes from. A swap of the agent waits (`wait = confirmation`) for a local transition in progress; a `POST /v1/generations` during a swap of the agent receives `J-E1608`.
 
-#### 3.4.3 Fases
+#### 3.4.3 Phases
 
-| Fase | Troca | Janela de saúde | Rollback |
+| Phase | Swap | Health window | Rollback |
 |---|---|---|---|
-| `runtime` | binário no slot inativo; o `jokerd` reinicia no novo slot **com a geração confirmada atual**; os equipamentos cobrem o intervalo com o fallback (M1) e os MCUs com o seu lease | `health_window` + `confirm` | reinício no slot anterior; automático também se o `jokerd` novo não arrancar (systemd, documento 01, §16) |
-| `mcu` | §3.6 | `mcu-target.confirm` | o MCU reverte para a imagem anterior |
-| `generation` | o pipeline do documento 01, §15: planear o diff, preparar, trocar num limite de tick de cada grupo afetado | `confirm` | troca de volta para a geração anterior, mantida quente (`keep_previous`) |
+| `runtime` | binary in the inactive slot; `jokerd` restarts in the new slot **with the current confirmed generation**; the equipment covers the interval with the fallback (M1) and the MCUs with their lease | `health_window` + `confirm` | restart in the previous slot; also automatic if the new `jokerd` does not start (systemd, document 01, §16) |
+| `mcu` | §3.6 | `mcu-target.confirm` | the MCU reverts to the previous image |
+| `generation` | the pipeline of document 01, §15: plan the diff, prepare, swap at a tick boundary of each affected group | `confirm` | swap back to the previous generation, kept warm (`keep_previous`) |
 
-Numeração das gerações: o `gen` inteiro é atribuído pelo nó quando a geração entra em staging. Um rollback **reativa** a geração anterior com o mesmo hash e **o mesmo número** (D9); a que falhou fica no histórico com o seu, em `rolled_back`. O histórico é de **ativações**, cada uma com a sua `origin` (`gen-origin`, §2.2: `agent` com o `seq` do DSD, `rollback`, …), o que a API mostra em `GET /v1/generations` (ref/09 §5.13).
+Numbering of generations: the integer `gen` is assigned by the node when the generation enters staging. A rollback **reactivates** the previous generation with the same hash and **the same number** (D9); the one that failed stays in the history with its own, in `rolled_back`. The history is of **activations**, each with its `origin` (`gen-origin`, §2.2: `agent` with the `seq` of the DSD, `rollback`, …), which the API shows in `GET /v1/generations` (ref/09 §5.13).
 
-#### 3.4.4 Espera antes de trocar
+#### 3.4.4 Waiting before swapping
 
-Uma fase só troca quando todas as condições se verificam; senão fica em `waiting` com o motivo (`J0959`):
+A phase only swaps when all the conditions hold; otherwise it stays in `waiting` with the reason (`J0959`):
 
-| Motivo | Condição para avançar |
+| Reason | Condition to proceed |
 |---|---|
-| `not_before` | agora ≥ `schedule.not_before` |
-| `window` | agora está dentro de uma janela do DSD **e** de uma janela local (`[agent] maintenance`); sem janelas de um dos lados, esse lado não restringe. Uma interseção vazia nos próximos 7 dias é reportada logo |
-| `jitter` | passou o atraso sorteado (contado da primeira vez que as outras condições se verificaram) |
-| `clock` | há `windows` ou `not_before` e o relógio está `unsynced` (com `holdover` avança) |
-| `paused` | `jk agent pause` ativo |
+| `not_before` | now ≥ `schedule.not_before` |
+| `window` | now is within a window of the DSD **and** a local window (`[agent] maintenance`); with no windows on one side, that side does not restrict. An empty intersection in the next 7 days is reported at once |
+| `jitter` | the drawn delay has passed (counted from the first time the other conditions held) |
+| `clock` | there are `windows` or `not_before` and the clock is `unsynced` (with `holdover` it proceeds) |
+| `paused` | `jk agent pause` active |
 | `local_hold` | §3.7.1 |
-| `confirmation` | outra fase em confirmação |
-| `rate_limit` | `max_applies_per_day` atingido (`J0962`) |
-| `mcu_link` | o MCU da fase não está `up` |
+| `confirmation` | another phase being confirmed |
+| `rate_limit` | `max_applies_per_day` reached (`J0962`) |
+| `mcu_link` | the MCU of the phase is not `up` |
 
-O download e o staging não esperam por nada disto: fazem-se logo, para que a troca, quando a janela abre, demore segundos.
+Download and staging do not wait for any of this: they are done at once, so that the swap, when the window opens, takes seconds.
 
-### 3.5 Confirmação e saúde
+### 3.5 Confirmation and health
 
-A janela de confirmação começa na troca. As verificações de saúde:
+The confirmation window starts at the swap. The health checks:
 
-| # | Verificação | Se falhar |
+| # | Check | If it fails |
 |---|---|---|
-| H1 | nenhum grupo de ciclo em `overrun`, `tripped` ou `stopped` | reinicia o `stable_for` |
-| H2 | nenhuma app em `crashloop` ou `failed` | **rollback imediato** (`J0961`) |
-| H3 | nenhum trip novo desde a troca | **rollback imediato** (`J0961`) |
-| H4 | cada dispositivo que estava `up` antes da troca está `up` ou `degraded`; cada dispositivo novo chega a `up` ou `degraded` | reinicia o `stable_for` |
-| H5 | nenhum alarme novo ativo com gravidade ≥ `alarm_severity` | reinicia o `stable_for` |
-| H6 | só na fase `runtime`: o primeiro tick de cada grupo dentro de `health_window` e os drivers ligados (documento 01, §16) | rollback no fim de `health_window` |
-| H7 | `require_uplink`: depois da troca, pelo menos uma troca autenticada completa com o Deck (um `report-ack`) | impede a confirmação `auto` |
+| H1 | no cycle group in `overrun`, `tripped` or `stopped` | restarts `stable_for` |
+| H2 | no app in `crashloop` or `failed` | **immediate rollback** (`J0961`) |
+| H3 | no new trip since the swap | **immediate rollback** (`J0961`) |
+| H4 | each device that was `up` before the swap is `up` or `degraded`; each new device reaches `up` or `degraded` | restarts `stable_for` |
+| H5 | no new active alarm with severity ≥ `alarm_severity` | restarts `stable_for` |
+| H6 | only in the `runtime` phase: the first tick of each group within `health_window` and the drivers connected (document 01, §16) | rollback at the end of `health_window` |
+| H7 | `require_uplink`: after the swap, at least one complete authenticated exchange with the Deck (a `report-ack`) | prevents `auto` confirmation |
 
-| `mode` | Confirma quando | Rollback quando |
+| `mode` | Confirms when | Rollback when |
 |---|---|---|
-| `auto` | H1–H6 seguidas durante `stable_for` **e** H7 | H2, H3 (imediato); fim da janela sem confirmar (`J0960`, ou `J0961` se a saúde estava a falhar) |
-| `deck` | chega um comando `confirm` com o (`seq`, fase, hash) certo; o nó exige H1–H6 no momento, senão responde `conflict` | H2, H3; `reject` (`J0969`); fim da janela (`J0960`) |
-| `manual` | `jk confirm` local ou numa sessão remota | H2, H3; `jk rollback`; fim da janela (`J0960`) |
+| `auto` | H1–H6 continuously for `stable_for` **and** H7 | H2, H3 (immediate); end of the window without confirming (`J0960`, or `J0961` if health was failing) |
+| `deck` | a `confirm` command arrives with the right (`seq`, phase, hash); the node requires H1–H6 at that moment, otherwise it responds `conflict` | H2, H3; `reject` (`J0969`); end of the window (`J0960`) |
+| `manual` | `jk confirm` locally or in a remote session | H2, H3; `jk rollback`; end of the window (`J0960`) |
 
-O H7 é o que faz do `auto` uma confirmação honesta no sentido da ADR 0015: uma geração que cortou a rede ao nó não se consegue confirmar a si própria.
+H7 is what makes `auto` an honest confirmation in the sense of ADR 0015: a generation that cut the network off from the node cannot confirm itself.
 
-### 3.6 MCUs atrás do nó
+### 3.6 MCUs behind the node
 
-Para cada `mcu-target`, por `order`, **um de cada vez**:
+For each `mcu-target`, by `order`, **one at a time**:
 
-1. O MCU tem de estar `up` no Joker Link (senão `wait = mcu_link`; ao fim de `fetch_deadline`, `J0965`).
-2. O nó já verificou a assinatura (papel `firmware` ou `config`); o MCU verifica-a **outra vez** com as suas próprias chaves (o bootloader e o `joker-micro` para o firmware, o `jk_generation_open` para o blob; ref/08 §2.12.4, §2.13.5). O MCU é a autoridade final sobre o que arranca.
-3. **Firmware:** o nó envia a imagem pela mensagem `OTA` (ref/07); o MCU grava-a no slot inativo e reinicia em modo de teste (MCUboot *test swap* ou equivalente). Durante o reinício (milissegundos), as saídas do MCU estão no `safe` do próprio MCU.
-4. O nó espera o `HELLO` com o digest novo (chave 5.2; e 5.9, o do descritor) e o firmware em experiência (12.4) dentro de `confirm.window`, e depois `stable_for` com o link `up`, a geração do MCU a correr e sem trips novos no MCU. Então confirma pela `OTA` (o MCU marca a imagem como permanente). Se não, o MCU reverte no reinício seguinte, que o nó provoca (`J0965`).
-5. **Blob de geração:** o mesmo caminho, com o blob `joker.generation.v1` (ref/08 §2.13), trocado a quente (`jk_generation_swap`) com a janela da `OTA` `activate` (`confirm_ms`) e o anti-rollback por `gen_seq` (ref/07 §9.4–§9.5). O `HELLO` seguinte mostra o `gen_seq`, o hash e o estado de confirmação (chaves 6 e 12.7).
-6. Uma falha pára a fase: os MCUs seguintes ficam por atualizar e os anteriores ficam confirmados.
+1. The MCU must be `up` on Joker Link (otherwise `wait = mcu_link`; at the end of `fetch_deadline`, `J0965`).
+2. The node has already verified the signature (`firmware` or `config` role); the MCU verifies it **again** with its own keys (the bootloader and `joker-micro` for the firmware, `jk_generation_open` for the blob; ref/08 §2.12.4, §2.13.5). The MCU is the final authority over what it boots.
+3. **Firmware:** the node sends the image through the `OTA` message (ref/07); the MCU writes it to the inactive slot and restarts in test mode (MCUboot *test swap* or equivalent). During the restart (milliseconds), the outputs of the MCU are in the `safe` of the MCU itself.
+4. The node waits for the `HELLO` with the new digest (key 5.2; and 5.9, that of the descriptor) and the firmware on trial (12.4) within `confirm.window`, and then `stable_for` with the link `up`, the generation of the MCU running and no new trips on the MCU. Then it confirms through the `OTA` (the MCU marks the image as permanent). If not, the MCU reverts at the next restart, which the node triggers (`J0965`).
+5. **Generation blob:** the same path, with the `joker.generation.v1` blob (ref/08 §2.13), hot-swapped (`jk_generation_swap`) with the window of the `OTA` `activate` (`confirm_ms`) and anti-rollback by `gen_seq` (ref/07 §9.4–§9.5). The next `HELLO` shows the `gen_seq`, the hash and the confirmation state (keys 6 and 12.7).
+6. A failure stops the phase: the following MCUs are left un-updated and the previous ones stay confirmed.
 
-O estado de cada MCU aparece em `report-body.mcus`, e cada passo gera um evento `apply` com `phase = mcu` e `device`.
+The state of each MCU appears in `report-body.mcus`, and each step generates an `apply` event with `phase = mcu` and `device`.
 
-### 3.7 Alterações locais, pausa e importação
+### 3.7 Local changes, pause and import
 
-#### 3.7.1 Alterações locais (local-first)
+#### 3.7.1 Local changes (local-first)
 
-O `jk apply`, o `jk rollback` e o `jk runtime upgrade` locais funcionam sempre, com o papel `admin`. Quando uma pessoa muda a geração ou a runtime localmente (`origin = local` ou `session`):
+The local `jk apply`, `jk rollback` and `jk runtime upgrade` always work, with the `admin` role. When a person changes the generation or the runtime locally (`origin = local` or `session`):
 
-| `[agent] local_changes` | Efeito |
+| `[agent] local_changes` | Effect |
 |---|---|
-| `hold` (omissão) | o nó continua a aceitar, descarregar e preparar DSDs, mas **não troca** (`wait = local_hold`, `J0966`, alarme `joker.agent.hold`). A espera termina com `jk agent resume`, com um DSD com `override_local = true`, ou com um DSD cuja geração e runtime são iguais às locais (o Git apanhou a mudança) |
-| `overwrite` | o próximo DSD aplica-se normalmente |
+| `hold` (default) | the node keeps accepting, downloading and preparing DSDs, but **does not swap** (`wait = local_hold`, `J0966`, alarm `joker.agent.hold`). The wait ends with `jk agent resume`, with a DSD with `override_local = true`, or with a DSD whose generation and runtime are equal to the local ones (Git caught up with the change) |
+| `overwrite` | the next DSD is applied normally |
 
-A omissão protege o técnico que corrigiu uma coisa no local às 3 da manhã de ver a correção desfeita pelo Deck às 3h05. O relatório mostra a deriva (`drift`), e o Deck decide.
+The default protects the technician who fixed something on site at 3 in the morning from seeing the fix undone by the Deck at 3:05. The report shows the drift (`drift`), and the Deck decides.
 
-#### 3.7.2 Pausa
+#### 3.7.2 Pause
 
-`jk agent pause --ttl <d> --reason "…"` suspende as trocas (não os downloads, os relatórios, os eventos nem os rollbacks) até `ttl` (≤ 7 d) ou `jk agent resume`. Evento `agent` `paused`/`resumed`. Serve para o comissionamento: o Deck não troca nada enquanto alguém está a trabalhar no quadro.
+`jk agent pause --ttl <d> --reason "…"` suspends the swaps (not the downloads, the reports, the events or the rollbacks) until `ttl` (≤ 7 d) or `jk agent resume`. Event `agent` `paused`/`resumed`. It serves commissioning: the Deck swaps nothing while someone is working on the panel.
 
-#### 3.7.3 Importação (sites sem rede)
+#### 3.7.3 Import (sites without network)
 
-`jk agent import <dir>` aplica um DSD trazido à mão. O diretório tem `desired.cose` e um *OCI image layout* (`oci-layout`, `index.json`, `blobs/sha256/…`) com os artefactos. O processamento é o do §3.3 e §3.4, com o diretório como primeira fonte e `origin = import`. As regras de `seq` aplicam-se: um DSD importado e depois recebido pela rede não se aplica duas vezes. Como não há Deck, o H7 não se pode cumprir: numa importação, `mode = auto` com `require_uplink = true` passa a `manual`, e a pessoa confirma com `jk confirm`.
+`jk agent import <dir>` applies a DSD brought by hand. The directory has `desired.cose` and an *OCI image layout* (`oci-layout`, `index.json`, `blobs/sha256/…`) with the artifacts. The processing is that of §3.3 and §3.4, with the directory as the first source and `origin = import`. The `seq` rules apply: a DSD imported and then received over the network is not applied twice. Since there is no Deck, H7 cannot be met: in an import, `mode = auto` with `require_uplink = true` becomes `manual`, and the person confirms with `jk confirm`.
 
-### 3.8 Estado reportado
+### 3.8 Reported state
 
-#### 3.8.1 Completo e delta
+#### 3.8.1 Full and delta
 
-| Envia-se um relatório completo | Envia-se um delta |
+| A full report is sent | A delta is sent |
 |---|---|
-| depois do `hello` com `need_full = true` ou com `boot` novo | em cada mudança, agregada durante `report_min_interval` |
-| depois de cada transição de fase de uma aplicação | a cada `heartbeat` se nada mudou (só `resources` e `agent`) |
-| a cada `full_interval`, com um desvio de `hash(nó) mod full_interval` para espalhar a frota | — |
-| com o comando `report_full` | — |
-| quando um delta excederia 32 KiB | — |
+| after the `hello` with `need_full = true` or with a new `boot` | at each change, aggregated during `report_min_interval` |
+| after each phase transition of an apply | at each `heartbeat` if nothing changed (only `resources` and `agent`) |
+| at each `full_interval`, with an offset of `hash(node) mod full_interval` to spread the fleet | — |
+| with the `report_full` command | — |
+| when a delta would exceed 32 KiB | — |
 
-**Deltas.** O nó guarda o último relatório **confirmado** (`report-ack`). Um delta é o merge patch (RFC 7386) desse relatório para o estado atual, com `base` = o seu `seq`. Se o ack se perder, o delta seguinte continua a ter a mesma `base` e inclui as mudanças anteriores: um delta repetido ou perdido nunca deixa o Deck num estado errado. O Deck aplica o delta se o `seq` que tem guardado for a `base`; senão responde `need_full`.
+**Deltas.** The node keeps the last **acknowledged** report (`report-ack`). A delta is the merge patch (RFC 7386) from that report to the current state, with `base` = its `seq`. If the ack is lost, the next delta still has the same `base` and includes the previous changes: a repeated or lost delta never leaves the Deck in a wrong state. The Deck applies the delta if the `seq` it has stored is the `base`; otherwise it responds `need_full`.
 
-#### 3.8.2 Frequência e custo
+#### 3.8.2 Frequency and cost
 
-| Cenário | Completo | Delta típico | Volume mensal (agente, sem telemetria) |
+| Scenario | Full | Typical delta | Monthly volume (agent, without telemetry) |
 |---|---|---|---|
-| bomba de calor (documento 08, rodada 5), JSON em HTTPS | ~3 KiB | ~200 B | ~2 MB (delta a cada 5 min, completo a cada 6 h) |
-| idem, CBOR em MQTT, `heartbeat = 30m` | ~1,2 KiB | ~90 B | ~0,5 MB |
-| BESS com 50 dispositivos e 200 instâncias, JSON | ~25 KiB | ~1 KiB | ~15 MB |
-| Joker Micro, CBOR | ≤ 1 KiB | ~60 B | ~0,2 MB |
+| heat pump (document 08, round 5), JSON over HTTPS | ~3 KiB | ~200 B | ~2 MB (delta every 5 min, full every 6 h) |
+| same, CBOR over MQTT, `heartbeat = 30m` | ~1.2 KiB | ~90 B | ~0.5 MB |
+| BESS with 50 devices and 200 instances, JSON | ~25 KiB | ~1 KiB | ~15 MB |
+| Joker Micro, CBOR | ≤ 1 KiB | ~60 B | ~0.2 MB |
 
-Os bytes do agente contam para o orçamento do uplink da mesma ligação (M12, documento 01, §13): eventos `alarm`, `security` e `apply` na classe `alarms`; relatórios e outros eventos na classe `events`; artefactos e uploads na classe `bulk`. Sob pressão de orçamento, o nó alarga `report_min_interval` até 15 min e `full_interval` até 24 h, e nunca atrasa as classes `alarms`.
+The bytes of the agent count toward the uplink budget of the same connection (M12, document 01, §13): `alarm`, `security` and `apply` events in the `alarms` class; reports and other events in the `events` class; artifacts and uploads in the `bulk` class. Under budget pressure, the node widens `report_min_interval` up to 15 min and `full_interval` up to 24 h, and never delays the `alarms` classes.
 
-#### 3.8.3 Truncagem
+#### 3.8.3 Truncation
 
-Um completo acima de 256 KiB é cortado, por esta ordem, até caber: `devices` em `up`, `instances` em `ok`, `apps` em `running`, `groups` em `ok`, `alarms` de gravidade `low`. As chaves cortadas vão em `truncated`, e o nó regista `J0971`. O que está mal nunca é cortado antes do que está bem.
+A full report above 256 KiB is cut, in this order, until it fits: `devices` in `up`, `instances` in `ok`, `apps` in `running`, `groups` in `ok`, `alarms` of severity `low`. The keys cut go in `truncated`, and the node logs `J0971`. What is wrong is never cut before what is fine.
 
-### 3.9 Eventos
+### 3.9 Events
 
-#### 3.9.1 Produção
+#### 3.9.1 Production
 
-Cada evento recebe o `seq` quando é escrito no registo local (joker-store). Os de classe A são escritos com `fsync = "always"` (como os trips e as entradas críticas do registo de decisões, documento 01, §12 e §19); os de classe B e C em lote (1 s). Numa falta de energia perde-se no máximo 1 s de eventos B e C, que nunca chegaram a ter `seq` persistido e por isso não deixam buraco.
+Each event receives its `seq` when it is written to the local log (joker-store). Those of class A are written with `fsync = "always"` (like trips and the critical entries of the decision log, document 01, §12 and §19); those of classes B and C in a batch (1 s). In a power outage at most 1 s of B and C events is lost, which never got a persisted `seq` and therefore leave no hole.
 
-#### 3.9.2 Entrega
+#### 3.9.2 Delivery
 
-- **Pelo menos uma vez**, por ordem de `seq`, em lotes de até `event_batch`.
-- O Deck responde com o **ack cumulativo**: o maior `seq` S tal que todos os eventos ≤ S estão guardados de forma durável no Deck ou declarados perdidos por um `gap`. O nó apaga da fila tudo o que é ≤ S.
-- Sem ack em 30 s, ou depois de uma reconexão, o nó reenvia a partir de S + 1. O Deck deduplica por (nó, `seq`); o `id` (ULID) deduplica entre sistemas (por exemplo, depois de exportar para outro sistema).
-- Em MQTT, o PUBACK do broker **não é** o ack: só o `ack/events` assinado pelo Deck apaga eventos. Um ack antigo repetido só confirma o que já estava confirmado; um ack acima do `event_seq` do nó é ignorado.
-- Depois de uma reconexão, o completo vai **antes** da fila acumulada: o Deck sabe o estado atual antes de digerir o passado.
+- **At least once**, in `seq` order, in batches of up to `event_batch`.
+- The Deck responds with the **cumulative ack**: the highest `seq` S such that all events ≤ S are durably stored in the Deck or declared lost by a `gap`. The node deletes from the queue everything that is ≤ S.
+- Without an ack within 30 s, or after a reconnection, the node resends from S + 1. The Deck deduplicates by (node, `seq`); the `id` (ULID) deduplicates across systems (for example, after exporting to another system).
+- Over MQTT, the PUBACK of the broker **is not** the ack: only the `ack/events` signed by the Deck deletes events. A repeated old ack only confirms what was already confirmed; an ack above the `event_seq` of the node is ignored.
+- After a reconnection, the full report goes **before** the accumulated queue: the Deck knows the current state before digesting the past.
 
-#### 3.9.3 Fila e o que se perde
+#### 3.9.3 Queue and what is lost
 
-A fila é um cursor sobre o registo local, com o teto `queue.max_disk`. Quando está cheia, o nó descarta, por esta ordem: o evento C mais antigo; o B mais antigo; o A mais antigo. Cada descarte:
+The queue is a cursor over the local log, with the ceiling `queue.max_disk`. When it is full, the node discards, in this order: the oldest C event; the oldest B; the oldest A. Each discard:
 
-- mantém o `seq` do evento (o Deck vê o buraco);
-- entra num evento `gap` (nunca descartado; os `gap` seguidos fundem-se, até 64 intervalos) com os intervalos e as contagens por tipo;
-- incrementa `joker.agent.dropped` e levanta `joker.agent.queue_overflow` (`J0970`).
+- keeps the `seq` of the event (the Deck sees the hole);
+- goes into a `gap` event (never discarded; consecutive `gap`s merge, up to 64 ranges) with the ranges and the counts per type;
+- increments `joker.agent.dropped` and raises `joker.agent.queue_overflow` (`J0970`).
 
-**O que se perde é o envio, e não o registo.** As decisões, os alarmes e os trips continuam no registo local, sujeitos à retenção local (documento 01, §12), e o Deck pode pedi-los com o comando `upload` depois de ver o `gap`. Com 64 MiB e ~200 B por evento, a fila guarda ~300 000 eventos: meses de um site normal offline.
+**What is lost is the sending, not the record.** Decisions, alarms and trips stay in the local log, subject to local retention (document 01, §12), and the Deck can request them with the `upload` command after seeing the `gap`. With 64 MiB and ~200 B per event, the queue holds ~300,000 events: months of a normal site offline.
 
-No perfil micro, a fila é um anel de 32 eventos em RAM (mais flash, se o firmware lhe der espaço), com a mesma ordem de descarte e o mesmo `gap`.
+In the micro profile, the queue is a ring of 32 events in RAM (plus flash, if the firmware gives it room), with the same discard order and the same `gap`.
 
-#### 3.9.4 Esvaziar a fila
+#### 3.9.4 Draining the queue
 
-Depois de muito tempo offline, o nó envia a fila a `drain_rate` eventos/s (omissão 50/s), dentro do orçamento do uplink. Um Deck que precisa de respirar responde `rate_limited`.
+After a long time offline, the node sends the queue at `drain_rate` events/s (default 50/s), within the uplink budget. A Deck that needs to breathe responds `rate_limited`.
 
-### 3.10 Sessão remota (agent/1.3)
+### 3.10 Remote session (agent/1.3)
 
-**Abertura.**
+**Opening.**
 
-1. Uma pessoa pede a sessão no Deck. A autenticação da pessoa (e o MFA) é do Deck.
-2. O Deck envia o comando `session_open`, assinado.
-3. O nó verifica, por ordem: suporta a 1.3; `[agent.remote] allow` (`J0980`); o transporte tem HTTPS (`J0985`); `max_sessions` (`J0982`); `ttl` ≤ `max_ttl` (`J0983`); o **papel** (abaixo, `J0981`).
-4. Se `consent = "local"`: levanta `joker.agent.session_request` e espera `jk session accept <id>` (papel `operator`, no socket local) ou o `consent_signal` a verdadeiro, até `consent_timeout` (`J0984`).
-5. O nó abre o túnel (`wss://`, mTLS) para o URL do comando, que tem de estar num dos `deck_urls`.
-6. Evento `session` `opened`; alarme `joker.agent.session`.
+1. A person requests the session in the Deck. The authentication of the person (and the MFA) belongs to the Deck.
+2. The Deck sends the `session_open` command, signed.
+3. The node checks, in order: it supports 1.3; `[agent.remote] allow` (`J0980`); the transport has HTTPS (`J0985`); `max_sessions` (`J0982`); `ttl` ≤ `max_ttl` (`J0983`); the **role** (below, `J0981`).
+4. If `consent = "local"`: it raises `joker.agent.session_request` and waits for `jk session accept <id>` (role `operator`, on the local socket) or for `consent_signal` to be true, up to `consent_timeout` (`J0984`).
+5. The node opens the tunnel (`wss://`, mTLS) to the URL of the command, which must be in one of the `deck_urls`.
+6. Event `session` `opened`; alarm `joker.agent.session`.
 
-**O papel é do nó.** O papel efetivo é o menor de três: o pedido, `max_role`, e o que o `[security.roles]` do manifesto dá ao principal. Os principais das sessões escrevem-se `deck:<deck_id>/user:<id>` e `deck:<deck_id>/group:<grupo>` (por exemplo `operator = ["deck:deck-prod/group:ops-porto"]`). Sem nenhuma entrada que case, vale `default_role`; vazio, recusa. Um pedido acima do permitido é recusado (`J0981`), e não reduzido em silêncio: quem pediu sabe o que tem.
+**The role belongs to the node.** The effective role is the lowest of three: the requested one, `max_role`, and what the `[security.roles]` of the manifest gives the principal. Session principals are written `deck:<deck_id>/user:<id>` and `deck:<deck_id>/group:<group>` (for example `operator = ["deck:deck-prod/group:ops-porto"]`). With no matching entry, `default_role` applies; empty, it refuses. A request above what is allowed is refused (`J0981`), and not silently reduced: whoever asked knows what they have.
 
-**Onde termina.** Cada fluxo do túnel termina na API local, que aplica os papéis, o envelope, o árbitro e o TTL das escritas manuais (A10), como para qualquer cliente. O túnel não leva a mais nada: nem shell, nem reencaminhamento de portas para os equipamentos de campo, nem a outro nó.
+**Where it ends.** Each stream of the tunnel ends at the local API, which applies the roles, the envelope, the arbiter and the TTL of manual writes (A10), as for any client. The tunnel leads to nothing else: no shell, no port forwarding to field equipment, no other node.
 
-**Proibido em sessões, com qualquer papel** (`J0986`): os endpoints de identidade e confiança (`/v1/node/*`), as mudanças ao próprio agente (`/v1/agent/*` exceto as leituras: `pause`, `resume`, `import`, aceitar sessões) e os segredos (`/v1/secrets`). O Deck não consegue usar uma sessão para alargar a trela com que o nó o segura. A lista é a da ref/09 §2.3.
+**Forbidden in sessions, with any role** (`J0986`): the identity and trust endpoints (`/v1/node/*`), changes to the agent itself (`/v1/agent/*` except the reads: `pause`, `resume`, `import`, accepting sessions) and secrets (`/v1/secrets`). The Deck cannot use a session to loosen the leash by which the node holds it. The list is that of ref/09 §2.3.
 
-**Fim.** Por `ttl`, por inatividade (`idle`), por `session_close`, por `jk session close` local, por reinício do `jokerd` (as sessões não sobrevivem), ou por revogação do certificado. Evento `session` `closed`/`expired` com as contagens de pedidos e escritas.
+**End.** By `ttl`, by inactivity (`idle`), by `session_close`, by a local `jk session close`, by a restart of `jokerd` (sessions do not survive), or by revocation of the certificate. Event `session` `closed`/`expired` with the counts of requests and writes.
 
-**Auditoria.** Cada pedido no túnel entra no registo de auditoria local da API (ref/09 §4) com o `id` da sessão e o principal `deck:<deck_id>/user:<id>`; `GET /v1/audit?session=<id>` mostra-os. Cada escrita entra no registo de decisões com `writer = user:deck:<deck_id>/user:<id>` e `session`, e é sempre enviada ao Deck (§2.11).
+**Audit.** Each request in the tunnel enters the local audit log of the API (ref/09 §4) with the `id` of the session and the principal `deck:<deck_id>/user:<id>`; `GET /v1/audit?session=<id>` shows them. Each write enters the decision log with `writer = user:deck:<deck_id>/user:<id>` and `session`, and is always sent to the Deck (§2.11).
 
-**Limites.** `max_rate` por sessão (balde de tokens), 16 fluxos, crédito inicial de 256 KiB por fluxo, `ping` a cada 30 s.
+**Limits.** `max_rate` per session (token bucket), 16 streams, initial credit of 256 KiB per stream, `ping` every 30 s.
 
-### 3.11 Transportes
+### 3.11 Transports
 
-#### 3.11.1 HTTPS e long-poll
+#### 3.11.1 HTTPS and long-poll
 
 ```
-nó                                           Deck
- │── TLS 1.3 (mTLS; pinos deck_tls) ────────▶│
+node                                         Deck
+ │── TLS 1.3 (mTLS; deck_tls pins) ─────────▶│
  │── POST /hello ───────────────────────────▶│
  │◀─ hello-reply {need_full, event_ack} ─────│
- │── POST /report (completo, se pedido) ────▶│
- │── POST /events (fila, por ordem) ────────▶│
- │── GET /poll?desired=418&cursor=c&wait=55s▶│  o Deck segura o pedido
- │◀─ poll-reply {desired?, commands?} ───────│  logo que haja DSD com seq > 418, comandos, ou ao fim de wait
- │── GET /poll … (de imediato) ─────────────▶│
+ │── POST /report (full, if requested) ─────▶│
+ │── POST /events (queue, in order) ────────▶│
+ │── GET /poll?desired=418&cursor=c&wait=55s▶│  the Deck holds the request
+ │◀─ poll-reply {desired?, commands?} ───────│  as soon as there is a DSD with seq > 418, commands, or at the end of wait
+ │── GET /poll … (immediately) ─────────────▶│
 ```
 
-- Relatórios e eventos vão em pedidos à parte na **mesma** ligação HTTP/2.
-- O poll é também o sinal de vida do nó para o Deck.
-- Com `poll_interval` > 0 (LTE), o nó faz polls curtos (`wait = 0`) a esse intervalo, e envia deltas e eventos quando os tem. Um alarme `critical` provoca um poll imediato.
+- Reports and events go in separate requests on the **same** HTTP/2 connection.
+- The poll is also the sign of life of the node to the Deck.
+- With `poll_interval` > 0 (LTE), the node makes short polls (`wait = 0`) at that interval, and sends deltas and events when it has them. A `critical` alarm triggers an immediate poll.
 
 #### 3.11.2 MQTT
 
-1. `CONNECT` com `clean start = false`, a *will* `status` assinada (`online = false`) e o certificado.
-2. `SUBSCRIBE` aos tópicos Deck → nó. O DSD retido chega logo.
-3. `PUBLISH` do `hello`, depois do `status` (`online = true`).
-4. O Deck responde em `hello/reply`, e o resto segue como em HTTPS, com os acks nos tópicos `ack/*`.
+1. `CONNECT` with `clean start = false`, the signed `status` *will* (`online = false`) and the certificate.
+2. `SUBSCRIBE` to the Deck → node topics. The retained DSD arrives at once.
+3. `PUBLISH` of the `hello`, after the `status` (`online = true`).
+4. The Deck answers on `hello/reply`, and the rest follows as over HTTPS, with the acks on the `ack/*` topics.
 
-**Tudo é assinado de ponta a ponta** (§2.14): o broker é transporte, não é confiança. Um broker comprometido consegue atrasar ou deitar fora mensagens, e não consegue forjar um relatório, um evento, um ack nem um DSD. A repetição de mensagens antigas é inócua: `seq` nos relatórios e eventos, e acks que só confirmam o que existe.
+**Everything is signed end to end** (§2.14): the broker is transport, not trust. A compromised broker can delay or throw away messages, and cannot forge a report, an event, an ack or a DSD. Replaying old messages is harmless: `seq` in reports and events, and acks that only confirm what exists.
 
-#### 3.11.3 Artefactos
+#### 3.11.3 Artifacts
 
-O nó descarrega por digest com a API de distribuição OCI (`GET /v2/<nome>/blobs/<digest>`, com `Range` para retomar), com o token do `POST /registry-token` quando `auth = token`. As assinaturas procuram-se pela API *referrers* ou pelos digests em `artifact.signatures`. Uma cache local por digest evita descargas repetidas; um blob parcial guarda-se 7 d para ser retomado por um DSD seguinte. Cada fonte é tentada por ordem (espelhos locais, depois as do DSD), e cada artefacto é retentado com backoff de 30 s a 1 h até `fetch_deadline`.
+The node downloads by digest with the OCI distribution API (`GET /v2/<name>/blobs/<digest>`, with `Range` to resume), with the token from `POST /registry-token` when `auth = token`. Signatures are looked up through the *referrers* API or through the digests in `artifact.signatures`. A local cache by digest avoids repeated downloads; a partial blob is kept for 7 d to be resumed by a following DSD. Each source is tried in order (local mirrors, then those of the DSD), and each artifact is retried with a backoff of 30 s to 1 h until `fetch_deadline`.
 
-#### 3.11.4 Reconexão e backoff
+#### 3.11.4 Reconnection and backoff
 
-- Atraso da tentativa *n*: aleatório uniforme em [0, min(`backoff_max`, 1 s × 2ⁿ)] (*full jitter*). Volta a *n* = 0 depois de uma ligação que durou mais de 60 s.
-- `Retry-After`, `retry_after` e `poll-reply.backoff` são mínimos: o nó espera o maior entre esse e o seu.
-- Três falhas seguidas num URL passam ao seguinte de `deck_urls` (ou de `mqtt`); depois do último, volta ao primeiro.
-- Um erro de TLS por pino (`J0975`) não é repetido mais do que uma vez por hora: é quase sempre configuração, e não rede.
+- Delay of attempt *n*: uniform random in [0, min(`backoff_max`, 1 s × 2ⁿ)] (*full jitter*). It goes back to *n* = 0 after a connection that lasted more than 60 s.
+- `Retry-After`, `retry_after` and `poll-reply.backoff` are minimums: the node waits the larger of that and its own.
+- Three consecutive failures on a URL move to the next one of `deck_urls` (or of `mqtt`); after the last, it goes back to the first.
+- A TLS error due to a pin (`J0975`) is not retried more than once an hour: it is almost always configuration, not network.
 
-#### 3.11.5 Meses offline
+#### 3.11.5 Months offline
 
-| O que acontece | Como se resolve |
+| What happens | How it is resolved |
 |---|---|
-| o nó controla no último estado confirmado | por desenho (princípio 1) |
-| um DSD em `waiting` continua à espera | aplica-se quando a janela abre, se ainda for o último |
-| o certificado expira | `POST /renew` com o certificado expirado, até `renew_grace` (§3.2.1) |
-| o bundle ficou para trás (chaves `deck` rodadas) | `hello-reply.trust` traz a cadeia; o nó verifica versão a versão antes de verificar o DSD |
-| a fila de eventos enche | descarte com `gap` (§3.9.3); o registo local fica |
-| o relógio derivou | §3.12 |
-| a runtime do nó já saiu do suporte do Deck | núcleo mínimo (§3.14) |
+| the node controls in the last confirmed state | by design (principle 1) |
+| a DSD in `waiting` keeps waiting | it is applied when the window opens, if it is still the latest |
+| the certificate expires | `POST /renew` with the expired certificate, up to `renew_grace` (§3.2.1) |
+| the bundle fell behind (`deck` keys rotated) | `hello-reply.trust` carries the chain; the node verifies version by version before verifying the DSD |
+| the event queue fills | discard with `gap` (§3.9.3); the local log stays |
+| the clock drifted | §3.12 |
+| the runtime of the node has already left the support of the Deck | minimal core (§3.14) |
 
-O Deck **não guarda uma fila de DSDs**: guarda o último. O nó que volta recebe o estado desejado de hoje, e não as 26 versões semanais por que passou. É o que torna o regresso de 6 meses uma aplicação só.
+The Deck **does not keep a queue of DSDs**: it keeps the latest. The node that comes back receives today's desired state, and not the 26 weekly versions it went through. That is what makes the return after 6 months a single apply.
 
-### 3.12 Relógios
+### 3.12 Clocks
 
-1. **O nó nunca recusa nada do Deck por tempo com o relógio não `synced`.** A frescura vem do `seq` (DSD) e da ligação ao alvo (comandos). Com o relógio `synced`, aplicam-se `expires`, `issued` e a janela de ±30 s dos comandos (ref/00, §9).
-2. **TLS em 1970.** Com o relógio `unsynced`, o nó ignora as datas de validade do certificado do Deck e aceita-o só se o SPKI estiver em `deck_tls`. Sem pinos, o nó espera pelo relógio para falar com o Deck (e isso fica no `jk doctor`). Por isso os bundles de produção devem ter pinos.
-3. **Tempo do Deck.** Cada `hello-reply` e `poll-reply` traz `time`. O nó calcula o desvio (com metade do RTT) e mostra-o no `jk agent status`. O nó usa-o como fonte grosseira do relógio (ref/02), com qualidade no máximo `holdover`, nunca `synced`.
-4. **Do lado do Deck**, um relatório ou evento nunca é recusado por desvio. O Deck calcula-o, marca-o acima de 5 min (`J0972`) e corrige os tempos dos eventos com o par (`boot`, `mono`) e os eventos `clock`, que o nó emite quando o relógio muda de qualidade ou salta (é a correspondência monotónico ↔ UTC do documento 01, §18, enviada para fora).
-5. As janelas de manutenção exigem `synced` ou `holdover`; com `unsynced`, a fase espera (`wait = clock`).
+1. **The node never refuses anything from the Deck on time grounds with the clock not `synced`.** Freshness comes from the `seq` (DSD) and from the binding to the target (commands). With the clock `synced`, `expires`, `issued` and the ±30 s window of commands apply (ref/00, §9).
+2. **TLS in 1970.** With the clock `unsynced`, the node ignores the validity dates of the certificate of the Deck and accepts it only if the SPKI is in `deck_tls`. Without pins, the node waits for the clock before talking to the Deck (and that shows in `jk doctor`). That is why production bundles should have pins.
+3. **Deck time.** Each `hello-reply` and `poll-reply` carries `time`. The node computes the offset (with half the RTT) and shows it in `jk agent status`. The node uses it as a coarse clock source (ref/02), with quality at most `holdover`, never `synced`.
+4. **On the Deck side**, a report or event is never refused because of the offset. The Deck computes it, flags it above 5 min (`J0972`) and corrects the times of the events with the pair (`boot`, `mono`) and the `clock` events, which the node emits when the clock changes quality or jumps (it is the monotonic ↔ UTC correspondence of document 01, §18, sent outside).
+5. Maintenance windows require `synced` or `holdover`; with `unsynced`, the phase waits (`wait = clock`).
 
-### 3.13 Perfil micro: comportamento
+### 3.13 Micro profile: behavior
 
-- Mesmas regras de validação (V1–V24, com o subconjunto do §2.15) e a mesma máquina de estados, com as fases `runtime` (o firmware) e `generation` (o blob).
-- **Firmware:** gravado no slot inativo; reinício em modo de teste; confirmado pelo próprio MCU depois de `stable_for` com H1–H5 e, se `require_uplink`, de um `report-ack` do Deck. Sem confirmação, o bootloader reverte no reinício seguinte (o watchdog garante que ele acontece).
-- **Blob de geração:** gravado na área de geração inativa e trocado a quente num limite de tick (`jk_generation_swap`, ref/08 §2.12.4), com a mesma confirmação; sem ela, o MCU volta à geração anterior sozinho. Os trips persistem em flash entre reinícios.
-- O MCU guarda em flash: o bundle, os pisos, o último `seq` aceite, o `seq` dos relatórios e dos eventos, e o estado da aplicação em curso.
-- Relatórios: completo no arranque e a cada `full_interval`; deltas agregados durante 30 s no mínimo.
-- Sem sessões remotas, sem `upload`, sem MCUs atrás.
+- Same validation rules (V1–V24, with the subset of §2.15) and the same state machine, with the phases `runtime` (the firmware) and `generation` (the blob).
+- **Firmware:** written to the inactive slot; restart in test mode; confirmed by the MCU itself after `stable_for` with H1–H5 and, if `require_uplink`, a `report-ack` from the Deck. Without confirmation, the bootloader reverts at the next restart (the watchdog guarantees that it happens).
+- **Generation blob:** written to the inactive generation area and hot-swapped at a tick boundary (`jk_generation_swap`, ref/08 §2.12.4), with the same confirmation; without it, the MCU goes back to the previous generation on its own. Trips persist in flash across restarts.
+- The MCU stores in flash: the bundle, the floors, the last `seq` accepted, the `seq` of the reports and of the events, and the state of the apply in progress.
+- Reports: full at boot and at each `full_interval`; deltas aggregated for 30 s at least.
+- No remote sessions, no `upload`, no MCUs behind.
 
-### 3.14 Versões e compatibilidade
+### 3.14 Versions and compatibility
 
-**Negociação.** O nó envia `proto = [1, N]` no `hello`; o Deck responde com `proto_minor = min(N, M)`. As mensagens e chaves de uma minor acima da negociada não se enviam.
+**Negotiation.** The node sends `proto = [1, N]` in the `hello`; the Deck answers with `proto_minor = min(N, M)`. Messages and keys of a minor above the negotiated one are not sent.
 
-**Núcleo mínimo.** `hello`, `poll` e `desired`, `report`, `events`, `renew`, e os comandos `confirm`, `reject` e `report_full`, na forma da `agent/1.0`, **nunca mudam na série 1** (ADR 0022, decisão 1: o protocolo do agente não quebra numa 1.x). Todo o Deck da série 1 aceita o núcleo mínimo de qualquer nó 1.x.
+**Minimal core.** `hello`, `poll` and `desired`, `report`, `events`, `renew`, and the `confirm`, `reject` and `report_full` commands, in the `agent/1.0` form, **never change in the 1 series** (ADR 0022, decision 1: the agent protocol does not break within a 1.x). Every Deck of the 1 series accepts the minimal core of any 1.x node.
 
-**Suporte.** Um Deck suporta por inteiro nós das **três últimas minors e da LTS** (ADR 0022, decisão 5): todas as funcionalidades, testadas. Um nó mais antigo recebe só o núcleo mínimo (`hello-reply.code = J0973`, aviso no Deck), que chega para lhe mandar um DSD com uma runtime nova. Um nó nunca fica sem caminho para ser atualizado.
+**Support.** A Deck fully supports nodes of the **last three minors and the LTS** (ADR 0022, decision 5): all features, tested. An older node only receives the minimal core (`hello-reply.code = J0973`, warning in the Deck), which is enough to send it a DSD with a new runtime. A node is never left without a path to be updated.
 
-**O que uma minor pode acrescentar** (ref/00, §1): chaves opcionais, variantes de enum no fim, comandos, tipos de evento, endpoints e tópicos. Uma chave nova no DSD que um nó antigo **não pode** ignorar vai em `crit`; o nó antigo recusa o DSD (`J0946`) e o Deck sabe, pelo `proto_minor`, que não a deve enviar.
+**What a minor may add** (ref/00, §1): optional keys, enum variants at the end, commands, event types, endpoints and topics. A new key in the DSD that an old node **must not** ignore goes in `crit`; the old node rejects the DSD (`J0946`) and the Deck knows, from the `proto_minor`, that it should not send it.
 
-| Minor | Acrescenta |
+| Minor | Adds |
 |---|---|
-| `agent/1.0` | tudo o que este documento não marca com outra versão |
-| `agent/1.1` | tipo `joker.model.v1+jkm` e papel `models`; chave 23 do DSD; `report-body` 20 (modelos, sombra) |
-| `agent/1.3` | sessões remotas (comandos 5 e 6, túnel, eventos `session`); `report-body` 19 (intenções pendentes); atestação TPM exigível no enrolamento |
-| `agent/1.5` | nada de obrigatório; o Deck agrega auditoria a partir de `upload` e dos eventos `decision` |
+| `agent/1.0` | everything that this document does not mark with another version |
+| `agent/1.1` | type `joker.model.v1+jkm` and role `models`; key 23 of the DSD; `report-body` 20 (models, shadow) |
+| `agent/1.3` | remote sessions (commands 5 and 6, tunnel, `session` events); `report-body` 19 (pending intents); TPM attestation requirable at enrollment |
+| `agent/1.5` | nothing mandatory; the Deck aggregates audit from `upload` and from the `decision` events |
 
-**v2.** O protocolo da v2 descreve **sites** (vários nós e MCUs como um sistema; documento 21, §8). Fica reservado, sem semântica:
+**v2.** The v2 protocol describes **sites** (several nodes and MCUs as one system; document 21, §8). Reserved, without semantics:
 
-- o identificador `agent/2`, o prefixo HTTPS `/agent/v2`, o prefixo MQTT `jk/2/` e o recurso CoAP `/a2/`;
-- as chaves 100–119 do `desired-state` e do `report-body` (em particular: 100 `site`, 101 `members`, 102 `placement`, 103 `site_generation`);
-- o primeiro segmento `@` nos caminhos (ref/00, §2), para caminhos qualificados por nó em relatórios e eventos.
+- the identifier `agent/2`, the HTTPS prefix `/agent/v2`, the MQTT prefix `jk/2/` and the CoAP resource `/a2/`;
+- keys 100–119 of `desired-state` and of `report-body` (in particular: 100 `site`, 101 `members`, 102 `placement`, 103 `site_generation`);
+- the first segment `@` in paths (ref/00, §2), for paths qualified by node in reports and events.
 
-Um Deck da série 2 fala `agent/1` com os nós 1.x durante toda a série (documento 21, §1.1).
+A Deck of the 2 series speaks `agent/1` with 1.x nodes for the whole series (document 21, §1.1).
 
 ---
 
-## 4. Estresse
+## 4. Stress
 
-**S1 — O Deck é comprometido.** O atacante tem a base de dados, a CA emissora e a chave `deck`.
+**S1 — The Deck is compromised.** The attacker has the database, the issuing CA and the `deck` key.
 
-| Consegue | Não consegue |
+| Can | Cannot |
 |---|---|
-| deixar de entregar atualizações (congelar a frota) | fazer um nó correr um artefacto que não esteja assinado por uma chave de pipeline do bundle (princípio 5) |
-| emitir DSDs com artefactos **antigos mas válidos** | ir abaixo de um piso, nem a uma runtime mais antiga sem `allow_downgrade`, nem a um digest revogado (V15) |
-| fazer trocas a más horas, dentro das janelas **locais** do nó | trocar fora de `[agent] maintenance`, nem mais de `max_applies_per_day` vezes |
-| confirmar ou rejeitar gerações em confirmação | impedir o rollback automático de uma geração que falha a saúde |
-| abrir sessões com utilizadores inventados, com o papel que o manifesto dá aos principais `deck:` | ter mais do que esse papel; mexer na identidade, na confiança ou no agente; escrever sem TTL ou fora do envelope |
-| ler relatórios, eventos e uploads (perda de confidencialidade) | ler segredos (nunca passam pelo protocolo) |
-| emitir certificados para nomes de nós | fazer-se passar pelo Deck perante os nós sem o SPKI dos pinos; mudar a `authority` |
-| mudar o `[security] trust` do manifesto | — o manifesto é assinado pela chave `config`, que não está no Deck |
+| stop delivering updates (freeze the fleet) | make a node run an artifact that is not signed by a pipeline key of the bundle (principle 5) |
+| issue DSDs with **old but valid** artifacts | go below a floor, nor to an older runtime without `allow_downgrade`, nor to a revoked digest (V15) |
+| make swaps at bad hours, within the **local** windows of the node | swap outside `[agent] maintenance`, nor more than `max_applies_per_day` times |
+| confirm or reject generations being confirmed | prevent the automatic rollback of a generation that fails health |
+| open sessions with invented users, with the role that the manifest gives the `deck:` principals | have more than that role; touch identity, trust or the agent; write without TTL or outside the envelope |
+| read reports, events and uploads (loss of confidentiality) | read secrets (they never go through the protocol) |
+| issue certificates for node names | impersonate the Deck to the nodes without the SPKI of the pins; change the `authority` |
+| change the `[security] trust` of the manifest | — the manifest is signed by the `config` key, which is not in the Deck |
 
-**Correções incorporadas:** a janela local de manutenção e o limite de trocas por dia (sem eles, um Deck comprometido podia reiniciar 3 000 `jokerd` a cada minuto, alternando entre duas runtimes válidas, e pôr todos os equipamentos em fallback); a proibição de mudar o agente e a confiança dentro de sessões; o `[security] trust` do manifesto que só restringe. **Resíduo:** o congelamento e a escolha de versões antigas acima do piso. Mitigação operacional: pisos publicados pelo pipeline a cada release de segurança, e alarme no pipeline se um nó não reportar a versão nova em N dias. **Aguenta.**
+**Fixes incorporated:** the local maintenance window and the limit of swaps per day (without them, a compromised Deck could restart 3,000 `jokerd`s every minute, alternating between two valid runtimes, and put all the equipment in fallback); the prohibition of changing the agent and trust inside sessions; the `[security] trust` of the manifest that only restricts. **Residue:** the freeze and the choice of old versions above the floor. Operational mitigation: floors published by the pipeline at each security release, and an alarm in the pipeline if a node does not report the new version within N days. **Holds.**
 
-**S2 — Rollout de 3 000 nós** (documento 08, rodada 5). O Deck emite DSDs por ondas (1% → 10% → 100%), com `windows` das 2h às 5h e `jitter = "45m"`. Os nós descarregam logo (2,8 MB de app × 3 000 = 8,4 GB, servidos pelo registo ou por uma CDN, não pelo Deck), e trocam dentro da janela, espalhados em 45 min. Carga no Deck: 3 000 long-polls abertos (~55 pedidos/s em regime), relatórios completos depois de cada fase (~9 000 em 3 h, ~1/s). A primeira onda confirma em `auto` com `stable_for = "5m"`; o Deck vê os eventos `apply` e os KPIs (documento 20, D2), e, se a regra de paragem disparar, **simplesmente não emite** os DSDs das ondas seguintes, e emite para a primeira onda um DSD com a geração anterior (`seq` + 1). Os nós em confirmação recebem `reject`. Os 300 gateways em LTE (50 MB/mês) recebem o mesmo DSD, mas a descarga de 2,8 MB vai na classe `bulk` com `fetch_deadline = "7d"`: gasta 6% do orçamento do mês e nunca atrasa um alarme. **Achado:** sem `fetch_deadline` longo e classe `bulk`, o OTA mensal comia o orçamento dos alarmes. **Corrigido** (§3.8.2). **Aguenta**, e a porta da 1.5 (99,9% no estado desejado em 24 h) depende das janelas, e não do protocolo.
+**S2 — Rollout of 3,000 nodes** (document 08, round 5). The Deck issues DSDs in waves (1% → 10% → 100%), with `windows` from 2:00 to 5:00 and `jitter = "45m"`. The nodes download at once (2.8 MB of app × 3,000 = 8.4 GB, served by the registry or by a CDN, not by the Deck), and swap within the window, spread over 45 min. Load on the Deck: 3,000 open long-polls (~55 requests/s in steady state), full reports after each phase (~9,000 in 3 h, ~1/s). The first wave confirms in `auto` with `stable_for = "5m"`; the Deck sees the `apply` events and the KPIs (document 20, D2), and, if the stop rule fires, **simply does not issue** the DSDs of the following waves, and issues for the first wave a DSD with the previous generation (`seq` + 1). The nodes being confirmed receive `reject`. The 300 gateways on LTE (50 MB/month) receive the same DSD, but the 2.8 MB download goes in the `bulk` class with `fetch_deadline = "7d"`: it uses 6% of the monthly budget and never delays an alarm. **Finding:** without a long `fetch_deadline` and the `bulk` class, the monthly OTA ate the budget of the alarms. **Fixed** (§3.8.2). **Holds**, and the exit gate of 1.5 (99.9% at the desired state within 24 h) depends on the windows, and not on the protocol.
 
-**S3 — Nó offline 6 meses.** Volta com a runtime 1.0.3 e o Deck já está a instalar a 1.2. O certificado (365 d) ainda vale; se não valesse, `POST /renew` com o expirado. O `hello` diz `trust_version = 3`; o `hello-reply` traz as versões 4 e 5 (uma rotação da chave `deck`), que o nó verifica pela ordem. O Deck entrega **o DSD de hoje** (runtime 1.2 + geração de hoje), e não os 26 intermédios. O nó aplica a fase `runtime` (a 1.2 lê a geração da 1.0, pela regra de ouro), confirma, e depois a `generation`. A fila tinha 64 MiB de eventos; o completo vai primeiro, a fila a seguir a 50/s (~100 min para 300 000 eventos), com um `gap` se encheu. Os eventos com relógio `holdover` são corrigidos pelo Deck com os `clock`. **Aguenta.**
+**S3 — Node offline for 6 months.** It comes back with runtime 1.0.3 and the Deck is already installing 1.2. The certificate (365 d) is still valid; if it were not, `POST /renew` with the expired one. The `hello` says `trust_version = 3`; the `hello-reply` carries versions 4 and 5 (a rotation of the `deck` key), which the node verifies in order. The Deck delivers **today's DSD** (runtime 1.2 + today's generation), and not the 26 intermediate ones. The node applies the `runtime` phase (1.2 reads the generation of 1.0, by the golden rule), confirms, and then the `generation`. The queue had 64 MiB of events; the full report goes first, the queue next at 50/s (~100 min for 300,000 events), with a `gap` if it filled up. The events with a `holdover` clock are corrected by the Deck with the `clock` events. **Holds.**
 
-**S4 — Dois Decks a disputar o mesmo nó.** (a) Um Deck de um integrador antigo continua a emitir DSDs para um nó que mudou de Deck: a chave dele já não é a `authority` (V3, `J0941`), evento `security` e alarme. (b) Um Deck em alta disponibilidade entra em *split-brain* e as duas metades emitem `seq = 512` com conteúdos diferentes: o nó aceita o primeiro que chega e recusa o segundo (`J0943`), e o evento diz ao Deck que tem dois emissores. (c) As duas metades emitem 512 e 513: o nó aplica o 513, porque o `seq` é a ordem, e o `superseded` do 512 aparece no relatório. **Achado:** sem `J0943`, o nó aplicava em silêncio o DSD de quem ganhasse a corrida. **Correção:** a regra V7 e a recomendação ao Deck de derivar o `seq` de um contador único (uma sequência na base de dados, nunca por instância). **Aguenta.**
+**S4 — Two Decks fighting over the same node.** (a) A Deck of a former integrator keeps issuing DSDs for a node that changed Deck: its key is no longer the `authority` (V3, `J0941`), `security` event and alarm. (b) A high-availability Deck enters *split-brain* and the two halves issue `seq = 512` with different contents: the node accepts the first that arrives and rejects the second (`J0943`), and the event tells the Deck that it has two issuers. (c) The two halves issue 512 and 513: the node applies 513, because the `seq` is the order, and the `superseded` of 512 appears in the report. **Finding:** without `J0943`, the node silently applied the DSD of whoever won the race. **Fix:** rule V7 and the recommendation to the Deck to derive the `seq` from a single counter (a sequence in the database, never per instance). **Holds.**
 
-**S5 — Estado desejado com um artefacto que o nó não consegue descarregar.** O registo apagou a tag, a CDN devolve 403, ou o artefacto nunca foi publicado. O nó tenta os espelhos e as fontes por ordem, com backoff por artefacto, e reporta `desired.state = fetching` com `fetched = [1,2 MB, 4,0 MB]`. Nada é trocado: o staging só começa com tudo descarregado e verificado, e a aplicação é tudo ou nada por fase. Ao fim de `fetch_deadline`, `failed` com `J0952` e o digest em `causes`. O nó continua na geração confirmada; o Deck corrige a publicação e emite `seq` + 1 (os blobs já descarregados estão na cache). Variante: o artefacto descarrega, mas o digest não confere (`J0950`) ou a assinatura não é de uma chave com o papel (`J0951`): `refused` na hora, sem esperar pelo prazo, e alarme de segurança. **Aguenta.**
+**S5 — Desired state with an artifact that the node cannot download.** The registry deleted the tag, the CDN returns 403, or the artifact was never published. The node tries the mirrors and the sources in order, with backoff per artifact, and reports `desired.state = fetching` with `fetched = [1.2 MB, 4.0 MB]`. Nothing is swapped: staging only starts with everything downloaded and verified, and the apply is all or nothing per phase. At the end of `fetch_deadline`, `failed` with `J0952` and the digest in `causes`. The node stays on the confirmed generation; the Deck fixes the publication and issues `seq` + 1 (the blobs already downloaded are in the cache). Variant: the artifact downloads, but the digest does not match (`J0950`) or the signature is not from a key with the role (`J0951`): `refused` at once, without waiting for the deadline, and a security alarm. **Holds.**
 
-**S6 — A geração nova corta a rede ao nó.** Uma rota errada no manifesto. A troca acontece, as saúdes locais H1–H5 passam, mas o H7 nunca se cumpre: não há `report-ack`. Ao fim de `window`, rollback (`J0960`), a rede volta, e o evento `apply` `rolled_back` chega ao Deck. **Aguenta**, e é exatamente a ADR 0015. **Achado:** a primeira versão do `auto` só olhava para a saúde local, e confirmava uma geração que tinha isolado o nó. **Corrigido** com o H7 e `require_uplink = true` por omissão.
+**S6 — The new generation cuts the network off from the node.** A wrong route in the manifest. The swap happens, the local health checks H1–H5 pass, but H7 is never met: there is no `report-ack`. At the end of `window`, rollback (`J0960`), the network comes back, and the `apply` `rolled_back` event reaches the Deck. **Holds**, and it is exactly ADR 0015. **Finding:** the first version of `auto` only looked at local health, and confirmed a generation that had isolated the node. **Fixed** with H7 and `require_uplink = true` by default.
 
-**S7 — Arranque em 1970** (documento 08, rodada 5 (d)). O gateway armv7 sem RTC arranca com o relógio em 1970 e LTE fraco. O TLS com o Deck funciona pelos pinos (§3.12, 2); o DSD é aceite pelo `seq`; o `expires` é ignorado; a fase com `windows` espera (`wait = clock`); os eventos saem com `clock = unsynced` e são corrigidos depois pelo evento `clock`. **Achado:** sem pinos no bundle, o nó não fala com o Deck enquanto não tiver hora, e sem Deck não recebe a hora grosseira; ficava preso até ao NTP. **Correção:** os pinos `deck_tls` e o tempo do Deck como fonte grosseira (ref/02, §3.2.4). **Aguenta.**
+**S7 — Boot in 1970** (document 08, round 5 (d)). The armv7 gateway without RTC boots with the clock in 1970 and weak LTE. TLS with the Deck works through the pins (§3.12, 2); the DSD is accepted by its `seq`; `expires` is ignored; the phase with `windows` waits (`wait = clock`); the events go out with `clock = unsynced` and are corrected later by the `clock` event. **Finding:** without pins in the bundle, the node does not talk to the Deck until it has the time, and without the Deck it does not get the coarse time; it was stuck until NTP. **Fix:** the `deck_tls` pins and the time of the Deck as a coarse source (ref/02, §3.2.4). **Holds.**
 
-**S8 — Cartão SD clonado.** Um técnico copia o cartão de um RevPi que funciona para montar um segundo. A chave estava em ficheiro. O clone liga-se com a mesma identidade e outra impressão de hardware: quarentena (`J0937`). Se os dois estiverem ligados ao mesmo tempo, os dois ficam em quarentena (`J0938`). Nenhum dos dois pára de controlar. A solução é `jk node enroll --force` no clone, que lhe dá uma identidade própria. Com TPM, o clone nem faz TLS. **Aguenta**, e o `J0933` em cada nó com chave em ficheiro torna o risco visível.
+**S8 — Cloned SD card.** A technician copies the card of a working RevPi to build a second one. The key was in a file. The clone connects with the same identity and another hardware fingerprint: quarantine (`J0937`). If both are connected at the same time, both are put in quarantine (`J0938`). Neither of them stops controlling. The solution is `jk node enroll --force` on the clone, which gives it an identity of its own. With a TPM, the clone cannot even do TLS. **Holds**, and the `J0933` on each node with a key in a file makes the risk visible.
 
-**S9 — 50 MB por mês em LTE.** Long-poll contínuo em HTTPS: um poll a cada 55 s com TLS retomado custa ~1–2 KB (as NAT de LTE fecham ligações paradas), 47 000 por mês, até ~90 MB. **Quebrou.** **Correção:** `poll = "15m"` (2 900 polls, ~5 MB) com poll imediato em alarmes críticos, ou MQTT com `keepalive = "20m"` e CBOR (~1 MB por mês incluindo relatórios). O `jk check` avisa se um nó com `[uplink] budget` usa long-poll contínuo. **Aguenta com a correção.**
+**S9 — 50 MB per month on LTE.** Continuous long-poll over HTTPS: a poll every 55 s with resumed TLS costs ~1–2 KB (LTE NATs close idle connections), 47,000 per month, up to ~90 MB. **Broke.** **Fix:** `poll = "15m"` (2,900 polls, ~5 MB) with an immediate poll on critical alarms, or MQTT with `keepalive = "20m"` and CBOR (~1 MB per month including reports). `jk check` warns if a node with `[uplink] budget` uses continuous long-poll. **Holds with the fix.**
 
-**S10 — O Deck é reposto de uma cópia de segurança de ontem.** O contador de `seq` do Deck para o nó está em 510, e o nó já aceitou 514. Sem mais nada, todos os DSDs novos seriam `J0942` para sempre. **Correção incorporada:** o `hello` leva `desired_seq`, e o Deck passa a emitir a partir de max(o seu, o do nó) + 1. O mesmo para os eventos: o `event_ack` do Deck fica abaixo do que o nó já apagou; o nó reenvia o que ainda tem, e o resto aparece como buraco sem `gap`, que o Deck recupera com `upload` (`what = events`). **Aguenta.**
+**S10 — The Deck is restored from yesterday's backup.** The `seq` counter of the Deck for the node is at 510, and the node has already accepted 514. With nothing else, all new DSDs would be `J0942` forever. **Fix incorporated:** the `hello` carries `desired_seq`, and the Deck starts issuing from max(its own, that of the node) + 1. The same for events: the `event_ack` of the Deck is below what the node has already deleted; the node resends what it still has, and the rest appears as a hole without a `gap`, which the Deck recovers with `upload` (`what = events`). **Holds.**
 
-**S11 — Nó 1.0 e Deck 1.5.** A 1.0 já saiu do suporte (12 meses). O Deck fala com ele pelo núcleo mínimo (`J0973` como aviso), não lhe envia `crit` que ele não conheça, e entrega-lhe um DSD com a runtime 1.5. O nó recusaria um DSD com um modelo (`J0957`), e o Deck sabe-o pelo `proto_minor = 0`. **Aguenta.**
+**S11 — 1.0 node and 1.5 Deck.** 1.0 has already left support (12 months). The Deck talks to it through the minimal core (`J0973` as a warning), does not send it a `crit` it does not know, and delivers it a DSD with runtime 1.5. The node would reject a DSD with a model (`J0957`), and the Deck knows it from `proto_minor = 0`. **Holds.**
 
-**S12 — Um técnico faz `jk apply` no local a meio de um rollout.** Às 3h00 corrige um endereço Modbus; às 3h05 o Deck entrega a onda 2. Com `local_changes = "hold"`, o DSD é preparado, mas não trocado (`J0966`); o relatório mostra `origin = local` e a deriva. Quando o endereço corrigido chega ao Git e o Deck emite um DSD com essa geração, o hash coincide e a espera termina sozinha. **Achado:** sem `hold`, a correção era desfeita em 5 minutos, e o técnico voltava a corrigir, e o Deck a desfazer. **Aguenta.**
+**S12 — A technician runs `jk apply` on site in the middle of a rollout.** At 3:00 they fix a Modbus address; at 3:05 the Deck delivers wave 2. With `local_changes = "hold"`, the DSD is prepared, but not swapped (`J0966`); the report shows `origin = local` and the drift. When the fixed address reaches Git and the Deck issues a DSD with that generation, the hash matches and the wait ends on its own. **Finding:** without `hold`, the fix was undone within 5 minutes, and the technician fixed it again, and the Deck undid it again. **Holds.**
 
 ---
 
-## 5. Decisões e alternativas rejeitadas
+## 5. Decisions and rejected alternatives
 
-**D1 — Estado desejado completo e idempotente, com `seq`.** Rejeitada: uma fila de ordens ("instala X", "reinicia Y"), como em vários gestores de dispositivos. Uma fila offline durante meses tem de ser reproduzida por ordem, e uma ordem perdida ou repetida deixa o nó num estado que ninguém escolheu. O estado completo dá o regresso de 6 meses numa aplicação só (S3).
+**D1 — Complete and idempotent desired state, with `seq`.** Rejected: a queue of orders ("install X", "restart Y"), as in several device managers. A queue offline for months has to be replayed in order, and a lost or repeated order leaves the node in a state nobody chose. The complete state gives the return after 6 months in a single apply (S3).
 
-**D2 — Duas camadas de assinatura.** O DSD é assinado pela chave `deck` (que vive no Deck), e os artefactos pelas chaves do pipeline (que não vivem). Rejeitado: assinar o DSD no pipeline (as ondas, as janelas e os rollbacks passavam a precisar de uma cerimónia de assinatura); e não o assinar de todo (o TLS não protege quando há um broker MQTT no meio nem numa importação em pen USB).
+**D2 — Two layers of signature.** The DSD is signed by the `deck` key (which lives in the Deck), and the artifacts by the pipeline keys (which do not). Rejected: signing the DSD in the pipeline (waves, windows and rollbacks would then need a signing ceremony); and not signing it at all (TLS does not protect when there is an MQTT broker in the middle, nor in an import on a USB stick).
 
-**D3 — Documentos assinados sempre em CBOR/COSE, também em HTTPS.** Rejeitado: JWS em JSON. Duas famílias de assinatura e o problema da canonicalização de JSON; a ref/00 já fixa COSE com CBOR determinístico.
+**D3 — Signed documents always in CBOR/COSE, also over HTTPS.** Rejected: JWS in JSON. Two signature families and the JSON canonicalization problem; ref/00 already fixes COSE with deterministic CBOR.
 
-**D4 — Long-poll e MQTT; nada de canal de controlo permanente.** Rejeitados: gRPC (HTTP/2 com Protobuf, sem `no_std` útil e sem par em MQTT), e um WebSocket permanente para controlo (proxies industriais cortam-no, e passava a ser o "caminho de controlo" que o princípio 2 proíbe). O WebSocket só existe para sessões, abertas pelo nó, com TTL.
+**D4 — Long-poll and MQTT; no permanent control channel.** Rejected: gRPC (HTTP/2 with Protobuf, without a useful `no_std` and without a counterpart over MQTT), and a permanent WebSocket for control (industrial proxies cut it, and it would become the "control path" that principle 2 forbids). The WebSocket only exists for sessions, opened by the node, with a TTL.
 
-**D5 — Deltas por merge patch (RFC 7386) sobre mapas chaveados por nome.** Rejeitado: JSON Patch (RFC 6902), com caminhos por índice e dependente da ordem. O merge patch funciona igual em CBOR e em JSON, e um delta perdido não estraga nada (a base é sempre o último confirmado).
+**D5 — Deltas by merge patch (RFC 7386) over maps keyed by name.** Rejected: JSON Patch (RFC 6902), with paths by index and dependent on order. Merge patch works the same in CBOR and in JSON, and a lost delta breaks nothing (the base is always the last acknowledged one).
 
-**D6 — Ack cumulativo e aplicacional.** Rejeitados: ack por evento (conversa demais em LTE) e o QoS 2 do MQTT (só garante a entrega ao broker, e não ao Deck).
+**D6 — Cumulative, application-level ack.** Rejected: ack per event (too chatty on LTE) and MQTT QoS 2 (it only guarantees delivery to the broker, and not to the Deck).
 
-**D7 — Bundle de confiança com raiz fora de linha, pisos por papel: uma versão curta do TUF.** Rejeitados: TUF e Uptane completos. São a direção certa e o desenho é compatível com eles (raiz, papéis delegados, rotação encadeada, proteção contra downgrade), mas o volume de metadados e de assinaturas não cabe num MCU de 2 KiB de DSD na v1.
+**D7 — Trust bundle with an offline root, floors per role: a short version of TUF.** Rejected: full TUF and Uptane. They are the right direction and the design is compatible with them (root, delegated roles, chained rotation, downgrade protection), but the volume of metadata and signatures does not fit an MCU with a 2 KiB DSD in v1.
 
-**D8 — Uma só autoridade por nó.** Rejeitado: vários Decks com direitos iguais (resolver conflitos entre eles no nó é inventar um protocolo de consenso). A mudança de autoridade é explícita e assinada pela raiz.
+**D8 — A single authority per node.** Rejected: several Decks with equal rights (resolving conflicts between them on the node is inventing a consensus protocol). The change of authority is explicit and signed by the root.
 
-**D9 — Nenhuma escrita em sinais no protocolo.** As escritas remotas só existem em sessões, pela API local. Rejeitado: um comando `write` no agente, que seria um segundo caminho de escrita, com outra autenticação, outra auditoria e outra forma de errar. Uma escrita remota é igual a uma local (AGENTS.md, invariante 3).
+**D9 — No writes to signals in the protocol.** Remote writes only exist in sessions, through the local API. Rejected: a `write` command in the agent, which would be a second write path, with another authentication, another audit and another way to go wrong. A remote write is the same as a local one (AGENTS.md, invariant 3).
 
-**D10 — Identidade em P-256, renovação com chave nova, e renovação com certificado expirado.** Rejeitados: Ed25519 na identidade (os TPM, os elementos seguros e o mbedTLS não o fazem no TLS), e EST (RFC 7030), que obriga a PKCS#7 e a autenticação HTTP Basic no enrolamento; a semântica do `/enroll` e do `/renew` é a do EST, sem os formatos.
+**D10 — Identity in P-256, renewal with a new key, and renewal with an expired certificate.** Rejected: Ed25519 for identity (TPMs, secure elements and mbedTLS do not do it in TLS), and EST (RFC 7030), which forces PKCS#7 and HTTP Basic authentication at enrollment; the semantics of `/enroll` and `/renew` are those of EST, without the formats.
 
-**D11 — Dois tipos de artefacto novos: `joker.runtime.v1` e `joker.config.v1+cbor`.** O documento 20, §3.2, não tinha como distribuir a runtime Linux nem a configuração de um nó Linux como artefacto; sem eles, o DSD não tinha para onde apontar. A alternativa (a runtime como pacote `.deb` e a configuração como commit Git a descarregar pelo nó) punha o Git e o APT no caminho de cada nó.
+**D11 — Two new artifact types: `joker.runtime.v1` and `joker.config.v1+cbor`.** Document 20, §3.2, had no way to distribute the Linux runtime or the configuration of a Linux node as an artifact; without them, the DSD had nowhere to point. The alternative (the runtime as a `.deb` package and the configuration as a Git commit to be downloaded by the node) put Git and APT in the path of each node.
 
-**D12 — Fases por ordem fixa (runtime → mcu → generation).** Rejeitado: ordem declarada no DSD. A ordem certa decorre das dependências (§3.4.1), e uma ordem configurável só servia para a escolher mal.
+**D12 — Phases in a fixed order (runtime → mcu → generation).** Rejected: an order declared in the DSD. The right order follows from the dependencies (§3.4.1), and a configurable order would only serve to choose it wrongly.
 
-**D13 — CDDL com chaves em forma dupla `("nome" / n)`.** Rejeitados: dois esquemas separados (JSON Schema e CDDL), que divergem ao primeiro commit; e só chaves de texto também em CBOR (o dobro do tamanho num MCU).
+**D13 — CDDL with keys in the dual form `("name" / n)`.** Rejected: two separate schemas (JSON Schema and CDDL), which diverge at the first commit; and text-only keys in CBOR too (double the size on an MCU).
 
-**D14 — LwM2M para os MCUs, rejeitado.** Seria um segundo modelo de objetos ao lado das classes e dos sinais. O perfil micro é o mesmo protocolo, com menos chaves.
+**D14 — LwM2M for the MCUs, rejected.** It would be a second object model next to the classes and the signals. The micro profile is the same protocol, with fewer keys.
 
 ---
 
-## 6. Marcações de versão
+## 6. Version markers
 
-| Item | Versão |
+| Item | Version |
 |---|---|
-| enrolamento, renovação, revogação, quarentena, bundle, pisos | 1.0 |
-| estado desejado, comandos `confirm`, `reject`, `report_full`, `renew`, `upload` | 1.0 |
-| estado reportado, eventos, fila com `gap` | 1.0 |
-| HTTPS com long-poll, MQTT, CoAP (perfil micro) | 1.0 |
-| perfil micro (MCUs autónomos); gestão em escala pelo Deck | 1.0; em escala, 1.5 |
-| MCUs atrás do nó (fase `mcu`) | 1.0 |
-| importação offline (`jk agent import`) | 1.0 |
-| **Preparado para ML:** tipo `joker.model.v1+jkm`, papel `models`, chave 23 do DSD, `report-body` 20, capacidade `models` | reservado na 1.0; semântica na **1.1** |
-| intenções pendentes no relatório (`report-body` 19) | reservado; 1.1 (M18) e aprovação no Deck na 1.3 |
-| sessões remotas (comandos 5 e 6, túnel, eventos `session`, `[agent.remote]`) | **1.3** (definidas agora, recusadas com `unsupported` antes) |
-| atestação TPM no enrolamento | opcional na 1.0; exigível pelo Deck a partir da 1.3 |
-| segredos por destinatário (`joker.secrets.v1`, chave 22 do DSD, `report-body` 21) | 1.0 (D6, ADR 0024) |
-| sites (chaves 100–119, `agent/2`, `jk/2/`, `/agent/v2`, `/a2/`) | reservado para a **v2** |
+| enrollment, renewal, revocation, quarantine, bundle, floors | 1.0 |
+| desired state, commands `confirm`, `reject`, `report_full`, `renew`, `upload` | 1.0 |
+| reported state, events, queue with `gap` | 1.0 |
+| HTTPS with long-poll, MQTT, CoAP (micro profile) | 1.0 |
+| micro profile (standalone MCUs); management at scale by the Deck | 1.0; at scale, 1.5 |
+| MCUs behind the node (`mcu` phase) | 1.0 |
+| offline import (`jk agent import`) | 1.0 |
+| **ML-ready:** type `joker.model.v1+jkm`, role `models`, key 23 of the DSD, `report-body` 20, capability `models` | reserved in 1.0; semantics in **1.1** |
+| pending intents in the report (`report-body` 19) | reserved; 1.1 (M18) and approval in the Deck in 1.3 |
+| remote sessions (commands 5 and 6, tunnel, `session` events, `[agent.remote]`) | **1.3** (defined now, refused with `unsupported` before) |
+| TPM attestation at enrollment | optional in 1.0; requirable by the Deck from 1.3 on |
+| per-recipient secrets (`joker.secrets.v1`, key 22 of the DSD, `report-body` 21) | 1.0 (D6, ADR 0024) |
+| sites (keys 100–119, `agent/2`, `jk/2/`, `/agent/v2`, `/a2/`) | reserved for **v2** |
