@@ -1,127 +1,127 @@
-# 20 — A família de produtos e o Joker Deck
+# 20 — The product family and Joker Deck
 
-O Joker começou como uma runtime. Com o Joker Micro (documento 19) e com a pergunta "quem orquestra 3 000 destes?", passa a ser uma **família**. Este documento define as peças, os contratos entre elas e, com mais detalhe, a peça que falta: o **Deck**, o plano de controlo da frota.
+Joker started as a runtime. With Joker Micro (document 19) and with the question "who orchestrates 3,000 of these?", it becomes a **family**. This document defines the pieces, the contracts between them and, in more detail, the missing piece: the **Deck**, the control plane of the fleet.
 
-É normativo quanto aos princípios e aos contratos (ADR 0021). O desenho interno do Deck é uma **proposta de arquitetura**: terá o seu próprio conjunto de documentos quando começar.
+It is normative as to the principles and the contracts (ADR 0021). The internal design of the Deck is an **architecture proposal**: it will have its own set of documents when it starts.
 
 ---
 
-## 1. A família
+## 1. The family
 
-O tema escreve-se sozinho: um joker é uma carta, e as cartas vivem num baralho.
+The theme writes itself: a joker is a card, and cards live in a deck.
 
-| Peça | O que é | Onde corre | Estado |
+| Piece | What it is | Where it runs | Status |
 |---|---|---|---|
-| **Joker** (`jokerd`, `jk`) | a runtime em Linux | Raspberry Pi, RevPi, PCs industriais, Jetson | v1 |
-| **Joker Micro** | a runtime em microcontroladores | RP2350, ESP32-C6/S3, STM32 | v1 |
-| **Joker Hub** | o registo de artefactos: perfis, placas, classes, apps, (modelos na 1.1) | nuvem ou on-premises | v1 (mínimo), cresce depois |
-| **Joker Deck** | o plano de controlo da frota: inventário, estado desejado, rollouts, observabilidade, acesso remoto | nuvem ou on-premises | MVP na v1, produto próprio depois |
-| **Joker Studio** | a interface de comissionamento e desenvolvimento: painel, navegador de sinais, traço e replay, escritas manuais | local (`jk ui`) e dentro do Deck | v1.x |
+| **Joker** (`jokerd`, `jk`) | the runtime on Linux | Raspberry Pi, RevPi, industrial PCs, Jetson | v1 |
+| **Joker Micro** | the runtime on microcontrollers | RP2350, ESP32-C6/S3, STM32 | v1 |
+| **Joker Hub** | the artifact registry: profiles, boards, classes, apps, (models in 1.1) | cloud or on-premises | v1 (minimal), grows later |
+| **Joker Deck** | the control plane of the fleet: inventory, desired state, rollouts, observability, remote access | cloud or on-premises | MVP in v1, its own product later |
+| **Joker Studio** | the commissioning and development interface: dashboard, signal browser, trace and replay, manual writes | local (`jk ui`) and inside the Deck | v1.x |
 
 ```
                          ┌──────────────── Joker Deck ────────────────┐
-  Git (sites, templates) │ inventário · estado desejado · rollouts ·  │ ◀── operadores, integradores
-  ──────────────────────▶│ observabilidade · alarmes · acesso remoto  │
+  Git (sites, templates) │ inventory · desired state · rollouts ·     │ ◀── operators, integrators
+  ──────────────────────▶│ observability · alarms · remote access     │
                          └───────┬───────────────────────▲────────────┘
-                   estado desejado│ (assinado)           │ estado reportado, telemetria
+                     desired state│ (signed)             │ reported state, telemetry
                                   ▼                      │
-            ┌──────── nó Linux (jokerd) ────────┐        │
-            │ apps · árbitro · envelope · ...   │────────┘
+            ┌────── Linux node (jokerd) ────────┐        │
+            │ apps · arbiter · envelope · ...   │────────┘
             └──────┬─────────────────▲──────────┘
-             Joker Link│             │SAMPLES/OUTCOMES          ┌── Joker Hub ──┐
-                   ▼   │             │                          │ perfis, placas│
-            ┌── Joker Micro ──┐    ┌── Joker Micro (autónomo) ──┐│ classes, apps │
-            │ coprocessador   │    │ Wi-Fi → Deck diretamente   ││ (OCI)         │
-            └─────────────────┘    └────────────────────────────┘└───────────────┘
+             Joker Link│             │SAMPLES/OUTCOMES          ┌─── Joker Hub ───┐
+                   ▼   │             │                          │ profiles, boards│
+            ┌── Joker Micro ──┐    ┌─ Joker Micro (standalone) ─┐│ classes, apps   │
+            │ coprocessor     │    │ Wi-Fi → Deck directly      ││ (OCI)           │
+            └─────────────────┘    └────────────────────────────┘└─────────────────┘
 ```
 
 ---
 
-## 2. Os princípios que não se negociam
+## 2. The principles that are not negotiable
 
-1. **Local-first.** Um nó funciona sozinho, para sempre, sem Deck nem Hub. Tudo o que o Deck faz, a `jk` faz também, nó a nó. O Deck serve a escala, e não a sobrevivência.
-2. **O Deck nunca está no caminho de controlo.** Não há nenhuma escrita em tempo real que dependa do Deck, e **o protocolo do agente não tem nenhuma mensagem de escrita em sinais**: o Deck muda configuração (gerações) e abre sessões. Uma escrita remota só existe dentro de uma sessão (1.3), pela API local do nó, como a de uma pessoa no local: escritor `manual` com o principal `deck:<deck_id>/user:<id>`, TTL, árbitro e envelope de sempre (ref/10, D9).
-3. **Contratos abertos.** O protocolo do agente, o formato dos artefactos (OCI), a telemetria (Sparkplug B, Zenoh, OTLP) e a API do Hub são especificados publicamente. Qualquer um pode escrever outro Deck, ou ligar o Joker a Mender, balena ou a um SCADA.
-4. **Git é a fonte da verdade da configuração.** O Deck lê templates, overlays e sites de um repositório (GitOps); edições na interface geram commits. Nada vive só na base de dados do Deck.
-5. **A segurança do nó não depende do Deck.** As assinaturas e a política de confiança são verificadas no nó; um Deck comprometido não consegue fazer um nó aceitar um artefacto que as chaves do nó não aceitem.
+1. **Local-first.** A node works on its own, forever, without a Deck or a Hub. Everything the Deck does, `jk` also does, node by node. The Deck serves scale, not survival.
+2. **The Deck is never in the control path.** There is no real-time write that depends on the Deck, and **the agent protocol has no message for writing to signals**: the Deck changes configuration (generations) and opens sessions. A remote write only exists inside a session (1.3), through the node's local API, like that of a person on site: a `manual` writer with the principal `deck:<deck_id>/user:<id>`, TTL, and the usual arbiter and envelope (ref/10, D9).
+3. **Open contracts.** The agent protocol, the artifact format (OCI), the telemetry (Sparkplug B, Zenoh, OTLP) and the Hub API are publicly specified. Anyone can write another Deck, or connect Joker to Mender, balena or a SCADA.
+4. **Git is the source of truth for configuration.** The Deck reads templates, overlays and sites from a repository (GitOps); edits in the interface generate commits. Nothing lives only in the Deck's database.
+5. **Node security does not depend on the Deck.** Signatures and the trust policy are verified on the node; a compromised Deck cannot make a node accept an artifact that the node's keys do not accept.
 
 ---
 
-## 3. Os contratos
+## 3. The contracts
 
-### 3.1 Protocolo do agente (nó ↔ Deck)
+### 3.1 Agent protocol (node ↔ Deck)
 
-A forma fechada é o protocolo `agent/1`, na ref/10 (mensagens, enrolamento, confiança, confirmação, transportes, perfil micro), com os esquemas em `spec/cddl/agent.cddl`. Em resumo:
+The closed form is the `agent/1` protocol, in ref/10 (messages, enrollment, trust, confirmation, transports, micro profile), with the schemas in `spec/cddl/agent.cddl`. In summary:
 
-| Mensagem | Sentido | Conteúdo |
+| Message | Direction | Contents |
 |---|---|---|
-| **estado desejado** | Deck → nó | documento assinado: versão da runtime, geração (hash de manifesto + lock + contratos), artefactos (apps, perfis, firmware de MCUs, modelos na 1.1) por digest OCI, janela de confirmação, coorte |
-| **estado reportado** | nó → Deck | versões em execução, geração confirmada, deriva do lock, saúde (grupos, dispositivos, instâncias), alarmes ativos, trips, uso de recursos, MCUs ligados e as suas versões |
-| **eventos** | nó → Deck | transições de alarmes, decisões marcadas para auditoria, resultados de aplicações de geração |
-| **sessão remota** (1.3) | Deck ↔ nó | túnel aberto pelo nó, com TTL, para a `jk` e para o Studio, com papéis do nó e consentimento local |
+| **desired state** | Deck → node | signed document: runtime version, generation (hash of manifest + lock + contracts), artifacts (apps, profiles, MCU firmware, models in 1.1) by OCI digest, confirmation window, cohort |
+| **reported state** | node → Deck | running versions, confirmed generation, lock drift, health (groups, devices, instances), active alarms, trips, resource usage, connected MCUs and their versions |
+| **events** | node → Deck | alarm transitions, decisions marked for audit, results of generation applies |
+| **remote session** (1.3) | Deck ↔ node | tunnel opened by the node, with TTL, for `jk` and for the Studio, with node roles and local consent |
 
-- **Transporte:** HTTPS com long-poll, ou MQTT; tolera meses offline (o nó continua no último estado confirmado).
-- **Aplicação:** o nó aplica o estado desejado com o mecanismo de sempre (documento 01, §15): validar, planear, trocar num limite de tick, esperar pela confirmação, rollback automático se a saúde falhar. O Deck não tem um caminho especial. Uma geração só se confirma sozinha depois de o Deck acusar um relatório (`report-ack`): uma geração que cortou a rede ao nó não se confirma a si própria (ref/10 §3.5).
-- **MCUs:** um MCU atrás de um nó Linux recebe firmware e gerações pelo Joker Link, orquestrado pelo nó. Um MCU autónomo com rede fala o mesmo protocolo, numa versão reduzida (CBOR sobre MQTT ou CoAP).
+- **Transport:** HTTPS with long-poll, or MQTT; tolerates months offline (the node stays in the last confirmed state).
+- **Apply:** the node applies the desired state with the usual mechanism (document 01, §15): validate, plan, swap at a tick boundary, wait for confirmation, automatic rollback if health fails. The Deck has no special path. A generation only confirms itself after the Deck acknowledges a report (`report-ack`): a generation that cut the node's network does not confirm itself (ref/10 §3.5).
+- **MCUs:** an MCU behind a Linux node receives firmware and generations over Joker Link, orchestrated by the node. A standalone MCU with a network speaks the same protocol, in a reduced version (CBOR over MQTT or CoAP).
 
-### 3.2 Artefactos (Hub)
+### 3.2 Artifacts (Hub)
 
-Tudo é um artefacto OCI assinado, com um tipo de media próprio e um papel de assinatura: a runtime, a geração de um nó Linux, apps, drivers, perfis, placas, classes (com o contrato e a conformidade), o firmware e o blob de geração dos MCUs, os segredos selados e, na 1.1, os modelos. A tabela única dos tipos, com a forma curta (`joker.app.v1+wasm`) e a forma completa do registo (`application/vnd.joker.app.v1+wasm`), está na ref/00, §7.1. Um registo OCI comum (Harbor, GHCR, ECR…) serve como Hub mínimo; o Hub acrescenta pesquisa, compatibilidade (que perfis implementam que classes) e as verificações de publicação (conformidade das classes, `jk class diff`).
+Everything is a signed OCI artifact, with its own media type and a signing role: the runtime, the generation of a Linux node, apps, drivers, profiles, boards, classes (with the contract and the conformance), the firmware and the generation blob of the MCUs, the sealed secrets and, in 1.1, the models. The single table of the types, with the short form (`joker.app.v1+wasm`) and the full registry form (`application/vnd.joker.app.v1+wasm`), is in ref/00, §7.1. A common OCI registry (Harbor, GHCR, ECR…) serves as a minimal Hub; the Hub adds search, compatibility (which profiles implement which classes) and the publication checks (class conformance, `jk class diff`).
 
-### 3.3 Telemetria
+### 3.3 Telemetry
 
-O Deck consome o que os nós já enviam: Sparkplug B ou Zenoh para sinais e alarmes, OTLP para as métricas da própria runtime (documento 01, §13 e §19). Não há um formato "do Deck".
+The Deck consumes what the nodes already send: Sparkplug B or Zenoh for signals and alarms, OTLP for the metrics of the runtime itself (document 01, §13 and §19). There is no "Deck" format.
 
 ---
 
-## 4. O Joker Deck, em detalhe
+## 4. Joker Deck, in detail
 
-### 4.1 O que faz
+### 4.1 What it does
 
-| Área | Funcionalidades |
+| Area | Features |
 |---|---|
-| **Inventário** | nós e MCUs, placas, versões, localização, cliente/site, estado do enrolamento, certificados |
-| **Configuração** | sites a partir de templates + overlays (M13) num repositório Git; diff entre o desejado e o reportado; deteção de deriva |
-| **Rollouts** | coortes e ondas (1% → 10% → 100%), paragem automática por KPI (taxa de alarmes, trips, overruns, rollback), janelas de manutenção por site |
-| **Observabilidade** | saúde da frota, alarmes agregados, métricas da runtime, painéis por site |
-| **Operação remota** | `jk` e Studio por túnel, escritas manuais e aprovação de intenções (M18) com auditoria |
-| **Identidade** | CA para o enrolamento de nós e MCUs, rotação de certificados, revogação |
-| **Auditoria** | quem mudou o quê, quando, em que site, com que aprovação; registos de decisões dos nós a pedido |
-| **Multi-inquilino** | um integrador gere as frotas dos seus clientes; cada cliente vê só as suas |
+| **Inventory** | nodes and MCUs, boards, versions, location, customer/site, enrollment status, certificates |
+| **Configuration** | sites from templates + overlays (M13) in a Git repository; diff between desired and reported; drift detection |
+| **Rollouts** | cohorts and waves (1% → 10% → 100%), automatic KPI stop (alarm rate, trips, overruns, rollback), maintenance windows per site |
+| **Observability** | fleet health, aggregated alarms, runtime metrics, dashboards per site |
+| **Remote operation** | `jk` and Studio through a tunnel, manual writes and approval of intents (M18) with audit |
+| **Identity** | CA for enrolling nodes and MCUs, certificate rotation, revocation |
+| **Audit** | who changed what, when, at which site, with which approval; the nodes' decision logs on request |
+| **Multi-tenant** | an integrator manages the fleets of their customers; each customer sees only their own |
 
-### 4.2 Arquitetura proposta
+### 4.2 Proposed architecture
 
-- **Servidor** em Rust (a mesma linguagem, os mesmos crates de manifesto, lock, `jkc` e verificação que a `jk` usa: o Deck valida uma geração exatamente como o `jk check`).
-- **Estado:** PostgreSQL para inventário, rollouts e auditoria; um registo OCI para artefactos; TimescaleDB ou equivalente opcional para métricas; o Git para configuração.
-- **Interface web**, com o Studio embutido para cada nó.
-- **Implantação:** SaaS ou on-premises, em containers; um Deck pequeno corre num único servidor para frotas de algumas centenas de nós.
+- **Server** in Rust (the same language, the same manifest, lock, `jkc` and verification crates that `jk` uses: the Deck validates a generation exactly like `jk check`).
+- **State:** PostgreSQL for inventory, rollouts and audit; an OCI registry for artifacts; TimescaleDB or an equivalent, optional, for metrics; Git for configuration.
+- **Web interface**, with the Studio embedded for each node.
+- **Deployment:** SaaS or on-premises, in containers; a small Deck runs on a single server for fleets of a few hundred nodes.
 
-### 4.3 Estresse
+### 4.3 Stress
 
-**D1 — 10 000 nós, 30% offline durante semanas.** O estado desejado é idempotente e assinado, e o nó aplica-o quando volta. O rollout conta um nó offline como "pendente", e não como falha. **Aguenta.**
+**D1 — 10,000 nodes, 30% offline for weeks.** The desired state is idempotent and signed, and the node applies it when it comes back. The rollout counts an offline node as "pending", not as a failure. **Holds.**
 
-**D2 — Um rollout mau.** A versão 3.2 da app aumenta os trips em 1% dos nós da primeira onda. Com uma regra `halt_if = "trips_rate > baseline * 1.5"`, o rollout para: o Deck deixa de emitir estados desejados para as ondas seguintes. Os nós afetados voltam atrás por janela de confirmação, por um comando `reject` (os que ainda estão a confirmar), ou por um estado desejado novo que aponta para a geração anterior, que o nó **reativa** com o mesmo hash e o mesmo número (ref/10 §3.5, S2). **Aguenta**, e é a razão para as ondas existirem.
+**D2 — A bad rollout.** Version 3.2 of the app increases trips on 1% of the nodes of the first wave. With a rule `halt_if = "trips_rate > baseline * 1.5"`, the rollout stops: the Deck stops issuing desired states for the following waves. The affected nodes go back through the confirmation window, through a `reject` command (those that are still confirming), or through a new desired state that points at the previous generation, which the node **reactivates** with the same hash and the same number (ref/10 §3.5, S2). **Holds**, and it is the reason waves exist.
 
-**D3 — O Deck é comprometido.** O atacante consegue publicar um estado desejado, mas não consegue assinar artefactos com as chaves que os nós aceitam (princípio 5), não tem nenhuma mensagem para escrever em sinais (princípio 2) e não lê segredos, que vão cifrados para os nós (ADR 0024). Consegue, no máximo, fazer rollback para gerações já assinadas, limitado pela janela de manutenção e por `max_applies_per_day` do nó (ref/10 §4). **Aguenta**, com a condição de as chaves de assinatura **não** viverem no Deck (HSM ou assinatura offline no pipeline de release).
+**D3 — The Deck is compromised.** The attacker can publish a desired state, but cannot sign artifacts with the keys the nodes accept (principle 5), has no message for writing to signals (principle 2) and does not read secrets, which go encrypted to the nodes (ADR 0024). At most, they can roll back to already signed generations, limited by the maintenance window and by the node's `max_applies_per_day` (ref/10 §4). **Holds**, on the condition that the signing keys do **not** live in the Deck (HSM or offline signing in the release pipeline).
 
-**D4 — Um integrador gere 40 clientes.** Multi-inquilino com isolamento por inquilino no inventário, nos artefactos privados e na telemetria. Os templates do integrador são partilhados; os sites são do cliente. **Aguenta.**
+**D4 — An integrator manages 40 customers.** Multi-tenant with per-tenant isolation in the inventory, in the private artifacts and in the telemetry. The integrator's templates are shared; the sites belong to the customer. **Holds.**
 
-**D5 — Um cliente não quer nuvem.** Deck on-premises, ou nenhum Deck: `jk` e Git chegam (princípio 1). **Aguenta.**
+**D5 — A customer does not want a cloud.** On-premises Deck, or no Deck: `jk` and Git are enough (principle 1). **Holds.**
 
-**D6 — O Deck cresce até virar um SCADA.** O risco de *scope creep* é real. Contenção: o Deck gere **nós e configuração**, e mostra saúde e alarmes; sinópticos, HMI de operação e historian de planta continuam a ser de produtos dedicados (documento 12). Se isso mudar, é uma decisão de produto explícita, com uma ADR.
+**D6 — The Deck grows until it becomes a SCADA.** The risk of *scope creep* is real. Containment: the Deck manages **nodes and configuration**, and shows health and alarms; synoptics, operation HMI and plant historian remain the domain of dedicated products (document 12). If that changes, it is an explicit product decision, with an ADR.
 
-### 4.4 O Deck MVP na prática
+### 4.4 The Deck MVP in practice
 
-O mínimo para correr o Deck MVP (§5, v1) numa instalação pequena: um servidor, algumas dezenas de nós, um repositório Git. É o que a trilha usa na parte 11, com o Deck no portátil. A referência completa do Deck (interface web, API de operadores, multi-inquilino, alta disponibilidade) é **produto**, e fica fora de `docs/ref/`. O contrato com os nós é só o protocolo `agent/1` da ref/10: tudo o que o Deck faz a um nó passa por lá.
+The minimum to run the Deck MVP (§5, v1) in a small installation: a server, a few dozen nodes, a Git repository. It is what the track uses in part 11, with the Deck on the laptop. The complete reference of the Deck (web interface, operator API, multi-tenancy, high availability) is **product**, and stays outside `docs/ref/`. The contract with the nodes is only the `agent/1` protocol of ref/10: everything the Deck does to a node goes through it.
 
-#### 4.4.1 O binário e os comandos
+#### 4.4.1 The binary and the commands
 
-| Comando | Faz |
+| Command | Does |
 |---|---|
-| `joker-deck serve --config deck.toml` | arranca o Deck: endpoints `/agent/v1` da ref/10 §2.13, o armazém de artefactos, a leitura do Git e os rollouts |
-| `joker-deck token create --node <nó> --ttl <d> [--config deck.toml]` | emite um token de enrolamento `jkt1_…` (ref/10 §2.5.1): de uso único, preso ao nome do nó, `ttl` ≤ 7 d |
+| `joker-deck serve --config deck.toml` | starts the Deck: the `/agent/v1` endpoints of ref/10 §2.13, the artifact store, reading from Git and the rollouts |
+| `joker-deck token create --node <node> --ttl <d> [--config deck.toml]` | issues an enrollment token `jkt1_…` (ref/10 §2.5.1): single use, bound to the node name, `ttl` ≤ 7 d |
 
-A imagem de container equivalente é `registry.example.com/joker/deck`, com o mesmo binário como ponto de entrada:
+The equivalent container image is `registry.example.com/joker/deck`, with the same binary as the entry point:
 
 ```sh
 docker run -d -p 8443:8443 -v /srv/deck:/srv/deck registry.example.com/joker/deck:1.0 serve --config /srv/deck/deck.toml
@@ -130,7 +130,7 @@ docker run -d -p 8443:8443 -v /srv/deck:/srv/deck registry.example.com/joker/dec
 #### 4.4.2 `deck.toml`
 
 ```toml
-# deck.toml — um Deck pequeno, num só servidor
+# deck.toml — a small Deck, on a single server
 [deck]
 id     = "bancada-deck"
 url    = "https://portatil.local:8443"
@@ -138,7 +138,7 @@ listen = "0.0.0.0:8443"
 data   = "~/deck/data"
 
 [database]
-url = "sqlite:deck.db"                  # em produção: "postgres://deck@db.example.com/deck"
+url = "sqlite:deck.db"                  # in production: "postgres://deck@db.example.com/deck"
 
 [git]
 repo   = "~/joker-bancada"
@@ -146,36 +146,36 @@ branch = "main"
 poll   = "30s"
 
 [ca]
-dir = "~/org-ca"                        # a mesma CA do `jk ca init`
+dir = "~/org-ca"                        # the same CA as `jk ca init`
 
 [artifacts]
-store = "builtin"                       # ou "oci://registry.example.com/joker/fleet"
+store = "builtin"                       # or "oci://registry.example.com/joker/fleet"
 
 [signing]
 key = "~/.local/share/joker/keys/deck.key"
 ```
 
-| Chave | Tipo | Obr. | Omissão | Significado |
+| Key | Type | Req. | Default | Meaning |
 |---|---|---|---|---|
-| `deck.id` | nome (ref/00 §5) | sim | — | o `deck_id`: a `authority` do bundle de confiança, o `deck` de cada estado desejado e da chave `deck` (ref/10 §2.4.3, §2.6) |
-| `deck.url` | URL `https://` | sim | — | o endereço que os nós usam; tem de estar nos `deck_urls` do bundle. O certificado TLS do servidor é emitido pela emissora de `[ca]` para o nome deste URL |
-| `deck.listen` | `"<host>:<porta>"` | não | `"0.0.0.0:8443"` | onde o servidor escuta |
-| `deck.data` | caminho | sim | — | estado local: a base SQLite, o armazém embutido, a cópia do repositório |
-| `database.url` | `"sqlite:<caminho>"` \| `"postgres://…"` | não | `"sqlite:deck.db"` | inventário, rollouts, relatórios e eventos. SQLite (relativo a `data`) para uma instalação pequena; PostgreSQL em produção. A palavra-passe nunca vai no ficheiro: vem das variáveis do libpq (`PGPASSWORD`) ou de `~/.pgpass` |
-| `git.repo` | URL ou caminho | sim | — | o repositório do projeto; as credenciais são as do Git do sistema (agente SSH, *credential helper*) |
-| `git.branch` | string | não | `"main"` | o ramo que é o estado desejado da frota |
-| `git.poll` | duração | não | `"30s"` | intervalo de leitura do ramo; ≥ `"5s"` |
-| `ca.dir` | caminho | sim | — | a pasta do `jk ca init`: o Deck lê a emissora (`ca.crt`, `ca.key`), o `org` e o bundle de confiança (`trust.cose`), que entrega no enrolamento. **Nunca lê `root.key`**: a raiz assina bundles fora do Deck (§2, princípio 5) |
-| `artifacts.store` | `"builtin"` \| URL `oci://` | não | `"builtin"` | onde vivem os artefactos assinados. `builtin`: uma API de distribuição OCI em `<url>/v2/`, guardada em `data`, e os nós descarregam de `/agent/v1/blobs` (fonte `kind = deck`); `oci://`: um registo externo, e os nós descarregam de lá (fonte `kind = oci`, com `registry-token`, ref/10 §2.13) |
-| `signing.key` | caminho ou `pkcs11:` | sim | — | a chave Ed25519 **com o papel `deck`**, e só essa: assina estados desejados e comandos. O Deck recusa arrancar se esta chave tiver no bundle outro papel além de `deck` |
+| `deck.id` | name (ref/00 §5) | yes | — | the `deck_id`: the `authority` of the trust bundle, the `deck` of each desired state and of the `deck` key (ref/10 §2.4.3, §2.6) |
+| `deck.url` | `https://` URL | yes | — | the address the nodes use; it must be in the bundle's `deck_urls`. The server's TLS certificate is issued by the `[ca]` issuer for the name of this URL |
+| `deck.listen` | `"<host>:<port>"` | no | `"0.0.0.0:8443"` | where the server listens |
+| `deck.data` | path | yes | — | local state: the SQLite database, the built-in store, the copy of the repository |
+| `database.url` | `"sqlite:<path>"` \| `"postgres://…"` | no | `"sqlite:deck.db"` | inventory, rollouts, reports and events. SQLite (relative to `data`) for a small installation; PostgreSQL in production. The password never goes in the file: it comes from the libpq variables (`PGPASSWORD`) or from `~/.pgpass` |
+| `git.repo` | URL or path | yes | — | the project repository; the credentials are those of the system's Git (SSH agent, *credential helper*) |
+| `git.branch` | string | no | `"main"` | the branch that is the desired state of the fleet |
+| `git.poll` | duration | no | `"30s"` | interval for reading the branch; ≥ `"5s"` |
+| `ca.dir` | path | yes | — | the `jk ca init` directory: the Deck reads the issuer (`ca.crt`, `ca.key`), the `org` and the trust bundle (`trust.cose`), which it delivers at enrollment. **It never reads `root.key`**: the root signs bundles outside the Deck (§2, principle 5) |
+| `artifacts.store` | `"builtin"` \| `oci://` URL | no | `"builtin"` | where the signed artifacts live. `builtin`: an OCI distribution API at `<url>/v2/`, stored in `data`, and the nodes download from `/agent/v1/blobs` (source `kind = deck`); `oci://`: an external registry, and the nodes download from there (source `kind = oci`, with `registry-token`, ref/10 §2.13) |
+| `signing.key` | path or `pkcs11:` | yes | — | the Ed25519 key **with the `deck` role**, and only that one: it signs desired states and commands. The Deck refuses to start if this key has any role other than `deck` in the bundle |
 
-`~` no início de um caminho expande para `$HOME`; caminhos relativos resolvem a partir da pasta do `deck.toml`. Uma chave desconhecida recusa o arranque.
+`~` at the start of a path expands to `$HOME`; relative paths resolve from the directory of `deck.toml`. An unknown key refuses the startup.
 
-**O Deck não tem as chaves da organização.** Não tem a raiz, nem as chaves `config`, `apps` ou `secrets`. Por isso não fabrica gerações: lê do Git o que a geração de cada nó deve ser, calcula o descritor e o hash com os mesmos crates da `jk` (ref/10 §2.6.2), e procura no armazém o artefacto `joker.config.v1+cbor` assinado pelo papel `config` com esse descritor, e os artefactos que ele refere, assinados pelos seus papéis. Quem os assina e envia é a `jk`, na máquina de quem tem as chaves: `jk publish --manifest <m>… --registry <oci> --sign-key <papel>=<chave>…` (documento 07, §3) assina a geração de cada nó e as apps, e publica-as no registo de `artifacts.store` (com `builtin`, o registo OCI que o próprio Deck serve em `<deck.url>/v2/`). O Deck só procura artefactos assinados: sem eles, não emite nada para esse nó, e regista `J0915`.
+**The Deck does not have the organization keys.** It does not have the root, nor the `config`, `apps` or `secrets` keys. That is why it does not fabricate generations: it reads from Git what the generation of each node should be, computes the descriptor and the hash with the same crates as `jk` (ref/10 §2.6.2), and looks in the store for the `joker.config.v1+cbor` artifact signed by the `config` role with that descriptor, and for the artifacts it refers to, signed by their roles. Whoever signs and sends them is `jk`, on the machine of whoever has the keys: `jk publish --manifest <m>… --registry <oci> --sign-key <role>=<key>…` (document 07, §3) signs the generation of each node and the apps, and publishes them to the `artifacts.store` registry (with `builtin`, the OCI registry that the Deck itself serves at `<deck.url>/v2/`). The Deck only looks for signed artifacts: without them, it issues nothing for that node, and logs `J0915`.
 
-#### 4.4.3 `fleet.toml`, no repositório
+#### 4.4.3 `fleet.toml`, in the repository
 
-O Deck lê do ramo, na raiz do repositório, um `fleet.toml`: que nó corre que manifesto de entrada, em que coorte, e como se faz um rollout.
+The Deck reads from the branch, at the root of the repository, a `fleet.toml`: which node runs which input manifest, in which cohort, and how a rollout is done.
 
 ```toml
 # fleet.toml
@@ -201,47 +201,47 @@ cohorts = ["canario"]
 cohorts = ["estavel"]
 ```
 
-| Chave | Tipo | Obr. | Omissão | Significado |
+| Key | Type | Req. | Default | Meaning |
 |---|---|---|---|---|
-| `version` | inteiro | sim | — | `1` |
-| `nodes.<nó>.manifest` | ficheiro | sim | — | manifesto de entrada do nó, relativo à raiz do repositório; o lock é o do mesmo nome (ref/02 §2.1.1), e tem de ter sido capturado neste nó (`J0480`) |
-| `nodes.<nó>.cohort` | nome | sim | — | a coorte do nó; aparece em `rollout.cohort` do estado desejado (ref/10 §2.6.4) |
-| `rollout.wave` | lista de tabelas | sim | — | as ondas, por ordem; cada `cohorts` lista coortes, e cada coorte está em exatamente uma onda |
-| `rollout.wait` | duração | não | `"30m"` | espera entre ondas, contada a partir do momento em que a onda passou (abaixo) |
-| `rollout.confirm` | tabela | não | a da ref/10 §2.6.4 | a `confirm-policy` que vai no estado desejado: `mode`, `window`, `stable_for`, `require_uplink`, `alarm_severity` |
-| `rollout.halt_if` | expressão ou lista de expressões | não | `[]` | condições sobre os KPIs da onda; basta uma verdadeira para parar o rollout |
+| `version` | integer | yes | — | `1` |
+| `nodes.<node>.manifest` | file | yes | — | input manifest of the node, relative to the repository root; the lock is the one with the same name (ref/02 §2.1.1), and it must have been captured on this node (`J0480`) |
+| `nodes.<node>.cohort` | name | yes | — | the node's cohort; it appears in `rollout.cohort` of the desired state (ref/10 §2.6.4) |
+| `rollout.wave` | list of tables | yes | — | the waves, in order; each `cohorts` lists cohorts, and each cohort is in exactly one wave |
+| `rollout.wait` | duration | no | `"30m"` | wait between waves, counted from the moment the wave passed (below) |
+| `rollout.confirm` | table | no | the one in ref/10 §2.6.4 | the `confirm-policy` that goes in the desired state: `mode`, `window`, `stable_for`, `require_uplink`, `alarm_severity` |
+| `rollout.halt_if` | expression or list of expressions | no | `[]` | conditions on the KPIs of the wave; a single true one is enough to stop the rollout |
 
-**KPIs**, calculados pelo Deck a partir dos relatórios e dos eventos dos nós da onda (ref/10 §2.10, §2.11), desde a troca de cada nó:
+**KPIs**, computed by the Deck from the reports and events of the nodes of the wave (ref/10 §2.10, §2.11), since each node's swap:
 
-| KPI | Significado |
+| KPI | Meaning |
 |---|---|
-| `overruns_rate` | overruns ÷ ticks, somados em todos os grupos de ciclo dos nós da onda (`report-body.groups`) |
-| `trips_rate` | trips novos por nó e por hora (eventos `trip`) |
-| `rollbacks` | nós da onda que terminaram este rollout em `rolled_back` |
-| `baseline` | numa comparação, o valor do mesmo KPI nos mesmos nós na hora antes da troca (`"trips_rate > baseline * 1.5"`, D2) |
+| `overruns_rate` | overruns ÷ ticks, summed over all the cycle groups of the nodes of the wave (`report-body.groups`) |
+| `trips_rate` | new trips per node and per hour (`trip` events) |
+| `rollbacks` | nodes of the wave that ended this rollout in `rolled_back` |
+| `baseline` | in a comparison, the value of the same KPI on the same nodes in the hour before the swap (`"trips_rate > baseline * 1.5"`, D2) |
 
-**De um commit a um rollout.**
+**From a commit to a rollout.**
 
-1. A cada `poll`, o Deck lê o ramo. Um commit novo que muda a geração de algum nó (ou os seus segredos) abre um **rollout**, e o rollout anterior ainda em curso passa a `superseded`: deixa de emitir, e os nós que já o receberam ficam onde estão até o novo lá chegar.
-2. Para cada nó, o Deck valida a geração como o `jk check` (V19–V22 da ref/10 §3.3) e procura os artefactos assinados (§4.4.2). Os segredos saem do `secrets.toml.enc` do commit: a cada nó vai o seu `secret-bundle`, só com o seu `wrap` (chave 22 do estado desejado); um `wrap` feito para um certificado que já não é o do nó é `J0922`, e esse nó fica em espera. Um nó que não passa não recebe nada; os outros seguem.
-3. **Onda a onda.** O Deck emite o estado desejado para os nós da onda, com `rollout = { id, wave, cohort }` e o `confirm` do `fleet.toml`. A onda **passa** quando todos os nós online confirmaram, e pelo menos um confirmou, e depois de `wait` sem nenhuma condição de `halt_if` verdadeira. Um nó offline conta como **pendente**, nunca como falha (D1): recebe o estado desejado de hoje quando voltar.
-4. **Paragem.** Uma condição de `halt_if` verdadeira, em qualquer momento da onda, põe o rollout em `halted`: o Deck não emite nada para as ondas seguintes, manda `reject` aos nós da onda que ainda estão a confirmar (ref/10 §2.7) e emite para os que já confirmaram um estado desejado com a geração anterior (`seq` + 1), que o nó reativa com o mesmo hash e o mesmo número (D2). Recomeça-se com um commit novo.
-5. O Deck guarda **o último** estado desejado de cada nó, e nunca uma fila (ref/10 §3.11.5).
+1. At each `poll`, the Deck reads the branch. A new commit that changes the generation of some node (or its secrets) opens a **rollout**, and the previous rollout still in progress becomes `superseded`: it stops issuing, and the nodes that already received it stay where they are until the new one reaches them.
+2. For each node, the Deck validates the generation like `jk check` (V19–V22 of ref/10 §3.3) and looks for the signed artifacts (§4.4.2). The secrets come from the commit's `secrets.toml.enc`: each node gets its own `secret-bundle`, with only its own `wrap` (key 22 of the desired state); a `wrap` made for a certificate that is no longer the node's is `J0922`, and that node is put on hold. A node that does not pass receives nothing; the others proceed.
+3. **Wave by wave.** The Deck issues the desired state for the nodes of the wave, with `rollout = { id, wave, cohort }` and the `confirm` of `fleet.toml`. The wave **passes** when all the online nodes have confirmed, and at least one has confirmed, and after `wait` without any `halt_if` condition being true. An offline node counts as **pending**, never as a failure (D1): it receives today's desired state when it comes back.
+4. **Stop.** A true `halt_if` condition, at any moment of the wave, puts the rollout in `halted`: the Deck issues nothing for the following waves, sends `reject` to the nodes of the wave that are still confirming (ref/10 §2.7) and issues to those that have already confirmed a desired state with the previous generation (`seq` + 1), which the node reactivates with the same hash and the same number (D2). It restarts with a new commit.
+5. The Deck keeps **the last** desired state of each node, and never a queue (ref/10 §3.11.5).
 
-No MVP o Deck só **lê** o Git: não escreve commits, nem locks, nem aprovações. Um `fleet.toml` inválido não abre rollout nenhum: o Deck regista o erro e continua com o último válido.
+In the MVP the Deck only **reads** Git: it writes no commits, no locks, no approvals. An invalid `fleet.toml` opens no rollout: the Deck logs the error and carries on with the last valid one.
 
 ---
 
-## 5. Sequência
+## 5. Sequence
 
-| Quando | O quê |
+| When | What |
 |---|---|
-| v1 (Fase 3) | protocolo do agente especificado; **Deck MVP**: inventário, estado desejado a partir de Git, rollouts com ondas e paragem por KPI, saúde da frota; Hub = registo OCI + verificações de publicação |
-| v1.x | Studio (local e no Deck); multi-inquilino; aprovação de intenções no Deck; sessões remotas |
-| v1.5 (LTS; documento 21, §7; ref/10 §6) | observabilidade completa, auditoria agregada, MCUs autónomos geridos em escala |
+| v1 (Phase 3) | agent protocol specified; **Deck MVP**: inventory, desired state from Git, rollouts with waves and KPI stop, fleet health; Hub = OCI registry + publication checks |
+| v1.x | Studio (local and in the Deck); multi-tenancy; approval of intents in the Deck; remote sessions |
+| v1.5 (LTS; document 21, §7; ref/10 §6) | complete observability, aggregated audit, standalone MCUs managed at scale |
 
-O Deck é **outro produto**, com outra equipa quando crescer, mas partilha os crates de validação com a `jk`. É isso que impede que o Deck e o nó tenham ideias diferentes sobre o que é uma geração válida.
+The Deck is **another product**, with another team when it grows, but it shares the validation crates with `jk`. That is what prevents the Deck and the node from having different ideas about what a valid generation is.
 
-## 6. Nota sobre o modelo de negócio
+## 6. Note on the business model
 
-Os princípios 1 e 3 (local-first e contratos abertos) são compatíveis com vários modelos. O mais natural é **runtime, Joker Micro, protocolo e formatos abertos**, e **Deck e Hub privado como produto** (SaaS ou licença on-premises). É uma decisão do dono do projeto, ligada à escolha da licença (documento 18, §6), e convém ser tomada antes do primeiro commit público.
+Principles 1 and 3 (local-first and open contracts) are compatible with several models. The most natural one is **runtime, Joker Micro, protocol and formats open**, and **Deck and private Hub as a product** (SaaS or on-premises license). It is a decision for the project owner, tied to the choice of license (document 18, §6), and it should be taken before the first public commit.

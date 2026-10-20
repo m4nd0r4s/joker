@@ -1,101 +1,101 @@
-# ref/04 — O mundo WIT `joker:runtime`, a secção `joker:meta`, o SDK Rust e o `joker-test`
+# ref/04 — The WIT world `joker:runtime`, the `joker:meta` section, the Rust SDK and `joker-test`
 
-Referência normativa das interfaces que uma app vê. Fica acima dos documentos 01–05 (docs/README, ADR 0023) e aplica o `ref/00`. A semântica (árbitro, envelope, qualidade, expressões) é a do documento 16 e não se repete aqui.
+Normative reference of the interfaces that an app sees. It sits above documents 01–05 (docs/README, ADR 0023) and applies `ref/00`. The semantics (arbiter, envelope, quality, expressions) are those of document 16 and are not repeated here.
 
 ---
 
-## 1. Âmbito e fontes
+## 1. Scope and sources
 
-### 1.1 O que cobre
+### 1.1 What it covers
 
-| Superfície | Onde | Secção |
+| Surface | Where | Section |
 |---|---|---|
-| mundo WIT das apps, `joker:runtime@0.1.0` (→ `@1.0.0` na 1.0) | `wit/joker-runtime.wit` | §2 |
-| ABI de ciclo: imagem de entradas e buffer de propostas, byte a byte | este documento | §3 |
-| SDK Rust `joker-sdk` (importado como `joker`): macros, tipos, traits, backends Wasm e nativo | este documento | §4 |
-| secção custom `joker:meta` | `spec/cddl/joker-meta.cddl` | §5 |
-| harness de testes `joker-test` | este documento | §6 |
-| erros de runtime `J-E…` vistos pelas apps, e erros de compilação do SDK | este documento | §7, §4.16 |
-| cópia máquina-legível do mundo `joker:sim/plant` (definido no ref/03, §2.4.10) | `wit/joker-sim.wit` | §2.10 |
+| WIT world of the apps, `joker:runtime@0.1.0` (→ `@1.0.0` in 1.0) | `wit/joker-runtime.wit` | §2 |
+| cycle ABI: input image and proposal buffer, byte by byte | this document | §3 |
+| Rust SDK `joker-sdk` (imported as `joker`): macros, types, traits, Wasm and native backends | this document | §4 |
+| custom section `joker:meta` | `spec/cddl/joker-meta.cddl` | §5 |
+| test harness `joker-test` | this document | §6 |
+| runtime errors `J-E…` seen by the apps, and compilation errors of the SDK | this document | §7, §4.16 |
+| machine-readable copy of the world `joker:sim/plant` (defined in ref/03, §2.4.10) | `wit/joker-sim.wit` | §2.10 |
 
-Fica fora: os SDKs de tier 2 (ref/05), o mundo `joker:driver` (ref/06), a ABI C e o crate do Joker Micro (ref/08), a API HTTP (ref/09).
+Out of scope: the tier 2 SDKs (ref/05), the world `joker:driver` (ref/06), the C ABI and the crate of Joker Micro (ref/08), the HTTP API (ref/09).
 
-### 1.2 Fontes
+### 1.2 Sources
 
-Documentos 04 (todo), 14 §3 e §6–7, 17 §2 e §4–6, 16 (todo), 19 §3 e §5, 02 §4–8, 01 §3–5, §9 e §18, 09 (ataques 2, 6, 8 e 10), 11 ("Preparado para ML"), 21 §1 e §3, ADR 0004, 0020 e 0022, e os 34 blocos `rust` de `docs/**/*.md` (§9).
+Documents 04 (all), 14 §3 and §6–7, 17 §2 and §4–6, 16 (all), 19 §3 and §5, 02 §4–8, 01 §3–5, §9 and §18, 09 (attacks 2, 6, 8 and 10), 11 ("Ready for ML"), 21 §1 and §3, ADR 0004, 0020 and 0022, and the 34 `rust` blocks of `docs/**/*.md` (§9).
 
-### 1.3 Ligações a outras referências
+### 1.3 Connections to other references
 
-| Referência | O que partilha com esta |
+| Reference | What it shares with this one |
 |---|---|
-| ref/00 | códigos de qualidade (§4.3) e de resultados (§4.4), tempo (§3), `record error` (§8), limites (§10) |
+| ref/00 | quality codes (§4.3) and result codes (§4.4), time (§3), `record error` (§8), limits (§10) |
 | ref/01 | `[apps.<app>]`: `bind`, `params`, `cycles`, `secrets`, `requires_clock`, `resources.*_memory`, `net.allow`; `[instances.*] implemented_by` |
-| ref/02 | `joker.lock` `[apps.<app>] wit` lido de `joker:meta`; segredos declarados em `joker:meta` e ligados em `[apps.<app>.secrets]` |
-| ref/03 | cenários e casos de conformidade de classe, que o `joker-test` executa (§6.7); literais (§2.1.3); simuladores de classe |
-| ref/05 | os SDKs de tier 2 usam o mesmo mundo, a mesma imagem empacotada e o mesmo buffer de propostas (§3), as mesmas funções de `cycle-io` para o acesso dinâmico e o mesmo esquema de `joker:meta` (com as chaves `tier`, `lang`, `engine` e `sdk`, §5); a correspondência função a função está na ref/05 §16 |
-| ref/06 | `joker:driver` importa `joker:runtime/log` com a mesma versão (§2.5.3) |
-| ref/08 | o backend nativo do SDK (feature `backend-native`, contrato `NativeApp`, ref/08 §2.11.5) usa o mesmo buffer de propostas (§3.3) e a mesma secção de metadados (§5.1) |
-| ref/09, ref/10 | a API e o agente mostram `joker:meta` e recusam, antes do deploy, mundos mais novos do que a runtime (`J-E0001`) e funcionalidades instáveis em `prod` (`J-E0003`); a API mostra os erros de `invoke` com os códigos do §7.1 e os alarmes das apps com o id `app.<app>.<nome>` (§4.2) |
+| ref/02 | `joker.lock` `[apps.<app>] wit` read from `joker:meta`; secrets declared in `joker:meta` and bound in `[apps.<app>.secrets]` |
+| ref/03 | scenarios and class conformance cases, which `joker-test` executes (§6.7); literals (§2.1.3); class simulators |
+| ref/05 | the tier 2 SDKs use the same world, the same packed image and the same proposal buffer (§3), the same `cycle-io` functions for dynamic access and the same `joker:meta` schema (with the keys `tier`, `lang`, `engine` and `sdk`, §5); the function-by-function correspondence is in ref/05 §16 |
+| ref/06 | `joker:driver` imports `joker:runtime/log` with the same version (§2.5.3) |
+| ref/08 | the native backend of the SDK (feature `backend-native`, contract `NativeApp`, ref/08 §2.11.5) uses the same proposal buffer (§3.3) and the same metadata section (§5.1) |
+| ref/09, ref/10 | the API and the agent show `joker:meta` and refuse, before the deploy, worlds newer than the runtime (`J-E0001`) and unstable features in `prod` (`J-E0003`); the API shows the errors of `invoke` with the codes of §7.1 and the alarms of the apps with the id `app.<app>.<name>` (§4.2) |
 
-### 1.4 Validação dos ficheiros máquina-legíveis
+### 1.4 Validation of the machine-readable files
 
-- `wit/joker-runtime.wit` e `wit/joker-sim.wit` foram validados com o analisador WIT do `wasm-tools` (via `jco embed --dummy` + `jco new`), em duas passagens: o mundo estável (sem as funcionalidades `@unstable`) e o mundo com todas as funcionalidades ativas. `wit/joker-driver.wit` (ref/06) resolve contra este pacote.
-- `spec/cddl/joker-meta.cddl` foi validado com o `zcbor` contra instâncias CBOR de exemplo (a de §5.5 e duas das apps do documento 04), e rejeita instâncias com chaves obrigatórias em falta ou valores fora das escolhas. O `zcbor` não suporta o controlo `.regexp` (RFC 8610, §3.8.3), que foi retirado só para a validação.
+- `wit/joker-runtime.wit` and `wit/joker-sim.wit` were validated with the WIT parser of `wasm-tools` (via `jco embed --dummy` + `jco new`), in two passes: the stable world (without the `@unstable` features) and the world with all features enabled. `wit/joker-driver.wit` (ref/06) resolves against this package.
+- `spec/cddl/joker-meta.cddl` was validated with `zcbor` against example CBOR instances (the one of §5.5 and two of the apps of document 04), and it rejects instances with missing required keys or values outside the choices. `zcbor` does not support the `.regexp` control (RFC 8610, §3.8.3), which was removed only for the validation.
 
 ---
 
-## 2. O mundo WIT `joker:runtime`
+## 2. The WIT world `joker:runtime`
 
-### 2.1 Visão geral
+### 2.1 Overview
 
-Uma app é um componente (ADR 0002) instanciado **duas vezes** (documento 01, §5; ADR 0004): uma instância de ciclo (thread `rt/<grupo>`) e uma instância async (tokio `app`). As importações estão todas no mundo; o host liga-as às duas instâncias, e as que não pertencem a uma delas fazem trap.
+An app is a component (ADR 0002) instantiated **twice** (document 01, §5; ADR 0004): a cycle instance (thread `rt/<group>`) and an async instance (tokio `app`). The imports are all in the world; the host binds them to both instances, and those that do not belong to one of them trap.
 
-| Interface | Instância de ciclo | Instância async | Fase |
+| Interface | Cycle instance | Async instance | Phase |
 |---|---|---|---|
-| `types` | tipos só | tipos só | 1.0 |
-| `cycle-io` | sim | trap `J-E0902` | 1.0 (`write-at`: 1.1) |
-| `async-io` | trap `J-E0901` | sim | 1.0 (`write-at`, `propose`: 1.1) |
-| `kv` | trap `J-E0901` | sim | 1.0 |
-| `secrets` | trap `J-E0901` | sim | 1.0 |
-| `log` | sim | sim | 1.0 |
-| `guest` (exportada) | `init`, `on-params`, `on-cycle`, `export-state`, `migrate` | `init`, `on-params`, `run-task`, `on-action`, `export-state`, `migrate` | 1.0 |
-| `ml` | trap `J-E0901` | sim | **reservada, 1.1** (`@unstable(feature = ml)`) |
-| `frames` | trap `J-E0901` | sim | **reservada, 1.1** (`streams`) |
-| `blocks` | trap `J-E0901` | sim | **reservada, 1.1** (`blocks`) |
+| `types` | types only | types only | 1.0 |
+| `cycle-io` | yes | trap `J-E0902` | 1.0 (`write-at`: 1.1) |
+| `async-io` | trap `J-E0901` | yes | 1.0 (`write-at`, `propose`: 1.1) |
+| `kv` | trap `J-E0901` | yes | 1.0 |
+| `secrets` | trap `J-E0901` | yes | 1.0 |
+| `log` | yes | yes | 1.0 |
+| `guest` (exported) | `init`, `on-params`, `on-cycle`, `export-state`, `migrate` | `init`, `on-params`, `run-task`, `on-action`, `export-state`, `migrate` | 1.0 |
+| `ml` | trap `J-E0901` | yes | **reserved, 1.1** (`@unstable(feature = ml)`) |
+| `frames` | trap `J-E0901` | yes | **reserved, 1.1** (`streams`) |
+| `blocks` | trap `J-E0901` | yes | **reserved, 1.1** (`blocks`) |
 
-Um export chamado na instância errada não acontece: o host nunca chama `on-cycle` na instância async nem `run-task` na de ciclo. Uma app sem tarefas async não tem instância async; uma app sem tarefas de ciclo não tem instância de ciclo.
+An export called on the wrong instance does not happen: the host never calls `on-cycle` on the async instance nor `run-task` on the cycle one. An app without async tasks has no async instance; an app without cycle tasks has no cycle instance.
 
-As apps de tier 2 (TypeScript, Python) também têm tarefas de ciclo, com períodos mínimos de 100 ms (TS) e 500 ms (Python) e admissão pelo **máximo** medido (D15, ref/05 §19). Usam o mesmo mundo e a mesma ABI de ciclo (§3).
+Tier 2 apps (TypeScript, Python) also have cycle tasks, with minimum periods of 100 ms (TS) and 500 ms (Python) and admission by the measured **maximum** (D15, ref/05 §19). They use the same world and the same cycle ABI (§3).
 
 ### 2.2 `types`
 
-| Tipo | Definição | Notas |
+| Type | Definition | Notes |
 |---|---|---|
-| `port` | `u32` | índice em `init-context.ports` (§2.6.2); local à app e à geração |
-| `instance` | `u32` | índice em `init-context.instances` |
-| `method` | `u16` | posição do método na lista `methods` do dispositivo em `joker:meta` (§5) |
-| `level` | `u8` | nível do árbitro, 1–16 |
-| `quality-code` | `enum { good, uncertain, bad }` | fechado para sempre |
-| `quality-reason` | `enum` com 20 casos | ordem dos casos = código do ref/00 §4.3 (`none` 0 … `deadline` 19) |
+| `port` | `u32` | index in `init-context.ports` (§2.6.2); local to the app and to the generation |
+| `instance` | `u32` | index in `init-context.instances` |
+| `method` | `u16` | position of the method in the `methods` list of the device in `joker:meta` (§5) |
+| `level` | `u8` | arbiter level, 1–16 |
+| `quality-code` | `enum { good, uncertain, bad }` | closed forever |
+| `quality-reason` | `enum` with 20 cases | order of the cases = code of ref/00 §4.3 (`none` 0 … `deadline` 19) |
 | `quality` | `record { code, reason }` | |
-| `value` | `variant { boolean(bool), int(s64), uint(u64), float(f64), text(string), blob(list<u8>) }` | sempre na unidade da porta; `enum` e `bits` como `uint`; `f32` promovido; registos como `blob` CBOR (§4.10) |
-| `sample` | `record { value, quality, ts-src: option<s64>, ts-hw: option<u64>, ts-acq: u64, seq: u64 }` | tempos do ref/00 §3 |
+| `value` | `variant { boolean(bool), int(s64), uint(u64), float(f64), text(string), blob(list<u8>) }` | always in the unit of the port; `enum` and `bits` as `uint`; `f32` promoted; records as CBOR `blob` (§4.10) |
+| `sample` | `record { value, quality, ts-src: option<s64>, ts-hw: option<u64>, ts-acq: u64, seq: u64 }` | times of ref/00 §3 |
 | `clock-quality` | `enum { synced, holdover, unsynced }` | ref/00 §6 |
 | `instant` | `record { mono-ns: u64, utc-ns: s64, clock }` | |
 | `clamp-kind` | `enum { range, rate }` | |
 | `clamp` | `record { by: clamp-kind, applied: value }` | |
-| `reject-reason` | `enum` com 8 casos | ordem = código do ref/00 §4.4 menos 1 |
-| `write-outcome` | `variant` (abaixo) | `none` exprime-se como `option::none` |
-| `error` | `record { code: string, message: string }` | ref/00 §8; `code` é um código do registo, `message` é texto em inglês que ninguém interpreta |
+| `reject-reason` | `enum` with 8 cases | order = code of ref/00 §4.4 minus 1 |
+| `write-outcome` | `variant` (below) | `none` is expressed as `option::none` |
+| `error` | `record { code: string, message: string }` | ref/00 §8; `code` is a code of the registry, `message` is English text that nobody interprets |
 | `change` | `record { port, sample }` | |
-| `event-delivery` | `record { port, payload: list<u8>, seq: u64, at: instant, lost: u32 }` | `lost`: eventos perdidos por este consumidor desde a entrega anterior |
-| `member-outcome` | `record { port, outcome: write-outcome }` | uma escrita expandida de um método |
+| `event-delivery` | `record { port, payload: list<u8>, seq: u64, at: instant, lost: u32 }` | `lost`: events dropped for this consumer since the previous delivery |
+| `member-outcome` | `record { port, outcome: write-outcome }` | one expanded write of a method |
 
-**`write-outcome` e os códigos do ref/00 §4.4:**
+**`write-outcome` and the codes of ref/00 §4.4:**
 
-| Caso WIT | Código | JSON (`outcome`) | Rust (`WriteOutcome<T>`) |
+| WIT case | Code | JSON (`outcome`) | Rust (`WriteOutcome<T>`) |
 |---|---|---|---|
-| (ausente: `option::none`) | 0 | `"none"` | `None` em `Option<WriteOutcome<T>>` |
+| (absent: `option::none`) | 0 | `"none"` | `None` in `Option<WriteOutcome<T>>` |
 | `accepted` | 1 | `"accepted"` | `Accepted` |
 | `clamped({ by: range, applied })` | 2 | `"clamped_range"` | `Clamped { by: ClampKind::Range, applied }` |
 | `clamped({ by: rate, applied })` | 3 | `"clamped_rate"` | `Clamped { by: ClampKind::Rate, applied }` |
@@ -108,311 +108,311 @@ As apps de tier 2 (TypeScript, Python) também têm tarefas de ciclo, com perío
 
 `reject-reason`: `wrong-type` 1, `interlock` 2, `quality` 3, `range` 4, `atomic-group` 5, `not-owner` 6, `clock-unsynced` 7, `budget` 8.
 
-### 2.3 `cycle-io` (instância de ciclo)
+### 2.3 `cycle-io` (cycle instance)
 
-Todas as funções são síncronas, não alocam no host e não bloqueiam. **Todos os SDKs**, o Rust e os de tier 2, usam o caminho empacotado (§3; ref/05 §16, A11) e só chamam `read` (carimbos `ts_src`/`ts_hw`, valores de arena e acesso dinâmico por nome), `mailbox-send`, `mailbox-recv` e `random-u64`. As restantes funções existem para acesso dinâmico e para valores que não cabem em `u64`; não são o caminho normal de nenhum SDK.
+All functions are synchronous, do not allocate in the host and do not block. **All SDKs**, the Rust one and the tier 2 ones, use the packed path (§3; ref/05 §16, A11) and only call `read` (timestamps `ts_src`/`ts_hw`, arena values and dynamic access by name), `mailbox-send`, `mailbox-recv` and `random-u64`. The remaining functions exist for dynamic access and for values that do not fit in `u64`; they are not the normal path of any SDK.
 
-| Função | Semântica | Equivalente empacotado | Erros |
+| Function | Semantics | Packed equivalent | Errors |
 |---|---|---|---|
-| `read(p) -> sample` | amostra do snapshot do latch deste tick; numa saída, o valor **aplicado** (02 §6.1) | entrada na secção de amostras | porta sem amostra (ação, evento, mailbox): trap `J-E0907` |
-| `write(p, v)` | acrescenta uma proposta | registo `WRITE` | tipo errado: a proposta sai `rejected(wrong-type)`; porta que não é saída: trap `J-E0907` |
-| `relinquish(p)` | liberta já o nível deste escritor (01 §6, regra 3) | `WRITE` com `RELINQUISH` | como `write` |
-| `pending(p) -> option<value>` | última proposta desta app para `p` neste tick, feita no domínio de ciclo (as tarefas anteriores do mesmo grupo contam; as propostas async drenadas no passo 2 não) | o SDK sabe-o sozinho | — |
-| `last-outcome(p) -> option<write-outcome>` | resultado da proposta **deste escritor** no commit mais recente do grupo dono; `none` se não teve proposta nesse commit | secção de resultados | — |
-| `param(p) -> value` | valor atual do parâmetro | entrada na secção de amostras | — |
-| `call(inst, m, args)` | acrescenta um registo de método (17 §4.1) | registo `METHOD` | método ou instância fora da gama: trap `J-E0907`; argumentos inválidos: `J-E0504` no registo de decisões, sem trap |
-| `publish(p, v)` | escreve um sinal publicado (`#[publish]`), a condição `bool` de um alarme da app (id `app.<app>.<nome>`, §4.2), um `Internal<T>` com escritor de ciclo (`blob` CBOR), ou um membro `state` de uma implementação | registo `PUBLISH` | porta errada: trap `J-E0907` |
-| `counter-add(p, delta)` | soma a um `Counter` | registo `COUNTER_ADD` | idem |
-| `emit(p, payload)` | emite um evento; filas de consumidores cheias perdem e contam | registo `EMIT` | payload > 8 KiB: `J-E0410`, o evento é descartado |
-| `note-substituted(p)` | regista no traço que a leitura de `p` foi substituída (`get_or`, 16 §3.1) | registo `NOTE` | — |
-| `mailbox-send(p, msg) -> bool` | envio não bloqueante para a instância async; `false` se cheia (perda contada) | — | mensagem > 256 B: `false` e `J-E0412` no log |
-| `mailbox-recv(p) -> option<list<u8>>` | receção não bloqueante | — | — |
-| `now() -> instant` | instante do latch deste tick (02 §5) | cabeçalho da imagem | — |
-| `dt-ns() -> u64` | período efetivo do grupo | cabeçalho da imagem | — |
-| `random-u64() -> u64` | pseudoaleatório determinista (§2.7) | — | — |
-| `write-at(p, v, at)` | **1.1** (`scheduled-writes`, M6) | `WRITE` com `AT` | |
+| `read(p) -> sample` | sample from the latch snapshot of this tick; on an output, the **applied** value (02 §6.1) | entry in the samples section | port without a sample (action, event, mailbox): trap `J-E0907` |
+| `write(p, v)` | appends a proposal | `WRITE` record | wrong type: the proposal comes out `rejected(wrong-type)`; port that is not an output: trap `J-E0907` |
+| `relinquish(p)` | releases this writer's level right away (01 §6, rule 3) | `WRITE` with `RELINQUISH` | as `write` |
+| `pending(p) -> option<value>` | last proposal of this app for `p` in this tick, made in the cycle domain (the earlier tasks of the same group count; the async proposals drained at step 2 do not) | the SDK knows it by itself | — |
+| `last-outcome(p) -> option<write-outcome>` | result of the proposal of **this writer** in the most recent commit of the owning group; `none` if it had no proposal in that commit | results section | — |
+| `param(p) -> value` | current value of the parameter | entry in the samples section | — |
+| `call(inst, m, args)` | appends a method record (17 §4.1) | `METHOD` record | method or instance out of range: trap `J-E0907`; invalid arguments: `J-E0504` in the decision log, without trap |
+| `publish(p, v)` | writes a published signal (`#[publish]`), the `bool` condition of an alarm of the app (id `app.<app>.<name>`, §4.2), an `Internal<T>` with a cycle writer (CBOR `blob`), or a `state` member of an implementation | `PUBLISH` record | wrong port: trap `J-E0907` |
+| `counter-add(p, delta)` | adds to a `Counter` | `COUNTER_ADD` record | same |
+| `emit(p, payload)` | emits an event; full consumer queues drop and count | `EMIT` record | payload > 8 KiB: `J-E0410`, the event is discarded |
+| `note-substituted(p)` | records in the trace that the read of `p` was substituted (`get_or`, 16 §3.1) | `NOTE` record | — |
+| `mailbox-send(p, msg) -> bool` | non-blocking send to the async instance; `false` if full (drop counted) | — | message > 256 B: `false` and `J-E0412` in the log |
+| `mailbox-recv(p) -> option<list<u8>>` | non-blocking receive | — | — |
+| `now() -> instant` | latch instant of this tick (02 §5) | image header | — |
+| `dt-ns() -> u64` | effective period of the group | image header | — |
+| `random-u64() -> u64` | deterministic pseudorandom (§2.7) | — | — |
+| `write-at(p, v, at)` | **1.1** (`scheduled-writes`, M6) | `WRITE` with `AT` | |
 
-### 2.4 `async-io` (instância async)
+### 2.4 `async-io` (async instance)
 
-| Função | Semântica | Erros (`error.code`) |
+| Function | Semantics | Errors (`error.code`) |
 |---|---|---|
-| `read(p) -> sample` | valor atual do slot, sem latch (02 §6.4) | — |
-| `snapshot(ps) -> result<list<sample>, error>` | leitura coerente (mesma época seqlock); ≤ 256 portas | `J-E0414` acima do limite |
-| `set(p, v)` | proposta sem esperar: vai para a inbox do grupo dono; `last-outcome` dá `deferred` até ao commit | — |
-| `write(p, v) -> result<write-outcome, error>` (async) | proposta; o future resolve depois do commit do grupo dono (01 §5, o `WriteTicket`) | `J-E0206` a geração mudou antes do commit; `J-E0205` escritor só-proposta |
-| `relinquish(p)` | liberta o nível | — |
-| `last-outcome(p)` | como em `cycle-io` | — |
-| `param(p) -> value` | valor atual | — |
-| `call(inst, m, args) -> result<list<member-outcome>, error>` (async) | método de classe; resolve depois do commit com um resultado por escrita expandida (17 §2.1) | `J-E0504`, `J-E0505`, `J-E0206` |
-| `invoke(p, args, key) -> result<list<u8>, error>` (async) | ação (M19, 17 §4.2): permissivo e papel → deduplicação pela chave → fila serializada do dispositivo → resultado | `J-E0301`…`J-E0313`; na API, os do §7.1 |
-| `start-action(p, args, key) -> result<action-call, error>` | ação `@long`: devolve logo um recurso `action-call` | idem; `J-E0313` se a ação não for longa |
-| `action-call.progress() -> stream<action-progress>` | eventos de progresso | — |
-| `action-call.cancel()` | pede o cancelamento | — |
-| `action-call.finish() -> result<list<u8>, error>` (async) | espera pelo resultado | `J-E0308` cancelada |
-| `publish`, `counter-add`, `emit`, `note-substituted` | como em `cycle-io`; vão pela inbox do grupo dono do sinal | como em `cycle-io` |
-| `subscribe(ps) -> result<stream<change>, error>` | uma mudança por `seq` nova; ≤ 256 portas; com o stream cheio (64), fica só a última mudança de cada porta, e as perdas contam | `J-E0414` |
-| `events(p) -> result<stream<event-delivery>, error>` | fila de consumidor própria, profundidade 64 | `J-E0414` |
-| `mailbox-send`, `mailbox-recv` | como em `cycle-io`, no sentido inverso | — |
-| `mailbox-next(p) -> list<u8>` (async) | espera pela próxima mensagem | — |
-| `history(q) -> result<list<sample>, error>` (async) | historian (01 §12); `step-ns = 0` só com `raw`; ≤ 10 000 pontos; com agregado, uma amostra por passo, com a **qualidade dominante** do passo (01 §12) e `ts-acq` = início do passo | `J-E0401` intervalo inválido; `J-E0402` resultado grande de mais; `J-E0403` sinal sem gravação |
-| `now() -> instant` | instante atual | — |
-| `sleep-until(mono-ns)` (async) | acorda no instante monotónico dado (ou logo, se já passou) | — |
+| `read(p) -> sample` | current value of the slot, without latch (02 §6.4) | — |
+| `snapshot(ps) -> result<list<sample>, error>` | coherent read (same seqlock epoch); ≤ 256 ports | `J-E0414` above the limit |
+| `set(p, v)` | proposal without waiting: it goes to the inbox of the owning group; `last-outcome` gives `deferred` until the commit | — |
+| `write(p, v) -> result<write-outcome, error>` (async) | proposal; the future resolves after the commit of the owning group (01 §5, the `WriteTicket`) | `J-E0206` the generation changed before the commit; `J-E0205` proposal-only writer |
+| `relinquish(p)` | releases the level | — |
+| `last-outcome(p)` | as in `cycle-io` | — |
+| `param(p) -> value` | current value | — |
+| `call(inst, m, args) -> result<list<member-outcome>, error>` (async) | class method; resolves after the commit with one result per expanded write (17 §2.1) | `J-E0504`, `J-E0505`, `J-E0206` |
+| `invoke(p, args, key) -> result<list<u8>, error>` (async) | action (M19, 17 §4.2): permissive and role → deduplication by the key → serialized queue of the device → result | `J-E0301`…`J-E0313`; in the API, those of §7.1 |
+| `start-action(p, args, key) -> result<action-call, error>` | `@long` action: returns an `action-call` resource right away | same; `J-E0313` if the action is not long |
+| `action-call.progress() -> stream<action-progress>` | progress events | — |
+| `action-call.cancel()` | requests the cancellation | — |
+| `action-call.finish() -> result<list<u8>, error>` (async) | waits for the result | `J-E0308` canceled |
+| `publish`, `counter-add`, `emit`, `note-substituted` | as in `cycle-io`; they go through the inbox of the owning group of the signal | as in `cycle-io` |
+| `subscribe(ps) -> result<stream<change>, error>` | one change per new `seq`; ≤ 256 ports; with the stream full (64), only the last change of each port is kept, and the drops count | `J-E0414` |
+| `events(p) -> result<stream<event-delivery>, error>` | own consumer queue, depth 64 | `J-E0414` |
+| `mailbox-send`, `mailbox-recv` | as in `cycle-io`, in the opposite direction | — |
+| `mailbox-next(p) -> list<u8>` (async) | waits for the next message | — |
+| `history(q) -> result<list<sample>, error>` (async) | historian (01 §12); `step-ns = 0` only with `raw`; ≤ 10,000 points; with an aggregate, one sample per step, with the **dominant quality** of the step (01 §12) and `ts-acq` = start of the step | `J-E0401` invalid interval; `J-E0402` result too large; `J-E0403` signal without recording |
+| `now() -> instant` | current instant | — |
+| `sleep-until(mono-ns)` (async) | wakes at the given monotonic instant (or right away, if it has passed) | — |
 | `random-u64()` | §2.7 | — |
-| `report-progress(request, fraction, message)` | progresso de uma ação que esta app serve em `on-action` | — |
-| `is-cancelled(request) -> bool` | o chamador cancelou a ação servida | — |
-| `write-at(p, v, at)` | **1.1** (`scheduled-writes`) | `J-E0207` fila de agendamento cheia |
-| `propose(p, v, reason, ttl-ns) -> result<string, error>` | **1.1** (`intents`, M18); devolve o ULID da intenção, que expira ao fim de `ttl-ns` se ninguém a decidir (ref/09 §5.9) | `J-E0209`, `J-E0210` |
+| `report-progress(request, fraction, message)` | progress of an action that this app serves in `on-action` | — |
+| `is-cancelled(request) -> bool` | the caller canceled the served action | — |
+| `write-at(p, v, at)` | **1.1** (`scheduled-writes`) | `J-E0207` scheduling queue full |
+| `propose(p, v, reason, ttl-ns) -> result<string, error>` | **1.1** (`intents`, M18); returns the ULID of the intent, which expires after `ttl-ns` if nobody decides it (ref/09 §5.9) | `J-E0209`, `J-E0210` |
 
-`history-query { port, from-utc-ns, to-utc-ns, step-ns, agg }` com `agg ∈ { raw, mean, min, max, first, last, count }`: os agregados do historian (01 §12). `count` devolve `uint`.
+`history-query { port, from-utc-ns, to-utc-ns, step-ns, agg }` with `agg ∈ { raw, mean, min, max, first, last, count }`: the aggregates of the historian (01 §12). `count` returns `uint`.
 
-### 2.5 `kv`, `secrets` e `log`
+### 2.5 `kv`, `secrets` and `log`
 
-#### 2.5.1 `kv` (só async)
+#### 2.5.1 `kv` (async only)
 
-| Função | Semântica | Erros |
+| Function | Semantics | Errors |
 |---|---|---|
-| `get(key) -> result<option<list<u8>>, error>` | leitura | `J-E0405` chave inválida |
-| `set(key, value)` (async) | escrita atómica e durável (fsync) antes de resolver | `J-E0404` quota; `J-E0405`; `J-E0406` valor grande de mais; `J-E0407` erro de armazenamento |
-| `delete(key)` (async) | idem | idem |
-| `keys(prefix) -> result<list<string>, error>` | por ordem bytewise | — |
-| `commit(ops)` (async) | até 64 operações, todas ou nenhuma | idem, e `J-E0404` |
+| `get(key) -> result<option<list<u8>>, error>` | read | `J-E0405` invalid key |
+| `set(key, value)` (async) | atomic and durable write (fsync) before resolving | `J-E0404` quota; `J-E0405`; `J-E0406` value too large; `J-E0407` storage error |
+| `delete(key)` (async) | same | same |
+| `keys(prefix) -> result<list<string>, error>` | in bytewise order | — |
+| `commit(ops)` (async) | up to 64 operations, all or none | same, and `J-E0404` |
 
-Limites: chave 1–128 B UTF-8 sem caracteres de controlo; valor ≤ 64 KiB; total ≤ 1 MiB por app em Linux (01 §9.1) e ≤ 16 KiB no Joker Micro (19 §3).
+Limits: key 1–128 B UTF-8 without control characters; value ≤ 64 KiB; total ≤ 1 MiB per app on Linux (01 §9.1) and ≤ 16 KiB on Joker Micro (19 §3).
 
-#### 2.5.2 `secrets` (só async)
+#### 2.5.2 `secrets` (async only)
 
-`reveal(name) -> result<list<u8>, error>`. `name` é o nome local declarado pela app (§4.2) e ligado no manifesto (ref/02 §2.4.7). Um nome não declarado ou não ligado dá `J-E0408`; declarado, ligado mas ausente no cofre do nó, `J-E0409`. O valor nunca entra no traço, no log nem no registo de decisões; no replay, a app recebe um valor substituto fixo (ref/02).
+`reveal(name) -> result<list<u8>, error>`. `name` is the local name declared by the app (§4.2) and bound in the manifest (ref/02 §2.4.7). A name not declared or not bound gives `J-E0408`; declared, bound but absent from the node's vault, `J-E0409`. The value never enters the trace, the log nor the decision log; in replay, the app receives a fixed substitute value (ref/02).
 
 #### 2.5.3 `log`
 
-`log(lvl, msg, fields)` e `enabled(lvl) -> bool`. Não bloqueia: cada instância tem um anel de 256 entradas; cheio, perde e conta em `joker.app.<app>.log_dropped`. `msg` é truncada a 1 KiB, `fields` a 16 pares de 256 B cada. Limite de ritmo: 100 mensagens/s por instância (as restantes contam como perdidas).
+`log(lvl, msg, fields)` and `enabled(lvl) -> bool`. It does not block: each instance has a ring of 256 entries; when full, it drops and counts in `joker.app.<app>.log_dropped`. `msg` is truncated to 1 KiB, `fields` to 16 pairs of 256 B each. Rate limit: 100 messages/s per instance (the rest count as dropped).
 
-A interface é **autónoma** (não usa `types`) de propósito: `joker:driver` importa-a com a mesma versão do pacote (ref/00 §1, ref/06 §4.1).
+The interface is **self-contained** (it does not use `types`) on purpose: `joker:driver` imports it with the same package version (ref/00 §1, ref/06 §4.1).
 
-### 2.6 `guest` (exportada pela app)
+### 2.6 `guest` (exported by the app)
 
-#### 2.6.1 Os exports
+#### 2.6.1 The exports
 
-| Export | Instância | Quando | Prazo | Erro devolvido |
+| Export | Instance | When | Deadline | Error returned |
 |---|---|---|---|---|
-| `init(cx) -> result<_, error>` | ambas | ao criar a instância, antes do primeiro tick ou gatilho | 1 s | `Err` ou prazo: a instância não arranca (`J-E0909`); numa troca a quente, a versão anterior continua (01 §9) |
-| `on-params(changes) -> result<_, error>` | a async, se existir; senão a de ciclo, num limite de tick | quando uma geração nova muda parâmetros (ref/01 §5.12.2) | 100 ms | `Err`: a geração é recusada para esta app (`J-E0011`), e o `jk apply` faz rollback (01 §15) |
-| `on-cycle(task, image) -> cycle-result` | ciclo | uma vez por tarefa e por tick, passo 4 (01 §4) | deadline por epoch (01 §4) | `cycle-result.error` termina a tarefa neste tick **sem** descartar as propostas já no buffer; trap descarta-as. `error.code = J-E0816` (exceção não apanhada num SDK de tier 2, ref/05 §9.3) vem com `proposals` vazio e o host trata-o como um trap (descarta as propostas da app nesse tick e conta para o crashloop), mas **sem** recriar a instância |
-| `run-task(task, why) -> result<_, error>` | async | uma chamada por disparo do gatilho (§4.3.2), também em `on` e `on_event` | — | `Err`: registado e contado em `joker.app.<app>.task.<t>.errors`; `J-E0816` conta em `joker.app.<app>.task.<t>.failures` e para o crashloop |
-| `on-action(req) -> result<list<u8>, error>` | async | ação de uma instância virtual servida por esta app (17 §5.3) | o `timeout` da ação | `Err` chega ao chamador tal como está; trap dá `J-E0312` ao chamador |
-| `export-state() -> result<list<u8>, error>` | ambas | troca a quente da versão antiga | 100 ms | `Err`: a nova versão começa com o estado inicial |
-| `migrate(previous, from-version) -> result<_, error>` | ambas | troca a quente da versão nova, depois de `init` | 1 s | `Err`: a versão antiga continua (`J-E0914`) |
+| `init(cx) -> result<_, error>` | both | when creating the instance, before the first tick or trigger | 1 s | `Err` or deadline: the instance does not start (`J-E0909`); in a hot swap, the previous version continues (01 §9) |
+| `on-params(changes) -> result<_, error>` | the async one, if it exists; otherwise the cycle one, at a tick boundary | when a new generation changes parameters (ref/01 §5.12.2) | 100 ms | `Err`: the generation is rejected for this app (`J-E0011`), and `jk apply` does a rollback (01 §15) |
+| `on-cycle(task, image) -> cycle-result` | cycle | once per task and per tick, step 4 (01 §4) | deadline by epoch (01 §4) | `cycle-result.error` ends the task in this tick **without** discarding the proposals already in the buffer; a trap discards them. `error.code = J-E0816` (uncaught exception in a tier 2 SDK, ref/05 §9.3) comes with empty `proposals` and the host treats it as a trap (discards the proposals of the app in that tick and counts toward the crashloop), but **without** recreating the instance |
+| `run-task(task, why) -> result<_, error>` | async | one call per firing of the trigger (§4.3.2), also in `on` and `on_event` | — | `Err`: logged and counted in `joker.app.<app>.task.<t>.errors`; `J-E0816` counts in `joker.app.<app>.task.<t>.failures` and toward the crashloop |
+| `on-action(req) -> result<list<u8>, error>` | async | action of a virtual instance served by this app (17 §5.3) | the `timeout` of the action | `Err` reaches the caller as it is; a trap gives `J-E0312` to the caller |
+| `export-state() -> result<list<u8>, error>` | both | hot swap of the old version | 100 ms | `Err`: the new version starts with the initial state |
+| `migrate(previous, from-version) -> result<_, error>` | both | hot swap of the new version, after `init` | 1 s | `Err`: the old version continues (`J-E0914`) |
 
-`cycle-result { proposals: list<u8>, error: option<error> }` existe porque um `result<list<u8>, error>` perderia as propostas de uma tarefa que devolve `Err`, e o documento 04 §3.2 manda mantê-las.
+`cycle-result { proposals: list<u8>, error: option<error> }` exists because a `result<list<u8>, error>` would lose the proposals of a task that returns `Err`, and document 04 §3.2 requires keeping them.
 
-`trigger`: `startup`; `timer(instant)` para `every` e `at`; `change(change)` para `on = "<porta>"`; `event(event-delivery)` para `on_event`.
+`trigger`: `startup`; `timer(instant)` for `every` and `at`; `change(change)` for `on = "<port>"`; `event(event-delivery)` for `on_event`.
 
-`action-request { request: u64, action: u32, args, idempotency-key, caller, deadline-mono-ns }`: `action` é o índice do membro na lista de membros de `implements` em `joker:meta` (§5); `caller` é o id do escritor (`user:ops`, `app:station`, ref/00 §5).
+`action-request { request: u64, action: u32, args, idempotency-key, caller, deadline-mono-ns }`: `action` is the index of the member in the member list of `implements` in `joker:meta` (§5); `caller` is the id of the writer (`user:ops`, `app:station`, ref/00 §5).
 
-#### 2.6.2 `init-context` e a tabela de portas
+#### 2.6.2 `init-context` and the port table
 
-| Campo | Conteúdo |
+| Field | Content |
 |---|---|
-| `kind` | `cycle` ou `task` |
-| `mode` | `normal`, `shadow` (M16: as escritas saem `shadowed`), `replay`, `test` |
-| `app`, `app-version`, `node` | identidade |
-| `served-world` | mundo servido depois do adaptador (§2.8) |
-| `generation`, `generation-hash` | geração (ref/00 §5) |
-| `seed` | semente do gerador (§2.7) |
-| `ports` | a tabela de portas (abaixo) |
-| `instances` | uma entrada por instância de classe ligada, e uma por nó da árvore de membros de classe, em profundidade (§4.8.6): `device`, `elem`, `name` (o nome da instância, ou o caminho aninhado de um submembro sem nome), `class-version`, `capabilities` |
-| `tasks` | as tarefas ativas nesta instância, com o grupo e o período efetivo |
-| `implements` | nome da instância virtual servida por esta instância da app |
-| `cycle-abi`, `image-len`, `proposal-capacity` | ABI de ciclo (§3.1) |
+| `kind` | `cycle` or `task` |
+| `mode` | `normal`, `shadow` (M16: the writes come out `shadowed`), `replay`, `test` |
+| `app`, `app-version`, `node` | identity |
+| `served-world` | world served after the adapter (§2.8) |
+| `generation`, `generation-hash` | generation (ref/00 §5) |
+| `seed` | seed of the generator (§2.7) |
+| `ports` | the port table (below) |
+| `instances` | one entry per bound class instance, and one per node of the tree of class members, depth-first (§4.8.6): `device`, `elem`, `name` (the name of the instance, or the nested path of an unnamed submember), `class-version`, `capabilities` |
+| `tasks` | the tasks active in this instance, with the group and the effective period |
+| `implements` | name of the virtual instance served by this instance of the app |
+| `cycle-abi`, `image-len`, `proposal-capacity` | cycle ABI (§3.1) |
 
-**A tabela de portas** é construída pelo host, sempre pela mesma ordem, e o `port` de uma porta é a sua posição:
+**The port table** is built by the host, always in the same order, and the `port` of a port is its position:
 
-1. cada porta de `joker:meta` (chave 6), pela ordem da lista, que é a que o SDK escreveu (a de declaração dos campos em Rust; a dos nomes nos SDKs de tier 2, ref/05 §15.1); uma porta `many` ocupa `n` posições seguidas (`n` fixado no `jk check`, pela ordem do `bind`: a da lista, ou a lexicográfica de um seletor);
-2. cada dispositivo (chave 8), pela ordem de declaração; para cada elemento (1, ou `n` num `Many`); para cada membro da lista de membros **do handle** (`joker:meta`, e não do contrato em runtime), uma posição; um membro de classe não ocupa posição, e desce-se à sua lista de membros, em profundidade (§4.8.6);
-3. os membros de `implements` (chave 9), pela ordem da lista.
+1. each port of `joker:meta` (key 6), in the order of the list, which is the one the SDK wrote (the declaration order of the fields in Rust; that of the names in the tier 2 SDKs, ref/05 §15.1); a `many` port takes `n` consecutive positions (`n` fixed in `jk check`, in the order of the `bind`: that of the list, or the lexicographic order of a selector);
+2. each device (key 8), in declaration order; for each element (1, or `n` in a `Many`); for each member of the member list **of the handle** (`joker:meta`, and not of the contract at runtime), one position; a class member takes no position, and one descends into its member list, depth-first (§4.8.6);
+3. the members of `implements` (key 9), in the order of the list.
 
-Cada `port-binding` diz a origem (`declared`, `device-member`, `command`, `state`, `class-event`), a declaração, o elemento, o membro, o nome resolvido, se está ligada (`bound`) e onde fica na imagem (`slot`, `outcome`). Um membro que o handle conhece e a instância não tem (capacidade em falta, membro opcional sem mapeamento, classe de minor anterior) fica com `bound = false`: a leitura dá `J-E0506`, e uma escrita é descartada com `J-E0506` no registo.
+Each `port-binding` states the origin (`declared`, `device-member`, `command`, `state`, `class-event`), the declaration, the element, the member, the resolved name, whether it is bound (`bound`) and where it is in the image (`slot`, `outcome`). A member that the handle knows and the instance does not have (missing capability, optional member without mapping, class of an earlier minor) has `bound = false`: the read gives `J-E0506`, and a write is discarded with `J-E0506` in the log.
 
-Como a lista de membros vem de `joker:meta`, uma app gerada contra `pump@1.2` corre sobre uma instância `pump@1.0` sem desalinhar índices (A11 do documento 14).
+Because the member list comes from `joker:meta`, an app generated against `pump@1.2` runs on a `pump@1.0` instance without misaligning indices (A11 of document 14).
 
-### 2.7 Relógio, aleatoriedade e WASI
+### 2.7 Clock, randomness and WASI
 
-- `now()` e `dt-ns()` da instância de ciclo são os do latch; o replay é exato (02 §5).
-- **Aleatoriedade:** `random-u64` usa, por instância, um xoshiro256\*\* semeado com `seed` = os primeiros 8 bytes (LE) de `SHA-256("joker-seed" ‖ generation-hash ‖ app ‖ kind ‖ implements)`. Determinista, não gravado no traço (reproduz-se a partir da geração) e **não criptográfico**.
-- **WASI.** Um componente Rust, TS ou Python importa quase sempre interfaces WASI (o `HashMap` da `std` pede `wasi:random/insecure-seed`). O host satisfaz estas, em 0.2.x e 0.3.x, sempre virtualizadas:
+- `now()` and `dt-ns()` of the cycle instance are those of the latch; replay is exact (02 §5).
+- **Randomness:** `random-u64` uses, per instance, a xoshiro256\*\* seeded with `seed` = the first 8 bytes (LE) of `SHA-256("joker-seed" ‖ generation-hash ‖ app ‖ kind ‖ implements)`. Deterministic, not recorded in the trace (it is reproduced from the generation) and **not cryptographic**.
+- **WASI.** A Rust, TS or Python component almost always imports WASI interfaces (the `HashMap` of `std` asks for `wasi:random/insecure-seed`). The host satisfies these, in 0.2.x and 0.3.x, always virtualized:
 
-| Interface WASI | Ciclo | Async |
+| WASI interface | Cycle | Async |
 |---|---|---|
-| `wasi:clocks/monotonic-clock`, `wall-clock` | instante do latch | instante atual |
-| `wasi:random/random`, `insecure`, `insecure-seed` | o mesmo gerador de `random-u64` | idem |
-| `wasi:cli/environment`, `stdin` | vazios | vazios |
-| `wasi:cli/stdout`, `stderr` | `log` `info` / `warn`, por linha, truncado a 1 KiB | idem |
+| `wasi:clocks/monotonic-clock`, `wall-clock` | latch instant | current instant |
+| `wasi:random/random`, `insecure`, `insecure-seed` | the same generator as `random-u64` | same |
+| `wasi:cli/environment`, `stdin` | empty | empty |
+| `wasi:cli/stdout`, `stderr` | `log` `info` / `warn`, per line, truncated to 1 KiB | same |
 | `wasi:cli/exit` | trap `J-E0905` | trap `J-E0905` |
-| `wasi:filesystem` | sem diretórios pré-abertos | idem |
-| `wasi:sockets`, `wasi:http/outgoing-handler` | sempre `access-denied` | filtrado por `net.allow` (ref/01); fora da lista, `access-denied` e `J-E0413` no log |
-| `wasi:io` | sim | sim |
+| `wasi:filesystem` | no preopened directories | same |
+| `wasi:sockets`, `wasi:http/outgoing-handler` | always `access-denied` | filtered by `net.allow` (ref/01); outside the list, `access-denied` and `J-E0413` in the log |
+| `wasi:io` | yes | yes |
 
-Qualquer outra importação faz o host recusar o componente ao carregar (`J-E0006`).
+Any other import makes the host refuse the component at load (`J-E0006`).
 
-### 2.8 Evolução dos enums e adaptadores
+### 2.8 Evolution of the enums and adapters
 
-- `quality-reason`, `reject-reason`, `clamp-kind` e `write-outcome` só crescem **no fim**. Cada caso novo é introduzido por uma ADR que declara a sua **projeção** no caso existente que uma app de um mundo anterior vê. Exemplos: um motivo de qualidade novo projeta-se em `none` com o mesmo `quality-code` (ref/00 §1, regra 2: conta pela sua categoria); um motivo de rejeição novo projeta-se no motivo existente mais próximo que a ADR indicar.
-- O host conhece o mundo de cada app (chave 3 de `joker:meta`) e aplica a projeção **antes** de escrever a imagem e antes de devolver valores WIT. Uma app nunca recebe um caso que o seu mundo não declara, nem pelo caminho empacotado (onde os códigos são bytes e o tipo não o impediria).
-- **Janela de adaptadores:** até à 1.0, a runtime serve o mundo atual e o minor anterior (M21, documento 09, ataque 8). A partir da 1.0, serve **todos** os `joker:runtime@1.y` com y ≤ o seu (regra de ouro, ADR 0022; documento 21, §1.1). Um mundo mais novo do que a runtime é recusado antes do deploy pelo `jk` e pelo agente (`J-E0001`), e, se chegar ao nó, ao carregar.
+- `quality-reason`, `reject-reason`, `clamp-kind` and `write-outcome` only grow **at the end**. Each new case is introduced by an ADR that declares its **projection** onto the existing case that an app of an earlier world sees. Examples: a new quality reason is projected onto `none` with the same `quality-code` (ref/00 §1, rule 2: it counts by its category); a new rejection reason is projected onto the closest existing reason that the ADR indicates.
+- The host knows the world of each app (key 3 of `joker:meta`) and applies the projection **before** writing the image and before returning WIT values. An app never receives a case that its world does not declare, not even through the packed path (where the codes are bytes and the type would not prevent it).
+- **Adapter window:** until 1.0, the runtime serves the current world and the previous minor (M21, document 09, attack 8). From 1.0 on, it serves **all** `joker:runtime@1.y` with y ≤ its own (golden rule, ADR 0022; document 21, §1.1). A world newer than the runtime is refused before the deploy by `jk` and by the agent (`J-E0001`), and, if it reaches the node, at load.
 
-### 2.9 Versões e reservas
+### 2.9 Versions and reservations
 
-- O pacote é `joker:runtime@0.1.0` até à 1.0 e `joker:runtime@1.0.0` na 1.0 (ref/00 §1). Um item sem porta existe desde a primeira versão do pacote; um item acrescentado numa minor leva `@since(version = 1.y.0)`; nada se remove numa major.
-- **Reservas da 1.1** usam `@unstable(feature = <nome>)` no próprio pacote:
+- The package is `joker:runtime@0.1.0` until 1.0 and `joker:runtime@1.0.0` in 1.0 (ref/00 §1). An item without a gate exists since the first version of the package; an item added in a minor carries `@since(version = 1.y.0)`; nothing is removed in a major.
+- **Reservations of 1.1** use `@unstable(feature = <name>)` in the package itself:
 
-| Funcionalidade | O que reserva | Documento |
+| Feature | What it reserves | Document |
 |---|---|---|
-| `ml` | interface `ml` (tensores, `infer`) | 06, M5 e M17 |
+| `ml` | interface `ml` (tensors, `infer`) | 06, M5 and M17 |
 | `streams` | interface `frames` | 01 §11, M4 |
 | `blocks` | interface `blocks` | 01 §11, M7 |
-| `scheduled-writes` | `cycle-io.write-at`, `async-io.write-at`, flag `AT` do registo `WRITE` | 02 §7.2, M6 |
+| `scheduled-writes` | `cycle-io.write-at`, `async-io.write-at`, flag `AT` of the `WRITE` record | 02 §7.2, M6 |
 | `intents` | `async-io.propose` | 01 §6.1, M18 |
 
-- Um item `@unstable` **não faz parte do mundo estável**: as ferramentas geram os bindings sem ele, a menos que a funcionalidade seja pedida (no SDK Rust, uma feature `unstable-<nome>`, §4.15). Um componente que importa um item instável é recusado pelo `jokerd` em `mode = "prod"` (`J-E0003`). Em `mode = "dev"`, a runtime 1.0 liga-o a stubs que devolvem `J-E0601`, o que deixa desenvolver contra a forma prevista.
-- Na 1.1, cada item estabilizado troca `@unstable(feature = …)` por `@since(version = 1.1.0)`. A forma pode ainda mudar antes dessa troca, e por isso **uma app compilada com uma funcionalidade instável não está coberta pela regra de ouro**. É isto que permite reservar já as interfaces (documento 11, "Preparado para ML") sem que a forma escolhida hoje fique presa para toda a série 1.
+- An `@unstable` item **is not part of the stable world**: the tools generate the bindings without it, unless the feature is requested (in the Rust SDK, an `unstable-<name>` feature, §4.15). A component that imports an unstable item is refused by `jokerd` in `mode = "prod"` (`J-E0003`). In `mode = "dev"`, the 1.0 runtime binds it to stubs that return `J-E0601`, which allows developing against the planned shape.
+- In 1.1, each stabilized item replaces `@unstable(feature = …)` with `@since(version = 1.1.0)`. The shape may still change before that replacement, and so **an app compiled with an unstable feature is not covered by the golden rule**. This is what allows reserving the interfaces already (document 11, "Ready for ML") without the shape chosen today being locked in for the whole 1 series.
 
-### 2.10 Outros pacotes em `wit/`
+### 2.10 Other packages in `wit/`
 
-| Ficheiro | Pacote | Dono |
+| File | Package | Owner |
 |---|---|---|
-| `wit/joker-runtime.wit` | `joker:runtime@0.1.0`, mundo `app` | esta referência |
-| `wit/joker-driver.wit` | `joker:driver@0.1.0`, mundo `driver`; importa `joker:runtime/log@0.1.0` | ref/06 |
-| `wit/joker-sim.wit` | `joker:sim@0.1.0`, mundo `plant` | ref/03, §2.4.10 (este ficheiro é a cópia máquina-legível; se divergirem, vale o ref/03) |
+| `wit/joker-runtime.wit` | `joker:runtime@0.1.0`, world `app` | this reference |
+| `wit/joker-driver.wit` | `joker:driver@0.1.0`, world `driver`; imports `joker:runtime/log@0.1.0` | ref/06 |
+| `wit/joker-sim.wit` | `joker:sim@0.1.0`, world `plant` | ref/03, §2.4.10 (this file is the machine-readable copy; if they diverge, ref/03 prevails) |
 
-### 2.11 Plano B para o async do tier 2 (D15)
+### 2.11 Plan B for the tier 2 async (D15)
 
-Se o async do WASI 0.3 não estiver estável no ComponentizeJS ou no componentize-py quando os SDKs de tier 2 saírem, o pacote ganha um segundo mundo, **`app-blocking`** (nome já reservado no `wit/joker-runtime.wit`):
+If the async of WASI 0.3 is not stable in ComponentizeJS or in componentize-py when the tier 2 SDKs come out, the package gains a second world, **`app-blocking`** (name already reserved in `wit/joker-runtime.wit`):
 
-- as mesmas interfaces e as mesmas funções, com as mesmas assinaturas, sem `async`: `write`, `call`, `invoke`, `history`, `mailbox-next`, `sleep-until`, `kv.set`, `kv.delete`, `kv.commit` e `action-call.finish` bloqueiam até ao resultado; os `stream<T>` passam a recursos com `next() -> option<T>` bloqueante;
-- o host serve a instância async desse componente numa **thread dedicada da pool `app`**, nunca no domínio de ciclo; a instância de ciclo é igual à do mundo `app` (as suas funções já são síncronas);
-- perde-se só a concorrência entre tarefas async da mesma app: uma `history()` lenta atrasa as outras tarefas async dessa app (ref/05 §29, D9);
-- o `joker:meta` diz o mundo (chave 3); o `jk check` e o agente tratam `app-blocking` como o `app` da mesma versão para a janela de adaptadores (§2.8).
+- the same interfaces and the same functions, with the same signatures, without `async`: `write`, `call`, `invoke`, `history`, `mailbox-next`, `sleep-until`, `kv.set`, `kv.delete`, `kv.commit` and `action-call.finish` block until the result; the `stream<T>` become resources with a blocking `next() -> option<T>`;
+- the host serves the async instance of that component in a **dedicated thread of the `app` pool**, never in the cycle domain; the cycle instance is the same as that of the `app` world (its functions are already synchronous);
+- only the concurrency between async tasks of the same app is lost: a slow `history()` delays the other async tasks of that app (ref/05 §29, D9);
+- `joker:meta` states the world (key 3); `jk check` and the agent treat `app-blocking` as the `app` of the same version for the adapter window (§2.8).
 
-A decisão de ativar o plano B é uma ADR na Fase 3, com a prova de que o async não está pronto. O SDK Rust usa sempre o mundo `app`.
+The decision to activate plan B is an ADR in Phase 3, with the proof that the async is not ready. The Rust SDK always uses the `app` world.
 
 ---
 
-## 3. A ABI de ciclo (layout binário)
+## 3. The cycle ABI (binary layout)
 
-O caminho rápido do documento 09, ataque 2: **uma chamada por tarefa e por tick**, `on-cycle(task, image) -> cycle-result`. Todos os inteiros são little-endian, sem alinhamento implícito (os leitores usam `from_le_bytes`), e os campos reservados são 0 à escrita e ignorados à leitura.
+The fast path of document 09, attack 2: **one call per task and per tick**, `on-cycle(task, image) -> cycle-result`. All integers are little-endian, without implicit alignment (readers use `from_le_bytes`), and reserved fields are 0 on write and ignored on read.
 
-### 3.1 Versão e negociação
+### 3.1 Version and negotiation
 
-- A app declara a versão da ABI que o seu SDK fala em `joker:meta` (chave 5). A v1 só tem a versão **1**.
-- O host escolhe a versão e comunica-a em `init-context.cycle-abi`, junto com `image-len` (fixo durante a geração) e `proposal-capacity`.
-- Uma versão nova acrescenta campos no fim do cabeçalho (o cabeçalho diz o seu comprimento) e tipos de registo novos. Um host lê sempre as versões anteriores. Um SDK que declara uma versão que o host não conhece é recusado ao carregar (`J-E0002`).
+- The app declares the ABI version that its SDK speaks in `joker:meta` (key 5). v1 only has version **1**.
+- The host chooses the version and communicates it in `init-context.cycle-abi`, together with `image-len` (fixed during the generation) and `proposal-capacity`.
+- A new version adds fields at the end of the header (the header states its length) and new record types. A host always reads the earlier versions. An SDK that declares a version that the host does not know is refused at load (`J-E0002`).
 
-### 3.2 A imagem de entradas
+### 3.2 The input image
 
 ```
-imagem := cabeçalho (64 B) · amostras (24 B × n_slots) · resultados (24 B × n_outcomes) · secção larga
+image := header (64 B) · samples (24 B × n_slots) · results (24 B × n_outcomes) · wide section
 ```
 
-**Cabeçalho (64 B):**
+**Header (64 B):**
 
-| Offset | Tamanho | Campo | Notas |
+| Offset | Size | Field | Notes |
 |---|---|---|---|
 | 0 | 1 | `abi` | 1 |
 | 1 | 1 | `header_len` | 64 |
-| 2 | 2 | `flags` | bit 0 `FIRST_TICK` (primeiro tick desta instância nesta geração); bit 1 `SHADOW`; bit 2 `REPLAY`; bit 3 `AFTER_SKIP` (o tick anterior foi saltado por `overrun = "skip"`); bits 4–15 reservados |
-| 4 | 4 | `task` | índice da tarefa em `joker:meta` |
-| 8 | 8 | `tick_seq` | número do tick do grupo |
-| 16 | 8 | `t_mono_ns` | instante do latch |
-| 24 | 8 | `t_utc_ns` (i64) | idem, em UTC |
-| 32 | 8 | `dt_ns` | período efetivo do grupo |
+| 2 | 2 | `flags` | bit 0 `FIRST_TICK` (first tick of this instance in this generation); bit 1 `SHADOW`; bit 2 `REPLAY`; bit 3 `AFTER_SKIP` (the previous tick was skipped by `overrun = "skip"`); bits 4–15 reserved |
+| 4 | 4 | `task` | index of the task in `joker:meta` |
+| 8 | 8 | `tick_seq` | tick number of the group |
+| 16 | 8 | `t_mono_ns` | latch instant |
+| 24 | 8 | `t_utc_ns` (i64) | same, in UTC |
+| 32 | 8 | `dt_ns` | effective period of the group |
 | 40 | 1 | `clock` | `clock_quality` (ref/00 §6) |
-| 41 | 3 | reservado | |
+| 41 | 3 | reserved | |
 | 44 | 4 | `n_slots` | |
 | 48 | 4 | `n_outcomes` | |
 | 52 | 4 | `outcomes_off` | = 64 + 24 × `n_slots` |
-| 56 | 4 | `wide_off` | início da secção larga |
+| 56 | 4 | `wide_off` | start of the wide section |
 | 60 | 4 | `wide_len` | |
 
-**Amostra (24 B), uma por porta com `slot`:** entradas, saídas (valor aplicado), parâmetros, `Internal<T>`, o estado de cada `Alarm` da app (sinal `alarm.app.<app>.<nome>.state`, §4.2), consultas de classes, membros `in`/`out`/`param` de dispositivos e os comandos de uma implementação, pela ordem de `slot`.
+**Sample (24 B), one per port with `slot`:** inputs, outputs (applied value), parameters, `Internal<T>`, the state of each `Alarm` of the app (signal `alarm.app.<app>.<name>.state`, §4.2), class queries, `in`/`out`/`param` members of devices and the commands of an implementation, in `slot` order.
 
-| Offset | Tamanho | Campo | Notas |
+| Offset | Size | Field | Notes |
 |---|---|---|---|
-| 0 | 8 | `value` | bits do valor (ref/00 §4.1); com `WIDE`, 32 bits baixos = offset desde o início da imagem, 32 altos = comprimento |
+| 0 | 8 | `value` | bits of the value (ref/00 §4.1); with `WIDE`, low 32 bits = offset from the start of the image, high 32 = length |
 | 8 | 1 | `quality_code` | ref/00 §4.3 |
-| 9 | 1 | `quality_reason` | ref/00 §4.3, já projetado (§2.8) |
-| 10 | 2 | `flags` | bit 0 `WIDE`; bit 1 `HAS_TS_HW`; bit 2 `HAS_TS_SRC`; bit 3 `CHANGED` (a `seq` mudou desde o latch anterior deste grupo); bit 4 `UNBOUND`; bits 5–15 reservados |
-| 12 | 4 | `seq` | 32 bits baixos; o SDK estende-os como no documento 01, §3.2 |
-| 16 | 8 | `ts_acq` | ns monotónicos |
+| 9 | 1 | `quality_reason` | ref/00 §4.3, already projected (§2.8) |
+| 10 | 2 | `flags` | bit 0 `WIDE`; bit 1 `HAS_TS_HW`; bit 2 `HAS_TS_SRC`; bit 3 `CHANGED` (the `seq` changed since the previous latch of this group); bit 4 `UNBOUND`; bits 5–15 reserved |
+| 12 | 4 | `seq` | low 32 bits; the SDK extends them as in document 01, §3.2 |
+| 16 | 8 | `ts_acq` | monotonic ns |
 
-Os bytes 8–11, lidos como `u32`, têm a disposição da palavra de qualidade do slot (código nos bits 0–7, motivo nos 8–15, flags nos 16–31, documento 01 §3.2). O `ts_hw` e o `ts_src` não vão na imagem: `HAS_TS_HW`/`HAS_TS_SRC` dizem ao SDK que `sample()` tem de os ir buscar com `cycle-io.read(p)`, uma chamada sem alocação no host.
+Bytes 8–11, read as `u32`, have the layout of the quality word of the slot (code in bits 0–7, reason in 8–15, flags in 16–31, document 01 §3.2). `ts_hw` and `ts_src` are not in the image: `HAS_TS_HW`/`HAS_TS_SRC` tell the SDK that `sample()` must fetch them with `cycle-io.read(p)`, a call without allocation in the host.
 
-Uma porta por ligar (`UNBOUND`) tem `quality = bad(not_connected)`. Uma amostra que nunca chegou tem `uncertain(initial)` e `value = 0`.
+An unbound port (`UNBOUND`) has `quality = bad(not_connected)`. A sample that never arrived has `uncertain(initial)` and `value = 0`.
 
-**Resultado (24 B), um por porta de saída com `outcome`:**
+**Result (24 B), one per output port with `outcome`:**
 
-| Offset | Tamanho | Campo | Notas |
+| Offset | Size | Field | Notes |
 |---|---|---|---|
-| 0 | 1 | `outcome` | código do ref/00 §4.4 (0 = `none`), já projetado |
-| 1 | 1 | `detail` | `rejected`: motivo (1–8); `overridden`: nível ativo; senão 0 |
-| 2 | 1 | `winner` | nível ativo que ganhou (1–16); 0 = nenhum (a saída está em `safe`) |
-| 3 | 1 | `flags` | bit 0 `MINE_ACTIVE` (o lease deste escritor está ativo); bit 1 `TRIPPED`; bit 2 `OTHER_GROUP` (o grupo dono é outro: o resultado é do último commit dele); bits 3–7 reservados |
-| 4 | 4 | `commit_seq` | 32 bits baixos do tick do grupo dono em que o resultado foi produzido |
-| 8 | 8 | `applied` | valor aplicado nesse commit |
-| 16 | 8 | `mine` | a proposta ativa deste escritor (`mine()`, 17 §11), válida com `MINE_ACTIVE` |
+| 0 | 1 | `outcome` | code of ref/00 §4.4 (0 = `none`), already projected |
+| 1 | 1 | `detail` | `rejected`: reason (1–8); `overridden`: active level; otherwise 0 |
+| 2 | 1 | `winner` | active level that won (1–16); 0 = none (the output is at `safe`) |
+| 3 | 1 | `flags` | bit 0 `MINE_ACTIVE` (the lease of this writer is active); bit 1 `TRIPPED`; bit 2 `OTHER_GROUP` (the owning group is another one: the result is from its last commit); bits 3–7 reserved |
+| 4 | 4 | `commit_seq` | low 32 bits of the tick of the owning group in which the result was produced |
+| 8 | 8 | `applied` | value applied in that commit |
+| 16 | 8 | `mine` | the active proposal of this writer (`mine()`, 17 §11), valid with `MINE_ACTIVE` |
 
-**Secção larga:** os valores de `string`, `bytes` e `Internal<T>` (≤ 64 B cada, ref/00 §10), cada um num offset múltiplo de 8. `string` em UTF-8, `bytes` crus, registos em CBOR (§4.10).
+**Wide section:** the values of `string`, `bytes` and `Internal<T>` (≤ 64 B each, ref/00 §10), each one at an offset that is a multiple of 8. `string` in UTF-8, `bytes` raw, records in CBOR (§4.10).
 
-O `image-len` fica fixo durante a geração: é `64 + 24 × (n_slots + n_outcomes) + 64 × n_largos`, arredondado a 8.
+The `image-len` stays fixed during the generation: it is `64 + 24 × (n_slots + n_outcomes) + 64 × n_largos`, rounded up to 8.
 
-### 3.3 O buffer de propostas
+### 3.3 The proposal buffer
 
 ```
-buffer := cabeçalho (8 B) · registo*
+buffer := header (8 B) · record*
 ```
 
-| Offset | Tamanho | Campo |
+| Offset | Size | Field |
 |---|---|---|
 | 0 | 1 | `abi` (1) |
-| 1 | 1 | reservado |
+| 1 | 1 | reserved |
 | 2 | 2 | `n_records` |
-| 4 | 4 | `len`: comprimento total, com o cabeçalho |
+| 4 | 4 | `len`: total length, including the header |
 
-**Registos** (empacotados, sem preenchimento; o primeiro byte é o tipo):
+**Records** (packed, without padding; the first byte is the type):
 
-| Tipo | Nome | Disposição | Tamanho |
+| Type | Name | Layout | Size |
 |---|---|---|---|
 | 1 | `WRITE` | `kind u8 · flags u8 · port u32 · value u64` [· `data[L]`] [· `at u64`] | 14 B (+ L) (+ 8) |
 | 2 | `METHOD` | `kind u8 · flags u8 (=0) · instance u32 · method u16 · len u16 · args[len]` | 10 B + len |
 | 3 | `PUBLISH` | `kind u8 · flags u8 · port u32 · value u64` [· `data[L]`] | 14 B (+ L) |
 | 4 | `COUNTER_ADD` | `kind u8 · flags u8 (=0) · port u32 · delta u64` | 14 B |
 | 5 | `EMIT` | `kind u8 · flags u8 (=0) · port u32 · len u16 · payload[len]` | 8 B + len |
-| 6 | `NOTE` | `kind u8 · flags u8 (=0) · port u32` (leitura substituída) | 6 B |
+| 6 | `NOTE` | `kind u8 · flags u8 (=0) · port u32` (substituted read) | 6 B |
 
-Flags de `WRITE` e `PUBLISH`: bit 0 `RELINQUISH` (só `WRITE`; `value` = 0); bit 1 `INLINE` (`value` = comprimento L ≤ 64, e seguem-se L bytes: `string`, `bytes`, ou CBOR de um registo); bit 2 `AT` (só `WRITE`, **1.1**, `scheduled-writes`: segue-se `at_mono_ns`). Bits 3–7 reservados.
+Flags of `WRITE` and `PUBLISH`: bit 0 `RELINQUISH` (only `WRITE`; `value` = 0); bit 1 `INLINE` (`value` = length L ≤ 64, and L bytes follow: `string`, `bytes`, or the CBOR of a record); bit 2 `AT` (only `WRITE`, **1.1**, `scheduled-writes`: `at_mono_ns` follows). Bits 3–7 reserved.
 
-Limites: `args` ≤ 4 KiB; `payload` ≤ 8 KiB; capacidade do buffer por omissão 16 KiB (`#[joker::app(proposal_buffer = "…")]`, máximo 1 MiB).
+Limits: `args` ≤ 4 KiB; `payload` ≤ 8 KiB; default buffer capacity 16 KiB (`#[joker::app(proposal_buffer = "…")]`, maximum 1 MiB).
 
-### 3.4 Ordem, validação e erros
+### 3.4 Order, validation and errors
 
-1. **Ordem.** Numa chamada a `on-cycle`, os registos feitos por funções de `cycle-io` (acesso dinâmico) vêm primeiro, pela ordem das chamadas; os do buffer devolvido vêm a seguir, pela ordem do buffer. Os SDKs (Rust e tier 2) escrevem só no buffer.
-2. **Árbitro.** Várias propostas do mesmo escritor na mesma saída e no mesmo tick: vence a última (16, A4). As propostas async drenadas no passo 2 são anteriores a todas as de ciclo.
-3. **Métodos.** Os registos `METHOD` são expandidos no passo 5a, pela ordem das chamadas (17 §4.1), com `own()` a ver as propostas anteriores do mesmo tick.
-4. **Validação estrutural** pelo host, antes de aplicar qualquer registo: `abi`, `len` e `n_records` coerentes com o tamanho da lista; tipo conhecido; flags reservadas a 0; `port` dentro da tabela e com o tipo de porta certo (`WRITE` → saída ou membro `out` ou comando virtual; `PUBLISH` → publicado, alarme, `Internal` de escritor de ciclo, membro `state`; `COUNTER_ADD` → `Counter`; `EMIT` → evento de saída ou evento de classe; `NOTE` → porta com amostra); `instance` e `method` dentro das tabelas; comprimentos dentro dos limites. Uma falha estrutural **descarta o buffer inteiro** e é um trap (`J-E0907`): conta para o crashloop como qualquer outro trap (01 §9).
-5. **Validação de valor**, registo a registo: `bool` só 0 ou 1; `enum` só variantes declaradas; `f64` NaN ou infinito; `string` UTF-8 inválido. Dá `rejected(wrong-type)` a essa proposta, no passo 1 do envelope, e não é trap.
-6. **Buffer cheio.** O SDK não escreve para lá da capacidade: as propostas seguintes são descartadas, e a tarefa termina com `cycle-result.error = J-E0203`. As que já estão no buffer seguem.
+1. **Order.** In a call to `on-cycle`, the records made by `cycle-io` functions (dynamic access) come first, in the order of the calls; those of the returned buffer come next, in the order of the buffer. The SDKs (Rust and tier 2) write only to the buffer.
+2. **Arbiter.** Several proposals of the same writer on the same output and in the same tick: the last one wins (16, A4). The async proposals drained at step 2 come before all the cycle ones.
+3. **Methods.** The `METHOD` records are expanded at step 5a, in the order of the calls (17 §4.1), with `own()` seeing the earlier proposals of the same tick.
+4. **Structural validation** by the host, before applying any record: `abi`, `len` and `n_records` coherent with the size of the list; known type; reserved flags at 0; `port` within the table and with the right port type (`WRITE` → output or `out` member or virtual command; `PUBLISH` → published, alarm, `Internal` of a cycle writer, `state` member; `COUNTER_ADD` → `Counter`; `EMIT` → output event or class event; `NOTE` → port with a sample); `instance` and `method` within the tables; lengths within the limits. A structural failure **discards the whole buffer** and is a trap (`J-E0907`): it counts toward the crashloop like any other trap (01 §9).
+5. **Value validation**, record by record: `bool` only 0 or 1; `enum` only declared variants; `f64` NaN or infinity; invalid UTF-8 `string`. It gives `rejected(wrong-type)` to that proposal, at step 1 of the envelope, and it is not a trap.
+6. **Full buffer.** The SDK does not write beyond the capacity: the following proposals are discarded, and the task ends with `cycle-result.error = J-E0203`. Those already in the buffer go through.
 
-### 3.5 Custo
+### 3.5 Cost
 
-Com 60 entradas e 12 saídas (grupo de 1 ms do documento 09, ataque 2): 64 + 24 × 72 + 24 × 12 = 2 080 B de imagem, copiados numa operação pelo ABI canónico para um buffer pré-reservado do guest. Uma app de classes com 720 portas (documento 14, A3) tem ~20 KB por tick. O resultado por saída (24 B) é o que permite `last_outcome()`, `mine()` e `winner()` sem chamadas ao host.
+With 60 inputs and 12 outputs (1 ms group of document 09, attack 2): 64 + 24 × 72 + 24 × 12 = 2,080 B of image, copied in one operation by the canonical ABI into a pre-reserved buffer of the guest. A class app with 720 ports (document 14, A3) has ~20 KB per tick. The result per output (24 B) is what allows `last_outcome()`, `mine()` and `winner()` without calls to the host.
 
 ---
 
-## 4. O SDK Rust `joker-sdk`
+## 4. The Rust SDK `joker-sdk`
 
-### 4.1 Crate, dependência e backends
+### 4.1 Crate, dependency and backends
 
 ```toml
-# apps/peak_shaver/Cargo.toml (gerado por `jk app new`)
+# apps/peak_shaver/Cargo.toml (generated by `jk app new`)
 [package]
 name = "peak_shaver"
 version = "1.4.2"
@@ -432,118 +432,118 @@ joker-test = "0.1"
 ```
 
 ```rust
-// apps/peak_shaver/build.rs (gerado)
+// apps/peak_shaver/build.rs (generated)
 fn main() {
-    joker_build::generate(); // classes locais (classes/local/*.jkc) → OUT_DIR/joker_classes.rs
+    joker_build::generate(); // local classes (classes/local/*.jkc) → OUT_DIR/joker_classes.rs
 }
 ```
 
-| Crate | Papel | `no_std` |
+| Crate | Role | `no_std` |
 |---|---|---|
-| `joker-sdk` | a API das apps; `use joker::prelude::*` | sim; `alloc` só no backend Wasm e em Linux nativo |
-| `joker-sdk-macros` | as macros; versão igual à do `joker-sdk` (dependência `=`) | — (proc-macro) |
-| `joker-classes-std` | handles gerados pelo `jkc` para `classes/std/`, reexportados em `joker::classes::std` | sim |
-| `joker-build` | gera as classes locais em `build.rs` | — |
-| `joker-test` | o harness (§6) | não |
+| `joker-sdk` | the API of the apps; `use joker::prelude::*` | yes; `alloc` only in the Wasm backend and on native Linux |
+| `joker-sdk-macros` | the macros; version equal to that of `joker-sdk` (`=` dependency) | — (proc-macro) |
+| `joker-classes-std` | handles generated by `jkc` for `classes/std/`, re-exported in `joker::classes::std` | yes |
+| `joker-build` | generates the local classes in `build.rs` | — |
+| `joker-test` | the harness (§6) | no |
 
-**Backends**, escolhidos pelo alvo, sem código diferente na app. São duas features Cargo exclusivas do `joker-sdk`: `backend-wasm` (a de omissão) e `backend-native`; o `jk build` escolhe a certa.
+**Backends**, chosen by the target, without different code in the app. They are two mutually exclusive Cargo features of `joker-sdk`: `backend-wasm` (the default) and `backend-native`; `jk build` chooses the right one.
 
-| Backend | Feature | Alvo | Quem o escolhe | Contrato com o host | Metadados |
+| Backend | Feature | Target | Who chooses it | Contract with the host | Metadata |
 |---|---|---|---|---|---|
-| `wasm` | `backend-wasm` | `wasm32-wasip2` (componente) | `jk build` | os exports do mundo (§2.6) | secção `joker:meta` (§5.1) |
-| `native-linux` | `backend-native` | o do `jokerd` (`kind = "native"`, 04 §5) | `jk runtime build --features native-apps` | o trait `NativeApp` (ref/08 §2.11.5) | secção ELF `.joker_meta` |
-| `native-micro` | `backend-native`, com `--cfg joker_micro` | `thumbv8m.main-none-eabihf`, `riscv32imac-…` (19 §5) | `jk build --target mcu:…` | `NativeApp`, avançado pelo `joker-micro` | secção ELF `.joker_meta` |
+| `wasm` | `backend-wasm` | `wasm32-wasip2` (component) | `jk build` | the exports of the world (§2.6) | section `joker:meta` (§5.1) |
+| `native-linux` | `backend-native` | that of `jokerd` (`kind = "native"`, 04 §5) | `jk runtime build --features native-apps` | the trait `NativeApp` (ref/08 §2.11.5) | ELF section `.joker_meta` |
+| `native-micro` | `backend-native`, with `--cfg joker_micro` | `thumbv8m.main-none-eabihf`, `riscv32imac-…` (19 §5) | `jk build --target mcu:…` | `NativeApp`, driven by `joker-micro` | ELF section `.joker_meta` |
 
-Com `backend-native`, a macro `#[joker::app]` gera `impl NativeApp` em vez dos exports WIT. O `NativeApp` recebe a mesma imagem (§3.2) e devolve o mesmo buffer de propostas (§3.3), e as tarefas async são futuros de tamanho fixo avançados pelo host (no MCU, por `jk_service`).
+With `backend-native`, the macro `#[joker::app]` generates `impl NativeApp` instead of the WIT exports. `NativeApp` receives the same image (§3.2) and returns the same proposal buffer (§3.3), and the async tasks are fixed-size futures driven by the host (on the MCU, by `jk_service`).
 
-**Versões:** `joker-sdk 0.y` gera `joker:runtime@0.y.0`; a partir da 1.0, `joker-sdk 1.y` gera `joker:runtime@1.y.0`. Para correr em runtimes mais antigas, fixa-se uma minor mais antiga do SDK. O `jk` avisa quando o mundo gerado é mais novo do que o `[project] joker` do manifesto.
+**Versions:** `joker-sdk 0.y` generates `joker:runtime@0.y.0`; from 1.0 on, `joker-sdk 1.y` generates `joker:runtime@1.y.0`. To run on older runtimes, you pin an older minor of the SDK. `jk` warns when the generated world is newer than the `[project] joker` of the manifest.
 
-**Registo das tarefas.** As tarefas (`#[joker::cycle]`, `#[joker::task]`, `#[joker::on_action]`) não são listadas no `#[joker::app]`: cada macro regista-se em tempo de ligação (construtores em `.init_array`, corridos por `__wasm_call_ctors` no Wasm e pelo arranque gerado pelo `jk build` no Micro) e emite o seu fragmento de `joker:meta` (§5.2). A ordem das tarefas é a do nome, nos dois lados.
+**Registration of the tasks.** The tasks (`#[joker::cycle]`, `#[joker::task]`, `#[joker::on_action]`) are not listed in `#[joker::app]`: each macro registers itself at link time (constructors in `.init_array`, run by `__wasm_call_ctors` in Wasm and by the startup generated by `jk build` on Micro) and emits its fragment of `joker:meta` (§5.2). The order of the tasks is that of the name, on both sides.
 
-### 4.2 Macros de app e de porta
+### 4.2 App and port macros
 
-#### `#[joker::app(…)]` (na struct da app, na raiz do crate)
+#### `#[joker::app(…)]` (on the app struct, at the crate root)
 
-| Argumento | Tipo | Obrig. | Omissão | Validação |
+| Argument | Type | Req. | Default | Validation |
 |---|---|---|---|---|
-| `name` | string | não | `CARGO_PKG_NAME` com `-` → `_` | `[a-z][a-z0-9_]{0,31}`, sem prefixo `joker` (`J-E0710`) |
-| `version` | string SemVer | não | `CARGO_PKG_VERSION` | SemVer (`J-E0710`) |
-| `requires_clock` | `"holdover"` \| `"synced"` | não | nenhum | a mais estrita entre esta e a do manifesto (ref/01 `requires_clock`) vale |
-| `secrets` | lista de nomes | não | `[]` | nomes locais `snake_case`; ligados em `[apps.<app>.secrets]` (ref/02) |
-| `optional_secrets` | lista de nomes | não | `[]` | idem, sem erro se não ligados |
-| `proposal_buffer` | tamanho (`"16 KiB"`) | não | `"16 KiB"` | 1 KiB – 1 MiB |
+| `name` | string | no | `CARGO_PKG_NAME` with `-` → `_` | `[a-z][a-z0-9_]{0,31}`, without the `joker` prefix (`J-E0710`) |
+| `version` | SemVer string | no | `CARGO_PKG_VERSION` | SemVer (`J-E0710`) |
+| `requires_clock` | `"holdover"` \| `"synced"` | no | none | the stricter of this one and the one of the manifest (ref/01 `requires_clock`) prevails |
+| `secrets` | list of names | no | `[]` | local `snake_case` names; bound in `[apps.<app>.secrets]` (ref/02) |
+| `optional_secrets` | list of names | no | `[]` | same, without error if not bound |
+| `proposal_buffer` | size (`"16 KiB"`) | no | `"16 KiB"` | 1 KiB – 1 MiB |
 
-A doc comment da struct vai para `joker:meta` (chave 17). A macro gera: `impl joker::App for <App>`, as vistas `CycleIo<'_, App>` e `TaskIo<'_, App>` (§4.5), o módulo `classes` com as classes locais (se `build.rs` as gerou), os exports do mundo e o fragmento de metadados. Uma segunda `#[joker::app]` no crate, ou uma fora da raiz, é `J-E0711`. Os itens gerados têm a visibilidade da struct.
+The doc comment of the struct goes to `joker:meta` (key 17). The macro generates: `impl joker::App for <App>`, the views `CycleIo<'_, App>` and `TaskIo<'_, App>` (§4.5), the module `classes` with the local classes (if `build.rs` generated them), the exports of the world and the metadata fragment. A second `#[joker::app]` in the crate, or one outside the root, is `J-E0711`. The generated items have the visibility of the struct.
 
-Os campos da struct têm um tipo de declaração (§4.4) e **um** atributo de porta:
+The fields of the struct have a declaration type (§4.4) and **one** port attribute:
 
-| Atributo | Tipo do campo | Argumentos (obrigatórios **a negrito**) | Omissões e validação |
+| Attribute | Field type | Arguments (required ones **in bold**) | Defaults and validation |
 |---|---|---|---|
-| `#[input]` | `Input<T>`, `InputMany<T>` (com `many`), `EventInput<E>` (com `event`) | `unit`, `quantity`, `optional`, `many`, `min`, `max`, `event` | numérico sem `unit` `J-E0703` (use `unit = "1"`); unidade fora do catálogo `J0109`; `many`: `min` 1, `max` 256 |
-| `#[output]` | `Output<T>`, `OutputMany<T>`, `EventOutput<E>` | `unit`, `quantity`, `optional`, `many`, `min`, `max`, `event`, `group` | como `#[input]`; `group`: grupo dono pedido (16, A11) |
-| `#[param]` | `Param<T>` | `unit`, `quantity`, `range`, `default` | `range = "a..b"` é **fechado** nos dois lados (`"a..=b"` é igual; `"..b"` e `"a.."` abertos); `default` fora da gama `J-E0706`; sem `default`, o manifesto tem de dar um valor (`J0142`, ref/01) |
-| `#[internal]` | `Internal<T: Record>` | `writer = "async" \| "cycle"` | omissão `"async"`; registo > 64 B `J-E0708` |
-| `#[publish]` | `Published<T>`, `Counter` | `unit`, `quantity` | caminho `app.<app>.<campo>` |
-| `#[alarm]` | `Alarm` | **`severity`**, **`message`**, `delay_on`, `delay_off` | alarme com o id `app.<app>.<campo>` (o que a API e a `jk` mostram, ref/09 §5.8) e os sinais `alarm.app.<app>.<campo>.state` e `.active` (02 §11) |
-| `#[action]` | `Action<A, R>` | `long` | `A` e `R`: `()` ou `Record`; ligado a uma ação de dispositivo (`"pcs.reset_fault"`) |
-| `#[mailbox]` | `Mailbox<T: Record, N>` | **`to = "cycle" \| "async"`** | 1 ≤ N ≤ 64; mensagem ≤ 256 B |
-| `#[device]` | tipo de classe, `Many<C, MIN, MAX>`, `Option<C>` | `requires = [...]` | `Option<C>`: dispositivo opcional; 0 ≤ MIN ≤ MAX ≤ 1024 (`J-E0717`) |
-| `#[model]` | `Model` | **`inputs`**, **`outputs`** | **1.1**, feature `unstable-ml` (`J-E0718` sem ela) |
+| `#[input]` | `Input<T>`, `InputMany<T>` (with `many`), `EventInput<E>` (with `event`) | `unit`, `quantity`, `optional`, `many`, `min`, `max`, `event` | numeric without `unit` `J-E0703` (use `unit = "1"`); unit outside the catalog `J0109`; `many`: `min` 1, `max` 256 |
+| `#[output]` | `Output<T>`, `OutputMany<T>`, `EventOutput<E>` | `unit`, `quantity`, `optional`, `many`, `min`, `max`, `event`, `group` | as `#[input]`; `group`: requested owning group (16, A11) |
+| `#[param]` | `Param<T>` | `unit`, `quantity`, `range`, `default` | `range = "a..b"` is **closed** on both sides (`"a..=b"` is the same; `"..b"` and `"a.."` open); `default` out of range `J-E0706`; without `default`, the manifest must give a value (`J0142`, ref/01) |
+| `#[internal]` | `Internal<T: Record>` | `writer = "async" \| "cycle"` | default `"async"`; record > 64 B `J-E0708` |
+| `#[publish]` | `Published<T>`, `Counter` | `unit`, `quantity` | path `app.<app>.<field>` |
+| `#[alarm]` | `Alarm` | **`severity`**, **`message`**, `delay_on`, `delay_off` | alarm with the id `app.<app>.<field>` (what the API and `jk` show, ref/09 §5.8) and the signals `alarm.app.<app>.<field>.state` and `.active` (02 §11) |
+| `#[action]` | `Action<A, R>` | `long` | `A` and `R`: `()` or `Record`; bound to a device action (`"pcs.reset_fault"`) |
+| `#[mailbox]` | `Mailbox<T: Record, N>` | **`to = "cycle" \| "async"`** | 1 ≤ N ≤ 64; message ≤ 256 B |
+| `#[device]` | class type, `Many<C, MIN, MAX>`, `Option<C>` | `requires = [...]` | `Option<C>`: optional device; 0 ≤ MIN ≤ MAX ≤ 1024 (`J-E0717`) |
+| `#[model]` | `Model` | **`inputs`**, **`outputs`** | **1.1**, feature `unstable-ml` (`J-E0718` without it) |
 
-Tipos `T` admitidos em portas escalares: `bool`, `i64`, `u64`, `f64`, `f32`, enums com `#[derive(joker::Enum)]` (ou gerados pelo `jkc`), `Bits<N>`, `BoundedString<N>` e `BoundedBytes<N>` com N ≤ 64. Qualquer outro (`i32`, `u8`, `String`) é `J-E0707`, com a sugestão do tipo certo.
+Types `T` admitted in scalar ports: `bool`, `i64`, `u64`, `f64`, `f32`, enums with `#[derive(joker::Enum)]` (or generated by `jkc`), `Bits<N>`, `BoundedString<N>` and `BoundedBytes<N>` with N ≤ 64. Any other (`i32`, `u8`, `String`) is `J-E0707`, with the suggestion of the right type.
 
-Nomes de campos: `snake_case` único na app. São reservados (`J-E0709`) os nomes de portas da ref/00 §2 (`now`, `dt`, `kv`, `secrets`, `snapshot`, `subscribe`, `sleep`, `sleep_until`, `log`, `cmd`, `state`, `http`, `random`, `meta`), o prefixo `joker` e os nomes começados por `_`; numa app que implementa uma classe, também `events`. São os mesmos em todas as linguagens (ref/05 §5.5).
+Field names: `snake_case`, unique in the app. Reserved (`J-E0709`) are the port names of ref/00 §2 (`now`, `dt`, `kv`, `secrets`, `snapshot`, `subscribe`, `sleep`, `sleep_until`, `log`, `cmd`, `state`, `http`, `random`, `meta`), the `joker` prefix and the names starting with `_`; in an app that implements a class, also `events`. They are the same in all languages (ref/05 §5.5).
 
-#### `#[joker::implements(Classe, capabilities = [...])]`
+#### `#[joker::implements(Class, capabilities = [...])]`
 
-Na mesma struct da app, antes ou depois de `#[joker::app]` (a ordem é indiferente). `Classe` é um tipo de classe (`Pump`, `StatusLight`); `capabilities` são as capacidades que a implementação oferece (omissão: nenhuma). Gera `io.cmd`, `io.state` e `io.events` (§4.8.4). Classe desconhecida ou capacidade que a classe não tem: `J-E0715`.
+On the same app struct, before or after `#[joker::app]` (the order does not matter). `Class` is a class type (`Pump`, `StatusLight`); `capabilities` are the capabilities that the implementation offers (default: none). It generates `io.cmd`, `io.state` and `io.events` (§4.8.4). Unknown class or capability that the class does not have: `J-E0715`.
 
 #### `#[joker::state(persist, version = N)]`
 
-No tipo de estado de uma tarefa. `persist` faz o estado sobreviver à troca a quente (§4.12); `version` (omissão 1) é a versão do esquema do estado. Um campo que não se codifica (§4.10) é `J-E0720`. `#[joker::migrate(<Tipo>)]` numa função dá a migração à medida desse tipo (§4.12).
+On the state type of a task. `persist` makes the state survive the hot swap (§4.12); `version` (default 1) is the version of the state schema. A field that cannot be encoded (§4.10) is `J-E0720`. `#[joker::migrate(<Type>)]` on a function gives the custom migration of that type (§4.12).
 
 #### Derives
 
-| Derive | Em | Gera | Regras |
+| Derive | On | Generates | Rules |
 |---|---|---|---|
-| `#[derive(joker::Record)]` | struct com campos nomeados | `impl Record`, esquema em `joker:meta`, tamanho máximo codificado | campos: escalares, `Instant`, `MonoNanos`, `UtcNanos`, `UtcSeconds`, `Duration`, `Quality`, enums, `Option<T>`, outros `Record`, `BoundedVec<T, N ≤ 64>`, `BoundedString<N ≤ 1024>` (`J-E0721`) |
-| `#[derive(joker::Event)]` | idem | `Record` + marca de evento | idem |
-| `#[derive(joker::Enum)]` | enum sem dados, variantes com valor explícito ou implícito (0, 1, …) | `impl Enum` (u64), `Copy`, `Eq`, esquema | valores únicos |
-| `#[derive(joker::Class)]` | struct com campos `#[input]`/`#[output]` | classe local (§4.8.5) | só `Input<T>` e `Output<T>` |
+| `#[derive(joker::Record)]` | struct with named fields | `impl Record`, schema in `joker:meta`, maximum encoded size | fields: scalars, `Instant`, `MonoNanos`, `UtcNanos`, `UtcSeconds`, `Duration`, `Quality`, enums, `Option<T>`, other `Record`s, `BoundedVec<T, N ≤ 64>`, `BoundedString<N ≤ 1024>` (`J-E0721`) |
+| `#[derive(joker::Event)]` | same | `Record` + event marker | same |
+| `#[derive(joker::Enum)]` | enum without data, variants with an explicit or implicit value (0, 1, …) | `impl Enum` (u64), `Copy`, `Eq`, schema | unique values |
+| `#[derive(joker::Class)]` | struct with `#[input]`/`#[output]` fields | local class (§4.8.5) | only `Input<T>` and `Output<T>` |
 
-Os derives e os traits com o mesmo nome coexistem (como no `serde`): `joker::Record` é as duas coisas.
+The derives and the traits with the same name coexist (as in `serde`): `joker::Record` is both things.
 
-### 4.3 Macros de tarefas
+### 4.3 Task macros
 
 #### 4.3.1 `#[joker::cycle(…)]`
 
-| Argumento | Tipo | Obrig. | Omissão | Validação |
+| Argument | Type | Req. | Default | Validation |
 |---|---|---|---|---|
-| `period` | duração | **sim** | — | `J-E0714`; é um pedido (04 §3.2, `J0130`) |
-| `wcet` | duração | não | medido por `jk bench` | ≤ `period` (`J-E0714`) |
-| `init` | caminho de `fn(&CycleIo<A>) -> S` | não | `S::default()` | |
-| `optional` | bool | não | `false` | desativada por `overrun = "degrade"` (01 §4) |
+| `period` | duration | **yes** | — | `J-E0714`; it is a request (04 §3.2, `J0130`) |
+| `wcet` | duration | no | measured by `jk bench` | ≤ `period` (`J-E0714`) |
+| `init` | path of `fn(&CycleIo<A>) -> S` | no | `S::default()` | |
+| `optional` | bool | no | `false` | disabled by `overrun = "degrade"` (01 §4) |
 
-Assinaturas aceites (outras: `J-E0712`, com a assinatura esperada):
+Accepted signatures (others: `J-E0712`, with the expected signature):
 
 ```rust
 #[joker::cycle(period = "200ms")]
-fn control(io: &mut CycleIo<PeakShaver>, st: &mut Ctl) -> Result<()>   // S: Default, ou init = …
+fn control(io: &mut CycleIo<PeakShaver>, st: &mut Ctl) -> Result<()>   // S: Default, or init = …
 #[joker::cycle(period = "200ms")]
-fn control(io: &mut CycleIo<PeakShaver>) -> Result<()>                 // sem estado
+fn control(io: &mut CycleIo<PeakShaver>) -> Result<()>                 // stateless
 ```
 
 #### 4.3.2 `#[joker::task(…)]`
 
-Exatamente um gatilho (`J-E0713` com zero ou dois):
+Exactly one trigger (`J-E0713` with zero or two):
 
-| Gatilho | Forma | Argumento extra da função | Semântica |
+| Trigger | Form | Extra argument of the function | Semantics |
 |---|---|---|---|
-| `every` | `every = "15m"`, `jitter = "30s"` (opcional) | — | periódico; `jitter` uniforme a partir do gerador determinista |
-| `on` | `on = "soc"` ou `on = ["a", "b"]`; membros com `"<dispositivo>.<membro>"` | `s: Sample<T>` (uma porta) ou `c: Change` (várias) | a cada `seq` nova; mudanças que chegam durante uma execução juntam-se na última |
-| `on_event` | `on_event = "detections"` ou `"<dispositivo>.<evento>"` | `e: E` ou `d: Delivery<E>` | cada evento é entregue, por ordem, um de cada vez; fila de 64, perdas em `Delivery::lost` |
-| `at` | `at = "cron: 0 */15 * * * *"` | — | cron de 6 campos, UTC; exige relógio `synced` ou `holdover` (sem ele, o disparo espera) |
-| `startup` | `startup` | — | uma vez, depois do `init`; os outros gatilhos da app só são entregues depois de todas as tarefas `startup` terminarem |
+| `every` | `every = "15m"`, `jitter = "30s"` (optional) | — | periodic; uniform `jitter` from the deterministic generator |
+| `on` | `on = "soc"` or `on = ["a", "b"]`; members with `"<device>.<member>"` | `s: Sample<T>` (one port) or `c: Change` (several) | at each new `seq`; changes that arrive during an execution are merged into the last one |
+| `on_event` | `on_event = "detections"` or `"<device>.<event>"` | `e: E` or `d: Delivery<E>` | each event is delivered, in order, one at a time; queue of 64, drops in `Delivery::lost` |
+| `at` | `at = "cron: 0 */15 * * * *"` | — | 6-field cron, UTC; requires a `synced` or `holdover` clock (without it, the firing waits) |
+| `startup` | `startup` | — | once, after `init`; the other triggers of the app are only delivered after all the `startup` tasks finish |
 
 ```rust
 #[joker::task(every = "15m", jitter = "30s")]
@@ -553,22 +553,22 @@ async fn watch_soc(io: &TaskIo<PeakShaver>, s: Sample<f64>) -> Result<()>
 #[joker::task(on_event = "detections")]
 async fn decide(io: &TaskIo<Inspector>, d: Detections) -> Result<()>
 #[joker::task(every = "1h")]
-async fn tally(io: &TaskIo<Inspector>, st: &Shared<Totals>) -> Result<()> // estado entre execuções
+async fn tally(io: &TaskIo<Inspector>, st: &Shared<Totals>) -> Result<()> // state between executions
 ```
 
-- Uma tarefa nunca corre em paralelo consigo mesma; tarefas diferentes da mesma app intercalam-se nos `await` (a instância async tem uma só thread). Um gatilho que dispara durante uma execução fica pendente (um só); os que se perdem contam em `joker.app.<app>.task.<t>.coalesced`.
-- `Shared<S>` (`S: Default`) é o estado de uma tarefa async entre execuções. Só se acede com `st.with(|s| …)` e `st.with_mut(|s| …)`, de modo que nunca atravessa um `await`.
+- A task never runs in parallel with itself; different tasks of the same app interleave at the `await`s (the async instance has a single thread). A trigger that fires during an execution stays pending (just one); the ones that are lost count in `joker.app.<app>.task.<t>.coalesced`.
+- `Shared<S>` (`S: Default`) is the state of an async task between executions. It is only accessed with `st.with(|s| …)` and `st.with_mut(|s| …)`, so that it never crosses an `await`.
 
-#### 4.3.3 `#[joker::on_action(<ação>)]`
+#### 4.3.3 `#[joker::on_action(<action>)]`
 
-Numa app com `#[joker::implements]`. Serve uma `action` da classe implementada.
+In an app with `#[joker::implements]`. It serves an `action` of the implemented class.
 
 ```rust
 #[joker::on_action(reset)]
 async fn reset(io: &TaskIo<PumpCtl>, args: (), cx: &ActionCx) -> Result<(), ActionError>
 ```
 
-`args` e o tipo de sucesso são os gerados pelo `jkc` para a ação; `cx` é opcional. `ActionCx`: `key() -> &str`, `caller() -> &str`, `deadline() -> MonoNanos`, `progress(fraction: Option<f32>, message: &str)`, `is_cancelled() -> bool`. Uma ação da classe (numa capacidade oferecida) sem handler é `J-E0716` no `jk build`.
+`args` and the success type are the ones generated by `jkc` for the action; `cx` is optional. `ActionCx`: `key() -> &str`, `caller() -> &str`, `deadline() -> MonoNanos`, `progress(fraction: Option<f32>, message: &str)`, `is_cancelled() -> bool`. An action of the class (in an offered capability) without a handler is `J-E0716` in `jk build`.
 
 #### 4.3.4 `#[joker::on_params]`
 
@@ -577,33 +577,33 @@ async fn reset(io: &TaskIo<PumpCtl>, args: (), cx: &ActionCx) -> Result<(), Acti
 fn check(changes: &ParamChanges) -> Result<()>
 ```
 
-Opcional, um por app. `ParamChanges`: `iter() -> impl Iterator<Item = (&str, Value)>`, `get<T: PortValue>(&self, name: &str) -> Option<T>`. Serve para recusar combinações inválidas (`min > max`): o `Err` recusa a geração para esta app (`J-E0011`). Os valores novos chegam à instância de ciclo na imagem do tick seguinte ao limite de troca, e à async em `param()`.
+Optional, one per app. `ParamChanges`: `iter() -> impl Iterator<Item = (&str, Value)>`, `get<T: PortValue>(&self, name: &str) -> Option<T>`. It serves to reject invalid combinations (`min > max`): the `Err` rejects the generation for this app (`J-E0011`). The new values reach the cycle instance in the image of the tick following the swap boundary, and the async one in `param()`.
 
-### 4.4 Tipos de declaração e o que dão em cada vista
+### 4.4 Declaration types and what they give in each view
 
-Os campos da struct da app são **tipos de declaração** (tamanho zero): a app nunca os constrói. O `#[joker::app]` dá a cada campo, em cada vista, o tipo de handle certo:
+The fields of the app struct are **declaration types** (zero-sized): the app never constructs them. `#[joker::app]` gives each field, in each view, the right handle type:
 
-| Declaração | Em `CycleIo` | Em `TaskIo` |
+| Declaration | In `CycleIo` | In `TaskIo` |
 |---|---|---|
 | `Input<T>` | `CycleInput<'_, T>` | `TaskInput<'_, T>` |
 | `InputMany<T>` | `CycleInputMany<'_, T>` | `TaskInputMany<'_, T>` |
 | `Output<T>` | `CycleOutput<'_, T>` | `TaskOutput<'_, T>` |
 | `OutputMany<T>` | `CycleOutputMany<'_, T>` | `TaskOutputMany<'_, T>` |
 | `Param<T>` | `ParamHandle<'_, T>` | `ParamHandle<'_, T>` |
-| `Internal<T>` | `CycleInternal<'_, T>` (`set` só com `writer = "cycle"`) | `TaskInternal<'_, T>` (`set` só com `writer = "async"`) |
-| `Published<T>` | `PublishedHandle<'_, T>` | idem |
-| `Counter` | `CounterHandle<'_>` | idem |
-| `Alarm` | `AlarmHandle<'_>` | idem |
-| `EventOutput<E>` | `EventOutputHandle<'_, E>` | idem |
-| `EventInput<E>` | indisponível (`J-E0701`) | `EventInputHandle<'_, E>` |
-| `Action<A, R>` | indisponível (`J-E0701`) | `ActionPort<'_, A, R>` |
-| `Mailbox<T, N>` | `MailboxEnd<'_, T>` (lado do ciclo) | `MailboxEnd<'_, T>` (lado async) |
-| classe `C` | `<C>Cycle<'_>` | `<C>Task<'_>` |
+| `Internal<T>` | `CycleInternal<'_, T>` (`set` only with `writer = "cycle"`) | `TaskInternal<'_, T>` (`set` only with `writer = "async"`) |
+| `Published<T>` | `PublishedHandle<'_, T>` | same |
+| `Counter` | `CounterHandle<'_>` | same |
+| `Alarm` | `AlarmHandle<'_>` | same |
+| `EventOutput<E>` | `EventOutputHandle<'_, E>` | same |
+| `EventInput<E>` | unavailable (`J-E0701`) | `EventInputHandle<'_, E>` |
+| `Action<A, R>` | unavailable (`J-E0701`) | `ActionPort<'_, A, R>` |
+| `Mailbox<T, N>` | `MailboxEnd<'_, T>` (cycle side) | `MailboxEnd<'_, T>` (async side) |
+| class `C` | `<C>Cycle<'_>` | `<C>Task<'_>` |
 | `Many<C, MIN, MAX>` | `ManyHandle<'_, <C>Cycle<'_>, MAX>` | `ManyHandle<'_, <C>Task<'_>, MAX>` |
 | `Option<C>` | `Option<<C>Cycle<'_>>` | `Option<<C>Task<'_>>` |
-| `Model` | indisponível (`J-E0701`) | `ModelHandle<'_>` (1.1) |
+| `Model` | unavailable (`J-E0701`) | `ModelHandle<'_>` (1.1) |
 
-Usar numa vista uma operação que só existe na outra dá um erro de compilação com código e explicação, e não um "método não encontrado": os métodos existem nas duas vistas, com um limite de trait que só a certa cumpre (`#[diagnostic::on_unimplemented]`, estável desde o Rust 1.78):
+Using in one view an operation that only exists in the other gives a compilation error with a code and an explanation, and not a "method not found": the methods exist in both views, with a trait bound that only the right one satisfies (`#[diagnostic::on_unimplemented]`, stable since Rust 1.78):
 
 ```
 error[E0277]: J-E0701: `write_at` is only available in async tasks (TaskIo)
@@ -614,24 +614,24 @@ error[E0277]: J-E0701: `write_at` is only available in async tasks (TaskIo)
    = note: a cycle task that needs this publishes an event; an async task acts on it (doc 02 §8)
 ```
 
-### 4.5 As vistas `CycleIo` e `TaskIo`
+### 4.5 The views `CycleIo` and `TaskIo`
 
 ```rust
 pub trait App: 'static {
     type Cycle<'a>;
     type Task<'a>;
-    // gerado por #[joker::app]; não se implementa à mão
+    // generated by #[joker::app]; not implemented by hand
 }
 
 pub struct CycleIo<'a, A: App> { /* … */ }
 impl<'a, A: App> core::ops::Deref for CycleIo<'a, A> { type Target = A::Cycle<'a>; }
 impl<'a, A: App> CycleIo<'a, A> {
-    pub fn now(&self) -> Instant;               // instante do latch
-    pub fn dt(&self) -> Duration;               // período efetivo do grupo
+    pub fn now(&self) -> Instant;               // latch instant
+    pub fn dt(&self) -> Duration;               // effective period of the group
     pub fn tick(&self) -> u64;                  // tick_seq
     pub fn first_tick(&self) -> bool;           // FIRST_TICK
     pub fn after_skip(&self) -> bool;           // AFTER_SKIP
-    pub fn shadow(&self) -> bool;               // a app corre em sombra (M16)
+    pub fn shadow(&self) -> bool;               // the app runs in shadow (M16)
     pub fn task(&self) -> &'static str;
     pub fn random(&self) -> u64;
 }
@@ -642,7 +642,7 @@ impl<'a, A: App> TaskIo<'a, A> {
     pub fn now(&self) -> Instant;
     pub async fn sleep(&self, d: Duration);
     pub async fn sleep_until(&self, t: MonoNanos);
-    pub fn snapshot<S: Snapshot>(&self, ports: S) -> Result<S::Samples>; // tuplos até 12: (&io.a, &io.b)
+    pub fn snapshot<S: Snapshot>(&self, ports: S) -> Result<S::Samples>; // tuples up to 12: (&io.a, &io.b)
     pub fn random(&self) -> u64;
     pub fn kv(&self) -> Kv<'_>;
     pub fn secret(&self, name: &str) -> Result<Secret>;                  // alloc
@@ -650,43 +650,43 @@ impl<'a, A: App> TaskIo<'a, A> {
 }
 ```
 
-A vista de ciclo recebe-se como `&mut CycleIo<A>`; a async como `&TaskIo<A>`, porque várias tarefas async da mesma app a partilham. Todas as operações de proposta recebem `&self` (o buffer é interior), o que evita conflitos de empréstimo entre handles.
+The cycle view is received as `&mut CycleIo<A>`; the async one as `&TaskIo<A>`, because several async tasks of the same app share it. All proposal operations take `&self` (the buffer is interior), which avoids borrow conflicts between handles.
 
-### 4.6 Handles de porta
+### 4.6 Port handles
 
-Corpos omitidos. `T: PortValue` (§4.7). Os valores estão sempre na unidade declarada da porta.
+Bodies omitted. `T: PortValue` (§4.7). The values are always in the declared unit of the port.
 
 ```rust
-// Entradas: iguais nas duas vistas, salvo onde marcado.
+// Inputs: the same in both views, except where marked.
 impl<'a, T: PortValue> CycleInput<'a, T> {
-    pub fn get(&self) -> Result<T, QualityError>;            // Good → Ok; senão Err (16 §3.1)
+    pub fn get(&self) -> Result<T, QualityError>;            // Good → Ok; otherwise Err (16 §3.1)
     pub fn get_uncertain(&self) -> Result<T, QualityError>;  // Good, Uncertain → Ok; Bad → Err
-    pub fn get_or(&self, default: T) -> T;                   // não Good → default, e NOTE no traço
+    pub fn get_or(&self, default: T) -> T;                   // not Good → default, and NOTE in the trace
     pub fn sample(&self) -> Sample<T>;
     pub fn is_bound(&self) -> bool;
     pub fn changed(&self) -> bool;                           // CHANGED
 }
 impl<'a, T: PortValue> TaskInput<'a, T> {
-    // get, get_uncertain, get_or, sample, is_bound: como em CycleInput, sobre o slot atual
-    pub async fn history(&self, from: Instant, to: Instant, step: Duration) -> Result<History<T>>;   // média por passo
+    // get, get_uncertain, get_or, sample, is_bound: as in CycleInput, on the current slot
+    pub async fn history(&self, from: Instant, to: Instant, step: Duration) -> Result<History<T>>;   // mean per step
     pub async fn history_agg(&self, from: Instant, to: Instant, step: Duration, agg: Agg) -> Result<History<T>>;
     pub fn subscribe(&self) -> Result<Changes<'a, T>>;       // Stream<Item = Sample<T>>
 }
 
-// Saídas.
+// Outputs.
 impl<'a, T: PortValue> CycleOutput<'a, T> {
-    pub fn set(&self, v: T);                                 // proposta (renova o lease, 16 A2)
+    pub fn set(&self, v: T);                                 // proposal (renews the lease, 16 A2)
     pub fn relinquish(&self);
     pub fn pending(&self) -> Option<T>;
     pub fn last_outcome(&self) -> Option<WriteOutcome<T>>;
-    pub fn get(&self) -> Result<T, QualityError>;            // valor aplicado
+    pub fn get(&self) -> Result<T, QualityError>;            // applied value
     pub fn sample(&self) -> Sample<T>;
-    pub fn mine(&self) -> Option<T>;                         // proposta ativa deste escritor
-    pub fn winner(&self) -> Option<Level>;                   // nível que ganhou; None = safe
+    pub fn mine(&self) -> Option<T>;                         // active proposal of this writer
+    pub fn winner(&self) -> Option<Level>;                   // level that won; None = safe
     pub fn is_bound(&self) -> bool;
 }
 impl<'a, T: PortValue> TaskOutput<'a, T> {
-    pub fn set(&self, v: T);                                 // sem esperar (deferred)
+    pub fn set(&self, v: T);                                 // without waiting (deferred)
     pub fn write(&self, v: T) -> WriteTicket<'a, T>;         // .await → Result<WriteOutcome<T>>
     pub fn relinquish(&self);
     pub fn last_outcome(&self) -> Option<WriteOutcome<T>>;
@@ -703,26 +703,26 @@ impl<'a, T: PortValue> TaskOutput<'a, T> {
 pub struct WriteTicket<'a, T> { /* … */ }
 impl<'a, T: PortValue> core::future::IntoFuture for WriteTicket<'a, T> { type Output = Result<WriteOutcome<T>>; }
 
-// Portas múltiplas: ordem = a do bind (lista) ou lexicográfica (seletor); tamanho fixo na geração.
+// Multiple ports: order = that of the bind (list) or lexicographic (selector); fixed size in the generation.
 impl<'a, T: PortValue> CycleInputMany<'a, T> {
     pub fn len(&self) -> usize;
     pub fn is_empty(&self) -> bool;
     pub fn get(&self, i: usize) -> Option<&CycleInput<'a, T>>;
     pub fn iter(&self) -> core::slice::Iter<'_, CycleInput<'a, T>>;
-    pub fn names(&self) -> impl Iterator<Item = &str>;       // caminhos resolvidos
+    pub fn names(&self) -> impl Iterator<Item = &str>;       // resolved paths
 }
 // CycleOutputMany, TaskInputMany, TaskOutputMany: len, is_empty, get, iter, iter_mut, names.
 
 impl<'a, T: PortValue> ParamHandle<'a, T> {
-    pub fn get(&self) -> T;                                  // um parâmetro tem sempre valor
+    pub fn get(&self) -> T;                                  // a parameter always has a value
 }
 
-impl<'a, T: Record> CycleInternal<'a, T> {                   // e TaskInternal
-    pub fn get(&self) -> Result<T, QualityError>;            // Uncertain(Initial) até à primeira escrita
+impl<'a, T: Record> CycleInternal<'a, T> {                   // and TaskInternal
+    pub fn get(&self) -> Result<T, QualityError>;            // Uncertain(Initial) until the first write
     pub fn get_or(&self, default: T) -> T;
     pub fn get_or_default(&self) -> T where T: Default;
     pub fn sample(&self) -> Sample<T>;
-    pub fn set(&self, v: T);                                 // só na vista do escritor declarado
+    pub fn set(&self, v: T);                                 // only in the view of the declared writer
 }
 
 impl<'a, T: PortValue> PublishedHandle<'a, T> { pub fn set(&self, v: T); }
@@ -731,7 +731,7 @@ impl<'a> AlarmHandle<'a> {
     pub fn raise(&self);
     pub fn clear(&self);
     pub fn set(&self, active: bool);
-    pub fn state(&self) -> AlarmState;                       // alarm.app.<app>.<nome>.state, do latch ou do slot
+    pub fn state(&self) -> AlarmState;                       // alarm.app.<app>.<name>.state, from the latch or from the slot
 }
 impl<'a, E: Event> EventOutputHandle<'a, E> { pub fn emit(&self, e: E); }
 impl<'a, E: Event> EventInputHandle<'a, E> {
@@ -739,24 +739,24 @@ impl<'a, E: Event> EventInputHandle<'a, E> {
     pub fn stream(&self) -> Result<Deliveries<'a, E>>;       // Stream<Item = Result<Delivery<E>>>
 }
 impl<'a, T: Record> MailboxEnd<'a, T> {
-    pub fn try_send(&self, v: T) -> Result<(), Full<T>>;     // só no lado emissor (mailbox-send)
-    pub fn lost(&self) -> u64;                               // só no lado emissor: envios recusados por fila cheia
-    pub fn try_recv(&self) -> Option<T>;                     // só no lado recetor (mailbox-recv)
-    pub fn drain(&self) -> impl Iterator<Item = T> + '_;     // só no lado recetor: try_recv até vazia
-    pub async fn recv(&self) -> T;                           // só no lado recetor, em TaskIo (mailbox-next)
+    pub fn try_send(&self, v: T) -> Result<(), Full<T>>;     // only on the sending side (mailbox-send)
+    pub fn lost(&self) -> u64;                               // only on the sending side: sends refused because the queue was full
+    pub fn try_recv(&self) -> Option<T>;                     // only on the receiving side (mailbox-recv)
+    pub fn drain(&self) -> impl Iterator<Item = T> + '_;     // only on the receiving side: try_recv until empty
+    pub async fn recv(&self) -> T;                           // only on the receiving side, in TaskIo (mailbox-next)
 }
 ```
 
-`Delivery<E> { pub event: E, pub seq: u64, pub at: Instant, pub lost: u32 }`. `History<T>` desreferencia para `[Sample<T>]`. Um `Alarm` e um `Published<T>` podem ser escritos das duas vistas: o grupo dono é o da primeira tarefa de ciclo da app (ou `default`), e numa escrita das duas no mesmo tick vence a de ciclo (16, A4).
+`Delivery<E> { pub event: E, pub seq: u64, pub at: Instant, pub lost: u32 }`. `History<T>` dereferences to `[Sample<T>]`. An `Alarm` and a `Published<T>` may be written from both views: the owning group is that of the first cycle task of the app (or `default`), and for a write from both in the same tick the cycle one wins (16, A4).
 
-#### 4.6.1 Outros tipos da API async
+#### 4.6.1 Other types of the async API
 
 ```rust
-pub enum Agg { Raw, Mean, Min, Max, First, Last, Count }       // history_agg; history() usa Mean
+pub enum Agg { Raw, Mean, Min, Max, First, Last, Count }       // history_agg; history() uses Mean
 pub struct Change { pub port: &'static str, pub sample: Sample<Value> }   // on = ["a", "b"]
-pub struct Full<T>(pub T);                                      // mailbox cheia: devolve a mensagem
+pub struct Full<T>(pub T);                                      // mailbox full: returns the message
 pub enum AlarmState { Normal, ActiveUnacked, ActiveAcked, RtnUnacked, Unknown }   // ref/00 §6
-pub trait Snapshot { type Samples; }                            // tuplos (&h1, …, &h12) de handles com amostra
+pub trait Snapshot { type Samples; }                            // tuples (&h1, …, &h12) of handles with a sample
 
 impl<'a> Kv<'a> {
     pub fn get(&self, key: &str) -> Result<Option<Vec<u8>>>;
@@ -768,20 +768,20 @@ impl<'a> Kv<'a> {
     pub fn batch(&self) -> KvBatch<'a>;                         // .set(k, v).delete(k).commit().await
 }
 
-pub struct Secret { /* bytes, apagados no drop; sem Debug nem Display do valor */ }
+pub struct Secret { /* bytes, wiped on drop; no Debug nor Display of the value */ }
 impl Secret { pub fn expose(&self) -> &[u8]; pub fn name(&self) -> &str; }
 ```
 
-`Changes<'a, T>` e `Deliveries<'a, E>` implementam `futures_core::Stream`. `IntentId` (1.1) é um ULID em `BoundedString<26>`.
+`Changes<'a, T>` and `Deliveries<'a, E>` implement `futures_core::Stream`. `IntentId` (1.1) is a ULID in `BoundedString<26>`.
 
-### 4.7 Tipos de valor, qualidade e tempo
+### 4.7 Value, quality and time types
 
 ```rust
-pub trait PortValue: Copy + PartialEq + core::fmt::Debug + 'static { /* selado */ }
+pub trait PortValue: Copy + PartialEq + core::fmt::Debug + 'static { /* sealed */ }
 // bool, i64, u64, f64, f32, Bits<N>, BoundedString<N ≤ 64>, BoundedBytes<N ≤ 64>, T: Enum
 
 pub struct Sample<T> {
-    pub value: T,                  // T::default() se nunca houve valor (Uncertain(Initial))
+    pub value: T,                  // T::default() if there never was a value (Uncertain(Initial))
     pub quality: Quality,
     pub ts_src: Option<UtcNanos>,
     pub ts_hw: Option<MonoNanos>,
@@ -830,7 +830,7 @@ pub enum WriteOutcome<T> {
 impl<T: PortValue> WriteOutcome<T> {
     pub fn code(&self) -> u8;                                  // ref/00 §4.4
     pub fn is_applied(&self) -> bool;                          // Accepted | Clamped
-    pub fn require_applied(self) -> Result<Self>;              // senão Err(J-E0204)
+    pub fn require_applied(self) -> Result<Self>;              // otherwise Err(J-E0204)
 }
 #[derive(Clone, Copy, PartialEq, Eq, Debug)] pub enum ClampKind { Range, Rate }
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -857,7 +857,7 @@ pub struct Instant { pub mono: MonoNanos, pub utc: UtcNanos, pub clock: ClockQua
 impl Instant {
     pub fn utc_seconds(&self) -> UtcSeconds;
 }
-// Instant ± Duration → Instant (os dois relógios); Instant − Instant → Duration (monotónico, saturado)
+// Instant ± Duration → Instant (both clocks); Instant − Instant → Duration (monotonic, saturating)
 // MonoNanos ± Duration → MonoNanos; UtcSeconds ± i64 → UtcSeconds; Instant: Into<MonoNanos>
 
 pub trait DurationExt {
@@ -870,14 +870,14 @@ pub trait DurationExt {
     fn d(self) -> Duration;
 }
 impl DurationExt for u64 { /* … */ }
-impl DurationExt for f64 { /* … */ }        // negativo ou NaN → Duration::ZERO; acima do máximo → Duration::MAX
+impl DurationExt for f64 { /* … */ }        // negative or NaN → Duration::ZERO; above the maximum → Duration::MAX
 ```
 
-- `200.ms()` e `io.travel.get().ms()` funcionam: o trait está implementado para **um só** tipo inteiro (`u64`), e o literal infere-o. O minuto é **`mins()`**, e não `min()`, que colidiria com `Ord::min` (erro E0034) e com `f64::min`.
-- Tipos limitados, sem alocação: `BoundedVec<T, const N: usize>` (`push -> Result<(), T>`, `iter`, `len`, `as_slice`, `Deref<[T]>`), `BoundedString<const N: usize>` (`as_str`, `try_from(&str)`), `BoundedBytes<const N: usize>`, `Bits<const N: usize>` (`bit(n) -> bool`, `bits() -> u64`).
-- `Value`: `enum Value { Bool(bool), I64(i64), U64(u64), F64(f64), Text(BoundedString<64>), Bytes(BoundedBytes<64>) }`, com `From` de todos os `PortValue` e `PartialEq<f64>`, `PartialEq<bool>`, `PartialEq<i64>`, `PartialEq<u64>`.
+- `200.ms()` and `io.travel.get().ms()` work: the trait is implemented for **a single** integer type (`u64`), and the literal infers it. The minute is **`mins()`**, and not `min()`, which would collide with `Ord::min` (error E0034) and with `f64::min`.
+- Bounded types, without allocation: `BoundedVec<T, const N: usize>` (`push -> Result<(), T>`, `iter`, `len`, `as_slice`, `Deref<[T]>`), `BoundedString<const N: usize>` (`as_str`, `try_from(&str)`), `BoundedBytes<const N: usize>`, `Bits<const N: usize>` (`bit(n) -> bool`, `bits() -> u64`).
+- `Value`: `enum Value { Bool(bool), I64(i64), U64(u64), F64(f64), Text(BoundedString<64>), Bytes(BoundedBytes<64>) }`, with `From` of all the `PortValue` types and `PartialEq<f64>`, `PartialEq<bool>`, `PartialEq<i64>`, `PartialEq<u64>`.
 
-#### 4.7.1 Erros
+#### 4.7.1 Errors
 
 ```rust
 pub type Result<T, E = Error> = core::result::Result<T, E>;
@@ -885,14 +885,14 @@ pub type Result<T, E = Error> = core::result::Result<T, E>;
 #[derive(Clone, PartialEq, Eq)]
 pub struct Error { /* code: Code, message: BoundedString<256> */ }
 impl Error {
-    pub fn new(code: Code, message: impl core::fmt::Display) -> Self;   // mensagem truncada a 256 B
+    pub fn new(code: Code, message: impl core::fmt::Display) -> Self;   // message truncated to 256 B
     pub fn app(message: impl core::fmt::Display) -> Self;               // J-E0050
     pub fn quality(members: MemberSet) -> Self;                         // J-E0501
     pub fn code(&self) -> Code;
     pub fn message(&self) -> &str;
 }
 impl core::fmt::Debug for Error { /* "J-E0303: action timed out after 5 s" */ }
-impl core::fmt::Display for Error { /* idem */ }
+impl core::fmt::Display for Error { /* same */ }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Code(/* [u8; 8], ASCII */);
@@ -902,7 +902,7 @@ impl Code {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct QualityError { pub port: &'static str, pub quality: Quality }   // J-E0101, J-E0102 ou J-E0103
+pub struct QualityError { pub port: &'static str, pub quality: Quality }   // J-E0101, J-E0102 or J-E0103
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct ActionError { pub kind: ActionErrorKind, pub error: Error }
@@ -912,64 +912,64 @@ pub enum ActionErrorKind { Denied, Forbidden, Timeout, Device, Invalid, Busy, No
 impl ActionError {
     pub fn device(message: impl core::fmt::Display) -> Self;    // J-E0304
     pub fn invalid(message: impl core::fmt::Display) -> Self;   // J-E0305
-    pub fn cancelled() -> Self;                                 // J-E0308: um on_action que viu is_cancelled()
+    pub fn cancelled() -> Self;                                 // J-E0308: an on_action that saw is_cancelled()
 }
 
-// From<QualityError>, From<ActionError> (e From<InferError> com unstable-ml) para Error: o `?` funciona.
+// From<QualityError>, From<ActionError> (and From<InferError> with unstable-ml) for Error: `?` works.
 ```
 
-Um código do host que o SDK não conhece passa intacto em `Code`: a app pode compará-lo (`e.code().as_str() == "J-E0303"`) sem que o SDK tenha de ser atualizado. `ActionErrorKind` é derivado do código (tabela do §7). `Cancelled` cobre as duas pontas de uma ação longa cancelada: quem chamou recebe `J-E0308`, e quem a serve em `on_action` devolve `ActionError::cancelled()` depois de ver `cx.is_cancelled()` (a ABI C tem o par `JK_ACTION_CANCELLED`, ref/08 §2.6.j).
+A host code that the SDK does not know passes intact in `Code`: the app may compare it (`e.code().as_str() == "J-E0303"`) without the SDK having to be updated. `ActionErrorKind` is derived from the code (table of §7). `Cancelled` covers both ends of a canceled long action: the caller receives `J-E0308`, and whoever serves it in `on_action` returns `ActionError::cancelled()` after seeing `cx.is_cancelled()` (the C ABI has the counterpart `JK_ACTION_CANCELLED`, ref/08 §2.6.j).
 
 ### 4.8 Classes
 
-#### 4.8.1 Nomes gerados
+#### 4.8.1 Generated names
 
-O `jkc` (documento 17, §6) gera, para cada classe, um módulo Rust em `joker::classes::<pacote>` (classes do registo) ou em `crate::classes::local` (classes do projeto, via `build.rs`):
+`jkc` (document 17, §6) generates, for each class, a Rust module in `joker::classes::<package>` (registry classes) or in `crate::classes::local` (project classes, via `build.rs`):
 
-| Da classe | Rust | Exemplo |
+| From the class | Rust | Example |
 |---|---|---|
-| nome da classe | UpperCamelCase do nome, sem pontos | `pump` → `Pump`; `temp_sensor` → `TempSensor`; `meter.ac3` → `MeterAc3`; `hvac.vav` → `HvacVav` |
-| handles | `<Nome>Cycle<'a>`, `<Nome>Task<'a>` | `LedCycle<'a>` |
-| estado de `read()` | `<Nome>State` | `PumpState` |
-| enums, registos | UpperCamelCase; variantes em UpperCamelCase | `StatusMode::Warn` |
-| comandos, estado e eventos de uma implementação | `<Nome>Cmd<'a>`, `<Nome>StateOut<'a>`, `<Nome>Events<'a>` | `PumpCmd<'a>` |
-| majors | `joker::classes::std::v<major>::<Nome>`; o nome sem módulo aponta para a major que o crate tinha quando a classe apareceu, e nunca muda dentro da major do crate | `joker::classes::std::v2::InverterPv` |
+| class name | UpperCamelCase of the name, without dots | `pump` → `Pump`; `temp_sensor` → `TempSensor`; `meter.ac3` → `MeterAc3`; `hvac.vav` → `HvacVav` |
+| handles | `<Name>Cycle<'a>`, `<Name>Task<'a>` | `LedCycle<'a>` |
+| state of `read()` | `<Name>State` | `PumpState` |
+| enums, records | UpperCamelCase; variants in UpperCamelCase | `StatusMode::Warn` |
+| commands, state and events of an implementation | `<Name>Cmd<'a>`, `<Name>StateOut<'a>`, `<Name>Events<'a>` | `PumpCmd<'a>` |
+| majors | `joker::classes::std::v<major>::<Name>`; the name without a module points to the major that the crate had when the class appeared, and never changes within the major of the crate | `joker::classes::std::v2::InverterPv` |
 
-Pode-se importar com outro nome (`use joker::classes::std::HvacVav as Vav;`).
+You may import with another name (`use joker::classes::std::HvacVav as Vav;`).
 
 #### 4.8.2 Handles
 
-Para uma classe com membros `in x`, `out y`, `param z`, `query q`, métodos `m(args)`, eventos `e` e ações `a(args) -> R`:
+For a class with members `in x`, `out y`, `param z`, `query q`, methods `m(args)`, events `e` and actions `a(args) -> R`:
 
-| Operação | `<C>Cycle` | `<C>Task` |
+| Operation | `<C>Cycle` | `<C>Task` |
 |---|---|---|
-| `x()`, `y()`, `z()`, `q()` | `Result<T>`: o membro com qualidade `Good` (um `out` dá o valor aplicado, 17 §11); senão `Err` (`J-E0101`); membro sem ligação `J-E0506`; capacidade em falta `J-E0502` | idem, sobre o slot |
-| `m(args)` | `()`: acrescenta um registo `METHOD` | `MethodCall` → `.await` dá `Result<MethodOutcome>` |
-| `a(args)` | indisponível (`J-E0701`) | `ActionCall<'_, R>` (§4.9) |
-| eventos | indisponível | `on_event = "<dispositivo>.<e>"`, ou `events_e() -> Result<Deliveries<'_, E>>` |
-| `raw()` | `<C>Raw<'_>`: os membros como handles de porta (`raw().on` é um `CycleOutput<bool>`) | idem, com `history` |
-| `read()` | `Result<<C>State>`: todos os membros; os de capacidades e os `@optional` como `Option<T>`; `Err(J-E0501)` com a instância `Failed` | idem |
-| `health()` | `Health` | idem |
-| `name()`, `index()` | nome da instância, posição no `Many` | idem |
-| `has(cap)` | `bool`: a instância tem a capacidade | idem |
+| `x()`, `y()`, `z()`, `q()` | `Result<T>`: the member with quality `Good` (an `out` gives the applied value, 17 §11); otherwise `Err` (`J-E0101`); member without binding `J-E0506`; missing capability `J-E0502` | same, on the slot |
+| `m(args)` | `()`: appends a `METHOD` record | `MethodCall` → `.await` gives `Result<MethodOutcome>` |
+| `a(args)` | unavailable (`J-E0701`) | `ActionCall<'_, R>` (§4.9) |
+| events | unavailable | `on_event = "<device>.<e>"`, or `events_e() -> Result<Deliveries<'_, E>>` |
+| `raw()` | `<C>Raw<'_>`: the members as port handles (`raw().on` is a `CycleOutput<bool>`) | same, with `history` |
+| `read()` | `Result<<C>State>`: all the members; those of capabilities and the `@optional` ones as `Option<T>`; `Err(J-E0501)` with the instance `Failed` | same |
+| `health()` | `Health` | same |
+| `name()`, `index()` | name of the instance, position in the `Many` | same |
+| `has(cap)` | `bool`: the instance has the capability | same |
 
-- Se um método tem o nome de um membro (em `led@1`, o `out on` e o `method on()`), o handle dá o método, e o membro fica em `raw()`.
-- Os argumentos com unidade são `f64` na unidade declarada na classe (`run_at(pct: f64 %)` → `run_at(60.0)`).
+- If a method has the name of a member (in `led@1`, the `out on` and the `method on()`), the handle gives the method, and the member stays in `raw()`.
+- The arguments with a unit are `f64` in the unit declared in the class (`run_at(pct: f64 %)` → `run_at(60.0)`).
 - `MethodOutcome`: `outcomes() -> &[(&'static str, WriteOutcome<Value>)]`, `all_applied() -> bool`, `require_applied(self) -> Result<Self>`.
-- `Health`: `Ok`, `Degraded(MemberSet)`, `Failed(MemberSet)` (17 §4.5). `MemberSet`: `iter() -> impl Iterator<Item = &'static str>`, `len()`, `is_empty()`, `Debug` com os nomes.
-- `ClassHandle` é o trait comum: `name`, `index`, `health`, `read`, `has`. É sobre ele (ou sobre `<C>Cycle<'_>`) que se escrevem extension traits (14 §6.7).
+- `Health`: `Ok`, `Degraded(MemberSet)`, `Failed(MemberSet)` (17 §4.5). `MemberSet`: `iter() -> impl Iterator<Item = &'static str>`, `len()`, `is_empty()`, `Debug` with the names.
+- `ClassHandle` is the common trait: `name`, `index`, `health`, `read`, `has`. It is on it (or on `<C>Cycle<'_>`) that extension traits are written (14 §6.7).
 
-Exemplo do que o `jkc` gera para `led@1` (excerto):
+Example of what `jkc` generates for `led@1` (excerpt):
 
 ```rust
-pub struct Led;                                      // declaração: #[device] led: Led
+pub struct Led;                                      // declaration: #[device] led: Led
 pub struct LedCycle<'a> { /* … */ }
 impl<'a> LedCycle<'a> {
     pub fn on(&self);
     pub fn off(&self);
     pub fn set(&self, v: bool);
     pub fn toggle(&self);
-    pub fn dim(&self, pct: f64);                     // capacidade dimmable; sem ela, J-E0502 no registo de decisões
+    pub fn dim(&self, pct: f64);                     // dimmable capability; without it, J-E0502 in the decision log
     pub fn brightness(&self) -> Result<f64>;
     pub fn raw(&self) -> LedRaw<'a>;                 // raw().on: CycleOutput<'a, bool>
 }
@@ -977,58 +977,58 @@ impl<'a> LedCycle<'a> {
 
 #### 4.8.3 `Many<C, MIN, MAX>`
 
-A forma é `Many<Pump, 1, 8>`: dois parâmetros constantes. A escrita `Many<Pump, 1..=8>` dos documentos 04 e 14 não é Rust válido (um argumento genérico constante que não é literal nem bloco tem de ir entre chavetas), e o parser falha antes de a macro a ver (§10, S1).
+The form is `Many<Pump, 1, 8>`: two const parameters. The spelling `Many<Pump, 1..=8>` of documents 04 and 14 is not valid Rust (a const generic argument that is neither a literal nor a block must go between braces), and the parser fails before the macro sees it (§10, S1).
 
 ```rust
 impl<'a, H: ClassHandle, const MAX: usize> ManyHandle<'a, H, MAX> {
-    pub fn len(&self) -> usize;                                  // fixo no init (14 §6.2, A10)
+    pub fn len(&self) -> usize;                                  // fixed at init (14 §6.2, A10)
     pub fn is_empty(&self) -> bool;
-    pub fn iter(&self) -> core::slice::Iter<'_, H>;              // ordem estável: a do bind
+    pub fn iter(&self) -> core::slice::Iter<'_, H>;              // stable order: that of the bind
     pub fn iter_mut(&mut self) -> core::slice::IterMut<'_, H>;
     pub fn get(&self, name: &str) -> Option<&H>;
     pub fn by_name(&self, name: &str) -> Result<&H>;             // Err(J-E0503)
     pub fn index(&self, i: usize) -> Option<&H>;
     pub fn names(&self) -> impl Iterator<Item = &str>;
     pub fn healthy(&self) -> impl Iterator<Item = &H>;           // health() == Ok
-    pub fn read_all(&self) -> Result<BoundedVec<H::State, MAX>>; // Err se alguma obrigatória Failed
+    pub fn read_all(&self) -> Result<BoundedVec<H::State, MAX>>; // Err if some required one is Failed
 }
 
-pub struct PerInstance<S, const MAX: usize> { /* … */ }          // estado por instância de um Many
+pub struct PerInstance<S, const MAX: usize> { /* … */ }          // per-instance state of a Many
 impl<S: Default, const MAX: usize> PerInstance<S, MAX> {
     pub fn get(&self, h: &impl ClassHandle) -> &S;
     pub fn get_mut(&mut self, h: &impl ClassHandle) -> &mut S;
 }
 ```
 
-`PerInstance` é o que cumpre a A10 do documento 14: é guardado por **nome de instância** no `export-state`, e numa geração que acrescenta `p4` as instâncias `p1`–`p3` mantêm o seu estado e `p4` começa em `Default`.
+`PerInstance` is what fulfills A10 of document 14: it is stored by **instance name** in `export-state`, and in a generation that adds `p4` the instances `p1`–`p3` keep their state and `p4` starts at `Default`.
 
-#### 4.8.4 Implementações ativas (`#[joker::implements]`)
+#### 4.8.4 Active implementations (`#[joker::implements]`)
 
-| Na vista | Tipo | Conteúdo |
+| In the view | Type | Content |
 |---|---|---|
-| `io.cmd` | `<C>Cmd<'_>` | um handle de entrada por membro `out` da classe (nas capacidades oferecidas): o valor **aplicado** do comando virtual, depois do árbitro e do envelope (14 §7.2). Sem escritor, é o `safe` |
-| `io.state` | `<C>StateOut<'_>` | um handle `set(v)` por membro `in` e `param` da classe: sinais publicados por esta app (registo `PUBLISH`) |
-| `io.events` | `<C>Events<'_>` | um `emit(e)` por evento da classe |
-| ações | `#[joker::on_action]` | §4.3.3 |
+| `io.cmd` | `<C>Cmd<'_>` | one input handle per `out` member of the class (in the offered capabilities): the **applied** value of the virtual command, after the arbiter and the envelope (14 §7.2). Without a writer, it is the `safe` |
+| `io.state` | `<C>StateOut<'_>` | one `set(v)` handle per `in` and `param` member of the class: signals published by this app (`PUBLISH` record) |
+| `io.events` | `<C>Events<'_>` | one `emit(e)` per event of the class |
+| actions | `#[joker::on_action]` | §4.3.3 |
 
-Um membro de uma capacidade que a implementação não oferece não existe em `io.state` nem em `io.cmd`: usá-lo é um erro de compilação.
+A member of a capability that the implementation does not offer does not exist in `io.state` nor in `io.cmd`: using it is a compilation error.
 
-#### 4.8.5 Classes locais (`#[derive(joker::Class)]`)
+#### 4.8.5 Local classes (`#[derive(joker::Class)]`)
 
-Uma struct com campos `#[input]` e `#[output]` torna-se uma classe local (`class_ref = "local:<Nome>"` em `joker:meta`). O derive gera `<Nome>Cycle<'a>` e `<Nome>Task<'a>` com os **mesmos nomes de campos**, cada um com o handle de porta da vista (`z.temp.get()?`, `z.setpoint.set(v)`), e `impl ClassHandle`. O comportamento livre escreve-se em `impl <Nome>Cycle<'_> { … }` no próprio crate (14 §6.7). Liga-se com `{ each, map }` (ref/01 §5.12.1).
+A struct with `#[input]` and `#[output]` fields becomes a local class (`class_ref = "local:<Name>"` in `joker:meta`). The derive generates `<Name>Cycle<'a>` and `<Name>Task<'a>` with the **same field names**, each one with the port handle of the view (`z.temp.get()?`, `z.setpoint.set(v)`), and `impl ClassHandle`. The free behavior is written in `impl <Name>Cycle<'_> { … }` in the crate itself (14 §6.7). It is bound with `{ each, map }` (ref/01 §5.12.1).
 
-#### 4.8.6 Membros de classe (handles aninhados)
+#### 4.8.6 Class members (nested handles)
 
-Para cada membro de classe (documento 17, §8), o `jkc` gera um **campo público** no handle, com o handle da classe do membro. Não é um método: `io.esp.boot` é um `ButtonCycle<'_>`, e o resto é a API de sempre.
+For each class member (document 17, §8), `jkc` generates a **public field** in the handle, with the handle of the member's class. It is not a method: `io.esp.boot` is a `ButtonCycle<'_>`, and the rest is the usual API.
 
-| Membro na classe | Campo em `<C>Cycle` / `<C>Task` | Exemplo |
+| Member in the class | Field in `<C>Cycle` / `<C>Task` | Example |
 |---|---|---|
-| fixo (`member boot: std/button@1`) | `pub boot: ButtonCycle<'a>` | `io.esp.boot.clicked()?` |
-| coleção (`member pumps: std/pump@1[1..8]`) | `pub pumps: ManyHandle<'a, PumpCycle<'a>, 8>` (§4.8.3) | `io.station.pumps.iter()`, `io.station.pumps.by_name("p1")?` |
-| `@optional`, ou numa capacidade | `pub grid: Option<SgReadyCycle<'a>>` | `if let Some(g) = &io.hp.grid { … }` |
+| fixed (`member boot: std/button@1`) | `pub boot: ButtonCycle<'a>` | `io.esp.boot.clicked()?` |
+| collection (`member pumps: std/pump@1[1..8]`) | `pub pumps: ManyHandle<'a, PumpCycle<'a>, 8>` (§4.8.3) | `io.station.pumps.iter()`, `io.station.pumps.by_name("p1")?` |
+| `@optional`, or in a capability | `pub grid: Option<SgReadyCycle<'a>>` | `if let Some(g) = &io.hp.grid { … }` |
 
 ```rust
-// o que o jkc gera para local/bench_io@1 (excerto)
+// what jkc generates for local/bench_io@1 (excerpt)
 pub struct BenchIoCycle<'a> {
     pub status: LedCycle<'a>,
     pub boot: ButtonCycle<'a>,
@@ -1039,18 +1039,18 @@ impl<'a> BenchIoCycle<'a> {
     pub fn rssi(&self) -> Result<i64>;
     pub fn uptime(&self) -> Result<f64>;
     pub fn online(&self) -> Result<bool>;
-    pub fn raw(&self) -> BenchIoRaw<'a>;             // só os membros escalares
+    pub fn raw(&self) -> BenchIoRaw<'a>;             // only the scalar members
 }
 ```
 
-- Os métodos de um handle aninhado são os da classe do membro, e as escritas são do escritor da app, no seu nível, como se a app tivesse ligado a instância do membro diretamente (documento 16, P6): `io.hp.compressor.stop()` numa `heat_pump` composta é o mesmo registo `METHOD` que `io.comp1.stop()`.
-- **Numa instância virtual**, os membros de classe só se leem, porque são da implementação (documento 16, P6). O handle aninhado tem o tipo de sempre (a classe não sabe se a instância é virtual), mas as portas de escrita desses membros ficam só de leitura na tabela de portas: um método chamado sobre eles, ou uma escrita por `raw()`, é descartado pelo host com `J-E0507` no registo de decisões, e não escreve. Uma classe cujos próprios métodos chamam métodos dos membros não pode ter instâncias virtuais (`J0656`, no `jk check`).
-- `health()` do handle composto é a da árvore (17 §4.5); `Degraded(m)` e `Failed(m)` levam os nomes dos membros de classe.
-- `read()` dá `<C>State` só com os membros escalares; cada membro de classe tem o seu `read()`.
-- **Nomes:** um membro de classe partilha o espaço de nomes da classe (`JC0206`, `JC0207`), e por isso um campo nunca colide com um método gerado.
-- **`joker:meta`** descreve a árvore: um membro de classe é um `member` com `member-kind` 6, a referência da classe, os limites da coleção e a sua própria lista de membros e métodos (§5, `spec/cddl/joker-meta.cddl`). A tabela de portas (§2.6.2, passo 2) desce a árvore **em profundidade**, pela ordem dos membros; numa coleção, por elemento. Cada nó da árvore tem uma entrada em `init-context.instances`, com `name` igual ao nome da instância ligada, ou ao caminho aninhado para um submembro sem nome (ref/03 §2.2.14).
+- The methods of a nested handle are those of the member's class, and the writes are from the writer of the app, at its level, as if the app had bound the instance of the member directly (document 16, P6): `io.hp.compressor.stop()` on a composite `heat_pump` is the same `METHOD` record as `io.comp1.stop()`.
+- **On a virtual instance**, the class members are read-only, because they belong to the implementation (document 16, P6). The nested handle has the usual type (the class does not know whether the instance is virtual), but the write ports of those members are read-only in the port table: a method called on them, or a write through `raw()`, is discarded by the host with `J-E0507` in the decision log, and does not write. A class whose own methods call methods of the members cannot have virtual instances (`J0656`, in `jk check`).
+- `health()` of the composite handle is that of the tree (17 §4.5); `Degraded(m)` and `Failed(m)` carry the names of the class members.
+- `read()` gives `<C>State` only with the scalar members; each class member has its own `read()`.
+- **Names:** a class member shares the namespace of the class (`JC0206`, `JC0207`), and so a field never collides with a generated method.
+- **`joker:meta`** describes the tree: a class member is a `member` with `member-kind` 6, the reference of the class, the limits of the collection and its own list of members and methods (§5, `spec/cddl/joker-meta.cddl`). The port table (§2.6.2, step 2) descends the tree **depth-first**, in the order of the members; in a collection, per element. Each node of the tree has an entry in `init-context.instances`, with `name` equal to the name of the bound instance, or to the nested path for an unnamed submember (ref/03 §2.2.14).
 
-### 4.9 Ações
+### 4.9 Actions
 
 ```rust
 impl<'a, A: Record, R: Record> ActionPort<'a, A, R> {
@@ -1058,8 +1058,8 @@ impl<'a, A: Record, R: Record> ActionPort<'a, A, R> {
 }
 pub struct ActionCall<'a, R> { /* … */ }
 impl<'a, R: Record> ActionCall<'a, R> {
-    pub fn key(self, key: &str) -> Self;                        // chave de idempotência; omissão: gerada
-    pub async fn start(self) -> Result<ActionHandle<'a, R>, ActionError>;   // só em ações `long`
+    pub fn key(self, key: &str) -> Self;                        // idempotency key; default: generated
+    pub async fn start(self) -> Result<ActionHandle<'a, R>, ActionError>;   // only in `long` actions
 }
 impl<'a, R: Record> core::future::IntoFuture for ActionCall<'a, R> { type Output = Result<R, ActionError>; }
 
@@ -1070,77 +1070,77 @@ impl<'a, R: Record> ActionHandle<'a, R> {
 }
 ```
 
-- `()` implementa `Record`, e por isso `Action<(), ()>` e `pump.reset().await` funcionam.
-- **A chave de idempotência** (M19, E9) gerada por omissão é um ULID feito com `now()` e o gerador determinista: protege contra retransmissões do host, **não** contra a app que chama duas vezes. Quem quer idempotência de negócio passa uma chave sua com `.key(…)`. A mesma chave com argumentos diferentes dentro de `dedup_window` é `J-E0310`.
-- Uma ação espera por resposta; uma tarefa de ciclo que precisa de uma publica um evento (02 §8).
+- `()` implements `Record`, and so `Action<(), ()>` and `pump.reset().await` work.
+- **The idempotency key** (M19, E9) generated by default is a ULID made with `now()` and the deterministic generator: it protects against retransmissions by the host, **not** against the app that calls twice. Whoever wants business idempotency passes a key of their own with `.key(…)`. The same key with different arguments within `dedup_window` is `J-E0310`.
+- An action waits for a response; a cycle task that needs one publishes an event (02 §8).
 
-### 4.10 Codificação dos registos
+### 4.10 Encoding of the records
 
-Os registos da app (`Internal<T>`, mensagens de `Mailbox`, eventos, argumentos e resultados de ações e métodos) viajam em **CBOR determinístico** (ref/00 §4.1, §7; D2), como um **mapa com chaves inteiras**: a chave de cada campo é a sua posição no esquema, **a contar de 0** (`joker:meta` para registos da app; o contrato `.jkc` para os de classes). `Plan { target_soc, limit_kw, valid_until }` codifica-se `{0: 0.62, 1: 400.0, 2: 1790244000}`. É a mesma forma no WIT, no Joker Link (ref/07 §6.2), no JDP e na ABI C.
+The records of the app (`Internal<T>`, `Mailbox` messages, events, arguments and results of actions and methods) travel in **deterministic CBOR** (ref/00 §4.1, §7; D2), as a **map with integer keys**: the key of each field is its position in the schema, **counting from 0** (`joker:meta` for records of the app; the `.jkc` contract for those of classes). `Plan { target_soc, limit_kw, valid_until }` is encoded `{0: 0.62, 1: 400.0, 2: 1790244000}`. It is the same form in WIT, in Joker Link (ref/07 §6.2), in JDP and in the C ABI.
 
-- As interfaces de texto (API, `jk`) mostram os campos pelo nome, a partir do esquema.
-- Um campo novo acrescenta-se **no fim**; reordenar ou remover um campo muda a versão do esquema (§4.12). Um campo `Option<T>` a `None` omite-se.
-- `f64` e `f32` codificam-se com o menor formato de vírgula flutuante que preserva o valor (RFC 8949, §4.2.2); `Instant` é `[mono, utc, clock]`; `Quality` é `[code, reason]`; enums, o valor numérico.
-- `Internal<T>`: o derive calcula o tamanho máximo codificado e o SDK recusa em compilação um registo acima de 64 B (`J-E0708`). `Plan` do documento 04 (3 campos) ocupa no máximo 31 B.
+- The text interfaces (API, `jk`) show the fields by name, from the schema.
+- A new field is added **at the end**; reordering or removing a field changes the version of the schema (§4.12). An `Option<T>` field at `None` is omitted.
+- `f64` and `f32` are encoded with the smallest floating-point format that preserves the value (RFC 8949, §4.2.2); `Instant` is `[mono, utc, clock]`; `Quality` is `[code, reason]`; enums, the numeric value.
+- `Internal<T>`: the derive computes the maximum encoded size and the SDK rejects at compile time a record above 64 B (`J-E0708`). The `Plan` of document 04 (3 fields) takes at most 31 B.
 
 ### 4.11 Log
 
-`joker::log::{trace, debug, info, warn, error}!` (reexportados no prelúdio como `log::…`):
+`joker::log::{trace, debug, info, warn, error}!` (re-exported in the prelude as `log::…`):
 
 ```rust
-log::warn!("forecast OOD; a usar o plano conservador");
-log::info!("nível {:.2} m", level; app_mode = "auto", pump = "p1");
+log::warn!("forecast OOD; using the conservative plan");
+log::info!("level {:.2} m", level; app_mode = "auto", pump = "p1");
 ```
 
-Formatam num buffer de 1 KiB na pilha (sem alocação; truncado) e chamam `log.log`. Os campos depois de `;` são pares `nome = valor` (`Display`). Numa app que também dependa do crate `log`, usa-se `joker::log::warn!` explicitamente. Um `panic!` escreve a mensagem no log (`error`) antes do trap. `joker::log::enabled(Level) -> bool` é o `log.enabled` do WIT: as macros usam-no para não formatar mensagens que o host deitaria fora.
+They format into a 1 KiB buffer on the stack (without allocation; truncated) and call `log.log`. The fields after `;` are `name = value` pairs (`Display`). In an app that also depends on the `log` crate, you use `joker::log::warn!` explicitly. A `panic!` writes the message to the log (`error`) before the trap. `joker::log::enabled(Level) -> bool` is the `log.enabled` of the WIT: the macros use it so as not to format messages that the host would throw away.
 
-### 4.12 Estado, troca a quente e migração
+### 4.12 State, hot swap and migration
 
-- O estado de uma tarefa de ciclo (`st`) vive na memória da instância de ciclo e começa em `Default` ou no `init` da tarefa. Sobrevive entre ticks e a traps de outras tarefas da app, mas não a um trap que recrie a instância (crashloop, 01 §9).
-- Sem `#[joker::state(persist)]`, uma versão nova começa com o estado inicial. Com ele, a troca a quente faz `export-state` na versão antiga e `migrate` na nova, com o blob `joker-state` do CDDL (§5): versão, versão da app, versão do esquema, tipo de instância e um CBOR por tarefa.
-- A migração por omissão faz corresponder os campos por nome; os que faltam ficam em `Default` e os que sobram ignoram-se. Uma migração à medida:
+- The state of a cycle task (`st`) lives in the memory of the cycle instance and starts at `Default` or at the `init` of the task. It survives between ticks and traps of other tasks of the app, but not a trap that recreates the instance (crashloop, 01 §9).
+- Without `#[joker::state(persist)]`, a new version starts with the initial state. With it, the hot swap does `export-state` on the old version and `migrate` on the new one, with the `joker-state` blob of the CDDL (§5): version, app version, schema version, instance kind and one CBOR per task.
+- The default migration matches the fields by name; the missing ones stay at `Default` and the extra ones are ignored. A custom migration:
 
 ```rust
 #[joker::migrate(Ctl)]
 fn migrate_ctl(prev: StateBlob<'_>, from_version: &str) -> Result<Ctl>
 ```
 
-`StateBlob`: `version() -> u32`, `field<T: Record>(&self, name: &str) -> Option<T>`. Blob acima de 1 MiB: `J-E0915`.
+`StateBlob`: `version() -> u32`, `field<T: Record>(&self, name: &str) -> Option<T>`. Blob above 1 MiB: `J-E0915`.
 
-### 4.13 Sem alocação no ciclo
+### 4.13 No allocation in the cycle
 
-A regra é a do invariante 6 do `AGENTS.md`, levada à instância Wasm:
+The rule is that of invariant 6 of `AGENTS.md`, carried into the Wasm instance:
 
-| Momento | Alocação |
+| Moment | Allocation |
 |---|---|
-| `init`, `migrate`, `on-params` (ciclo) | permitida (estado inicial, tabelas do SDK) |
-| `on-cycle` | **proibida**: o alocador global da instância de ciclo faz trap (`J-E0903`) |
-| ABI canónico de `on-cycle` | a imagem e o resultado usam buffers reservados no `init` (`cabi_realloc` devolve-os); os valores de arena de `cycle-io.read` usam uma arena de 4 KiB reposta a cada tick |
-| instância async | permitida (limite: `memory.max`, `J-E0906`) |
+| `init`, `migrate`, `on-params` (cycle) | allowed (initial state, tables of the SDK) |
+| `on-cycle` | **forbidden**: the global allocator of the cycle instance traps (`J-E0903`) |
+| canonical ABI of `on-cycle` | the image and the result use buffers reserved at `init` (`cabi_realloc` returns them); the arena values of `cycle-io.read` use a 4 KiB arena reset at each tick |
+| async instance | allowed (limit: `memory.max`, `J-E0906`) |
 
-- Tudo o que a API de ciclo devolve é `Copy` ou limitado (`BoundedVec`, `BoundedString`); a formatação do log usa a pilha.
-- Isto substitui o alocador bump reposto a cada tick do documento 04, §3.2: com ele, um `Vec` guardado no `st` ficava a apontar para memória reutilizada no tick seguinte, sem erro nenhum (§10, S3).
-- O `joker-sdk` é `#![no_std]`. O `alloc` entra só nos backends `wasm` e `native-linux`, e só nas APIs async que devolvem coleções de tamanho variável (`History`, `Secret`, `Vec` do `kv`).
+- Everything that the cycle API returns is `Copy` or bounded (`BoundedVec`, `BoundedString`); the formatting of the log uses the stack.
+- This replaces the bump allocator reset at each tick of document 04, §3.2: with it, a `Vec` kept in `st` would end up pointing at memory reused in the next tick, with no error at all (§10, S3).
+- `joker-sdk` is `#![no_std]`. `alloc` comes in only in the `wasm` and `native-linux` backends, and only in the async APIs that return variable-size collections (`History`, `Secret`, the `Vec` of `kv`).
 
-### 4.14 Joker Micro (backend nativo)
+### 4.14 Joker Micro (native backend)
 
-A mesma app compila para o MCU (19 §5), com a feature `backend-native` e o contrato `NativeApp` da ref/08 §2.11.5. O backend `native-micro` não copia a imagem: o núcleo dá ao SDK uma vista do snapshot com a mesma disposição de §3.2, e o SDK devolve o mesmo buffer de §3.3, que o `joker-core` drena como no Linux. Um *panic* de uma app num MCU é `jk_fatal` (D22): não há *sandbox*.
+The same app compiles for the MCU (19 §5), with the feature `backend-native` and the contract `NativeApp` of ref/08 §2.11.5. The `native-micro` backend does not copy the image: the core gives the SDK a view of the snapshot with the same layout as §3.2, and the SDK returns the same buffer as §3.3, which `joker-core` drains as on Linux. A *panic* of an app on an MCU is `jk_fatal` (D22): there is no *sandbox*.
 
-| API | Linux (Wasm) | Linux nativo | Joker Micro |
+| API | Linux (Wasm) | Native Linux | Joker Micro |
 |---|---|---|---|
-| tudo o que é de ciclo | sim | sim | sim |
-| `set`, `write`, `relinquish`, `snapshot`, `subscribe`, eventos, mailbox, `emit`, métodos, `invoke`, `sleep` | sim | sim | sim |
-| `every`, `on`, `on_event`, `startup` | sim | sim | sim |
-| `at = "cron: …"` | sim | sim | sim, com `TIME` do Joker Link (sem ele, espera) |
+| everything that is cycle | yes | yes | yes |
+| `set`, `write`, `relinquish`, `snapshot`, `subscribe`, events, mailbox, `emit`, methods, `invoke`, `sleep` | yes | yes | yes |
+| `every`, `on`, `on_event`, `startup` | yes | yes | yes |
+| `at = "cron: …"` | yes | yes | yes, with `TIME` of Joker Link (without it, it waits) |
 | `kv` | 1 MiB | 1 MiB | 16 KiB |
-| `secrets` | sim | sim | só em nós autónomos com segredos no blob (ref/02 §2.4.8); senão `J-E0408` |
-| `history` | sim | sim | **`J0720`** |
-| rede (`wasi:sockets`, `wasi:http`) | com `net.allow` | com `net.allow` | **`J0720`** |
-| `Secret`, `History` e outras coleções com `alloc` | sim | sim | **`J0720`** |
-| `#[joker::state(persist)]` | sim | não há troca a quente (04 §5): ignorado, com aviso | **`J0720`** |
+| `secrets` | yes | yes | only on standalone nodes with secrets in the blob (ref/02 §2.4.8); otherwise `J-E0408` |
+| `history` | yes | yes | **`J0720`** |
+| network (`wasi:sockets`, `wasi:http`) | with `net.allow` | with `net.allow` | **`J0720`** |
+| `Secret`, `History` and other collections with `alloc` | yes | yes | **`J0720`** |
+| `#[joker::state(persist)]` | yes | there is no hot swap (04 §5): ignored, with a warning | **`J0720`** |
 | `ml`, `streams`, `blocks`, `scheduled-writes`, `intents` | 1.1 | 1.1 | **`J0720`** |
 
-Os `J0720` são erros de compilação com o mesmo mecanismo de §4.4: os métodos existem, com um limite `where platform::Current: platform::Historian` que o alvo `joker_micro` não cumpre:
+The `J0720` are compilation errors with the same mechanism as §4.4: the methods exist, with a bound `where platform::Current: platform::Historian` that the `joker_micro` target does not satisfy:
 
 ```
 error[E0277]: J0720: `history()` is not available on Joker Micro
@@ -1151,11 +1151,11 @@ error[E0277]: J0720: `history()` is not available on Joker Micro
    = help: use a core window in the manifest (`avg(level, 15m)`) or move this task to a Linux node
 ```
 
-O **`J0721`** (aviso: `f64` num MCU sem FPU de dupla precisão, isto é, com `fpu = "none"` ou `"sp"`) é emitido pelo `jk build --target mcu:…` a partir das portas e dos campos `f64` em `joker:meta`, da FPU declarada pela placa (ref/03, §2.3.1; o enum da ref/08 §2.14) e das rotinas de vírgula flutuante por software que encontrar no objeto da app (ref/08 §2.11.5), e não pelo compilador. O `jk bench --target mcu` mede o custo real.
+**`J0721`** (warning: `f64` on an MCU without a double-precision FPU, that is, with `fpu = "none"` or `"sp"`) is emitted by `jk build --target mcu:…` from the `f64` ports and fields in `joker:meta`, from the FPU declared by the board (ref/03, §2.3.1; the enum of ref/08 §2.14) and from the software floating-point routines that it finds in the object of the app (ref/08 §2.11.5), and not by the compiler. `jk bench --target mcu` measures the real cost.
 
-### 4.15 Funcionalidades instáveis
+### 4.15 Unstable features
 
-| Feature Cargo | Funcionalidade WIT | Dá |
+| Cargo feature | WIT feature | Gives |
 |---|---|---|
 | `unstable-ml` | `ml` | `#[model]`, `ModelHandle::infer`, `Tensor`, `Inference`, `InferError` |
 | `unstable-streams` | `streams` | `StreamInput<F>`, `Frame` |
@@ -1163,7 +1163,7 @@ O **`J0721`** (aviso: `f64` num MCU sem FPU de dupla precisão, isto é, com `fp
 | `unstable-scheduled-writes` | `scheduled-writes` | `write_at` |
 | `unstable-intents` | `intents` | `propose`, `IntentId` |
 
-Usar uma API destas sem a feature é `J-E0718` (com a feature a ativar). Com a feature, a funcionalidade entra em `joker:meta` (chave 10) e o `jokerd` de produção recusa o componente (`J-E0003`) até à versão que a estabiliza. Assinaturas previstas (podem mudar até à estabilização):
+Using one of these APIs without the feature is `J-E0718` (with the feature to enable). With the feature, the feature enters `joker:meta` (key 10) and the production `jokerd` refuses the component (`J-E0003`) until the version that stabilizes it. Planned signatures (they may change until stabilization):
 
 ```rust
 #[cfg(feature = "unstable-ml")]
@@ -1181,76 +1181,76 @@ impl Tensor {
 pub struct Inference { pub outputs: Vec<Tensor>, pub quality: Quality, pub backend: String, pub latency: Duration }
 ```
 
-### 4.16 Erros de compilação do SDK
+### 4.16 Compilation errors of the SDK
 
-As macros e os limites de trait emitem mensagens com código, localização no campo ou atributo culpado e uma ajuda. O `jk build` mostra-as no estilo do rustc e o `jk explain` explica-as.
+The macros and the trait bounds emit messages with a code, the location on the offending field or attribute and a help line. `jk build` shows them in rustc style and `jk explain` explains them.
 
-| Código | Quando | Mensagem (primeira linha) |
+| Code | When | Message (first line) |
 |---|---|---|
-| `J-E0701` | API async usada em `CycleIo` (ou de ciclo em `TaskIo`) | `` `{api}` is only available in async tasks (TaskIo) `` |
-| `J-E0702` | `set` num `Internal<T>` na vista que não é a do escritor | `` `{port}` is written by the {domain} domain; declare #[internal(writer = "…")] to change it `` |
-| `J-E0703` | porta numérica sem `unit` | `` numeric port `{port}` needs a unit; use unit = "1" for a dimensionless value `` |
-| `J0109` | unidade fora do catálogo (16 §5) | `` unit `{unit}` is not in the v1 catalogue `` |
-| `J-E0705` | literal de duração inválido | `` invalid duration `{lit}`; expected e.g. "200ms", "1.5s", "90m" `` |
-| `J-E0706` | gama inválida, ou `default` fora dela | `` default {v} is outside range {range} `` |
-| `J-E0707` | tipo de porta não suportado | `` `{ty}` is not a port type; use {suggestion} `` |
-| `J-E0708` | `Internal<T>` acima de 64 B, ou com campos não escalares | `` internal record `{ty}` may encode to {n} bytes; the limit is 64 `` |
-| `J-E0709` | nome de campo duplicado ou reservado | `` port name `{name}` is reserved `` |
-| `J-E0710` | `name` ou `version` inválidos | `` app name `{name}` must match [a-z][a-z0-9_]{0,31} and not start with "joker" `` |
-| `J-E0711` | duas `#[joker::app]`, ou fora da raiz do crate | `` a crate holds exactly one #[joker::app], at the crate root `` |
-| `J-E0712` | assinatura de tarefa inválida | `` expected `fn(&mut CycleIo<App>, &mut State) -> Result<()>` `` (ou a de async) |
-| `J-E0713` | gatilho inválido: zero ou dois, `on` para uma porta que não existe, `on_event` para uma porta que não é de eventos | `` a task needs exactly one trigger: every, on, on_event, at or startup `` |
-| `J-E0714` | `period` em falta, `wcet > period`, período < 100 µs | `` cycle task `{task}` needs period = "…" `` |
-| `J-E0715` | `#[implements]` com classe ou capacidade desconhecida | `` class `{class}` has no capability `{cap}` `` |
-| `J-E0716` | ação de classe sem `#[joker::on_action]` (no `jk build`, a partir de `joker:meta`) | `` action `{action}` of `{class}` has no handler `` |
-| `J-E0717` | limites de `Many` inválidos | `` Many<_, {min}, {max}>: expected 0 <= MIN <= MAX <= 1024 `` |
-| `J-E0718` | API instável sem a feature | `` `{api}` is reserved for v1.1; enable the `unstable-{feature}` feature `` |
-| `J-E0719` | tipo de estado de ciclo que não é `'static` | `` cycle state `{ty}` must be 'static `` |
-| `J-E0720` | estado `persist` com um campo que não se codifica | `` field `{field}` of `{ty}` cannot be persisted `` |
-| `J-E0721` | campo de registo de tipo não suportado | `` field `{field}`: `{ty}` is not a record field type `` |
-| `J0720` | API indisponível no Joker Micro (§4.14) | `` `{api}` is not available on Joker Micro `` |
+| `J-E0701` | async API used in `CycleIo` (or cycle API in `TaskIo`) | `` `{api}` is only available in async tasks (TaskIo) `` |
+| `J-E0702` | `set` on an `Internal<T>` in the view that is not that of the writer | `` `{port}` is written by the {domain} domain; declare #[internal(writer = "…")] to change it `` |
+| `J-E0703` | numeric port without `unit` | `` numeric port `{port}` needs a unit; use unit = "1" for a dimensionless value `` |
+| `J0109` | unit outside the catalog (16 §5) | `` unit `{unit}` is not in the v1 catalogue `` |
+| `J-E0705` | invalid duration literal | `` invalid duration `{lit}`; expected e.g. "200ms", "1.5s", "90m" `` |
+| `J-E0706` | invalid range, or `default` outside it | `` default {v} is outside range {range} `` |
+| `J-E0707` | unsupported port type | `` `{ty}` is not a port type; use {suggestion} `` |
+| `J-E0708` | `Internal<T>` above 64 B, or with non-scalar fields | `` internal record `{ty}` may encode to {n} bytes; the limit is 64 `` |
+| `J-E0709` | duplicate or reserved field name | `` port name `{name}` is reserved `` |
+| `J-E0710` | invalid `name` or `version` | `` app name `{name}` must match [a-z][a-z0-9_]{0,31} and not start with "joker" `` |
+| `J-E0711` | two `#[joker::app]`, or outside the crate root | `` a crate holds exactly one #[joker::app], at the crate root `` |
+| `J-E0712` | invalid task signature | `` expected `fn(&mut CycleIo<App>, &mut State) -> Result<()>` `` (or the async one) |
+| `J-E0713` | invalid trigger: zero or two, `on` for a port that does not exist, `on_event` for a port that is not an event port | `` a task needs exactly one trigger: every, on, on_event, at or startup `` |
+| `J-E0714` | `period` missing, `wcet > period`, period < 100 µs | `` cycle task `{task}` needs period = "…" `` |
+| `J-E0715` | `#[implements]` with an unknown class or capability | `` class `{class}` has no capability `{cap}` `` |
+| `J-E0716` | class action without `#[joker::on_action]` (in `jk build`, from `joker:meta`) | `` action `{action}` of `{class}` has no handler `` |
+| `J-E0717` | invalid `Many` limits | `` Many<_, {min}, {max}>: expected 0 <= MIN <= MAX <= 1024 `` |
+| `J-E0718` | unstable API without the feature | `` `{api}` is reserved for v1.1; enable the `unstable-{feature}` feature `` |
+| `J-E0719` | cycle state type that is not `'static` | `` cycle state `{ty}` must be 'static `` |
+| `J-E0720` | `persist` state with a field that cannot be encoded | `` field `{field}` of `{ty}` cannot be persisted `` |
+| `J-E0721` | record field of an unsupported type | `` field `{field}`: `{ty}` is not a record field type `` |
+| `J0720` | API unavailable on Joker Micro (§4.14) | `` `{api}` is not available on Joker Micro `` |
 
 ---
 
-## 5. A secção `joker:meta`
+## 5. The `joker:meta` section
 
-O esquema completo está em `spec/cddl/joker-meta.cddl`. Aqui fica o que o esquema não diz.
+The complete schema is in `spec/cddl/joker-meta.cddl`. Here is what the schema does not say.
 
-### 5.1 Onde vive
+### 5.1 Where it lives
 
-| Artefacto | Local |
+| Artifact | Location |
 |---|---|
-| componente de `jk build` | secção custom `joker:meta` ao nível do componente, com **um** item `joker-meta` (forma canónica) |
-| componente de `cargo build` | a mesma secção no módulo core embutido, com a sequência de fragmentos (§5.2) |
-| binário nativo (Micro, `kind = "native"`) | secção ELF `.joker_meta`, com a sequência de fragmentos |
+| component from `jk build` | custom section `joker:meta` at component level, with **one** `joker-meta` item (canonical form) |
+| component from `cargo build` | the same section in the embedded core module, with the sequence of fragments (§5.2) |
+| native binary (Micro, `kind = "native"`) | ELF section `.joker_meta`, with the sequence of fragments |
 
-Os leitores (`jokerd`, `jk inspect`, `jk check`, o agente) procuram primeiro ao nível do componente e depois no módulo core. Sem secção, ou com uma que não valida contra o CDDL, o componente é recusado (`J-E0004`). A chave 3 (mundo) tem de coincidir com o mundo que o componente realmente importa (`J-E0005`).
+The readers (`jokerd`, `jk inspect`, `jk check`, the agent) look first at component level and then in the core module. Without a section, or with one that does not validate against the CDDL, the component is refused (`J-E0004`). Key 3 (world) must match the world that the component actually imports (`J-E0005`).
 
-### 5.2 Fragmentos
+### 5.2 Fragments
 
-Cada macro emite o seu fragmento (`meta-fragment`), e o ligador junta as secções com o mesmo nome. A secção é portanto uma **sequência CBOR** (RFC 8742) de fragmentos: um `app-fragment` (de `#[joker::app]`), um `task-fragment` por tarefa e um `schema-fragment` por tipo com derive.
+Each macro emits its fragment (`meta-fragment`), and the linker joins the sections with the same name. The section is therefore a **CBOR sequence** (RFC 8742) of fragments: one `app-fragment` (from `#[joker::app]`), one `task-fragment` per task and one `schema-fragment` per type with a derive.
 
-### 5.3 Junção
+### 5.3 Merging
 
-1. Exatamente um `app-fragment` (`J-E0004`).
-2. Tarefas: ordenadas por nome (ordem bytewise); o índice na lista é o `task` de `on-cycle` e `run-task`. Dois fragmentos com o mesmo nome: `J-E0004`.
-3. Esquemas: ordenados por nome e deduplicados. O mesmo nome com conteúdo diferente: `J-E0004`. O nome é o identificador do tipo Rust; os esquemas gerados de classes têm o prefixo da classe (`"std/pump@1:tripped"`).
-4. O resultado é codificado em CBOR determinístico. O `jk build` reescreve a secção com ele; o digest do componente cobre-o.
+1. Exactly one `app-fragment` (`J-E0004`).
+2. Tasks: sorted by name (bytewise order); the index in the list is the `task` of `on-cycle` and `run-task`. Two fragments with the same name: `J-E0004`.
+3. Schemas: sorted by name and deduplicated. The same name with different content: `J-E0004`. The name is the identifier of the Rust type; the schemas generated from classes have the prefix of the class (`"std/pump@1:tripped"`).
+4. The result is encoded in deterministic CBOR. `jk build` rewrites the section with it; the digest of the component covers it.
 
-### 5.4 O que cada consumidor usa
+### 5.4 What each consumer uses
 
-| Consumidor | Chaves |
+| Consumer | Keys |
 |---|---|
-| `jk check` (ref/01) | 1, 2, 6 (ligações, unidades, gamas, `optional`), 7 (grupos, `J0130`), 8 (classes, `requires`, `Many`), 9 (implementações, `J0191`), 13 (segredos, `J0927`) |
-| `jk build --target mcu` | 6, 11 (tipos `f64`, `J0721`), 10 (instáveis, `J0720`) |
+| `jk check` (ref/01) | 1, 2, 6 (bindings, units, ranges, `optional`), 7 (groups, `J0130`), 8 (classes, `requires`, `Many`), 9 (implementations, `J0191`), 13 (secrets, `J0927`) |
+| `jk build --target mcu` | 6, 11 (`f64` types, `J0721`), 10 (unstable, `J0720`) |
 | `joker.lock` (ref/02) | 2 (`version`), 3 (`wit`) |
-| `jokerd` ao carregar | 3 (mundo, §2.8), 5 (ABI), 10 (`J-E0003`), 6–9 (tabela de portas, §2.6.2), 16 (memória) |
-| agente e Deck (ref/10) | 2, 3, 10, antes do deploy |
-| `jk inspect`, API (ref/09) | tudo |
+| `jokerd` at load | 3 (world, §2.8), 5 (ABI), 10 (`J-E0003`), 6–9 (port table, §2.6.2), 16 (memory) |
+| agent and Deck (ref/10) | 2, 3, 10, before the deploy |
+| `jk inspect`, API (ref/09) | everything |
 
-### 5.5 Exemplo
+### 5.5 Example
 
-A app `level` do exemplo 00, forma canónica (168 B), em notação de diagnóstico CBOR:
+The `level` app of example 00, canonical form (168 B), in CBOR diagnostic notation:
 
 ```
 {
@@ -1277,66 +1277,66 @@ A app `level` do exemplo 00, forma canónica (168 B), em notação de diagnósti
 
 ## 6. `joker-test`
 
-### 6.1 Modos
+### 6.1 Modes
 
-| Comando | O que corre | Quando |
+| Command | What runs | When |
 |---|---|---|
-| `jk test` | o componente `.wasm` real no wasmtime (o `jk` compila-o e passa-o ao binário de testes em `JOKER_TEST_COMPONENT`), com o `joker-core` real e relógio virtual | sempre em CI; é o que conta (04 §3.7) |
-| `cargo test` | o mesmo código da app com o backend `native-linux`, ligado ao binário de testes | depuração rápida; o harness escreve um aviso de que não é o componente de produção |
+| `jk test` | the real `.wasm` component in wasmtime (`jk` compiles it and passes it to the test binary in `JOKER_TEST_COMPONENT`), with the real `joker-core` and a virtual clock | always in CI; it is what counts (04 §3.7) |
+| `cargo test` | the same app code with the `native-linux` backend, linked into the test binary | quick debugging; the harness writes a warning that it is not the production component |
 
-Nos dois modos: **relógio virtual**, núcleo real (árbitro, envelope, qualidade), determinismo total. Depois de cada tick, o harness corre o executor async até todas as tarefas estarem à espera de um temporizador ou de um gatilho; as propostas async entram no passo 2 do tick seguinte.
+In both modes: **virtual clock**, real core (arbiter, envelope, quality), total determinism. After each tick, the harness runs the async executor until all the tasks are waiting for a timer or a trigger; the async proposals enter at step 2 of the next tick.
 
-### 6.2 Construção
+### 6.2 Construction
 
 ```rust
 pub struct Harness<A: App> { /* … */ }
 impl<A: App> Harness<A> {
     pub fn new() -> Self;
-    pub fn group(self, task: &str, period: Duration) -> Self;            // período do grupo desta tarefa
+    pub fn group(self, task: &str, period: Duration) -> Self;            // period of the group of this task
     pub fn param(self, name: &str, v: impl Into<ParamValue>) -> Self;     // 400.0, true, "400 kW" (ref/03 §2.1.3)
-    pub fn input(self, port: &str, s: impl Into<Series>) -> Self;         // 0.5 é Series::constant(0.5)
+    pub fn input(self, port: &str, s: impl Into<Series>) -> Self;         // 0.5 is Series::constant(0.5)
     pub fn internal<T: Record>(self, port: &str, v: T) -> Self;
-    pub fn command(self, member: &str, v: impl Into<Value>) -> Self;      // comando virtual de uma implementação
-    pub fn device(self, name: &str, d: SimDevice) -> Self;                // instância simulada para um #[device]
+    pub fn command(self, member: &str, v: impl Into<Value>) -> Self;      // virtual command of an implementation
+    pub fn device(self, name: &str, d: SimDevice) -> Self;                // simulated instance for a #[device]
     pub fn devices(self, name: &str, ds: impl IntoIterator<Item = SimDevice>) -> Self; // Many
-    pub fn safe(self, output: &str, v: impl Into<Value>) -> Self;         // omissão: T::default()
-    pub fn envelope(self, output: &str, e: Envelope) -> Self;             // omissão: só o safe
-    pub fn lease(self, d: Duration) -> Self;                              // omissão: 3 × período (16 A9)
-    pub fn level(self, level: &str) -> Self;                              // omissão: "control:12"
+    pub fn safe(self, output: &str, v: impl Into<Value>) -> Self;         // default: T::default()
+    pub fn envelope(self, output: &str, e: Envelope) -> Self;             // default: only the safe
+    pub fn lease(self, d: Duration) -> Self;                              // default: 3 × period (16 A9)
+    pub fn level(self, level: &str) -> Self;                              // default: "control:12"
     pub fn manual(self, output: &str, v: impl Into<Value>, at: Duration, ttl: Duration) -> Self; // override
-    pub fn on_action(self, port: &str, r: ActionResponder) -> Self;       // resposta de uma ação chamada
-    pub fn history(self, port: &str, s: impl Into<Series>) -> Self;       // dados para history()
+    pub fn on_action(self, port: &str, r: ActionResponder) -> Self;       // response of a called action
+    pub fn history(self, port: &str, s: impl Into<Series>) -> Self;       // data for history()
     pub fn kv(self, key: &str, v: &[u8]) -> Self;
     pub fn secret(self, name: &str, v: &[u8]) -> Self;
-    pub fn start_utc(self, rfc3339: &str) -> Self;                        // omissão: "2026-01-01T00:00:00Z"
+    pub fn start_utc(self, rfc3339: &str) -> Self;                        // default: "2026-01-01T00:00:00Z"
     pub fn clock(self, q: ClockQuality) -> Self;
     pub fn seed(self, seed: u64) -> Self;
-    pub fn manifest(self, path: &str) -> Self;                            // envelopes e ligações de um manifesto real
-    pub fn scenario(self, path: &str) -> Self;                            // cenário de ref/03
+    pub fn manifest(self, path: &str) -> Self;                            // envelopes and bindings of a real manifest
+    pub fn scenario(self, path: &str) -> Self;                            // scenario of ref/03
 }
 ```
 
 `Envelope`: `Envelope::new().range(lo, hi).rate(per_s).safe(v).on_interlock_hold()`. `ActionResponder`: `ActionResponder::ok(value)`, `::err(code)`, `::after(d, value)`, `::with(|args| …)`.
 
-### 6.3 Execução
+### 6.3 Execution
 
 ```rust
 impl<A: App> Harness<A> {
     pub fn run_for(&mut self, d: Duration);
-    pub fn run_until(&mut self, t: Duration);        // tempo virtual desde o início
-    pub fn step(&mut self);                           // um tick do grupo mais rápido
+    pub fn run_until(&mut self, t: Duration);        // virtual time since the start
+    pub fn step(&mut self);                           // one tick of the fastest group
     pub fn now(&self) -> Instant;
     pub fn set_input(&mut self, port: &str, v: impl Into<Value>);
     pub fn inject(&mut self, port: &str, q: Quality, for_: Duration);
-    pub fn set_param(&mut self, name: &str, v: impl Into<ParamValue>);   // chama on-params
-    pub fn emit(&mut self, port: &str, e: impl Record);                  // evento de entrada
-    pub fn stop_app(&mut self);                                          // as duas instâncias param
+    pub fn set_param(&mut self, name: &str, v: impl Into<ParamValue>);   // calls on-params
+    pub fn emit(&mut self, port: &str, e: impl Record);                  // input event
+    pub fn stop_app(&mut self);                                          // both instances stop
     pub fn restart_app(&mut self);
     pub fn hot_swap(&mut self) -> Result<()>;                            // export-state + migrate
 }
 ```
 
-### 6.4 Resultados e asserções
+### 6.4 Results and assertions
 
 ```rust
 impl<A: App> Harness<A> {
@@ -1349,17 +1349,17 @@ impl<A: App> Harness<A> {
     pub fn internal(&self, port: &str) -> SeriesTrace;
     pub fn actions(&self, port: &str) -> ActionTrace;
     pub fn traps(&self) -> &[Trap];                      // Trap { at, task, code, message }
-    pub fn errors(&self) -> &[TaskError];                // Err devolvidos
+    pub fn errors(&self) -> &[TaskError];                // returned Errs
     pub fn logs(&self) -> &[LogLine];
 }
 
 impl OutputTrace {
-    // janelas (devolvem outra OutputTrace)
+    // windows (return another OutputTrace)
     pub fn after(&self, t: Duration) -> OutputTrace;
     pub fn before(&self, t: Duration) -> OutputTrace;
     pub fn between(&self, a: Duration, b: Duration) -> OutputTrace;
     pub fn when(&self, c: Condition) -> OutputTrace;
-    // sobre o valor aplicado
+    // on the applied value
     pub fn values(&self) -> impl Iterator<Item = Value> + '_;
     pub fn all(&self, f: impl FnMut(Value) -> bool) -> bool;
     pub fn any(&self, f: impl FnMut(Value) -> bool) -> bool;
@@ -1367,8 +1367,8 @@ impl OutputTrace {
     pub fn last(&self) -> Observed;
     pub fn toggles(&self) -> usize;
     pub fn intervals(&self) -> impl Iterator<Item = Duration> + '_;
-    pub fn toggles_every(&self, d: Duration) -> bool;    // todos os intervalos iguais a d
-    // sobre as propostas e os resultados
+    pub fn toggles_every(&self, d: Duration) -> bool;    // all intervals equal to d
+    // on the proposals and the results
     pub fn proposals(&self) -> impl Iterator<Item = (Duration, Value)> + '_;
     pub fn no_new_writes(&self) -> bool;
     pub fn outcomes(&self) -> impl Iterator<Item = (Duration, WriteOutcome<Value>)> + '_;
@@ -1389,43 +1389,43 @@ pub struct Observed(/* Option<Value> */);
 impl<T: Into<Value> + Copy> PartialEq<Option<T>> for Observed { /* … */ }  // assert_eq!(h.output("led").last(), Some(false))
 ```
 
-Os traços não são genéricos: um `Value` compara-se com `f64`, `bool`, `i64` e `u64` (`all(|v| v == 0.0)`), e `Observed` compara-se com `Option<T>`. Assim `h.output("led")` não precisa de anotação de tipo. Uma porta desconhecida faz `panic!` com a lista das portas da app.
+The traces are not generic: a `Value` is compared with `f64`, `bool`, `i64` and `u64` (`all(|v| v == 0.0)`), and `Observed` is compared with `Option<T>`. Thus `h.output("led")` needs no type annotation. An unknown port makes a `panic!` with the list of the ports of the app.
 
-### 6.5 Séries
+### 6.5 Series
 
 ```rust
 impl Series {
     pub fn constant(v: impl Into<Value>) -> Self;
     pub fn step(before: impl Into<Value>, after: impl Into<Value>, at: Duration) -> Self;
-    pub fn ramp(from: f64, to: f64, over: Duration) -> Self;       // linear e depois fica em `to`
-    pub fn linear(at_0: f64, at_over: f64, over: Duration) -> Self; // reta que continua depois de `over`
+    pub fn ramp(from: f64, to: f64, over: Duration) -> Self;       // linear and then stays at `to`
+    pub fn linear(at_0: f64, at_over: f64, over: Duration) -> Self; // straight line that continues after `over`
     pub fn sine(mean: f64, amp: f64, period: Duration) -> Self;
-    pub fn noise(mean: f64, sd: f64) -> Self;                      // gerador determinista (seed)
-    pub fn points(p: &[(Duration, f64)]) -> Self;                  // degraus nos instantes dados
-    pub fn replay(path: &str) -> Self;                             // .parquet ou .jktrace
-    pub fn every(self, d: Duration) -> Self;                       // amostra nova a cada d (omissão: cada tick)
-    pub fn with_quality_at(self, t: Duration, q: Quality) -> Self; // a partir de t
+    pub fn noise(mean: f64, sd: f64) -> Self;                      // deterministic generator (seed)
+    pub fn points(p: &[(Duration, f64)]) -> Self;                  // steps at the given instants
+    pub fn replay(path: &str) -> Self;                             // .parquet or .jktrace
+    pub fn every(self, d: Duration) -> Self;                       // new sample every d (default: every tick)
+    pub fn with_quality_at(self, t: Duration, q: Quality) -> Self; // from t on
     pub fn with_quality(self, from: Duration, to: Duration, q: Quality) -> Self;
-    pub fn frozen_after(self, t: Duration) -> Self;                // valor bit a bit igual
+    pub fn frozen_after(self, t: Duration) -> Self;                // bit-for-bit equal value
 }
 ```
 
-O prelúdio de `joker-test` reexporta `QualityReason::*`, e por isso `Quality::bad(CommFailure)` funciona sem prefixo.
+The prelude of `joker-test` re-exports `QualityReason::*`, and so `Quality::bad(CommFailure)` works without a prefix.
 
-### 6.6 Dispositivos simulados
+### 6.6 Simulated devices
 
-`SimDevice` é uma instância de classe simulada para o harness, com o simulador da classe (14 A13; ref/03 §2.4.11) quando existe:
+`SimDevice` is a simulated class instance for the harness, with the class simulator (14 A13; ref/03 §2.4.11) when there is one:
 
 ```rust
 impl Sim {
-    pub fn of<C: ClassDecl>() -> SimDevice;              // qualquer classe, membros a Default
-    pub fn temp_sensor() -> SimDevice;                   // um por classe std com simulador (gerado)
+    pub fn of<C: ClassDecl>() -> SimDevice;              // any class, members at Default
+    pub fn temp_sensor() -> SimDevice;                   // one per std class with a simulator (generated)
     pub fn button() -> SimDevice;
     pub fn pump() -> SimDevice;
 }
 impl SimDevice {
     pub fn member(self, name: &str, s: impl Into<Series>) -> Self;
-    pub fn constant(self, v: impl Into<Value>) -> Self;  // o membro principal da classe
+    pub fn constant(self, v: impl Into<Value>) -> Self;  // the main member of the class
     pub fn press_at(self, at: Duration, hold: Duration) -> Self;     // button
     pub fn fault(self, member: &str, q: Quality, at: Duration, for_: Duration) -> Self;
     pub fn capabilities(self, caps: &[&str]) -> Self;
@@ -1433,39 +1433,39 @@ impl SimDevice {
 }
 ```
 
-### 6.7 Cenários e conformidade de classes
+### 6.7 Scenarios and class conformance
 
-- `Harness::scenario(path)` carrega um cenário de `sim/scenarios/*.scenario.toml` (ref/03) contra a app sozinha: as ações `[[set]]`, `[[press]]` e `[[inject]]` são aplicadas, e as expectativas `[[expect]]` são verificadas por `h.check() -> ScenarioReport` (`passed() -> bool`, `failures() -> &[Failure]`).
-- `joker_test::conformance::<C>(path, harness)` corre os casos `classes/<pacote>/<nome>.conformance.toml` contra uma app que implementa `C`; é o que o `jk class verify` usa para uma instância virtual.
-- Os valores esperados escrevem-se à mão, e nunca a partir de uma execução anterior (a regra do documento 16, §8).
+- `Harness::scenario(path)` loads a scenario from `sim/scenarios/*.scenario.toml` (ref/03) against the app alone: the `[[set]]`, `[[press]]` and `[[inject]]` actions are applied, and the `[[expect]]` expectations are checked by `h.check() -> ScenarioReport` (`passed() -> bool`, `failures() -> &[Failure]`).
+- `joker_test::conformance::<C>(path, harness)` runs the cases `classes/<package>/<name>.conformance.toml` against an app that implements `C`; it is what `jk class verify` uses for a virtual instance.
+- The expected values are written by hand, and never from an earlier execution (the rule of document 16, §8).
 
 ---
 
-## 7. Erros de runtime `J-E…`
+## 7. Runtime errors `J-E…`
 
-Gama deste documento: `J-E0001`–`J-E0799` e `J-E0900`–`J-E0999`. Todos entram no registo `codes.toml` (16 §9). Os traps (`J-E09xx`) contam para o crashloop (01 §9: 3 em 10 s); os outros são valores de `error.code`.
+Range of this document: `J-E0001`–`J-E0799` and `J-E0900`–`J-E0999`. All of them enter the `codes.toml` registry (16 §9). The traps (`J-E09xx`) count toward the crashloop (01 §9: 3 in 10 s); the others are values of `error.code`.
 
-| Código | Gravidade | Mensagem | `ActionErrorKind` / nota |
+| Code | Severity | Message | `ActionErrorKind` / note |
 |---|---|---|---|
-| `J-E0001` | error | component world is newer than this runtime | recusado antes do deploy e ao carregar |
+| `J-E0001` | error | component world is newer than this runtime | refused before the deploy and at load |
 | `J-E0002` | error | component world or cycle ABI is outside the supported window | §2.8, §3.1 |
 | `J-E0003` | error-in-prod | component uses an unstable feature | §2.9 |
 | `J-E0004` | error | joker:meta missing or invalid | §5 |
 | `J-E0005` | error | joker:meta world does not match the component imports | |
 | `J-E0006` | error | component imports an interface that is not allowed | §2.7 |
-| `J-E0007` | error | app name in joker:meta does not match the manifest | também `jk check` |
+| `J-E0007` | error | app name in joker:meta does not match the manifest | also `jk check` |
 | `J-E0008` | error | init-context rejected by the SDK (layout mismatch) | §2.6.2 |
 | `J-E0011` | error | app refused the new parameters | §4.3.4 |
 | `J-E0050` | error | the app returned an error | `Error::app` |
 | `J-E0101` | error | value unavailable: quality is not Good | `get()` |
 | `J-E0102` | error | value unavailable: quality is Bad | `get_uncertain()` |
-| `J-E0103` | error | port is not bound | porta `optional` |
+| `J-E0103` | error | port is not bound | `optional` port |
 | `J-E0104` | error | value type does not match the port | tier 2 |
 | `J-E0105` | error | record does not decode against its schema | |
 | `J-E0203` | error | proposal buffer full; later proposals dropped | §3.4 |
 | `J-E0204` | error | write was not applied | `require_applied()` |
-| `J-E0205` | error | proposal-only writer cannot write directly | M18; `J0212` no `jk check` |
-| `J-E0206` | error | write cancelled: the generation changed before the commit | |
+| `J-E0205` | error | proposal-only writer cannot write directly | M18; `J0212` in `jk check` |
+| `J-E0206` | error | write canceled: the generation changed before the commit | |
 | `J-E0207` | error | scheduled-write queue full | 1.1 |
 | `J-E0209` | error | this writer cannot create intents | 1.1 |
 | `J-E0210` | error | intent TTL above max_manual | 1.1 |
@@ -1476,7 +1476,7 @@ Gama deste documento: `J-E0001`–`J-E0799` e `J-E0900`–`J-E0999`. Todos entra
 | `J-E0305` | error | invalid action arguments | `Invalid` |
 | `J-E0306` | error | action queue of the device is full | `Busy` |
 | `J-E0307` | error | device not connected | `NotConnected` |
-| `J-E0308` | error | action cancelled | `Cancelled` |
+| `J-E0308` | error | action canceled | `Cancelled` |
 | `J-E0309` | error | invalid idempotency key | `Invalid` |
 | `J-E0310` | error | idempotency key reused with different arguments | `Conflict` |
 | `J-E0311` | error | the instance does not support this action | `Unsupported` |
@@ -1492,25 +1492,25 @@ Gama deste documento: `J-E0001`–`J-E0799` e `J-E0900`–`J-E0999`. Todos entra
 | `J-E0408` | error | secret not declared or not bound | |
 | `J-E0409` | error | secret not found on this node | |
 | `J-E0410` | error | event payload too large or invalid | |
-| `J-E0411` | warning | event dropped for a full consumer | contado |
-| `J-E0412` | warning | mailbox full or message too large | contado |
-| `J-E0413` | warning | network destination not allowed | log do host |
+| `J-E0411` | warning | event dropped for a full consumer | counted |
+| `J-E0412` | warning | mailbox full or message too large | counted |
+| `J-E0413` | warning | network destination not allowed | host log |
 | `J-E0414` | error | too many ports in one request | |
 | `J-E0501` | error | instance health is Failed | `read()?` |
 | `J-E0502` | error | the instance lacks this capability | |
 | `J-E0503` | error | no instance with this name in the Many | `by_name` |
-| `J-E0504` | error | invalid method arguments | registo de decisões |
+| `J-E0504` | error | invalid method arguments | decision log |
 | `J-E0505` | error | method not in the class contract | tier 2 |
 | `J-E0506` | error | member not bound on this instance | |
-| `J-E0507` | error | write to a member of a virtual instance: the implementation owns it | registo de decisões; 16 P6 |
-| `J-E0601` | error | feature not available in this runtime | stubs de §2.9 |
+| `J-E0507` | error | write to a member of a virtual instance: the implementation owns it | decision log; 16 P6 |
+| `J-E0601` | error | feature not available in this runtime | stubs of §2.9 |
 | `J-E0602` | error | inference deadline exceeded | 1.1 |
 | `J-E0603` | error | inference backend error | 1.1 |
 | `J-E0604` | error | tensor shape or dtype mismatch | 1.1 |
 | `J-E0605` | error | tensor too large for the Wasm boundary (1 MiB) | 1.1 |
 | `J-E0606` | error | frame expired | 1.1 |
 | `J-E0607` | warning | blocks lost (slow consumer) | 1.1 |
-| `J-E0701`…`J-E0721` | error | erros de compilação | §4.16 |
+| `J-E0701`…`J-E0721` | error | compilation errors | §4.16 |
 | `J-E0901` | trap | async API called from the cycle instance | `async-io`, `kv`, `secrets`, `ml`, `frames`, `blocks` |
 | `J-E0902` | trap | cycle API called from the async instance | `cycle-io` |
 | `J-E0903` | trap | heap allocation during a cycle task | §4.13 |
@@ -1518,164 +1518,164 @@ Gama deste documento: `J-E0001`–`J-E0799` e `J-E0900`–`J-E0999`. Todos entra
 | `J-E0905` | trap | guest panicked or called exit | |
 | `J-E0906` | trap | memory limit exceeded | `memory.max` |
 | `J-E0907` | trap | malformed proposal buffer or invalid port use | §3.4 |
-| `J-E0908` | error | app is in crashloop | alarme `joker.app.<app>.crashloop` |
+| `J-E0908` | error | app is in crashloop | alarm `joker.app.<app>.crashloop` |
 | `J-E0909` | error | init failed or timed out | |
 | `J-E0910` | trap | stack overflow | |
-| `J-E0911` | trap | fuel exhausted | só testes com fuel |
+| `J-E0911` | trap | fuel exhausted | only tests with fuel |
 | `J-E0914` | error | migrate failed; previous version kept | |
 | `J-E0915` | error | exported state too large | 1 MiB |
 
-### 7.1 Erros de ações na API
+### 7.1 Action errors in the API
 
-Uma ação invocada pela API (`POST /v1/actions/{target}/{action}`, ref/09 §5.10) passa pelo mesmo caminho que um `invoke` de uma app. O resultado de erro que a app recebe e o que a API devolve são o mesmo facto com dois códigos:
+An action invoked through the API (`POST /v1/actions/{target}/{action}`, ref/09 §5.10) goes through the same path as an `invoke` of an app. The error result that the app receives and the one the API returns are the same fact with two codes:
 
-| `invoke` (app) | `ActionErrorKind` | API: forma | API: código | HTTP |
+| `invoke` (app) | `ActionErrorKind` | API: form | API: code | HTTP |
 |---|---|---|---|---|
-| `J-E0301` permissivo falso | `Denied` | erro do pedido | `J-E1402` | 409 |
-| `J-E0302` papel | `Forbidden` | erro do pedido | `J-E1002` | 403 |
+| `J-E0301` permissive false | `Denied` | request error | `J-E1402` | 409 |
+| `J-E0302` role | `Forbidden` | request error | `J-E1002` | 403 |
 | `J-E0303` timeout | `Timeout` | `Invocation` `failed`, `error.kind = timeout` | `J-E1406` | 200 |
-| `J-E0304` erro do equipamento | `Device` | `failed`, `kind = device` | `J-E1407` | 200 |
-| `J-E0305` argumentos | `Invalid` | erro do pedido | `J-E1401` | 400 |
-| `J-E0306` fila cheia | `Busy` | erro do pedido | `J-E1403` | 503 |
-| `J-E0307` dispositivo desligado | `NotConnected` | `failed`, `kind = device` | `J-E1415` | 200 |
-| `J-E0308` cancelada | `Cancelled` | `failed`, `kind = cancelled` | `J-E1409` | 200 |
-| `J-E0309` chave inválida | `Invalid` | erro do pedido | `J-E1025` | 400 |
-| `J-E0310` chave repetida com outros argumentos | `Conflict` | erro do pedido | `J-E1024` | 422 |
-| `J-E0311` a instância não tem a ação | `Unsupported` | erro do pedido | `J-E1400` | 404 |
-| `J-E0312` a implementação fez trap | `Failed` | `failed`, `kind = device` | `J-E1408` | 200 |
-| `J-E0313` não é uma ação longa | `Invalid` | erro do pedido | `J-E1405` | 409 |
+| `J-E0304` equipment error | `Device` | `failed`, `kind = device` | `J-E1407` | 200 |
+| `J-E0305` arguments | `Invalid` | request error | `J-E1401` | 400 |
+| `J-E0306` queue full | `Busy` | request error | `J-E1403` | 503 |
+| `J-E0307` device disconnected | `NotConnected` | `failed`, `kind = device` | `J-E1415` | 200 |
+| `J-E0308` canceled | `Cancelled` | `failed`, `kind = cancelled` | `J-E1409` | 200 |
+| `J-E0309` invalid key | `Invalid` | request error | `J-E1025` | 400 |
+| `J-E0310` key repeated with other arguments | `Conflict` | request error | `J-E1024` | 422 |
+| `J-E0311` the instance does not have the action | `Unsupported` | request error | `J-E1400` | 404 |
+| `J-E0312` the implementation trapped | `Failed` | `failed`, `kind = device` | `J-E1408` | 200 |
+| `J-E0313` not a long action | `Invalid` | request error | `J-E1405` | 409 |
 
-Um `Err` devolvido por um `on_action` chega à API como `failed` com o código que a app escolheu, e `kind` derivado dele por esta tabela (`device` para um código fora dela).
-
----
-
-## 8. Comportamento esperado
-
-1. **Uma chamada por tarefa e por tick.** O host chama `on-cycle` pela ordem do grupo (`order`, 01 §4 passo 4); o passo 4b (comandos virtuais) corre sobre os registos devolvidos logo a seguir à tarefa que os produziu.
-2. **Escritor único por app** (16, A1): as propostas das duas instâncias contam como o mesmo escritor e o mesmo nível; entre elas, vale A4.
-3. **Leitura:** a instância de ciclo lê sempre do latch (02 §6.1), e uma saída mostra o valor aplicado no tick anterior. A async lê o slot atual (02 §6.4).
-4. **Qualidade:** a tabela do 16 §3.1 aplica-se tal como está a `get`, `get_uncertain`, `get_or` e `sample`, nas duas vistas e nos handles de classe. Nenhuma API do SDK converte uma amostra `Bad` num número sem `Result` (invariante 4).
-5. **Escritas async:** `set` e `write` entram na inbox do grupo dono e são aplicadas no próximo tick dele (01 §5). O `WriteTicket` resolve depois desse commit com o resultado final; entretanto, `last_outcome()` dá `Deferred`.
-6. **Métodos:** a expansão é do núcleo (17 §4.1). No tick da chamada, `pending()` dos `out` expandidos dá `None`; o resultado vê-se no tick seguinte com `last_outcome()`, ou no `await` em async.
-7. **Ações:** nunca no ciclo; serializadas por dispositivo; a chave deduplica dentro de `dedup_window` (16 E9); o manifesto vence a classe na configuração (17 §4.2).
-8. **Traps:** descartam as propostas desse tick dessa app; os leases continuam a correr (01 §9). Um `Err` não é trap.
-9. **Parâmetros:** mudam num limite de tick, iguais para todas as tarefas desse tick.
-10. **Determinismo:** o que a instância de ciclo vê (imagem, `now`, `random`, WASI virtualizado) é função do traço e da geração; com NaN canonicalizados e sem relaxed SIMD (09, ataque 10), o mesmo `.wasm` dá os mesmos bytes de propostas em aarch64 e x86_64.
-11. **Limites** (ref/00 §10 e os desta referência): portas por app 65 535; buffer de propostas 16 KiB (máx. 1 MiB); `args` 4 KiB; evento 8 KiB; mensagem de mailbox 256 B; `snapshot`/`subscribe` 256 portas; `history` 10 000 pontos; kv como em §2.5.1.
-12. **Compatibilidade:** §2.8 e §2.9. Uma app 1.y corre em todas as 1.x com x ≥ y, com as mesmas propostas para as mesmas entradas.
+An `Err` returned by an `on_action` reaches the API as `failed` with the code that the app chose, and `kind` derived from it by this table (`device` for a code outside it).
 
 ---
 
-## 9. Cobertura dos exemplos
+## 8. Expected behavior
 
-Os 39 blocos `rust` de `docs/**/*.md` fora de `docs/ref/`, extraídos por script. "✓" quer dizer que tudo o que o bloco usa está nesta referência (ou na ref/08, para as apps de MCU, e nas classes `std/` do documento 14); "erro" aponta a correção que o exemplo precisava. As linhas 1–23 são dos documentos e exemplos, tal como estavam quando esta referência foi escrita, e as correções foram aplicadas na integração da rodada da API (documento 22, §7). As linhas 24–39 são da trilha reescrita (onze partes, documento 23), verificadas por um segundo script que procura cada atributo, método e tipo do bloco nesta referência e na ref/08; os únicos nomes que não estão cá são membros de classes (`pressed`, `blink`, `alert`, `LightMode::*`), que vêm do código gerado da `.jkc`.
+1. **One call per task and per tick.** The host calls `on-cycle` in the order of the group (`order`, 01 §4 step 4); step 4b (virtual commands) runs on the returned records right after the task that produced them.
+2. **Single writer per app** (16, A1): the proposals of the two instances count as the same writer and the same level; between them, A4 applies.
+3. **Read:** the cycle instance always reads from the latch (02 §6.1), and an output shows the value applied in the previous tick. The async one reads the current slot (02 §6.4).
+4. **Quality:** the table of 16 §3.1 applies as it is to `get`, `get_uncertain`, `get_or` and `sample`, in both views and in the class handles. No API of the SDK converts a `Bad` sample into a number without `Result` (invariant 4).
+5. **Async writes:** `set` and `write` enter the inbox of the owning group and are applied in its next tick (01 §5). The `WriteTicket` resolves after that commit with the final result; meanwhile, `last_outcome()` gives `Deferred`.
+6. **Methods:** the expansion belongs to the core (17 §4.1). In the tick of the call, `pending()` of the expanded `out` members gives `None`; the result is seen in the next tick with `last_outcome()`, or at the `await` in async.
+7. **Actions:** never in the cycle; serialized per device; the key deduplicates within `dedup_window` (16 E9); the manifest wins over the class in the configuration (17 §4.2).
+8. **Traps:** they discard the proposals of that tick of that app; the leases keep running (01 §9). An `Err` is not a trap.
+9. **Parameters:** they change at a tick boundary, the same for all the tasks of that tick.
+10. **Determinism:** what the cycle instance sees (image, `now`, `random`, virtualized WASI) is a function of the trace and of the generation; with canonicalized NaNs and without relaxed SIMD (09, attack 10), the same `.wasm` gives the same proposal bytes on aarch64 and x86_64.
+11. **Limits** (ref/00 §10 and those of this reference): ports per app 65,535; proposal buffer 16 KiB (max. 1 MiB); `args` 4 KiB; event 8 KiB; mailbox message 256 B; `snapshot`/`subscribe` 256 ports; `history` 10,000 points; kv as in §2.5.1.
+12. **Compatibility:** §2.8 and §2.9. A 1.y app runs on every 1.x with x ≥ y, with the same proposals for the same inputs.
 
-| # | Bloco | Usa | Estado |
+---
+
+## 9. Coverage of the examples
+
+The 39 `rust` blocks of `docs/**/*.md` outside `docs/ref/`, extracted by script. "✓" means that everything the block uses is in this reference (or in ref/08, for the MCU apps, and in the `std/` classes of document 14); "error" points to the fix that the example needed. Rows 1–23 are from the documents and examples, as they were when this reference was written, and the fixes were applied in the integration of the API round (document 22, §7). Rows 24–39 are from the rewritten track (eleven parts, document 23), checked by a second script that looks up each attribute, method and type of the block in this reference and in ref/08; the only names that are not here are class members (`pressed`, `blink`, `alert`, `LightMode::*`), which come from the code generated from the `.jkc`.
+
+| # | Block | Uses | Status |
 |---|---|---|---|
-| 1 | 00 §"DX" (l. 74) | `#[joker::app]` sem argumentos, `#[input/output/param(unit, default)]`, `#[joker::cycle(period)]`, `get()?`, `set` | ✓ |
-| 2 | 04 §3.1 | `app(name, version)`, `unit`/`quantity`/`range`/`default`, `#[internal] Internal<Plan>`, `#[model]`, `#[alarm] Alarm`, `#[output(event)] EventOutput`, `derive(Record)`, `UtcSeconds` | ✓; `#[model]` é 1.1 (`unstable-ml`); **erro**: `LowSoc` não está definido (falta `#[derive(joker::Event)] pub struct LowSoc { soc: f64 }`) |
+| 1 | 00 §"DX" (l. 74) | `#[joker::app]` without arguments, `#[input/output/param(unit, default)]`, `#[joker::cycle(period)]`, `get()?`, `set` | ✓ |
+| 2 | 04 §3.1 | `app(name, version)`, `unit`/`quantity`/`range`/`default`, `#[internal] Internal<Plan>`, `#[model]`, `#[alarm] Alarm`, `#[output(event)] EventOutput`, `derive(Record)`, `UtcSeconds` | ✓; `#[model]` is 1.1 (`unstable-ml`); **error**: `LowSoc` is not defined (`#[derive(joker::Event)] pub struct LowSoc { soc: f64 }` is missing) |
 | 3 | 04 §3.2 | `get()?`, `get_or_default()`, `now().utc_seconds()`, `raise/clear`, `dt()`, `set` | ✓ |
-| 4 | 04 §3.3 | `task(every, jitter)`, `history(…)`, `infer`, `Tensor::from_features`, `log::warn!`, `task(on)`, `Sample<f64>`, `emit` | **erro**: `15.min()` → `15.mins()`; **erro**: `io.calendar_features(now)` não existe (função da app: `calendar_features(now)`); `infer`/`Tensor` são 1.1 |
-| 5 | 04 §3.5 | `#[input(event = "Detections")]`, `#[action] Action<(), ()>`, `task(on_event)`, `write_at` | **erro**: `event` é uma flag (`#[input(event)]`), o tipo vem do genérico; **erro**: `Class::Defect` não está definido; `write_at` é 1.1 |
-| 6 | 04 §3.6 | `joker::classes::std`, `#[device]`, `requires`, `Many` | **erro**: `Many<Pump, 1..=8>` → `Many<Pump, 1, 8>` |
-| 7 | 04 §3.7 | `Harness`, `group`, `param`, `input`, `Series::ramp/linear/constant`, `internal`, `run_for`, `output`, `input_series`, `when`, `lt`, `all`, `traps`, `with_quality_at`, `Quality::bad(CommFailure)`, `after`, `no_new_writes` | **erro**: `10.min()` → `10.mins()` (três vezes) |
-| 8 | 06 §4 | trait `InferenceBackend` | fora (06, interno) |
-| 9 | 06 §6 | `infer`, `y.quality.code` | 1.1; **erro**: `Good =>`, `Uncertain =>`, `Bad =>` são padrões de ligação que apanham tudo: `QualityCode::Good` etc. |
+| 4 | 04 §3.3 | `task(every, jitter)`, `history(…)`, `infer`, `Tensor::from_features`, `log::warn!`, `task(on)`, `Sample<f64>`, `emit` | **error**: `15.min()` → `15.mins()`; **error**: `io.calendar_features(now)` does not exist (a function of the app: `calendar_features(now)`); `infer`/`Tensor` are 1.1 |
+| 5 | 04 §3.5 | `#[input(event = "Detections")]`, `#[action] Action<(), ()>`, `task(on_event)`, `write_at` | **error**: `event` is a flag (`#[input(event)]`), the type comes from the generic; **error**: `Class::Defect` is not defined; `write_at` is 1.1 |
+| 6 | 04 §3.6 | `joker::classes::std`, `#[device]`, `requires`, `Many` | **error**: `Many<Pump, 1..=8>` → `Many<Pump, 1, 8>` |
+| 7 | 04 §3.7 | `Harness`, `group`, `param`, `input`, `Series::ramp/linear/constant`, `internal`, `run_for`, `output`, `input_series`, `when`, `lt`, `all`, `traps`, `with_quality_at`, `Quality::bad(CommFailure)`, `after`, `no_new_writes` | **error**: `10.min()` → `10.mins()` (three times) |
+| 8 | 06 §4 | trait `InferenceBackend` | out of scope (06, internal) |
+| 9 | 06 §6 | `infer`, `y.quality.code` | 1.1; **error**: `Good =>`, `Uncertain =>`, `Bad =>` are binding patterns that catch everything: `QualityCode::Good` etc. |
 | 10 | 14 §6.1 | `#[device] Led, Button`, `clicked()?`, `toggle()` | ✓ |
-| 11 | 14 §6.2 | `Many`, `requires`, `Tank`, `Meter` | **erro**: `Many<…, 1..=8>`; **erro**: `Meter` → `MeterAc3` (ou `use … MeterAc3 as Meter`); `tank@1` não está na `std/` (14 §10) |
-| 12 | 14 §6.3 | `get("p1").read()?`, `PumpState`, `Health`, `Error::quality` | **erro**: `get` devolve `Option`: `io.pumps.by_name("p1")?.read()?` |
-| 13 | 14 §6.5 | `derive(joker::Class)`, `Many<Zone, 1..=64>` | **erro**: `Many<Zone, 1, 64>` |
-| 14 | 14 §6.7 | extension trait, `Instant`, `500.ms()`, `toggle()` | **erro**: `impl LedExt for Led<'_>` → `for LedCycle<'_>` |
-| 15 | 14 §7.1 | `#[joker::implements(Pump, capabilities)]`, `cycle(init = …)`, `io.cmd`, `io.state` | **erro**: `io.state.speed` é da capacidade `variable_speed`, que a `pump_ctl` não oferece (só `hour_counter`): não compila |
-| 16 | 14 §9.1 | `Many`, `healthy()`, `index()`, `iter_mut()`, `len()`, `InputMany`, membros como getters | **erro**: `Many<…, 1..=8>`/`0..=16`; **erro**: `io.pumps.len()` dentro do `for … in io.pumps.iter_mut()` é E0502 (use `iter()`, os métodos são `&self`, ou calcule `len` antes); `FlowMeter`, `Tank` não estão na `std/` |
-| 17 | 14 §9.2 | `Many`, `iter().filter`, `served_by()`, `ahu.supply_sp()?`, `set_supply_sp().await?` | **erro**: `Many<…>`; `Ahu`/`Vav` → `HvacAhu`/`HvacVav`; **erro**: `v.served_by() == ahu.name()` compara `Result` com `&str` (`v.served_by().is_ok_and(|s| s == ahu.name())`) |
-| 18 | 14 §13 | `#[joker::method(writes = …)]` | alternativa futura, não é API (§11) |
-| 19 | 19 §5 | `Input<f32>`, `Param<f32>`, backend nativo | ✓ |
-| 20 | exemplo 00 | `range`, `unit = "1"`, `wcet` | ✓ |
-| 21 | exemplo 01 (curtail) | `#[output(unit, many)] OutputMany`, `iter_mut`, `set` | ✓ |
-| 22 | exemplo 01 (Plan) | `derive(Record)`, `utc_seconds() + 30 * 60`, `Tensor::as_slice` | ✓; `Tensor` é 1.1 |
-| 23 | exemplo 02 | `derive(Event)`, `MonoNanos`, `BoundedVec`, `Quality` em registos, `#[input(event)]`, `#[publish] Counter`, `inc()`, `write_at` | ✓; `write_at` é 1.1; **erro**: `Class` não está definido (`#[derive(joker::Enum)] pub enum Class { Ok = 0, Defect = 1 }`) |
-| 24 | trilha 1 §5 | `app(name, version)`, `#[output]`, `#[param(unit, range, default)]`, `cycle(period, wcet)`, `dt()`, `set`, estado `Default` | ✓ |
-| 25 | trilha 1 §9 (testes) | `group`, `param`, `run_for`, `output`, `toggles`, `toggles_every`, `safe`, `stop_app`, `ms()`/`s()` | ✓ |
-| 26 | trilha 3 §3 | `#[input(unit)]` em `°C`, `#[param(unit, range, default)]` em `°C` e `ms`, `get()?` (`Err` sem temperatura `good`) | ✓ |
-| 27 | trilha 3 §7 (testes) | `input`, `Series::constant`, `with_quality`, `Quality::bad`, `after`, `between`, `errors`, `toggles_every` | ✓ |
-| 28 | trilha 4 §7 | `cycle(init = …)`, `Input<bool>`, `Default::default` | ✓ |
-| 29 | trilha 5 §3 | `#[joker::state(persist)]`, `get_or`, `#[param(unit, default)]` | ✓ |
-| 30 | trilha 5 §7 | `sample()`, `quality.is_good()` | ✓ |
-| 31 | trilha 7 §6 | `joker::classes::std`, `#[device]` (`Led`, `Button`, `TempSensor`, `AnalogIn`), `clicked()`, `pressed()`, `temperature()`, `raw()`, `off()`, `set`, `get_or` | ✓; os membros são os das classes `std/` (documento 14) |
-| 32 | trilha 8 §4 | `#[joker::implements(StatusLight)]`, `#[device] Led`, o `enum LightMode` gerado da `.jkc`, `Option` no estado | ✓; `LightMode` e os membros vêm do código gerado da classe `local/` (§4.8.4) |
-| 33 | trilha 8 §4 (testes) | `group`, `device`, `command`, `member`, `after`, `toggles_every`, `Sim::of` | ✓ |
-| 34 | trilha 8 §6 | `#[device] sinal: StatusLight`, métodos `blink`/`off`, `clicked()`, `pressed()`, `temperature()`, `raw()` | ✓ |
-| 35 | trilha 10 §2 | app nativa de MCU: `app`, `#[input]`, `#[output]`, `#[param(unit, range, default)]`, `cycle(period)` sem `wcet`, `dt().as_secs_f32()` | ✓ (ref/08 §2.11; `as_secs_f32` é de `core::time::Duration`) |
-| 36 | trilha 10 §4 | `#[joker::task(every)]`, `history`, `now()`, `h()`, `mins()` num alvo MCU | erro de propósito: `J0720` (`history` não existe no Joker Micro, ref/08 §2.11.5) |
-| 37 | trilha 10 §4 (linha) | `#[param(unit, range, default)]` com `Param<f64>` num MCU com `fpu = "sp"` | aviso de propósito: `J0721` |
-| 38 | trilha 11 §4 | `#[input] Input<bool>` ligado a `alarm.<a>.active`, `get_or`, método `alert()` da classe | ✓ |
-| 39 | trilha 11 §5 | função Rust pura (`Vec<f64>`) | ✓; a 0.7.1 compila e passa os testes: o defeito é de tempo (overruns no Pi Zero W), e não de API |
+| 11 | 14 §6.2 | `Many`, `requires`, `Tank`, `Meter` | **error**: `Many<…, 1..=8>`; **error**: `Meter` → `MeterAc3` (or `use … MeterAc3 as Meter`); `tank@1` is not in `std/` (14 §10) |
+| 12 | 14 §6.3 | `get("p1").read()?`, `PumpState`, `Health`, `Error::quality` | **error**: `get` returns `Option`: `io.pumps.by_name("p1")?.read()?` |
+| 13 | 14 §6.5 | `derive(joker::Class)`, `Many<Zone, 1..=64>` | **error**: `Many<Zone, 1, 64>` |
+| 14 | 14 §6.7 | extension trait, `Instant`, `500.ms()`, `toggle()` | **error**: `impl LedExt for Led<'_>` → `for LedCycle<'_>` |
+| 15 | 14 §7.1 | `#[joker::implements(Pump, capabilities)]`, `cycle(init = …)`, `io.cmd`, `io.state` | **error**: `io.state.speed` belongs to the capability `variable_speed`, which `pump_ctl` does not offer (only `hour_counter`): it does not compile |
+| 16 | 14 §9.1 | `Many`, `healthy()`, `index()`, `iter_mut()`, `len()`, `InputMany`, members as getters | **error**: `Many<…, 1..=8>`/`0..=16`; **error**: `io.pumps.len()` inside the `for … in io.pumps.iter_mut()` is E0502 (use `iter()`, the methods are `&self`, or compute `len` before); `FlowMeter`, `Tank` are not in `std/` |
+| 17 | 14 §9.2 | `Many`, `iter().filter`, `served_by()`, `ahu.supply_sp()?`, `set_supply_sp().await?` | **error**: `Many<…>`; `Ahu`/`Vav` → `HvacAhu`/`HvacVav`; **error**: `v.served_by() == ahu.name()` compares `Result` with `&str` (`v.served_by().is_ok_and(|s| s == ahu.name())`) |
+| 18 | 14 §13 | `#[joker::method(writes = …)]` | future alternative, not API (§11) |
+| 19 | 19 §5 | `Input<f32>`, `Param<f32>`, native backend | ✓ |
+| 20 | example 00 | `range`, `unit = "1"`, `wcet` | ✓ |
+| 21 | example 01 (curtail) | `#[output(unit, many)] OutputMany`, `iter_mut`, `set` | ✓ |
+| 22 | example 01 (Plan) | `derive(Record)`, `utc_seconds() + 30 * 60`, `Tensor::as_slice` | ✓; `Tensor` is 1.1 |
+| 23 | example 02 | `derive(Event)`, `MonoNanos`, `BoundedVec`, `Quality` in records, `#[input(event)]`, `#[publish] Counter`, `inc()`, `write_at` | ✓; `write_at` is 1.1; **error**: `Class` is not defined (`#[derive(joker::Enum)] pub enum Class { Ok = 0, Defect = 1 }`) |
+| 24 | track 1 §5 | `app(name, version)`, `#[output]`, `#[param(unit, range, default)]`, `cycle(period, wcet)`, `dt()`, `set`, `Default` state | ✓ |
+| 25 | track 1 §9 (tests) | `group`, `param`, `run_for`, `output`, `toggles`, `toggles_every`, `safe`, `stop_app`, `ms()`/`s()` | ✓ |
+| 26 | track 3 §3 | `#[input(unit)]` in `°C`, `#[param(unit, range, default)]` in `°C` and `ms`, `get()?` (`Err` without a `good` temperature) | ✓ |
+| 27 | track 3 §7 (tests) | `input`, `Series::constant`, `with_quality`, `Quality::bad`, `after`, `between`, `errors`, `toggles_every` | ✓ |
+| 28 | track 4 §7 | `cycle(init = …)`, `Input<bool>`, `Default::default` | ✓ |
+| 29 | track 5 §3 | `#[joker::state(persist)]`, `get_or`, `#[param(unit, default)]` | ✓ |
+| 30 | track 5 §7 | `sample()`, `quality.is_good()` | ✓ |
+| 31 | track 7 §6 | `joker::classes::std`, `#[device]` (`Led`, `Button`, `TempSensor`, `AnalogIn`), `clicked()`, `pressed()`, `temperature()`, `raw()`, `off()`, `set`, `get_or` | ✓; the members are those of the `std/` classes (document 14) |
+| 32 | track 8 §4 | `#[joker::implements(StatusLight)]`, `#[device] Led`, the `enum LightMode` generated from the `.jkc`, `Option` in the state | ✓; `LightMode` and the members come from the code generated from the `local/` class (§4.8.4) |
+| 33 | track 8 §4 (tests) | `group`, `device`, `command`, `member`, `after`, `toggles_every`, `Sim::of` | ✓ |
+| 34 | track 8 §6 | `#[device] sinal: StatusLight`, methods `blink`/`off`, `clicked()`, `pressed()`, `temperature()`, `raw()` | ✓ |
+| 35 | track 10 §2 | native MCU app: `app`, `#[input]`, `#[output]`, `#[param(unit, range, default)]`, `cycle(period)` without `wcet`, `dt().as_secs_f32()` | ✓ (ref/08 §2.11; `as_secs_f32` is from `core::time::Duration`) |
+| 36 | track 10 §4 | `#[joker::task(every)]`, `history`, `now()`, `h()`, `mins()` on an MCU target | error on purpose: `J0720` (`history` does not exist on Joker Micro, ref/08 §2.11.5) |
+| 37 | track 10 §4 (line) | `#[param(unit, range, default)]` with `Param<f64>` on an MCU with `fpu = "sp"` | warning on purpose: `J0721` |
+| 38 | track 11 §4 | `#[input] Input<bool>` bound to `alarm.<a>.active`, `get_or`, method `alert()` of the class | ✓ |
+| 39 | track 11 §5 | pure Rust function (`Vec<f64>`) | ✓; 0.7.1 compiles and passes the tests: the defect is one of timing (overruns on the Pi Zero W), and not of API |
 
-Menções fora de blocos: `#[joker::state(persist)]` (§4.12), `Mailbox<T, N>` (§4.2), `#[publish] Published<T>`/`Counter` (§4.2), `InputMany`/`OutputMany` (§4.6), `WriteTicket` (§4.6), `ActionHandle` (§4.9), `raw()` (§4.8.2), `x.mine()`/`x.winner()` (§4.6). **Erro:** o `#[joker::shared]` do documento 04 §3.4 não existe e o erro prometido não é implementável (um `static` mutável não se distingue de outro); a separação das memórias é garantida pelas duas instâncias, e documenta-se. **Erro:** a saída do `jk inspect` da trilha antiga (parte 6, §5: "métodos usados", "consultas usadas") não é obtenível sem análise estática; `joker:meta` lista os métodos e membros **conhecidos** pelo handle.
-
----
-
-## 10. Estresse
-
-**S1 — `Many<Pump, 1..=8>`.** Os documentos 04 e 14 escrevem-no assim em sete sítios. Um argumento genérico constante que não é literal nem bloco tem de ir entre chavetas, e o erro sai do parser do rustc, antes de o `#[joker::app]` receber os tokens. *Quebrou.* **Correção:** `Many<C, MIN, MAX>` com dois `usize` (§4.8.3), que é Rust estável, dá a capacidade de `read_all()` em compilação e é o que o `jk check` compara (`J0610`).
-
-**S2 — `15.min()`.** Com `DurationExt` para `u64` no prelúdio, `15.min()` tem dois candidatos (`Ord::min` e `DurationExt::min`), e é o erro E0034; em `f64`, o método inerente `f64::min` ganha e pede um argumento. *Quebrou.* **Correção:** `mins()` (§4.7). O `ms()`, o `s()`, o `h()` e o `d()` não colidem com nada.
-
-**S3 — Um `Vec` no estado de ciclo.** Com o alocador bump reposto a cada tick (documento 04, §3.2), `st.buf.push(x)` num tick guardava um ponteiro para memória que o tick seguinte reutilizava: corrupção silenciosa e não determinista. *Quebrou.* **Correção:** no `on-cycle`, o alocador faz trap (`J-E0903`), e o harness mostra o tick e a pilha; o `init` pode alocar; a API de ciclo só usa tipos limitados (§4.13).
-
-**S4 — `on-cycle` com `Err`.** A assinatura do documento 04 (`result<list<u8>, string>`) perdia o buffer quando a tarefa devolvia `Err`, contra a regra de manter as propostas já feitas. *Quebrou.* **Correção:** `cycle-result { proposals, error: option<error> }` (§2.6.1).
-
-**S5 — `write(v).await?` não quer dizer "escrito".** `Rejected(Interlock)` é um resultado, e não um erro de transporte: `?` deixa-o passar. É o erro de utilização mais provável da API async. **Correção incorporada:** `Err` só quando nada foi proposto (`J-E0205`, `J-E0206`); `WriteOutcome::require_applied()?` para quem quer tratar a não aplicação como erro (`J-E0204`); o exemplo da documentação do SDK usa-o.
-
-**S6 — Uma app 1.0 numa runtime 1.2 com um motivo de qualidade novo.** Pelo WIT, o adaptador não deixava passar o caso novo; pela imagem empacotada, o byte novo chegava à app sem nenhum tipo o impedir, e o SDK 1.0 não saberia o que fazer. *Quebrou.* **Correção:** cada caso novo tem uma projeção declarada, e o host projeta **antes** de escrever a imagem e os valores WIT, conforme o mundo da app (§2.8). Os `enum` Rust são `#[non_exhaustive]` para que o código-fonte também sobreviva a uma atualização do SDK.
-
-**S7 — As reservas de ML presas à 1.0.** O documento 11 põe `ml` e `frames` no mundo da v1. Se fizessem parte do mundo estável 1.0, a sua forma ficava fixa para toda a série 1 (regra de ouro), antes de o subsistema de ML existir. *Quebrou.* **Correção:** `@unstable(feature = …)` no próprio pacote, fora do mundo estável; recusadas em `prod` (`J-E0003`), stubs em `dev`; estabilizadas na 1.1 com `@since` (§2.9). As escritas agendadas (M6) e as intenções (M18), que o documento 11 põe na 1.1, levam o mesmo tratamento.
-
-**S8 — Um buffer de propostas malicioso.** Um guest pode devolver `n_records` falso, um `len` de método que sai do buffer, uma porta de entrada num `WRITE`, ou flags reservadas. **Aguenta:** validação estrutural completa antes de aplicar qualquer registo, e buffer inteiro descartado com trap (`J-E0907`), para que nunca haja uma aplicação parcial de uma saída atómica; erros de valor (NaN, enum inexistente) são `rejected(wrong-type)` só nessa proposta (§3.4).
-
-**S9 — `HashMap` numa app Rust.** A `std` pede `wasi:random/insecure-seed`, e o componente não liga se o host não a fornecer, ou deixa de ser determinista se a fornecer com entropia real. *Quebrou* (o documento 04 não falava de WASI). **Correção:** o host fornece o conjunto WASI de §2.7, sempre virtualizado: aleatoriedade do gerador determinista, relógios do tick, sem ficheiros, rede só em async e com `net.allow`.
-
-**S10 — Uma classe `pump@1.2` na app, uma instância `pump@1.0` no site.** Se os índices de membros viessem do contrato em runtime, o membro 5 da app seria outra coisa na instância. **Aguenta:** a tabela de portas é construída pela lista de membros **do handle**, gravada em `joker:meta`, e o membro que a instância não tem fica `bound = false` (§2.6.2).
-
-**S11 — `h.output("led").last() == Some(false)` sem tipos.** Um traço genérico `OutputTrace<T>` exigiria anotação nos testes que só contam `toggles()`, e um traço de `Value` não se compara com `Option<bool>`. *Quebrou* com a primeira forma. **Correção:** traços de `Value`, com `Value: PartialEq<f64 | bool | i64 | u64>` e `Observed: PartialEq<Option<T>>` (§6.4): os testes da trilha compilam tal como estão.
-
-**S12 — Desempenho de uma app de 120 VAVs.** 720 portas, das quais ~240 saídas: imagem de 64 + 24 × (720 + 240) ≈ 23 KB por tick, uma cópia pelo ABI canónico (~3 µs num A76 a 8 GB/s efetivos, a medir), e nenhuma chamada ao host. O resultado por saída custa 24 B, e é o que permite `last_outcome()` em 240 saídas sem 240 chamadas. **Aguenta**, dentro do orçamento do documento 09, ataque 2.
+Mentions outside blocks: `#[joker::state(persist)]` (§4.12), `Mailbox<T, N>` (§4.2), `#[publish] Published<T>`/`Counter` (§4.2), `InputMany`/`OutputMany` (§4.6), `WriteTicket` (§4.6), `ActionHandle` (§4.9), `raw()` (§4.8.2), `x.mine()`/`x.winner()` (§4.6). **Error:** the `#[joker::shared]` of document 04 §3.4 does not exist and the promised error cannot be implemented (one mutable `static` cannot be told apart from another); the separation of the memories is guaranteed by the two instances, and it is documented. **Error:** the output of `jk inspect` in the old track (part 6, §5: "methods used", "queries used") cannot be obtained without static analysis; `joker:meta` lists the methods and members **known** to the handle.
 
 ---
 
-## 11. Decisões e alternativas rejeitadas
+## 10. Stress
 
-| Decisão | Alternativa rejeitada | Porquê |
+**S1 — `Many<Pump, 1..=8>`.** Documents 04 and 14 write it like this in seven places. A const generic argument that is neither a literal nor a block must go between braces, and the error comes from the rustc parser, before `#[joker::app]` receives the tokens. *Broke.* **Fix:** `Many<C, MIN, MAX>` with two `usize` (§4.8.3), which is stable Rust, gives the capacity of `read_all()` at compile time and is what `jk check` compares (`J0610`).
+
+**S2 — `15.min()`.** With `DurationExt` for `u64` in the prelude, `15.min()` has two candidates (`Ord::min` and `DurationExt::min`), and that is error E0034; on `f64`, the inherent method `f64::min` wins and asks for an argument. *Broke.* **Fix:** `mins()` (§4.7). `ms()`, `s()`, `h()` and `d()` do not collide with anything.
+
+**S3 — A `Vec` in the cycle state.** With the bump allocator reset at each tick (document 04, §3.2), `st.buf.push(x)` in one tick kept a pointer to memory that the next tick reused: silent and nondeterministic corruption. *Broke.* **Fix:** in `on-cycle`, the allocator traps (`J-E0903`), and the harness shows the tick and the stack; `init` may allocate; the cycle API only uses bounded types (§4.13).
+
+**S4 — `on-cycle` with `Err`.** The signature of document 04 (`result<list<u8>, string>`) lost the buffer when the task returned `Err`, against the rule of keeping the proposals already made. *Broke.* **Fix:** `cycle-result { proposals, error: option<error> }` (§2.6.1).
+
+**S5 — `write(v).await?` does not mean "written".** `Rejected(Interlock)` is a result, and not a transport error: `?` lets it through. It is the most likely usage error of the async API. **Fix incorporated:** `Err` only when nothing was proposed (`J-E0205`, `J-E0206`); `WriteOutcome::require_applied()?` for whoever wants to treat non-application as an error (`J-E0204`); the example of the SDK documentation uses it.
+
+**S6 — A 1.0 app on a 1.2 runtime with a new quality reason.** Through WIT, the adapter did not let the new case through; through the packed image, the new byte reached the app without any type preventing it, and the 1.0 SDK would not know what to do. *Broke.* **Fix:** each new case has a declared projection, and the host projects **before** writing the image and the WIT values, according to the world of the app (§2.8). The Rust `enum`s are `#[non_exhaustive]` so that the source code also survives an update of the SDK.
+
+**S7 — The ML reservations locked into 1.0.** Document 11 puts `ml` and `frames` in the v1 world. If they were part of the stable 1.0 world, their shape would be fixed for the whole 1 series (golden rule), before the ML subsystem exists. *Broke.* **Fix:** `@unstable(feature = …)` in the package itself, outside the stable world; refused in `prod` (`J-E0003`), stubs in `dev`; stabilized in 1.1 with `@since` (§2.9). Scheduled writes (M6) and intents (M18), which document 11 puts in 1.1, get the same treatment.
+
+**S8 — A malicious proposal buffer.** A guest may return a false `n_records`, a method `len` that goes beyond the buffer, an input port in a `WRITE`, or reserved flags. **Holds:** complete structural validation before applying any record, and the whole buffer discarded with a trap (`J-E0907`), so that there is never a partial application of an atomic output; value errors (NaN, nonexistent enum) are `rejected(wrong-type)` only on that proposal (§3.4).
+
+**S9 — `HashMap` in a Rust app.** `std` asks for `wasi:random/insecure-seed`, and the component does not link if the host does not provide it, or stops being deterministic if the host provides it with real entropy. *Broke* (document 04 did not talk about WASI). **Fix:** the host provides the WASI set of §2.7, always virtualized: randomness from the deterministic generator, clocks from the tick, no files, network only in async and with `net.allow`.
+
+**S10 — A `pump@1.2` class in the app, a `pump@1.0` instance on the site.** If the member indices came from the contract at runtime, member 5 of the app would be something else on the instance. **Holds:** the port table is built from the member list **of the handle**, recorded in `joker:meta`, and the member that the instance does not have gets `bound = false` (§2.6.2).
+
+**S11 — `h.output("led").last() == Some(false)` without types.** A generic trace `OutputTrace<T>` would require an annotation in the tests that only count `toggles()`, and a trace of `Value` cannot be compared with `Option<bool>`. *Broke* with the first form. **Fix:** traces of `Value`, with `Value: PartialEq<f64 | bool | i64 | u64>` and `Observed: PartialEq<Option<T>>` (§6.4): the tests of the track compile as they are.
+
+**S12 — Performance of an app with 120 VAVs.** 720 ports, of which ~240 outputs: image of 64 + 24 × (720 + 240) ≈ 23 KB per tick, one copy through the canonical ABI (~3 µs on an A76 at 8 GB/s effective, to be measured), and no call to the host. The result per output costs 24 B, and it is what allows `last_outcome()` on 240 outputs without 240 calls. **Holds**, within the budget of document 09, attack 2.
+
+---
+
+## 11. Decisions and rejected alternatives
+
+| Decision | Rejected alternative | Why |
 |---|---|---|
-| reservas da 1.1 com `@unstable` no mesmo pacote | pacote separado `joker:ml` com versão própria | quebraria a regra "uma versão para o mundo" do ref/00 §1 e obrigaria a uma matriz de versões; o `@unstable` é o mecanismo do próprio WIT e sai do mundo estável sem mudar nada |
-| `cycle-result` com propostas e erro | `result<list<u8>, error>` | perde as propostas de uma tarefa com `Err` |
-| sem alocação no `on-cycle` (trap) | alocador bump reposto por tick | ponteiros pendentes no estado, sem erro (S3) |
-| porta = posição na tabela construída pela ordem de `joker:meta` | handles opacos dados pelo host | a tabela é reconstruível pelo SDK e pelo `jk inspect`, e os índices de membros não dependem do contrato em runtime (S10) |
-| enums WIT com projeção declarada | códigos `u8` no WIT | o ref/00 fixa os enums WIT; a projeção dá tolerância sem perder os tipos |
-| registos com chaves inteiras | chaves de texto | um `Internal<T>` de 3 campos cabia mal nos 64 B com nomes; o esquema está sempre disponível em `joker:meta` |
-| `Many<C, MIN, MAX>` | `Many<C, {1..=8}>` | um `RangeInclusive` como parâmetro constante não é estável, e a macro teria de o reescrever num tipo que o utilizador não vê |
-| `mins()` | `min()`, `minutes()` | `min` colide; `minutes` fica desalinhado dos outros sufixos curtos |
-| registo das tarefas em tempo de ligação | `joker::export!(App, [control, replan])` | nenhum exemplo o tem, e esquecer uma tarefa na lista seria um erro silencioso |
-| `joker:meta` como sequência de fragmentos | uma macro que conhece tudo | uma macro de atributo não vê os outros itens do crate |
-| erros com `record error { code, message }` onde a app decide | variantes por interface (`action-error`) | um código de registo é extensível sem mudar o WIT, e é o que `jk explain` e a API usam; o `cancelled` das ações longas é o `J-E0308`, sem caso novo no WIT |
-| um `run-task` por disparo, também em `on` e `on_event` | um `run-task` longo que consome `subscribe` no guest (proposta da ref/05) | o host conta e junta os disparos (§4.3.2) da mesma forma em todas as linguagens, e um guest que termina não deixa um gatilho mudo |
-| plano B como mundo irmão `app-blocking` (§2.11) | funções bloqueantes no mundo `app` | o mundo `app` fica igual nas três linguagens; o plano B só existe se uma ADR o ativar |
-| traços do harness sobre `Value` | traços genéricos | S11 |
-| métodos como funções Wasm puras (14 §13) | — | continua alternativa futura; nada nesta API a impede |
+| 1.1 reservations with `@unstable` in the same package | separate package `joker:ml` with its own version | it would break the rule "one version for the world" of ref/00 §1 and force a version matrix; `@unstable` is WIT's own mechanism and leaves the stable world without changing anything |
+| `cycle-result` with proposals and error | `result<list<u8>, error>` | it loses the proposals of a task with `Err` |
+| no allocation in `on-cycle` (trap) | bump allocator reset per tick | dangling pointers in the state, without error (S3) |
+| port = position in the table built in the order of `joker:meta` | opaque handles given by the host | the table can be rebuilt by the SDK and by `jk inspect`, and the member indices do not depend on the contract at runtime (S10) |
+| WIT enums with a declared projection | `u8` codes in WIT | ref/00 fixes the WIT enums; the projection gives tolerance without losing the types |
+| records with integer keys | text keys | a 3-field `Internal<T>` would hardly fit in the 64 B with names; the schema is always available in `joker:meta` |
+| `Many<C, MIN, MAX>` | `Many<C, {1..=8}>` | a `RangeInclusive` as a const parameter is not stable, and the macro would have to rewrite it into a type that the user does not see |
+| `mins()` | `min()`, `minutes()` | `min` collides; `minutes` is out of line with the other short suffixes |
+| registration of the tasks at link time | `joker::export!(App, [control, replan])` | no example has it, and forgetting a task in the list would be a silent error |
+| `joker:meta` as a sequence of fragments | one macro that knows everything | an attribute macro does not see the other items of the crate |
+| errors with `record error { code, message }` where the app decides | variants per interface (`action-error`) | a registry code is extensible without changing the WIT, and it is what `jk explain` and the API use; the `cancelled` of long actions is `J-E0308`, without a new case in the WIT |
+| one `run-task` per firing, also in `on` and `on_event` | one long `run-task` that consumes `subscribe` in the guest (proposal of ref/05) | the host counts and merges the firings (§4.3.2) in the same way in all languages, and a guest that ends does not leave a silent trigger |
+| plan B as a sibling world `app-blocking` (§2.11) | blocking functions in the `app` world | the `app` world stays the same in the three languages; plan B only exists if an ADR activates it |
+| harness traces over `Value` | generic traces | S11 |
+| methods as pure Wasm functions (14 §13) | — | it remains a future alternative; nothing in this API prevents it |
 
 ---
 
-## 12. Marcações de versão
+## 12. Version markers
 
-| Item | Fase |
+| Item | Phase |
 |---|---|
-| `types`, `cycle-io` (exceto `write-at`), `async-io` (exceto `write-at` e `propose`), `kv`, `secrets`, `log`, `guest` | 1.0 |
-| ABI de ciclo v1 (§3), exceto a flag `AT` | 1.0 |
-| todo o SDK de §4, exceto §4.15 | 1.0 (backends `wasm` e `native-linux` na Fase 1; `native-micro` na Fase 2, documento 11) |
-| instâncias virtuais, `#[implements]`, `on-action`, `on_action` | 1.0 (Fase 2) |
-| `joker-test`, exceto `Series::replay` de `.jktrace` com ML | 1.0 (Fase 0 para o harness; Fase 1 para o componente) |
-| `ml`, `frames`, `blocks`, `write-at`, `propose`, flag `AT`, `#[model]`, `Tensor` | **1.1**, reservados com `@unstable` |
-| mundo `app-blocking` (plano B do tier 2, §2.11) | reservado; só com ADR na Fase 3 |
-| Wasm no Joker Micro (`wasmi`) | 1.4 (documento 21): a ABI de ciclo não muda |
-| mundo WIT 2 | 2.0 (ADR 0022) |
+| `types`, `cycle-io` (except `write-at`), `async-io` (except `write-at` and `propose`), `kv`, `secrets`, `log`, `guest` | 1.0 |
+| cycle ABI v1 (§3), except the `AT` flag | 1.0 |
+| the whole SDK of §4, except §4.15 | 1.0 (backends `wasm` and `native-linux` in Phase 1; `native-micro` in Phase 2, document 11) |
+| virtual instances, `#[implements]`, `on-action`, `on_action` | 1.0 (Phase 2) |
+| `joker-test`, except `Series::replay` of `.jktrace` with ML | 1.0 (Phase 0 for the harness; Phase 1 for the component) |
+| `ml`, `frames`, `blocks`, `write-at`, `propose`, `AT` flag, `#[model]`, `Tensor` | **1.1**, reserved with `@unstable` |
+| world `app-blocking` (tier 2 plan B, §2.11) | reserved; only with an ADR in Phase 3 |
+| Wasm on Joker Micro (`wasmi`) | 1.4 (document 21): the cycle ABI does not change |
+| WIT world 2 | 2.0 (ADR 0022) |

@@ -1,20 +1,20 @@
-# ADR 0013 — A telemetria nunca bloqueia o controlo
+# ADR 0013 — Telemetry never blocks control
 
-**Estado:** aceite (v1) · **Data:** 2026-09
+**Status:** accepted (v1) · **Date:** 2026-09
 
-## Contexto
+## Context
 
-Um disco lento, uma rede em baixo ou um broker MQTT sobrecarregado não podem atrasar um tick.
+A slow disk, a network that is down or an overloaded MQTT broker must not delay a tick.
 
-## Decisão
+## Decision
 
-Os serviços consomem o núcleo apenas por filas lock-free limitadas. Filas cheias descartam segundo a política declarada, e cada descarte é contado e exposto como sinal `joker.*`. O store-and-forward lê do historian em vez de manter filas em memória.
+Services consume the core only through bounded lock-free queues. Full queues discard according to the declared policy, and each discard is counted and exposed as a `joker.*` signal. Store-and-forward reads from the historian instead of keeping queues in memory.
 
-## Razões
+## Reasons
 
-- O controlo não depende de nada que esteja fora do dispositivo.
-- As perdas nunca são silenciosas.
+- Control does not depend on anything outside the device.
+- Drops are never silent.
 
-## Consequências
+## Consequences
 
-- Em condições extremas perdem-se amostras de telemetria. Os alarmes e o registo de decisões têm a prioridade mais alta e fsync próprio.
+- Under extreme conditions, telemetry samples are dropped. Alarms and the decision log have the highest priority and their own fsync.

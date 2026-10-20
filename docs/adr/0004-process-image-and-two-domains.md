@@ -1,24 +1,24 @@
-# ADR 0004 — Imagem de processo, dois domínios de execução, duas instâncias por app
+# ADR 0004 — Process image, two execution domains, two instances per app
 
-**Estado:** aceite (v1) · **Data:** 2026-09
+**Status:** accepted (v1) · **Date:** 2026-09
 
-## Contexto
+## Context
 
-Controlo precisa de periodicidade e consistência. ML, rede e I/O lento precisam de async. Misturar os dois na mesma thread ou na mesma instância Wasm traz inversão de prioridade e jitter.
+Control needs periodicity and consistency. ML, networking and slow I/O need async. Mixing the two in the same thread or in the same Wasm instance brings priority inversion and jitter.
 
-## Decisão
+## Decision
 
-- **Domínio de ciclo:** threads `SCHED_FIFO` por grupo, com latch → tarefas → árbitro → envelope → commit, sem alocação, sem bloqueio e sem `await`.
-- **Domínio async:** tokio, com leituras do último valor e escritas como propostas para o grupo dono.
-- **Duas instâncias do mesmo componente** por app (ciclo e async), que partilham apenas sinais internos, caixas de correio e eventos.
+- **Cycle domain:** `SCHED_FIFO` threads per group, with latch → tasks → arbiter → envelope → commit, without allocation, without blocking and without `await`.
+- **Async domain:** tokio, with last-value reads and writes as proposals to the owning group.
+- **Two instances of the same component** per app (cycle and async), which share only internal signals, mailboxes and events.
 
-## Razões
+## Reasons
 
-- Consistência de snapshot dentro do tick, e escritas aplicadas de uma vez.
-- O async não consegue atrasar o ciclo por construção.
-- O isolamento entre instâncias dá robustez (um trap async não mata o ciclo).
+- Snapshot consistency within the tick, and writes applied all at once.
+- Async cannot delay the cycle, by construction.
+- Isolation between instances gives robustness (an async trap does not kill the cycle).
 
-## Consequências
+## Consequences
 
-- Custo de DX: o estado não é partilhado implicitamente, e o SDK tem de o tornar óbvio (documento 04, §3.4).
-- Alternativas rejeitadas: uma instância com mutex; async a correr na thread RT entre ticks; threads Wasm partilhadas (ainda não estáveis). Detalhe no documento 09, ataque 6.
+- DX cost: state is not shared implicitly, and the SDK must make that obvious (document 04, §3.4).
+- Rejected alternatives: one instance with a mutex; async running on the RT thread between ticks; shared Wasm threads (not yet stable). Detail in document 09, attack 6.

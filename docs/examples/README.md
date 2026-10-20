@@ -1,12 +1,12 @@
-# Exemplos
+# Examples
 
-| Ficheiro | O que mostra | Para quem |
+| File | What it shows | For whom |
 |---|---|---|
-| `00-first-project.md` | percurso guiado: planta simulada, app Rust, envelope, alarme, testes, replay, passagem para um RPi real | quem começa |
-| `01-bess-peak-shaving.md` | template + site, duas apps, previsão Burn, cenários de teste, comissionamento, relatório de cumprimento | energia |
-| `02-visual-inspection.md` | `.jkm` com HEF + ONNX, pipeline nativo, `write_at`, modo sombra de um modelo novo | visão |
-| `03-predictive-maintenance.md` | sinais em bloco, pipelines de features, treino Burn no dispositivo, alarmes, gravação por gatilho | monitorização |
+| `00-first-project.md` | guided walkthrough: simulated plant, Rust app, envelope, alarm, tests, replay, move to a real RPi | beginners |
+| `01-bess-peak-shaving.md` | template + site, two apps, Burn forecast, test scenarios, commissioning, compliance report | energy |
+| `02-visual-inspection.md` | `.jkm` with HEF + ONNX, native pipeline, `write_at`, shadow mode for a new model | vision |
+| `03-predictive-maintenance.md` | block signals, feature pipelines, on-device Burn training, alarms, triggered recording | monitoring |
 
-Para aprender do zero, com hardware real e passo a passo, começa antes pela trilha de estudo (`../track/README.md`).
+To learn from scratch, with real hardware and step by step, start with the learning track instead (`../track/README.md`).
 
-Os manifestos e o código estão dentro de blocos de código, que são a fonte canónica. Os exemplos 01 (a previsão), 02 e 03 usam funcionalidades da 1.1 (ADR 0019), marcadas "(1.1)" nos blocos. Onde um exemplo e uma referência (`../ref/`) divergirem, vale a referência. Os números de latência e memória marcados como ilustrativos são estimativas a medir na Fase 2.
+The manifests and the code are inside code blocks, which are the canonical source. Examples 01 (the forecast), 02 and 03 use 1.1 features (ADR 0019), marked "(1.1)" in the blocks. Where an example and a reference (`../ref/`) diverge, the reference prevails. The latency and memory figures marked as illustrative are estimates to be measured in Phase 2.

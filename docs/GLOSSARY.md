@@ -51,7 +51,10 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 - **Codes**: `J0795`, `J-E0001`, M-numbers (`M15`), C/D/E/X item ids used in the stress documents, ADR numbers.
 - **Section and document numbers**: `docs/16 §3`, `ref/02 §2.1.13`, "document 23", "ADR 0015". Remissions point at numbers, so they survive the translation unchanged.
 - **Text inside code blocks** is code: keep it, except comments and human-readable strings in illustrative examples, which are translated (AGENTS.md rules 11 and 12). A string that is a normative message (a code's `message` in `spec/codes.toml`, an error text quoted from a reference) is taken from its source, never retranslated by hand.
-- **Placeholders** in angle brackets inside code spans and command synopses are human-readable and are translated: `<nome>` → `<name>`, `<caminho>` → `<path>`, `<placa|triplo>` → `<board|triple>`, `perfil@major` → `profile@major`. Identifiers next to them are not.
+- **Placeholders** in angle brackets inside code spans, command synopses and code blocks are prose, not identifiers, and are translated: `<nome>` → `<name>`, `<caminho>` → `<path>`, `<tipo>` → `<type>`, `<variante>` → `<variant>`, `<nó>` → `<node>`, `<placa>` → `<board>`, `<placa|triplo>` → `<board|triple>`, `<janela>` → `<window>`, `<papel>=<chave>` → `<role>=<key>`, `perfil@major` → `profile@major`. Identifiers next to them are not.
+- **Illustrative identifiers** (example device, signal, app, site and file names such as `bancada`, `luz`, `canario`) are English too: ADR 0036 renamed them, and Appendix B maps every old name to the new one. A new example uses English names from the start.
+- The markers that `jk` writes in generated output are English: `# REVER` → `# REVIEW` (drafts of `jk profile import` and `jk board probe`, ref/03 §2.2.19, §2.3.7) and `# omissão` → `# default` (`jk diff` and the effective manifest, ref/01 §8).
+- Table headers of key references: *Chave*, *Tipo*, *Obr.*, *Omissão*, *Significado* → **Key**, **Type**, **Req.**, **Default**, **Meaning**.
 - English words already used as terms in the Portuguese source stay as they are: lease, latch, tick, snapshot, trip, fallback, overlay, rollout, inbox, watchdog, historian, uplink, bundle, blob, digest, handle, backend, pipeline, stream, replay, commit, deploy, guest, host, harness.
 
 ### 1.5 Remissions and links
@@ -100,7 +103,7 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | ação | **action** | command-type port with a result; 02 §8 |
 | alarme | **alarm** | 02 §11 |
 | permissivo | **permissive** | a boolean condition that allows an action; 01 §4 |
-| faixa (de níveis do árbitro) | **band** | 01 §6 |
+| faixa (de níveis do árbitro) | **band** | 01 §6; the `manual` level band |
 | evento | **event** | |
 | expressão | **expression** | the manifest expression language |
 | casos-limite | **edge cases** | |
@@ -109,15 +112,21 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | anel de traço | **trace ring** | |
 | segmento de estado | **state segment** | in a trace; 16 §7 |
 | gravação, gravar | **recording**, **record** | |
-| carimbo (de tempo), domínio do carimbo | **timestamp**, **timestamp domain** | 01 §3.2, 02 §5 |
+| carimbo (de tempo), domínio do carimbo, carimbo da origem | **timestamp**, **timestamp domain**, **source timestamp** | `ts_src`, `ts_hw`; 01 §3.2, 02 §5, 16 §3.3; *avoid* "stamp" as a noun |
 | envelhecimento | **aging** | 01 §3.3 |
 | registo (tipo de dados, WIT) | **record** | "os registos do contrato" → **the contract records**; not a register or a registry |
 | gravidade (de alarme) | **severity** | |
-| arquivar (alarme), *shelving* | **shelve**, **shelving** | 02 §11 |
-| gatilho, gravação por gatilho | **trigger**, **trigger-based recording** | |
-| rastreio causal | **causal tracing** | |
+| arquivar, desarquivar (alarme), arquivado, *shelving* | **shelve**, **unshelve**, **shelved**, **shelving** | `shelve`; 02 §11; *avoid* "archive" |
+| gatilho, gravação por gatilho | **trigger**, **triggered recording** | task triggers; M7 |
+| rastreio causal | **causal tracing** | M3 |
+| gravar (firmware, flash) | **flash** | `espflash` flashes the ESP32; "gravado em flash" → "recorded in flash" when it is data |
 | reproduzir, replay | **replay** | |
 | verdade de fundo | **ground truth** | 12 |
+| lido por poll, leitura | **read by poll**, **read** | 16 §3.4 |
+| prazo | **deadline** | 16 A14, §7 |
+| vírgula flutuante | **floating point** | 19 |
+| reconhecer (um alarme) | **acknowledge** | `ack`; "não reconhecido" → **not acknowledged** |
+| valor de recurso (de `get_or`) | **substitute value** | the value `get_or` returns instead of a sample that is not `Good`; not to be confused with **fallback** (M1) |
 
 ---
 
@@ -141,10 +150,10 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | tick, tick do grupo | **tick**, **group tick** | |
 | limite de tick | **tick boundary** | where a hot swap takes effect |
 | caminho do tick | **tick path** | "não aloca no caminho do tick" → "does not allocate on the tick path" |
-| caixa (de saída), caixa por saída | **output box**, **per-output box** | latest-wins; not the app **mailbox** |
+| caixa (de saída, de propostas), caixa por saída | **output box**, **proposal box**, **per-output box** | latest-wins; 01 §3.4; *avoid* "outbox" and the app **mailbox** |
 | contrapressão | **backpressure** | |
-| lote, execução de lote | **batch**, **batch execution** | |
-| registo (Hub, OCI, de perfis) | **registry** | "registo de perfis" → **profile registry** |
+| lote, lote (de leitura), execução de lote | **batch**, **batch execution** | `batch-spec`; ref/06 §2.6 |
+| registo (Hub, OCI, de perfis) | **registry** | "registo de perfis" → **profile registry**; `oci://<registry>/…`; a Modbus register stays **register** |
 | registo de gerações | **generation log** | |
 | latch, instante do latch | **latch**, **latch instant** | |
 | inbox (do grupo) | **(group) inbox** | |
@@ -169,8 +178,14 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | store-and-forward | **store-and-forward** | |
 | uplink | **uplink** | `joker-link` crate |
 | ponte | **bridge** | API bridges (Home Assistant, OPC UA server) |
+| escuta (da API) | **listener** | `[security.api] listen`; "escutar" → **listen**, "onde escutar" → **where to listen** |
 | API local | **local API** | |
 | observabilidade | **observability** | |
+| buffers partilhados | **shared buffers** | M4 |
+| caixa latest-wins, caixa do driver, caixa de valor, fila ordenada | **latest-wins box**, **driver box**, **value box**, **ordered queue** | 01 §3.4, 18 P1 |
+| malha (de controlo), malha de corrente | **loop**, **current loop** | 11, 12, 19 |
+| executor de interrupção | **interrupt executor** | Embassy; 12, 19 |
+| medição de *fuel* | ***fuel* metering** | wasmi; 19 §5 |
 | saúde | **health** | |
 | modo de falha, falha | **failure mode**, **failure** / **fault** | "falha" of a device or bus → **fault**; of a process or plan → **failure** |
 | plataforma | **platform** | |
@@ -187,6 +202,8 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | buffer de propostas | **proposal buffer** | |
 | ciclo de vida de uma proposta | **lifecycle of a proposal** | 02 §7.1 |
 | aplicada (escrita) | **applied**, **committed** | "escritas já aplicadas (*committed*)" → "writes already applied (*committed*)" |
+| saída (sinal comandado) | **output** | the commanded signal with envelope and `safe`; not an exit gate |
+| origem (de um escritor) | **origin** | writer = (origin, level); 16 A1 |
 | aceite, limitada, rejeitada | **accepted**, **clamped**, **rejected** | the three outcomes; ref/00 §4.4 |
 | resultado de escrita | **write result** | |
 | escritas agendadas | **scheduled writes** | M6 |
@@ -194,6 +211,8 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | árbitro, arbitragem | **arbiter**, **arbitration** | ADR 0011 |
 | nível (do árbitro) | **level** | `safety`, `manual`, … |
 | prioridade | **priority** | |
+| escritores só-proposta | **proposal-only writers** | M18 |
+| registos com tipo | **typed records** | proposal buffer; 18 P1 |
 | escrita efetiva | **effective write** | |
 | envelope | **envelope** | range, rate, interlocks, safe state, lease |
 | passo do envelope | **envelope step** | |
@@ -252,6 +271,19 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | planta simulada | **simulated plant** | |
 | semente | **seed** | random seed |
 | lógica de negócio | **business logic** | |
+| programador de negócio | **business programmer** | persona; 14, 15 |
+| sinal de vida | **heartbeat signal** | 14 §2 |
+| SDK de tier 2 | **tier 2 SDK** | Python, TypeScript; ref/05 |
+| objeto de definição | **definition object** | TS `app({...})`; ref/05 §5.1 |
+| vista (de I/O) | **(I/O) view** | `CycleIo`, `TaskIo`, `self`; ref/04 §4.5, ref/05 §13 |
+| marcador (de tipo) | **(type) marker** | `i64`, `f32` in Python; ref/05 §5.2 |
+| imagem empacotada | **packed image** | the `on-cycle` input; ref/04 §3 |
+| disparo (de uma tarefa, de um gatilho) | **firing** | one `run-task` per firing; ref/05 §9.2 |
+| modo nativo | **native mode** | SDK outside Wasm; ref/05 §17.4 |
+| biblioteca cliente | **client library** | `joker-client`; ref/05 Part B |
+| camada gerada, camada escrita à mão | **generated layer**, **hand-written layer** | ref/05 §21 |
+| tabela de operações | **operation table** | by `operationId`; ref/05 §21 |
+| nova tentativa | **retry** | ref/05 §24.4, ref/06 §2.14 |
 
 ---
 
@@ -270,6 +302,8 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | troca de geração | **generation swap** | |
 | aplicar, aplicação transacional | **apply**, **transactional apply** | |
 | aplicar com confirmação | **apply with confirmation** | ADR 0015 |
+| trinco de transição de gerações | **generation-transition mutex**; short form **transition mutex** | shared by the local API and the agent (ref/09 §5.13, ref/10 §3.4.2); *avoid* "latch" (core term, §3) and "lock" (`joker.lock`, §6) |
+| ramo (Git) | **branch** | |
 | janela de confirmação | **confirmation window** | |
 | rollback | **rollback** | |
 | estado desejado | **desired state** | |
@@ -303,6 +337,8 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | política de versões | **versioning policy** | ADR 0022 |
 | estável, instável | **stable**, **unstable** | |
 | major, minor, patch | **major**, **minor**, **patch** | |
+| versionado, versionar | **version-controlled**, **version-control** | 15 |
+| armazém por conteúdo | **content-addressed store** | 15 §2.5 |
 
 ---
 
@@ -320,7 +356,7 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | escala | **scale** | |
 | driver, drivers da árvore, driver do catálogo | **driver**, **in-tree drivers**, **catalog driver** | |
 | variador | **drive**, **variable-frequency drive** | |
-| leitura de retorno | **readback** | `verify = { readback = … }` |
+| leitura de retorno | **readback** | the point read back from an output; `verify = { readback = … }`; *avoid* "read-back" |
 | tier (N, W, X) | **tier** | |
 | plano de leitura | **read plan** | |
 | transporte | **transport** | |
@@ -331,6 +367,9 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | catálogo | **catalog** | |
 | conformidade de drivers, suite de conformidade | **driver conformance**, **conformance suite** | `joker-drvtest` |
 | sonda | **probe** | debug probe |
+| vez de fala (RS-485 half-duplex) | **turn-taking** | |
+| referência (de chip) | **part number** | `stm32g474re`; 25 §2.3 |
+| ponte USB-série | **USB-serial bridge** | CP2102, CH340; 23 |
 | pinos | **pins** | |
 | periférico | **peripheral** | |
 | rede de campo | **fieldbus** | |
@@ -338,6 +377,20 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | debounce, flanco | **debounce**, **edge** | |
 | integrador de hardware | **hardware integrator** | |
 | fabricante | **vendor** / **manufacturer** | vendor for software and NPUs, manufacturer for equipment |
+| duplos de equipamento | **equipment doubles** | `joker-drvtest`; 13 |
+| quadro (elétrico) | **cabinet** | 12, 19 |
+| pedido de plano | **plan request** | `plan-request`; ref/06 §2.4 |
+| preparação da geração | **generation preparation** | ref/06 §2.1 |
+| falha de lote | **batch failure** | `batch-failure`; ref/06 §2.8 |
+| valor cru, tipo cru | **raw value**, **raw type** | ref/06 §2.7 |
+| escalonador do barramento | **bus scheduler** | 05 §5, ref/06 §2.14 |
+| anel (SPSC, JDP) | **ring** | `up` ring, `down` ring; ref/06 §5.5 |
+| duplo (de equipamento) | **double** | conformance; ref/06 §6.2 |
+| fixture | **fixture** | `<driver>.fixture.toml`; ref/06 §6.2 |
+| encravamento, encravado | **hang**, **hung** | a tier X process; ref/06 §5.7 |
+| arredondamento com empates para o par | **rounding with ties to even** | `round_ties_even`; ref/06 §2.7 |
+| permilagem | **per mille** | action progress; ref/06 §5.3.2 |
+| ressalto (de um botão) | **bounce** | `bounce` in a simulation model; debounce removes it |
 
 ---
 
@@ -358,7 +411,16 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | contrato, hash de contrato | **contract**, **contract hash** | |
 | IDL de classes | **class IDL** | `.jkc`, 17 |
 | gramática | **grammar** | |
+| registo (tipo do `.jkc`), registo de instâncias | **record**, **instance registry** | a `record` type vs the registry of instances; 17 §3.3, §6 |
+| membro fixo, membro coleção | **fixed member**, **collection member** | 17 §3.2, §8 |
+| agregação | **aggregation** | `any`, `count`; 17 §8 |
+| profundidade (da composição) | **depth** | `JC0501`; 17 §8 |
+| camadas de implementação | **implementation layers** | `J0620`; 14 §7.2 |
+| cumprir (uma classe) | **fulfill** | a profile or instance fulfills a class |
+| sugestão (`@*_hint`) | **hint** | 17 |
+| método de topo | **top-level method** | 17 §4.1 |
 | autor de abstrações | **abstraction author** | persona; 24 |
+| quem integra, quem cria abstrações, quem implementa, quem usa | **the integrator**, **the abstraction creator**, **the implementer**, **the user** | the four people of track 8 §10 and document 14 §1 |
 
 ---
 
@@ -415,12 +477,21 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | chaves da organização | **organization keys** | |
 | bundle de confiança, cadeia de bundles | **trust bundle**, **bundle chain** | |
 | política de confiança | **trust policy** | |
+| papel de assinatura | **signing role** | 15 |
+| responsável de segurança | **security officer** | persona; 15 |
+| integrador do site, engenheiro do site | **site integrator**, **site engineer** | personas; 15 |
 | CA local | **local CA** | |
+| emissora, emissor (de certificados, de uma CA) | **issuer** | the `[ca]` of `deck.toml`; the P-256 key of `jk ca init` that signs node and user certificates; the root signs trust bundles |
+| inquilino, multi-inquilino | **tenant**, **multi-tenant** (noun: **multi-tenancy**) | Deck; 20 §4.1 |
+| armazém de artefactos | **artifact store** | `artifacts.store` |
+| acusar (um relatório) | **acknowledge** | `report-ack` |
 | memória de nonces | **nonce memory** | |
 | proteção de dados | **data protection** | 26 |
 | técnico de campo | **field technician** | persona |
 | operador | **operator** | |
 | operador de rede | **grid operator** | in energy cases; "rede" as computer network stays **network** |
+| em experiência (geração, firmware) | **on trial** | a generation or firmware not yet confirmed (before `confirm`); a test swap |
+| retoma, retomar (transferência OTA, sessão WebSocket) | **resumption**, **resume** | `resume`; "retomável" → **resumable** (§15) |
 
 ---
 
@@ -437,6 +508,25 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | negociação | **negotiation** | |
 | em série, por série | **over serial** | |
 | flash, geração em flash | **flash**, **generation in flash** | |
+| anfitrião, dispositivo (papéis de uma sessão, H e D) | **host**, **device** | ref/07 §1 |
+| sessão | **session** | |
+| trama L2, pacote, mensagem | **L2 frame**, **packet**, **message** | ref/07 §2; a bus frame stays **frame** (§7) |
+| confirmação, confirmar (de um pacote) | **acknowledgment**, **acknowledge** | ref/07 §5.3; confirming a generation or firmware stays **confirmation**, **confirm** |
+| classe de entrega: efémera, estado, fiável | **delivery class**: **ephemeral**, **state**, **reliable** | E, S, F; ref/07 §5.4 |
+| reenviar (verbo) | **resend** | the noun is **retransmission** |
+| remontagem | **reassembly** | |
+| vez (em half-duplex) | **turn** | ref/07 §3.3 |
+| sujo (sinal por enviar) | **dirty** | |
+| sonda, eco, acerto (fases do `TIME`) | **probe**, **echo**, **set** | ref/07 §6.23 |
+| interface externa, escritor externo, dispositivo externo | **external interface**, **external writer**, **external device** | ref/08 §2.1 |
+| contexto de chamada | **call context** | `[any]`, `[group g]`, `[service]`, `[excl]`, `[pure]` |
+| modo de entrega | **delivery mode** | firmware, C library, Rust crate |
+| firmware genérico | **generic firmware** | ref/08 §2.12.1 |
+| área (de flash), partição | **area**, **partition** | `JK_AREA_*` |
+| diário (de persistência), lápide, compactação | **journal**, **tombstone**, **compaction** | ref/08 §2.10.2 |
+| tabela de pinos | **pin table** | ref/08 §2.11.3 |
+| verificador (de bytecode) | **verifier** | |
+| pino de arranque (ESP32) | **strapping pin** | GPIO0, GPIO2 and the like, read at reset |
 
 ---
 
@@ -461,6 +551,14 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | proposta (documento) | **proposal** | directory `proposals/`, non-normative |
 | sensor de toque | **touch sensor** | |
 | LED, pisca, piscar | **LED**, **blinks**, **blink** | |
+| tempo de funcionamento | **uptime** | |
+| Objetivo | **Goal** | standard block in the track |
+| Exercícios | **Exercises** | standard section in the track |
+| (acrescentar), (acrescentar, no ramo) | **(add)**, **(add, on the branch)** | code-block comment after a file name |
+| carga (do CPU) | **load** | `stress-ng` load; the simulated signal is `load` too (Appendix B) |
+| dissipador | **heat sink** | |
+| pen (USB) | **USB stick** | where the root key is kept |
+| `# omissão`, `# REVER` (marcadores) | `# default`, `# REVIEW` | `jk diff` and the effective manifest (ref/01 §8); drafts of `jk profile import` and `jk board probe` (ref/03 §2.2.19, §2.3.7) |
 
 ---
 
@@ -498,9 +596,22 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | custo | **cost** | |
 | lacuna (a fechar) | **gap (to close)** | |
 | refinamento | **refinement** | |
+| funcionalidade de cabeça, cabeça de cartaz | **headline feature**, **headline** | ADR 0022, 21 |
+| pessoas-semana | **person-weeks** | 26 §5 |
+| corte (de âmbito) | **cut** | ADR 0028, 26 §5 |
+| errata | **erratum** (plural **errata**) | |
+| porta de piloto | **pilot gate** | |
 | veredicto | **verdict** | |
 | auditoria | **audit** | |
 | revisão final | **final review** | 26 |
+| revisão de âmbito | **scope review** | 12 |
+| marco | **milestone** | 13 |
+| executor (de conformidade, de suites e casos) | **runner** | 13; the async executor of the harness stays **executor** |
+| noturno (CI) | **nightly** | 13 |
+| piloto de bancada, piloto de campo | **bench pilot**, **field pilot** | 11 |
+| congelar, checklist de congelamento | **freeze**, **freeze checklist** | 18 |
+| adenda | **addendum** | 18, 19 |
+| marca (registada) | **trademark** | 18 |
 | mudanças de desenho, primitivas | **design changes**, **primitives** | 10 |
 | limites | **limits** | 12 |
 | fora do nicho | **out of niche** | 12 |
@@ -515,6 +626,7 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | DX | **DX** | developer experience |
 | ADR: Estado, Data, aceite | **Status**, **Date**, **accepted** | ADR header |
 | ADR: Contexto, Decisão, Consequências, Alternativas | **Context**, **Decision**, **Consequences**, **Alternatives** | ADR sections |
+| ADR: Razões, Nota | **Reasons**, **Note** | ADR sections |
 | alterada por, substitui, substituída por | **amended by**, **replaces**, **superseded by** | ADR header |
 | coberta, coberta (1.1) | **covered**, **covered (1.1)** | key coverage tables in ref/01 |
 
@@ -538,12 +650,198 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | inspeção visual | **visual inspection** |
 | manutenção preditiva | **predictive maintenance** |
 | comissionamento | **commissioning** |
-| SGTC (sistema de gestão técnica centralizada) | **building management system** | abbreviated **BMS** only where no battery BMS is in context |
+| SGTC (sistema de gestão técnica centralizada) | **BMS** (building management system) | spell out **building management system** where a battery BMS is in context |
 | UTA | **AHU** (air handling unit) |
 | contagem fiscal | **fiscal metering** |
 | homem-morto | **dead man's switch** |
 | golpe de aríete | **water hammer** |
+| estação de bombagem, bomba principal | **pumping station**, **lead pump** |
+| boia, fim de curso, relé térmico | **float**, **limit switch**, **thermal relay** |
+| ida, retorno (água) | **supply**, **return** |
+| proteção contra ciclos curtos | **protection against short cycling** |
+| contador certificado | **certified meter** |
+| sinópticos, ecrãs de operação | **mimic diagrams**, **operator screens** |
+| troca (ativo/standby) | **switchover** |
+| blocos funcionais | **function blocks** |
+| alarme que pisca | **flapping alarm** (a LED **blinks**) |
 | piso (de um edifício) | **floor** |
+
+---
+
+## 15. Diagnostics, API and protocol vocabulary (`spec/` and `wit/`)
+
+Terms fixed while translating `spec/codes.toml`, the CDDL files and the OpenAPI document. They also apply to the references that quote those files.
+
+| PT | EN | Notes / source |
+|---|---|---|
+| recusar (ligação, identidade, consentimento) | **refuse** | validation and policy checks **reject** (§1.1) |
+| cancelado, cancelamento | **canceled**, **cancellation** | American spelling; identifiers such as `cancelled` stay as they are |
+| subscrição | **subscription** | ref/09 WebSocket and SSE |
+| tópico | **topic** | WebSocket, MQTT |
+| túnel | **tunnel** | |
+| seletor | **selector** | `GET /v1/values` |
+| pedido mutante | **mutating request** | `x-joker-mutating` |
+| paragem (da API, do processo) | **shutdown** | |
+| trabalho (assíncrono) | **job** | |
+| bloco (de um upload) | **chunk** | not **block**, which names block signals |
+| batimento | **heartbeat** | |
+| retomável | **resumable** | |
+| registo de auditoria | **audit log** | |
+| par (de protocolo) | **peer** | |
+| enquadramento | **framing** | Joker Link L2 |
+| reenvio, remontar | **retransmission**, **reassemble** | |
+| oferta, resposta (HELLO) | **offer**, **answer** | ref/07 |
+| perfil micro | **micro profile** | agent protocol |
+| congelado | **frozen** | trace segments |
+| ocupado, libertar (nível manual) | **held**, **release** | a busy resource is **busy** |
+| bilhete | **ticket** | |
+| em claro | **plaintext**, **in plaintext** | |
+| selado | **sealed** | `SealedSecret` |
+| etiqueta (AEAD) | **tag** | |
+| cofre | **vault** | |
+| âncora (de confiança) | **(trust) anchor** | |
+| folha (de uma cadeia de certificados) | **leaf** | |
+| concorrência otimista | **optimistic concurrency** | `If-Match` |
+| proveniência | **provenance** | |
+| consentimento | **consent** | |
+| religação | **reconnection** | |
+| atestação | **attestation** | |
+| elemento seguro | **secure element** | |
+| quarentena | **quarantine** | |
+| impressão de hardware | **hardware fingerprint** | |
+| rodar (uma chave) | **rotate** | |
+| desfasado (relógio) | **skewed** | |
+| fuso horário | **time zone** | |
+| vivacidade | **liveness** | |
+| fixado (no lock) | **pinned** | |
+| desatualizado, obsoleto | **out of date**, **stale** | |
+| alargar (o envelope) | **widen** | |
+| ajuste (de um sinal) | **adjustment** | |
+| justificação | **justification** | |
+| acessor | **accessor** | SDK |
+| ponto de entrada | **entry point** | |
+| empacotamento, roda (Python) | **packaging**, **wheel** | |
+| pré-inicialização | **pre-initialization** | |
+| pilha | **stack** | memory |
+| temporizador | **timer** | |
+| desgaste (flash) | **wear** | |
+| ciclo algébrico | **algebraic loop** | |
+| painel (`jk dev --panel`) | **panel** | the Deck UI stays **dashboard** (§10) |
+| ligado, desligado (dispositivo) | **connected**, **disconnected** | a feature is **enabled** / **disabled** |
+| mal formado | **malformed** | |
+
+---
+
+## 16. Reference vocabulary: conventions, manifest, lock and node (`ref/00`–`ref/02`)
+
+Terms fixed while translating `ref/00`, `ref/01` and `ref/02`. Section 15 (diagnostics, API and protocol vocabulary) applies to these references too.
+
+| PT | EN | Notes / source |
+|---|---|---|
+| `Texto`, `Inteiro`, `Número`, `Nome`, `NomeDns`, `Duração`, `Quantidade<D>`, `Taxa<U>`, `Orçamento`, `Tamanho`, `VolumeDados`, `Percentagem`, `Valor<S>`, `Caminho`, `Seletor`, `Nível`, `Ficheiro`, `Lista<T>`, `Tabela<K, V>` | `Text`, `Integer`, `Number`, `Name`, `DnsName`, `Duration`, `Quantity<D>`, `Rate<U>`, `Budget`, `Size`, `DataVolume`, `Percentage`, `Value<S>`, `Path`, `Selector`, `Level`, `File`, `List<T>`, `Table<K, V>` | type names of ref/01 §2.2; they are documentation metasyntax (they match the Rust types of ref/01 §12), so they are translated, also inside code spans; `Bool`, `Expr<T>`, `Ref` stay |
+| placeholders `<nome>`, `<caminho>`, `<dispositivo>`, `<placa>`… | `<name>`, `<path>`, `<device>`, `<board>`… | metasyntax in headings, grammars and code spans is translated; keys, values and identifiers are not |
+| não-terminais de gramática (`duração`, `seletor`, `nível`…) | grammar nonterminals (`duration`, `selector`, `level`…) | ref/00 §3.1, ref/01 §3 |
+| colunas `Obr.`, `Omissão`, `Validação`, `Origem`, `Fase` | `Req.`, `Default`, `Validation`, `Origin`, `Phase` | key tables; cells `sim`/`não`/`nova` → `yes`/`no`/`new` |
+| colunas `Código`, `Gravidade`, `Mensagem` | `Code`, `Severity`, `Message` | code tables; a message quoted from `spec/codes.toml` is copied from it |
+| gama (de códigos) | **range** | "a gama `J0140`–`J0199`" |
+| incoerente, coerente | **inconsistent**, **consistent** | as in `spec/codes.toml` |
+| erro de escrita (gralha) | **typo** | not a **write** |
+| fixar (no lock) | **pin** | verb of "fixado → pinned" (§15) |
+| ficheiro de arranque do nó, configuração de arranque do nó | **node startup file**, **node startup configuration** | `/etc/joker/node.toml`; ref/02 §2.2 |
+| layout em disco | **on-disk layout** | `/var/lib/joker/` |
+| falha fechada | **fail closed** | |
+| espelho do registo | **registry mirror** | |
+| motor (Wasm, AOT) | **engine** | |
+| caminho de pesquisa | **search path** | `defaults.search` |
+| contexto (da `jk`) | **context** | |
+| endereço de arranque | **bootstrap address** | see **bootstrap channel** (§10) |
+| troca de âncoras | **anchor swap** | |
+| separação de funções | **separation of duties** | |
+| revogar, revogação, expiração | **revoke**, **revocation**, **expiration** | |
+| confiança no primeiro uso | **trust on first use** | |
+| impressão digital (certificado) | **fingerprint** | |
+| memória bloqueada (`mlock`) | **locked memory** | |
+| payload destacado | **detached payload** | COSE |
+| pessoas de escrow | **escrow holders** | |
+| valor substituto | **substitute value** | |
+| enrolamento sem intervenção | **zero-touch enrollment** | |
+| imagem de fábrica | **factory image** | |
+| reter (um nó) | **hold back** | Deck rollout |
+| captura, capturar | **capture** | device facts captured into the lock |
+| factos de dispositivo | **device facts** | |
+| órfão, podar | **orphan**, **prune** | |
+| princípio da mudança mínima | **principle of minimal change** | |
+| apertar, alargamento | **tighten**, **widening** | "os envelopes só apertam" → **envelopes only tighten**; "alargar" → **widen** (§15) |
+| fusão, fundir, diretiva de fusão | **merge**, **merge directive** | overlays; ref/01 §7 |
+| chave pontuada | **dotted key** | TOML |
+| listas de tabelas (TOML) | **arrays of tables** | the TOML term |
+| linearização em pós-ordem | **post-order linearization** | `extends` |
+| materializar as omissões | **materialize the defaults** | effective manifest |
+| casa com, correspondências (seletor) | **matches** | |
+| prefixos com dono | **owned prefixes** | document 02 §9 |
+| grupo de avaliação | **evaluation group** | expressions |
+| envelope por passos | **step-by-step envelope** | |
+| atómicos (grupos) | **atomics** | short for atomic groups |
+| reservas (de ML) | **(ML) reservations** | document 11 |
+| modelo (de texto, `"{}.temp"`) | **template** | not an ML **model** |
+| (versão) quente | **warm** (previous version) | after a hot swap |
+| coberta (só Joker Micro), diretiva de overlay | **covered (Joker Micro only)**, **overlay directive** | coverage table of ref/01 appendix B |
+| segundos intercalares | **leap seconds** | |
+| complemento para dois | **two's complement** | |
+
+---
+
+## 17. HTTP API and agent protocol vocabulary (`ref/09`–`ref/10`)
+
+Terms fixed while translating ref/09 and ref/10. Sections 15 and 16 apply to these references too.
+
+| PT | EN | Notes / source |
+|---|---|---|
+| balde de fichas, balde de tokens | **token bucket** | rate limits |
+| rajada | **burst** | |
+| coalescência, coalescer | **coalescing**, **coalesce** | state topics |
+| amostrador | **sampler** | |
+| código de fecho | **close code** | WebSocket |
+| conjunto causal | **causal set** | `Decision.inputs` |
+| ocupação (de um nível manual) | **holding** | see **held** (§15) |
+| autoridade (do nó) | **authority** | the Deck the node is enrolled with |
+| documento de estado desejado (DSD) | **desired state document (DSD)** | ref/10 §1.4 |
+| núcleo mínimo (do protocolo) | **minimal core** | ref/10 §3.14; not the runtime **core** (§3) |
+| aplicação (de um estado desejado, de uma fase) | **apply** (noun) | "a última aplicação falhou" → "the last apply failed"; never "application" |
+| fase (de uma aplicação) | **phase** | `runtime`, `mcu`, `generation` |
+| pinos (TLS) | **pins** | `deck_tls` SPKI pins |
+| prova de renovação | **renewal proof** | `renew-proof` |
+| Preparado para ML | **Ready for ML** | document 11 heading (§"Ready for ML"); version markers cite it as "Ready for ML" too; *avoid* "ML-ready" |
+
+---
+
+## 18. Catalog, simulation, test and SDK vocabulary (`ref/03`–`ref/04`)
+
+Terms fixed while translating `ref/03` and `ref/04`. Sections 15 to 17 apply to these references too.
+
+| PT | EN | Notes / source |
+|---|---|---|
+| rascunho (de perfil) | **draft** | output of `jk profile import csv` |
+| ficha técnica | **datasheet** | |
+| sobreposição (de registos) | **overlap** | `J0811` |
+| sobreposição local (cenário), sobrepor | **local override**, **override** | ref/03 §2.5.2; manifest adjustments override profile keys |
+| expectativa | **expectation** | `[[expect]]` |
+| predicado | **predicate** | |
+| gerador | **generator** | `gen`; also the deterministic random generator |
+| tecla, tecla de falha | **key**, **fault key** | `panel` keys of `jk dev` |
+| falha programada | **scheduled fault** | `[faults]` |
+| passo (de integração, de uma ação, do envelope) | **step** | |
+| planta | **plant** | `[plant]`, `joker:sim/plant` |
+| capacidades (tabela `[capacities]` de uma placa) | **capacities** | fixed sizes of the MCU firmware; a feature that a device or class offers stays **capability** (§5) |
+| etiqueta (OCI) | **tag** | ref/03 §2.8.1 |
+| anotação (OCI) | **annotation** | |
+| tipo de declaração | **declaration type** | ref/04 §4.4 |
+| imagem de entradas, secção larga | **input image**, **wide section** | cycle ABI, ref/04 §3.2 |
+| caminho empacotado | **packed path** | ref/04 §2.3 |
+| projeção (de um caso de enum) | **projection** | ref/04 §2.8 |
+| janela de adaptadores | **adapter window** | |
+| reserva (de uma funcionalidade) | **reservation** | `@unstable` |
+| importador | **importer** | |
 
 ---
 

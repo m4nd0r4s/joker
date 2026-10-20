@@ -1,25 +1,25 @@
-# ADR 0023 — As interfaces fecham-se em referências normativas (`docs/ref/`)
+# ADR 0023 — Interfaces are closed in normative references (`docs/ref/`)
 
-**Estado:** aceite (v1) · **Data:** 2026-09
+**Status:** accepted (v1) · **Date:** 2026-09
 
-## Contexto
+## Context
 
-Os documentos por área (03 manifesto, 04 SDK, 05 drivers, 19 Joker Micro, 20 Deck) explicam o desenho com exemplos, mas não eram exaustivos: havia chaves usadas nos exemplos sem definição, mensagens sem campos, erros sem código e dois documentos a dizer coisas diferentes sobre o mesmo campo. Implementar a partir deles obrigaria a inventar detalhe durante a implementação, e cada equipa inventaria o seu.
+The per-area documents (03 manifest, 04 SDK, 05 drivers, 19 Joker Micro, 20 Deck) explain the design with examples, but they were not exhaustive: there were keys used in the examples without a definition, messages without fields, errors without a code and two documents saying different things about the same field. Implementing from them would force detail to be invented during implementation, and each team would invent its own.
 
-## Decisão
+## Decision
 
-1. Cada interface tem uma **referência exaustiva** em `docs/ref/`, com a representação comum fixada em `ref/00-conventions.md` (documento 22).
-2. **Precedência:** `ref/00` tem o nível do documento 16. `ref/01`–`ref/10` ficam **acima** dos documentos por área, que passam a ser a explicação e remetem para a referência no detalhe. A ordem completa está em `docs/README.md`.
-3. Os ficheiros máquina-legíveis (`wit/`, `spec/cddl/`, `spec/openapi/`, `spec/c/`) são parte da referência: se um ficheiro e o texto divergem, é um bug a corrigir nos dois, e a CI da Fase 0 (tarefa 0a, documento 22, §8) impede que isso aconteça em silêncio.
-4. Mudar uma interface é mudar a referência e o ficheiro máquina-legível no mesmo conjunto de commits, com ADR se tocar num contrato público (ADR 0022).
+1. Each interface has an **exhaustive reference** in `docs/ref/`, with the common representation fixed in `ref/00-conventions.md` (document 22).
+2. **Precedence:** `ref/00` has the level of document 16. `ref/01`–`ref/10` sit **above** the per-area documents, which become the explanation and refer to the reference for the detail. The full order is in `docs/README.md`.
+3. The machine-readable files (`wit/`, `spec/cddl/`, `spec/openapi/`, `spec/c/`) are part of the reference: if a file and the text diverge, it is a bug to fix in both, and the Phase 0 CI (task 0a, document 22, §8) prevents that from happening silently.
+4. Changing an interface is changing the reference and the machine-readable file in the same set of commits, with an ADR if it touches a public contract (ADR 0022).
 
-## Razões
+## Reasons
 
-- A implementação só trabalha sobre specs; as dúvidas resolvem-se na referência, não no código.
-- Os ficheiros máquina-legíveis geram código (bindings WIT, clientes do OpenAPI, validação CBOR) e testes de conformidade.
+- Implementation only works on specs; doubts are resolved in the reference, not in the code.
+- The machine-readable files generate code (WIT bindings, OpenAPI clients, CBOR validation) and conformance tests.
 
-## Consequências
+## Consequences
 
-- Os documentos por área encolhem no detalhe e ganham remissões.
-- As referências são grandes (cerca de 1,2 MB de texto) e precisam de dono por frente (documento 13).
-- A tarefa 0a da Fase 0 compila e valida as referências antes de qualquer funcionalidade.
+- The per-area documents shrink in detail and gain cross-references.
+- The references are large (about 1.2 MB of text) and need an owner per front (document 13).
+- Task 0a of Phase 0 compiles and validates the references before any feature.

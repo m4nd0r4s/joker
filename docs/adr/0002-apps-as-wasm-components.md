@@ -1,25 +1,25 @@
-# ADR 0002 — As apps são componentes WebAssembly
+# ADR 0002 — Apps are WebAssembly components
 
-**Estado:** aceite (v1) · **Data:** 2026-09
+**Status:** accepted (v1) · **Date:** 2026-09
 
-## Contexto
+## Context
 
-As apps precisam de ser portáveis entre arquiteturas, substituíveis a quente, isoladas umas das outras e da runtime, e escritas em mais do que uma linguagem. Containers resolvem o isolamento, mas custam memória, arranque e IPC em cada leitura.
+Apps need to be portable across architectures, hot-swappable, isolated from one another and from the runtime, and written in more than one language. Containers solve isolation, but they cost memory, startup and IPC on every read.
 
-## Decisão
+## Decision
 
-As apps são **componentes** do Component Model no mundo `joker:runtime`, sobre WASI 0.3 (async nativo, `stream<T>`, `future<T>`), executados no wasmtime com AOT obrigatório em produção. Rust é tier 1; TypeScript e Python são tier 2. Apps nativas existem apenas como porta de saída (documento 04, §5).
+Apps are Component Model **components** in the `joker:runtime` world, on WASI 0.3 (native async, `stream<T>`, `future<T>`), executed in wasmtime with AOT required in production. Rust is tier 1; TypeScript and Python are tier 2. Native apps exist only as an exit gate (document 04, §5).
 
-## Razões
+## Reasons
 
-- Um artefacto `.wasm` corre em aarch64, x86_64 e armv7 (neste com Pulley).
-- Sandbox sem ambient authority: a app só vê as portas ligadas.
-- Hot-swap num limite de tick, com migração de estado.
-- Custo de fronteira pequeno com a imagem empacotada (documento 09, ataque 2).
-- WASI 0.3 foi publicado em junho de 2026 e o wasmtime 46 implementa a versão final.
+- One `.wasm` artifact runs on aarch64, x86_64 and armv7 (on the latter with Pulley).
+- Sandbox without ambient authority: the app only sees the bound ports.
+- Hot swap at a tick boundary, with state migration.
+- Small boundary cost with the packed image (document 09, attack 2).
+- WASI 0.3 was published in June 2026 and wasmtime 46 implements the final version.
 
-## Consequências
+## Consequences
 
-- O Component Model ainda evolui, e a política de versões M21 existe por isso.
-- Os SDKs de tier 2 embutem um motor JS ou Python (MB e pausas de GC) e ficam limitados a ciclos lentos.
-- Alternativas rejeitadas: **containers** (memória e latência); **Lua/scripting embutido** (sem tipos, sem ecossistema); **plugins nativos** (sem isolamento, sem ABI estável).
+- The Component Model is still evolving, and that is why the M21 versioning policy exists.
+- The tier 2 SDKs embed a JS or Python engine (MB and GC pauses) and are limited to slow cycles.
+- Rejected alternatives: **containers** (memory and latency); **embedded Lua/scripting** (no types, no ecosystem); **native plugins** (no isolation, no stable ABI).

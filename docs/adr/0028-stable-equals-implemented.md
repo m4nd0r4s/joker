@@ -1,21 +1,21 @@
-# ADR 0028 — Estável = implementado
+# ADR 0028 — Stable = implemented
 
-**Estado:** aceite (v1, 2026-10-21; documento 26, §5 e §9) · **Data:** 2026-09
+**Status:** accepted (v1, 2026-10-21; document 26, §5 and §9) · **Date:** 2026-09
 
-## Contexto
+## Context
 
-A especificação da v1.0 é muito mais larga do que a equipa prevista consegue implementar no calendário do documento 11 (documento 26, §5: ~350–435 pessoas-semana contra ~155). E a regra de ouro da ADR 0022 congela, durante toda a série 1, tudo o que a 1.0 declara estável. Declarar estáveis centenas de superfícies que nunca foram implementadas é garantir erros de desenho permanentes.
+The v1.0 specification is much wider than the planned team can implement in the schedule of document 11 (document 26, §5: ~350–435 person-weeks against ~155). And the golden rule of ADR 0022 freezes, for the whole of series 1, everything that 1.0 declares stable. Declaring stable hundreds of surfaces that were never implemented is guaranteeing permanent design errors.
 
-## Decisão
+## Decision
 
-1. Na 1.0 só é **estável** o que foi implementado e passou a sua porta de saída.
-2. O resto fica **reservado**, com os mecanismos que o ML já usa: `@unstable` no WIT, chave reservada no manifesto (código de "reservado para uma versão futura", como o `J0290`), `x-joker-since` > 1.0 no OpenAPI (a operação responde `J-E1017`), identificador de mensagem reservado no Joker Link e no agente, `status = "reserved"` no registo de códigos.
-3. Uma superfície reservada entra numa minor quando é implementada; nada do que é estável muda. A regra de ouro fica intacta.
-4. Tem de estar certo logo na 1.0, porque fica no campo sem atualização por software: o formato do traço, as camadas L1–L3 do Joker Link com negociação no `HELLO`, o recetor de OTA no firmware do MCU, o núcleo mínimo `agent/1.0`, o subconjunto estável do WIT, o formato do lock, o espaço de nomes dos códigos e os tipos de media.
-5. O corte inicial é o da tabela do documento 26, §5, a reavaliar no fim da M0 com números reais.
+1. In 1.0, only what was implemented and passed its exit gate is **stable**.
+2. The rest is **reserved**, with the mechanisms that ML already uses: `@unstable` in the WIT, a reserved key in the manifest (a "reserved for a future version" code, such as `J0290`), `x-joker-since` > 1.0 in the OpenAPI (the operation responds `J-E1017`), a reserved message identifier in Joker Link and in the agent, `status = "reserved"` in the code registry.
+3. A reserved surface enters a minor when it is implemented; nothing that is stable changes. The golden rule stays intact.
+4. These must be right from 1.0, because they stay in the field without a software update: the trace format, layers L1–L3 of Joker Link with negotiation in `HELLO`, the OTA receiver in the MCU firmware, the minimal `agent/1.0` core, the stable subset of the WIT, the lock format, the code namespace and the media types.
+5. The initial cut is that of the table in document 26, §5, to be reassessed at the end of M0 with real figures.
 
-## Consequências
+## Consequences
 
-- O documento 11 é refeito: nova base de calendário, portas de piloto à escala da bancada, Deck e Hub fora do caminho crítico da runtime.
-- As referências marcam as superfícies reservadas (trabalho mecânico, a fazer quando a ADR for aceite).
-- Especificar continua a ser barato; congelar passa a exigir implementação.
+- Document 11 is redone: a new schedule baseline, pilot gates at bench scale, Deck and Hub off the critical path of the runtime.
+- The references mark the reserved surfaces (mechanical work, to be done when the ADR is accepted).
+- Specifying remains cheap; freezing now requires implementation.

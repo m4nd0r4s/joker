@@ -1,86 +1,86 @@
-# 23 — A bancada de desenvolvimento
+# 23 — The development bench
 
-Este documento diz **com que hardware se desenvolve e testa o Joker agora**, e como cada fase do roadmap (documento 11) se valida com ele.
+This document says **with which hardware Joker is developed and tested now**, and how each phase of the roadmap (document 11) is validated with it.
 
-**A regra desta bancada: não se compra nada.** Tudo o que está aqui funciona só com as três placas que existem, os cabos que elas já usam (alimentação, micro-USB, cartões SD), o portátil e a rede Wi-Fi. O que precisaria de uma peça a mais está marcado como **compra futura (opcional)** e nunca bloqueia uma fase: ou se cobre de outra forma (simulação, QEMU), ou fica declarado como não validado na bancada.
+**The rule of this bench: nothing is bought.** Everything here works only with the three boards that exist, the cables they already use (power, micro-USB, SD cards), the laptop and the Wi-Fi network. What would need one more part is marked as **future purchase (optional)** and never blocks a phase: either it is covered some other way (simulation, QEMU), or it is declared as not validated on the bench.
 
 ---
 
-## 1. Inventário e papéis
+## 1. Inventory and roles
 
-| Placa | O que é | Papel |
+| Board | What it is | Role |
 |---|---|---|
-| **Raspberry Pi 3 Model B+** (2017) | 4× Cortex-A53 a 1,4 GHz, 1 GB, aarch64, Ethernet (por USB 2.0), Wi-Fi, 40 pinos | **Nó Linux principal** (`lab`). `jokerd` com o wasmtime completo (Cranelift em aarch64), API, historian, drivers. Onde se mede o jitter com PREEMPT_RT. Alimenta o ESP32 pelo USB. |
-| **Raspberry Pi Zero W v1** | 1× ARM1176 (ARMv6) a 1 GHz, 512 MB, 32 bits, só Wi-Fi | **Plataforma fraca e segundo nó** (`zero`). Prova que o `jokerd` se degrada com avisos e não parte; cliente Modbus TCP do ESP32 pelo Wi-Fi; segundo nó para o Deck (Fase 3). |
-| **ESP32** (original, placa de desenvolvimento) | 2× Xtensa LX6 a 240 MHz, 520 KB de SRAM, FPU de precisão simples, Wi-Fi, Bluetooth, ponte USB-série na placa (CP2102 ou CH340), LED no GPIO2, botão `BOOT` no GPIO0 | **Primeiro Joker Micro.** Na Fase 1, um equipamento Modbus "de verdade", por RTU e por TCP ao mesmo tempo (§4); na Fase 2, coprocessador do Pi 3 pelo Joker Link e nó por Wi-Fi. |
-| portátil | — | desenvolvimento, `jk`, CI local, QEMU, e o Deck na Fase 3 |
+| **Raspberry Pi 3 Model B+** (2017) | 4× Cortex-A53 at 1.4 GHz, 1 GB, aarch64, Ethernet (over USB 2.0), Wi-Fi, 40 pins | **Main Linux node** (`lab`). `jokerd` with the full wasmtime (Cranelift on aarch64), API, historian, drivers. Where jitter is measured with PREEMPT_RT. Powers the ESP32 over USB. |
+| **Raspberry Pi Zero W v1** | 1× ARM1176 (ARMv6) at 1 GHz, 512 MB, 32-bit, Wi-Fi only | **Weak platform and second node** (`zero`). Proves that `jokerd` degrades with warnings and does not break; Modbus TCP client of the ESP32 over Wi-Fi; second node for the Deck (Phase 3). |
+| **ESP32** (original, development board) | 2× Xtensa LX6 at 240 MHz, 520 KB of SRAM, single-precision FPU, Wi-Fi, Bluetooth, USB-serial bridge on the board (CP2102 or CH340), LED on GPIO2, `BOOT` button on GPIO0 | **First Joker Micro.** In Phase 1, a "real" Modbus device, over RTU and over TCP at the same time (§4); in Phase 2, coprocessor of the Pi 3 over Joker Link and a node over Wi-Fi. |
+| laptop | — | development, `jk`, local CI, QEMU, and the Deck in Phase 3 |
 
-O **Bluetooth** do ESP32 não é usado: nenhuma interface da v1 o prevê.
+The ESP32's **Bluetooth** is not used: no v1 interface provides for it.
 
-## 2. Topologia
+## 2. Topology
 
 ```
-                          Wi-Fi / rede local
+                          Wi-Fi / local network
       ┌───────────────┬──────────────────────┬─────────────────────────┐
       │               │                      │                         │
  ┌────┴─────┐   ┌─────┴──────────────┐   ┌───┴─────────────┐    ┌──────┴────────────┐
- │ portátil │   │ Raspberry Pi 3 B+  │   │ Pi Zero W       │    │ ESP32             │
- │ jk, CI,  │──▶│ jokerd (nó "lab")  │   │ jokerd (nó      │    │ Fase 1: servidor  │
- │ QEMU,    │   │ mosquitto (F2/F3)  │   │ "zero"): cliente│───▶│ Modbus TCP :502   │
- │ Deck(F3) │   │                    │   │ Modbus TCP      │    │ (Fase 2: link UDP)│
- └──────────┘   │   USB ─────────────┼───┼─────────────────┼───▶│ UART0 pela ponte  │
-                └────────────────────┘   └─────────────────┘    │ USB (RTU / link)  │
+ │ laptop   │   │ Raspberry Pi 3 B+  │   │ Pi Zero W       │    │ ESP32             │
+ │ jk, CI,  │──▶│ jokerd (node "lab")│   │ jokerd (node    │    │ Phase 1: Modbus   │
+ │ QEMU,    │   │ mosquitto (F2/F3)  │   │ "zero"): Modbus │───▶│ TCP server :502   │
+ │ Deck(F3) │   │                    │   │ TCP client      │    │ Phase 2: UDP link │
+ └──────────┘   │   USB ─────────────┼───┼─────────────────┼───▶│ UART0 via the USB │
+                └────────────────────┘   └─────────────────┘    │ bridge (RTU/link) │
                                                                 └───────────────────┘
-       O cabo micro-USB do ESP32 ligado ao Pi 3 dá alimentação e uma porta série
-       (/dev/serial/by-id/usb-Silicon_Labs_CP2102_…): Modbus RTU na Fase 1, Joker Link
-       na Fase 2. O Pi Zero W só chega ao ESP32 pelo Wi-Fi. Sem fios de jumper.
+       The ESP32 micro-USB cable connected to the Pi 3 provides power and a serial port
+       (/dev/serial/by-id/usb-Silicon_Labs_CP2102_…): Modbus RTU in Phase 1, Joker Link
+       in Phase 2. The Pi Zero W only reaches the ESP32 over Wi-Fi. No jumper wires.
 ```
 
-**O truque que evita comprar peças:** a ponte USB-série da placa do ESP32 (CP2102 ou CH340, conforme o fabricante) é uma porta série real para o Pi 3. Serve para o Modbus RTU e para o Joker Link sem transceptor RS-485 e sem fios. Na Fase 2, o `UART0` do ESP32 deixa de ser consola e passa a ser o link; as mensagens do ROM de arranque a 115 200 baud chegam antes do firmware e são lixo que o COBS descarta até ao primeiro `0x00` (ref/07 §3.2).
+**The trick that avoids buying parts:** the USB-serial bridge of the ESP32 board (CP2102 or CH340, depending on the manufacturer) is a real serial port for the Pi 3. It serves for Modbus RTU and for Joker Link without an RS-485 transceiver and without wires. In Phase 2, the ESP32's `UART0` stops being the console and becomes the link; the boot ROM messages at 115,200 baud arrive before the firmware and are garbage that COBS discards up to the first `0x00` (ref/07 §3.2).
 
-**O Pi Zero W não pode usar o USB.** Tem um só micro-USB OTG e não há adaptador na bancada: fala com o ESP32 pelo Wi-Fi, por Modbus TCP na Fase 1 (é isso que o firmware de bancada serve, §4). O ESP32 continua alimentado pelo USB do Pi 3 (ou do portátil).
+**The Pi Zero W cannot use USB.** It has a single micro-USB OTG port and there is no adapter on the bench: it talks to the ESP32 over Wi-Fi, through Modbus TCP in Phase 1 (that is what the bench firmware serves, §4). The ESP32 remains powered by the USB of the Pi 3 (or of the laptop).
 
-## 3. Sinais reais sem componentes
+## 3. Real signals without components
 
-A trilha de estudo (`docs/track/`) pede uma saída, uma entrada discreta, uma entrada analógica ruidosa e um equipamento remoto. Sem comprar nada, os equivalentes são:
+The learning track (`docs/track/`) asks for an output, a discrete input, a noisy analog input and a piece of remote equipment. Without buying anything, the equivalents are:
 
-| Placa | Sinal | Como | Tipo |
+| Board | Signal | How | Type |
 |---|---|---|---|
-| Pi 3, Pi Zero | **LED `ACT`** da placa | driver `sysfs`, `/sys/class/leds/ACT/brightness` (§7) | saída `bool` |
-| Pi 3, Pi Zero | **temperatura do CPU** | driver `sysfs`, `/sys/class/thermal/thermal_zone0/temp` (m°C) | entrada `f64`, `°C`. É o "processo físico" da trilha: aquece com carga (`stress-ng --cpu 4 --timeout 5m`) e arrefece sozinha |
-| ESP32 | **LED da placa** (GPIO2 na maioria das placas; algumas não têm) | GPIO | saída `bool` |
-| ESP32 | **botão `BOOT`** (GPIO0, em todas as placas) | GPIO com pull-up, ativo em baixo | entrada `bool` |
-| ESP32 | **sensor de toque** (T0 no GPIO4; basta tocar no pino com o dedo) | periférico *touch* | cru `u16`, sinal `u64`: é o "potenciómetro" da bancada, um valor analógico real e ruidoso, que **desce** quando se toca |
-| ESP32 | **RSSI do Wi-Fi** | rádio | cru `i16`, sinal `i64` em dBm (sem unidade no catálogo, porque é logarítmica: `unit = "1"`, com a descrição) |
-| ESP32 | **tempo de funcionamento** | temporizador | cru `u32` em `s`, sinal `f64` em `s`, `monotonic` |
+| Pi 3, Pi Zero | the board's **`ACT` LED** | `sysfs` driver, `/sys/class/leds/ACT/brightness` (§7) | `bool` output |
+| Pi 3, Pi Zero | **CPU temperature** | `sysfs` driver, `/sys/class/thermal/thermal_zone0/temp` (m°C) | `f64` input, `°C`. It is the "physical process" of the track: it heats up under load (`stress-ng --cpu 4 --timeout 5m`) and cools down on its own |
+| ESP32 | **board LED** (GPIO2 on most boards; some have none) | GPIO | `bool` output |
+| ESP32 | **`BOOT` button** (GPIO0, on all boards) | GPIO with pull-up, active low | `bool` input |
+| ESP32 | **touch sensor** (T0 on GPIO4; touching the pin with a finger is enough) | *touch* peripheral | raw `u16`, signal `u64`: it is the bench "potentiometer", a real and noisy analog value, which **drops** when touched |
+| ESP32 | **Wi-Fi RSSI** | radio | raw `i16`, signal `i64` in dBm (no unit in the catalog, because it is logarithmic: `unit = "1"`, with the description) |
+| ESP32 | **uptime** | timer | raw `u32` in `s`, signal `f64` in `s`, `monotonic` |
 
-Os tipos dos sinais são os que a aquisição dá aos tipos crus do perfil (ref/03 §2.2.7: um inteiro cru com `unit` diferente de `1` passa a `f64`), e são os mesmos que o driver `esp32` do Joker Micro dá na Fase 2 (ref/01 anexo A): trocar de firmware não muda os tipos.
+The signal types are those that acquisition gives to the raw types of the profile (ref/03 §2.2.7: a raw integer with a `unit` other than `1` becomes `f64`), and they are the same as those the `esp32` driver of Joker Micro gives in Phase 2 (ref/01 appendix A): changing the firmware does not change the types.
 
-Chega para cobrir o que a trilha quer ensinar: uma saída com envelope e `safe`, uma entrada discreta com flancos, uma entrada analógica com ruído e `deadband`, um sensor que muda devagar e se pode aquecer, um equipamento remoto com qualidade, perda de comunicação e fallback do equipamento.
+That is enough to cover what the track wants to teach: an output with an envelope and `safe`, a discrete input with edges, an analog input with noise and `deadband`, a sensor that changes slowly and can be heated, a piece of remote equipment with quality, loss of communication and equipment fallback.
 
-**O que não há:** tensões e correntes reais, relés, um sensor industrial verdadeiro. Os pinos de ADC do ESP32 estão soltos e só dão ruído.
+**What there is not:** real voltages and currents, relays, a genuine industrial sensor. The ESP32's ADC pins are floating and only give noise.
 
-## 4. O firmware de bancada do ESP32 (Fase 1)
+## 4. The ESP32 bench firmware (Phase 1)
 
-Na Fase 1 ainda não existe o Joker Micro, mas o `jokerd` precisa de um equipamento real para testar os drivers `modbus-rtu` e `modbus-tcp`, a perda de comunicação e o fallback M1. Por isso o ESP32 começa como **um equipamento Modbus simples**, com um firmware pequeno em Rust (`esp-hal`, `esp-wifi` e um servidor Modbus `no_std`, por exemplo o `rmodbus`), em `tools/bench/esp32-modbus/` do repositório do Joker, gravado com `espflash`.
+In Phase 1, Joker Micro does not exist yet, but `jokerd` needs a real device to test the `modbus-rtu` and `modbus-tcp` drivers, loss of communication and the M1 fallback. That is why the ESP32 starts as **a simple Modbus device**, with a small firmware in Rust (`esp-hal`, `esp-wifi` and a `no_std` Modbus server, for example `rmodbus`), in `tools/bench/esp32-modbus/` of the Joker repository, flashed with `espflash`.
 
-**Dois transportes, uma tabela.** O firmware serve **ao mesmo tempo**:
+**Two transports, one table.** The firmware serves **at the same time**:
 
-- **Modbus RTU no `UART0`**, pela ponte USB: 115 200 baud, 8N1, unidade 1;
-- **Modbus TCP no Wi-Fi**, na porta 502, unidade 1.
+- **Modbus RTU on `UART0`**, through the USB bridge: 115,200 baud, 8N1, unit 1;
+- **Modbus TCP over Wi-Fi**, on port 502, unit 1.
 
-Os dois leem e escrevem a **mesma** tabela de registos, e qualquer pedido válido, venha de onde vier, conta para o temporizador do fallback.
+Both read and write the **same** register table, and any valid request, wherever it comes from, counts for the fallback timer.
 
-| Registo | FC | Tipo | Sinal |
+| Register | FC | Type | Signal |
 |---|---|---|---|
-| coil 0 | 1 (ler), 5 (escrever) | `bool` | LED da placa |
-| discrete input 0 | 2 | `bool` | botão `BOOT` (já invertido: 1 = premido) |
-| input register 0 | 4 | `u16` | leitura do sensor de toque |
-| input register 1 | 4 | `i16` | RSSI em dBm (0 sem Wi-Fi) |
-| input registers 2–3 | 4 | `u32` | segundos desde o arranque |
-| holding register 0 | 3 | `u16` | versão do firmware de bancada |
+| coil 0 | 1 (read), 5 (write) | `bool` | board LED |
+| discrete input 0 | 2 | `bool` | `BOOT` button (already inverted: 1 = pressed) |
+| input register 0 | 4 | `u16` | touch sensor reading |
+| input register 1 | 4 | `i16` | RSSI in dBm (0 without Wi-Fi) |
+| input registers 2–3 | 4 | `u32` | seconds since boot |
+| holding register 0 | 3 | `u16` | bench firmware version |
 
-**Credenciais do Wi-Fi.** Entram no build por variáveis de ambiente, e nunca no Git:
+**Wi-Fi credentials.** They enter the build through environment variables, and never Git:
 
 ```sh
 cd tools/bench/esp32-modbus
@@ -88,11 +88,11 @@ BENCH_WIFI_SSID="bancada" BENCH_WIFI_PASSWORD="…" cargo build --release
 espflash flash --monitor target/xtensa-esp32-none-elf/release/esp32-modbus
 ```
 
-Sem as duas variáveis, o firmware compila só com o RTU (e o RSSI fica a 0). No arranque, antes de o `UART0` passar a servir Modbus, o firmware escreve na consola série uma linha com a versão, o SSID e o **IP** obtido por DHCP (`bench-esp32 v1 · wifi bancada · ip 192.168.1.60 · modbus-tcp :502 · modbus-rtu uart0 115200 8N1`), e repete-a a cada ligação ao Wi-Fi. O `espflash --monitor` mostra-a logo depois de gravar; mais tarde, lê-se no Pi 3 com `picocom -b 115200` na porta `by-id`, **com o `jokerd` parado** (é a mesma porta). O endereço do `joker.zero.toml` (§6.4) é este IP: fixa-se com uma reserva DHCP no router.
+Without the two variables, the firmware compiles with RTU only (and the RSSI stays at 0). At boot, before `UART0` starts serving Modbus, the firmware writes a line to the serial console with the version, the SSID and the **IP** obtained by DHCP (`bench-esp32 v1 · wifi bancada · ip 192.168.1.60 · modbus-tcp :502 · modbus-rtu uart0 115200 8N1`), and repeats it on each Wi-Fi connection. `espflash --monitor` shows it right after flashing; later, it is read on the Pi 3 with `picocom -b 115200` on the `by-id` port, **with `jokerd` stopped** (it is the same port). The address in `joker.zero.toml` (§6.4) is this IP: it is pinned with a DHCP reservation on the router.
 
-**Fallback do próprio equipamento (M1):** se não receber nenhum pedido Modbus, por nenhum dos transportes, durante 2 s, o firmware apaga o LED. É o comportamento que o `[fallback]` do perfil declara, e é o que o `jk doctor` verifica.
+**The equipment's own fallback (M1):** if it receives no Modbus request, over either transport, for 2 s, the firmware turns the LED off. It is the behavior that the profile's `[fallback]` declares, and it is what `jk doctor` checks.
 
-**O perfil** é do projeto, e não do registo: `profiles/local/bench-esp32@1.profile.toml` (é o que a trilha escreve na parte 4, a partir do mapa acima em CSV, com o `jk profile import csv`; ref/03 §2.2.19). Depois de resolvidos os `# REVER`:
+**The profile** belongs to the project, not to the registry: `profiles/local/bench-esp32@1.profile.toml` (it is what the track writes in part 4, from the map above in CSV, with `jk profile import csv`; ref/03 §2.2.19). After the `# REVIEW` markers are resolved:
 
 ```toml
 # profiles/local/bench-esp32@1.profile.toml
@@ -102,7 +102,7 @@ schema = 1
 name        = "local/bench-esp32"
 version     = "1.0.0"
 driver      = "modbus"
-description = "Firmware de bancada do ESP32 (documento 23, §4): LED, botão, toque, RSSI, tempo de funcionamento"
+description = "ESP32 bench firmware (document 23, §4): LED, button, touch, RSSI, uptime"
 
 [defaults]
 poll = "100ms"
@@ -111,8 +111,8 @@ poll = "100ms"
 "led"     = { at = 0, fc = 5, type = "bool", direction = "output", readback = "led_rb", safe_hint = false }
 "led_rb"  = { at = 0, fc = 1, type = "bool" }
 "button"  = { at = 0, fc = 2, type = "bool", label = "BOOT" }
-"touch"   = { at = 0, fc = 4, type = "u16", deadband = 5, description = "valor cru do sensor de toque T0 (GPIO4); desce quando se toca" }
-"rssi"    = { at = 1, fc = 4, type = "i16", description = "RSSI do Wi-Fi em dBm; 0 sem ligação" }
+"touch"   = { at = 0, fc = 4, type = "u16", deadband = 5, description = "raw value of the T0 touch sensor (GPIO4); drops when touched" }
+"rssi"    = { at = 1, fc = 4, type = "i16", description = "Wi-Fi RSSI in dBm; 0 without a connection" }
 "uptime"  = { at = 2, fc = 4, type = "u32", unit = "s", monotonic = true }
 "fw"      = { at = 0, fc = 3, type = "u16", direction = "param" }
 
@@ -122,7 +122,7 @@ value      = false
 applies_to = ["led"]
 ```
 
-O mesmo perfil serve os dois transportes: a família `modbus` aceita `modbus-rtu` e `modbus-tcp` (ref/03 §2.2.2). Testa-se sem manifesto com o `jk profile test` e as URIs da ref/03 §2.2.20:
+The same profile serves both transports: the `modbus` family accepts `modbus-rtu` and `modbus-tcp` (ref/03 §2.2.2). It is tested without a manifest with `jk profile test` and the URIs of ref/03 §2.2.20:
 
 ```sh
 jk profile test local/bench-esp32@1 --node lab \
@@ -130,73 +130,73 @@ jk profile test local/bench-esp32@1 --node lab \
 jk profile test local/bench-esp32@1 --node zero --uri "modbus-tcp://192.168.1.60:502?unit=1"
 ```
 
-**Um equipamento, um mestre de cada vez.** O firmware aceita pedidos pelos dois transportes, mas **dois nós não devem falar ao mesmo tempo com o ESP32**. Os dois escreveriam o LED (coil 0) sem árbitro comum, porque o árbitro é de cada nó (documento 16, A1), e os pedidos de um manteriam vivo o temporizador do fallback quando o outro morre, o que esconde exatamente o que a parte 5 da trilha quer mostrar. Antes de o `zero` falar com o ESP32 (§6.4), o `lab` deixa de o fazer (`lab$ sudo systemctl stop jokerd`, ou uma geração sem o dispositivo `esp`); e quando o ESP32 passa a Joker Micro (Fase 2), o `esp` do `zero` fica `bad(comm_failure)`, porque o firmware Joker já não serve Modbus. O Joker não o consegue impedir: um equipamento Modbus não sabe quem são os seus mestres, e cada nó só vê os seus próprios pedidos. É uma regra da bancada, e é também a regra de um site real.
+**One device, one client at a time.** The firmware accepts requests over both transports, but **two nodes should not talk to the ESP32 at the same time**. Both would write the LED (coil 0) without a common arbiter, because the arbiter belongs to each node (document 16, A1), and the requests of one would keep the fallback timer alive when the other dies, which hides exactly what part 5 of the track wants to show. Before `zero` talks to the ESP32 (§6.4), `lab` stops doing so (`lab$ sudo systemctl stop jokerd`, or a generation without the `esp` device); and when the ESP32 becomes a Joker Micro (Phase 2), the `esp` of `zero` becomes `bad(comm_failure)`, because the Joker firmware no longer serves Modbus. Joker cannot prevent it: a Modbus device does not know who its clients are, and each node only sees its own requests. It is a rule of the bench, and it is also the rule of a real site.
 
-Na Fase 2, o **mesmo ESP32** recebe o firmware do Joker Micro, e os mesmos sinais passam a chegar pelo Joker Link, com os mesmos nomes e os mesmos tipos (§3). O manifesto do Pi 3 só muda o dispositivo (§6.5), e as apps não mudam. É o antes e depois mais claro que se pode ter da ADR 0020.
+In Phase 2, the **same ESP32** receives the Joker Micro firmware, and the same signals start arriving over Joker Link, with the same names and the same types (§3). The Pi 3 manifest only changes the device (§6.5), and the apps do not change. It is the clearest before-and-after of ADR 0020 one can have.
 
-## 5. O que se valida em cada fase
+## 5. What is validated in each phase
 
-### 5.1 Fase 0 — Núcleo determinista e portável
+### 5.1 Phase 0 — Deterministic and portable core
 
-| Porta de saída (documento 11) | Na bancada | Observações |
+| Exit gate (document 11) | On the bench | Notes |
 |---|---|---|
-| núcleo `no_std`, conformidade no Linux | portátil e Pi 3 (aarch64) | |
-| **os mesmos bytes num MCU** | **ESP32** (Xtensa, `xtensa-esp32-none-elf`), por série | o Rust para Xtensa usa a toolchain da Espressif (`espup`): não está no LLVM oficial, e a CI tem de a instalar. Por isso o job Xtensa da CI **não bloqueia** (documento 13, §5), e o MSRV do núcleo fica ≤ à versão de Rust da toolchain Xtensa mais recente (13 §5.1) |
-| a mesma conformidade em ARM Cortex-M e RISC-V | **QEMU no portátil**: `mps2-an505` (Cortex-M33, a arquitetura do RP2350) e `virt` riscv32 (a do ESP32-C6) | cobre as arquiteturas dos alvos de referência sem as placas; prova os bytes, não o tempo. São estes os jobs que **bloqueiam** a CI (13 §5) |
-| WCET no chip | ESP32, com o contador de ciclos (`CCOUNT`), relatado por série | sem sonda: o ESP32 original só tem JTAG com um adaptador externo (compra futura) |
+| `no_std` core, conformance on Linux | laptop and Pi 3 (aarch64) | |
+| **the same bytes on an MCU** | **ESP32** (Xtensa, `xtensa-esp32-none-elf`), over serial | Rust for Xtensa uses the Espressif toolchain (`espup`): it is not in the official LLVM, and the CI must install it. That is why the Xtensa CI job **does not block** (document 13, §5), and the MSRV of the core stays ≤ the Rust version of the most recent Xtensa toolchain (13 §5.1) |
+| the same conformance on ARM Cortex-M and RISC-V | **QEMU on the laptop**: `mps2-an505` (Cortex-M33, the RP2350 architecture) and riscv32 `virt` (that of the ESP32-C6) | covers the architectures of the reference targets without the boards; it proves the bytes, not the timing. These are the jobs that **block** the CI (13 §5) |
+| WCET on the chip | ESP32, with the cycle counter (`CCOUNT`), reported over serial | no probe: the original ESP32 only has JTAG with an external adapter (future purchase) |
 
-### 5.2 Fase 1 — MVP em Linux
+### 5.2 Phase 1 — MVP on Linux
 
-| Porta de saída | Na bancada | Observações |
+| Exit gate | On the bench | Notes |
 |---|---|---|
-| `jokerd` num nó real, API, `jk dev` remoto, replay | **Pi 3** | |
-| drivers `modbus-rtu`, `modbus-tcp`, `sysfs` | ESP32 (§4): RTU pela ponte USB do Pi 3, TCP pelo Wi-Fi a partir do Pi Zero W; `sysfs` nos dois Pi | o RS-485 **half-duplex** (vez de fala, `turnaround`) não se testa: a ponte USB é full-duplex. Declarado |
-| fallback do equipamento (M1) e perda de comunicação | desligar o cabo do ESP32: LED apaga em 2 s pelo próprio firmware, sinais `bad(comm_failure)` no Pi 3 | |
-| jitter medido com PREEMPT_RT | Pi 3, kernel com `PREEMPT_RT` (no kernel oficial desde a 6.12), `isolcpus=3` | **registado, sem alvo**: os alvos do documento 01 §21 (≤ 100 µs p99,9) são para CM4/CM5. A Ethernet do Pi 3 passa pelo USB e gera interrupções: medir com e sem rede. A medição externa num pino exige 2 fios e o ESP32 como analisador (compra futura: fios) |
-| degradação sem RT | Pi Zero: 1 núcleo, kernel `standard` | espera-se `J0352` em todos os grupos, e o `jokerd` tem de funcionar com ele |
-| trilha, partes 01–07 (a porta DX do documento 11) | Pi 3, Pi Zero W e ESP32, com os sinais do §3 | §6.6; o `jk class verify` no hardware (parte 7, §9) só na Fase 2 |
+| `jokerd` on a real node, API, remote `jk dev`, replay | **Pi 3** | |
+| `modbus-rtu`, `modbus-tcp`, `sysfs` drivers | ESP32 (§4): RTU through the Pi 3's USB bridge, TCP over Wi-Fi from the Pi Zero W; `sysfs` on both Pis | **half-duplex** RS-485 (turn-taking, `turnaround`) is not tested: the USB bridge is full-duplex. Declared |
+| equipment fallback (M1) and loss of communication | unplug the ESP32 cable: the LED turns off within 2 s through the firmware itself, signals `bad(comm_failure)` on the Pi 3 | |
+| jitter measured with PREEMPT_RT | Pi 3, kernel with `PREEMPT_RT` (in the mainline kernel since 6.12), `isolcpus=3` | **recorded, without a target**: the targets of document 01 §21 (≤ 100 µs p99.9) are for CM4/CM5. The Pi 3's Ethernet goes through USB and generates interrupts: measure with and without network. External measurement on a pin requires 2 wires and the ESP32 as an analyzer (future purchase: wires) |
+| degradation without RT | Pi Zero: 1 core, `standard` kernel | `J0352` is expected on all groups, and `jokerd` must work with it |
+| track, parts 01–07 (the DX exit gate of document 11) | Pi 3, Pi Zero W and ESP32, with the signals of §3 | §6.6; `jk class verify` on the hardware (part 7, §9) only in Phase 2 |
 
-**Pi Zero W e o wasmtime.** O documento 01 §22 prevê o Pulley em armv7. O Zero é ARMv6, um degrau abaixo. **A confirmar na Fase 1:** se o wasmtime com Pulley compilar para `arm-unknown-linux-gnueabihf`, o Zero corre apps Wasm (devagar); se não, corre só apps nativas (documento 04, §5) e continua útil como segundo nó e como cliente Modbus TCP do ESP32. Nos dois casos fica no nível `dev` (§7).
+**Pi Zero W and wasmtime.** Document 01 §22 provides for Pulley on armv7. The Zero is ARMv6, one step below. **To be confirmed in Phase 1:** if wasmtime with Pulley compiles for `arm-unknown-linux-gnueabihf`, the Zero runs Wasm apps (slowly); if not, it runs native apps only (document 04, §5) and remains useful as a second node and as the ESP32's Modbus TCP client. In both cases it stays at the `dev` level (§7).
 
-**Nunca se compila no nó** (documento 07, §1, princípio 8). O `jokerd`, as apps e o AOT compilam-se no portátil (ou na CI), por build cruzado: `aarch64-unknown-linux-gnu` para o Pi 3 e `arm-unknown-linux-gnueabihf` para o Pi Zero W. O `jk runtime build` e o `jk dev --node` compilam no portátil e enviam o resultado; as Raspberry não têm `cargo` nem toolchain. Com 1 GiB (Pi 3) e 512 MiB (Pi Zero W) de RAM e um cartão SD (§7), compilar o `jokerd` na placa levaria horas e gastaria o cartão.
+**Nothing is ever compiled on the node** (document 07, §1, principle 8). `jokerd`, the apps and the AOT are compiled on the laptop (or in the CI), by cross build: `aarch64-unknown-linux-gnu` for the Pi 3 and `arm-unknown-linux-gnueabihf` for the Pi Zero W. `jk runtime build` and `jk dev --node` compile on the laptop and send the result; the Raspberry Pis have neither `cargo` nor a toolchain. With 1 GiB (Pi 3) and 512 MiB (Pi Zero W) of RAM and an SD card (§7), compiling `jokerd` on the board would take hours and wear out the card.
 
-### 5.3 Fase 2 — Joker Micro e interoperabilidade
+### 5.3 Phase 2 — Joker Micro and interoperability
 
-| Porta de saída | Na bancada | Observações |
+| Exit gate | On the bench | Notes |
 |---|---|---|
-| Joker Link em série | ESP32 ↔ Pi 3 pela ponte USB (até ~921 600 baud, conforme a ponte) | o caso U1 do documento 19 a outra escala |
-| Joker Link em IP | ESP32 por Wi-Fi, UDP para o Pi 3 | com cifra obrigatória (`J0179`) |
-| matar o `jokerd` → `safe` pelo MCU | `systemctl kill jokerd` no Pi 3; o LED do ESP32 segue o `safe` dentro do lease | a porta de saída mais importante da ADR 0020, validável já |
-| OTA do blob de geração e do firmware | pelo link, com retoma depois de desligar o cabo a meio | A/B com o bootloader da Espressif (§7) |
-| nó autónomo (U2) | ESP32 com MQTT por Wi-Fi para um broker no Pi 3 | |
-| alvos RP2350, ESP32-C6, STM32 | **não há placas**: conformidade em QEMU (§5.1); o firmware completo só no ESP32 original | a porta "três alvos de referência" passa a "um alvo real e duas arquiteturas em QEMU" até haver hardware |
-| CAN, RS-485 | **não se testam** | declarado |
+| Joker Link over serial | ESP32 ↔ Pi 3 through the USB bridge (up to ~921,600 baud, depending on the bridge) | case U1 of document 19 at another scale |
+| Joker Link over IP | ESP32 over Wi-Fi, UDP to the Pi 3 | with mandatory encryption (`J0179`) |
+| kill `jokerd` → `safe` through the MCU | `systemctl kill jokerd` on the Pi 3; the ESP32 LED follows `safe` within the lease | the most important exit gate of ADR 0020, which can be validated already |
+| OTA of the generation blob and of the firmware | over the link, with resume after unplugging the cable halfway | A/B with the Espressif bootloader (§7) |
+| standalone node (U2) | ESP32 with MQTT over Wi-Fi to a broker on the Pi 3 | |
+| RP2350, ESP32-C6, STM32 targets | **there are no boards**: conformance in QEMU (§5.1); the complete firmware only on the original ESP32 | the "three reference targets" gate becomes "one real target and two architectures in QEMU" until there is hardware |
+| CAN, RS-485 | **not tested** | declared |
 
-### 5.4 Fase 3 — Frota, confiança e v1.0
+### 5.4 Phase 3 — Fleet, trust and v1.0
 
-| Porta de saída | Na bancada | Observações |
+| Exit gate | On the bench | Notes |
 |---|---|---|
-| Deck MVP com nós reais | Deck no portátil; nós Pi 3 e Pi Zero; ESP32 como MCU atrás do Pi 3 **ou** como MCU autónomo | dois nós Linux chegam para rollouts, coortes e rollback |
-| nó offline durante muito tempo | desligar o Wi-Fi do Pi Zero dias seguidos | |
-| escala (centenas de nós) | **agentes simulados** no portátil (o protocolo do agente é o mesmo, ref/10) | a escala não precisa de hardware |
-| TPM | **não há** (o Pi 3 não tem): identidade em ficheiro, e o `jk doctor` diz-o (`J0933`, aviso) | declarado |
+| Deck MVP with real nodes | Deck on the laptop; Pi 3 and Pi Zero nodes; ESP32 as an MCU behind the Pi 3 **or** as a standalone MCU | two Linux nodes are enough for rollouts, cohorts and rollback |
+| node offline for a long time | turn off the Pi Zero's Wi-Fi for days on end | |
+| scale (hundreds of nodes) | **simulated agents** on the laptop (the agent protocol is the same, ref/10) | scale does not need hardware |
+| TPM | **there is none** (the Pi 3 does not have one): identity in a file, and `jk doctor` says so (`J0933`, warning) | declared |
 
-## 6. Manifestos da bancada
+## 6. Bench manifests
 
-São os ficheiros do projeto da trilha, `joker-bancada/` (`[project] name = "bancada"`), no estado em que ficam depois da parte 6: um manifesto comum e um overlay por nó (ref/01 §7). As partes seguintes acrescentam instâncias, classes e apps ao `joker.toml`, e o `joker.lab-link.toml` (parte 9); os ficheiros de nó não mudam. Cada manifesto de entrada tem o seu lock (`joker.sim.lock`, `joker.lab.lock`, `joker.zero.lock`, `joker.lab-link.lock`; documento 07, §1); o `joker.rpi.toml` só entra por `extends` e não tem lock. Os overlays chamam-se `joker.<variante>.toml` e escolhem-se com `--env <variante>` (`jk apply --env zero` é o `joker.zero.toml`; ADR 0026).
+They are the files of the track project, `joker-bancada/` (`[project] name = "bancada"`), in the state they are in after part 6: a common manifest and one overlay per node (ref/01 §7). The following parts add instances, classes and apps to `joker.toml`, and `joker.lab-link.toml` (part 9); the node files do not change. Each input manifest has its own lock (`joker.sim.lock`, `joker.lab.lock`, `joker.zero.lock`, `joker.lab-link.lock`; document 07, §1); `joker.rpi.toml` only comes in through `extends` and has no lock. The overlays are called `joker.<variant>.toml` and are chosen with `--env <variant>` (`jk apply --env zero` is `joker.zero.toml`; ADR 0026).
 
 ```
-joker.toml ◀── joker.sim.toml                                          (portátil, tudo simulado)
+joker.toml ◀── joker.sim.toml                                          (laptop, everything simulated)
      ▲
-     └──── joker.rpi.toml ◀── joker.lab.toml ◀── joker.lab-link.toml    (Pi 3; ESP32 por RTU, depois pelo link)
+     └──── joker.rpi.toml ◀── joker.lab.toml ◀── joker.lab-link.toml    (Pi 3; ESP32 over RTU, then over the link)
                   ▲
-                  └──── joker.zero.toml                                 (Pi Zero W; ESP32 por Modbus TCP)
+                  └──── joker.zero.toml                                 (Pi Zero W; ESP32 over Modbus TCP)
 ```
 
-### 6.1 `joker.toml`: o que é igual em todo o lado
+### 6.1 `joker.toml`: what is the same everywhere
 
 ```toml
-# joker-bancada/joker.toml — comum: saídas e envelopes, ciclos, calc, alarmes, apps
+# joker-bancada/joker.toml — common: outputs and envelopes, cycles, calc, alarms, apps
 [project]
 name  = "bancada"
 joker = "1.0"
@@ -219,13 +219,13 @@ toque_nivel = "clamp((60 - esp.touch) / 45, 0, 1)"
 when     = "calc.temp_media > 70 °C"
 delay_on = "10s"
 severity = "medium"
-message  = "CPU a {calc.temp_media}"
+message  = "CPU at {calc.temp_media}"
 
 [alarms.esp_offline]
 when     = "!good(esp.uptime)"
 delay_on = "5s"
 severity = "high"
-message  = "ESP32 sem comunicação"
+message  = "ESP32 not communicating"
 
 [apps.luz]
 path   = "apps/luz"
@@ -234,12 +234,12 @@ params = { half_period = "500 ms", t_frio = "45 °C", t_quente = "70 °C" }
 cycles = { pisca = "main" }
 ```
 
-Não tem `[target]` nem `[devices]`: os sinais `pi.*` e `esp.*` vêm dos overlays, e é por isso que o mesmo `joker.toml` corre no simulador (`joker.sim.toml`, com `driver = "sim"` nos dois dispositivos) e nas duas placas.
+It has no `[target]` nor `[devices]`: the `pi.*` and `esp.*` signals come from the overlays, and that is why the same `joker.toml` runs in the simulator (`joker.sim.toml`, with `driver = "sim"` on both devices) and on the two boards.
 
-### 6.2 `joker.rpi.toml`: o que as duas Raspberry têm em comum
+### 6.2 `joker.rpi.toml`: what the two Raspberry Pis have in common
 
 ```toml
-# joker-bancada/joker.rpi.toml — o dispositivo "pi" de qualquer Raspberry Pi (sysfs)
+# joker-bancada/joker.rpi.toml — the "pi" device of any Raspberry Pi (sysfs)
 extends = ["joker.toml"]
 
 [devices.pi]
@@ -251,12 +251,12 @@ act_led  = { led = "ACT", direction = "output" }
 cpu_temp = { thermal = "thermal_zone0" }
 ```
 
-Até à parte 5, este `[devices.pi]` vive no `joker.lab.toml`; a parte 6 tira-o para aqui quando aparece a segunda placa (uma refatoração de overlays: o manifesto efetivo do `lab` não muda, e o `jk diff` prova-o).
+Up to part 5, this `[devices.pi]` lives in `joker.lab.toml`; part 6 moves it here when the second board appears (a refactoring of overlays: the effective manifest of `lab` does not change, and `jk diff` proves it).
 
-### 6.3 `joker.lab.toml`: o Pi 3, com o ESP32 por Modbus RTU
+### 6.3 `joker.lab.toml`: the Pi 3, with the ESP32 over Modbus RTU
 
 ```toml
-# joker-bancada/joker.lab.toml — nó "lab" (Raspberry Pi 3 B+)
+# joker-bancada/joker.lab.toml — node "lab" (Raspberry Pi 3 B+)
 extends = ["joker.rpi.toml"]
 
 [target]
@@ -279,12 +279,12 @@ unit_id = 1
 profile = "local/bench-esp32@1"
 ```
 
-O nome da porta série depende da ponte da placa do ESP32 (CP2102 ou CH340): usa-se sempre o caminho estável de `/dev/serial/by-id/`, que o `jk doctor` e o `GET /v1/node/hardware` mostram (ref/09 §5.2).
+The name of the serial port depends on the bridge of the ESP32 board (CP2102 or CH340): always use the stable path from `/dev/serial/by-id/`, which `jk doctor` and `GET /v1/node/hardware` show (ref/09 §5.2).
 
-### 6.4 `joker.zero.toml`: o Pi Zero W, com o ESP32 por Modbus TCP
+### 6.4 `joker.zero.toml`: the Pi Zero W, with the ESP32 over Modbus TCP
 
 ```toml
-# joker-bancada/joker.zero.toml — nó "zero" (Raspberry Pi Zero W)
+# joker-bancada/joker.zero.toml — node "zero" (Raspberry Pi Zero W)
 extends = ["joker.rpi.toml"]
 
 [target]
@@ -297,15 +297,15 @@ unit_id = 1
 profile = "local/bench-esp32@1"
 ```
 
-- **A placa é do projeto:** `boards/rpi-zero-w.board.toml`, escrita na parte 6 com o `jk board probe --node zero` e validada com o `jk board check --node zero` (ref/03 §2.3.7; o resultado está no §7).
-- **Sem `[resources]`:** com um só núcleo não há isolamento, e o grupo `main` fica sem classe `rt`. Com `kernel = "standard"`, o `jk check` dá `J0352` (aviso) no grupo `main`, e o `jokerd` tem de funcionar com ele (§5.2).
-- **O mesmo perfil, outro transporte:** a família `modbus` aceita `modbus-tcp` (ref/03 §2.2.2), e o `address` é o IP que o firmware de bancada mostra na consola (§4). Os caminhos (`esp.led`, `esp.touch`) e a app não mudam.
-- Só um nó fala com o ESP32 de cada vez (§4).
+- **The board belongs to the project:** `boards/rpi-zero-w.board.toml`, written in part 6 with `jk board probe --node zero` and validated with `jk board check --node zero` (ref/03 §2.3.7; the result is in §7).
+- **No `[resources]`:** with a single core there is no isolation, and the `main` group has no `rt` class. With `kernel = "standard"`, `jk check` gives `J0352` (warning) on the `main` group, and `jokerd` must work with it (§5.2).
+- **The same profile, another transport:** the `modbus` family accepts `modbus-tcp` (ref/03 §2.2.2), and the `address` is the IP that the bench firmware shows on the console (§4). The paths (`esp.led`, `esp.touch`) and the app do not change.
+- Only one node talks to the ESP32 at a time (§4).
 
-### 6.5 `joker.lab-link.toml`: o mesmo ESP32 pelo Joker Link (Fase 2)
+### 6.5 `joker.lab-link.toml`: the same ESP32 over Joker Link (Phase 2)
 
 ```toml
-# joker-bancada/joker.lab-link.toml — o ESP32 passa a ser um Joker Micro
+# joker-bancada/joker.lab-link.toml — the ESP32 becomes a Joker Micro
 extends = ["joker.lab.toml"]
 
 [buses.esp32]
@@ -320,32 +320,32 @@ report  = "20ms"
 refresh = "1s"
 
 [outputs]
-"esp.led" = { unset = true }      # o envelope desta saída passa a viver no MCU
+"esp.led" = { unset = true }      # the envelope of this output now lives on the MCU
 ```
 
-O dispositivo mantém o nome `esp`, e o firmware do Joker Micro exporta os sinais com os mesmos nomes e tipos (`led`, `button`, `touch`, `rssi`, `uptime`; o LED e o botão pelo driver `gpio` do MCU, `line = "gpio2"` e `line = "gpio0"`; o toque, o RSSI e o tempo de funcionamento pelo driver `esp32`, ref/01 anexo A): os caminhos (`esp.led`) não mudam, e as apps também não. O perfil é gerado do catálogo do `HELLO` (ref/03 §2.2.16). O envelope e o `safe` do LED passam a viver **no MCU**: o manifesto do Joker Micro (`micro/esp/joker.toml`, compilado com `jk build --target mcu:esp32-devkit`, ref/08) declara-os, e o nó Linux não arbitra essa saída (ref/07 §8.1). A chave do link vem do enrolamento do MCU (`jk node enroll <mcu> --link esp`). Para o link por Wi-Fi (parte 10), o manifesto do MCU declara `[net.wifi]` com a palavra-passe como `secret:` (ref/01 §5.22), e o enrolamento leva `--ca` para o MCU poder receber segredos (ref/08 §2.17).
+The device keeps the name `esp`, and the Joker Micro firmware exports the signals with the same names and types (`led`, `button`, `touch`, `rssi`, `uptime`; the LED and the button through the MCU's `gpio` driver, `line = "gpio2"` and `line = "gpio0"`; touch, RSSI and uptime through the `esp32` driver, ref/01 appendix A): the paths (`esp.led`) do not change, and neither do the apps. The profile is generated from the `HELLO` catalog (ref/03 §2.2.16). The envelope and the `safe` of the LED now live **on the MCU**: the Joker Micro manifest (`micro/esp/joker.toml`, compiled with `jk build --target mcu:esp32-devkit`, ref/08) declares them, and the Linux node does not arbitrate that output (ref/07 §8.1). The link key comes from the enrollment of the MCU (`jk node enroll <mcu> --link esp`). For the link over Wi-Fi (part 10), the MCU manifest declares `[net.wifi]` with the password as `secret:` (ref/01 §5.22), and the enrollment takes `--ca` so that the MCU can receive secrets (ref/08 §2.17).
 
-### 6.6 A trilha de estudo nesta bancada
+### 6.6 The learning track on this bench
 
-A trilha (`docs/track/`, partes 01–11) é o plano de testes desta bancada: cada parte corre num estado conhecido e valida uma parte do que as Fases 1–3 prometem. O detalhe, com comandos e saídas, está em cada parte; aqui fica o que cada uma prova do hardware.
+The track (`docs/track/`, parts 01–11) is the test plan of this bench: each part runs in a known state and validates a part of what Phases 1–3 promise. The detail, with commands and outputs, is in each part; here is what each one proves about the hardware.
 
-| Parte | Onde | O que valida da bancada |
+| Part | Where | What it validates of the bench |
 |---|---|---|
-| 01 | portátil | nada de hardware: `jk dev`, o painel e os cenários contra o simulador (Fase 0/1) |
-| 02 | Pi 3 | instalação e enrolamento de um nó real; a placa `rpi3b-plus`; o driver `sysfs` no LED `ACT`. Sem fallback de hardware, o LED fica como estava quando o `jokerd` para: é o `J0205` em `prod`, a lição da parte |
-| 03 | sim → Pi 3 | a temperatura do CPU pelo `sysfs`, aquecida com `stress-ng`; `calc`, alarmes, historian e a API HTTP num nó real |
-| 04 | sim → Pi 3 + ESP32 | o driver `modbus-rtu` pela ponte USB; o perfil `local/bench-esp32@1` a partir do CSV (`jk profile import csv`, `jk profile test`); flancos do botão e `readback` do LED |
-| 05 | sim → Pi 3 + ESP32 | perda de comunicação real (desligar o cabo): `bad(comm_failure)` no Pi 3 e o LED do ESP32 apagado em 2 s pelo próprio firmware (fallback M1); qualidade, `get_or` e replay |
-| 06 | Pi Zero W + ESP32 por Wi-Fi | o driver `modbus-tcp`; uma placa ARMv6 de nível `dev` escrita com `jk board probe` e `jk board check`; a degradação sem RT (`J0352`) |
-| 07 | sim → Pi 3 (e Zero) | as classes `std/*` sobre sinais reais, com o mesmo cenário da parte 5 |
-| 08 | sim → Pi 3 | uma instância virtual (`status_light@1`) implementada por uma app, no hardware |
-| 09 | Pi 3 + ESP32 (firmware Joker) | o Joker Link em série pela ponte USB; `jk flash` por `espflash`; o `safe` do LED no MCU quando se mata o `jokerd` (a porta de saída mais importante da ADR 0020) |
-| 10 | ESP32 (+ Pi 3) | uma app nativa no MCU; o driver `esp32`; `[net.wifi]`; o link por UDP com cifra obrigatória (`J0179`) |
-| 11 | portátil (Deck) + Pi 3 + Pi Zero W | assinaturas e segredos em `prod`; o Deck MVP com dois nós reais, coortes e um rollout que para no canário (overruns no Pi Zero W) |
+| 01 | laptop | no hardware: `jk dev`, the dashboard and the scenarios against the simulator (Phase 0/1) |
+| 02 | Pi 3 | installation and enrollment of a real node; the `rpi3b-plus` board; the `sysfs` driver on the `ACT` LED. Without hardware fallback, the LED stays as it was when `jokerd` stops: that is `J0205` in `prod`, the lesson of the part |
+| 03 | sim → Pi 3 | the CPU temperature through `sysfs`, heated with `stress-ng`; `calc`, alarms, historian and the HTTP API on a real node |
+| 04 | sim → Pi 3 + ESP32 | the `modbus-rtu` driver through the USB bridge; the `local/bench-esp32@1` profile from the CSV (`jk profile import csv`, `jk profile test`); button edges and the LED's `readback` |
+| 05 | sim → Pi 3 + ESP32 | real loss of communication (unplug the cable): `bad(comm_failure)` on the Pi 3 and the ESP32 LED turned off within 2 s by the firmware itself (M1 fallback); quality, `get_or` and replay |
+| 06 | Pi Zero W + ESP32 over Wi-Fi | the `modbus-tcp` driver; an ARMv6 board of `dev` level written with `jk board probe` and `jk board check`; degradation without RT (`J0352`) |
+| 07 | sim → Pi 3 (and Zero) | the `std/*` classes on top of real signals, with the same scenario as part 5 |
+| 08 | sim → Pi 3 | a virtual instance (`status_light@1`) implemented by an app, on the hardware |
+| 09 | Pi 3 + ESP32 (Joker firmware) | Joker Link over serial through the USB bridge; `jk flash` through `espflash`; the LED's `safe` on the MCU when `jokerd` is killed (the most important exit gate of ADR 0020) |
+| 10 | ESP32 (+ Pi 3) | a native app on the MCU; the `esp32` driver; `[net.wifi]`; the link over UDP with mandatory encryption (`J0179`) |
+| 11 | laptop (Deck) + Pi 3 + Pi Zero W | signatures and secrets in `prod`; the Deck MVP with two real nodes, cohorts and a rollout that stops at the canary (overruns on the Pi Zero W) |
 
-## 7. Perfis de placa
+## 7. Board profiles
 
-Os três ficheiros seguem a ref/03 §2.3. O `rpi3b-plus` e o `esp32-devkit` estão no registo; o `rpi-zero-w` não, porque é de nível `dev`: é o que a trilha escreve na parte 6, com o `jk board probe` e os `# REVER` resolvidos (ref/03 §2.3.7), e fica em `boards/` do projeto. O Pi 3 fica no nível `2` (aarch64, sem CI com hardware); o Pi Zero W e o ESP32 original ficam no nível `dev`: servem para desenvolver e nunca são alvos de produção (01 §22). As duas Raspberry declaram `storage = "sd"`: arrancam de um cartão SD, e o `jk check` e o `jk doctor` avisam (`J0381`) quando a carga de escrita projetada passa do que um cartão aguenta (01 §12 e §19).
+The three files follow ref/03 §2.3. `rpi3b-plus` and `esp32-devkit` are in the registry; `rpi-zero-w` is not, because it is of `dev` level: it is what the track writes in part 6, with `jk board probe` and the `# REVIEW` markers resolved (ref/03 §2.3.7), and it stays in the project's `boards/`. The Pi 3 stays at level `2` (aarch64, without CI with hardware); the Pi Zero W and the original ESP32 stay at the `dev` level: they serve for development and are never production targets (01 §22). The two Raspberry Pis declare `storage = "sd"`: they boot from an SD card, and `jk check` and `jk doctor` warn (`J0381`) when the projected write load exceeds what a card can withstand (01 §12 and §19).
 
 ```toml
 # boards/rpi3b-plus.board.toml
@@ -447,7 +447,7 @@ mcu_class  = "m2"
 chip       = "esp32"
 tier       = "dev"
 vendor     = "Espressif"
-model      = "ESP32 (Xtensa LX6), placa de desenvolvimento genérica"
+model      = "ESP32 (Xtensa LX6), generic development board"
 memory     = "520 KiB"
 flash      = "4 MiB"
 fpu        = "sp"
@@ -471,14 +471,14 @@ priorities = 3
 
 [pins.gpio0]
 functions = ["gpio"]
-note      = "botão BOOT (pino de arranque: não usar como saída)"
+note      = "BOOT button (boot pin: do not use as an output)"
 [pins.gpio2]
 functions = ["gpio", "pwm"]
-note      = "LED da placa, na maioria das placas (pino de arranque, puxado a baixo)"
+note      = "board LED, on most boards (boot pin, pulled low)"
 [pins.gpio4]
 functions     = ["gpio", "adc", "touch"]
 touch_channel = 0
-note          = "sensor de toque T0"
+note          = "T0 touch sensor"
 [pins.gpio1]
 functions = ["gpio", "uart"]
 [pins.gpio3]
@@ -524,35 +524,35 @@ wifi     = true
 ethernet = false
 ```
 
-Notas:
+Notes:
 
-- **`reset_safe = false`** no ESP32: no reset, os GPIO ficam como entradas até o firmware os configurar; só os pinos de arranque têm pull interno (o GPIO2 tem pull-down, e por isso o LED fica apagado). Na bancada não há carga ligada, e o `mode = "dev"` aceita-o; em `prod` é `J0786`, que a parte 11 da trilha aceita com `accept_unsafe_reset` e a justificação (ref/01 §5.22).
-- As **partições** seguem a tabela do bootloader da Espressif (a tabela de partições em `0x8000` fica fora das áreas do Joker); a troca A/B do firmware usa as partições OTA dele.
-- **Gravação por série** (`espflash`, pela ponte USB), sem sonda: `jk flash` com `tool = "espflash"`.
-- O ESP32 original não está na tabela de alvos da v1 (19 §3.1), mas é da mesma família do ESP32-S3 (Xtensa, FPU simples) e tem memória da classe M2: as capacidades são as do S3 reduzidas.
+- **`reset_safe = false`** on the ESP32: on reset, the GPIOs stay as inputs until the firmware configures them; only the boot pins have an internal pull (GPIO2 has a pull-down, and that is why the LED stays off). On the bench there is no load connected, and `mode = "dev"` accepts it; in `prod` it is `J0786`, which part 11 of the track accepts with `accept_unsafe_reset` and the justification (ref/01 §5.22).
+- The **partitions** follow the table of the Espressif bootloader (the partition table at `0x8000` stays outside the Joker areas); the A/B swap of the firmware uses its OTA partitions.
+- **Flashing over serial** (`espflash`, through the USB bridge), without a probe: `jk flash` with `tool = "espflash"`.
+- The original ESP32 is not in the v1 target table (19 §3.1), but it is of the same family as the ESP32-S3 (Xtensa, single FPU) and has M2-class memory: the capacities are those of the S3, reduced.
 
-## 8. O que esta bancada não prova
+## 8. What this bench does not prove
 
-| Lacuna | Consequência | Como se fecha (quando houver) |
+| Gap | Consequence | How it is closed (when available) |
 |---|---|---|
-| nenhum MCU ARM Cortex-M real | o alvo M1 de referência (RP2350) só em QEMU; `probe-rs` e `jk bench --target mcu` por sonda não se testam | compra futura (opcional): Raspberry Pi Pico 2 e Debug Probe |
-| nenhum ESP32-C6 (RISC-V, sem FPU) | o caso `J0780` (vírgula flutuante por software) não se mede | compra futura: um ESP32-C6 |
-| RS-485 half-duplex e CAN | a vez de fala do Joker Link e o Modbus RTU em barramento partilhado, e o link em CAN, ficam sem teste real | compra futura: adaptadores USB-RS485 e CAN |
-| hardware da classe dos alvos RT (CM4/CM5) | os números do documento 01 §21 não se confirmam; os do Pi 3 ficam registados como referência pessimista | hardware de CI (pendente, documento 18) |
-| medição externa do jitter | só a medição interna (traço, métricas, `cyclictest`) | 2 fios de jumper, com o ESP32 como analisador lógico (captura de flancos com o temporizador) |
-| TPM | identidade só em ficheiro | placa com TPM ou elemento seguro |
-| equipamentos industriais reais | sem PLCs, inversores, contadores | pilotos |
+| no real ARM Cortex-M MCU | the M1 reference target (RP2350) only in QEMU; `probe-rs` and `jk bench --target mcu` through a probe are not tested | future purchase (optional): Raspberry Pi Pico 2 and Debug Probe |
+| no ESP32-C6 (RISC-V, without FPU) | the `J0780` case (software floating point) is not measured | future purchase: an ESP32-C6 |
+| half-duplex RS-485 and CAN | Joker Link turn-taking and Modbus RTU on a shared bus, and the link over CAN, remain without a real test | future purchase: USB-RS485 and CAN adapters |
+| hardware of the RT target class (CM4/CM5) | the figures of document 01 §21 are not confirmed; those of the Pi 3 are recorded as a pessimistic reference | CI hardware (pending, document 18) |
+| external measurement of jitter | only internal measurement (trace, metrics, `cyclictest`) | 2 jumper wires, with the ESP32 as a logic analyzer (edge capture with the timer) |
+| TPM | identity only in a file | a board with a TPM or a secure element |
+| real industrial equipment | no PLCs, inverters, meters | pilots |
 
-Nenhuma destas lacunas bloqueia uma fase: cada porta de saída afetada fica marcada **"validada na bancada"** ou **"validada em QEMU/simulação"**, e o resto espera por hardware.
+None of these gaps blocks a phase: each affected exit gate is marked **"validated on the bench"** or **"validated in QEMU/simulation"**, and the rest waits for hardware.
 
-## 9. O que isto mudou noutros documentos
+## 9. What this changed in other documents
 
-- **ref/01, anexo A, e documento 05 §10:** driver novo **`sysfs`** (tier N, 1.0), para o LED e a temperatura de qualquer placa Linux (`/sys/class/leds`, `/sys/class/thermal`).
-- **ref/03 §2.3:** `arch` aceita `armv6` (Linux, só nível `dev`) e o triplo `xtensa-esp32-none-elf`; `[boot] bootloader` aceita `esp-idf`; `[probe]` ganha `tool` (`probe-rs` \| `espflash`) e o protocolo `serial`.
-- **ref/08 §2.15.1:** linha do ESP32 original como alvo de desenvolvimento.
-- **01 §22:** o Raspberry Pi 3 no nível 2; o Pi Zero W (ARMv6) e o ESP32 original no nível `dev`.
-- **07:** `jk flash` grava por sonda (`probe-rs`) ou por série (`espflash`).
-- **11:** as portas de saída das Fases 0–2 dizem onde se validam enquanto houver só esta bancada.
-- **ref/03 §2.2.19–§2.2.20 e §2.3.7, documento 07 §7:** `jk profile import csv`, a gramática das URIs de equipamento do `jk profile test`, e `jk board probe`, `jk board check`, `jk board new` e `jk board publish`, para escrever o perfil do firmware de bancada e o da placa `rpi-zero-w`; `[pins] touch_channel` nas placas MCU.
-- **ref/09 §5.2 e OpenAPI:** `GET /v1/node/hardware` (`NodeHardware`), o inventário só de leitura que o `jk board probe` usa.
-- **ref/01 anexo A e §5.22:** o driver `esp32` do Joker Micro (toque, RSSI, tempo de funcionamento) e a secção `[net.wifi]` (`J0240`–`J0242`); **ref/08 §2.13.3 e §2.17:** a secção `NET` do blob e o caminho da palavra-passe do Wi-Fi em `SECRETS`; **ref/02 §2.4.8:** a exceção dos segredos de um MCU coprocessador com Wi-Fi.
+- **ref/01, appendix A, and document 05 §10:** new **`sysfs`** driver (tier N, 1.0), for the LED and the temperature of any Linux board (`/sys/class/leds`, `/sys/class/thermal`).
+- **ref/03 §2.3:** `arch` accepts `armv6` (Linux, `dev` level only) and the `xtensa-esp32-none-elf` triple; `[boot] bootloader` accepts `esp-idf`; `[probe]` gains `tool` (`probe-rs` \| `espflash`) and the `serial` protocol.
+- **ref/08 §2.15.1:** a row for the original ESP32 as a development target.
+- **01 §22:** the Raspberry Pi 3 at level 2; the Pi Zero W (ARMv6) and the original ESP32 at the `dev` level.
+- **07:** `jk flash` flashes through a probe (`probe-rs`) or over serial (`espflash`).
+- **11:** the exit gates of Phases 0–2 say where they are validated while there is only this bench.
+- **ref/03 §2.2.19–§2.2.20 and §2.3.7, document 07 §7:** `jk profile import csv`, the grammar of the equipment URIs of `jk profile test`, and `jk board probe`, `jk board check`, `jk board new` and `jk board publish`, to write the profile of the bench firmware and that of the `rpi-zero-w` board; `[pins] touch_channel` on MCU boards.
+- **ref/09 §5.2 and OpenAPI:** `GET /v1/node/hardware` (`NodeHardware`), the read-only inventory that `jk board probe` uses.
+- **ref/01 appendix A and §5.22:** the Joker Micro `esp32` driver (touch, RSSI, uptime) and the `[net.wifi]` section (`J0240`–`J0242`); **ref/08 §2.13.3 and §2.17:** the `NET` section of the blob and the path of the Wi-Fi password in `SECRETS`; **ref/02 §2.4.8:** the exception for the secrets of a coprocessor MCU with Wi-Fi.

@@ -1,22 +1,22 @@
-# ADR 0021 — Uma família de produtos, local-first, com contratos abertos
+# ADR 0021 — A product family, local-first, with open contracts
 
-**Estado:** aceite (v1) · **Data:** 2026-09
+**Status:** accepted (v1) · **Date:** 2026-09
 
-## Contexto
+## Context
 
-Gerir centenas ou milhares de nós e MCUs exige um plano de controlo (inventário, estado desejado, rollouts, observabilidade). Era um limite declarado ("não é o servidor de frota"), mas é de muito valor construí-lo em conjunto com a runtime.
+Managing hundreds or thousands of nodes and MCUs requires a control plane (inventory, desired state, rollouts, observability). It was a declared limit ("it is not the fleet server"), but there is great value in building it together with the runtime.
 
-## Decisão
+## Decision
 
-O Joker é uma família: **Joker** (Linux), **Joker Micro** (MCUs), **Joker Hub** (registo de artefactos), **Joker Deck** (plano de controlo) e **Joker Studio** (comissionamento). Princípios (documento 20, §2): local-first; o Deck nunca está no caminho de controlo; contratos abertos; o Git como fonte da verdade da configuração; a segurança do nó não depende do Deck. O protocolo do agente e o MVP do Deck entram na v1 (Fase 3).
+Joker is a family: **Joker** (Linux), **Joker Micro** (MCUs), **Joker Hub** (artifact registry), **Joker Deck** (control plane) and **Joker Studio** (commissioning). Principles (document 20, §2): local-first; the Deck is never in the control path; open contracts; Git as the source of truth for configuration; node security does not depend on the Deck. The agent protocol and the Deck MVP enter v1 (Phase 3).
 
-## Razões
+## Reasons
 
-- O nó continua útil sozinho, e o Deck acrescenta escala.
-- Os crates de validação são partilhados entre a `jk` e o Deck: uma geração válida é a mesma nos dois.
+- The node remains useful on its own, and the Deck adds scale.
+- The validation crates are shared between `jk` and the Deck: a valid generation is the same in both.
 
-## Consequências
+## Consequences
 
-- Uma pessoa dedicada ao Deck a partir da Fase 3.
-- O protocolo do agente passa a ser uma interface pública versionada (política M21).
-- O modelo de negócio (runtime aberta, Deck como produto, ou outro) é uma decisão ligada à licença (documento 18, §6).
+- One person dedicated to the Deck from Phase 3 on.
+- The agent protocol becomes a versioned public interface (M21 policy).
+- The business model (open runtime, Deck as a product, or another) is a decision tied to the license (document 18, §6).

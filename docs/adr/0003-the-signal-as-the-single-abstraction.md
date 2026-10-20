@@ -1,22 +1,22 @@
-# ADR 0003 — O sinal é a abstração única
+# ADR 0003 — The signal is the single abstraction
 
-**Estado:** aceite (v1) · **Data:** 2026-09
+**Status:** accepted (v1) · **Date:** 2026-09
 
-## Contexto
+## Context
 
-Cada protocolo tem o seu modelo (registos, nós, objetos, PDOs, pinos). Se as apps falarem protocolos, deixam de ser portáveis, e cada uma reimplementa escala, unidades e qualidade.
+Each protocol has its own model (registers, nodes, objects, PDOs, pins). If apps speak protocols, they stop being portable, and each one reimplements scale, units and quality.
 
-## Decisão
+## Decision
 
-Tudo o que as apps veem é um **sinal**: valor tipado, unidade, qualidade (código + motivo) e tempo (`ts_src`, `ts_acq`, `seq`), com as variantes bloco, stream e evento, e ações para comandos. Os drivers entregam valores crus, e a semântica (escala, unidade, qualidade) é aplicada pelo núcleo.
+Everything apps see is a **signal**: typed value, unit, quality (code + reason) and time (`ts_src`, `ts_acq`, `seq`), with the block, stream and event variants, and actions for commands. Drivers deliver raw values, and the semantics (scale, unit, quality) are applied by the core.
 
-## Razões
+## Reasons
 
-- Portabilidade das apps entre sites por ligações.
-- A qualidade como cidadã de primeira classe elimina a família de bugs "valor velho tratado como bom".
-- Unidades verificadas em compilação eliminam a família "W em vez de kW".
+- Portability of apps across sites through bindings.
+- Quality as a first-class citizen eliminates the family of bugs "stale value treated as good".
+- Units checked at compile time eliminate the "W instead of kW" family.
 
-## Consequências
+## Consequences
 
-- Perde-se detalhe de protocolo em dois pontos (sessões por utilizador e histórico no equipamento), que ficam declarados (documento 12, §14).
-- Comandos e escritas coerentes exigiram M19 e M20 (documento 09, ataque 1).
+- Protocol detail is lost in two places (per-user sessions and history on the equipment), which are declared (document 12, §14).
+- Coherent commands and writes required M19 and M20 (document 09, attack 1).

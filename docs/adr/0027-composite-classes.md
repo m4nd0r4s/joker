@@ -1,26 +1,26 @@
-# ADR 0027 — Classes compostas de ponta a ponta
+# ADR 0027 — Composite classes end to end
 
-**Estado:** aceite (v1) · **Data:** 2026-09
+**Status:** accepted (v1) · **Date:** 2026-09
 
-## Contexto
+## Context
 
-Uma classe já podia ter membros que são outras classes (`member pumps: std/pump@1[1..8]`), com profundidade máxima 3. Mas faltava o resto: como se liga um membro de classe numa instância, que caminhos ganha, se uma instância pode estar em duas composições, se um método pode chamar métodos dos membros, como se calcula a saúde, como um único perfil cumpre uma classe composta, e como um Joker Micro exporta uma. Sem isto, não se consegue abstrair um equipamento inteiro (uma bomba de calor, o nó de I/O da bancada) numa só instância.
+A class could already have members that are other classes (`member pumps: std/pump@1[1..8]`), with a maximum depth of 3. But the rest was missing: how a class member is bound in an instance, which paths it gains, whether an instance can be in two compositions, whether a method can call the members' methods, how health is computed, how a single profile fulfills a composite class, and how a Joker Micro exports one. Without this, a whole piece of equipment (a heat pump, the bench I/O node) cannot be abstracted into a single instance.
 
-## Decisão
+## Decision
 
-1. No `map` de uma instância composta, um membro de classe liga-se ao **nome de uma instância**, e uma coleção a uma **lista** de nomes, verificados na classe, na major, nas capacidades e nos limites (`J0650`–`J0654`).
-2. Um membro de classe cria **caminhos aninhados** `<instância>.<membro>.<submembro>`, que são aliases dos mesmos sinais (16 P6).
-3. Uma instância pode estar em várias composições; os seus `out` continuam a ter um só envelope e um só árbitro, e o `jk check` avisa quando duas apps chegam à mesma saída por caminhos diferentes (`J0655`).
-4. Um método pode chamar métodos de **membros fixos** (`call drive.stop()`), nunca de coleções (`JC0502`–`JC0504`). Numa instância **virtual**, os membros pertencem à implementação: quem chama só lê (`J-E0507`, `J0656`).
-5. A saúde de uma composta é a pior entre as suas regras e a dos membros obrigatórios.
-6. Um perfil cumpre uma classe composta com `[implements."<classe>".members.<membro>]`, recursivamente.
-7. O Joker Micro exporta a árvore no catálogo do `HELLO`, e o nó Linux vê os mesmos caminhos.
-8. A profundidade de composição (≤ 3, `JC0501`) e a das camadas de implementação (≤ 3, `J0620`) contam-se à parte.
-9. **Uma classe descreve um papel, não um chip:** `bench_io@1` ("o nó de I/O da bancada") é aceitável; `esp32@1` é o erro.
+1. In the `map` of a composite instance, a class member is bound to the **name of an instance**, and a collection to a **list** of names, checked for class, major, capabilities and limits (`J0650`–`J0654`).
+2. A class member creates **nested paths** `<instance>.<member>.<submember>`, which are aliases of the same signals (16 P6).
+3. An instance can be in several compositions; its `out` members still have a single envelope and a single arbiter, and `jk check` warns when two apps reach the same output through different paths (`J0655`).
+4. A method can call methods of **fixed members** (`call drive.stop()`), never of collections (`JC0502`–`JC0504`). In a **virtual** instance, the members belong to the implementation: whoever calls only reads (`J-E0507`, `J0656`).
+5. The health of a composite is the worst of its rules and that of the required members.
+6. A profile fulfills a composite class with `[implements."<class>".members.<member>]`, recursively.
+7. Joker Micro exports the tree in the `HELLO` catalog, and the Linux node sees the same paths.
+8. The composition depth (≤ 3, `JC0501`) and the depth of implementation layers (≤ 3, `J0620`) are counted separately.
+9. **A class describes a role, not a chip:** `bench_io@1` ("the bench I/O node") is acceptable; `esp32@1` is the mistake.
 
-O detalhe está no documento 14 (§2, §4.6, §9.3), no 17 (§3.2, §4, §7, §8), no 16 §6, na ref/01 §5.13, na ref/03 §2.2.14, na ref/04 §4.8.6, na ref/05 §14.6, na ref/07 e na ref/09 §5.11.
+The detail is in document 14 (§2, §4.6, §9.3), in document 17 (§3.2, §4, §7, §8), in 16 §6, in ref/01 §5.13, in ref/03 §2.2.14, in ref/04 §4.8.6, in ref/05 §14.6, in ref/07 and in ref/09 §5.11.
 
-## Consequências
+## Consequences
 
-- Um equipamento inteiro pode ser uma instância, até num Joker Micro, e o nó Linux vê o papel, não o chip.
-- O `joker:meta`, o catálogo do Joker Link e a API passam a descrever árvores de instâncias.
+- A whole piece of equipment can be an instance, even on a Joker Micro, and the Linux node sees the role, not the chip.
+- `joker:meta`, the Joker Link catalog and the API now describe trees of instances.

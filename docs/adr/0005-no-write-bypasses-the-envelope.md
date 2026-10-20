@@ -1,21 +1,21 @@
-# ADR 0005 — Nenhum caminho de escrita contorna o envelope
+# ADR 0005 — No write path bypasses the envelope
 
-**Estado:** aceite (v1) · **Data:** 2026-09
+**Status:** accepted (v1) · **Date:** 2026-09
 
-## Contexto
+## Context
 
-Os sistemas de edge costumam ter "portas das traseiras": um comando de diagnóstico, uma API de manutenção, um script do integrador. É por essas portas que acontecem os acidentes.
+Edge systems tend to have "back doors": a diagnostic command, a maintenance API, an integrator's script. It is through these doors that accidents happen.
 
-## Decisão
+## Decision
 
-Todas as escritas (apps, CLI, API, pontes, uplinks, intenções aprovadas) passam pelo árbitro e pelo envelope. Os drivers só recebem escritas aplicadas. A única exceção é o bit `force_safe` do supervisor, que só consegue levar ao estado seguro.
+All writes (apps, CLI, API, bridges, uplinks, approved intents) go through the arbiter and the envelope. Drivers only receive applied writes. The only exception is the supervisor's `force_safe` bit, which can only lead to the safe state.
 
-## Razões
+## Reasons
 
-- A garantia não depende de disciplina de quem integra.
-- O registo de decisões fica completo, porque tudo passa pelo mesmo sítio.
+- The guarantee does not depend on the discipline of whoever integrates.
+- The decision log is complete, because everything goes through the same place.
 
-## Consequências
+## Consequences
 
-- Um técnico que precise de "forçar" um valor fora do envelope tem de alterar o envelope por config (com `widen` justificado e auditado), e não por um comando.
-- Invariante 2 do `AGENTS.md`.
+- A technician who needs to "force" a value outside the envelope must change the envelope through config (with a justified and audited `widen`), and not through a command.
+- Invariant 2 of `AGENTS.md`.
