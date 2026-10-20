@@ -21,7 +21,9 @@ conformance/
 | `arbiter/` | writers, levels, leases, manual writes and TTL (docs/16 §1) |
 | `envelope/` | the envelope steps 0–7 and their ordering (docs/01 §7, docs/16 §2) |
 | `quality/` | quality propagation in expressions, staleness, initial samples (docs/16 §3, §4; docs/02 §4) |
-| `alarms/` | alarm states and trip actions (docs/02 §11, ref/01 §5.15) |
+| `expressions/` | stateful functions, units and number semantics (docs/02 §10, docs/16 §4) |
+| `alarms/` | alarm states, trip actions and alarms in permissives (docs/02 §11, ref/01 §5.15) |
+| `trace/` | the full per-tick result sequence that the determinism gate compares (docs/16 §7) |
 
 ## File format
 
