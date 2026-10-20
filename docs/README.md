@@ -40,6 +40,7 @@ Estado: **documento de desenho.** Nada disto está implementado. Os números atr
 | `ref/` | **Referências normativas de todas as interfaces** (ADR 0023): `00` convenções · `01` manifesto · `02` lock, nó, cliente, segredos · `03` perfis, placas, simulação, cenários, conformidade · `04` WIT e SDK Rust · `05` SDKs Python e TypeScript, clientes · `06` drivers N/W/X · `07` Joker Link · `08` ABI C do Joker Micro · `09` API HTTP · `10` protocolo do agente |
 | `propostas/` | Propostas e o seu raciocínio; **não normativas** (a da IDL foi incorporada no 17) |
 | `adr/` | Registos de decisão de arquitetura |
+| `GLOSSARY.md` | English term for every domain word, translation style, and the file-name map (ADR 0029) |
 | `exemplos/` | Percurso guiado e três projetos completos |
 | `trilha/` | **Trilha de estudo** em 11 partes e 4 módulos, sobre a bancada do documento 23 (portátil, Pi 3 B+, Pi Zero W, ESP32; nada se compra): sinais e o nó Linux (o LED `ACT`, a temperatura do CPU, o ESP32 por Modbus RTU e TCP, falhas e replay, trocar de placa), classes (as da `std/` e a tua), o Joker Micro no ESP32 (Joker Link em série e por Wi-Fi, uma app no MCU) e a frota (`prod`, segredos, o Deck e um rollout em ondas) |
 
