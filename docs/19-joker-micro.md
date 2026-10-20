@@ -1,161 +1,161 @@
-# 19 — Joker Micro: o Joker em microcontroladores
+# 19 — Joker Micro: Joker on microcontrollers
 
-Documento normativo (ADR 0020), com o detalhe das interfaces nas referências (ADR 0023): o Joker Link na ref/07 e a ABI C, o crate e o blob de geração na ref/08. Até aqui, "microcontroladores" era a Fase 5 e um produto à parte. Passa a fazer parte da **v1**, e isso muda uma decisão que tem de ser tomada **antes** da primeira linha de código: **o núcleo do Joker é `no_std` desde o primeiro dia.**
+Normative document (ADR 0020), with the detail of the interfaces in the references (ADR 0023): Joker Link in ref/07 and the C ABI, the crate and the generation blob in ref/08. Until now, "microcontrollers" was Phase 5 and a separate product. It becomes part of **v1**, and that changes a decision that must be made **before** the first line of code: **the Joker core is `no_std` from day one.**
 
-A ideia é a mesma de sempre, levada até ao fim: a carta que vale por qualquer outra. A mesma app, os mesmos sinais, o mesmo árbitro, o mesmo envelope e as mesmas classes, num Raspberry Pi **ou** num microcontrolador de 5 €.
+The idea is the same as always, taken all the way: the card that stands for any other. The same app, the same signals, the same arbiter, the same envelope and the same classes, on a Raspberry Pi **or** on a €5 microcontroller.
 
 ---
 
-## 1. Porque importa, e o que muda no desenho
+## 1. Why it matters, and what changes in the design
 
-Um microcontrolador faz bem exatamente o que o Linux faz mal:
+A microcontroller does well exactly what Linux does badly:
 
-| | Linux (`jokerd`) | Microcontrolador (Joker Micro) |
+| | Linux (`jokerd`) | Microcontroller (Joker Micro) |
 |---|---|---|
-| tempo real | *soft*, ~100 µs de jitter a 1 kHz com PREEMPT_RT (documento 12, §2) | *hard*, jitter de µs, ciclos até ~10 kHz |
-| amostragem | não passa de ~1 kHz por software (documento 12, §3) | temporizadores de hardware + DMA, dezenas a centenas de kS/s |
-| arranque | segundos | milissegundos |
-| sobreviver a um crash | watchdog + systemd, com uma janela sem controlo | watchdog de hardware; as saídas ficam no `safe` do próprio MCU |
-| custo, consumo | 30–150 €, 3–10 W | 1–15 €, mW |
-| capacidade | ML, historian, pontes, muitas apps | poucas apps, sem historian, sem ML (na v1) |
+| real time | *soft*, ~100 µs of jitter at 1 kHz with PREEMPT_RT (document 12, §2) | *hard*, µs jitter, cycles up to ~10 kHz |
+| sampling | does not go beyond ~1 kHz in software (document 12, §3) | hardware timers + DMA, tens to hundreds of kS/s |
+| boot | seconds | milliseconds |
+| surviving a crash | watchdog + systemd, with a window without control | hardware watchdog; the outputs stay at the MCU's own `safe` |
+| cost, consumption | €30–150, 3–10 W | €1–15, mW |
+| capacity | ML, historian, bridges, many apps | few apps, no historian, no ML (in v1) |
 
-Por isso o Joker Micro não é um "Joker pequeno": é a **outra metade**. Três padrões de uso, todos na v1:
+That is why Joker Micro is not a "small Joker": it is the **other half**. Three usage patterns, all in v1:
 
-1. **Nó autónomo.** Um MCU com Wi-Fi ou Ethernet (ESP32-C6, STM32H5) é o nó inteiro: um controlador de bomba de calor, um contador inteligente, um sensor com lógica.
-2. **Coprocessador de I/O de um nó Linux.** O Raspberry Pi pensa; o MCU (um RP2350 numa placa de I/O) segura as saídas com o seu envelope e o seu `safe`. Se o Linux morrer, o MCU mantém a segurança. É a resposta ao problema da parte 2 da trilha (o LED `ACT` do Pi não tem fallback: com o `jokerd` morto, fica como estava), e a trilha resolve-o na parte 9, com o `safe` do LED no ESP32.
-3. **Biblioteca dentro de firmware existente.** Um fabricante que já tem firmware em C (Zephyr, ESP-IDF, FreeRTOS, bare-metal) integra o Joker como uma biblioteca: o firmware continua a ser dono do hardware, e o Joker dá-lhe sinais, envelope, árbitro, classes e ligação ao resto da frota.
+1. **Standalone node.** An MCU with Wi-Fi or Ethernet (ESP32-C6, STM32H5) is the whole node: a heat pump controller, a smart meter, a sensor with logic.
+2. **I/O coprocessor of a Linux node.** The Raspberry Pi thinks; the MCU (an RP2350 on an I/O board) holds the outputs with its envelope and its `safe`. If Linux dies, the MCU keeps safety. It is the answer to the problem of part 2 of the track (the Pi's `ACT` LED has no fallback: with `jokerd` dead, it stays as it was), and the track solves it in part 9, with the LED's `safe` on the ESP32.
+3. **Library inside existing firmware.** A manufacturer that already has firmware in C (Zephyr, ESP-IDF, FreeRTOS, bare-metal) integrates Joker as a library: the firmware remains the owner of the hardware, and Joker gives it signals, envelope, arbiter, classes and a connection to the rest of the fleet.
 
 ---
 
-## 2. Arquitetura: um núcleo, dois hospedeiros
+## 2. Architecture: one core, two hosts
 
 ```
-                        ┌──────────────────────── partilhado (no_std, sem alocação no tick) ───────────┐
-                        │ joker-units · joker-expr · joker-core (registo, slots, imagem, árbitro,       │
-                        │ envelope, alarmes, consultas e métodos de classes, traço)  · joker-link-proto │
+                        ┌──────────────────────── shared (no_std, no allocation on the tick) ──────────┐
+                        │ joker-units · joker-expr · joker-core (registry, slots, image, arbiter,      │
+                        │ envelope, alarms, class queries and methods, trace)       · joker-link-proto │
                         └──────────────────────────────────────────────────────────────────────────────┘
                ┌────────────────────────────┐                        ┌──────────────────────────────────┐
   Linux        │ jokerd                      │        MCU             │ joker-micro                      │
                │ tokio · wasmtime · drivers  │                        │ Embassy · embedded-hal · drivers │
-               │ historian · pontes · API    │ ◀── Joker Link ──────▶ │ apps nativas · flash · watchdog  │
+               │ historian · bridges · API   │ ◀── Joker Link ──────▶ │ native apps · flash · watchdog   │
                └────────────────────────────┘                        └──────────────────────────────────┘
 ```
 
-**A decisão estrutural (ADR 0020):** o núcleo (`joker-units`, `joker-expr`, `joker-core` e os restantes crates da lista do documento 13, §1) é `#![no_std]`. Nenhuma estrutura do caminho do tick aloca, e todas têm capacidade fixa conhecida no build. O `alloc` é uma feature opcional, usada só no Linux para construir o registo a partir do manifesto em runtime. Isto custa pouco se for feito já, e é muito caro de fazer depois (documento 18, adenda).
+**The structural decision (ADR 0020):** the core (`joker-units`, `joker-expr`, `joker-core` and the remaining crates of the list in document 13, §1) is `#![no_std]`. No structure on the tick path allocates, and all have a fixed capacity known at build time. `alloc` is an optional feature, used only on Linux to build the registry from the manifest at runtime. This costs little if done now, and is very expensive to do later (document 18, addendum).
 
 ---
 
-## 3. O que corre num MCU
+## 3. What runs on an MCU
 
-| Peça | No Joker Micro (v1) | Nota |
+| Piece | On Joker Micro (v1) | Note |
 |---|---|---|
-| sinais, qualidade, tempo, unidades | sim | o mesmo núcleo |
-| imagem de processo, grupos de ciclo | sim | cada grupo é um executor de interrupção do Embassy, com prioridade de hardware |
-| árbitro, envelope, trips, alarmes | sim | idênticos, bit a bit, aos do Linux (a mesma bateria de conformidade) |
-| classes e instâncias | sim | tipos gerados pelo `jkc` em `no_std`; métodos e consultas executados pelo mesmo núcleo |
-| apps | **nativas**, em Rust | a mesma API do SDK; sem Wasm na v1 (§5) |
-| tarefas async | parcial | `every`, `on`, `on_event`; sem `history`, sem `infer`, sem rede arbitrária |
-| `kv` | sim, em flash com wear-leveling | pequeno (≤ 16 KiB) |
-| alocação | **não** no núcleo, nos drivers nem nas apps | exceção declarada: o heap de tamanho fixo do rádio do ESP32 (`esp-alloc` e `esp-rtos`), só no firmware com Wi-Fi, fora do núcleo e contado no `J0710` (ref/08 §2.15.2) |
-| drivers | GPIO, ADC, PWM, I²C, SPI, UART, Modbus RTU **mestre e escravo**, CAN, 1-Wire | sobre `embedded-hal` 1.0 onde há trait; o ADC e o CAN usam dois traits próprios do `joker-hal` (`AdcRead`, `CanFrames`), e o 1-Wire um pino *open-drain*. A tabela é a da ref/06 §3.7 |
-| historian | não | só um anel de amostras em RAM, enviado pelo Joker Link |
-| uplink | Joker Link; MQTT direto em MCUs com rede | sem Sparkplug completo na v1 |
-| traço | anel em RAM (tamanho configurável), despejado pelo link ou por sonda | o mesmo formato (documento 16, §7) |
-| OTA | sim, A/B com bootloader (embassy-boot ou MCUboot), imagens assinadas; o recetor é **obrigatório** no modo firmware e no modo crate (ref/08 §2.12.6, `J0795`): um MCU no campo recebe firmware novo sem visita | pelo Joker Link, ou pelo Deck em MCUs com rede |
-| ML | **não na v1** | Burn Flex `no_std` avaliado na 1.1 |
+| signals, quality, time, units | yes | the same core |
+| process image, cycle groups | yes | each group is an Embassy interrupt executor, with hardware priority |
+| arbiter, envelope, trips, alarms | yes | identical, bit for bit, to those on Linux (the same conformance suite) |
+| classes and instances | yes | types generated by `jkc` in `no_std`; methods and queries executed by the same core |
+| apps | **native**, in Rust | the same SDK API; no Wasm in v1 (§5) |
+| async tasks | partial | `every`, `on`, `on_event`; no `history`, no `infer`, no arbitrary network |
+| `kv` | yes, in flash with wear-leveling | small (≤ 16 KiB) |
+| allocation | **not** in the core, the drivers or the apps | declared exception: the fixed-size heap of the ESP32 radio (`esp-alloc` and `esp-rtos`), only in the firmware with Wi-Fi, outside the core and counted in `J0710` (ref/08 §2.15.2) |
+| drivers | GPIO, ADC, PWM, I²C, SPI, UART, Modbus RTU **client and server**, CAN, 1-Wire | on top of `embedded-hal` 1.0 where there is a trait; ADC and CAN use two traits of `joker-hal`'s own (`AdcRead`, `CanFrames`), and 1-Wire an *open-drain* pin. The table is the one in ref/06 §3.7 |
+| historian | no | only a ring of samples in RAM, sent over Joker Link |
+| uplink | Joker Link; direct MQTT on MCUs with a network | no full Sparkplug in v1 |
+| trace | ring in RAM (configurable size), dumped over the link or by probe | the same format (document 16, §7) |
+| OTA | yes, A/B with a bootloader (embassy-boot or MCUboot), signed images; the receiver is **required** in firmware mode and in crate mode (ref/08 §2.12.6, `J0795`): an MCU in the field receives new firmware without a visit | over Joker Link, or by the Deck on MCUs with a network |
+| ML | **not in v1** | Burn Flex `no_std` evaluated in 1.1 |
 
-### 3.1 Alvos da v1
+### 3.1 v1 targets
 
-| Classe | Exemplos | RAM | Uso típico |
+| Class | Examples | RAM | Typical use |
 |---|---|---|---|
-| **M1** (referência) | RP2350 (2× Cortex-M33, 520 KB), STM32G4 | 128–520 KB | coprocessador de I/O, controlador pequeno |
-| **M2** (com rede) | ESP32-C6 / ESP32-S3, STM32H5/H7 | 320 KB–1 MB | nó autónomo com Wi-Fi ou Ethernet |
-| fora de âmbito | < 128 KB de RAM, Cortex-M0 sem FPU a < 64 MHz | — | o núcleo cabe, mas não sobra espaço útil para apps |
+| **M1** (reference) | RP2350 (2× Cortex-M33, 520 KB), STM32G4 | 128–520 KB | I/O coprocessor, small controller |
+| **M2** (with network) | ESP32-C6 / ESP32-S3, STM32H5/H7 | 320 KB–1 MB | standalone node with Wi-Fi or Ethernet |
+| out of scope | < 128 KB of RAM, Cortex-M0 without FPU at < 64 MHz | — | the core fits, but no useful space is left for apps |
 
-A FPU conta: o ESP32-C6 **não tem FPU**, e toda a vírgula flutuante é por software (aviso `J0780` para `f32`, `J0721` para `f64`); o RP2350 tem precisão simples com um coprocessador de dupla. A placa declara-a (`fpu`, ref/03 §2.3), e a tabela completa dos alvos está na ref/08.
+The FPU matters: the ESP32-C6 **has no FPU**, and all floating point is in software (warning `J0780` for `f32`, `J0721` for `f64`); the RP2350 has single precision with a double-precision coprocessor. The board declares it (`fpu`, ref/03 §2.3), and the full table of targets is in ref/08.
 
-Orçamento alvo (a medir na fase do MCU): núcleo + Joker Link + Modbus RTU + 1 app + 64 sinais ≤ **160 KB de flash** e ≤ **48 KB de RAM**.
+Target budget (to be measured in the MCU phase): core + Joker Link + Modbus RTU + 1 app + 64 signals ≤ **160 KB of flash** and ≤ **48 KB of RAM**.
 
 ---
 
-## 4. Do projeto ao microcontrolador: `jk build --target mcu:…`
+## 4. From the project to the microcontroller: `jk build --target mcu:…`
 
-O mesmo projeto, o mesmo `jk check`. O que muda é o que o build produz. Um MCU não interpreta TOML: o manifesto é **compilado**.
+The same project, the same `jk check`. What changes is what the build produces. An MCU does not interpret TOML: the manifest is **compiled**.
 
 ```
 joker.toml + joker.lock + classes (.jkc) + apps (Rust)
-   │  jk check            (as mesmas regras, mais os limites do MCU: J07xx)
+   │  jk check            (the same rules, plus the MCU limits: J07xx)
    ▼
-geração compilada
-   ├─ tabelas: registo de sinais, envelopes, árbitros, bytecode das expressões e consultas, instâncias
-   ├─ apps ligadas estaticamente (SDK com o backend nativo)
-   └─ drivers escolhidos por features
+compiled generation
+   ├─ tables: signal registry, envelopes, arbiters, bytecode of expressions and queries, instances
+   ├─ statically linked apps (SDK with the native backend)
+   └─ drivers chosen by features
    │
-   ├─▶ modo firmware:   firmware completo (ELF/UF2/bin)          → jk flash (probe-rs) ou OTA
-   ├─▶ modo biblioteca: libjoker_node.a + joker_project.h (ABI C) → para firmware em C existente
-   └─▶ modo crate:      crate Rust para projetos Embassy          → para firmware em Rust existente
+   ├─▶ firmware mode:   complete firmware (ELF/UF2/bin)           → jk flash (probe-rs) or OTA
+   ├─▶ library mode:    libjoker_node.a + joker_project.h (C ABI) → for existing C firmware
+   └─▶ crate mode:      Rust crate for Embassy projects           → for existing Rust firmware
 ```
 
-### 4.1 Firmware genérico + geração em flash
+### 4.1 Generic firmware + generation in flash
 
-Compilar uma imagem por site não escala (3 000 sites seriam 3 000 firmwares; documento 08, rodada 5). Por isso há duas formas de levar uma geração:
+Compiling one image per site does not scale (3,000 sites would be 3,000 firmwares; document 08, round 5). That is why there are two ways to carry a generation:
 
-- **geração embutida:** tabelas `const` dentro do firmware. É a mais simples e o melhor para protótipos e produtos fechados;
-- **geração em flash:** um firmware **genérico** por placa e conjunto de apps, e a geração do site num **blob binário assinado** (`.jkgen`, assinado pelo papel `config`, com CRC-32C) numa partição própria, carregado no arranque. Mudar a configuração de um site é enviar um blob de alguns KB, e não um firmware novo. O formato está na ref/08.
+- **embedded generation:** `const` tables inside the firmware. It is the simplest and the best for prototypes and closed products;
+- **generation in flash:** one **generic** firmware per board and set of apps, and the site's generation in a **signed binary blob** (`.jkgen`, signed by the `config` role, with CRC-32C) in its own partition, loaded at boot. Changing a site's configuration is sending a blob of a few KB, and not new firmware. The format is in ref/08.
 
-Os dois usam as mesmas estruturas de capacidade fixa. A capacidade máxima (sinais, saídas, grupos, instâncias) é fixada no build do firmware genérico, e o `jk check` recusa uma geração que não caiba (`J0710`).
+Both use the same fixed-capacity structures. The maximum capacity (signals, outputs, groups, instances) is fixed in the build of the generic firmware, and `jk check` rejects a generation that does not fit (`J0710`).
 
-### 4.2 Modo biblioteca: a ABI C
+### 4.2 Library mode: the C ABI
 
-Para o terceiro padrão do §1. O firmware existente continua a mandar no hardware e no escalonamento; o Joker é chamado:
+For the third pattern of §1. The existing firmware keeps control of the hardware and the scheduling; Joker is called:
 
 ```c
-#include "joker_project.h"      /* gerado pelo jk build; inclui joker_node.h, o header fixo */
+#include "joker_project.h"      /* generated by jk build; includes joker_node.h, the fixed header */
 
-static jk_node_t node;           /* estado estático, sem malloc */
+static jk_node_t node;           /* static state, no malloc */
 
-uint64_t jk_now_us(void) { return board_timer_us(); }    /* o tempo vem de fora (ADR 0007) */
+uint64_t jk_now_us(void) { return board_timer_us(); }    /* time comes from outside (ADR 0007) */
 
 JK_NORETURN void jk_fatal(jk_status_t code, uint32_t detail) {
     (void)code; (void)detail;
-    for (;;) { esp_restart(); }  /* sem sandbox: reset para o estado de reset do hardware */
+    for (;;) { esp_restart(); }  /* no sandbox: reset to the hardware reset state */
 }
 
-static const jk_platform_t platform = {                  /* flash: persistência e gerações */
+static const jk_platform_t platform = {                  /* flash: persistence and generations */
     .area_info = flash_info, .area_read = flash_read,
     .area_write = flash_write, .area_erase = flash_erase,
 };
 
 void app_main(void) {
     jk_status_t st = jk_init(&node, &JK_GENERATION, &platform, jk_now_us());
-    if (st != JK_OK) { jk_fatal(st, 0); }                  /* ABI, interface ou geração errada */
+    if (st != JK_OK) { jk_fatal(st, 0); }                  /* wrong ABI, interface or generation */
     TickType_t last = xTaskGetTickCount();
     for (;;) {
         uint64_t now = jk_now_us();
         jk_set_input(&node, JK_SIG_TANK_LEVEL, read_level_m(), JK_GOOD, now);
-        jk_tick(&node, JK_GROUP_MAIN, now);                /* latch → apps → árbitro → envelope → commit */
+        jk_tick(&node, JK_GROUP_MAIN, now);                /* latch → apps → arbiter → envelope → commit */
         bool pump; jk_quality_t q;
         if (jk_get_output(&node, JK_SIG_PUMP_RUN, &pump, &q) == JK_OK) {
-            gpio_set_level(PUMP_PIN, pump);                /* o valor é sempre admissível */
+            gpio_set_level(PUMP_PIN, pump);                /* the value is always admissible */
         }
-        jk_link_poll(&node, uart_rx, uart_tx);             /* link + um passo de serviço (persistência, async) */
+        jk_link_poll(&node, uart_rx, uart_tx);             /* link + one service step (persistence, async) */
         vTaskDelayUntil(&last, pdMS_TO_TICKS(10));
     }
 }
 ```
 
-- **Dois headers:** `joker_node.h` é fixo e versionado (`JK_ABI_VERSION`, política da ADR 0022); `joker_project.h` é gerado pelo `jk build --target mcu:<placa> --lib`, com os identificadores (`JK_SIG_…`, `JK_GROUP_…`, `JK_WRITER_…`). Os identificadores são índices da **interface externa** do build, ligados **por nome** à geração carregada no `jk_init`: continuam válidos quando chega uma geração nova por flash. O `jk_init` é uma macro que passa o tamanho do nó, a versão da ABI e o hash da interface, e um header regenerado com a biblioteca antiga é recusado (`JK_E_ABI`) antes de ler qualquer entrada.
-- Sem alocação, sem threads próprias, sem estado global escondido; reentrante por `jk_node_t`. O integrador define dois símbolos: `jk_now_us` e `jk_fatal`.
-- **Um *panic* de app é fatal.** No MCU não há sandbox: uma app ligada estaticamente que entra em *panic* chama `jk_fatal`, que não volta (reset). As saídas ficam no estado de reset do hardware, que a placa tem de declarar seguro (`reset_safe`, `J0786`). O mesmo vale para uma invariante interna partida.
-- **Código C que escreve em saídas** é uma app `kind = "extern"` no manifesto, com `writes` e `reads`: propõe com o seu escritor (`jk_propose_bool(&node, JK_WRITER_PANEL, …)`), com nível e lease, e passa pelo árbitro e pelo envelope como as outras.
-- **Persistência:** um trip, um reconhecimento ou um parâmetro alterado são gravados em flash no próximo `jk_service` (ou `jk_link_poll`), e o integrador chama-o pelo menos a cada `service_deadline` (100 ms por omissão). É a diferença declarada face ao `fsync` do Linux: uma falta de energia dentro dessa janela perde o trip, e a saída arranca em `safe`.
-- **Watchdog:** `jk_supervise` numa ISR de temporizador força o `safe` de um grupo parado a 3 períodos e diz quando se pode alimentar o watchdog de hardware.
+- **Two headers:** `joker_node.h` is fixed and versioned (`JK_ABI_VERSION`, policy of ADR 0022); `joker_project.h` is generated by `jk build --target mcu:<board> --lib`, with the identifiers (`JK_SIG_…`, `JK_GROUP_…`, `JK_WRITER_…`). The identifiers are indices of the build's **external interface**, bound **by name** to the generation loaded in `jk_init`: they remain valid when a new generation arrives in flash. `jk_init` is a macro that passes the node size, the ABI version and the interface hash, and a regenerated header with the old library is rejected (`JK_E_ABI`) before any input is read.
+- No allocation, no threads of its own, no hidden global state; reentrant per `jk_node_t`. The integrator defines two symbols: `jk_now_us` and `jk_fatal`.
+- **An app *panic* is fatal.** On the MCU there is no sandbox: a statically linked app that *panics* calls `jk_fatal`, which does not return (reset). The outputs stay in the hardware reset state, which the board must declare safe (`reset_safe`, `J0786`). The same applies to a broken internal invariant.
+- **C code that writes to outputs** is an app `kind = "extern"` in the manifest, with `writes` and `reads`: it proposes with its writer (`jk_propose_bool(&node, JK_WRITER_PANEL, …)`), with level and lease, and goes through the arbiter and the envelope like the others.
+- **Persistence:** a trip, an acknowledgment or a changed parameter are recorded in flash at the next `jk_service` (or `jk_link_poll`), and the integrator calls it at least every `service_deadline` (100 ms by default). It is the declared difference from Linux's `fsync`: a power outage within that window loses the trip, and the output starts in `safe`.
+- **Watchdog:** `jk_supervise` in a timer ISR forces the `safe` of a stalled group at 3 periods and says when the hardware watchdog may be fed.
 
-A ABI completa está na ref/08 e em `spec/c/joker_node.h`; um exemplo que compila está em `spec/c/example/`.
+The complete ABI is in ref/08 and in `spec/c/joker_node.h`; an example that compiles is in `spec/c/example/`.
 
 ---
 
-## 5. Apps: a mesma app, dois alvos
+## 5. Apps: the same app, two targets
 
 ```rust
 use joker::prelude::*;
@@ -174,78 +174,78 @@ fn control(io: &mut CycleIo<Level>, _st: &mut ()) -> Result<()> {
 }
 ```
 
-- No Linux, compila para Wasm e corre no wasmtime. No MCU, o **mesmo código** compila para `thumbv8m.main-none-eabihf` com o backend nativo do SDK (contrato `NativeApp`, ref/08 §2.11.5) e é ligado ao firmware. Sem sandbox, um *panic* é `jk_fatal` (§4.2).
-- O SDK marca em compilação o que não existe no MCU (`history`, `infer`, `frames`, rede arbitrária), e o `jk build --target mcu` falha com `J0720` e uma sugestão.
-- **Números:** muitos MCUs só têm FPU de precisão simples, e alguns nenhuma. As portas aceitam `f32`, e o `jk bench --target mcu` (por sonda) mede o WCET no próprio chip. O `jk build` procura no objeto de cada app as rotinas de vírgula flutuante por software: `f64` num MCU sem FPU de dupla precisão dá `J0721`; `f32` num MCU sem FPU (ESP32-C6) dá `J0780`.
-- **Wasm no MCU** (com o interpretador `wasmi`, que é `no_std`, determinista e com medição de *fuel*) fica para a 1.4, em MCUs M2: dá troca de apps sem reflash, com um custo de desempenho grande. Não é preciso na v1.
+- On Linux, it compiles to Wasm and runs in wasmtime. On the MCU, the **same code** compiles to `thumbv8m.main-none-eabihf` with the SDK's native backend (`NativeApp` contract, ref/08 §2.11.5) and is linked into the firmware. Without a sandbox, a *panic* is `jk_fatal` (§4.2).
+- The SDK marks at compile time what does not exist on the MCU (`history`, `infer`, `frames`, arbitrary network), and `jk build --target mcu` fails with `J0720` and a suggestion.
+- **Numbers:** many MCUs only have a single-precision FPU, and some none. The ports accept `f32`, and `jk bench --target mcu` (by probe) measures the WCET on the chip itself. `jk build` searches each app's object for the software floating-point routines: `f64` on an MCU without a double-precision FPU gives `J0721`; `f32` on an MCU without an FPU (ESP32-C6) gives `J0780`.
+- **Wasm on the MCU** (with the `wasmi` interpreter, which is `no_std`, deterministic and with *fuel* metering) is left for 1.4, on M2 MCUs: it gives app swapping without reflashing, with a large performance cost. It is not needed in v1.
 
 ---
 
 ## 6. Joker Link
 
-O protocolo entre um Joker Micro e um `jokerd` (ou o Deck, documento 20). A referência ao nível do fio é a **ref/07**, com o CDDL em `spec/cddl/joker-link.cddl` e vetores de teste.
+The protocol between a Joker Micro and a `jokerd` (or the Deck, document 20). The wire-level reference is **ref/07**, with the CDDL in `spec/cddl/joker-link.cddl` and test vectors.
 
 | | |
 |---|---|
-| transportes | UART, RS-485 (full e half-duplex), USB CDC e TCP, com COBS + CRC-32C; CAN/CAN-FD (ISO-TP) e UDP, um datagrama por trama. O **CRC-32C** está em todos, também em TCP e UDP |
-| codificação | CBOR com chaves inteiras, e identificadores numéricos resolvidos pelo catálogo anunciado no `HELLO` |
-| segurança | chave por nó (do `jk node enroll`), ChaCha20-Poly1305. Configura-se **nos dois lados, sem negociação** (não há *downgrade*): obrigatória em TCP e UDP, opcional em barramentos fechados dentro de um quadro |
-| entrega | três classes: efémera (`PROPOSE`, `TIME`), de estado (`SAMPLES`: uma retransmissão leva o valor **atual**, nunca o antigo) e fiável (ações, métodos, eventos, alarmes, OTA) |
+| transports | UART, RS-485 (full and half-duplex), USB CDC and TCP, with COBS + CRC-32C; CAN/CAN-FD (ISO-TP) and UDP, one datagram per frame. **CRC-32C** is in all of them, also in TCP and UDP |
+| encoding | CBOR with integer keys, and numeric identifiers resolved by the catalog announced in `HELLO` |
+| security | per-node key (from `jk node enroll`), ChaCha20-Poly1305. It is configured **on both sides, without negotiation** (there is no *downgrade*): required on TCP and UDP, optional on closed buses inside a cabinet |
+| delivery | three classes: ephemeral (`PROPOSE`, `TIME`), state (`SAMPLES`: a retransmission carries the **current** value, never the old one) and reliable (actions, methods, events, alarms, OTA) |
 
-As mensagens principais (a lista completa, com os campos e os papéis, está na ref/07 §6.1):
+The main messages (the complete list, with the fields and the roles, is in ref/07 §6.1):
 
-| Mensagem | Sentido | Conteúdo |
+| Message | Direction | Content |
 |---|---|---|
-| `HELLO` | ↔ | versão do protocolo, identidade, hash da geração e do catálogo, descritor do firmware, contratos das classes; a resposta decide o modo da sessão |
-| `SAMPLES` | MCU → Linux | amostras alteradas (seq, qualidade, `dt`), em lote |
-| `PROPOSE` | Linux → MCU | propostas nas saídas do MCU, com nível do árbitro e lease |
-| `OUTCOMES` | MCU → Linux | resultados das escritas (o envelope que decide é o do MCU) |
-| `CALL` / `ACTION` / `RESULT` | Linux → MCU / MCU → Linux | métodos e ações de classes, com a chave de idempotência |
-| `EVENTS`, `ALARMS` | MCU → Linux | eventos e transições de alarme |
-| `TIME` | ↔ | sincronização em três fases (sonda, eco, acerto), com a qualidade do relógio; sem ela, o MCU fica em `Holdover` |
-| `CATALOG`, `TRACE`, `OTA` | ↔ | catálogo por intervalos, anel de traço, firmware ou blob de geração assinados (com teste, confirmação e reversão) |
+| `HELLO` | ↔ | protocol version, identity, hash of the generation and of the catalog, firmware descriptor, class contracts; the response decides the session mode |
+| `SAMPLES` | MCU → Linux | changed samples (seq, quality, `dt`), in batches |
+| `PROPOSE` | Linux → MCU | proposals on the MCU's outputs, with arbiter level and lease |
+| `OUTCOMES` | MCU → Linux | write results (the envelope that decides is the MCU's) |
+| `CALL` / `ACTION` / `RESULT` | Linux → MCU / MCU → Linux | class methods and actions, with the idempotency key |
+| `EVENTS`, `ALARMS` | MCU → Linux | events and alarm transitions |
+| `TIME` | ↔ | three-phase synchronization (probe, echo, adjustment), with the clock quality; without it, the MCU stays in `Holdover` |
+| `CATALOG`, `TRACE`, `OTA` | ↔ | catalog by ranges, trace ring, signed firmware or generation blob (with test, confirmation and rollback) |
 
-**Modos da sessão** (`session_mode`, ref/00 §6), decididos pelo nó Linux no `HELLO`: `full` (tudo); `observe` (o MCU não corresponde ao lock ou à geração: o nó lê, mas não escreve em `prod`, e dispara o alarme de deriva); `maintenance` (MCU sem geração válida: só OTA, traço, tempo, reinício, catálogo e rotação de chaves); `refused` (sem versão comum, ou identidade errada). O estado do link que cada modo dá ao dispositivo está no documento 05, §12.
+**Session modes** (`session_mode`, ref/00 §6), decided by the Linux node in `HELLO`: `full` (everything); `observe` (the MCU does not match the lock or the generation: the node reads, but does not write in `prod`, and raises the drift alarm); `maintenance` (MCU without a valid generation: only OTA, trace, time, restart, catalog and key rotation); `refused` (no common version, or wrong identity). The link state that each mode gives the device is in document 05, §12.
 
-**Como o `jokerd` vê um MCU:** como um **dispositivo** com o driver `joker-link`. O perfil é **gerado a partir do catálogo** que o MCU anuncia (o hash vai no `HELLO`, os bytes pelo `CATALOG`, e o lock fixa o hash): os sinais, as ações e as classes que o MCU exporta aparecem como sinais e instâncias implícitas do nó Linux. Nada se escreve à mão.
+**How `jokerd` sees an MCU:** as a **device** with the `joker-link` driver. The profile is **generated from the catalog** that the MCU announces (the hash goes in `HELLO`, the bytes over `CATALOG`, and the lock pins the hash): the signals, actions and classes that the MCU exports appear as signals and implicit instances of the Linux node. Nothing is written by hand.
 
-**Quem manda nas saídas do MCU:** o **MCU**. O `jokerd` é um escritor como os outros, com nível e lease. Se o link cair, o lease expira **no MCU** e o envelope do MCU aplica o `safe`. O fallback do dispositivo (M1) deixa de ser uma coisa a verificar e passa a ser o próprio desenho.
-
----
-
-## 7. Estresse: dez casos
-
-**U1 — Coprocessador de I/O de um Raspberry Pi.** Um RP2350 com 16 DI e 16 DO, ligado por UART a 1 Mbaud. Uma trama cifrada com 32 sinais alterados no mesmo tick tem ~250 B, ~2,5 ms no fio; com as alterações espalhadas pelo período, ~3,5 ms (ref/07 §11.2). Para ciclos de 10 ms no Linux, chega, e o UART é full-duplex. **Não cabe em CAN clássico** a 500 kbit/s (150% do barramento, `J0732`); em CAN-FD cabe com folga. Mata-se o `jokerd`: em ≤ lease + um período (40 ms) as saídas vão para `safe` pelo MCU, e o LED sem fallback da parte 2 da trilha deixa de ser um problema (a trilha mostra-o na parte 9, com o ESP32). **Aguenta.**
-
-**U2 — Controlador autónomo de bomba de calor (ESP32-C6).** Modbus RTU para a bomba, dois relés SG-Ready, Modbus **escravo** para o SGTC do edifício e MQTT por Wi-Fi para o Deck. Sem Linux. **Achado:** 3 000 sites exigiam 3 000 firmwares. **Correção:** firmware genérico com a geração em flash (§4.1).
-
-**U3 — Vibração a 25,6 kS/s num STM32H7.** Um ADC por DMA gera blocos de 2 560 amostras, e o MCU calcula RMS e bandas e envia blocos e features por Ethernet para o `jokerd`. Resolve o limite da amostragem por software (documento 12, §3). **Aguenta**, com os sinais em bloco (M7) movidos para a 1.1 junto com o ML (documento 11).
-
-**U4 — Malha de corrente de um motor a 20 kHz.** É FOC, e pertence ao firmware do drive, e não ao Joker. O Joker Micro faz ciclos até ~10 kHz com lógica simples num Cortex-M33 a 150 MHz (a medir). **Fronteira declarada** (documento 12).
-
-**U5 — Integração em firmware ESP-IDF existente.** O fabricante chama `jk_tick` na sua própria tarefa FreeRTOS. **Achados:** a ABI tinha de ser sem alocação, reentrante por nó e com IDs gerados, o que está garantido no §4.2; os IDs são da interface externa, e não da geração, para sobreviverem a uma geração nova em flash. O tempo tem de vir de fora (`jk_now_us()`), o que é o ADR 0007 aplicado ao pé da letra. **Aguenta.**
-
-**U6 — A mesma app no Linux e no MCU.** A app usa `history()` para uma média de 24 h. No MCU dá `J0720`, com a sugestão: "uma janela do núcleo (`avg(x, 15m)`) ou mover o cálculo para o nó Linux". A app faz contas em `f64` num RP2350: `J0721`, e o `jk bench --target mcu` mostra o custo real. **Aguenta, com erros claros.**
-
-**U7 — Classes através do link.** O MCU exporta uma instância `temp_sensor@1`, e o `jokerd` recebe-a como instância implícita. Se o contrato no MCU for `temp_sensor@1.1.0` e o do nó Linux `1.0.0`, o hash difere mas a major é a mesma: aceite. Se a major diferir: `J0630` no nó Linux e alarme de deriva. Uma instância **composta** (a bomba de calor do U2 como `heat_pump@1`, com compressor, sondas e SG-Ready) chega com a árvore de membros e os mesmos caminhos aninhados; o nó vê só a instância de topo, e a renomeação de `instances` aplica-se a esse nome (ref/07 §6.3 e §8.3; o exemplo completo está no documento 14, §9.3). **Aguenta.**
-
-**U8 — Memória esgotada.** 300 sinais num RP2040 (264 KB). O `jk check` calcula RAM e flash a partir da geração e das capacidades do firmware, antes de gravar: `J0710` com o detalhe por componente. **Aguenta.**
-
-**U9 — Depurar uma falha em campo.** O anel de traço do MCU (16 KB ≈ alguns segundos) é congelado num trip e despejado pelo link, ou lido por sonda. O `jk replay` no portátil corre o **mesmo núcleo** e reproduz o que o MCU decidiu. **Aguenta**, e é um dos maiores ganhos de ter um só núcleo.
-
-**U10 — Segurança num RS-485 dentro de um quadro contra Wi-Fi.** Num barramento fechado, a autenticação pode ser dispensada (declarado nos dois lados, no manifesto e no blob do MCU, e visível no `jk doctor`); como não há negociação, um atacante não consegue baixar a segurança de um link que a exige. Em IP é obrigatória, e o enrolamento dá a cada MCU a sua chave. **Aguenta.**
+**Who controls the MCU's outputs:** the **MCU**. `jokerd` is a writer like the others, with level and lease. If the link drops, the lease expires **on the MCU** and the MCU's envelope applies the `safe`. The device fallback (M1) stops being something to verify and becomes the design itself.
 
 ---
 
-## 8. O que isto pede ao resto da documentação
+## 7. Stress: ten cases
 
-| Documento | Alteração |
+**U1 — I/O coprocessor of a Raspberry Pi.** An RP2350 with 16 DI and 16 DO, connected over UART at 1 Mbaud. An encrypted frame with 32 signals changed in the same tick is ~250 B, ~2.5 ms on the wire; with the changes spread over the period, ~3.5 ms (ref/07 §11.2). For 10 ms cycles on Linux, it is enough, and UART is full-duplex. **It does not fit on classic CAN** at 500 kbit/s (150% of the bus, `J0732`); on CAN-FD it fits with room to spare. Kill `jokerd`: within ≤ lease + one period (40 ms) the outputs go to `safe` through the MCU, and the LED without fallback of part 2 of the track stops being a problem (the track shows it in part 9, with the ESP32). **Holds.**
+
+**U2 — Standalone heat pump controller (ESP32-C6).** Modbus RTU to the pump, two SG-Ready relays, Modbus **server** for the building's BMS (SGTC) and MQTT over Wi-Fi to the Deck. No Linux. **Finding:** 3,000 sites required 3,000 firmwares. **Fix:** generic firmware with the generation in flash (§4.1).
+
+**U3 — Vibration at 25.6 kS/s on an STM32H7.** An ADC over DMA produces blocks of 2,560 samples, and the MCU computes RMS and bands and sends blocks and features over Ethernet to `jokerd`. It solves the software sampling limit (document 12, §3). **Holds**, with block signals (M7) moved to 1.1 together with ML (document 11).
+
+**U4 — Current loop of a motor at 20 kHz.** It is FOC, and it belongs to the drive's firmware, and not to Joker. Joker Micro does cycles up to ~10 kHz with simple logic on a Cortex-M33 at 150 MHz (to be measured). **Declared boundary** (document 12).
+
+**U5 — Integration into existing ESP-IDF firmware.** The manufacturer calls `jk_tick` in its own FreeRTOS task. **Findings:** the ABI had to be allocation-free, reentrant per node and with generated IDs, which is guaranteed in §4.2; the IDs belong to the external interface, and not to the generation, so that they survive a new generation in flash. Time must come from outside (`jk_now_us()`), which is ADR 0007 applied to the letter. **Holds.**
+
+**U6 — The same app on Linux and on the MCU.** The app uses `history()` for a 24 h average. On the MCU it gives `J0720`, with the suggestion: "a core window (`avg(x, 15m)`) or move the computation to the Linux node". The app does arithmetic in `f64` on an RP2350: `J0721`, and `jk bench --target mcu` shows the real cost. **Holds, with clear errors.**
+
+**U7 — Classes across the link.** The MCU exports an instance `temp_sensor@1`, and `jokerd` receives it as an implicit instance. If the contract on the MCU is `temp_sensor@1.1.0` and the Linux node's is `1.0.0`, the hash differs but the major is the same: accepted. If the major differs: `J0630` on the Linux node and a drift alarm. A **composite** instance (the heat pump of U2 as `heat_pump@1`, with compressor, sensors and SG-Ready) arrives with the member tree and the same nested paths; the node sees only the top-level instance, and the `instances` renaming applies to that name (ref/07 §6.3 and §8.3; the complete example is in document 14, §9.3). **Holds.**
+
+**U8 — Memory exhausted.** 300 signals on an RP2040 (264 KB). `jk check` computes RAM and flash from the generation and the firmware capacities, before flashing: `J0710` with the detail per component. **Holds.**
+
+**U9 — Debugging a field failure.** The MCU's trace ring (16 KB ≈ a few seconds) is frozen on a trip and dumped over the link, or read by probe. `jk replay` on the laptop runs the **same core** and reproduces what the MCU decided. **Holds**, and it is one of the biggest gains of having a single core.
+
+**U10 — Security on an RS-485 inside a cabinet versus Wi-Fi.** On a closed bus, authentication may be waived (declared on both sides, in the manifest and in the MCU's blob, and visible in `jk doctor`); since there is no negotiation, an attacker cannot lower the security of a link that requires it. Over IP it is required, and enrollment gives each MCU its own key. **Holds.**
+
+---
+
+## 8. What this asks of the rest of the documentation
+
+| Document | Change |
 |---|---|
-| AGENTS.md | invariante: os crates da lista `no_std` do documento 13, §1, são `no_std`, sem alocação no tick, com capacidades fixas |
-| 01 §22 | microcontroladores passam a tier 1 (M1) e tier 2 (M2) |
-| 11 | uma fase própria para o Joker Micro na v1; o ML passa para a 1.1 |
-| 12 | os limites §2, §3 e §8 passam a ter resposta |
-| 13 | a Fase 0 compila o núcleo para `thumbv8m.main-none-eabihf` em CI e corre a conformidade também em hardware (RP2350) |
-| 16 | a conformidade é a mesma nos dois hospedeiros: o mesmo caso tem de dar os mesmos bytes |
-| códigos | `J0710` (geração não cabe no MCU), `J0720` (API indisponível no MCU), `J0721` (aviso: `f64` num MCU sem FPU de dupla precisão), `J0780` (aviso: `f32` num MCU sem FPU); os restantes das gamas `J073x`–`J079x` e `J-E2000`–`J-E2999` estão na ref/07 e na ref/08 |
-| ref/07, ref/08 | a forma fechada do §4.2 e do §6: ABI C, crate, blob `.jkgen`, descritor de firmware `.jkfw`, e o Joker Link ao nível do fio |
+| AGENTS.md | invariant: the crates of the `no_std` list in document 13, §1, are `no_std`, with no allocation on the tick, with fixed capacities |
+| 01 §22 | microcontrollers become tier 1 (M1) and tier 2 (M2) |
+| 11 | a phase of its own for Joker Micro in v1; ML moves to 1.1 |
+| 12 | limits §2, §3 and §8 now have an answer |
+| 13 | Phase 0 compiles the core for `thumbv8m.main-none-eabihf` in CI and also runs conformance on hardware (RP2350) |
+| 16 | conformance is the same on both hosts: the same case must give the same bytes |
+| codes | `J0710` (generation does not fit on the MCU), `J0720` (API unavailable on the MCU), `J0721` (warning: `f64` on an MCU without a double-precision FPU), `J0780` (warning: `f32` on an MCU without an FPU); the rest of the ranges `J073x`–`J079x` and `J-E2000`–`J-E2999` are in ref/07 and ref/08 |
+| ref/07, ref/08 | the closed form of §4.2 and §6: C ABI, crate, `.jkgen` blob, `.jkfw` firmware descriptor, and Joker Link at wire level |
