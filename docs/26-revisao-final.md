@@ -13,7 +13,7 @@ A última rodada antes de escrever código. Juntou quatro olhares: uma **auditor
 | Documentos | 00–26, mais a trilha (11 partes), os exemplos e as propostas |
 | Referências normativas | 11 (`docs/ref/00`–`10`), com `wit/` (3 pacotes), `spec/cddl/` (6), `spec/openapi/` e `spec/c/` |
 | ADRs | 0001–0028 aceites (a 0028 em 2026-10-21) |
-| Registo de códigos | `spec/codes.toml` (a contagem vive lá; não se repete na prosa, B8) |
+| Registo de códigos | `crates/joker-manifest/codes.toml` (a semente `spec/codes.toml` passou para lá na tarefa 0b; a contagem vive lá; não se repete na prosa, B8) |
 | Validação | todos os blocos TOML e o `codes.toml` com `tomli`; o OpenAPI com `openapi-spec-validator`; os headers C com `gcc -pedantic`; os WIT com o parser oficial (`jco`); os CDDL num parser de sintaxe |
 
 O que **não** foi validado continua a ser a tarefa 0a da Fase 0: as assinaturas Rust e o TypeScript das referências nunca foram compilados, e os CDDL (exceto o do `joker:meta`) não foram validados contra instâncias.

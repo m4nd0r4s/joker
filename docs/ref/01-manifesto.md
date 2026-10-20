@@ -1606,7 +1606,7 @@ A API local expõe o manifesto efetivo da geração ativa e de cada geração gu
 Todos vivem em `crates/joker-manifest/codes.toml` (documento 16, §9). Gravidades: `error`; `warning` (em todos os modos); `error-in-prod` (erro em `prod`; aviso `W` com o mesmo número em `dev`).
 
 ```toml
-# excerto do formato do registo (spec/codes.toml; documento 16, §9)
+# excerto do formato do registo (crates/joker-manifest/codes.toml; documento 16, §9)
 [[code]]
 id       = "J0140"
 severity = "error"

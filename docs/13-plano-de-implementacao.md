@@ -138,4 +138,4 @@ O esquema é um só para o núcleo e para as classes (`[suite]`, `[[case]]`, `do
 | **Atualizar toolchains e dependências 0.x é uma tarefa explícita, uma vez por fase**, com a conformidade (Linux, QEMU e placas) como porta de entrada | atualizações a conta-gotas partem um alvo sem ninguém ver |
 | **O Xtensa nunca é o único alvo** de uma verificação de conformidade | é a toolchain de terceiros; ver o parágrafo anterior |
 
-As contagens que a prosa ainda repete (códigos, operações da API, mensagens do Joker Link) são verificadas pelo `joker-spec-tests` (tarefa 0a) contra as fontes: `spec/codes.toml`, o OpenAPI e o CDDL. Onde é fácil, a prosa remete para a fonte em vez de repetir o número.
+As contagens que a prosa ainda repete (códigos, operações da API, mensagens do Joker Link) são verificadas pelo `joker-spec-tests` (tarefa 0a) contra as fontes: `crates/joker-manifest/codes.toml`, o OpenAPI e o CDDL. Onde é fácil, a prosa remete para a fonte em vez de repetir o número.

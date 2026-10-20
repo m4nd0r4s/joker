@@ -142,7 +142,7 @@ Até à parte 5, `joker.lab.toml` estende diretamente `joker.toml` e tem o `[dev
   - `pi`: o Raspberry Pi. `pi.act_led` (`bool`, saída) e, a partir da parte 3, `pi.cpu_temp` (`f64`, `°C`). Driver `sim` no portátil, `sysfs` nas placas.
   - `esp`: o ESP32. `esp.led` (saída), `esp.led_rb`, `esp.button`, `esp.touch`, `esp.rssi`, `esp.uptime`, `esp.fw`. Driver `sim` no portátil, `modbus-rtu` no Pi 3 (partes 4–5), `modbus-tcp` no Zero (parte 6), `joker-link` a partir da parte 9.
 - **Grupo de ciclo:** `main`, 20 ms.
-- **Saídas:** blocos sem linguagem, curtos, com os códigos de `spec/codes.toml`. Em `mode = "dev"`, os códigos de gravidade `error-in-prod` aparecem como avisos `W` com o mesmo número (`W0205`); os avisos puros mantêm o `J` (`J0352`).
+- **Saídas:** blocos sem linguagem, curtos, com os códigos de `crates/joker-manifest/codes.toml`. Em `mode = "dev"`, os códigos de gravidade `error-in-prod` aparecem como avisos `W` com o mesmo número (`W0205`); os avisos puros mantêm o `J` (`J0352`).
 - **Versões.** Cada parte termina com um commit (`git commit`; com jj, `jj describe && jj new`) e diz o estado que deixa: a versão da app, os ficheiros novos e a geração de cada nó.
 - **Nomes de exemplo:** o utilizador `dl`, a organização `bancada` (`jk ca init ~/org-ca --org bancada`), domínios `example.com`.
 
