@@ -1,12 +1,12 @@
 # ADR 0028 — Estável = implementado
 
-**Estado:** **proposta** (a decidir pelo dono do projeto antes do primeiro commit; documento 26, §5 e §9) · **Data:** 2026-09
+**Estado:** aceite (v1, 2026-10-21; documento 26, §5 e §9) · **Data:** 2026-09
 
 ## Contexto
 
 A especificação da v1.0 é muito mais larga do que a equipa prevista consegue implementar no calendário do documento 11 (documento 26, §5: ~350–435 pessoas-semana contra ~155). E a regra de ouro da ADR 0022 congela, durante toda a série 1, tudo o que a 1.0 declara estável. Declarar estáveis centenas de superfícies que nunca foram implementadas é garantir erros de desenho permanentes.
 
-## Decisão (proposta)
+## Decisão
 
 1. Na 1.0 só é **estável** o que foi implementado e passou a sua porta de saída.
 2. O resto fica **reservado**, com os mecanismos que o ML já usa: `@unstable` no WIT, chave reservada no manifesto (código de "reservado para uma versão futura", como o `J0290`), `x-joker-since` > 1.0 no OpenAPI (a operação responde `J-E1017`), identificador de mensagem reservado no Joker Link e no agente, `status = "reserved"` no registo de códigos.

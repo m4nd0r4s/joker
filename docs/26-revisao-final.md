@@ -2,7 +2,7 @@
 
 A última rodada antes de escrever código. Juntou quatro olhares: uma **auditoria de coerência** do corpus inteiro, as **lições do ecossistema Rust embedded** (documento 25), um **estresse com olhos de quem tem de construir** isto, e uma lista de **funcionalidades candidatas**. Termina com um veredicto e com as decisões que ficam para o dono do projeto.
 
-É análise e planeamento (precedência de `docs/README.md`). A proposta de corte do §5 só passa a valer quando a ADR 0028 for aceite.
+É análise e planeamento (precedência de `docs/README.md`). A proposta de corte do §5 passou a valer com a aceitação da ADR 0028 (2026-10-21).
 
 ---
 
@@ -12,7 +12,7 @@ A última rodada antes de escrever código. Juntou quatro olhares: uma **auditor
 |---|---|
 | Documentos | 00–26, mais a trilha (11 partes), os exemplos e as propostas |
 | Referências normativas | 11 (`docs/ref/00`–`10`), com `wit/` (3 pacotes), `spec/cddl/` (6), `spec/openapi/` e `spec/c/` |
-| ADRs | 0001–0027 aceites; 0028 proposta |
+| ADRs | 0001–0028 aceites (a 0028 em 2026-10-21) |
 | Registo de códigos | `spec/codes.toml` (a contagem vive lá; não se repete na prosa, B8) |
 | Validação | todos os blocos TOML e o `codes.toml` com `tomli`; o OpenAPI com `openapi-spec-validator`; os headers C com `gcc -pedantic`; os WIT com o parser oficial (`jco`); os CDDL num parser de sintaxe |
 
@@ -149,6 +149,14 @@ A tensão que fica declarada: o replay precisa dos valores exatos, por isso um t
 1. **A equipa:** quantas pessoas, e quem é dono de que frente (documento 13). A M0 precisa de 1–2 pessoas e de um autor de conformidade independente, que pode ser um agente com acesso só a `docs/`.
 2. **A licença:** antes da primeira dependência (a *allowlist* deriva dela) e antes de qualquer contribuição externa. Recomendação: a do documento 18 (Apache-2.0 OR MIT).
 3. **O corte e a nova base do roadmap:** aceitar ou não a ADR 0028, e escolher entre ~60–65 semanas com 4 pessoas e 44 semanas com 5, antes de começar. Sem isto, "atrasado" não quer dizer nada.
+
+**Decididas em 2026-10-21:**
+
+| Decisão | Resultado |
+|---|---|
+| equipa | o dono do projeto com vários agentes em paralelo, um workspace jj por frente (`AGENTS.md` §4); a conformidade é escrita por um agente que só lê `docs/` |
+| licença | Apache-2.0 OR MIT (`LICENSE-APACHE`, `LICENSE-MIT`) |
+| corte | ADR 0028 aceite; o corte da §5 é a base, a reavaliar no fim da M0. A nova base de calendário do documento 11 fica para o fim da M0, com números reais |
 
 **Têm prazo, mas não bloqueiam:**
 

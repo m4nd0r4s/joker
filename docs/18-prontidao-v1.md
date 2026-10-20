@@ -135,7 +135,7 @@ Os 45 achados da auditoria, agrupados. Todos estão corrigidos nesta versão, ou
 - [x] O plano da Fase 0 tem tarefas com dependências e referências à especificação (documento 13).
 - [x] Os limites estão declarados (documento 12).
 - [x] Os nomes de crates foram verificados.
-- [ ] Licença escolhida.
+- [x] Licença escolhida: Apache-2.0 OR MIT (2026-10-21).
 - [ ] Nome e marca confirmados.
 - [ ] Equipa e donos das frentes definidos (AGENTS.md, §3).
 - [ ] Hardware de CI (CM4, CM5, RevPi Connect 5, PC x86) disponível ou encomendado.

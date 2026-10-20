@@ -29,6 +29,6 @@
 | [0025](0025-identidade-e-assinaturas.md) | Identidade P-256 nos nós, Ed25519 na organização, COSE em tudo o que se assina |
 | [0026](0026-tipo-no-nome-do-ficheiro.md) | O tipo de um ficheiro está no nome (`<nome>.<tipo>.toml`, `joker.<variante>.toml`) |
 | [0027](0027-classes-compostas.md) | Classes compostas de ponta a ponta: ligação, caminhos aninhados, métodos, saúde, perfis e Joker Micro |
-| [0028](0028-estavel-igual-implementado.md) | **Proposta:** estável = implementado; o que não sai na 1.0 fica reservado |
+| [0028](0028-estavel-igual-implementado.md) | Estável = implementado; o que não sai na 1.0 fica reservado |
 
 Mudar uma decisão = escrever uma ADR nova que a substitui, e atualizar os documentos afetados no mesmo conjunto de commits.
