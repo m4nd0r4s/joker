@@ -75,6 +75,9 @@ pub enum Cause {
     Takeover(WriterId),
     /// The writer's level was freed by this principal with `force`.
     ForcedRelease(WriterId),
+    /// An alarm's trip action, or the range step with `on_range = "trip"`
+    /// in another tick, put the output in trip.
+    Trip,
 }
 
 /// A change of a manual level, for the persistence of docs/16 A14. The host
@@ -167,6 +170,8 @@ pub trait CommitSink {
     fn decision(&mut self, _record: &DecisionRecord) {}
     /// One call per change of a manual level (docs/16 A14).
     fn manual(&mut self, _record: &ManualRecord) {}
+    /// One call per alarm transition or operator action (ADR 0040).
+    fn alarm(&mut self, _event: &crate::alarm::AlarmEvent) {}
 }
 
 impl CommitSink for () {}
@@ -215,6 +220,7 @@ pub struct OutputState {
     last: Applied,
     tripped: bool,
     reset_pending: bool,
+    trip_pending: bool,
     expired_now: bool,
     started: bool,
     arena_offset: usize,
@@ -239,6 +245,7 @@ impl OutputState {
         last: Applied::Value(0),
         tripped: false,
         reset_pending: false,
+        trip_pending: false,
         expired_now: false,
         started: false,
         arena_offset: 0,
@@ -598,6 +605,24 @@ impl<'a> Outputs<'a> {
         }
     }
 
+    /// Puts an output in trip from outside the envelope (an alarm's trip
+    /// action, ADR 0040 §7). It takes effect at the next commit of the
+    /// owner group, which is the same tick when called from step 3. An
+    /// output already in trip is left as it is.
+    pub fn trip(&mut self, signal: SignalId) -> bool {
+        match self.find(signal) {
+            Some(i) => {
+                let state = &mut self.states[i];
+                if !state.tripped {
+                    state.tripped = true;
+                    state.trip_pending = true;
+                }
+                true
+            }
+            None => false,
+        }
+    }
+
     /// The output configurations.
     pub fn configs(&self) -> &[OutputConfig<'a>] {
         self.configs
@@ -842,6 +867,7 @@ impl<'a> Outputs<'a> {
             else {
                 continue;
             };
+            let external_trip = core::mem::take(&mut state.trip_pending);
             let active = state.arbiter.active();
             if applied != state.last {
                 state.last_actuation = Some(now);
@@ -984,7 +1010,7 @@ impl<'a> Outputs<'a> {
                 outcome,
                 level,
                 tick.index,
-                reset || tripped,
+                reset || tripped || external_trip,
             ) {
                 let level_changed = previous.is_none_or(|p| p.level != level);
                 let manual = level.is_some_and(|l| l.band() == Band::Manual);
@@ -992,6 +1018,7 @@ impl<'a> Outputs<'a> {
                     || outcome.is_rejected()
                     || outcome == Outcome::Tripped
                     || tripped
+                    || external_trip
                     || reset
                     || manual
                 {
@@ -1001,6 +1028,8 @@ impl<'a> Outputs<'a> {
                 };
                 let cause = if reset {
                     Cause::Reset
+                } else if external_trip {
+                    Cause::Trip
                 } else if let Some(cause) = active_cause {
                     cause
                 } else if state.expired_now {
@@ -1040,12 +1069,16 @@ impl<'a> Outputs<'a> {
 
 /// The latched snapshot of a group, with the slots as fallback, as the
 /// expression VM reads it (docs/02 §6.1).
-struct TickInputs<'x> {
+pub(crate) struct TickInputs<'x> {
     image: &'x ProcessImage<'x>,
     slots: &'x [Slot],
 }
 
-impl TickInputs<'_> {
+impl<'x> TickInputs<'x> {
+    pub(crate) fn new(image: &'x ProcessImage<'x>, slots: &'x [Slot]) -> Self {
+        Self { image, slots }
+    }
+
     fn sample(&self, signal: SignalId) -> Sample {
         if let Some(sample) = self.image.sample(signal) {
             return *sample;
