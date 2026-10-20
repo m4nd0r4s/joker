@@ -327,7 +327,7 @@ interface types {
         /// Deterministic CBOR of the device keys to paste in the manifest (`{ "unit_id": 1 }`).
         config: list<u8>,
         info: device-info,
-        /// Profile reference suggested by the driver, if it recognises the device.
+        /// Profile reference suggested by the driver, if it recognizes the device.
         profile: option<string>,
     }
 
@@ -354,7 +354,7 @@ interface host {
     report-link: func(state: link-state, detail: string);
     /// Progress of a long action (permille 0–1000).
     progress: func(call: u64, permille: u16, message: string);
-    /// True if the core cancelled the action `call` (the driver should stop and return `cancelled`).
+    /// True if the core canceled the action `call` (the driver should stop and return `cancelled`).
     cancelled: func(call: u64) -> bool;
 }
 
@@ -474,7 +474,7 @@ interface transport {
 }
 
 /// Exported by the driver. Calls to one instance are never concurrent, except that a pending `read`
-/// of a `push` batch may be cancelled by the host to run `write`, `read-addr`, `write-addr` or
+/// of a `push` batch may be canceled by the host to run `write`, `read-addr`, `write-addr` or
 /// `invoke` (ref/06 §2.14): push reads must be cancel-safe.
 interface guest {
     use joker:runtime/types@0.1.0.{error};
@@ -498,7 +498,7 @@ interface guest {
 
     /// One execution of a batch. One sample per point of the batch, no other points.
     /// For a `push` batch: returns as soon as at least one sample is available, or `ok([])` at the
-    /// deadline; may be cancelled.
+    /// deadline; may be canceled.
     read: async func(b: batch) -> result<list<raw-sample>, batch-failure>;
 
     /// Applies committed writes in the given order. Exactly one ack per write, same order.

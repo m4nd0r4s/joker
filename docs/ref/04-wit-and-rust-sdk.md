@@ -1190,7 +1190,7 @@ The macros and the trait bounds emit messages with a code, the location on the o
 | `J-E0701` | async API used in `CycleIo` (or cycle API in `TaskIo`) | `` `{api}` is only available in async tasks (TaskIo) `` |
 | `J-E0702` | `set` on an `Internal<T>` in the view that is not that of the writer | `` `{port}` is written by the {domain} domain; declare #[internal(writer = "…")] to change it `` |
 | `J-E0703` | numeric port without `unit` | `` numeric port `{port}` needs a unit; use unit = "1" for a dimensionless value `` |
-| `J0109` | unit outside the catalog (16 §5) | `` unit `{unit}` is not in the v1 catalogue `` |
+| `J0109` | unit outside the catalog (16 §5) | `` unit `{unit}` is not in the v1 catalog `` |
 | `J-E0705` | invalid duration literal | `` invalid duration `{lit}`; expected e.g. "200ms", "1.5s", "90m" `` |
 | `J-E0706` | invalid range, or `default` outside it | `` default {v} is outside range {range} `` |
 | `J-E0707` | unsupported port type | `` `{ty}` is not a port type; use {suggestion} `` |

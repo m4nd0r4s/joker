@@ -246,7 +246,7 @@ interface async-io {
     random-u64: func() -> u64;
     /// Progress of an action this app is serving in `on-action` (virtual instances).
     report-progress: func(request: u64, fraction: option<f32>, message: string);
-    /// True once the caller cancelled the action this app is serving.
+    /// True once the caller canceled the action this app is serving.
     is-cancelled: func(request: u64) -> bool;
 
     enum aggregate { raw, mean, min, max, first, last, count }

@@ -25,7 +25,7 @@
  *     MCU boot, UTC int64_t since 1970-01-01T00:00:00Z;
  *   - all values are in the declared unit of the signal (ref/00 section 4.1);
  *   - JK_OK is 0, errors are negative, informative results are positive;
- *   - synchronisation is only critical-section + portable-atomic (rule 8): the
+ *   - synchronization is only critical-section + portable-atomic (rule 8): the
  *     integrator links a critical-section implementation (its RTOS or HAL), or
  *     builds the library with the cs-single-core feature.
  *
@@ -463,7 +463,7 @@ jk_status_t jk_generation_info(const jk_generation_t *gen, jk_generation_info_t 
 /* 10. Lifecycle                                                             */
 /* ------------------------------------------------------------------------- */
 
-/** Initialise. Use the jk_init() macro, which checks the ABI version, the
+/** Initialize. Use the jk_init() macro, which checks the ABI version, the
  *  size of jk_node_t and the interface hash of "joker_project.h". [excl] */
 jk_status_t jk_init_checked(jk_node_t *node, size_t node_size, uint32_t abi_version,
                             uint64_t iface_hash, const jk_generation_t *gen,
@@ -658,7 +658,7 @@ typedef struct jk_action_req {
 } jk_action_req_t;
 
 #define JK_ACTREQF_LONG      (1u << 0)  /* @long: progress and cancel allowed */
-#define JK_ACTREQF_CANCELLED (1u << 1)  /* set on re-poll of a cancelled long action */
+#define JK_ACTREQF_CANCELLED (1u << 1)  /* set on re-poll of a canceled long action */
 
 jk_status_t jk_action_next(jk_node_t *node, jk_action_req_t *req, uint8_t *args, uint32_t cap);
 jk_status_t jk_action_progress(jk_node_t *node, uint32_t id, uint8_t percent);

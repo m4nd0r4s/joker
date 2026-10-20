@@ -109,7 +109,7 @@ port = {
   0: port-name,                 ; struct field name
   1: port-kind,
   ? 2: signal-type,             ; for signal-like kinds; absent for action, mailbox, model, stream, block
-  ? 3: unit,                    ; catalogue of doc 16 §5; absent = no unit (bool, enum, bits, text)
+  ? 3: unit,                    ; catalog of doc 16 §5; absent = no unit (bool, enum, bits, text)
   ? 4: quantity,
   ? 5: optional,                ; may stay unbound (default false)
   ? 6: many,                    ; #[input(many)] / #[output(many)]
