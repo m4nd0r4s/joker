@@ -1,75 +1,75 @@
-# 00 — Visão geral
+# 00 — Overview
 
-**Joker** é a runtime coringa: corre em qualquer dispositivo de edge, de um Raspberry Pi, um RevPi ou um PC industrial com Linux (`jokerd`) a um microcontrolador de poucos euros (Joker Micro, documento 19), e controla tudo o que o dispositivo toca. Lê sensores, comanda atuadores, fala os protocolos industriais e recolhe telemetria; na 1.1, corre também modelos de ML. É uma família: a runtime, o Joker Micro, o registo (Hub) e o plano de controlo da frota (Deck, documento 20). A quem programa, oferece uma única abstração: **sinais tipados, com unidade, qualidade e tempo**.
+**Joker** is the wildcard runtime: it runs on any edge device, from a Raspberry Pi, a RevPi or an industrial PC with Linux (`jokerd`) to a microcontroller that costs a few euros (Joker Micro, document 19), and it controls everything the device touches. It reads sensors, drives actuators, speaks the industrial protocols and collects telemetry; in 1.1, it also runs ML models. It is a family: the runtime, Joker Micro, the registry (Hub) and the fleet control plane (Deck, document 20). To whoever programs it, it offers a single abstraction: **typed signals, with unit, quality and time**.
 
-O nome vem da carta que vale por qualquer outra. Não serve literalmente para *tudo*: o documento 12 diz exatamente para onde não vai.
-
----
-
-## A tese
-
-Hoje há três famílias de software de edge, e cada uma resolve um terço do problema.
-
-1. **Orquestradores de containers** (balena, AWS Greengrass, Azure IoT Edge). Tratam bem o deploy e mal o dispositivo. Não sabem o que é um registo Modbus, não têm noção de estado seguro, e cada container reinventa drivers, buffers e telemetria.
-2. **Gateways de protocolos** (Eclipse Kura, EdgeX Foundry, Node-RED). Falam muitos protocolos, mas o ML entra como apêndice e a robustez é a de uma aplicação web. A EdgeX são vários microserviços em containers, o que num CM4 com 2 GB é caro. O Kura é Java/OSGi. O Node-RED é ótimo a prototipar e fraco a garantir.
-3. **Runtimes de PLC** (CODESYS, TwinCAT, Siemens Industrial Edge). São deterministas e seguros, mas fechados e caros, e a DX é a da automação clássica. ML, telemetria moderna e software moderno ficam do lado de fora.
-
-**O Joker junta os três terços num só processo, com uma regra que os três violam:**
-
-> A aplicação nunca toca no mundo. Declara que sinais lê e que sinais quer escrever. A runtime é a dona do I/O, do tempo, da segurança e da telemetria. Cada escrita é uma *proposta*, que um envelope de segurança nativo aceita, limita ou rejeita antes de chegar ao hardware.
-
-Desta regra saem as propriedades que interessam:
-
-- as apps são **portáveis entre sites**, porque falam de portas e não de endereços;
-- as apps são **substituíveis a quente**, porque o estado seguro não depende delas;
-- são **testáveis sem hardware**, porque o mundo é uma imagem de processo que se pode simular e reproduzir;
-- o ML pode **atuar sem se tornar perigoso**: o envelope limita o que o modelo pode fazer, embora não garanta que o faça bem.
+The name comes from the card that stands in for any other. It does not literally serve for *everything*: document 12 says exactly where it does not go.
 
 ---
 
-## As sete apostas
+## The thesis
 
-| # | Aposta | Custo assumido |
+Today there are three families of edge software, and each one solves a third of the problem.
+
+1. **Container orchestrators** (balena, AWS Greengrass, Azure IoT Edge). They handle the deploy well and the device badly. They do not know what a Modbus register is, they have no notion of a safe state, and every container reinvents drivers, buffers and telemetry.
+2. **Protocol gateways** (Eclipse Kura, EdgeX Foundry, Node-RED). They speak many protocols, but ML comes in as an appendix and the robustness is that of a web application. EdgeX is several microservices in containers, which on a CM4 with 2 GB is expensive. Kura is Java/OSGi. Node-RED is great for prototyping and weak at guaranteeing.
+3. **PLC runtimes** (CODESYS, TwinCAT, Siemens Industrial Edge). They are deterministic and safe, but closed and expensive, and the DX is that of classic automation. ML, modern telemetry and modern software stay outside.
+
+**Joker brings the three thirds together in a single process, with a rule that all three violate:**
+
+> The application never touches the world. It declares which signals it reads and which signals it wants to write. The runtime owns the I/O, the time, the safety and the telemetry. Every write is a *proposal*, which a native safety envelope accepts, clamps or rejects before it reaches the hardware.
+
+From this rule come the properties that matter:
+
+- apps are **portable between sites**, because they speak of ports and not of addresses;
+- apps are **hot-swappable**, because the safe state does not depend on them;
+- they are **testable without hardware**, because the world is a process image that can be simulated and replayed;
+- ML can **actuate without becoming dangerous**: the envelope limits what the model can do, although it does not guarantee that it does it well.
+
+---
+
+## The seven bets
+
+| # | Bet | Accepted cost |
 |---|---|---|
-| 1 | Uma só abstração: o **sinal** (valor + qualidade + tempo + unidade) | protocolos com semântica rica perdem detalhe; as ações (M19) tapam o resto |
-| 2 | A app **não escreve no hardware**: propõe, e o envelope decide | uma camada a mais em cada escrita (~µs) |
-| 3 | **Dois domínios de execução**: o ciclo determinista e o assíncrono | quem programa tem de escolher onde cada coisa corre |
-| 4 | Apps em **WebAssembly** (Component Model, WASI 0.3) | overhead de fronteira; o SDK nativo em Rust fica como escape |
-| 5 | **O relógio é um input** do núcleo, e o mundo é reproduzível | disciplina interna forte; o ML em GPU exige gravar as saídas (M22) |
-| 6 | **O mesmo núcleo em Linux e em microcontroladores** (`no_std` desde o primeiro dia); o ML entra na 1.1 como recurso da runtime | disciplina de capacidades fixas no núcleo; o ML espera pela 1.1 |
-| 7 | A **telemetria nunca bloqueia o controlo** | perdas possíveis, mas sempre contadas e nunca silenciosas |
+| 1 | A single abstraction: the **signal** (value + quality + time + unit) | protocols with rich semantics lose detail; actions (M19) cover the rest |
+| 2 | The app **does not write to the hardware**: it proposes, and the envelope decides | one more layer on every write (~µs) |
+| 3 | **Two execution domains**: the deterministic cycle and the async one | whoever programs must choose where each thing runs |
+| 4 | Apps in **WebAssembly** (Component Model, WASI 0.3) | boundary overhead; the native Rust SDK remains as an escape hatch |
+| 5 | **The clock is an input** to the core, and the world is reproducible | strong internal discipline; ML on GPU requires recording the outputs (M22) |
+| 6 | **The same core on Linux and on microcontrollers** (`no_std` from day one); ML comes in 1.1 as a runtime resource | discipline of fixed capacities in the core; ML waits for 1.1 |
+| 7 | **Telemetry never blocks control** | drops are possible, but always counted and never silent |
 
 ---
 
-## Os sete mecanismos que distinguem o Joker
+## The seven mechanisms that set Joker apart
 
-**1. Imagem de processo com snapshot.** No início de cada ciclo as entradas são congeladas num snapshot consistente, e as saídas escritas durante o ciclo só são aplicadas no fim, todas de uma vez. Não há leituras rasgadas nem escritas a meio. É o modelo de um PLC, oferecido a código moderno.
+**1. Process image with snapshot.** At the start of each cycle the inputs are frozen into a consistent snapshot, and the outputs written during the cycle are only applied at the end, all at once. There are no torn reads and no half-done writes. It is the model of a PLC, offered to modern code.
 
-**2. Envelope de segurança por saída.** Cada atuador declara a sua gama, a taxa de variação máxima, os interlocks, o estado seguro e o lease. O envelope corre em código nativo, depois da arbitragem e antes do driver, e **não há caminho que o contorne**, nem sequer um comando manual do CLI.
+**2. Per-output safety envelope.** Each actuator declares its range, its maximum rate of change, its interlocks, its safe state and its lease. The envelope runs in native code, after arbitration and before the driver, and **there is no path that bypasses it**, not even a manual command from the CLI.
 
-**3. Estado seguro obrigatório.** Uma saída sem `safe` declarado é um erro de validação: não há valor por omissão. Quando o escritor deixa de renovar o lease (porque a app morreu, o modelo encravou ou a rede caiu), a saída vai para o estado seguro, e a runtime verifica que o *fallback do próprio dispositivo* está configurado de forma coerente (M1).
+**3. Mandatory safe state.** An output without a declared `safe` is a validation error: there is no default. When the writer stops renewing the lease (because the app died, the model hung or the network went down), the output goes to the safe state, and the runtime checks that the *device's own fallback* is configured coherently (M1).
 
-**4. Portas e ligações.** Uma app declara no código portas tipadas com unidade (`grid_power: kW`). O manifesto do site liga cada porta a um sinal concreto (`meter.p_total`). Uma unidade incompatível é um erro de compilação, e unidades da mesma dimensão (W → kW) são convertidas pela runtime. A mesma app, sem recompilar, corre em cem sites com cem mapas de registos diferentes.
+**4. Ports and bindings.** An app declares typed ports with a unit in its code (`grid_power: kW`). The site manifest binds each port to a concrete signal (`meter.p_total`). An incompatible unit is a compilation error, and units of the same dimension (W → kW) are converted by the runtime. The same app, without recompiling, runs on a hundred sites with a hundred different register maps.
 
-**5. Arbitragem com prioridades e leases.** Cada saída tem um árbitro com níveis de prioridade, à maneira do *priority array* do BACnet: `safety > manual > supervisor > optimizer`. Vence o lease ativo de maior prioridade, e um override manual expira sozinho. Resolve de raiz o conflito "o operador mexeu, o modelo desfez" (M15).
+**5. Arbitration with priorities and leases.** Each output has an arbiter with priority levels, in the manner of the BACnet *priority array*: `safety > manual > supervisor > optimizer`. The active lease with the highest priority wins, and a manual override expires on its own. It solves at the root the conflict "the operator changed it, the model undid it" (M15).
 
-**6. Modo sombra.** Uma versão nova de uma app ou de um modelo corre em paralelo com a atual, com as mesmas entradas, mas as suas escritas são gravadas em vez de aplicadas. `jk shadow diff` compara as duas, e a promoção fica condicionada a critérios declarados. É o único caminho para pôr em produção algo que atua (M16).
+**6. Shadow mode.** A new version of an app or of a model runs in parallel with the current one, with the same inputs, but its writes are recorded instead of applied. `jk shadow diff` compares the two, and promotion is conditional on declared criteria. It is the only path to put into production something that actuates (M16).
 
-**7. Reprodução determinista.** Como o relógio é um input e todo o I/O passa pela imagem de processo, uma gravação (`jk record`) chega para reproduzir exatamente o que uma app fez (`jk replay`), num portátil e sem hardware. Os bugs de campo passam a ser testes de regressão.
+**7. Deterministic replay.** Because the clock is an input and all I/O goes through the process image, a recording (`jk record`) is enough to replay exactly what an app did (`jk replay`), on a laptop and without hardware. Field bugs become regression tests.
 
 ---
 
-## A DX em três ecrãs
+## DX in three screens
 
-**Primeiro contacto: cinco minutos, sem hardware.**
+**First contact: five minutes, no hardware.**
 
 ```sh
-jk new tanque --template sim-tank     # planta simulada: tanque, bomba, sensor de nível
+jk new tanque --template sim-tank     # simulated plant: tank, pump, level sensor
 cd tanque
-jk dev                                # compila, arranca a runtime local, hot-reload
+jk dev                                # builds, starts the local runtime, hot-reload
 ```
 
-**Uma app completa em Rust:**
+**A complete app in Rust:**
 
 ```rust
 use joker::prelude::*;
@@ -83,110 +83,110 @@ struct Level {
 
 #[joker::cycle(period = "100ms")]
 fn control(io: &mut CycleIo<Level>, _st: &mut ()) -> Result<()> {
-    let err = io.level.get()? - io.target.get();     // `?`: qualidade má é erro, nunca um número
-    io.pump.set((err * 80.0).clamp(0.0, 100.0));     // a bomba esvazia o tanque
+    let err = io.level.get()? - io.target.get();     // `?`: bad quality is an error, never a number
+    io.pump.set((err * 80.0).clamp(0.0, 100.0));     // the pump empties the tank
     Ok(())
 }
 ```
 
-**Um erro, como o `jk check` o mostra:**
+**An error, as `jk check` shows it:**
 
 ```
-error[J0107]: unidade incompatível na ligação
+error[J0107]: incompatible unit in binding
   --> joker.toml:42:18
    |
 42 | bind.soc = "pcs.p_ac"
-   |            ^^^^^^^^^^ `pcs.p_ac` é uma potência (kW); a porta `soc` espera uma fração (%)
+   |            ^^^^^^^^^^ `pcs.p_ac` is a power (kW); port `soc` expects a fraction (%)
    |
-   = ajuda: sinais com unidade % neste site: bms.soc, bms.soh, inv1.derate
+   = help: signals with unit % on this site: bms.soc, bms.soh, inv1.derate
 ```
 
-O mesmo artefacto `.wasm` que corre no portátil contra a planta simulada corre no RevPi contra o hardware real. Só muda o manifesto.
+The same `.wasm` artifact that runs on the laptop against the simulated plant runs on the RevPi against the real hardware. Only the manifest changes.
 
 ---
 
-## O que existe hoje, e onde o Joker entra
+## What exists today, and where Joker comes in
 
-| Projeto | O que faz bem | O que lhe falta face ao Joker |
+| Project | What it does well | What it lacks compared to Joker |
 |---|---|---|
-| Eclipse Kura | muitos protocolos (Modbus, OPC UA, S7) e MQTT | Java/OSGi, pesado; sem envelope de segurança; ML fraco |
-| EdgeX Foundry | normalização de devices, ecossistema | microserviços em containers; latência entre serviços; sem ciclo determinista |
-| Node-RED | milhares de nós de protocolo, prototipagem | robustez, tipos, testes, performance |
-| AWS Greengrass / Azure IoT Edge | deploy e ML acoplados à cloud | não modelam o dispositivo; lock-in |
-| balena | OTA e frotas de containers | não sabe nada de I/O |
-| CODESYS / TwinCAT | determinismo, IEC 61131-3 | fechado, caro, DX clássica, ML externo |
-| WasmEdge / wasmCloud | Wasm no edge | genéricos: sem sinais, sem drivers, sem envelope |
-| ForestHub edge-agents | agentes de IA offline em RPi/Jetson | foco em agentes; protocolos industriais ainda no roadmap |
+| Eclipse Kura | many protocols (Modbus, OPC UA, S7) and MQTT | Java/OSGi, heavy; no safety envelope; weak ML |
+| EdgeX Foundry | device normalization, ecosystem | microservices in containers; latency between services; no deterministic cycle |
+| Node-RED | thousands of protocol nodes, prototyping | robustness, types, tests, performance |
+| AWS Greengrass / Azure IoT Edge | deploy and ML coupled to the cloud | do not model the device; lock-in |
+| balena | OTA and container fleets | knows nothing about I/O |
+| CODESYS / TwinCAT | determinism, IEC 61131-3 | closed, expensive, classic DX, external ML |
+| WasmEdge / wasmCloud | Wasm at the edge | generic: no signals, no drivers, no envelope |
+| ForestHub edge-agents | offline AI agents on RPi/Jetson | focus on agents; industrial protocols still on the roadmap |
 
-O Joker **não concorre** com o SO nem com o SCADA, e integra-se com os dois (documento 12). A gestão de frota é do **Joker Deck**, o plano de controlo da família (documento 20, ADR 0021), e o Joker fala com ele (ou com outro gestor) pelo agente (ref/10).
+Joker **does not compete** with the OS or with SCADA, and it integrates with both (document 12). Fleet management belongs to **Joker Deck**, the family's control plane (document 20, ADR 0021), and Joker talks to it (or to another manager) through the agent (ref/10).
 
 ---
 
-## Como ler esta documentação
+## How to read this documentation
 
-| Documento | Para quem | Quando |
+| Document | For whom | When |
 |---|---|---|
-| **00** este | toda a gente | primeiro |
-| **01 Arquitetura** | quem implementa | referência normativa |
-| **02 Modelo de sinais** | toda a gente | antes de escrever uma app |
-| **03 Manifesto** | quem configura sites | referência diária |
-| **04 SDK** | quem escreve apps | referência diária |
-| **05 Drivers** | quem integra hardware | referência |
-| **06 ML** | quem põe modelos a correr (inclui a análise do Burn) | referência |
-| **07 CLI** | toda a gente | referência diária |
-| **08 Stress tests** | quem decide | antes de aceitar o desenho |
-| **09 Arquitetura sob estresse** | quem implementa | antes de escrever o núcleo |
-| **10 Mudanças de desenho** | quem acompanhou a v1 | depois do 08 e do 09 |
-| **11 Roadmap** | quem planeia | — |
-| **12 Limites** | **toda a gente** | **antes de prometer seja o que for** |
-| **13 Plano de implementação** | quem começa a Fase 0 | — |
-| **14 Classes e instâncias** | quem escreve lógica de negócio ou abstrações | depois do 04 |
-| **15 Mapa de ficheiros** | toda a gente | quando te perderes entre ficheiros |
-| **16 Semântica do núcleo** | quem implementa a Fase 0 | referência normativa |
-| **17 IDL `.jkc`** | quem escreve classes | referência |
-| **18 Prontidão v1** | quem decide | antes do primeiro commit |
-| **19 Joker Micro** | quem integra MCUs | referência normativa |
-| **20 Família e Deck** | quem planeia o produto | — |
-| **21 Da v1 à v2** | quem planeia o produto | depois do 11 |
-| **22 Rodada da API** | quem implementa ou integra | antes de abrir uma referência: o mapa das interfaces e as decisões D1–D23 |
-| **23 Bancada** | quem desenvolve e testa agora | antes de ligar hardware: o que cada placa faz e o que se valida com ela |
-| **24 Público e usos** | quem decide o produto | antes de priorizar a 1.x |
-| **25 Ecossistema Rust embedded** | quem implementa o Joker Micro e os drivers | antes da Fase 2 |
-| **26 Revisão final** | quem decide começar | **antes do primeiro commit** |
-| **ref/** Referências | quem implementa uma interface | referência normativa da sua superfície, acima dos documentos por área; começa em `ref/00-conventions.md` |
-| **track/** | quem aprende | primeiro, se nunca usaste o Joker |
-| **adr/** | quem questiona uma decisão | quando questionar |
-| **examples/** | quem aprende | a seguir ao 02 |
+| **00** this one | everyone | first |
+| **01 Architecture** | whoever implements | normative reference |
+| **02 Signal model** | everyone | before writing an app |
+| **03 Manifest** | whoever configures sites | daily reference |
+| **04 SDK** | whoever writes apps | daily reference |
+| **05 Drivers** | whoever integrates hardware | reference |
+| **06 ML** | whoever puts models to run (includes the analysis of Burn) | reference |
+| **07 CLI** | everyone | daily reference |
+| **08 Stress tests** | whoever decides | before accepting the design |
+| **09 Architecture under stress** | whoever implements | before writing the core |
+| **10 Design changes** | whoever followed v1 | after 08 and 09 |
+| **11 Roadmap** | whoever plans | — |
+| **12 Limits** | **everyone** | **before promising anything at all** |
+| **13 Implementation plan** | whoever starts Phase 0 | — |
+| **14 Classes and instances** | whoever writes business logic or abstractions | after 04 |
+| **15 File map** | everyone | when you get lost among files |
+| **16 Core semantics** | whoever implements Phase 0 | normative reference |
+| **17 IDL `.jkc`** | whoever writes classes | reference |
+| **18 v1 readiness** | whoever decides | before the first commit |
+| **19 Joker Micro** | whoever integrates MCUs | normative reference |
+| **20 Family and Deck** | whoever plans the product | — |
+| **21 From v1 to v2** | whoever plans the product | after 11 |
+| **22 API round** | whoever implements or integrates | before opening a reference: the map of the interfaces and decisions D1–D23 |
+| **23 Bench** | whoever develops and tests now | before connecting hardware: what each board does and what is validated with it |
+| **24 Audience and uses** | whoever decides the product | before prioritizing 1.x |
+| **25 Rust embedded ecosystem** | whoever implements Joker Micro and the drivers | before Phase 2 |
+| **26 Final review** | whoever decides to start | **before the first commit** |
+| **ref/** References | whoever implements an interface | normative reference for its surface, above the per-area documents; starts at `ref/00-conventions.md` |
+| **track/** | whoever is learning | first, if you have never used Joker |
+| **adr/** | whoever questions a decision | when questioning it |
+| **examples/** | whoever is learning | after 02 |
 
 ---
 
-## Glossário
+## Glossary
 
-| Termo | Significado |
+| Term | Meaning |
 |---|---|
-| **Sinal** | grandeza nomeada e tipada, com unidade; cada leitura é uma **amostra** (valor, qualidade, tempo, seq) |
-| **Qualidade** | `Good`, `Uncertain(motivo)` ou `Bad(motivo)`; herdada do OPC UA |
-| **Caminho** | nome estável de um sinal: `dispositivo.grupo.sinal`, p. ex. `inv1.ac.p` |
-| **Porta** | entrada, saída, parâmetro ou ação declarada por uma app, com tipo e unidade |
-| **Ligação** (*binding*) | associação, no manifesto, entre uma porta e um sinal concreto |
-| **Imagem de processo** | vetor denso com o último valor de cada sinal escalar, congelado por ciclo |
-| **Grupo de ciclo** | conjunto de tarefas periódicas que partilham período, prioridade e snapshot |
-| **Domínio de ciclo** | threads de tempo real onde correm os grupos de ciclo |
-| **Domínio assíncrono** | runtime tokio onde correm tarefas por evento, ML, rede e historian |
-| **Envelope** | gama, taxa, interlocks, estado seguro e lease de uma saída |
-| **Lease** | validade temporal de uma escrita; expirado, o árbitro passa ao próximo nível ou ao estado seguro |
-| **Árbitro** | decide, por prioridade, qual das escritas concorrentes numa saída é a efetiva |
-| **Trip** | estado de uma saída forçada ao estado seguro até haver um reset explícito |
-| **Fallback do dispositivo** | o que o próprio equipamento faz quando perde a comunicação; declarado e verificado |
-| **Stream** | sinal de dados volumosos (imagens, nuvens de pontos) com buffers partilhados |
-| **Sinal em bloco** | forma de onda: blocos de N amostras com t0 e período de amostragem |
-| **Pipeline** | cadeia nativa stream → pré-processamento → modelo → pós-processamento → sinal |
-| **Perfil** | mapa reutilizável de um equipamento: registos, escalas, unidades, fallback |
-| **joker.lock** | resolução fixada de perfis, mapas descobertos, versões de firmware e hashes |
-| **Modo sombra** | execução paralela sem efeito, com as escritas gravadas para comparação |
-| **Traço** | gravação do snapshot de entradas e das decisões, suficiente para reproduzir |
-| **Classe de recursos** | conjunto de CPUs, memória e aceleradores atribuído a um trabalho (`rt`, `ml`, `bg`) |
-| **Ação** | porta do tipo comando (reset, iniciar calibração, método OPC UA), com resultado |
-| **Classe** | contrato versionado de um tipo de equipamento para um programa (`led@1`, `pump@1`): membros, capacidades, métodos, consultas |
-| **Instância** | um equipamento concreto que cumpre uma classe: implícita (perfil), composta (manifesto) ou virtual (app) |
-| **Implementação ativa** | uma app que implementa uma classe com comportamento próprio, sobre sinais de mais baixo nível |
+| **Signal** | named and typed quantity, with a unit; each reading is a **sample** (value, quality, time, seq) |
+| **Quality** | `Good`, `Uncertain(reason)` or `Bad(reason)`; inherited from OPC UA |
+| **Path** | stable name of a signal: `device.group.signal`, e.g. `inv1.ac.p` |
+| **Port** | input, output, parameter or action declared by an app, with type and unit |
+| **Binding** | association, in the manifest, between a port and a concrete signal |
+| **Process image** | dense vector with the last value of each scalar signal, frozen per cycle |
+| **Cycle group** | set of periodic tasks that share period, priority and snapshot |
+| **Cycle domain** | real-time threads where the cycle groups run |
+| **Async domain** | tokio runtime where event-driven tasks, ML, network and historian run |
+| **Envelope** | range, rate, interlocks, safe state and lease of an output |
+| **Lease** | temporal validity of a write; once expired, the arbiter moves to the next level or to the safe state |
+| **Arbiter** | decides, by priority, which of the competing writes on an output is the effective one |
+| **Trip** | state of an output forced to the safe state until there is an explicit reset |
+| **Device fallback** | what the equipment itself does when it loses communication; declared and verified |
+| **Stream** | bulk data signal (images, point clouds) with shared buffers |
+| **Block signal** | waveform: blocks of N samples with t0 and sampling period |
+| **Pipeline** | native chain stream → preprocessing → model → postprocessing → signal |
+| **Profile** | reusable map of a piece of equipment: registers, scales, units, fallback |
+| **joker.lock** | pinned resolution of profiles, discovered maps, firmware versions and hashes |
+| **Shadow mode** | parallel execution without effect, with the writes recorded for comparison |
+| **Trace** | recording of the input snapshot and of the decisions, sufficient for replay |
+| **Resource class** | set of CPUs, memory and accelerators assigned to a workload (`rt`, `ml`, `bg`) |
+| **Action** | command-type port (reset, start calibration, OPC UA method), with a result |
+| **Class** | versioned contract of an equipment type for a program (`led@1`, `pump@1`): members, capabilities, methods, queries |
+| **Instance** | a concrete piece of equipment that fulfills a class: implicit (profile), composite (manifest) or virtual (app) |
+| **Active implementation** | an app that implements a class with its own behavior, on top of lower-level signals |
