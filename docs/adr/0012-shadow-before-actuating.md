@@ -1,21 +1,21 @@
-# ADR 0012 — Modo sombra como único caminho de promoção para o que atua
+# ADR 0012 — Shadow mode as the only promotion path for what actuates
 
-**Estado:** aceite (v1) · **Alterada por ADR 0019 (ML na 1.1)**: a sombra de apps é da 1.0; a de modelos, da 1.1 · **Data:** 2026-09
+**Status:** accepted (v1) · **Amended by ADR 0019 (ML in 1.1)**: the shadow of apps is in 1.0; that of models, in 1.1 · **Date:** 2026-09
 
-## Contexto
+## Context
 
-Modelos e apps novas que atuam num processo real não podem ser validados só offline, e "ativamos e vemos" não é aceitável.
+New models and apps that actuate on a real process cannot be validated offline only, and "we turn it on and see" is not acceptable.
 
-## Decisão
+## Decision
 
-Uma versão nova de um modelo ou app com saídas corre primeiro em sombra: mesmas entradas, escritas gravadas como `Shadowed`, comparação com a versão atual ou com o sistema existente. A promoção faz-se por critérios declarados (automática ou manual), pode ser parcial por saídas e tem despromoção automática por KPI. Em `prod`, promover um modelo que atua sem passar pela sombra exige `--skip-shadow "<justificação>"`, que fica auditado.
+A new version of a model or app with outputs first runs in shadow: same inputs, writes recorded as `Shadowed`, comparison with the current version or with the existing system. Promotion is done by declared criteria (automatic or manual), may be partial by outputs and has automatic demotion by KPI. In `prod`, promoting a model that actuates without going through shadow requires `--skip-shadow "<justification>"`, which is audited.
 
-## Razões
+## Reasons
 
-- Transforma confiança em evidência.
-- Os traços da sombra são também dados de avaliação.
+- It turns trust into evidence.
+- The shadow traces are also evaluation data.
 
-## Consequências
+## Consequences
 
-- Custo de CPU (duas versões a correr) e de tempo até à promoção.
-- A sombra não apanha efeitos de malha fechada (a versão em sombra não vê as consequências das suas próprias decisões). É uma limitação conhecida, e a promoção parcial mitiga-a.
+- CPU cost (two versions running) and time cost until promotion.
+- Shadow does not catch closed-loop effects (the version in shadow does not see the consequences of its own decisions). It is a known limitation, and partial promotion mitigates it.

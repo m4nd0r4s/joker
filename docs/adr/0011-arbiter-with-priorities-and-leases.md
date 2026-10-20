@@ -1,21 +1,21 @@
-# ADR 0011 — Árbitro com prioridades e leases
+# ADR 0011 — Arbiter with priorities and leases
 
-**Estado:** aceite (v1) · **Data:** 2026-09
+**Status:** accepted (v1) · **Date:** 2026-09
 
-## Contexto
+## Context
 
-Várias fontes querem escrever na mesma saída: operador, proteção de software, supervisor, controlador, otimizador, ML. Sem regra explícita, ganha quem escreveu por último, e isso é o problema "o operador mexeu, o modelo desfez".
+Several sources want to write to the same output: operator, software protection, supervisor, controller, optimizer, ML. Without an explicit rule, whoever wrote last wins, and that is the "the operator changed it, the model undid it" problem.
 
-## Decisão
+## Decision
 
-16 níveis (1 é o mais alto) com faixas nomeadas; cada escritor ocupa um nível declarado; cada escrita tem lease; vence o lease ativo de maior prioridade; sem nenhum ativo, vai para `safe`; os níveis manuais têm TTL obrigatório.
+16 levels (1 is the highest) with named bands; each writer occupies a declared level; each write has a lease; the active lease with the highest priority wins; with none active, the output goes to `safe`; the manual levels have a mandatory TTL.
 
-## Razões
+## Reasons
 
-- É o modelo do *priority array* do BACnet, testado em décadas de gestão técnica de edifícios, com leases acrescentados para cobrir escritores que morrem.
-- O lease é o homem-morto de cada escritor.
+- It is the BACnet *priority array* model, tested over decades of building management, with leases added to cover writers that die.
+- The lease is each writer's dead man's switch.
 
-## Consequências
+## Consequences
 
-- Uma saída com vários escritores obriga cada um a declarar nível e lease (`J0211`). Com um só escritor há um valor por omissão (`control:12`, lease de 3 períodos), para o manifesto mínimo continuar pequeno.
-- Com equipamentos que também têm prioridades (BACnet), o nível no equipamento é declarado por dispositivo.
+- An output with several writers forces each one to declare a level and a lease (`J0211`). With a single writer there is a default (`control:12`, a lease of 3 periods), so that the minimal manifest stays small.
+- With equipment that also has priorities (BACnet), the level on the equipment is declared per device.

@@ -1,23 +1,23 @@
-# ADR 0008 — Drivers em três tiers
+# ADR 0008 — Drivers in three tiers
 
-**Estado:** aceite (v1) · **Data:** 2026-09
+**Status:** accepted (v1) · **Date:** 2026-09
 
-## Contexto
+## Context
 
-Os drivers são o maior investimento. Uns são críticos e universais (Modbus), outros são nichos de terceiros, e outros ainda dependem de SDKs binários de fabricantes.
+Drivers are the largest investment. Some are critical and universal (Modbus), others are third-party niches, and others still depend on vendors' binary SDKs.
 
-## Decisão
+## Decision
 
-- **N** (nativo, Rust, compilado para dentro): protocolos de base.
-- **W** (Wasm, com transportes fornecidos): protocolos de terceiros.
-- **X** (processo externo, JDP): SDKs binários e código não confiável.
+- **N** (native, Rust, compiled in): base protocols.
+- **W** (Wasm, with provided transports): third-party protocols.
+- **X** (external process, JDP): binary SDKs and untrusted code.
 
-## Razões
+## Reasons
 
-- O essencial é rápido e seguro; o ecossistema cresce sem tocar no `jokerd`; os blobs ficam isolados.
-- Sem plugins Rust dinâmicos (ABI instável).
+- The essentials are fast and safe; the ecosystem grows without touching `jokerd`; blobs stay isolated.
+- No dynamic Rust plugins (unstable ABI).
 
-## Consequências
+## Consequences
 
-- Para acrescentar um driver N é preciso um build da runtime (`jk runtime build --features`).
-- O JDP é um protocolo a manter e a versionar.
+- Adding an N driver takes a runtime build (`jk runtime build --features`).
+- JDP is a protocol to maintain and to version.
