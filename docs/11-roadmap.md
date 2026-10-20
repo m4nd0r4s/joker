@@ -1,162 +1,162 @@
 # 11 — Roadmap
 
-**A v1 é a runtime coringa que fala com os dispositivos, em Linux e em microcontroladores, com uma frota gerível.** O machine learning é a **1.1**, e a v1 é construída preparada para ele (ADR 0019). Os microcontroladores entram na v1 (ADR 0020), e com eles o núcleo é `no_std` desde o primeiro dia.
+**v1 is the wildcard runtime that talks to devices, on Linux and on microcontrollers, with a manageable fleet.** Machine learning is **1.1**, and v1 is built ready for it (ADR 0019). Microcontrollers are in v1 (ADR 0020), and with them the core is `no_std` from day one.
 
-Quatro fases até à v1.0, com portas de saída mensuráveis e um ponto de decisão depois da Fase 1. As durações são estimativas para uma equipa de 3–4 pessoas com experiência em Rust e automação, mais uma pessoa no Deck a partir da Fase 3. A regra de ordem continua: **primeiro o que torna o sistema seguro, depois o que o torna útil, e por fim o que o torna escalável.**
+Four phases up to v1.0, with measurable exit gates and a decision point after Phase 1. The durations are estimates for a team of 3–4 people with experience in Rust and automation, plus one person on the Deck from Phase 3. The ordering rule still holds: **first what makes the system safe, then what makes it useful, and finally what makes it scalable.**
 
 ```
- Fase 0 ──▶ Fase 1 ──▶ [decisão] ──▶ Fase 2 ──▶ Fase 3 ──▶ v1.0 ──▶ v1.1 (ML) ──▶ v1.x / v2
- núcleo      MVP Linux              Joker Micro   frota e
- no_std                             e interop     confiança
+ Phase 0 ──▶ Phase 1 ──▶ [decision] ──▶ Phase 2 ──▶ Phase 3 ──▶ v1.0 ──▶ v1.1 (ML) ──▶ v1.x / v2
+ core        Linux MVP                  Joker Micro fleet and
+ no_std                                 and interop trust
 ```
 
 ---
 
-## Fase 0 — Núcleo determinista e portável (≈ 8 semanas)
+## Phase 0 — Deterministic and portable core (≈ 8 weeks)
 
-**Objetivo:** o `joker-core` completo, **`no_std`**, sem I/O e sem alocação no tick, testado por conformidade e propriedades. A especificação de referência é o documento 16, com a representação da ref/00.
+**Goal:** the complete `joker-core`, **`no_std`**, with no I/O and no allocation in the tick, tested by conformance and properties. The reference specification is document 16, with the representation of ref/00.
 
-**Antes de qualquer funcionalidade**, as três tarefas que fecham as referências no código (documento 22, §8):
+**Before any feature**, the three tasks that close the references in code (document 22, §8):
 
-- **0a — compilar as referências:** o crate `joker-spec-tests` compila os blocos Rust das referências como doctests, corre `tsc` nos blocos TypeScript, valida os CDDL contra os exemplos, gera o esquema JSON do manifesto a partir dos tipos e valida contra ele todos os blocos TOML, e valida o OpenAPI. A CI falha se uma referência e o código divergirem.
-- **0b — o registo de códigos:** todos os códigos das referências em `crates/joker-manifest/codes.toml` (16 §9), sem colisões.
-- **0c — os vetores de teste:** os do Joker Link (ref/07 §4.8), os da ABI C (ref/08) e os casos de conformidade do núcleo passam a ficheiros em `conformance/`, corridos em Linux e num MCU.
+- **0a — compile the references:** the `joker-spec-tests` crate compiles the Rust blocks of the references as doctests, runs `tsc` on the TypeScript blocks, validates the CDDL against the examples, generates the manifest JSON schema from the types and validates every TOML block against it, and validates the OpenAPI. CI fails if a reference and the code diverge.
+- **0b — the code registry:** every code of the references in `crates/joker-manifest/codes.toml` (16 §9), with no collisions.
+- **0c — the test vectors:** those of Joker Link (ref/07 §4.8), those of the C ABI (ref/08) and the core conformance cases become files in `conformance/`, run on Linux and on an MCU.
 
-**Hardware:** enquanto não houver outro, as Fases 0–2 validam-se na bancada do documento 23 (Raspberry Pi 3 B+, Pi Zero W, ESP32 original), com QEMU para as arquiteturas que faltam; cada porta de saída diz onde foi validada.
+**Hardware:** until there is other hardware, Phases 0–2 are validated on the bench of document 23 (Raspberry Pi 3 B+, Pi Zero W, original ESP32), with QEMU for the missing architectures; each exit gate states where it was validated.
 
-Depois:
+Then:
 
-- `joker-units`, `joker-expr`, `joker-core` (registo, slots, imagem, árbitro, envelope, trips, alarmes, expansão de métodos e consultas de classes, traço), todos `no_std`, com capacidades fixas e a feature `alloc` só para o Linux.
-- `joker-manifest` (TOML → modelo validado, J-codes, `extends`, lock v1, admissão RT).
-- `joker-drivers/sim` e `joker-test` (harness com relógio virtual).
-- `conformance/` com ≥ 150 casos, um ficheiro por suite (`conformance/<área>/<suite>.conformance.toml`, esquema da ref/03 §2.6).
-- CI: o núcleo compila para `x86_64`, `aarch64`, **`thumbv8m.main-none-eabihf` e `riscv32imac-unknown-none-elf`** (com a conformidade em QEMU, a bloquear) e para Xtensa (sem bloquear); a bateria de conformidade corre no ESP32 real da bancada e, quando houver placa, num RP2350 (documento 13, §5).
+- `joker-units`, `joker-expr`, `joker-core` (registry, slots, image, arbiter, envelope, trips, alarms, expansion of class methods and queries, trace), all `no_std`, with fixed capacities and the `alloc` feature only for Linux.
+- `joker-manifest` (TOML → validated model, J-codes, `extends`, lock v1, RT admission).
+- `joker-drivers/sim` and `joker-test` (harness with virtual clock).
+- `conformance/` with ≥ 150 cases, one file per suite (`conformance/<área>/<suite>.conformance.toml`, schema of ref/03 §2.6).
+- CI: the core compiles for `x86_64`, `aarch64`, **`thumbv8m.main-none-eabihf` and `riscv32imac-unknown-none-elf`** (with conformance in QEMU, blocking) and for Xtensa (non-blocking); the conformance battery runs on the bench's real ESP32 and, when a board is available, on an RP2350 (document 13, §5).
 
-**Portas de saída:**
+**Exit gates:**
 
-1. Os 150+ casos passam, e o proptest do árbitro e do envelope corre 10⁶ casos sem violar invariantes.
-2. **Os mesmos casos dão os mesmos bytes em x86_64, num ESP32 real (bancada) e em Cortex-M33 e RISC-V em QEMU**, até haver uma placa RP2350 (documento 23, §5.1).
-3. O caminho do tick não aloca (guarda no-alloc em CI; no MCU, sem alocador ligado).
-4. Envelope + árbitro ≤ 300 ns por saída em x86; o custo por saída num Cortex-M33 a 150 MHz fica medido e publicado.
-5. O mesmo traço dá os mesmos bytes em 1 000 execuções.
+1. The 150+ cases pass, and the proptest of the arbiter and the envelope runs 10⁶ cases without violating invariants.
+2. **The same cases give the same bytes on x86_64, on a real ESP32 (bench) and on Cortex-M33 and RISC-V in QEMU**, until an RP2350 board is available (document 23, §5.1).
+3. The tick path does not allocate (no-alloc guard in CI; on the MCU, with no allocator linked).
+4. Envelope + arbiter ≤ 300 ns per output on x86; the cost per output on a Cortex-M33 at 150 MHz is measured and published.
+5. The same trace gives the same bytes in 1,000 runs.
 
-## Fase 1 — MVP em Linux (≈ 12 semanas)
+## Phase 1 — Linux MVP (≈ 12 weeks)
 
-**Objetivo:** o caso da rodada 1 (BESS + FV) em bancada, de ponta a ponta.
+**Goal:** the round 1 case (BESS + PV) on a bench, end to end.
 
-- `jokerd`: threads, classes de recursos (M8), PREEMPT_RT, supervisor, watchdog de hardware, gerações e `apply --confirm`.
-- `joker-host`: wasmtime, AOT, pooling, epochs, duas instâncias por app, buffer de propostas com registos de método.
-- `joker-sdk` (Rust) com os backends Wasm e nativo (este último usado pelo Joker Micro na Fase 2), `joker:runtime@0.1`.
-- Drivers: `modbus-tcp`, `modbus-rtu`, `sunspec` (descoberta, M2), `gpio`, `i2c`, `sysfs` (LEDs e temperatura das placas, documento 23), `revpi`, `mqtt` (entrada). Fallback do dispositivo (M1).
-- Ações (M19), grupos atómicos (M20), versões (M21), qualidade do relógio (M14), alarmes (M9), árbitro (M15), rastreio causal (M3).
-- Classes (M24), parte declarativa: `jkc` (documento 17), registo, codegen Rust, instâncias implícitas e compostas, e a `std/` inicial, que é a lista do documento 14, §10.
+- `jokerd`: threads, resource classes (M8), PREEMPT_RT, supervisor, hardware watchdog, generations and `apply --confirm`.
+- `joker-host`: wasmtime, AOT, pooling, epochs, two instances per app, proposal buffer with method records.
+- `joker-sdk` (Rust) with the Wasm and native backends (the latter used by Joker Micro in Phase 2), `joker:runtime@0.1`.
+- Drivers: `modbus-tcp`, `modbus-rtu`, `sunspec` (discovery, M2), `gpio`, `i2c`, `sysfs` (LEDs and board temperature, document 23), `revpi`, `mqtt` (input). Device fallback (M1).
+- Actions (M19), atomic groups (M20), versions (M21), clock quality (M14), alarms (M9), arbiter (M15), causal tracing (M3).
+- Classes (M24), declarative part: `jkc` (document 17), registry, Rust codegen, implicit and composite instances, and the initial `std/`, which is the list of document 14, §10.
 - `joker-store` v1, `joker-link` v1 (MQTT, Sparkplug B).
-- `joker-api` (ref/09), `joker-client` (Rust, ref/05) e a `jk` (os comandos das partes 1–7 da trilha, incluindo `jk profile import`/`test` e `jk board probe`/`check`/`new`).
-- Placas: `rpi4`, `rpi5`, `cm4`, `cm5`, `revpi-connect-4`, `revpi-connect-5`, `x86-generic`; `rpi3b-plus`, a placa da bancada (documento 23, §7).
+- `joker-api` (ref/09), `joker-client` (Rust, ref/05) and `jk` (the commands of parts 1–7 of the track, including `jk profile import`/`test` and `jk board probe`/`check`/`new`).
+- Boards: `rpi4`, `rpi5`, `cm4`, `cm5`, `revpi-connect-4`, `revpi-connect-5`, `x86-generic`; `rpi3b-plus`, the bench board (document 23, §7).
 
-**Portas de saída:**
+**Exit gates:**
 
-1. Piloto de bancada BESS durante 30 dias sem intervenção humana, com a matriz de falhas (documento 09, ataque 4) injetada.
-2. Jitter em CM4 e CM5 com PREEMPT_RT: p99,9 ≤ 200 µs a 1 ms.
-3. RSS ≤ 90 MB num site de 1 000 sinais e 3 apps.
-4. **DX:** uma pessoa nova faz as partes 1–7 da trilha (módulos A e B: sinais e classes, do simulador ao Pi 3 e ao Pi Zero W da bancada do documento 23) só com a documentação, com a primeira app em simulação em < 30 min. Duas secções dessas partes usam o que só chega depois, e ficam fora desta medição: o cliente Python da parte 3, §9 (as bibliotecas cliente Python e TypeScript são da Fase 3; a API que ele usa é desta fase) e o `jk class verify` no hardware da parte 7, §9 (os testes de conformidade das classes são da Fase 2).
+1. BESS bench pilot for 30 days without human intervention, with the fault matrix (document 09, attack 4) injected.
+2. Jitter on CM4 and CM5 with PREEMPT_RT: p99.9 ≤ 200 µs at 1 ms.
+3. RSS ≤ 90 MB on a site of 1,000 signals and 3 apps.
+4. **DX:** a new person does parts 1–7 of the track (modules A and B: signals and classes, from the simulator to the Pi 3 and the Pi Zero W of the bench of document 23) with only the documentation, with the first app in simulation in < 30 min. Two sections of those parts use what only arrives later, and are left out of this measurement: the Python client of part 3, §9 (the Python and TypeScript client libraries are Phase 3; the API it uses is this phase) and `jk class verify` on hardware in part 7, §9 (the class conformance tests are Phase 2).
 
-### Ponto de decisão (fim da Fase 1)
+### Decision point (end of Phase 1)
 
-| Critério | Limiar |
+| Criterion | Threshold |
 |---|---|
-| Piloto BESS | 30 dias limpos |
-| RT | ≤ 2× o alvo |
-| DX | as medições acima, com 3 pessoas |
-| Custo de perfis | SunSpec + 2 PCS perfilados e testados em < 2 semanas |
+| BESS pilot | 30 clean days |
+| RT | ≤ 2× the target |
+| DX | the measurements above, with 3 people |
+| Profile cost | SunSpec + 2 PCS profiled and tested in < 2 weeks |
 
-Se o RT falhar, a promessa em Linux desce para grupos ≥ 10 ms, e as malhas rápidas passam explicitamente para o Joker Micro. Se a DX falhar, redesenha-se o SDK antes da Fase 2. Se o custo dos perfis falhar, investe-se primeiro nos importadores.
+If RT fails, the promise on Linux drops to groups ≥ 10 ms, and the fast loops move explicitly to Joker Micro. If DX fails, the SDK is redesigned before Phase 2. If the profile cost fails, the importers get the investment first.
 
-## Fase 2 — Joker Micro e interoperabilidade (≈ 12 semanas)
+## Phase 2 — Joker Micro and interoperability (≈ 12 weeks)
 
-**Objetivo:** o mesmo núcleo em microcontroladores, os três modos de entrega, e o nó Linux a falar com o mundo industrial à volta.
+**Goal:** the same core on microcontrollers, the three delivery modes, and the Linux node talking to the industrial world around it.
 
-- `joker-micro` sobre Embassy, com alvos de referência **RP2350** (M1), **ESP32-C6** (M2, Wi-Fi) e **STM32G4/H5** (M1/M2).
-- Modos de entrega: **firmware**, **biblioteca C** (`libjoker_node.a` + `joker_node.h`) e **crate Rust** (documento 19, §4).
-- Geração embutida e **geração em flash** (firmware genérico + blob assinado).
-- **Joker Link** (UART/RS-485, CAN, USB, UDP e TCP; ref/07) e o driver `joker-link` no `jokerd`, com perfis gerados a partir do `HELLO`.
-- Drivers do MCU: GPIO, ADC, PWM, I²C, SPI, UART, Modbus RTU mestre e **escravo**, CAN.
-- OTA de MCUs (A/B, assinado) pelo Joker Link.
-- No Linux: `opcua` (cliente), `can`, `canopen`, `m-bus`; pontes (M11) servidor OPC UA e servidor Modbus.
-- Classes, parte ativa: instâncias virtuais, testes de conformidade das classes, simuladores de classe (a parte 8 da trilha, e o §9 da parte 7, passam a funcionar).
+- `joker-micro` on Embassy, with reference targets **RP2350** (M1), **ESP32-C6** (M2, Wi-Fi) and **STM32G4/H5** (M1/M2).
+- Delivery modes: **firmware**, **C library** (`libjoker_node.a` + `joker_node.h`) and **Rust crate** (document 19, §4).
+- Embedded generation and **generation in flash** (generic firmware + signed blob).
+- **Joker Link** (UART/RS-485, CAN, USB, UDP and TCP; ref/07) and the `joker-link` driver in `jokerd`, with profiles generated from the `HELLO`.
+- MCU drivers: GPIO, ADC, PWM, I²C, SPI, UART, Modbus RTU client and **server**, CAN.
+- MCU OTA (A/B, signed) over Joker Link.
+- On Linux: `opcua` (client), `can`, `canopen`, `m-bus`; bridges (M11) OPC UA server and Modbus server.
+- Classes, active part: virtual instances, class conformance tests, class simulators (part 8 of the track, and §9 of part 7, start to work).
 
-**Portas de saída:**
+**Exit gates:**
 
-1. **Coprocessador em bancada** (documento 19, U1): RevPi ou Pi + RP2350 durante 30 dias, com o `jokerd` morto 100 vezes e as saídas sempre no `safe` em ≤ lease.
-2. Um nó autónomo ESP32-C6 (U2) a controlar uma bomba de calor simulada, com geração em flash atualizada remotamente 10 vezes.
-3. Um exemplo de integração em firmware ESP-IDF existente pela ABI C (U5).
-4. Orçamento: núcleo + Link + Modbus RTU + 1 app + 64 sinais ≤ 160 KB de flash e ≤ 48 KB de RAM num RP2350.
-5. Jitter de ciclo no RP2350 a 1 kHz: p99,9 ≤ 10 µs.
-6. **DX:** as partes 8–10 da trilha (a tua classe; o ESP32 como Joker Micro, pelo Joker Link em série e por Wi-Fi) correm na bancada só com a documentação.
+1. **Coprocessor on a bench** (document 19, U1): RevPi or Pi + RP2350 for 30 days, with `jokerd` killed 100 times and the outputs always at `safe` in ≤ lease.
+2. A standalone ESP32-C6 node (U2) controlling a simulated heat pump, with generation in flash updated remotely 10 times.
+3. An example of integration into existing ESP-IDF firmware through the C ABI (U5).
+4. Budget: core + Link + Modbus RTU + 1 app + 64 signals ≤ 160 KB of flash and ≤ 48 KB of RAM on an RP2350.
+5. Cycle jitter on the RP2350 at 1 kHz: p99.9 ≤ 10 µs.
+6. **DX:** parts 8–10 of the track (your own class; the ESP32 as Joker Micro, over Joker Link over serial and over Wi-Fi) run on the bench with only the documentation.
 
-## Fase 3 — Frota, confiança e v1.0 (≈ 12 semanas)
+## Phase 3 — Fleet, trust and v1.0 (≈ 12 weeks)
 
-**Objetivo:** gerir centenas de nós e MCUs sem visitas ao local.
+**Goal:** manage hundreds of nodes and MCUs without site visits.
 
-- OTA da runtime Linux (A/B); OTA de MCUs orquestrado pelo nó.
-- **Protocolo do agente** `agent/1` (ref/10), publicado; crates `joker-agent` e `joker-agent-proto` (`no_std`, para os MCUs autónomos).
-- **Joker Deck MVP**: inventário, estado desejado a partir de Git, rollouts com ondas e paragem por KPI, saúde da frota. **Joker Hub mínimo**: registo OCI + verificações de publicação.
-- Orçamentos de uplink (M12), overlays completos (M13), modo sombra **para apps** (M16).
-- Ponte Zenoh/ROS 2; uplink Zenoh e OTLP.
-- **SDK TypeScript** (`@joker/sdk`, `@joker/test`, `@joker/classes-<pacote>`) e bibliotecas cliente Python e TypeScript da API (ref/05). O SDK Python fica com a API fechada na ref/05 e sai na 1.2.
+- Linux runtime OTA (A/B); MCU OTA orchestrated by the node.
+- **Agent protocol** `agent/1` (ref/10), published; crates `joker-agent` and `joker-agent-proto` (`no_std`, for the standalone MCUs).
+- **Joker Deck MVP**: inventory, desired state from Git, rollouts in waves with KPI stop, fleet health. **Minimal Joker Hub**: OCI registry + publication checks.
+- Uplink budgets (M12), complete overlays (M13), shadow mode **for apps** (M16).
+- Zenoh/ROS 2 bridge; Zenoh and OTLP uplink.
+- **TypeScript SDK** (`@joker/sdk`, `@joker/test`, `@joker/classes-<pacote>`) and Python and TypeScript client libraries of the API (ref/05). The Python SDK has its API closed in ref/05 and ships in 1.2.
 
-**Portas de saída:**
+**Exit gates:**
 
-1. Piloto de campo com 50 nós Linux e 50 MCUs em 3 tipos de hardware durante 60 dias, com 2 atualizações de runtime, 4 de apps e 2 de firmware de MCUs, sem visitas.
-2. Um rollout mau parado automaticamente pelo Deck (documento 20, D2) num ensaio controlado.
-3. Orçamento de 50 MB/mês cumprido em LTE, com alarmes entregues em < 60 s.
-4. **DX:** a parte 11 da trilha (produção, segredos, o Deck no portátil com dois nós e um rollout parado no canário) corre na bancada só com a documentação, e o §9 da parte 3 com o cliente Python.
+1. Field pilot with 50 Linux nodes and 50 MCUs on 3 hardware types for 60 days, with 2 runtime updates, 4 app updates and 2 MCU firmware updates, without visits.
+2. A bad rollout stopped automatically by the Deck (document 20, D2) in a controlled trial.
+3. Budget of 50 MB/month met on LTE, with alarms delivered in < 60 s.
+4. **DX:** part 11 of the track (production, secrets, the Deck on the laptop with two nodes and a rollout stopped at the canary) runs on the bench with only the documentation, and §9 of part 3 with the Python client.
 
-**No fim da Fase 3: release v1.0.**
+**At the end of Phase 3: v1.0 release.**
 
 ---
 
 ## v1.1 — Machine learning
 
-- `joker-ml`, `.jkm`, backends Burn (Flex, CubeCL CPU, Vulkan, CUDA), ORT e HailoRT (documento 06).
-- Streams (M4), pipelines (M5), escritas agendadas (M6), **sinais em bloco (M7)**, com aquisição de alta taxa pelo Joker Micro.
-- Linhagem (M10), sombra e promoção de modelos (M16), guarda de entrada e controlador de fallback (M17), escritores só-proposta (M18), saídas não deterministas no traço (M22).
-- Treino no dispositivo.
-- Experiência: Burn Flex `no_std` em MCUs M2 (modelos pequenos de anomalia).
-- Portas de saída: as bancadas de visão e de vibração (documento 08, rodadas 2 e 3) e as seis validações do Burn (documento 06, §12.6).
+- `joker-ml`, `.jkm`, Burn backends (Flex, CubeCL CPU, Vulkan, CUDA), ORT and HailoRT (document 06).
+- Streams (M4), pipelines (M5), scheduled writes (M6), **block signals (M7)**, with high-rate acquisition by Joker Micro.
+- Lineage (M10), shadow and promotion of models (M16), input guard and fallback controller (M17), proposal-only writers (M18), non-deterministic outputs in the trace (M22).
+- On-device training.
+- Experiment: Burn Flex `no_std` on M2 MCUs (small anomaly models).
+- Exit gates: the vision and vibration benches (document 08, rounds 2 and 3) and the six Burn validations (document 06, §12.6).
 
-### Preparado para ML (o que a v1 já inclui)
+### Ready for ML (what v1 already includes)
 
-A v1 não implementa ML, mas não obriga a mudar nada para o receber:
+The v1 does not implement ML, but it does not force any change to receive it:
 
-| Na v1 | Para quê na 1.1 |
+| In v1 | What for in 1.1 |
 |---|---|
-| o pacote WIT declara as interfaces `ml` e `frames` como `@unstable`, fora do mundo estável: recusadas em `prod` (`J-E0003`), stubs em `dev` (ref/04 §2.9) | a forma ainda pode mudar antes de existir o ML; na 1.1 passam a `@since(1.1.0)`, e acrescentar funções é minor (M21). As escritas agendadas (M6) e as intenções (M18) levam o mesmo tratamento |
-| o mundo `joker:driver` e o SDK tier W existem como `@unstable`, só para os drivers da árvore (`J0860` fora dela em `prod`; ref/06 §4) | estáveis e abertos a terceiros na **1.2**, não na 1.1 |
-| a classe de recursos `ml` existe no manifesto e nos cpusets | os modelos entram sem mexer no escalonamento |
-| o formato do traço reserva a secção de saídas de modelos (vazia) | o replay com ML (M22) não muda o formato |
-| o lock, o agente e o Hub reservam o tipo de artefacto `joker.model.v1+jkm` | o OTA de modelos é mais um artefacto |
-| o registo de sinais reserva os tipos bloco e stream | M4 e M7 não mudam o `SignalId` nem o slot |
-| o envelope e o árbitro não distinguem apps de modelos | um modelo que atua é um escritor como os outros |
+| the WIT package declares the `ml` and `frames` interfaces as `@unstable`, outside the stable world: rejected in `prod` (`J-E0003`), stubs in `dev` (ref/04 §2.9) | the shape can still change before ML exists; in 1.1 they become `@since(1.1.0)`, and adding functions is minor (M21). Scheduled writes (M6) and intents (M18) get the same treatment |
+| the `joker:driver` world and the tier W SDK exist as `@unstable`, only for in-tree drivers (`J0860` outside the tree in `prod`; ref/06 §4) | stable and open to third parties in **1.2**, not in 1.1 |
+| the `ml` resource class exists in the manifest and in the cpusets | models come in without touching scheduling |
+| the trace format reserves the model outputs section (empty) | replay with ML (M22) does not change the format |
+| the lock, the agent and the Hub reserve the artifact type `joker.model.v1+jkm` | model OTA is just one more artifact |
+| the signal registry reserves the block and stream types | M4 and M7 do not change the `SignalId` or the slot |
+| the envelope and the arbiter do not distinguish apps from models | a model that actuates is a writer like the others |
 
-## v1.x e v2
+## v1.x and v2
 
-O plano depois da 1.0 está no **documento 21** (e a política de versões na ADR 0022). Em resumo:
+The plan after 1.0 is in **document 21** (and the versioning policy in ADR 0022). In summary:
 
-| Versão | Tema | Cabeça de cartaz |
+| Version | Theme | Headline |
 |---|---|---|
-| 1.1 | inteligência | ML (Burn, ORT, Hailo), streams, pipelines, sinais em bloco |
-| 1.2 | indústria e ecossistema | Structured Text, SDK de drivers tier W estável e aberto a terceiros (instável na 1.0, ref/06 §4), SDK Python, BACnet, EtherCAT, IEC 104/61850, DLMS, EEBus |
-| 1.3 | segurança e operação | modo gateway, protocolos seguros, SBOM, Joker Studio, operação remota e multi-inquilino no Deck |
-| 1.4 | Micro+ | Wasm em MCUs M2 (`wasmi`), ML em MCUs, baixo consumo, LoRaWAN se houver procura |
-| 1.5 (LTS) | frota em escala | Hub público, observabilidade e auditoria da frota, MCUs autónomos em escala |
-| 2.0 | o site como um sistema | ativo/standby, malha de nós, mundo WIT 2, manifesto de site, Joker OS se houver procura |
-| trilha própria | — | subconjunto certificável (SIL) do Joker Micro; aprendizagem federada (v2.x) |
+| 1.1 | intelligence | ML (Burn, ORT, Hailo), streams, pipelines, block signals |
+| 1.2 | industry and ecosystem | Structured Text, stable tier W driver SDK open to third parties (unstable in 1.0, ref/06 §4), Python SDK, BACnet, EtherCAT, IEC 104/61850, DLMS, EEBus |
+| 1.3 | security and operation | gateway mode, secure protocols, SBOM, Joker Studio, remote and multi-tenant operation in the Deck |
+| 1.4 | Micro+ | Wasm on M2 MCUs (`wasmi`), ML on MCUs, low power, LoRaWAN if there is demand |
+| 1.5 (LTS) | fleet at scale | public Hub, fleet observability and audit, standalone MCUs at scale |
+| 2.0 | the site as a system | active/standby, node mesh, WIT world 2, site manifest, Joker OS if there is demand |
+| separate track | — | certifiable subset (SIL) of Joker Micro; federated learning (v2.x) |
 
-## O que fica deliberadamente para depois
+## What is deliberately left for later
 
-| Tema | Porquê esperar |
+| Theme | Why wait |
 |---|---|
-| threads Wasm partilhadas | à espera de estabilização no Component Model (candidato ao mundo WIT 2, documento 21, §8) |
-| aprendizagem federada | precisa de frota real e de casos concretos (v2.x) |
-| SCADA/HMI de operação | outro produto (documento 12, §12) |
+| shared Wasm threads | waiting for stabilization in the Component Model (candidate for WIT world 2, document 21, §8) |
+| federated learning | needs a real fleet and concrete cases (v2.x) |
+| operation SCADA/HMI | another product (document 12, §12) |
