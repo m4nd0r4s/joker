@@ -26,7 +26,15 @@ jobs:
       - run: cargo build --target ${{ matrix.target }} -p joker-units -p joker-expr -p joker-core
 
   conformance:
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - run: rustup show
@@ -40,8 +48,22 @@ jobs:
       - if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: conformance-x86_64
+          name: conformance-${{ matrix.arch }}
           path: target/conformance/
+
+  determinism:
+    needs: conformance
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: conformance-*
+      - name: same result sequence on x86_64 and aarch64 (docs/16 §7, ADR 0020)
+        run: |
+          digests() {
+            jq -S '[.suites[].cases[] | {id, status, sequence_digest}]' "$1/report.json"
+          }
+          diff <(digests conformance-x86_64) <(digests conformance-aarch64)
 
   deny:
     runs-on: ubuntu-latest
