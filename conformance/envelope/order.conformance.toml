@@ -1,0 +1,151 @@
+schema = 1
+
+[suite]
+kind        = "core"
+id          = "envelope.order"
+spec        = ["16 E1", "16 E10", "01 §7"]
+period      = "100ms"
+hosts       = ["linux", "mcu"]
+description = "The first failing step decides: type, permissive, quality, range, rate; values that do not fit the type are Rejected(WrongType) and do not renew"
+
+[[signals]]
+path = "x.ok"
+type = "bool"
+
+[[signals]]
+path = "x.m"
+type = "f64"
+unit = "kW"
+
+[[outputs]]
+path          = "x.p_set"
+type          = "f64"
+unit          = "kW"
+range         = ["-100 kW", "100 kW"]
+on_range      = "trip"
+rate          = "10 kW/s"
+interlock     = "x.ok"
+requires_good = ["x.m"]
+safe          = "0 kW"
+
+[[outputs]]
+path = "x.k"
+type = "f64"
+unit = "1"
+safe = 0.0
+
+[[outputs]]
+path      = "x.i"
+type      = "f64"
+unit      = "1"
+interlock = "x.ok"
+safe      = 0.0
+
+[[writers]]
+id    = "a"
+level = "control:10"
+lease = "1s"
+kind  = "cycle"
+
+[[writers]]
+id    = "b"
+level = "control:9"
+lease = "300ms"
+kind  = "cycle"
+
+[[case]]
+id   = "interlock_before_quality"
+name = "With both the permissive and requires_good failing, the permissive decides"
+spec = ["16 E1", "01 §7 step 2", "01 §7 step 3"]
+do   = [
+  { at = "0ms", input = "x.ok", value = false },
+  { at = "0ms", input = "x.m", quality = "bad(comm_failure)" },
+  { at = "0ms", propose = "x.p_set", writer = "a", value = "5 kW" },
+]
+expect = [{ at = "0ms", output = "x.p_set", outcome = "rejected(interlock)", equals = "0 kW" }]
+
+[[case]]
+id   = "quality_before_range"
+name = "A failing requires_good decides before an out-of-range value can trip"
+spec = ["16 E1", "01 §7 step 3", "01 §7 step 4"]
+do   = [
+  { at = "0ms",   input = "x.ok", value = true },
+  { at = "0ms",   input = "x.m", quality = "bad(comm_failure)" },
+  { at = "0ms",   propose = "x.p_set", writer = "a", value = "150 kW" },
+  { at = "100ms", input = "x.m", value = "1 kW" },
+  { at = "100ms", propose = "x.p_set", writer = "a", value = "0.5 kW" },
+]
+expect = [
+  { at = "0ms",   output = "x.p_set", outcome = "rejected(quality)", equals = "0 kW" },
+  { at = "100ms", output = "x.p_set", outcome = "accepted", equals = "0.5 kW" },
+]
+
+[[case]]
+id   = "range_before_rate"
+name = "An out-of-range value with on_range = trip trips before the rate step"
+spec = ["16 E1", "01 §7 step 4", "01 §7 step 5"]
+do   = [
+  { at = "0ms", input = "x.ok", value = true },
+  { at = "0ms", input = "x.m", value = "1 kW" },
+  { at = "0ms", propose = "x.p_set", writer = "a", value = "150 kW" },
+]
+expect = [{ at = "0ms", output = "x.p_set", outcome = "tripped", equals = "0 kW" }]
+
+[[case]]
+id   = "all_steps_pass"
+name = "Permissive, quality and range pass; the rate limits the step"
+spec = ["01 §7"]
+do   = [
+  { at = "0ms", input = "x.ok", value = true },
+  { at = "0ms", input = "x.m", value = "1 kW" },
+  { at = "0ms", propose = "x.p_set", writer = "a", value = "50 kW" },
+]
+expect = [{ at = "0ms", output = "x.p_set", outcome = "clamped_rate", equals = "1 kW", level = "control:10" }]
+
+[[case]]
+id   = "nan_is_wrong_type"
+name = "A NaN proposal is Rejected(WrongType) in step 1"
+spec = ["16 E10"]
+do   = [{ at = "0ms", propose = "x.k", writer = "a", value = nan }]
+expect = [{ at = "0ms", output = "x.k", outcome = "rejected(wrong_type)" }]
+
+[[case]]
+id   = "infinity_is_wrong_type"
+name = "An infinite proposal is Rejected(WrongType)"
+spec = ["16 E10"]
+do   = [{ at = "0ms", propose = "x.k", writer = "a", value = -inf }]
+expect = [{ at = "0ms", output = "x.k", outcome = "rejected(wrong_type)" }]
+
+[[case]]
+id   = "wrong_type_does_not_renew"
+name = "A WrongType proposal does not renew the lease taken by an earlier proposal"
+spec = ["16 E10", "16 A3"]
+do   = [
+  { at = "0ms",   propose = "x.k", writer = "b", value = 5.0 },
+  { at = "200ms", propose = "x.k", writer = "b", value = nan },
+]
+expect = [
+  { at = "0ms",   output = "x.k", outcome = "accepted", equals = 5.0, level = "control:9" },
+  { at = "200ms", output = "x.k", outcome = "rejected(wrong_type)" },
+  { at = "300ms", output = "x.k", equals = 0.0, level = "none" },
+]
+
+[[case]]
+id   = "only_the_bad_proposal_is_refused"
+name = "After a WrongType proposal the next valid proposal is accepted"
+spec = ["16 E10"]
+do   = [
+  { at = "0ms",   propose = "x.k", writer = "a", value = nan },
+  { at = "100ms", propose = "x.k", writer = "a", value = 7.0 },
+]
+expect = [{ at = "100ms", output = "x.k", outcome = "accepted", equals = 7.0, level = "control:10" }]
+
+[[case]]
+id   = "wrong_type_before_interlock"
+name = "Step 1 (type) decides before the permissive"
+spec = ["16 E1", "16 E10"]
+do   = [
+  { at = "0ms", input = "x.ok", value = false },
+  { at = "0ms", propose = "x.i", writer = "a", value = nan },
+]
+expect = [{ at = "0ms", output = "x.i", outcome = "rejected(wrong_type)" }]
