@@ -1,0 +1,158 @@
+schema = 1
+
+[suite]
+kind        = "core"
+id          = "expressions.numbers"
+spec        = ["16 §4", "16 §5", "02 §10"]
+period      = "100ms"
+hosts       = ["linux", "mcu"]
+description = "Affine temperature arithmetic, exact comparison of same-sign integers, f64 comparison across signedness, and chained derived signals"
+
+[[signals]]
+path = "x.t1"
+type = "f64"
+unit = "°C"
+
+[[signals]]
+path = "x.t2"
+type = "f64"
+unit = "°C"
+
+[[signals]]
+path = "x.i"
+type = "i64"
+
+[[signals]]
+path = "x.j"
+type = "i64"
+
+[[signals]]
+path = "x.k"
+type = "u64"
+
+[[signals]]
+path = "x.l"
+type = "u64"
+
+[[signals]]
+path = "x.u"
+type = "f64"
+unit = "kW"
+
+[[calc]]
+path = "calc.dt"
+expr = "x.t1 - x.t2"
+
+[[calc]]
+path = "calc.t_up"
+expr = "x.t1 + 2 K"
+
+[[calc]]
+path = "calc.t_down"
+expr = "x.t1 - 5 K"
+
+[[calc]]
+path = "calc.warm"
+expr = "x.t1 > 20 °C"
+
+[[calc]]
+path = "calc.i_gt_j"
+expr = "x.i > x.j"
+
+[[calc]]
+path = "calc.k_gt_l"
+expr = "x.k > x.l"
+
+[[calc]]
+path = "calc.i_gt_l"
+expr = "x.i > x.l"
+
+[[calc]]
+path = "calc.double_u"
+expr = "2 * x.u"
+
+[[calc]]
+path = "calc.double_plus"
+expr = "calc.double_u + x.u"
+
+[[case]]
+id   = "celsius_difference_is_kelvin"
+name = "°C − °C gives a temperature difference in K"
+spec = ["16 §4"]
+do   = [
+  { at = "0ms", input = "x.t1", value = "25 °C" },
+  { at = "0ms", input = "x.t2", value = "20 °C" },
+]
+expect = [{ at = "0ms", signal = "calc.dt", equals = "5 K", tolerance = "0.000001 K", quality = "good" }]
+
+[[case]]
+id   = "celsius_plus_kelvin_is_celsius"
+name = "°C + K gives °C"
+spec = ["16 §4"]
+do   = [{ at = "0ms", input = "x.t1", value = "25 °C" }]
+expect = [{ at = "0ms", signal = "calc.t_up", equals = "27 °C", tolerance = "0.000001 K" }]
+
+[[case]]
+id   = "celsius_minus_kelvin_is_celsius"
+name = "°C − K gives °C"
+spec = ["16 §4"]
+do   = [{ at = "0ms", input = "x.t1", value = "25 °C" }]
+expect = [{ at = "0ms", signal = "calc.t_down", equals = "20 °C", tolerance = "0.000001 K" }]
+
+[[case]]
+id   = "celsius_comparison"
+name = "Comparisons between temperatures of the same dimension"
+spec = ["16 §4"]
+do   = [{ at = "0ms", input = "x.t1", value = "20.5 °C" }]
+expect = [{ at = "0ms", signal = "calc.warm", equals = true, quality = "good" }]
+
+[[case]]
+id   = "signed_integers_compare_exactly"
+name = "Two i64 above 2^53 compare exactly, without going through f64"
+spec = ["16 §4", "02 §10"]
+do   = [
+  { at = "0ms", input = "x.i", value = 9007199254740993 },
+  { at = "0ms", input = "x.j", value = 9007199254740992 },
+]
+expect = [{ at = "0ms", signal = "calc.i_gt_j", equals = true, quality = "good" }]
+
+[[case]]
+id   = "unsigned_integers_compare_exactly"
+name = "Two u64 above 2^53 compare exactly"
+spec = ["16 §4"]
+do   = [
+  { at = "0ms", input = "x.k", value = 9007199254740993 },
+  { at = "0ms", input = "x.l", value = 9007199254740992 },
+]
+expect = [{ at = "0ms", signal = "calc.k_gt_l", equals = true }]
+
+[[case]]
+id   = "mixed_signedness_compares_in_f64"
+name = "An i64 against a u64 compares in f64, where 2^53 + 1 and 2^53 are equal"
+spec = ["16 §4"]
+do   = [
+  { at = "0ms", input = "x.i", value = 9007199254740993 },
+  { at = "0ms", input = "x.l", value = 9007199254740992 },
+]
+expect = [{ at = "0ms", signal = "calc.i_gt_l", equals = false }]
+
+[[case]]
+id   = "unitless_factor"
+name = "A literal without unit is accepted as a factor"
+spec = ["16 §4"]
+do   = [{ at = "0ms", input = "x.u", value = "1.5 kW" }]
+expect = [{ at = "0ms", signal = "calc.double_u", equals = "3 kW", quality = "good" }]
+
+[[case]]
+id   = "chained_derived_signals"
+name = "A derived signal can use another derived signal"
+spec = ["ref/01 §5.14", "02 §10"]
+do   = [{ at = "0ms", input = "x.u", value = "1.5 kW" }]
+expect = [{ at = "100ms", signal = "calc.double_plus", equals = "4.5 kW", quality = "good" }]
+
+[[case]]
+id   = "chained_quality_propagates"
+name = "Quality propagates through chained derived signals"
+spec = ["16 §3.2"]
+do   = [{ at = "0ms", input = "x.u", value = "1.5 kW", quality = "uncertain(substituted)" }]
+expect = [{ at = "100ms", signal = "calc.double_plus", equals = "4.5 kW", quality = "uncertain" }]

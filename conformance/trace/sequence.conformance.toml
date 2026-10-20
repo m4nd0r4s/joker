@@ -1,0 +1,75 @@
+schema = 1
+
+[suite]
+kind        = "core"
+id          = "trace.sequence"
+spec        = ["16 §7", "16 §8", "ref/03 §2.6.4", "ADR 0020"]
+period      = "100ms"
+hosts       = ["linux", "mcu"]
+description = "Every output has a result on every tick a case covers; the full sequence is the determinism gate compared byte for byte between hosts and runs"
+
+[[outputs]]
+path  = "z.p_set"
+type  = "f64"
+unit  = "kW"
+range = ["-100 kW", "100 kW"]
+rate  = "10 kW/s"
+safe  = "0 kW"
+
+[[outputs]]
+path  = "a.p_set"
+type  = "f64"
+unit  = "kW"
+range = ["-100 kW", "100 kW"]
+safe  = "0 kW"
+
+[[outputs]]
+path = "m.run"
+type = "bool"
+safe = false
+
+[[writers]]
+id    = "w"
+level = "control:10"
+lease = "300ms"
+kind  = "cycle"
+
+[[writers]]
+id    = "op"
+level = "manual:3"
+kind  = "manual"
+ttl   = "200ms"
+
+[[case]]
+id   = "untouched_outputs_hold_safe_every_tick"
+name = "Outputs nobody writes report safe and level none on every tick, next to an output that is written"
+spec = ["ref/03 §2.6.4", "16 A6"]
+do   = [{ at = "0ms", propose = "z.p_set", writer = "w", value = "50 kW" }]
+expect = [
+  { at = "0ms", output = "z.p_set", outcome = "clamped_rate", equals = "1 kW", level = "control:10" },
+  { during = "0ms .. 400ms", output = "a.p_set", equals = "0 kW", level = "none" },
+  { during = "0ms .. 400ms", output = "m.run", equals = false, level = "none" },
+]
+
+[[case]]
+id   = "interleaved_writers_on_several_outputs"
+name = "A fixed timeline over three outputs and two writers gives one known sequence of applied values and levels"
+spec = ["16 §7", "16 A2", "16 A5", "16 A7"]
+do   = [
+  { at = "0ms",   propose = "z.p_set", writer = "w",  value = "50 kW" },
+  { at = "0ms",   propose = "a.p_set", writer = "w",  value = "20 kW" },
+  { at = "100ms", propose = "a.p_set", writer = "op", value = "30 kW" },
+  { at = "100ms", propose = "m.run",   writer = "op", value = true },
+]
+expect = [
+  { at = "0ms",   output = "a.p_set", outcome = "accepted", equals = "20 kW", level = "control:10" },
+  { at = "0ms",   output = "m.run",   equals = false, level = "none" },
+  { at = "100ms", output = "z.p_set", equals = "2 kW", tolerance = "0.001 kW", level = "control:10" },
+  { at = "100ms", output = "a.p_set", outcome = "accepted", equals = "30 kW", level = "manual:3" },
+  { at = "100ms", output = "m.run",   outcome = "accepted", equals = true, level = "manual:3" },
+  { at = "200ms", output = "z.p_set", equals = "3 kW", tolerance = "0.001 kW", level = "control:10" },
+  { at = "200ms", output = "a.p_set", equals = "30 kW", level = "manual:3" },
+  { at = "300ms", output = "z.p_set", equals = "0 kW", level = "none" },
+  { at = "300ms", output = "a.p_set", equals = "0 kW", level = "none" },
+  { at = "300ms", output = "m.run",   equals = false, level = "none" },
+]

@@ -1,0 +1,141 @@
+schema = 1
+
+[suite]
+kind        = "core"
+id          = "envelope.range"
+spec        = ["01 §7 step 4", "16 A3", "16 E7", "ref/01 §5.10"]
+period      = "100ms"
+hosts       = ["linux", "mcu"]
+description = "Range step with clamp, reject and trip; trips end only by reset or reset_when"
+
+[[signals]]
+path = "x.clear"
+type = "bool"
+
+[[outputs]]
+path  = "x.p_set"
+type  = "f64"
+unit  = "kW"
+range = ["-100 kW", "100 kW"]
+safe  = "0 kW"
+
+[[outputs]]
+path     = "x.r_set"
+type     = "f64"
+unit     = "kW"
+range    = ["-100 kW", "100 kW"]
+on_range = "reject"
+safe     = "0 kW"
+
+[[outputs]]
+path     = "x.t_set"
+type     = "f64"
+unit     = "kW"
+range    = ["-100 kW", "100 kW"]
+on_range = "trip"
+safe     = "0 kW"
+
+[[outputs]]
+path       = "x.u_set"
+type       = "f64"
+unit       = "kW"
+range      = ["-100 kW", "100 kW"]
+on_range   = "trip"
+reset_when = "x.clear"
+safe       = "0 kW"
+
+[[writers]]
+id    = "a"
+level = "control:10"
+lease = "1s"
+kind  = "cycle"
+
+[[writers]]
+id    = "b"
+level = "control:9"
+lease = "300ms"
+kind  = "cycle"
+
+[[case]]
+id   = "in_range_accepted"
+name = "A value inside the range is applied as proposed"
+spec = ["01 §7 step 4"]
+do   = [{ at = "0ms", propose = "x.p_set", writer = "a", value = "99 kW" }]
+expect = [{ at = "0ms", output = "x.p_set", outcome = "accepted", equals = "99 kW", level = "control:10" }]
+
+[[case]]
+id   = "clamp_to_upper_bound"
+name = "on_range = clamp (the default) limits to the upper bound"
+spec = ["01 §7 step 4", "ref/01 §5.10"]
+do   = [{ at = "0ms", propose = "x.p_set", writer = "a", value = "150 kW" }]
+expect = [{ at = "0ms", output = "x.p_set", outcome = "clamped_range", equals = "100 kW", level = "control:10" }]
+
+[[case]]
+id   = "clamp_to_lower_bound"
+name = "on_range = clamp limits to the lower bound"
+spec = ["01 §7 step 4"]
+do   = [{ at = "0ms", propose = "x.p_set", writer = "a", value = "-150 kW" }]
+expect = [{ at = "0ms", output = "x.p_set", outcome = "clamped_range", equals = "-100 kW", level = "control:10" }]
+
+[[case]]
+id   = "reject_out_of_range"
+name = "on_range = reject refuses the proposal with reason range"
+spec = ["01 §7 step 4"]
+do   = [{ at = "0ms", propose = "x.r_set", writer = "a", value = "150 kW" }]
+expect = [{ at = "0ms", output = "x.r_set", outcome = "rejected(range)", level = "control:10" }]
+
+[[case]]
+id   = "range_rejection_renews_lease"
+name = "A proposal rejected by the range step still renews the writer's lease"
+spec = ["16 A3"]
+do   = [
+  { at = "0ms",   propose = "x.r_set", writer = "b", value = "5 kW" },
+  { at = "200ms", propose = "x.r_set", writer = "b", value = "150 kW" },
+]
+expect = [
+  { at = "0ms",   output = "x.r_set", outcome = "accepted", equals = "5 kW", level = "control:9" },
+  { at = "200ms", output = "x.r_set", outcome = "rejected(range)", level = "control:9" },
+  { at = "400ms", output = "x.r_set", level = "control:9" },
+  { at = "500ms", output = "x.r_set", equals = "0 kW", level = "none" },
+]
+
+[[case]]
+id   = "trip_goes_to_safe"
+name = "on_range = trip trips the output and applies safe"
+spec = ["01 §7 step 4", "01 §7"]
+do   = [{ at = "0ms", propose = "x.t_set", writer = "a", value = "150 kW" }]
+expect = [{ at = "0ms", output = "x.t_set", outcome = "tripped", equals = "0 kW" }]
+
+[[case]]
+id   = "trip_holds_safe_until_reset"
+name = "A tripped output stays at safe whatever is proposed, until an explicit reset"
+spec = ["01 §7", "16 E7", "ref/03 §2.6.2"]
+do   = [
+  { at = "0ms",   propose = "x.t_set", writer = "a", value = "150 kW" },
+  { at = "100ms", propose = "x.t_set", writer = "a", value = "10 kW" },
+  { at = "200ms", propose = "x.t_set", writer = "a", value = "10 kW" },
+  { at = "300ms", reset = "x.t_set" },
+  { at = "400ms", propose = "x.t_set", writer = "a", value = "10 kW" },
+]
+expect = [
+  { at = "100ms", output = "x.t_set", equals = "0 kW" },
+  { at = "200ms", output = "x.t_set", equals = "0 kW" },
+  { at = "400ms", output = "x.t_set", outcome = "accepted", equals = "10 kW", level = "control:10" },
+]
+
+[[case]]
+id   = "reset_when_ends_trip"
+name = "reset_when, evaluated on every tick while tripped, ends the trip when it becomes true"
+spec = ["16 E7"]
+do   = [
+  { at = "0ms",   input = "x.clear", value = false },
+  { at = "0ms",   propose = "x.u_set", writer = "a", value = "150 kW" },
+  { at = "100ms", propose = "x.u_set", writer = "a", value = "10 kW" },
+  { at = "200ms", input = "x.clear", value = true },
+  { at = "300ms", propose = "x.u_set", writer = "a", value = "10 kW" },
+]
+expect = [
+  { at = "0ms",   output = "x.u_set", outcome = "tripped", equals = "0 kW" },
+  { at = "100ms", output = "x.u_set", equals = "0 kW" },
+  { at = "300ms", output = "x.u_set", outcome = "accepted", equals = "10 kW", level = "control:10" },
+]

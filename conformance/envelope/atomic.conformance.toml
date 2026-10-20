@@ -1,0 +1,135 @@
+schema = 1
+
+[suite]
+kind        = "core"
+id          = "envelope.atomic"
+spec        = ["01 §7 step 7", "02 §7.3", "ref/01 §5.16"]
+period      = "100ms"
+hosts       = ["linux", "mcu"]
+description = "Atomic groups: all outputs pass together or none does; on_rate independent or proportional"
+
+[[outputs]]
+path     = "pcs.p_set"
+type     = "f64"
+unit     = "kW"
+range    = ["-100 kW", "100 kW"]
+on_range = "reject"
+rate     = "10 kW/s"
+safe     = "0 kW"
+
+[[outputs]]
+path  = "pcs.q_set"
+type  = "f64"
+unit  = "kvar"
+range = ["-100 kvar", "100 kvar"]
+rate  = "100 kvar/s"
+safe  = "0 kvar"
+
+[[outputs]]
+path  = "drv.l_set"
+type  = "f64"
+unit  = "%"
+range = ["-100 %", "100 %"]
+rate  = "10 %/s"
+safe  = "0 %"
+
+[[outputs]]
+path  = "drv.r_set"
+type  = "f64"
+unit  = "%"
+range = ["-100 %", "100 %"]
+rate  = "100 %/s"
+safe  = "0 %"
+
+[[atomic]]
+id      = "pcs_cmd"
+outputs = ["pcs.p_set", "pcs.q_set"]
+
+[[atomic]]
+id      = "drv_cmd"
+outputs = ["drv.l_set", "drv.r_set"]
+on_rate = "proportional"
+
+[[writers]]
+id    = "a"
+level = "control:10"
+lease = "1s"
+kind  = "cycle"
+
+[[case]]
+id   = "group_passes_together"
+name = "When every output of the group passes, all are applied"
+spec = ["01 §7 step 7", "02 §7.3"]
+do   = [
+  { at = "0ms", propose = "pcs.p_set", writer = "a", value = "0.5 kW" },
+  { at = "0ms", propose = "pcs.q_set", writer = "a", value = "5 kvar" },
+]
+expect = [
+  { at = "0ms", output = "pcs.p_set", outcome = "accepted", equals = "0.5 kW", level = "control:10" },
+  { at = "0ms", output = "pcs.q_set", outcome = "accepted", equals = "5 kvar", level = "control:10" },
+]
+
+[[case]]
+id   = "one_rejection_rejects_the_group"
+name = "If one output of the group is rejected, the others are Rejected(AtomicGroup)"
+spec = ["01 §7 step 7", "02 §7.3"]
+do   = [
+  { at = "0ms", propose = "pcs.p_set", writer = "a", value = "150 kW" },
+  { at = "0ms", propose = "pcs.q_set", writer = "a", value = "5 kvar" },
+]
+expect = [
+  { at = "0ms", output = "pcs.p_set", outcome = "rejected" },
+  { at = "0ms", output = "pcs.q_set", outcome = "rejected(atomic_group)" },
+]
+
+[[case]]
+id   = "independent_rate_by_default"
+name = "With on_rate = independent (the default) each output is rate limited on its own"
+spec = ["02 §7.3", "ref/01 §5.16"]
+do   = [
+  { at = "0ms", propose = "pcs.p_set", writer = "a", value = "4 kW" },
+  { at = "0ms", propose = "pcs.q_set", writer = "a", value = "5 kvar" },
+]
+expect = [
+  { at = "0ms", output = "pcs.p_set", outcome = "clamped_rate", equals = "1 kW" },
+  { at = "0ms", output = "pcs.q_set", outcome = "accepted", equals = "5 kvar" },
+]
+
+[[case]]
+id   = "proportional_rate_scales_the_group"
+name = "With on_rate = proportional, a rate limit to a fraction of the step limits every output to the same fraction"
+spec = ["02 §7.3"]
+do   = [
+  { at = "0ms", propose = "drv.l_set", writer = "a", value = "4 %" },
+  { at = "0ms", propose = "drv.r_set", writer = "a", value = "4 %" },
+]
+expect = [
+  { at = "0ms", output = "drv.l_set", outcome = "clamped_rate", equals = "1 %", tolerance = "0.001 %" },
+  { at = "0ms", output = "drv.r_set", equals = "1 %", tolerance = "0.001 %" },
+]
+
+[[case]]
+id   = "proportional_keeps_ratio_and_sign"
+name = "Proportional limiting keeps the ratio between steps of opposite sign"
+spec = ["02 §7.3"]
+do   = [
+  { at = "0ms", propose = "drv.l_set", writer = "a", value = "-4 %" },
+  { at = "0ms", propose = "drv.r_set", writer = "a", value = "8 %" },
+]
+expect = [
+  { at = "0ms", output = "drv.l_set", equals = "-1 %", tolerance = "0.001 %" },
+  { at = "0ms", output = "drv.r_set", equals = "2 %", tolerance = "0.001 %" },
+]
+
+[[case]]
+id   = "proportional_without_limit_is_unchanged"
+name = "When no output hits its rate, proportional mode changes nothing"
+spec = ["02 §7.3"]
+do   = [
+  { at = "0ms", propose = "drv.l_set", writer = "a", value = "0.5 %" },
+  { at = "0ms", propose = "drv.r_set", writer = "a", value = "4 %" },
+]
+expect = [
+  { at = "0ms", output = "drv.l_set", outcome = "accepted", equals = "0.5 %" },
+  { at = "0ms", output = "drv.r_set", outcome = "accepted", equals = "4 %" },
+]

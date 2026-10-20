@@ -1,0 +1,129 @@
+schema = 1
+
+[suite]
+kind        = "core"
+id          = "arbiter.manual"
+spec        = ["16 A10", "16 A13", "01 §6", "ref/03 §2.6.2"]
+period      = "100ms"
+hosts       = ["linux", "mcu"]
+description = "Manual writes: TTL as the lease, override of apps, expiry back to the app or to safe, release and renewal"
+
+[[outputs]]
+path  = "x.p_set"
+type  = "f64"
+unit  = "kW"
+range = ["-100 kW", "100 kW"]
+safe  = "0 kW"
+
+[[writers]]
+id    = "op"
+level = "manual:3"
+kind  = "manual"
+ttl   = "500ms"
+
+[[writers]]
+id    = "op2"
+level = "manual:4"
+kind  = "manual"
+ttl   = "1s"
+
+[[writers]]
+id    = "c"
+level = "control:10"
+lease = "300ms"
+kind  = "cycle"
+
+[[case]]
+id   = "manual_overrides_app_then_expires_back"
+name = "A manual write with TTL wins over the app and expires on its own, returning control to the app"
+spec = ["16 A2", "16 A5", "16 A10", "01 §6"]
+do   = [
+  { at = "0ms",   propose = "x.p_set", writer = "c",  value = "20 kW" },
+  { at = "100ms", propose = "x.p_set", writer = "c",  value = "20 kW" },
+  { at = "100ms", propose = "x.p_set", writer = "op", value = "30 kW" },
+  { at = "200ms", propose = "x.p_set", writer = "c",  value = "20 kW" },
+  { at = "300ms", propose = "x.p_set", writer = "c",  value = "20 kW" },
+  { at = "400ms", propose = "x.p_set", writer = "c",  value = "20 kW" },
+  { at = "500ms", propose = "x.p_set", writer = "c",  value = "20 kW" },
+  { at = "600ms", propose = "x.p_set", writer = "c",  value = "20 kW" },
+  { at = "700ms", propose = "x.p_set", writer = "c",  value = "20 kW" },
+]
+expect = [
+  { at = "0ms",   output = "x.p_set", equals = "20 kW", level = "control:10" },
+  { at = "100ms", output = "x.p_set", outcome = "accepted", equals = "30 kW", level = "manual:3" },
+  { at = "500ms", output = "x.p_set", equals = "30 kW", level = "manual:3" },
+  { at = "600ms", output = "x.p_set", outcome = "accepted", equals = "20 kW", level = "control:10" },
+  { at = "700ms", output = "x.p_set", equals = "20 kW", level = "control:10" },
+]
+
+[[case]]
+id   = "manual_ttl_expires_to_safe"
+name = "A lone manual write expires at TTL and the output goes to safe"
+spec = ["16 A2", "16 A6", "16 A10"]
+do   = [{ at = "0ms", propose = "x.p_set", writer = "op", value = "30 kW" }]
+expect = [
+  { at = "0ms",   output = "x.p_set", outcome = "accepted", equals = "30 kW", level = "manual:3" },
+  { at = "400ms", output = "x.p_set", equals = "30 kW", level = "manual:3" },
+  { at = "500ms", output = "x.p_set", outcome = "none", equals = "0 kW", level = "none" },
+]
+
+[[case]]
+id   = "release_frees_level_immediately"
+name = "Releasing a manual write frees the level in the release tick"
+spec = ["01 §6", "ref/03 §2.6.2"]
+do   = [
+  { at = "0ms",   propose = "x.p_set", writer = "op", value = "30 kW" },
+  { at = "200ms", release = "x.p_set", writer = "op" },
+]
+expect = [
+  { at = "100ms", output = "x.p_set", equals = "30 kW", level = "manual:3" },
+  { at = "200ms", output = "x.p_set", equals = "0 kW", level = "none" },
+]
+
+[[case]]
+id   = "release_returns_control_to_app"
+name = "After a release the active app level is effective again"
+spec = ["01 §6", "16 A5"]
+do   = [
+  { at = "0ms",   propose = "x.p_set", writer = "c",  value = "20 kW" },
+  { at = "0ms",   propose = "x.p_set", writer = "op", value = "30 kW" },
+  { at = "100ms", propose = "x.p_set", writer = "c",  value = "20 kW" },
+  { at = "200ms", propose = "x.p_set", writer = "c",  value = "20 kW" },
+  { at = "200ms", release = "x.p_set", writer = "op" },
+  { at = "300ms", propose = "x.p_set", writer = "c",  value = "20 kW" },
+]
+expect = [
+  { at = "100ms", output = "x.p_set", equals = "30 kW", level = "manual:3" },
+  { at = "200ms", output = "x.p_set", equals = "20 kW", level = "control:10" },
+  { at = "300ms", output = "x.p_set", equals = "20 kW", level = "control:10" },
+]
+
+[[case]]
+id   = "same_principal_renews_value_and_ttl"
+name = "A new write by the same principal on the same level replaces value and TTL"
+spec = ["16 A13"]
+do   = [
+  { at = "0ms",   propose = "x.p_set", writer = "op", value = "30 kW" },
+  { at = "300ms", propose = "x.p_set", writer = "op", value = "40 kW" },
+]
+expect = [
+  { at = "300ms", output = "x.p_set", outcome = "accepted", equals = "40 kW", level = "manual:3" },
+  { at = "700ms", output = "x.p_set", equals = "40 kW", level = "manual:3" },
+  { at = "800ms", output = "x.p_set", equals = "0 kW", level = "none" },
+]
+
+[[case]]
+id   = "manual_levels_by_priority"
+name = "Two manual levels: manual:3 wins, manual:4 takes over when manual:3 expires"
+spec = ["16 A5", "16 A10"]
+do   = [
+  { at = "0ms", propose = "x.p_set", writer = "op2", value = "10 kW" },
+  { at = "0ms", propose = "x.p_set", writer = "op",  value = "30 kW" },
+]
+expect = [
+  { at = "0ms",    output = "x.p_set", equals = "30 kW", level = "manual:3" },
+  { at = "400ms",  output = "x.p_set", equals = "30 kW", level = "manual:3" },
+  { at = "500ms",  output = "x.p_set", equals = "10 kW", level = "manual:4" },
+  { at = "900ms",  output = "x.p_set", equals = "10 kW", level = "manual:4" },
+  { at = "1000ms", output = "x.p_set", equals = "0 kW", level = "none" },
+]
