@@ -521,6 +521,43 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 
 ---
 
+## 16. Catalog, simulation, test and SDK vocabulary (ref/03, ref/04)
+
+Terms fixed while translating `ref/03` and `ref/04`.
+
+| PT | EN | Notes / source |
+|---|---|---|
+| rascunho (de perfil) | **draft** | output of `jk profile import csv` |
+| `# REVER` (marcador) | **`# REVIEW`** | the comment that `jk profile import` and `jk board probe` write; ref/03 §2.2.19, §2.3.7 |
+| ficha técnica | **datasheet** | |
+| sobreposição (de registos) | **overlap** | `J0811` |
+| sobreposição local (cenário), sobrepor | **local override**, **override** | ref/03 §2.5.2; manifest adjustments override profile keys |
+| executor (de suites e casos) | **runner** | conformance; the async executor of the harness stays **executor** |
+| expectativa | **expectation** | `[[expect]]` |
+| predicado | **predicate** | |
+| gerador | **generator** | `gen`; also the deterministic random generator |
+| ressalto | **bounce** | `bounce` |
+| tecla, tecla de falha | **key**, **fault key** | `panel` keys of `jk dev` |
+| falha programada | **scheduled fault** | `[faults]` |
+| passo (de integração, de uma ação, do envelope) | **step** | |
+| planta | **plant** | `[plant]`, `joker:sim/plant` |
+| capacidades (tabela `[capacities]` de uma placa) | **capacities** | fixed sizes of the MCU firmware; a feature that a device or class offers stays **capability** (§5) |
+| etiqueta (OCI) | **tag** | ref/03 §2.8.1 |
+| anotação (OCI) | **annotation** | |
+| camada (OCI) | **layer** | |
+| vista (`CycleIo`, `TaskIo`) | **view** | ref/04 §4.5 |
+| tipo de declaração | **declaration type** | ref/04 §4.4 |
+| disparo (de um gatilho) | **firing** | |
+| imagem de entradas, secção larga | **input image**, **wide section** | cycle ABI, ref/04 §3.2 |
+| caminho empacotado | **packed path** | ref/04 §2.3 |
+| projeção (de um caso de enum) | **projection** | ref/04 §2.8 |
+| janela de adaptadores | **adapter window** | |
+| reserva (de uma funcionalidade) | **reservation** | `@unstable` |
+| prazo | **deadline** | |
+| importador | **importer** | |
+
+---
+
 ## Appendix A. File-name map
 
 Every file under `docs/` keeps its number and gets an English slug (ADR 0029, decision 3). The directories `trilha/`, `exemplos/` and `propostas/` become `track/`, `examples/` and `proposals/`. The rename is one commit, and every remission and link in `docs/`, `spec/`, `wit/`, `README.md` and `AGENTS.md` was rewritten with it. Files whose name does not change are omitted.
