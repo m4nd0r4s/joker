@@ -2985,6 +2985,13 @@ message = "enum sem essa variante"
 doc = "ref/01 §10.1"
 
 [[code]]
+id = "J0304"
+severity = "error"
+message = "expression with incompatible types (operand, enum of another type, unreadable signal, wrong result type)"
+doc = "ref/01 §10.1"
+also = ["ADR 0034"]
+
+[[code]]
 id = "J0305"
 severity = "error"
 message = "janela acima do máximo (15 min)"
@@ -2996,6 +3003,13 @@ id = "J0306"
 severity = "error"
 message = "`own()` fora de um método de classe"
 doc = "ref/01 §10.1"
+
+[[code]]
+id = "J0307"
+severity = "error"
+message = "unknown function, wrong number of arguments, or an argument that must be a path, a duration or a constant"
+doc = "ref/01 §10.1"
+also = ["ADR 0034"]
 
 [[code]]
 id = "J0350"

@@ -393,6 +393,31 @@ impl Unit {
         })
     }
 
+    /// The square root of a unit whose dimension exponents are all even
+    /// (`m2` → `m`); `°C` and odd exponents have no root.
+    pub fn checked_sqrt(&self) -> Result<Unit, Error> {
+        if self.is_affine() {
+            return Err(Error::new(ErrorKind::InvalidUnitSyntax, Span::default()));
+        }
+        let mut exponents = self.dimension.exponents();
+        for e in exponents.iter_mut() {
+            if *e % 2 != 0 {
+                return Err(Error::new(ErrorKind::InvalidUnitSyntax, Span::default()));
+            }
+            *e /= 2;
+        }
+        let mut symbol = Symbol::new("sqrt(").ok_or(too_long())?;
+        symbol.push(self.symbol.as_str()).ok_or(too_long())?;
+        symbol.push(")").ok_or(too_long())?;
+        Ok(Unit {
+            dimension: Dimension::from_exponents(exponents),
+            factor: sqrt(self.factor),
+            offset: 0.0,
+            kind: None,
+            symbol,
+        })
+    }
+
     fn combine(&self, other: &Unit, op: Op) -> Result<Unit, Error> {
         let lhs = self.difference();
         let rhs = other.difference();
@@ -459,6 +484,21 @@ fn kinds_compatible(a: QuantityKind, b: QuantityKind) -> bool {
 
 fn too_long() -> Error {
     Error::new(ErrorKind::SymbolTooLong, Span::default())
+}
+
+fn sqrt(value: f64) -> f64 {
+    if value <= 0.0 || !value.is_finite() {
+        return value;
+    }
+    let mut x = if value > 1.0 { value / 2.0 } else { 1.0 };
+    for _ in 0..128 {
+        let next = 0.5 * (x + value / x);
+        if next == x {
+            break;
+        }
+        x = next;
+    }
+    x
 }
 
 fn powi(base: f64, n: i8) -> f64 {
@@ -747,5 +787,13 @@ mod tests {
         assert_eq!(u("1/s2"), u("s").checked_powi(-2).unwrap());
         assert_eq!(kw.checked_mul(&u("h")).unwrap().kind(), None);
         assert!(u("°C").checked_powi(2).is_err());
+        let side = u("km2").checked_sqrt().unwrap();
+        assert_eq!(side.dimension(), u("m").dimension());
+        assert_eq!(side.factor(), 1000.0);
+        assert_eq!(side.symbol(), "sqrt(km2)");
+        assert_eq!(u("1").checked_sqrt().unwrap().factor(), 1.0);
+        assert!(u("m3").checked_sqrt().is_err());
+        assert!(u("°C").checked_sqrt().is_err());
+        assert_eq!(u("mm2").checked_sqrt().unwrap().factor(), 1e-3);
     }
 }

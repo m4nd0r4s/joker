@@ -32,5 +32,6 @@
 | [0028](0028-estavel-igual-implementado.md) | Estável = implementado; o que não sai na 1.0 fica reservado |
 | [0029](0029-english-project-language.md) | English is the project language; code has docstrings only, no comments |
 | [0030](0030-unit-syntax-and-kinds.md) | Unit syntax, quantity kinds in compounds, and literal error codes |
+| [0034](0034-expression-typing-and-evaluation.md) | Expression typing, `J0304` and `J0307`, and the semantics of windows and stateful functions |
 
 Mudar uma decisão = escrever uma ADR nova que a substitui, e atualizar os documentos afetados no mesmo conjunto de commits.
