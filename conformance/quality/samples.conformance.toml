@@ -1,0 +1,97 @@
+schema = 1
+
+[suite]
+kind        = "core"
+id          = "quality.samples"
+spec        = ["01 §3.3", "02 §4", "16 §3.3", "ref/03 §2.6.2"]
+period      = "100ms"
+hosts       = ["linux", "mcu"]
+description = "Sample quality at the latch: staleness against max_age, initial samples, injected qualities kept, and the clock not changing sample quality"
+
+[[signals]]
+path    = "x.m"
+type    = "f64"
+unit    = "kW"
+max_age = "300ms"
+
+[[signals]]
+path = "x.n"
+type = "f64"
+unit = "kW"
+
+[[case]]
+id   = "fresh_sample_is_good"
+name = "A sample younger than max_age keeps its Good quality"
+spec = ["01 §3.3"]
+do   = [{ at = "0ms", input = "x.m", value = "1 kW" }]
+expect = [
+  { at = "0ms",   signal = "x.m", equals = "1 kW", quality = "good" },
+  { at = "200ms", signal = "x.m", equals = "1 kW", quality = "good" },
+]
+
+[[case]]
+id   = "older_than_max_age_is_uncertain_stale"
+name = "A sample older than max_age is Uncertain(Stale) at the latch"
+spec = ["01 §3.3", "02 §4"]
+do   = [{ at = "0ms", input = "x.m", value = "1 kW" }]
+expect = [{ at = "400ms", signal = "x.m", equals = "1 kW", quality = "uncertain(stale)" }]
+
+[[case]]
+id   = "older_than_twice_max_age_is_bad_stale"
+name = "A sample older than 2 x max_age is Bad(Stale)"
+spec = ["01 §3.3", "02 §4"]
+do   = [{ at = "0ms", input = "x.m", value = "1 kW" }]
+expect = [{ at = "700ms", signal = "x.m", quality = "bad(stale)" }]
+
+[[case]]
+id   = "new_sample_refreshes_age"
+name = "A new sample restarts the age"
+spec = ["01 §3.3"]
+do   = [
+  { at = "0ms",   input = "x.m", value = "1 kW" },
+  { at = "300ms", input = "x.m", value = "2 kW" },
+]
+expect = [{ at = "500ms", signal = "x.m", equals = "2 kW", quality = "good" }]
+
+[[case]]
+id   = "no_max_age_never_ages"
+name = "Without max_age in the fixture a sample never ages"
+spec = ["ref/03 §2.6.2"]
+do   = [{ at = "0ms", input = "x.n", value = "1 kW" }]
+expect = [{ at = "2000ms", signal = "x.n", equals = "1 kW", quality = "good" }]
+
+[[case]]
+id   = "no_sample_is_uncertain_initial"
+name = "A signal without any sample since start is Uncertain(Initial)"
+spec = ["02 §4"]
+expect = [{ at = "0ms", signal = "x.n", quality = "uncertain(initial)" }]
+
+[[case]]
+id   = "injected_quality_is_kept"
+name = "An input with Bad quality is seen with that code and reason"
+spec = ["ref/03 §2.6.2", "02 §4"]
+do   = [{ at = "0ms", input = "x.n", quality = "bad(comm_failure)" }]
+expect = [{ at = "100ms", signal = "x.n", quality = "bad(comm_failure)" }]
+
+[[case]]
+id   = "sample_held_until_next"
+name = "An input holds until the next one"
+spec = ["ref/03 §2.6.2"]
+do   = [
+  { at = "0ms",   input = "x.n", value = "1 kW" },
+  { at = "300ms", input = "x.n", value = "3 kW" },
+]
+expect = [
+  { during = "0ms .. 200ms", signal = "x.n", equals = "1 kW" },
+  { during = "300ms .. 500ms", signal = "x.n", equals = "3 kW" },
+]
+
+[[case]]
+id   = "unsynced_clock_does_not_degrade_samples"
+name = "The node clock state does not change the quality of input samples"
+spec = ["16 §3.3"]
+do   = [
+  { at = "0ms", clock = "unsynced" },
+  { at = "0ms", input = "x.n", value = "1 kW" },
+]
+expect = [{ at = "100ms", signal = "x.n", equals = "1 kW", quality = "good" }]
