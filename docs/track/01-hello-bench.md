@@ -1,14 +1,14 @@
-# Parte 1 — Olá, bancada: um LED no simulador
+# Part 1 — Hello, bench: an LED in the simulator
 
-**Objetivo:** partir de uma pasta vazia e acabar com a app `luz` a piscar o LED `ACT` de um Raspberry Pi **simulado**, com testes da app e um cenário do site que o provam.
+**Goal:** start from an empty directory and end with the app `luz` blinking the `ACT` LED of a **simulated** Raspberry Pi, with app tests and a site scenario that prove it.
 
-**Vais aprender:** projeto e manifesto · overlays desde o primeiro dia · o tipo no nome dos ficheiros · dispositivo `sim` · sinal, porta e ligação · saída com `safe` · grupo de ciclo · hot-reload de parâmetros e de código · `jk read` e `jk trace` · `joker-test` e relógio virtual · cenários.
+**You will learn:** project and manifest · overlays from day one · the type in the file name · `sim` device · signal, port and binding · output with `safe` · cycle group · hot-reload of parameters and code · `jk read` and `jk trace` · `joker-test` and the virtual clock · scenarios.
 
-**Antes de começar:** o portátil com Rust estável e a `jk` instalada (`jk --version` responde `jk 1.0.0`). Não há hardware nesta parte.
+**Before you start:** the laptop with stable Rust and `jk` installed (`jk --version` answers `jk 1.0.0`). There is no hardware in this part.
 
 ---
 
-## 1. Pasta vazia → projeto
+## 1. Empty directory → project
 
 ```sh
 $ mkdir joker-bancada && cd joker-bancada
@@ -17,24 +17,24 @@ $ jk init --name bancada
 ```
 
 ```
-criado joker.toml
-criado sim/
-criado .gitignore            (ignora target/ e .joker/)
-próximo passo: jk app new <nome>
+created joker.toml
+created sim/
+created .gitignore            (ignores target/ and .joker/)
+next step: jk app new <name>
 ```
 
-O `joker.toml` que o `init` escreve tem só o projeto:
+The `joker.toml` that `init` writes has only the project:
 
 ```toml
 [project]
 name  = "bancada"
-joker = "1.0"           # versão mínima da runtime que aceita este manifesto
-mode  = "dev"           # dev: avisos em vez de erros para o que só importa em produção
+joker = "1.0"           # minimum runtime version that accepts this manifest
+mode  = "dev"           # dev: warnings instead of errors for what only matters in production
 ```
 
-A omissão de `mode` é `prod` (ref/01 §5.2): esquecer a chave num site real não pode desligar as assinaturas. Por isso o `init` escreve `dev` explicitamente.
+The default of `mode` is `prod` (ref/01 §5.2): forgetting the key on a real site must not turn signatures off. That is why `init` writes `dev` explicitly.
 
-## 2. Criar a app
+## 2. Create the app
 
 ```sh
 $ jk app new luz --lang rust
@@ -42,51 +42,51 @@ $ jk app new luz --lang rust
 
 ```
 apps/luz/
-  Cargo.toml            depende de `joker-sdk` (a API), `joker-build`, e `joker-test` nos testes
+  Cargo.toml            depends on `joker-sdk` (the API), `joker-build`, and `joker-test` in the tests
   build.rs
   src/lib.rs
 ```
 
-## 3. Um Pi simulado
+## 3. A simulated Pi
 
-O dispositivo vai chamar-se `pi` no simulador e no hardware. É isso que faz o caminho `pi.act_led` existir nos dois mundos, e é por isso que a app e o manifesto comum nunca vão mudar quando passares para a placa.
+The device will be called `pi` in the simulator and on the hardware. That is what makes the path `pi.act_led` exist in both worlds, and it is why the app and the common manifest will never change when you move to the board.
 
-Por agora, o Pi simulado tem um único sinal: o LED `ACT`.
+For now, the simulated Pi has a single signal: the `ACT` LED.
 
 ```toml
 # sim/pi.sim.toml
 schema = 1
 
 [model]
-description = "Raspberry Pi da bancada, simulado: por agora, só o LED ACT"
+description = "Bench Raspberry Pi, simulated: for now, only the ACT LED"
 
 [signals]
-act_led = { type = "bool", direction = "output", label = "LED ACT", panel = { label = "ACT", kind = "lamp" } }
+act_led = { type = "bool", direction = "output", label = "ACT LED", panel = { label = "ACT", kind = "lamp" } }
 ```
 
-- `direction = "output"`: alguém escreve este sinal. O valor que o modelo recebe é o **aplicado**, depois do árbitro e do envelope, e nunca a proposta crua da app (ref/03 §2.4.4).
-- `panel = { kind = "lamp" }`: no painel do `jk dev`, aparece como uma lâmpada. Uma lâmpada mostra e nunca muda o valor.
+- `direction = "output"`: someone writes this signal. The value the model receives is the **applied** one, after the arbiter and the envelope, and never the raw proposal of the app (ref/03 §2.4.4).
+- `panel = { kind = "lamp" }`: in the `jk dev` panel, it appears as a lamp. A lamp shows the value and never changes it.
 
-## 4. O manifesto, em duas camadas desde já
+## 4. The manifest, in two layers from the start
 
-O manifesto separa **o que o sistema faz** (a app, a saída e o seu `safe`, o ciclo) de **onde está o hardware** (os dispositivos). O primeiro vai para `joker.toml`; o segundo para um overlay por alvo.
+The manifest separates **what the system does** (the app, the output and its `safe`, the cycle) from **where the hardware is** (the devices). The first goes into `joker.toml`; the second into one overlay per target.
 
 ```toml
-# joker.toml — o comum. Nenhum dispositivo aqui.
+# joker.toml — the common part. No device here.
 [project]
 name  = "bancada"
 joker = "1.0"
 mode  = "dev"
 
-# Toda a saída diz o que é "seguro". Para um LED, apagado.
+# Every output says what is "safe". For an LED, off.
 [outputs."pi.act_led"]
 safe = false
 
-# Um grupo de ciclo: um relógio que bate a cada 20 ms.
+# One cycle group: a clock that beats every 20 ms.
 [cycles.main]
 period = "20ms"
 
-# A app, e a ligação da sua porta `led` ao sinal `pi.act_led`.
+# The app, and the binding of its port `led` to the signal `pi.act_led`.
 [apps.luz]
 path   = "apps/luz"
 bind   = { led = "pi.act_led" }
@@ -95,7 +95,7 @@ cycles = { pisca = "main" }
 ```
 
 ```toml
-# joker.sim.toml — tudo simulado, no portátil
+# joker.sim.toml — everything simulated, on the laptop
 extends = ["joker.toml"]
 
 [devices.pi]
@@ -103,35 +103,35 @@ driver = "sim"
 model  = "sim/pi.sim.toml"
 ```
 
-**Porquê o overlay já na parte 1?** Porque na parte 2 vais acrescentar `joker.lab.toml`, com o Pi 3 real, e não vais mexer em mais nada. Se o dispositivo simulado estivesse no `joker.toml`, terias de o tirar de lá, e o `joker.toml` deixava de ser "o sistema" para passar a ser "o sistema no portátil". Com duas camadas desde o início, cada alvo é um ficheiro pequeno que só diz onde está o hardware (ref/01 §7).
+**Why the overlay already in part 1?** Because in part 2 you will add `joker.lab.toml`, with the real Pi 3, and you will not touch anything else. If the simulated device were in `joker.toml`, you would have to take it out, and `joker.toml` would stop being "the system" and become "the system on the laptop". With two layers from the start, each target is a small file that only says where the hardware is (ref/01 §7).
 
-**Os nomes dizem o tipo.** Cada ficheiro do projeto leva o tipo no sufixo: `joker.toml` é o manifesto, `joker.<variante>.toml` um overlay, `sim/pi.sim.toml` um modelo de simulação. Com o sufixo, o editor sabe o esquema e dá completação e erros enquanto escreves, e o `jk check` recusa com `J0803` um ficheiro cujo conteúdo não bate com o nome (ADR 0026). A variante é também o que escolhes na linha de comandos: `--env sim` quer dizer `joker.sim.toml`.
+**The names state the type.** Every project file carries its type in the suffix: `joker.toml` is the manifest, `joker.<variant>.toml` an overlay, `sim/pi.sim.toml` a simulation model. With the suffix, the editor knows the schema and gives completion and errors while you type, and `jk check` rejects with `J0803` a file whose content does not match its name (ADR 0026). The variant is also what you choose on the command line: `--env sim` means `joker.sim.toml`.
 
-Três coisas a reparar:
+Three things to notice:
 
-- **`pi.act_led` é um caminho**: `<dispositivo>.<sinal>`. A app não o conhece. Conhece a sua **porta** `led`, e é o manifesto que faz a **ligação** (documento 02, §9).
-- **`safe = false` não é opcional.** Não existe um "valor seguro por omissão" (ADR 0006). O `safe` é uma decisão sobre o sistema, e por isso vive no comum, e não no overlay do hardware.
-- **Não declarámos `writer`.** Com um só escritor na saída, vale a omissão: nível `control:12` e um lease de 3 períodos do grupo dono, 60 ms (documento 16, A9 e A11; ref/01 §3.11). Isto só passa a importar na parte 2.
+- **`pi.act_led` is a path**: `<device>.<signal>`. The app does not know it. It knows its **port** `led`, and it is the manifest that makes the **binding** (document 02, §9).
+- **`safe = false` is not optional.** There is no "default safe value" (ADR 0006). `safe` is a decision about the system, and so it lives in the common part, and not in the hardware overlay.
+- **We did not declare `writer`.** With a single writer on the output, the default applies: level `control:12` and a lease of 3 periods of the owning group, 60 ms (document 16, A9 and A11; ref/01 §3.11). This only starts to matter in part 2.
 
-## 5. A app `luz` 0.1
+## 5. The app `luz` 0.1
 
 ```rust
 // apps/luz/src/lib.rs
 use joker::prelude::*;
 
-/// Pisca um LED. Versão 0.1 da trilha.
+/// Blinks an LED. Version 0.1 of the track.
 #[joker::app(name = "luz", version = "0.1.0")]
 pub struct Luz {
-    /// O LED. A app só sabe que é um bool de saída.
+    /// The LED. The app only knows it is an output bool.
     #[output]
     led: Output<bool>,
 
-    /// Meio período do pisca: 500 ms aceso, 500 ms apagado.
+    /// Half period of the blink: 500 ms on, 500 ms off.
     #[param(unit = "ms", range = "20..5000", default = 500.0)]
     half_period: Param<f64>,
 }
 
-/// Estado local da tarefa de ciclo: vive entre ticks, na memória da app.
+/// Local state of the cycle task: lives between ticks, in the app's memory.
 #[derive(Default)]
 struct Pisca {
     elapsed_ms: f64,
@@ -140,62 +140,62 @@ struct Pisca {
 
 #[joker::cycle(period = "20ms", wcet = "5us")]
 fn pisca(io: &mut CycleIo<Luz>, st: &mut Pisca) -> Result<()> {
-    // O período real do grupo (io.dt()), e não uma constante: o manifesto pode mudá-lo.
+    // The real period of the group (io.dt()), and not a constant: the manifest may change it.
     st.elapsed_ms += io.dt().as_secs_f64() * 1000.0;
 
     if st.elapsed_ms >= io.half_period.get() {
-        st.elapsed_ms -= io.half_period.get();   // subtrair, e não pôr a zero, não acumula erro
+        st.elapsed_ms -= io.half_period.get();   // subtracting, and not resetting to zero, does not accumulate error
         st.on = !st.on;
     }
 
-    // Propõe o valor a cada tick. Isso renova o lease: se a app parar, o LED vai para `safe`.
+    // Proposes the value on every tick. That renews the lease: if the app stops, the LED goes to `safe`.
     io.led.set(st.on);
     Ok(())
 }
 ```
 
-Porque é que se escreve o LED a cada tick, e não só quando muda? Porque **propor é renovar o lease** (documento 16, A2). O Joker não envia nada ao driver quando o valor aplicado não muda, mas fica a saber que a app está viva. É isto que garante que, se a app morrer, o LED vai para `safe` em 60 ms.
+Why write the LED on every tick, and not only when it changes? Because **proposing is renewing the lease** (document 16, A2). Joker sends nothing to the driver when the applied value does not change, but it learns that the app is alive. That is what guarantees that, if the app dies, the LED goes to `safe` within 60 ms.
 
-O `period` da macro é um **pedido**: quem manda é o grupo a que o manifesto liga a tarefa (`cycles = { pisca = "main" }`). Se forem diferentes além da tolerância da app, o `jk check` avisa com `J0130`.
+The macro's `period` is a **request**: what decides is the group the manifest binds the task to (`cycles = { pisca = "main" }`). If they differ beyond the app's tolerance, `jk check` warns with `J0130`.
 
-## 6. Verificar
+## 6. Check
 
 ```sh
-$ jk check --env sim            # o mesmo que --manifest joker.sim.toml
+$ jk check --env sim            # the same as --manifest joker.sim.toml
 ```
 
 ```
-✓ manifesto          joker.sim.toml ← joker.toml · 1 dispositivo (sim), 1 saída, 1 app, 1 grupo
-✓ ligações           luz.led → pi.act_led (bool)
-✓ parâmetros         luz.half_period = 500 ms (20..5000 ms)
-✓ admissão RT        main 20ms: 5 µs declarados (0,03%)
-aviso[J0352]: o grupo `main` (20 ms) não tem kernel PREEMPT_RT neste alvo; jitter não garantido
-   = nota: no portátil, com o simulador, é irrelevante
-nota: sem `[target] board`, as verificações que dependem da placa ficam por fazer
-nota: joker.sim.lock atualizado (apps.luz)
+✓ manifest           joker.sim.toml ← joker.toml · 1 device (sim), 1 output, 1 app, 1 group
+✓ bindings           luz.led → pi.act_led (bool)
+✓ parameters         luz.half_period = 500 ms (20..5000 ms)
+✓ RT admission       main 20ms: 5 µs declared (0.03%)
+warning[J0352]: group `main` (20 ms) has no PREEMPT_RT kernel on this target; jitter not guaranteed
+   = note: on the laptop, with the simulator, it is irrelevant
+note: without `[target] board`, the checks that depend on the board are left undone
+note: joker.sim.lock updated (apps.luz)
 ```
 
-Repara na última linha: cada manifesto de entrada tem o seu lock na mesma pasta (`joker.sim.toml` → `joker.sim.lock`), e em `dev` o `jk check` mantém-no atualizado sozinho (ref/02 §2.1.1 e §3.1.2). Versiona-o.
+Notice the last line: each input manifest has its lock in the same directory (`joker.sim.toml` → `joker.sim.lock`), and in `dev` `jk check` keeps it up to date by itself (ref/02 §2.1.1 and §3.1.2). Put it under version control.
 
-### O que o `jk check` diz quando algo está mal
+### What `jk check` says when something is wrong
 
-Sem `--env` (nem `--manifest`), a `jk` usa o `joker.toml`, que não tem dispositivos:
+Without `--env` (or `--manifest`), `jk` uses `joker.toml`, which has no devices:
 
 ```sh
 $ jk check
 ```
 
 ```
-erro[J0101]: sinal desconhecido `pi.act_led`
+error[J0101]: unknown signal `pi.act_led`
  --> joker.toml:8:10
   |
 8 | [outputs."pi.act_led"]
-  |          ^^^^^^^^^^^^ nenhum dispositivo `pi` neste manifesto
-  = nota: `joker.toml` é estendido por joker.sim.toml
-  = ajuda: jk check --env sim
+  |          ^^^^^^^^^^^^ no device `pi` in this manifest
+  = note: `joker.toml` is extended by joker.sim.toml
+  = help: jk check --env sim
 ```
 
-É o comportamento certo: o comum sozinho não é um sistema. Para não escreveres `--env sim` a toda a hora, põe a omissão na configuração local do projeto (fica em `.joker/`, que não se versiona; ref/02 §2.3.2):
+That is the right behavior: the common part alone is not a system. So that you do not have to type `--env sim` all the time, put the default in the project's local configuration (it lives in `.joker/`, which is not versioned; ref/02 §2.3.2):
 
 ```toml
 # .joker/config.toml
@@ -205,58 +205,58 @@ version = 1
 manifest = "joker.sim.toml"
 ```
 
-Agora apaga a linha `safe = false` do `joker.toml` e volta a verificar:
+Now delete the line `safe = false` from `joker.toml` and check again:
 
 ```
-erro[J0201]: a saída `pi.act_led` não tem `safe`
+error[J0201]: output `pi.act_led` has no `safe`
  --> joker.toml:8:1
   |
 8 | [outputs."pi.act_led"]
-  | ^^^^^^^^^^^^^^^^^^^^^^ esta saída não diz o que é seguro
-  = nota: não existe valor seguro por omissão (ADR 0006)
-  = ajuda: para um LED, `safe = false`
+  | ^^^^^^^^^^^^^^^^^^^^^^ this output does not say what is safe
+  = note: there is no default safe value (ADR 0006)
+  = help: for an LED, `safe = false`
 ```
 
-Repõe a linha.
+Put the line back.
 
-## 7. Correr
+## 7. Run
 
 ```sh
 $ jk dev --panel --env sim
 ```
 
 ```
-joker 1.0.0 · dev · bancada · geração 1 · alvo local (sim)
+joker 1.0.0 · dev · bancada · generation 1 · local target (sim)
 ┌ pi (sim) ──────────────────────────────────┐
-│ ACT        ●                               │   ← alterna a cada 500 ms
+│ ACT        ●                               │   ← toggles every 500 ms
 └────────────────────────────────────────────┘
- grupos   main 20ms   jitter p99 0,7 ms   overruns 0
- apps     luz 0.1.0  a correr  wcet medido 1,6 µs
- saídas   pi.act_led = true  (accepted · control:12 · app:luz)
- [q] sair  [r] recarregar  [t] trace pi.act_led  [?] ajuda
+ groups   main 20ms   jitter p99 0.7 ms   overruns 0
+ apps     luz 0.1.0  running  measured wcet 1.6 µs
+ outputs  pi.act_led = true  (accepted · control:12 · app:luz)
+ [q] quit  [r] reload  [t] trace pi.act_led  [?] help
 ```
 
-**Hot-reload de parâmetros.** Com o `jk dev` a correr, muda o parâmetro no `joker.toml` e grava:
+**Parameter hot-reload.** With `jk dev` running, change the parameter in `joker.toml` and save:
 
 ```toml
 params = { half_period = "100 ms" }
 ```
 
-O `jk dev` aplica uma geração nova (geração 2). O LED passa a piscar a 5 Hz **sem reiniciar a app**: o valor novo chega à instância de ciclo na imagem do tick seguinte (ref/04 §4.3.4). Experimenta `"10 ms"`: a geração é recusada com `J0120` (fora da gama `20..5000` que a app declara), e a geração 2 continua a correr. Volta a `"500 ms"`.
+`jk dev` applies a new generation (generation 2). The LED starts blinking at 5 Hz **without restarting the app**: the new value reaches the cycle instance in the image of the next tick (ref/04 §4.3.4). Try `"10 ms"`: the generation is rejected with `J0120` (outside the range `20..5000` that the app declares), and generation 2 keeps running. Go back to `"500 ms"`.
 
-**Hot-reload de código.** Muda a app, por exemplo para um pisca assimétrico (`if st.on { … }` com dois tempos), e grava. O `jk dev` recompila o componente e troca-o entre dois ticks. O estado da tarefa recomeça em `Default` (LED apagado, contador a zero), porque `Pisca` não tem `#[joker::state(persist)]`; com ele, a troca migraria o estado (ref/04 §4.12). A versão anterior fica quente durante `keep_previous` (10 min), para voltar atrás sem recompilar. Desfaz a mudança antes de continuar.
+**Code hot-reload.** Change the app, for example to an asymmetric blink (`if st.on { … }` with two times), and save. `jk dev` recompiles the component and swaps it between two ticks. The task state starts again at `Default` (LED off, counter at zero), because `Pisca` does not have `#[joker::state(persist)]`; with it, the swap would migrate the state (ref/04 §4.12). The previous version stays warm for `keep_previous` (10 min), so you can go back without recompiling. Undo the change before you continue.
 
-## 8. Ver por dentro
+## 8. Look inside
 
-Noutro terminal, com o `jk dev` a correr:
+In another terminal, with `jk dev` running:
 
 ```sh
 $ jk read pi.act_led --watch
 ```
 
 ```
-pi.act_led   true    good   idade 4 ms    control:12 · app:luz
-pi.act_led   false   good   idade 2 ms    control:12 · app:luz
+pi.act_led   true    good   age 4 ms    control:12 · app:luz
+pi.act_led   false   good   age 2 ms    control:12 · app:luz
 …
 ```
 
@@ -266,25 +266,25 @@ $ jk trace pi.act_led
 
 ```
 tick 1250  t=25.000s  main
-  app:luz.pisca     propõe true   (control:12, lease até 25.060s)
-  árbitro           nível ativo control:12 → true
+  app:luz.pisca     proposes true   (control:12, lease until 25.060s)
+  arbiter           active level control:12 → true
   envelope          accepted
-  commit            true → driver sim (mudou)
+  commit            true → driver sim (changed)
 tick 1251  t=25.020s  main
-  app:luz.pisca     propõe true   (control:12, lease até 25.080s)
-  árbitro           nível ativo control:12 → true
+  app:luz.pisca     proposes true   (control:12, lease until 25.080s)
+  arbiter           active level control:12 → true
   envelope          accepted
-  commit            — (igual ao aplicado)
+  commit            — (same as applied)
 ```
 
-O `jk trace` segue um sinal pela cadeia toda: driver, aquisição, apps que o leem, propostas, árbitro, envelope, commit, readback (documento 07, §4). Numa saída, é a primeira ferramenta quando alguma coisa não faz o que esperavas.
+`jk trace` follows a signal through the whole chain: driver, acquisition, apps that read it, proposals, arbiter, envelope, commit, readback (document 07, §4). On an output, it is the first tool to reach for when something does not do what you expected.
 
-## 9. Testes da app, com relógio virtual
+## 9. App tests, with a virtual clock
 
-Um LED a piscar parece não precisar de testes, mas este mostra o que o Joker dá de graça: **relógio virtual**. Dez segundos correm em milissegundos, de forma determinista, com o árbitro e o envelope reais (ref/04 §6.1).
+A blinking LED seems not to need tests, but this one shows what Joker gives you for free: a **virtual clock**. Ten seconds run in milliseconds, deterministically, with the real arbiter and envelope (ref/04 §6.1).
 
 ```rust
-// apps/luz/src/lib.rs (no fim)
+// apps/luz/src/lib.rs (at the end)
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -299,8 +299,8 @@ mod tests {
         h.run_for(10.s());
 
         let led = h.output("led");
-        assert_eq!(led.toggles(), 20);                  // 10 s a 1 Hz = 20 mudanças
-        assert!(led.toggles_every(500.ms()));           // exato: o relógio é virtual
+        assert_eq!(led.toggles(), 20);                  // 10 s at 1 Hz = 20 changes
+        assert!(led.toggles_every(500.ms()));           // exact: the clock is virtual
     }
 
     #[test]
@@ -308,11 +308,11 @@ mod tests {
         let mut h = Harness::<Luz>::new()
             .group("pisca", 20.ms())
             .safe("led", false);
-        h.run_for(520.ms());                            // LED aceso desde os 500 ms
+        h.run_for(520.ms());                            // LED on since 500 ms
         assert_eq!(h.output("led").last(), Some(true));
         h.stop_app();
         h.run_for(80.ms());
-        assert_eq!(h.output("led").last(), Some(false)); // lease de 60 ms expirou → safe
+        assert_eq!(h.output("led").last(), Some(false)); // 60 ms lease expired → safe
     }
 }
 ```
@@ -322,21 +322,21 @@ $ jk test
 ```
 
 ```
-apps/luz (cargo test, componente wasm no wasmtime) ... 2 passed
+apps/luz (cargo test, wasm component on wasmtime) ... 2 passed
 ```
 
-O `jk test` corre o **componente `.wasm` real**, e não uma compilação nativa da app: é o que vai para o nó. O `cargo test` também funciona, com o backend nativo, e avisa que não é o componente de produção.
+`jk test` runs the **real `.wasm` component**, and not a native build of the app: it is what goes to the node. `cargo test` also works, with the native backend, and warns that it is not the production component.
 
-## 10. Um cenário do site
+## 10. A site scenario
 
-Os testes da app correm a app sozinha. Um **cenário** corre o **site**: o manifesto completo, o modelo simulado, o núcleo real e o relógio virtual (ref/03 §2.5).
+The app tests run the app alone. A **scenario** runs the **site**: the complete manifest, the simulated model, the real core and the virtual clock (ref/03 §2.5).
 
 ```toml
 # sim/scenarios/pisca.scenario.toml
 schema = 1
 
 [scenario]
-name     = "pisca a 1 Hz e vai para safe quando a app para"
+name     = "blinks at 1 Hz and goes to safe when the app stops"
 manifest = "joker.sim.toml"
 duration = "10s"
 
@@ -357,43 +357,43 @@ equals = false
 level  = "none"
 ```
 
-O último `[[expect]]` diz duas coisas: o LED está apagado **e** não há nenhum nível ativo no árbitro. Ninguém escreveu `false`: o lease da app expirou e o árbitro aplicou o `safe` (documento 16, A6).
+The last `[[expect]]` says two things: the LED is off **and** there is no active level in the arbiter. Nobody wrote `false`: the app's lease expired and the arbiter applied the `safe` (document 16, A6).
 
 ```sh
 $ jk test
 ```
 
 ```
-apps/luz (cargo test, componente wasm no wasmtime) ... 2 passed
-sim/scenarios/pisca.scenario.toml (joker.sim.toml, 10 s virtuais em 41 ms) ... passed
+apps/luz (cargo test, wasm component on wasmtime) ... 2 passed
+sim/scenarios/pisca.scenario.toml (joker.sim.toml, 10 virtual s in 41 ms) ... passed
 ```
 
-Uma expectativa que falhe é `J0842`, com o instante, o valor visto e a cadeia de decisão do `jk trace`. Experimenta: põe `toggles_every = "400ms ± 20ms"` e lê o relatório. O `jk test` sai com o código 6 (documento 07, §8), que é o que a CI usa.
+A failing expectation is `J0842`, with the instant, the value seen and the decision chain from `jk trace`. Try it: set `toggles_every = "400ms ± 20ms"` and read the report. `jk test` exits with code 6 (document 07, §8), which is what CI uses.
 
-## 11. O que aconteceu por baixo
+## 11. What happened underneath
 
-A cada 20 ms, o grupo `main` faz um **tick** (documento 01, §4):
+Every 20 ms, the group `main` runs a **tick** (document 01, §4):
 
-1. **latch:** congela as entradas numa imagem de processo (ainda não há nenhuma);
-2. **tarefas:** chama `pisca` na instância Wasm da app, que propõe `led = true/false`;
-3. **árbitro:** a proposta ocupa o nível `control:12` e renova o lease (documento 16, A2);
-4. **envelope:** passa tudo, porque para um `bool` só declarámos `safe` (documento 01, §7);
-5. **commit:** se o valor aplicado mudou, vai para o driver `sim`, que o mostra no painel.
+1. **latch:** freezes the inputs into a process image (there are none yet);
+2. **tasks:** calls `pisca` in the app's Wasm instance, which proposes `led = true/false`;
+3. **arbiter:** the proposal takes level `control:12` and renews the lease (document 16, A2);
+4. **envelope:** everything passes, because for a `bool` we only declared `safe` (document 01, §7);
+5. **commit:** if the applied value changed, it goes to the `sim` driver, which shows it in the panel.
 
-O `jk dev` e o `jk test` correm exatamente este núcleo. A única diferença é o relógio: real no `jk dev`, virtual no `jk test` (ADR 0007). É por isso que o que passa num cenário é o que acontece no nó.
+`jk dev` and `jk test` run exactly this core. The only difference is the clock: real in `jk dev`, virtual in `jk test` (ADR 0007). That is why what passes in a scenario is what happens on the node.
 
-As camadas do manifesto resolvem-se antes de tudo: `joker.sim.toml` estende `joker.toml`, as tabelas fundem-se chave a chave, e o resultado é o **manifesto efetivo**, com todas as omissões materializadas (ref/01 §7 e §8). Vê-o com `jk diff --env sim`: o lease de 60 ms e o nível `control:12` aparecem lá, marcados `# omissão`.
+The manifest layers are resolved before anything else: `joker.sim.toml` extends `joker.toml`, the tables are merged key by key, and the result is the **effective manifest**, with every default materialized (ref/01 §7 and §8). See it with `jk diff --env sim`: the 60 ms lease and the level `control:12` appear there, marked `# default`.
 
-## 12. Exercícios
+## 12. Exercises
 
-1. Faz o LED piscar com um *duty cycle* de 10% (100 ms aceso, 900 ms apagado), com dois parâmetros. Atualiza o teste e o cenário.
-2. Muda o `period` do grupo para `"50ms"` sem mexer na app. O pisca continua certo? Porquê? (Dica: `io.dt()`.) O que diz o `jk check`?
-3. No cenário, acrescenta uma escrita manual (`[[write]]`, com `output`, `value = true`, `ttl = "2s"`, `at = "3s"`) e uma expectativa `level = "manual:4"` durante esse intervalo. O que acontece ao `toggles_every` entre os 3 s e os 5 s?
+1. Make the LED blink with a 10% *duty cycle* (100 ms on, 900 ms off), with two parameters. Update the test and the scenario.
+2. Change the group's `period` to `"50ms"` without touching the app. Is the blink still right? Why? (Hint: `io.dt()`.) What does `jk check` say?
+3. In the scenario, add a manual write (`[[write]]`, with `output`, `value = true`, `ttl = "2s"`, `at = "3s"`) and an expectation `level = "manual:4"` during that interval. What happens to `toggles_every` between 3 s and 5 s?
 
 ```sh
-$ git add -A && git commit -qm "trilha(01): luz 0.1 pisca o LED ACT simulado; testes e cenário"
+$ git add -A && git commit -qm "track(01): luz 0.1 blinks the simulated ACT LED; tests and scenario"
 ```
 
-**Estado no fim desta parte:** app `luz` **0.1**. Ficheiros: `joker.toml`, `joker.sim.toml`, `joker.sim.lock`, `sim/pi.sim.toml`, `sim/scenarios/pisca.scenario.toml`, `apps/luz/`.
+**State at the end of this part:** app `luz` **0.1**. Files: `joker.toml`, `joker.sim.toml`, `joker.sim.lock`, `sim/pi.sim.toml`, `sim/scenarios/pisca.scenario.toml`, `apps/luz/`.
 
-**Próximo:** [Parte 2 — O Pi 3 como nó: instalar, enrolar, a placa, o LED real](02-the-pi-as-a-node.md).
+**Next:** [Part 2 — The Pi 3 as a node: install, enroll, the board, the real LED](02-the-pi-as-a-node.md).
