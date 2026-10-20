@@ -33,5 +33,6 @@
 | [0029](0029-english-project-language.md) | English is the project language; code has docstrings only, no comments |
 | [0031](0031-registry-hash-encoding.md) | Signal ordering and the registry hash encoding |
 | [0032](0032-dt-after-overrun-skip.md) | `dt()` counts whole periods, also after `overrun = "skip"` |
+| [0033](0033-write-outcomes-and-decision-records.md) | Write outcomes per proposal and per tick, and decision records |
 
 Mudar uma decisão = escrever uma ADR nova que a substitui, e atualizar os documentos afetados no mesmo conjunto de commits.
