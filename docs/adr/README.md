@@ -37,5 +37,6 @@
 | [0033](0033-write-outcomes-and-decision-records.md) | Write outcomes per proposal and per tick, and decision records |
 | [0034](0034-expression-typing-and-evaluation.md) | Expression typing, `J0304` and `J0307`, and the semantics of windows and stateful functions |
 | [0037](0037-trace-v1-encoding-details.md) | Encoding details of the `.jktrace` v1 format |
+| [0038](0038-envelope-steps-2-to-6.md) | Details of envelope steps 2–6 |
 
 Mudar uma decisão = escrever uma ADR nova que a substitui, e atualizar os documentos afetados no mesmo conjunto de commits.
