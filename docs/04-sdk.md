@@ -1,43 +1,43 @@
-# 04 — SDK de apps
+# 04 — App SDK
 
-Uma app é um **componente WebAssembly** que declara portas e exporta tarefas. Pode ser escrita em Rust (tier 1), TypeScript ou Python (tier 2). Este documento explica o contrato WIT, o SDK Rust, os SDKs de tier 2, os testes e a simulação. O detalhe normativo está nas referências (ADR 0023): o mundo WIT e o SDK Rust na ref/04, os SDKs de TypeScript e Python na ref/05, a simulação na ref/03 §2.4.
-
----
-
-## 1. Princípios de DX
-
-1. **O código é o manifesto da app.** As portas, as unidades, as gamas de parâmetros, as tarefas e os alarmes são declarados no código. O SDK emite-os numa secção custom `joker:meta` do componente, e não há um `app.toml` separado que possa ficar dessincronizado.
-2. **Os erros aparecem o mais cedo possível:** tipo e unidade na compilação da app, ligação no `jk check`, e só a qualidade em runtime.
-3. **A qualidade é explícita.** `get()` devolve `Result`, e o `?` é o caminho feliz.
-4. **O ciclo e o async são tipos diferentes.** Não se consegue chamar `history` nem `invoke` numa tarefa de ciclo, porque o compilador não deixa.
-5. **Tudo é testável sem hardware**, com relógio virtual e determinismo total.
+An app is a **WebAssembly component** that declares ports and exports tasks. It may be written in Rust (tier 1), TypeScript or Python (tier 2). This document explains the WIT contract, the Rust SDK, the tier 2 SDKs, testing and simulation. The normative detail is in the references (ADR 0023): the WIT world and the Rust SDK in ref/04, the TypeScript and Python SDKs in ref/05, simulation in ref/03 §2.4.
 
 ---
 
-## 2. O contrato WIT (`wit/joker-runtime.wit`)
+## 1. DX principles
 
-O mundo das apps é o pacote `joker:runtime` (`@0.1.0` até à 1.0, `@1.0.0` na 1.0), no ficheiro `wit/joker-runtime.wit`. A referência normativa é a **ref/04 §2** (interfaces, funções e erros) e **§3** (a ABI de ciclo, byte a byte). Em resumo:
-
-- **`types`:** qualidade (os 20 motivos, pela ordem dos códigos da ref/00 §4.3), `value`, `sample`, `instant`, `write-outcome` (com `clamped(clamp)`, que distingue gama e ritmo) e `record error { code, message }`, com um código do registo.
-- **`cycle-io`** (instância de ciclo): leitura do latch, propostas, métodos de classe, publicados, eventos, caixas de correio, `now`, `dt-ns` e `random-u64`. Síncronas e sem alocação no host.
-- **`async-io`** (instância async): leitura do slot, `snapshot`, `set` e `write` (o `write` resolve com o resultado final, depois do commit do grupo dono), métodos com resultado, ações (também longas, com progresso e cancelamento), `subscribe`, eventos, `history` e `sleep-until`.
-- **`kv`** e **`secrets`** (só async), e **`log`** (as duas; autónoma, para que o `joker:driver` a importe com a mesma versão).
-- **`guest`** (exportada): `init`, `on-params`, `on-cycle`, `run-task`, `on-action`, `export-state`, `migrate`. O caminho rápido é **uma chamada por tarefa e por tick**: a imagem de entradas empacotada (24 B por amostra) entra, o buffer de propostas sai. `on-cycle` devolve um `cycle-result` com as propostas **e** o erro, para que um `Err` não perca as propostas já feitas.
-- **Reservadas para a 1.1** com `@unstable`: `ml`, `frames`, `blocks`, `write-at` (M6) e `propose` (M18). Não fazem parte do mundo estável, e um componente que as importe é recusado em `mode = "prod"` (`J-E0003`).
-
-**Duas instâncias do mesmo componente** (documento 01, §5): na instância de ciclo, as importações de `async-io`, `kv` e `secrets` (e as reservadas `ml`, `frames`, `blocks`) fazem trap com `J-E0901 async API called from cycle`; na instância async, `cycle-io` faz trap com `J-E0902`. O SDK Rust impede estes erros em compilação (`J-E0701`), e os de tier 2 no `jk build` (`J-E0859`) e, se escaparem, em runtime com uma mensagem clara. O host fornece o WASI sempre virtualizado: relógios do latch no ciclo, aleatoriedade determinista, sem ficheiros, rede só em async e só para `net.allow` (ref/04 §2.7).
-
-**Metadados** (secção `joker:meta`, CBOR determinístico, esquema em `spec/cddl/joker-meta.cddl`, ref/04 §5): nome e versão da app, mundo WIT (`joker:runtime@0.1.0`), linguagem, tier e versão do SDK, versão da ABI de ciclo, portas (nome, direção, tipo, unidade, grandeza, gama, `optional`; a posição de uma porta na tabela é o seu handle), tarefas (nome, tipo, gatilho, período pedido, WCET declarado), alarmes, esquemas de registos, **equipamentos** (nome, classe e major, `requires`, limites de `Many` e a lista de membros **que o handle conhece**), **classes implementadas** (`#[implements]`, com o hash do contrato), segredos (só os nomes), funcionalidades instáveis e a memória sugerida. `jk inspect app.wasm` mostra-os.
-
-**Versões (M21):** até à 1.0, o `jokerd` serve o mundo atual e o minor anterior, através de um adaptador gerado; a partir da 1.0, serve todos os `joker:runtime@1.y` com y até ao seu (ADR 0022). Um mundo mais novo do que a runtime é recusado antes do deploy (`J-E0001`). Os enums só crescem no fim, e cada caso novo tem uma projeção declarada para os mundos anteriores (ref/04 §2.8).
+1. **The code is the app's manifest.** Ports, units, parameter ranges, tasks and alarms are declared in the code. The SDK emits them into a `joker:meta` custom section of the component, and there is no separate `app.toml` that could fall out of sync.
+2. **Errors show up as early as possible:** type and unit when the app is compiled, binding in `jk check`, and only quality at runtime.
+3. **Quality is explicit.** `get()` returns `Result`, and `?` is the happy path.
+4. **Cycle and async are different types.** You cannot call `history` or `invoke` in a cycle task, because the compiler does not let you.
+5. **Everything is testable without hardware**, with a virtual clock and full determinism.
 
 ---
 
-## 3. SDK Rust
+## 2. The WIT contract (`wit/joker-runtime.wit`)
 
-**Dependência.** O crate publicado chama-se `joker-sdk` (o nome `joker` está ocupado no crates.io), e o `Cargo.toml` gerado pelo `jk app new` importa-o como `joker`: `joker = { package = "joker-sdk", version = "0.1" }`. Daí o `use joker::prelude::*`.
+The app world is the `joker:runtime` package (`@0.1.0` until 1.0, `@1.0.0` in 1.0), in the file `wit/joker-runtime.wit`. The normative reference is **ref/04 §2** (interfaces, functions and errors) and **§3** (the cycle ABI, byte by byte). In summary:
 
-### 3.1 Declarar uma app
+- **`types`:** quality (the 20 reasons, in the code order of ref/00 §4.3), `value`, `sample`, `instant`, `write-outcome` (with `clamped(clamp)`, which distinguishes range and rate) and `record error { code, message }`, with a code from the registry.
+- **`cycle-io`** (cycle instance): latch read, proposals, class methods, published signals, events, mailboxes, `now`, `dt-ns` and `random-u64`. Synchronous and allocation-free in the host.
+- **`async-io`** (async instance): slot read, `snapshot`, `set` and `write` (`write` resolves with the final result, after the owning group's commit), methods with a result, actions (long ones too, with progress and cancellation), `subscribe`, events, `history` and `sleep-until`.
+- **`kv`** and **`secrets`** (async only), and **`log`** (both; standalone, so that `joker:driver` imports it with the same version).
+- **`guest`** (exported): `init`, `on-params`, `on-cycle`, `run-task`, `on-action`, `export-state`, `migrate`. The fast path is **one call per task and per tick**: the packed input image (24 B per sample) goes in, the proposal buffer comes out. `on-cycle` returns a `cycle-result` with the proposals **and** the error, so that an `Err` does not lose the proposals already made.
+- **Reserved for 1.1** with `@unstable`: `ml`, `frames`, `blocks`, `write-at` (M6) and `propose` (M18). They are not part of the stable world, and a component that imports them is rejected in `mode = "prod"` (`J-E0003`).
+
+**Two instances of the same component** (document 01, §5): in the cycle instance, the imports of `async-io`, `kv` and `secrets` (and the reserved `ml`, `frames`, `blocks`) trap with `J-E0901 async API called from cycle`; in the async instance, `cycle-io` traps with `J-E0902`. The Rust SDK prevents these errors at compile time (`J-E0701`), and the tier 2 ones in `jk build` (`J-E0859`) and, if they slip through, at runtime with a clear message. The host always provides a virtualized WASI: latch clocks in the cycle, deterministic randomness, no files, network only in async and only for `net.allow` (ref/04 §2.7).
+
+**Metadata** (`joker:meta` section, deterministic CBOR, schema in `spec/cddl/joker-meta.cddl`, ref/04 §5): app name and version, WIT world (`joker:runtime@0.1.0`), language, tier and SDK version, cycle ABI version, ports (name, direction, type, unit, quantity, range, `optional`; a port's position in the table is its handle), tasks (name, type, trigger, requested period, declared WCET), alarms, record schemas, **equipment** (name, class and major, `requires`, `Many` limits and the list of members **that the handle knows**), **implemented classes** (`#[implements]`, with the contract hash), secrets (names only), unstable features and the suggested memory. `jk inspect app.wasm` shows them.
+
+**Versions (M21):** until 1.0, `jokerd` serves the current world and the previous minor, through a generated adapter; from 1.0 on, it serves every `joker:runtime@1.y` with y up to its own (ADR 0022). A world newer than the runtime is rejected before the deploy (`J-E0001`). Enums only grow at the end, and each new case has a declared projection for the earlier worlds (ref/04 §2.8).
+
+---
+
+## 3. Rust SDK
+
+**Dependency.** The published crate is called `joker-sdk` (the name `joker` is taken on crates.io), and the `Cargo.toml` generated by `jk app new` imports it as `joker`: `joker = { package = "joker-sdk", version = "0.1" }`. Hence the `use joker::prelude::*`.
+
+### 3.1 Declaring an app
 
 ```rust
 use joker::prelude::*;
@@ -45,9 +45,9 @@ use joker::prelude::*;
 #[joker::app(name = "peak_shaver", version = "1.4.2")]
 pub struct PeakShaver {
     #[input(unit = "kW", quantity = "active_power")]
-    grid_power: Input<f64>,                      // o nome que o bind do documento 03, §8, liga
+    grid_power: Input<f64>,                      // the name that the bind of document 03, §8, binds
 
-    #[input(unit = "1")]                         // fração 0..1
+    #[input(unit = "1")]                         // fraction 0..1
     soc: Input<f64>,
 
     #[output(unit = "kW", quantity = "active_power")]
@@ -60,19 +60,19 @@ pub struct PeakShaver {
     reserve: Param<f64>,
 
     #[internal]
-    plan: Internal<Plan>,                        // escrito pelo async, lido pelo ciclo
+    plan: Internal<Plan>,                        // written by async, read by the cycle
 
     #[model(inputs = "f32[1,96,4]", outputs = "f32[1,96]")]   // 1.1: feature `unstable-ml`
     forecast: Model,
 
-    #[alarm(severity = "medium", message = "plano expirado")]
+    #[alarm(severity = "medium", message = "plan expired")]
     plan_stale: Alarm,
 
     #[output(event)]
     low_soc: EventOutput<LowSoc>,
 }
 
-#[derive(Record, Clone, Copy, Default)]          // ≤ 64 bytes, só escalares
+#[derive(Record, Clone, Copy, Default)]          // ≤ 64 bytes, scalars only
 pub struct Plan {
     target_soc: f64,
     limit_kw: f64,
@@ -85,15 +85,15 @@ pub struct LowSoc {
 }
 ```
 
-A porta `#[model]` e o `infer` são da 1.1 (reservados com `@unstable`, ref/04 §4.15): sem a feature, `J-E0718`, e um componente que os use é recusado em produção. A mesma app na v1.0, sem modelo e com o plano calculado a partir do historian, está na ref/05 §20.1, lado a lado em Rust, TypeScript e Python.
+The `#[model]` port and `infer` are 1.1 (reserved with `@unstable`, ref/04 §4.15): without the feature, `J-E0718`, and a component that uses them is rejected in production. The same app in v1.0, without a model and with the plan computed from the historian, is in ref/05 §20.1, side by side in Rust, TypeScript and Python.
 
-**Portas múltiplas.** `#[output(many)]` com `OutputMany<T>` (e `InputMany<T>`) liga-se a um seletor do manifesto (`"inv*.w_max_lim_pct"`) e dá um array ordenado por caminho. O número de elementos é fixado no `init`.
+**Multiple ports.** `#[output(many)]` with `OutputMany<T>` (and `InputMany<T>`) binds to a manifest selector (`"inv*.w_max_lim_pct"`) and gives an array ordered by path. The number of elements is fixed in `init`.
 
-**Sinais publicados.** `#[publish]` declara sinais derivados da app (`Published<T>`, ou `Counter` para contadores monotónicos), visíveis como `app.<app>.<nome>`, gravados e usáveis em alarmes e expressões como qualquer outro sinal.
+**Published signals.** `#[publish]` declares derived signals of the app (`Published<T>`, or `Counter` for monotonic counters), visible as `app.<app>.<name>`, recorded and usable in alarms and expressions like any other signal.
 
-O `#[joker::app]` gera duas vistas, `CycleIo<PeakShaver>` e `TaskIo<PeakShaver>`, com os métodos certos em cada uma, e a secção `joker:meta`.
+`#[joker::app]` generates two views, `CycleIo<PeakShaver>` and `TaskIo<PeakShaver>`, with the right methods in each, and the `joker:meta` section.
 
-### 3.2 Tarefas de ciclo
+### 3.2 Cycle tasks
 
 ```rust
 #[derive(Default)]
@@ -103,43 +103,43 @@ struct Ctl {
 
 #[joker::cycle(period = "200ms", wcet = "40us")]
 fn control(io: &mut CycleIo<PeakShaver>, st: &mut Ctl) -> Result<()> {
-    let grid = io.grid_power.get()?;             // Err(Quality) → o tick desta tarefa termina aqui
+    let grid = io.grid_power.get()?;             // Err(Quality) → this task's tick ends here
     let soc  = io.soc.get()?;
-    let plan = io.plan.get_or_default();         // antes do primeiro replan: valid_until = 0
+    let plan = io.plan.get_or_default();         // before the first replan: valid_until = 0
 
     let stale = plan.valid_until < io.now().utc_seconds();
-    io.plan_stale.set(stale);                    // raise()/clear() numa só chamada
+    io.plan_stale.set(stale);                    // raise()/clear() in a single call
 
-    // Sem plano válido, vale o parâmetro. Com o Plan::default(), o limite seria 0 kW
-    // e a bateria descarregaria para cobrir toda a importação da rede.
+    // Without a valid plan, the parameter applies. With Plan::default(), the limit would be 0 kW
+    // and the battery would discharge to cover all the import from the grid.
     let limit = if stale { io.limit.get() } else { plan.limit_kw.min(io.limit.get()) };
     let excess = grid - limit;
     st.integral = (st.integral + excess * io.dt().as_secs_f64()).clamp(-50.0, 50.0);
 
-    let floor = io.reserve.get() / 100.0;                // % → fração, como o soc
+    let floor = io.reserve.get() / 100.0;                // % → fraction, like soc
     let sp = if soc <= floor { 0.0 } else { (excess + 0.1 * st.integral).max(0.0) };
-    io.battery.set(sp);                          // proposta; o envelope decide
+    io.battery.set(sp);                          // proposal; the envelope decides
     Ok(())
 }
 ```
 
-- **O estado local** (`st`) vive na memória da instância de ciclo e é inicializado com `Default`. Sobrevive entre ticks e, se a app implementar `#[joker::state(persist)]`, também ao hot-swap (via `export-state`/`migrate`).
-- **Não há `async`, alocação nem I/O no ciclo.** O `init` pode alocar (estado inicial, tabelas); durante o `on-cycle`, o alocador global da instância de ciclo faz trap (`J-E0903`), e o harness mostra o tick e a pilha. A API de ciclo só devolve tipos `Copy` ou limitados (`BoundedVec`, `BoundedString`), e o estado usa-os também. (Um alocador bump reposto a cada tick deixaria um `Vec` guardado no `st` a apontar para memória reutilizada no tick seguinte, sem erro nenhum: ref/04 §4.13.)
-- **`period` é um pedido**, não uma ordem: o manifesto escolhe o grupo. Se o período do grupo divergir mais do que `period_tolerance` (por omissão ±50%), aparece `J0130`. Por isso as tarefas usam `io.dt()` e não constantes.
-- Um erro devolvido (`Err`) termina a tarefa neste tick sem descartar as escritas já propostas, e fica registado (o `cycle-result` leva as duas coisas). Um **panic** é trap: as propostas do tick são descartadas (documento 01, §9).
+- **Local state** (`st`) lives in the memory of the cycle instance and is initialized with `Default`. It survives between ticks and, if the app implements `#[joker::state(persist)]`, also the hot swap (via `export-state`/`migrate`).
+- **There is no `async`, allocation or I/O in the cycle.** `init` may allocate (initial state, tables); during `on-cycle`, the global allocator of the cycle instance traps (`J-E0903`), and the harness shows the tick and the stack. The cycle API only returns `Copy` or bounded types (`BoundedVec`, `BoundedString`), and the state uses them too. (A bump allocator reset on every tick would leave a `Vec` kept in `st` pointing at memory reused in the next tick, with no error at all: ref/04 §4.13.)
+- **`period` is a request**, not an order: the manifest chooses the group. If the group's period diverges by more than `period_tolerance` (±50% by default), `J0130` appears. That is why tasks use `io.dt()` and not constants.
+- A returned error (`Err`) ends the task in this tick without discarding the writes already proposed, and is recorded (the `cycle-result` carries both). A **panic** is a trap: the tick's proposals are discarded (document 01, §9).
 
-### 3.3 Tarefas assíncronas
+### 3.3 Asynchronous tasks
 
 ```rust
 #[joker::task(every = "15m", jitter = "30s")]
 async fn replan(io: &TaskIo<PeakShaver>) -> Result<()> {
     let now = io.now();
-    let hist = io.grid_power.history(now - 24.h(), now, 15.mins()).await?;   // 96 pontos
-    let x = Tensor::from_features(&hist, &calendar_features(now))?;         // função da app; 1.1
+    let hist = io.grid_power.history(now - 24.h(), now, 15.mins()).await?;   // 96 points
+    let x = Tensor::from_features(&hist, &calendar_features(now))?;         // app function; 1.1
     let y = io.forecast.infer([x]).await?;                                  // 1.1
 
     if y.quality.is_uncertain() {
-        log::warn!("forecast OOD; a usar o plano conservador");
+        log::warn!("forecast OOD; using the conservative plan");
         io.plan.set(Plan::conservative(now));
         return Ok(());
     }
@@ -148,9 +148,9 @@ async fn replan(io: &TaskIo<PeakShaver>) -> Result<()> {
     Ok(())
 }
 
-#[joker::task(on = "soc")]                                           // corre a cada mudança de `soc`
+#[joker::task(on = "soc")]                                           // runs on every change of `soc`
 async fn watch_soc(io: &TaskIo<PeakShaver>, s: Sample<f64>) -> Result<()> {
-    if let Some(&v) = s.good() {                                     // só amostras good
+    if let Some(&v) = s.good() {                                     // good samples only
         if v < 0.05 {
             io.low_soc.emit(LowSoc { soc: v });
         }
@@ -159,19 +159,19 @@ async fn watch_soc(io: &TaskIo<PeakShaver>, s: Sample<f64>) -> Result<()> {
 }
 ```
 
-Gatilhos: `every = "…"`, `on = "porta"` (mudança), `on_event = "porta"`, `at = "cron: 0 */15 * * * *"`, e `startup` (ref/04 §4.3.2). O minuto é `mins()`, e não `min()`, que colidiria com `Ord::min`. Um `s.value` lido sem ver a qualidade trataria um `bad(comm_failure)` como um SOC válido.
+Triggers: `every = "…"`, `on = "port"` (change), `on_event = "port"`, `at = "cron: 0 */15 * * * *"`, and `startup` (ref/04 §4.3.2). The minute is `mins()`, and not `min()`, which would collide with `Ord::min`. An `s.value` read without looking at the quality would treat a `bad(comm_failure)` as a valid SOC.
 
-### 3.4 Partilha entre ciclo e async
+### 3.4 Sharing between cycle and async
 
-| Mecanismo | Direção | Semântica |
+| Mechanism | Direction | Semantics |
 |---|---|---|
-| `Internal<T>` | um só escritor, declarado: `#[internal(writer = "async")]` (omissão) ou `"cycle"` | último valor (slot largo ≤ 64 B), seqlock; o ciclo lê do latch |
-| `Mailbox<T, N>` | `#[mailbox(to = "cycle")]` ou `to = "async"` | fila SPSC limitada (N ≤ 64, mensagens ≤ 256 B); `try_send` nunca bloqueia; as perdas são contadas |
-| eventos (`emit`) | qualquer → qualquer consumidor | fila por consumidor, gravado se declarado |
+| `Internal<T>` | a single writer, declared: `#[internal(writer = "async")]` (default) or `"cycle"` | last value (wide slot ≤ 64 B), seqlock; the cycle reads from the latch |
+| `Mailbox<T, N>` | `#[mailbox(to = "cycle")]` or `to = "async"` | bounded SPSC queue (N ≤ 64, messages ≤ 256 B); `try_send` never blocks; drops are counted |
+| events (`emit`) | any → any consumer | queue per consumer, recorded if declared |
 
-Não há `static mut` partilhado entre instâncias, porque não existe: são memórias lineares diferentes, e um `static` mutável existe duas vezes, uma em cada instância. O SDK não o consegue detetar (um `static` não se distingue de outro), e por isso a regra está na documentação e nos testes: o harness corre sempre as duas instâncias (ref/04 §6).
+There is no `static mut` shared between instances, because it does not exist: they are different linear memories, and a mutable `static` exists twice, once in each instance. The SDK cannot detect it (one `static` cannot be told apart from another), and so the rule lives in the documentation and in the tests: the harness always runs both instances (ref/04 §6).
 
-### 3.5 Ações, streams e escritas agendadas
+### 3.5 Actions, streams and scheduled writes
 
 ```rust
 #[derive(joker::Enum, Clone, Copy, PartialEq, Eq, Debug)]
@@ -185,7 +185,7 @@ pub struct Detections { frame_ts_hw: MonoNanos, items: BoundedVec<Detection, 64>
 
 #[joker::app]
 pub struct Inspector {
-    #[input(event)]                   detections: EventInput<Detections>,   // o tipo vem do genérico
+    #[input(event)]                   detections: EventInput<Detections>,   // the type comes from the generic
     #[input]                          photoeye: Input<bool>,
     #[output]                         ejector: Output<bool>,
     #[action]                         reset_line: Action<(), ()>,
@@ -195,19 +195,19 @@ pub struct Inspector {
 #[joker::task(on_event = "detections")]
 async fn decide(io: &TaskIo<Inspector>, d: Detections) -> Result<()> {
     let bad = d.items.iter().any(|b| b.class == Class::Defect && b.score > 0.6);
-    let t_eject = d.frame_ts_hw + io.travel.get().ms();             // ts monotónico do flanco do trigger
+    let t_eject = d.frame_ts_hw + io.travel.get().ms();             // monotonic ts of the trigger edge
     if bad {
-        io.ejector.write_at(true, t_eject).await?;                   // 1.1; o manifesto define pulse e on_late
+        io.ejector.write_at(true, t_eject).await?;                   // 1.1; the manifest defines pulse and on_late
     }
     Ok(())
 }
 ```
 
-As escritas agendadas (`write_at`, M6) são da 1.1, como os streams e a ML: reservadas com `@unstable` e a feature `unstable-scheduled-writes` (D5 do documento 22; ref/04 §2.9). O exemplo mostra a forma prevista.
+Scheduled writes (`write_at`, M6) are 1.1, like streams and ML: reserved with `@unstable` and the `unstable-scheduled-writes` feature (D5 of document 22; ref/04 §2.9). The example shows the intended form.
 
-### 3.6 Handles de classe (M24)
+### 3.6 Class handles (M24)
 
-Além das portas, uma app pode declarar **equipamentos** tipados, gerados a partir das classes do registo ou definidos na própria app:
+Besides ports, an app may declare typed **equipment**, generated from the classes in the registry or defined in the app itself:
 
 ```rust
 use joker::classes::std::{Led, Button, Pump};
@@ -215,16 +215,16 @@ use joker::classes::std::{Led, Button, Pump};
 #[joker::app(name = "demo", version = "0.1.0")]
 pub struct Demo {
     #[device] led: Led,                                 // led.on(), led.off(), led.toggle()
-    #[device] botao: Button,                            // botao.clicked()? (consulta do núcleo)
-    #[device(requires = ["pressure"])] pumps: Many<Pump, 1, 8>,   // entre 1 e 8 instâncias
+    #[device] botao: Button,                            // botao.clicked()? (core query)
+    #[device(requires = ["pressure"])] pumps: Many<Pump, 1, 8>,   // between 1 and 8 instances
 }
 ```
 
-`Many<C, MIN, MAX>` leva dois parâmetros constantes: a forma `Many<Pump, 1..=8>` não é Rust válido, e o parser falharia antes de a macro a ver (ref/04 §4.8.3). Um `Many` dá `iter()`, `len()`, `healthy()`, `get(nome) -> Option` e `by_name(nome) -> Result`.
+`Many<C, MIN, MAX>` takes two const parameters: the form `Many<Pump, 1..=8>` is not valid Rust, and the parser would fail before the macro saw it (ref/04 §4.8.3). A `Many` gives `iter()`, `len()`, `healthy()`, `get(name) -> Option` and `by_name(name) -> Result`.
 
-Uma app pode também implementar uma classe, com `#[joker::implements(Pump)]`, e oferecer a outras apps um equipamento virtual. Tudo isto compila para portas: o documento 14 tem a definição completa, os casos grandes e os ataques ao desenho.
+An app may also implement a class, with `#[joker::implements(Pump)]`, and offer a virtual piece of equipment to other apps. All of this compiles down to ports: document 14 has the full definition, the large cases and the attacks on the design.
 
-### 3.7 Testes unitários (`joker-test`)
+### 3.7 Unit tests (`joker-test`)
 
 ```rust
 #[cfg(test)]
@@ -242,7 +242,7 @@ mod tests {
             .input("soc", Series::linear(0.30, 0.05, 10.mins()))
             .internal("plan", Plan { target_soc: 0.5, limit_kw: 400.0, valid_until: UtcSeconds::MAX });
 
-        h.run_for(10.mins());                                         // relógio virtual: corre em ms
+        h.run_for(10.mins());                                         // virtual clock: runs in ms
 
         let sp = h.output("battery");
         let soc = h.input_series("soc");
@@ -261,13 +261,13 @@ mod tests {
 }
 ```
 
-O `Harness` corre o componente real (`.wasm`) no wasmtime com o relógio virtual, e não uma versão nativa: o que se testa é o que vai para produção.
+The `Harness` runs the real component (`.wasm`) in wasmtime with the virtual clock, and not a native build: what is tested is what goes to production.
 
 ---
 
-## 4. SDKs de tier 2
+## 4. Tier 2 SDKs
 
-Os SDKs de TypeScript e Python usam o mesmo mundo, a mesma imagem empacotada e o mesmo `joker:meta` do Rust. A API completa, a paridade com o Rust e o empacotamento estão na **ref/05** (pacotes `@joker/sdk` e `joker_sdk`). Os nomes de portas, parâmetros e membros ficam em `snake_case` em todas as linguagens, também em TypeScript (ref/00 §2).
+The TypeScript and Python SDKs use the same world, the same packed image and the same `joker:meta` as Rust. The full API, the parity with Rust and the packaging are in **ref/05** (packages `@joker/sdk` and `joker_sdk`). Port, parameter and member names stay in `snake_case` in every language, TypeScript included (ref/00 §2).
 
 ### 4.1 TypeScript (via ComponentizeJS / jco)
 
@@ -283,7 +283,7 @@ export default app({
 
   cycles: {
     track: cycle("1s", (io) => {
-      const occ = io.occupied.get();          // lança QualityError se não for good
+      const occ = io.occupied.get();          // throws QualityError if not good
       io.setpoint.set(occ ? io.comfort.get() : io.comfort.get() - 3);
     }),
   },
@@ -291,7 +291,7 @@ export default app({
   tasks: {
     report: task.every("1h", async (io) => {
       const hist = await io.zone_temp.history({ last: "24h", step: "15m" });
-      log.info("média diária", { avg: hist.mean() });
+      log.info("daily average", { avg: hist.mean() });
     }),
   },
 });
@@ -310,44 +310,44 @@ class Tank(App):
 
     @cycle("500ms")
     def control(self) -> None:
-        err = self.level.get() - self.target.get()      # a bomba esvazia o tanque
+        err = self.level.get() - self.target.get()      # the pump empties the tank
         self.pump.set(max(0.0, min(100.0, err * 80.0)))
 
     @task.every("10m")
     async def report(self) -> None:
         h = await self.level.history(last="1h", step="1m")
-        log.info("nível", mean=h.mean())                 # média das amostras good
+        log.info("level", mean=h.mean())                 # mean of the good samples
 ```
 
-O estado não vive em `self`, que é uma vista só de leitura (uma atribuição dá `J-E0803`): as duas instâncias não partilham memória, e o estado de ciclo passa por `state=`, `Internal` ou `Mailbox` (ref/05 §10).
+State does not live in `self`, which is a read-only view (an assignment gives `J-E0803`): the two instances do not share memory, and cycle state goes through `state=`, `Internal` or `Mailbox` (ref/05 §10).
 
-### 4.3 Limites de tier 2
+### 4.3 Tier 2 limits
 
-**O tier 2 também corre no ciclo**, com um período mínimo. As pausas de GC acontecem dentro do tick, o `jk bench` mede-as, e a admissão usa o **máximo** medido, e não o p99,9, porque uma cauda de GC fora do p99,9 dava deadlines falhados em campo (D15 do documento 22).
+**Tier 2 also runs in the cycle**, with a minimum period. GC pauses happen inside the tick, `jk bench` measures them, and admission uses the measured **maximum**, and not the p99.9, because a GC tail beyond the p99.9 caused missed deadlines in the field (D15 of document 22).
 
 | | Rust | TypeScript | Python |
 |---|---|---|---|
-| Tamanho do componente | 0,1–2 MB | 8–12 MB (máximo 32 MB) | 15–30 MB (máximo 64 MB) |
-| `memory.max` por omissão (ciclo / async) | 16 / 64 MiB | 64 / 64 MiB | 128 / 128 MiB |
-| Período mínimo de ciclo | 1 ms | **100 ms** (regra: `J-E0854`) | **500 ms** (regra: `J-E0854`) |
-| Admissão de tempo real | p99,9 medido | máximo medido | máximo medido |
-| GC no ciclo | não | sim, dentro do tick | sim, dentro do tick |
-| Tipos e unidades | na compilação | tipos no `tsc`; unidades no `jk build` | tipos no mypy/pyright; unidades no `jk build` |
-| Joker Micro | sim (nativo) | não (`J0720`) | não (`J0720`) |
+| Component size | 0.1–2 MB | 8–12 MB (maximum 32 MB) | 15–30 MB (maximum 64 MB) |
+| Default `memory.max` (cycle / async) | 16 / 64 MiB | 64 / 64 MiB | 128 / 128 MiB |
+| Minimum cycle period | 1 ms | **100 ms** (rule: `J-E0854`) | **500 ms** (rule: `J-E0854`) |
+| Real-time admission | measured p99.9 | measured maximum | measured maximum |
+| GC in the cycle | no | yes, inside the tick | yes, inside the tick |
+| Types and units | at compile time | types in `tsc`; units in `jk build` | types in mypy/pyright; units in `jk build` |
+| Joker Micro | yes (native) | no (`J0720`) | no (`J0720`) |
 
-Os mínimos, os máximos de WCET e de tamanho e as arquiteturas são regras do `jk check`; os tamanhos e os tempos são alvos a medir quando cada SDK existir (TypeScript na Fase 3, Python na 1.2). A tabela completa está na ref/05 §19. Se o async do WASI 0.3 não estiver estável nos toolchains quando o SDK sair, a instância async de tier 2 usa uma variante bloqueante do mundo numa thread `app` (plano B, ref/05 §29 D9). A regra continua: **controlo rápido em Rust**, e TS ou Python para lógica lenta, integrações e protótipos.
-
----
-
-## 5. Apps nativas (escape)
-
-`kind = "native"`: crate Rust compilado **dentro** do `jokerd` através de uma feature, com a mesma API do SDK (`joker::prelude`), mas sem Wasm. Serve para ciclos de 1 kHz com cálculo pesado. Não tem hot-swap nem sandbox, e exige a feature `native-apps` no build da runtime e assinatura com a chave `runtime`. É uma porta de saída, não o caminho normal. O mesmo código compila para o backend nativo do SDK (ref/04 §4.1 e §4.14), que é também o do Joker Micro (contrato `NativeApp`, ref/08 §2.11.5).
+The minimums, the WCET and size maximums and the architectures are `jk check` rules; the sizes and times are targets to measure when each SDK exists (TypeScript in Phase 3, Python in 1.2). The full table is in ref/05 §19. If WASI 0.3 async is not stable in the toolchains when the SDK ships, the tier 2 async instance uses a blocking variant of the world on an `app` thread (plan B, ref/05 §29 D9). The rule stands: **fast control in Rust**, and TS or Python for slow logic, integrations and prototypes.
 
 ---
 
-## 6. Simulação
+## 5. Native apps (escape hatch)
 
-O driver `sim` fornece plantas para `jk dev`, testes de site e CI:
+`kind = "native"`: a Rust crate compiled **into** `jokerd` through a feature, with the same SDK API (`joker::prelude`), but without Wasm. It is meant for 1 kHz cycles with heavy computation. It has no hot swap and no sandbox, and it requires the `native-apps` feature in the runtime build and a signature with the `runtime` key. It is an escape hatch, not the normal path. The same code compiles for the SDK's native backend (ref/04 §4.1 and §4.14), which is also the Joker Micro one (`NativeApp` contract, ref/08 §2.11.5).
+
+---
+
+## 6. Simulation
+
+The `sim` driver provides plants for `jk dev`, site tests and CI:
 
 ```toml
 # sim/tank.sim.toml
@@ -359,33 +359,33 @@ pump      = { type = "f64", unit = "%", direction = "output" }
 inflow    = { type = "f64", unit = "m3/h", gen = { kind = "sine", mean = 2.0, amp = 1.0, period = "10m" } }
 
 [dynamics]
-# nível' = (inflow - k·pump) / área ; integrado pelo sim a cada 10 ms de tempo virtual
+# level' = (inflow - k·pump) / area ; integrated by the sim every 10 ms of virtual time
 level = "integrate((inflow - 0.05 m3/h/% * pump) / 3.2 m2, min = 0 m, max = 3 m)"
 
 [faults]
 "level" = [{ at = "5m", quality = "bad(comm_failure)", for = "20s" }]
 ```
 
-- **Geradores:** `constant`, `step`, `ramp`, `sine`, `square`, `noise`, `walk`, `replay` (CSV ou Parquet).
-- **Dinâmicas:** expressões com `integrate`, `lag(x, tau)` e `delay(x, t)`, suficientes para tanques, térmicas RC, SOC de bateria, rampa de inversor. Os argumentos nomeados (`min =`, `max =`) são uma extensão da linguagem de expressões que só vale em `[dynamics]` (ref/03 §2.4.6).
-- **Plantas em Wasm:** para dinâmicas reais, um componente no mundo `joker:sim/plant` com `step(dt, inputs) -> outputs`, escrito em qualquer linguagem.
-- **Falhas injetadas:** qualidade, atraso, valores congelados, desconexão, saltos de relógio.
-- **Realismo de hardware:** `bounce` (ressalto de contactos), `noise` (ruído de ADC), latência por pedido. Os bugs que só aparecem com hardware real devem aparecer primeiro no simulador.
-- **Painel interativo** (`jk dev --panel`): um sinal com `panel = { kind = "lamp" | "momentary" | "toggle" | "slider" | "gauge", key/keys = … }` aparece no terminal e pode ser mexido com o teclado. Um `momentary` é um impulso de `pulse` (150 ms por omissão) a cada pressão, porque um terminal não dá o soltar da tecla. `[faults] panel = { key = …, toggle = "bad(…)" }` liga e desliga uma falha; `panel` e `"*"` são nomes reservados em `[faults]`.
+- **Generators:** `constant`, `step`, `ramp`, `sine`, `square`, `noise`, `walk`, `replay` (CSV or Parquet).
+- **Dynamics:** expressions with `integrate`, `lag(x, tau)` and `delay(x, t)`, enough for tanks, RC thermal models, battery SOC, inverter ramp. Named arguments (`min =`, `max =`) are an extension of the expression language that is only valid in `[dynamics]` (ref/03 §2.4.6).
+- **Wasm plants:** for real dynamics, a component in the `joker:sim/plant` world with `step(dt, inputs) -> outputs`, written in any language.
+- **Injected faults:** quality, delay, frozen values, disconnection, clock jumps.
+- **Hardware realism:** `bounce` (contact bounce), `noise` (ADC noise), latency per request. Bugs that only show up with real hardware should show up first in the simulator.
+- **Interactive panel** (`jk dev --panel`): a signal with `panel = { kind = "lamp" | "momentary" | "toggle" | "slider" | "gauge", key/keys = … }` appears in the terminal and can be operated with the keyboard. A `momentary` is a `pulse` impulse (150 ms by default) on each press, because a terminal does not report the key release. `[faults] panel = { key = …, toggle = "bad(…)" }` turns a fault on and off; `panel` and `"*"` are reserved names in `[faults]`.
 
-**Cenários** (`sim/scenarios/*.scenario.toml`): ações `[[set]]` (valor ou `series`), `[[press]]` (atalho para um botão momentâneo) e `[[inject]]` (qualidade durante um intervalo); expectativas `[[expect]]` com `at` ou `during` e um de `equals`, `max`/`min`, `toggles`, `toggles_every = "500ms ± 20ms"`, `pattern = "on 100ms, off 100ms, …"`, `outcome`, `quality`, ou `alarm` + `state`. Os literais canónicos são em minúsculas (`"bad(comm_failure)"`, `"clamped_rate"`); as formas da CLI (`Bad(CommFailure)`) são sinónimos exatos. A trilha de estudo (`docs/track/`) usa todos. O formato completo dos modelos, dos cenários e dos casos de conformidade está na ref/03 §2.4–2.6.
+**Scenarios** (`sim/scenarios/*.scenario.toml`): actions `[[set]]` (value or `series`), `[[press]]` (shortcut for a momentary button) and `[[inject]]` (quality during an interval); expectations `[[expect]]` with `at` or `during` and one of `equals`, `max`/`min`, `toggles`, `toggles_every = "500ms ± 20ms"`, `pattern = "on 100ms, off 100ms, …"`, `outcome`, `quality`, or `alarm` + `state`. The canonical literals are lowercase (`"bad(comm_failure)"`, `"clamped_rate"`); the CLI forms (`Bad(CommFailure)`) are exact synonyms. The learning track (`docs/track/`) uses all of them. The full format of the models, the scenarios and the conformance cases is in ref/03 §2.4–2.6.
 
-`jk test` corre os cenários de `sim/` contra o **manifesto completo**, com o núcleo real, o envelope real e relógio virtual. Testa o *site*, e não só a app: "com a frequência a 49,7 Hz, o PCS vai para 0 kW em menos de 1 tick".
+`jk test` runs the scenarios of `sim/` against the **complete manifest**, with the real core, the real envelope and a virtual clock. It tests the *site*, and not just the app: "with the frequency at 49.7 Hz, the PCS goes to 0 kW in less than 1 tick".
 
 ---
 
 ## 7. Replay
 
 ```sh
-jk record --for 2h --out incidente.jktrace          # no dispositivo
-jk replay incidente.jktrace --app peak_shaver@1.4.3 # no portátil, com a versão corrigida
+jk record --for 2h --out incidente.jktrace          # on the device
+jk replay incidente.jktrace --app peak_shaver@1.4.3 # on the laptop, with the fixed version
 ```
 
-Um traço contém o snapshot de entradas de cada tick dos grupos gravados, os resultados das escritas, as saídas de modelos não deterministas (M22), os parâmetros e as gerações de configuração. O replay reexecuta as apps com o mesmo relógio e compara as propostas. `--diff` mostra onde a nova versão diverge.
+A trace contains the input snapshot of every tick of the recorded groups, the write results, the outputs of non-deterministic models (M22), the parameters and the configuration generations. Replay re-executes the apps with the same clock and compares the proposals. `--diff` shows where the new version diverges.
 
-**O estado de partida.** O `jk record` guarda no início do traço o estado de cada app (o blob do `export-state`, o mesmo da troca a quente; ref/04 §4.12) num segmento de estado, e o `jk replay` começa desse estado, e não do zero. Só as apps com estado persistente (`#[joker::state(persist)]`) o exportam; as outras começam do `init`. Os traços extraídos do anel contínuo (`jk trace-dump`) e os reconstruídos do historian (`jk trace-from-history`) não têm esse segmento: o replay começa do `init`, e os primeiros ticks podem divergir do gravado até o estado da app convergir. O formato está no documento 16, §7.
+**The starting state.** `jk record` stores at the start of the trace the state of each app (the `export-state` blob, the same as in the hot swap; ref/04 §4.12) in a state segment, and `jk replay` starts from that state, and not from zero. Only apps with persistent state (`#[joker::state(persist)]`) export it; the others start from `init`. Traces extracted from the continuous ring (`jk trace-dump`) and those rebuilt from the historian (`jk trace-from-history`) do not have that segment: replay starts from `init`, and the first ticks may diverge from the recording until the app's state converges. The format is in document 16, §7.
