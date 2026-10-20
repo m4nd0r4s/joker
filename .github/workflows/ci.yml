@@ -25,6 +25,24 @@ jobs:
       - run: rustup show
       - run: cargo build --target ${{ matrix.target }} -p joker-units -p joker-expr -p joker-core
 
+  conformance:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show
+      - run: >-
+          cargo run --package xtask -- conformance
+          --known-failures xtask/conformance-known-failures.toml
+          --json target/conformance/report.json
+          --markdown target/conformance/report.md
+      - if: always()
+        run: cat target/conformance/report.md >> "$GITHUB_STEP_SUMMARY" || true
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conformance-x86_64
+          path: target/conformance/
+
   deny:
     runs-on: ubuntu-latest
     steps:
