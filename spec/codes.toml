@@ -2736,7 +2736,7 @@ id = "J0240"
 severity = "error"
 message = "`[net.wifi]` inválido: `ssid` vazio ou com mais de 32 B, `country` fora da ISO 3166-1 alfa-2, ou `hostname` fora da gramática"
 doc = "ref/01 §10.2"
-also = ["ref/01 §5.22", "ref/08 §2.17"]
+also = ["ref/01 §5.22"]
 
 [[code]]
 id = "J0241"
@@ -2757,7 +2757,7 @@ id = "J0243"
 severity = "warning"
 message = "a placa não tem motor Wasm para a arquitetura: só apps nativas"
 doc = "ref/01 §10.2"
-also = ["01 §22", "23 §5.2"]
+also = ["01 §22"]
 
 [[code]]
 id = "J0250"
@@ -3044,7 +3044,7 @@ id = "J0381"
 severity = "warning"
 message = "carga de escrita projetada ou medida acima do que o meio de armazenamento da placa (`storage`) aguenta"
 doc = "ref/01 §10.1"
-also = ["ref/03 §2.3.1", "01 §12", "01 §19"]
+also = ["ref/03 §2.3.1", "01 §12"]
 
 [[code]]
 id = "J0401"
@@ -3279,7 +3279,7 @@ id = "J0650"
 severity = "error"
 message = "membro de classe ligado a um nome que não é uma instância"
 doc = "03 §15"
-also = ["ref/01 §5.13", "ref/03 §2.2.14", "ref/07 §8.3"]
+also = ["ref/01 §5.13", "ref/07 §8.3"]
 
 [[code]]
 id = "J0651"
@@ -3293,7 +3293,7 @@ id = "J0652"
 severity = "error"
 message = "instância ligada a um membro de classe sem as capacidades que o membro exige (`@requires`)"
 doc = "03 §15"
-also = ["ref/01 §5.13", "17 §3.2"]
+also = ["ref/01 §5.13"]
 
 [[code]]
 id = "J0653"
