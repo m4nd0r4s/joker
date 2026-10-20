@@ -1,3 +1,7 @@
 # joker-expr
 
-The manifest expression language (docs/16 §4): lexer, parser with spans, type and unit checking, bytecode and an allocation-free stack VM. `no_std`.
+The expression language of the manifest (docs/02 §10, docs/16 §3.2 and §4, ADR 0034). `no_std`, no allocation.
+
+- [`parse`]: lexer and recursive-descent parser into a fixed-capacity [`ast::Ast`], with spans.
+- [`check`]: name resolution against an [`Env`] (the registry), type and unit checking, unit alignment (W to kW, °C to K), selector expansion.
+- [`Diagnostic`]: every error carries a span and a registry code (`J0108`, `J0109`, `J0149`, `J0152`–`J0155`, `J0158`, `J0301`–`J0307`), and renders in rustc style.
