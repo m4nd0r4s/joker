@@ -3,9 +3,9 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use super::exec::Unguarded;
 use super::report::{Report, Status};
 use super::{Known, run_file};
+use crate::guard::NoAlloc;
 
 const PATH: &str = "conformance/envelope/rate.conformance.toml";
 
@@ -42,7 +42,7 @@ expect = [
 "#;
 
 fn suite(text: &str) -> super::report::SuiteReport {
-    run_file(Path::new(PATH), text, &[], &Unguarded)
+    run_file(Path::new(PATH), text, &[], &NoAlloc)
 }
 
 fn statuses(text: &str) -> Vec<Status> {
@@ -146,7 +146,7 @@ fn the_file_type_comes_from_the_suffix_and_the_suite_table() {
         Path::new("conformance/envelope/rate.toml"),
         DOCS16_EXAMPLE,
         &[],
-        &Unguarded,
+        &NoAlloc,
     );
     assert_eq!(report.diagnostics[0].code, "J0803");
     let no_suite = DOCS16_EXAMPLE.replace("[suite]", "[x_suite]");
@@ -161,7 +161,7 @@ fn kind_must_match_the_location() {
         Path::new("conformance/drivers/rate.conformance.toml"),
         DOCS16_EXAMPLE,
         &[],
-        &Unguarded,
+        &NoAlloc,
     );
     assert_eq!(driver.diagnostics[0].code, "J0845");
 }

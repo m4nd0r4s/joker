@@ -6,12 +6,13 @@
 extern crate alloc;
 
 mod conformance;
+mod guard;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 use conformance::Options;
-use conformance::exec::Unguarded;
+use guard::NoAlloc;
 
 const USAGE: &str = "usage: cargo xtask <task>
 
@@ -44,7 +45,7 @@ fn conformance(args: &[String]) -> Result<bool, String> {
             path => options.paths.push(PathBuf::from(path)),
         }
     }
-    conformance::run(&options, &Unguarded)
+    conformance::run(&options, &NoAlloc)
 }
 
 fn main() -> ExitCode {

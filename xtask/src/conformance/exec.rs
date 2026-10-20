@@ -69,20 +69,16 @@ pub struct Timeline {
     pub ticks: Vec<TickRecord>,
 }
 
-/// Runs code that must not allocate. The default is the identity; a host
-/// can install a guard (`--features no-alloc-guard`).
+/// Runs code that must not allocate: the core part of every tick. A host
+/// installs a guard that counts allocator calls (the `xtask` binary always
+/// does); a firmware may run the identity.
 pub trait TickGuard {
     /// Runs `f` inside the guard.
     fn run<R>(&self, f: impl FnOnce() -> R) -> R;
-}
 
-/// No guard.
-#[derive(Copy, Clone, Debug, Default)]
-pub struct Unguarded;
-
-impl TickGuard for Unguarded {
-    fn run<R>(&self, f: impl FnOnce() -> R) -> R {
-        f()
+    /// Allocator calls seen inside guarded code on this thread so far.
+    fn violations(&self) -> u32 {
+        0
     }
 }
 

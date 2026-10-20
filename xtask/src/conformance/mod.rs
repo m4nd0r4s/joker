@@ -121,7 +121,19 @@ pub fn run_suite(suite: &Suite, filters: &[String], guard: &impl TickGuard) -> V
             report.status = Status::Error;
             report.diagnostics.clone_from(&case.errors);
         } else {
-            match exec::run(suite, case, guard) {
+            let before = guard.violations();
+            let result = exec::run(suite, case, guard);
+            let allocations = guard.violations().saturating_sub(before);
+            if allocations > 0 {
+                report.diagnostics.push(Diagnostic {
+                    code: "R7",
+                    location: "tick".to_string(),
+                    message: format!(
+                        "the tick path made {allocations} allocator calls (docs/10 R7, AGENTS.md §2 rule 6)"
+                    ),
+                });
+            }
+            match result {
                 Err(e) => {
                     report.status = Status::Error;
                     report.diagnostics.push(Diagnostic {
@@ -133,7 +145,9 @@ pub fn run_suite(suite: &Suite, filters: &[String], guard: &impl TickGuard) -> V
                 Ok(timeline) => {
                     report.digest = Some(eval::sequence_digest(&timeline));
                     report.failures = eval::evaluate(suite, case, &timeline);
-                    if !report.failures.is_empty() {
+                    if allocations > 0 {
+                        report.status = Status::Error;
+                    } else if !report.failures.is_empty() {
                         report.status = Status::Fail;
                     }
                 }
