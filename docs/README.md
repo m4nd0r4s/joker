@@ -1,75 +1,75 @@
-# Joker — documentação de desenho
+# Joker — design documentation
 
-A runtime coringa para dispositivos de edge: o mesmo núcleo em Linux embarcado e em microcontroladores, uma abstração só (o sinal), um envelope de segurança entre cada app e o hardware.
+The wildcard runtime for edge devices: the same core on embedded Linux and on microcontrollers, a single abstraction (the signal), a safety envelope between each app and the hardware.
 
-Estado: **documento de desenho.** Nada disto está implementado. Os números atribuídos a projetos existentes vêm de fontes citadas; os alvos propostos são estimativas a validar.
+Status: **design document.** None of this is implemented. The figures attributed to existing projects come from cited sources; the proposed targets are estimates to validate.
 
 ---
 
-## Índice
+## Index
 
-| Ficheiro | Conteúdo |
+| File | Contents |
 |---|---|
-| `00-overview.md` | A tese, as sete apostas, os sete mecanismos, DX, panorama, glossário |
-| `01-architecture.md` | Camadas, processos e threads, imagem de processo, escalonamento, envelope, árbitro, host Wasm, ML, historian, uplink, API, OTA, segurança, observabilidade, falhas, números |
-| `02-signal-model.md` | Tipos, unidades, qualidade, tempo, caminhos, sinais escalares, em bloco e streams, semântica de leitura e escrita, ações, expressões |
-| `03-manifest.md` | Referência completa de `joker.toml` e `joker.lock` |
-| `04-sdk.md` | O mundo WIT, o SDK Rust, TypeScript e Python, testes, simulação |
-| `05-drivers.md` | Os três tiers de drivers, o trait, planos de leitura, perfis, descoberta, catálogo |
-| `06-ml.md` | O subsistema de ML, o artefacto `.jkm`, pipelines, treino no dispositivo, **análise do Burn** |
-| `07-cli.md` | A CLI `jk` completa |
-| `08-stress-tests.md` | Seis rodadas de estresse em casos de uso reais e o que quebrou |
-| `09-architecture-under-stress.md` | Doze ataques à própria arquitetura: orçamentos, falhas, fugas da abstração, versões, segurança |
-| `10-design-changes.md` | As 26 primitivas que saíram dos documentos 08 e 09 |
-| `11-roadmap.md` | Fases até à v1.0, portas de saída, ponto de decisão |
-| `12-limits.md` | **O que o Joker não faz, e porquê** |
-| `13-implementation-plan.md` | Crates, frentes e as primeiras tarefas da Fase 0 |
-| `14-classes-and-instances.md` | Classes de equipamento (`Led`, `Pump`, `Inverter`), instâncias implícitas, compostas e virtuais, `Many<T>`, implementações ativas, 14 ataques ao desenho |
-| `15-files.md` | Mapa de todos os ficheiros (manifesto, overlays, lock, perfis, placas, classes, simulação, cenários, apps, artefactos), a regra dos nomes `<nome>.<tipo>.toml` (ADR 0026) e o vocabulário placa/dispositivo/perfil/instância/classe |
-| `16-core-semantics.md` | **Normativo para a Fase 0**: regras exatas do árbitro, do envelope, da qualidade, das expressões; catálogo de unidades; aliases; formato do traço; esquema dos casos de conformidade; registo de códigos |
-| `17-jkc.md` | A IDL de classes `.jkc`: declarações, `method` vs `action`, gramática, execução, adaptadores, geração, versões |
-| `18-v1-readiness.md` | A rodada de prontidão: ataques de ponta a ponta, o que mudou, o veredicto sobre fechar a v1 e começar a implementar |
-| `19-joker-micro.md` | **O Joker em microcontroladores**: núcleo `no_std`, modos firmware, biblioteca C e crate, Joker Link, coprocessador, 10 casos de estresse |
-| `20-family-and-deck.md` | A família (Joker, Micro, Hub, Deck, Studio), os princípios local-first e o Joker Deck |
-| `21-from-v1-to-v2.md` | **Depois da 1.0**: as versões 1.1 a 1.5 (LTS) por tema, a v2 (o site como um sistema), as regras de compatibilidade e o estresse do plano |
-| `22-api-round.md` | **A rodada da API**: o mapa das interfaces, um valor e uma escrita de ponta a ponta, as 23 decisões transversais, estresse entre superfícies, o que isto pede à Fase 0 |
-| `23-development-bench.md` | **A bancada atual**: Raspberry Pi 3 B+, Pi Zero W e ESP32, sem comprar nada; papéis, ligações, firmware de bancada, manifestos, perfis de placa, o que se valida em cada fase e o que fica por provar |
-| `24-audience-and-uses.md` | **Para quem é o Joker**: o comprador, quem trabalha com ele todos os dias, o canal, o público generalista, a primeira hora e a primeira semana de cada um, e oito propostas (placa inteira como dispositivo, firmware expansor, apps externas, painel de leitura, catálogo do dia 1, OCPP, classes `std/`, ponte para o Home Assistant) |
-| `25-lessons-from-the-rust-embedded-ecosystem.md` | O que aprender com PAC, HAL, BSP, `embedded-hal`, Embassy, `esp-hal`, `probe-rs`, `defmt`, Tock, Hubris e Zephyr: o que adotar, o que não, e os riscos de dependência |
-| `26-final-review.md` | **A revisão final**: auditoria, lições do ecossistema, 12 casos de estresse, o âmbito contra a equipa (ADR 0028), a primeira fatia vertical (M0), funcionalidades candidatas, a fronteira da proteção de dados e o veredicto de arranque |
-| `ref/` | **Referências normativas de todas as interfaces** (ADR 0023): `00` convenções · `01` manifesto · `02` lock, nó, cliente, segredos · `03` perfis, placas, simulação, cenários, conformidade · `04` WIT e SDK Rust · `05` SDKs Python e TypeScript, clientes · `06` drivers N/W/X · `07` Joker Link · `08` ABI C do Joker Micro · `09` API HTTP · `10` protocolo do agente |
-| `proposals/` | Propostas e o seu raciocínio; **não normativas** (a da IDL foi incorporada no 17) |
-| `adr/` | Registos de decisão de arquitetura |
+| `00-overview.md` | The thesis, the seven bets, the seven mechanisms, DX, landscape, glossary |
+| `01-architecture.md` | Layers, processes and threads, process image, scheduling, envelope, arbiter, Wasm host, ML, historian, uplink, API, OTA, security, observability, failures, figures |
+| `02-signal-model.md` | Types, units, quality, time, paths, scalar signals, block signals and streams, read and write semantics, actions, expressions |
+| `03-manifest.md` | Complete reference of `joker.toml` and `joker.lock` |
+| `04-sdk.md` | The WIT world, the Rust, TypeScript and Python SDK, tests, simulation |
+| `05-drivers.md` | The three driver tiers, the trait, read plans, profiles, discovery, catalog |
+| `06-ml.md` | The ML subsystem, the `.jkm` artifact, pipelines, on-device training, **analysis of Burn** |
+| `07-cli.md` | The complete `jk` CLI |
+| `08-stress-tests.md` | Six stress rounds on real use cases and what broke |
+| `09-architecture-under-stress.md` | Twelve attacks on the architecture itself: budgets, failures, abstraction leaks, versions, security |
+| `10-design-changes.md` | The 26 primitives that came out of documents 08 and 09 |
+| `11-roadmap.md` | Phases up to v1.0, exit gates, decision point |
+| `12-limits.md` | **What Joker does not do, and why** |
+| `13-implementation-plan.md` | Crates, fronts and the first tasks of Phase 0 |
+| `14-classes-and-instances.md` | Equipment classes (`Led`, `Pump`, `Inverter`), implicit, composite and virtual instances, `Many<T>`, active implementations, 14 attacks on the design |
+| `15-files.md` | Map of all the files (manifest, overlays, lock, profiles, boards, classes, simulation, scenarios, apps, artifacts), the `<name>.<type>.toml` naming rule (ADR 0026) and the board/device/profile/instance/class vocabulary |
+| `16-core-semantics.md` | **Normative for Phase 0**: exact rules of the arbiter, the envelope, quality, expressions; unit catalog; aliases; trace format; schema of the conformance cases; code registry |
+| `17-jkc.md` | The `.jkc` class IDL: declarations, `method` vs `action`, grammar, execution, adapters, generation, versions |
+| `18-v1-readiness.md` | The readiness round: end-to-end attacks, what changed, the verdict on closing v1 and starting to implement |
+| `19-joker-micro.md` | **Joker on microcontrollers**: `no_std` core, firmware, C library and crate modes, Joker Link, coprocessor, 10 stress cases |
+| `20-family-and-deck.md` | The family (Joker, Micro, Hub, Deck, Studio), the local-first principles and Joker Deck |
+| `21-from-v1-to-v2.md` | **After 1.0**: versions 1.1 to 1.5 (LTS) by theme, v2 (the site as a system), the compatibility rules and the stress of the plan |
+| `22-api-round.md` | **The API round**: the map of the interfaces, a value and a write end to end, the 23 cross-cutting decisions, stress across surfaces, what this asks of Phase 0 |
+| `23-development-bench.md` | **The current bench**: Raspberry Pi 3 B+, Pi Zero W and ESP32, without buying anything; roles, wiring, bench firmware, manifests, board profiles, what is validated in each phase and what remains to be proven |
+| `24-audience-and-uses.md` | **Who Joker is for**: the buyer, whoever works with it every day, the channel, the general audience, the first hour and the first week of each, and eight proposals (whole board as a device, expander firmware, external apps, read-only dashboard, day-1 catalog, OCPP, `std/` classes, bridge to Home Assistant) |
+| `25-lessons-from-the-rust-embedded-ecosystem.md` | What to learn from PAC, HAL, BSP, `embedded-hal`, Embassy, `esp-hal`, `probe-rs`, `defmt`, Tock, Hubris and Zephyr: what to adopt, what not to, and the dependency risks |
+| `26-final-review.md` | **The final review**: audit, lessons from the ecosystem, 12 stress cases, the scope against the team (ADR 0028), the first vertical slice (M0), candidate features, the data protection boundary and the verdict on starting |
+| `ref/` | **Normative references of all the interfaces** (ADR 0023): `00` conventions · `01` manifest · `02` lock, node, client, secrets · `03` profiles, boards, simulation, scenarios, conformance · `04` WIT and Rust SDK · `05` Python and TypeScript SDKs, clients · `06` N/W/X drivers · `07` Joker Link · `08` Joker Micro C ABI · `09` HTTP API · `10` agent protocol |
+| `proposals/` | Proposals and their reasoning; **not normative** (the IDL one was incorporated into 17) |
+| `adr/` | Architecture decision records |
 | `GLOSSARY.md` | English term for every domain word, translation style, and the file-name map (ADR 0029) |
-| `examples/` | Percurso guiado e três projetos completos |
-| `track/` | **Trilha de estudo** em 11 partes e 4 módulos, sobre a bancada do documento 23 (portátil, Pi 3 B+, Pi Zero W, ESP32; nada se compra): sinais e o nó Linux (o LED `ACT`, a temperatura do CPU, o ESP32 por Modbus RTU e TCP, falhas e replay, trocar de placa), classes (as da `std/` e a tua), o Joker Micro no ESP32 (Joker Link em série e por Wi-Fi, uma app no MCU) e a frota (`prod`, segredos, o Deck e um rollout em ondas) |
+| `examples/` | Guided walkthrough and three complete projects |
+| `track/` | **Learning track** in 11 parts and 4 modules, on the bench of document 23 (laptop, Pi 3 B+, Pi Zero W, ESP32; nothing is bought): signals and the Linux node (the `ACT` LED, the CPU temperature, the ESP32 over Modbus RTU and TCP, faults and replay, switching boards), classes (those of `std/` and your own), Joker Micro on the ESP32 (Joker Link over serial and over Wi-Fi, an app on the MCU) and the fleet (`prod`, secrets, the Deck and a rollout in waves) |
 
 ---
 
-## Precedência (v1)
+## Precedence (v1)
 
-Quando dois documentos divergem, vale, por esta ordem: **16** e **ref/00** (semântica do núcleo e representação) → **17** (`.jkc`) → **ref/01–ref/10** (referências das interfaces, com os ficheiros de `wit/` e `spec/`) → **01–05, 14, 19** (normativos por área, que explicam) → **20** (princípios e contratos da família) → **06–07, 15** → ADRs → **08–13, 18, 21, 22, 24–26** (análise e planeamento) → **examples/**, **track/** e **proposals/** (ilustrativos). Um exemplo que contradiga um normativo é um bug no exemplo.
+When two documents diverge, the following prevail, in this order: **16** and **ref/00** (core semantics and representation) → **17** (`.jkc`) → **ref/01–ref/10** (interface references, with the files of `wit/` and `spec/`) → **01–05, 14, 19** (normative per area, which explain) → **20** (principles and contracts of the family) → **06–07, 15** → ADRs → **08–13, 18, 21, 22, 24–26** (analysis and planning) → **examples/**, **track/** and **proposals/** (illustrative). An example that contradicts a normative document is a bug in the example.
 
-## Por onde começar
+## Where to start
 
-**Se tens 10 minutos:** `00-overview.md` e depois `12-limits.md`.
+**If you have 10 minutes:** `00-overview.md` and then `12-limits.md`.
 
-**Se vais decidir se isto se constrói:** `08-stress-tests.md` e `09-architecture-under-stress.md`. É onde o desenho é atacado em vez de defendido.
+**If you are going to decide whether this gets built:** `08-stress-tests.md` and `09-architecture-under-stress.md`. That is where the design is attacked instead of defended.
 
-**Se vais implementar:** `01` → `02` → `09` → `04` para perceber, depois `22` e a referência da tua frente em `ref/`, que é o que se implementa. As ADRs quando discordares de alguma coisa.
+**If you are going to implement:** `01` → `02` → `09` → `04` to understand, then `22` and the reference of your front in `ref/`, which is what gets implemented. The ADRs when you disagree with something.
 
-**Se estás a aprender:** `track/README.md`, parte a parte, com a bancada do documento 23: um Raspberry Pi 3 B+, um Pi Zero W, um ESP32 e o portátil, sem breadboard nem componentes. A parte 1 corre só no portátil, no simulador.
+**If you are learning:** `track/README.md`, part by part, with the bench of document 23: a Raspberry Pi 3 B+, a Pi Zero W, an ESP32 and the laptop, with no breadboard or components. Part 1 runs on the laptop only, in the simulator.
 
-**Se vais escrever apps:** `examples/00-first-project.md`, depois `02` e `04`.
+**If you are going to write apps:** `examples/00-first-project.md`, then `02` and `04`.
 
-**Se vais pôr ML a atuar:** `06-ml.md`, a rodada 6 do `08` e a ADR 0012.
+**If you are going to have ML actuate:** `06-ml.md`, round 6 of `08` and ADR 0012.
 
 ---
 
-## Em três frases
+## In three sentences
 
-A app nunca toca no mundo: lê um snapshot consistente de sinais e propõe escritas, que um envelope nativo (gama, taxa, interlocks, lease, estado seguro) aceita, limita ou rejeita antes de chegarem ao driver.
+The app never touches the world: it reads a consistent snapshot of signals and proposes writes, which a native envelope (range, rate, interlocks, lease, safe state) accepts, clamps or rejects before they reach the driver.
 
-O controlo corre num domínio de ciclo de tempo real, sem alocação nem bloqueio. ML, rede e historian correm num domínio assíncrono separado, que nunca o pode atrasar, e a telemetria perde amostras contadas em vez de travar o controlo.
+Control runs in a real-time cycle domain, without allocation or blocking. ML, networking and the historian run in a separate async domain, which can never delay it, and telemetry drops counted samples instead of stalling control.
 
-Como o relógio é um input e todo o I/O passa pela imagem de processo, qualquer execução gravada no campo pode ser reproduzida bit a bit num portátil, e qualquer versão nova pode correr primeiro em modo sombra.
+Because the clock is an input and all I/O goes through the process image, any execution recorded in the field can be replayed bit for bit on a laptop, and any new version can run first in shadow mode.
