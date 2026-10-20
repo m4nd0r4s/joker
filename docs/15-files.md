@@ -1,173 +1,173 @@
-# 15 — Mapa de ficheiros e vocabulário
+# 15 — File map and vocabulary
 
-Um índice de todos os ficheiros que um projeto Joker tem, quem os escreve, quando e onde estão definidos. A coluna "Definido em" aponta para o documento que explica e para a referência de `docs/ref/` que fecha o formato. E, antes disso, o vocabulário que costuma confundir: "dispositivo" quer dizer uma coisa precisa, e não é nem a placa nem a classe.
+An index of every file a Joker project has, who writes it, when, and where it is defined. The "Defined in" column points to the document that explains it and to the reference in `docs/ref/` that closes the format. And, before that, the vocabulary that tends to confuse: "device" means one precise thing, and it is neither the board nor the class.
 
 ---
 
-## 1. Vocabulário: placa, dispositivo, perfil, instância, classe
+## 1. Vocabulary: board, device, profile, instance, class
 
-Na trilha há quatro "coisas físicas" diferentes, e cada uma tem o seu nome:
+In the track there are four different "physical things", and each has its own name:
 
-| Termo | O que é | Exemplo na trilha | Onde se declara |
+| Term | What it is | Example in the track | Where it is declared |
 |---|---|---|---|
-| **Placa** (*board*) | o modelo de computador onde o Joker corre | o Raspberry Pi 3 B+ | `[target] board = "rpi3b-plus@1"` no manifesto; descrita por um **perfil de placa** |
-| **Nó** (*node*) | uma placa concreta com `jokerd`, identificada e registada | `lab` (`lab.local`), o Pi 3 da bancada | `jk node enroll`; escolhido com `--node` na CLI |
-| **Barramento** (*bus*) | um meio de comunicação partilhado | a porta série da ponte USB do ESP32 (`[buses.esp32]`) | `[buses.<nome>]` no manifesto |
-| **Dispositivo** (*device*) | **uma coisa com que o Joker fala**, através de um driver | o `pi` (os LEDs e a temperatura, pelo `sysfs`), o `esp` (o ESP32 em Modbus RTU, unidade 1) | `[devices.<nome>]` no manifesto |
-| **Perfil** (*profile*) | a descrição de um **modelo** de dispositivo: registos, escalas, unidades, fallback | `local/bench-esp32@1` | um ficheiro por modelo, em `profiles/` ou no registo |
-| **Sinal** | uma grandeza de um dispositivo (ou calculada) | `pi.cpu_temp`, `esp.led` | no perfil, no modelo de simulação ou no manifesto |
-| **Classe** | um **tipo** de equipamento, para os programas | `temp_sensor@1`, `led@1` | um ficheiro por classe, em `classes/` ou no registo |
-| **Instância** | um equipamento concreto que cumpre uma classe | `cpu` (um `temp_sensor@1`), `led_pi`, `sinal` (uma `status_light@1` virtual) | implícita (perfil), no manifesto (`[instances.*]`) ou virtual (app) |
+| **Board** | the computer model Joker runs on | the Raspberry Pi 3 B+ | `[target] board = "rpi3b-plus@1"` in the manifest; described by a **board profile** |
+| **Node** | a concrete board with `jokerd`, identified and registered | `lab` (`lab.local`), the Pi 3 on the bench | `jk node enroll`; chosen with `--node` in the CLI |
+| **Bus** | a shared communication medium | the serial port of the ESP32's USB bridge (`[buses.esp32]`) | `[buses.<name>]` in the manifest |
+| **Device** | **a thing Joker talks to**, through a driver | the `pi` (the LEDs and the temperature, through `sysfs`), the `esp` (the ESP32 over Modbus RTU, unit 1) | `[devices.<name>]` in the manifest |
+| **Profile** | the description of a device **model**: registers, scales, units, fallback | `local/bench-esp32@1` | one file per model, in `profiles/` or in the registry |
+| **Signal** | a quantity of a device (or computed) | `pi.cpu_temp`, `esp.led` | in the profile, in the simulation model or in the manifest |
+| **Class** | a **type** of equipment, for programs | `temp_sensor@1`, `led@1` | one file per class, in `classes/` or in the registry |
+| **Instance** | a concrete piece of equipment that fulfills a class | `cpu` (a `temp_sensor@1`), `led_pi`, `sinal` (a virtual `status_light@1`) | implicit (profile), in the manifest (`[instances.*]`) or virtual (app) |
 
-Duas relações que é preciso ter claras:
+Two relations that need to be clear:
 
-- **Dispositivo ≠ instância.** O dispositivo é *com quem se fala* (endereço, driver, protocolo). A instância é *o que aquilo é para o programa*. Às vezes coincidem: o ESP32 da trilha é o dispositivo `esp` **e**, pelo perfil, a instância implícita `esp` (um `std/led@1`, um `std/button@1` e um `std/analog_in@1`). Outras vezes não: o LED `ACT` é um sinal do dispositivo `pi` (o `sysfs`), e a instância `led_pi` foi composta no manifesto (trilha, parte 7). Uma bomba real é uma instância feita de sinais de três dispositivos.
-- **Não há um ficheiro por dispositivo.** Os dispositivos são secções do manifesto. Os ficheiros são por **modelo**: um perfil serve todos os dispositivos daquele modelo (dez medidores iguais = um perfil), e um perfil de placa serve todas as placas daquele modelo.
+- **Device ≠ instance.** The device is *who you talk to* (address, driver, protocol). The instance is *what that thing is for the program*. Sometimes they coincide: the track's ESP32 is the device `esp` **and**, through the profile, the implicit instance `esp` (a `std/led@1`, a `std/button@1` and a `std/analog_in@1`). Other times they do not: the `ACT` LED is a signal of the device `pi` (`sysfs`), and the instance `led_pi` was composed in the manifest (track, part 7). A real pump is an instance made of signals from three devices.
+- **There is no file per device.** Devices are sections of the manifest. Files are per **model**: one profile serves every device of that model (ten identical meters = one profile), and one board profile serves every board of that model.
 
 ---
 
-## 2. Os ficheiros de um projeto
+## 2. The files of a project
 
-**O tipo está no nome** (ADR 0026). Cada ficheiro TOML escreve-se `<nome>.<tipo>.toml` (`.profile.toml`, `.board.toml`, `.sim.toml`, `.scenario.toml`, `.conformance.toml`, `.fixture.toml`, `.driver.toml`, `.package.toml`); as camadas do manifesto chamam-se `joker.toml` ou `joker.<variante>.toml`, em qualquer pasta, e os locks `joker.lock` ou `joker.<variante>.lock`. O conteúdo tem de bater com o sufixo (`J0803`, ref/03 §2.1.6). Os ficheiros de configuração da `jk`, do nó e do Deck têm nomes fixos (`config.toml`, `node.toml`, `deck.toml`, `fleet.toml`). A tabela completa está no ref/00 §2.
+**The type is in the name** (ADR 0026). Every TOML file is written `<name>.<type>.toml` (`.profile.toml`, `.board.toml`, `.sim.toml`, `.scenario.toml`, `.conformance.toml`, `.fixture.toml`, `.driver.toml`, `.package.toml`); the manifest layers are called `joker.toml` or `joker.<variant>.toml`, in any directory, and the locks `joker.lock` or `joker.<variant>.lock`. The content must match the suffix (`J0803`, ref/03 §2.1.6). The configuration files of `jk`, of the node and of the Deck have fixed names (`config.toml`, `node.toml`, `deck.toml`, `fleet.toml`). The complete table is in ref/00 §2.
 
-### 2.1 Escritos por pessoas
+### 2.1 Written by people
 
-| Ficheiro | Formato | O que descreve | Quem escreve | Quando se mexe | Definido em |
+| File | Format | What it describes | Who writes it | When it changes | Defined in |
 |---|---|---|---|---|---|
-| `joker.toml` | TOML | **o site**: placa, barramentos, dispositivos, saídas e envelopes, ciclos, apps e ligações, instâncias, modelos, pipelines, `calc`, alarmes, telemetria, pontes, segurança | integrador / engenheiro do site | sempre; é o ficheiro principal | 03, ref/01 |
-| overlays `joker.<variante>.toml` (`joker.sim.toml`, `joker.rpi.toml`, `templates/joker.bess-v2.toml`, `sites/lisboa-01/joker.verao.toml`) | TOML, com `extends` | variações do manifesto: simulador vs hardware, template partilhado vs site concreto; escolhem-se com `--env <variante>` | integrador | quando o mesmo sistema tem mais do que um ambiente ou site | 03 §2, ref/01 §7 |
-| `profiles/<fabricante>/<modelo>@<major>.profile.toml` | TOML | um **modelo de dispositivo**: registos, tipos, escalas, unidades, limites, enums, coerência, fallback, ações, `implements` | integrador de hardware | quando aparece um equipamento que ainda não está no registo | 05 §6, ref/03 §2.2 |
-| `boards/<placa>.board.toml` | TOML | um **modelo de placa**, com `version`: núcleos recomendados, watchdog, IO fixo (com `fallback`), portas série, aceleradores; num MCU, flash, FPU, capacidades e sonda | quem suporta uma placa nova (raro) | quase nunca: vêm do registo | 05 §11, ref/03 §2.3 |
-| `classes/<pacote>/<nome>.jkc` | `.jkc` (documento 17) | uma **classe**: membros, capacidades, métodos, ações, eventos, consultas, saúde | autor de abstrações | quando se cria um tipo de equipamento novo | 17, ref/03 §2.7 |
-| `classes/<pacote>/<pacote>.package.toml` | TOML | um **pacote de classes**: nome, licença, autores, dependências (o pacote `local` não precisa dele) | autor de abstrações | quando se publica um pacote | 17 §3.2, ref/03 §2.7 |
-| `classes/<pacote>/<nome>.conformance.toml` | TOML | os testes que qualquer implementação da classe tem de passar (o esquema único de conformidade) | autor de abstrações | com a classe | 14 §7.3, ref/03 §2.6 |
-| `classes/<pacote>/<nome>.sim.toml` | TOML | o **simulador** de uma classe, para correr a conformidade e as apps sem hardware | autor de abstrações | opcional, com a classe | ref/03 §2.4.11 |
-| `sim/<modelo>.sim.toml` | TOML | um **dispositivo simulado**: sinais, geradores, dinâmica, falhas, painel, `implements` | quem desenvolve | enquanto não há hardware, e para testes | 04 §6, ref/03 §2.4 |
-| `sim/scenarios/<nome>.scenario.toml` | TOML | um **cenário de teste do site**: ações no tempo e expectativas | quem desenvolve | com cada comportamento novo | 04 §6, ref/03 §2.5 |
-| `apps/<app>/` (`Cargo.toml` + `src/`, ou `package.json`, ou `pyproject.toml`) | código | uma **app**; as portas, as tarefas e os parâmetros são declarados no código, sem `app.toml` | programador | sempre | 04, ref/04, ref/05 |
-| `keys/*.pub` | chaves públicas | chaves que o projeto usa: âncoras e chaves por papel (`runtime`, `config`, `apps`, `drivers`, `secrets`…); o manifesto só **restringe** o bundle de confiança do nó | responsável de segurança | no início, e em rotações | 03 §13, ref/02 §2.5 |
-| `.joker/config.toml` | TOML | configuração local do cliente para o projeto: nó e manifesto (ou variante) por omissão (não versionado; o do utilizador está em `~/.config/joker/config.toml`) | quem desenvolve | raramente | ref/02 §2.3 |
-| `.taplo.toml` | TOML | associa cada sufixo (`*.profile.toml`, `joker*.toml`…) ao esquema JSON do seu tipo, para completação e erros no editor | `jk init`, `jk new`, `jk migrate` (versionado) | quase nunca | ref/03 §2.1.6 |
+| `joker.toml` | TOML | **the site**: board, buses, devices, outputs and envelopes, cycles, apps and bindings, instances, models, pipelines, `calc`, alarms, telemetry, bridges, security | integrator / site engineer | always; it is the main file | 03, ref/01 |
+| overlays `joker.<variant>.toml` (`joker.sim.toml`, `joker.rpi.toml`, `templates/joker.bess-v2.toml`, `sites/lisboa-01/joker.verao.toml`) | TOML, with `extends` | variations of the manifest: simulator vs hardware, shared template vs concrete site; chosen with `--env <variant>` | integrator | when the same system has more than one environment or site | 03 §2, ref/01 §7 |
+| `profiles/<vendor>/<model>@<major>.profile.toml` | TOML | a **device model**: registers, types, scales, units, limits, enums, coherence, fallback, actions, `implements` | hardware integrator | when a piece of equipment appears that is not yet in the registry | 05 §6, ref/03 §2.2 |
+| `boards/<board>.board.toml` | TOML | a **board model**, with `version`: recommended cores, watchdog, fixed IO (with `fallback`), serial ports, accelerators; on an MCU, flash, FPU, capabilities and probe | whoever supports a new board (rare) | almost never: they come from the registry | 05 §11, ref/03 §2.3 |
+| `classes/<package>/<name>.jkc` | `.jkc` (document 17) | a **class**: members, capabilities, methods, actions, events, queries, health | abstraction author | when a new equipment type is created | 17, ref/03 §2.7 |
+| `classes/<package>/<package>.package.toml` | TOML | a **class package**: name, license, authors, dependencies (the `local` package does not need it) | abstraction author | when a package is published | 17 §3.2, ref/03 §2.7 |
+| `classes/<package>/<name>.conformance.toml` | TOML | the tests that any implementation of the class must pass (the single conformance schema) | abstraction author | with the class | 14 §7.3, ref/03 §2.6 |
+| `classes/<package>/<name>.sim.toml` | TOML | the **simulator** of a class, to run conformance and apps without hardware | abstraction author | optional, with the class | ref/03 §2.4.11 |
+| `sim/<model>.sim.toml` | TOML | a **simulated device**: signals, generators, dynamics, faults, panel, `implements` | the developer | while there is no hardware, and for tests | 04 §6, ref/03 §2.4 |
+| `sim/scenarios/<name>.scenario.toml` | TOML | a **site test scenario**: actions over time and expectations | the developer | with each new behavior | 04 §6, ref/03 §2.5 |
+| `apps/<app>/` (`Cargo.toml` + `src/`, or `package.json`, or `pyproject.toml`) | code | an **app**; ports, tasks and parameters are declared in the code, without `app.toml` | programmer | always | 04, ref/04, ref/05 |
+| `keys/*.pub` | public keys | keys the project uses: anchors and per-role keys (`runtime`, `config`, `apps`, `drivers`, `secrets`…); the manifest only **restricts** the node's trust bundle | security officer | at the start, and on rotations | 03 §13, ref/02 §2.5 |
+| `.joker/config.toml` | TOML | local client configuration for the project: default node and manifest (or variant) (not version-controlled; the user's one is in `~/.config/joker/config.toml`) | the developer | rarely | ref/02 §2.3 |
+| `.taplo.toml` | TOML | associates each suffix (`*.profile.toml`, `joker*.toml`…) with the JSON schema of its type, for completion and errors in the editor | `jk init`, `jk new`, `jk migrate` (version-controlled) | almost never | ref/03 §2.1.6 |
 
-### 2.2 Gerados, mas versionados
+### 2.2 Generated, but version-controlled
 
-| Ficheiro | Gerado por | O que fixa | Versionar? |
+| File | Generated by | What it pins | Version-control it? |
 |---|---|---|---|
-| `joker.lock` e `joker.<variante>.lock` | `jk lock`, `jk bench`, `jk build` (digests de apps locais) | versões exatas de placas, perfis, classes, apps e drivers; mapas descobertos (SunSpec), firmware, fallbacks verificados, WCET medido, exceções aprovadas (`widen`, `accept_missing_fallback`) | **sim**: é o que torna o site reproduzível e deteta a deriva (ref/02 §2.1) |
-| `secrets.toml.enc` | `jk secret` | os segredos do projeto, cada um cifrado para os nós destinatários e para as pessoas de escrow, assinado e com `rev` | **sim** (ADR 0024): só contém valores cifrados, e é assim que o Deck os distribui sem os ler (ref/02 §2.4) |
+| `joker.lock` and `joker.<variant>.lock` | `jk lock`, `jk bench`, `jk build` (digests of local apps) | exact versions of boards, profiles, classes, apps and drivers; discovered maps (SunSpec), firmware, verified fallbacks, measured WCET, approved exceptions (`widen`, `accept_missing_fallback`) | **yes**: it is what makes the site reproducible and detects drift (ref/02 §2.1) |
+| `secrets.toml.enc` | `jk secret` | the project's secrets, each encrypted for the recipient nodes and for the escrow people, signed and with `rev` | **yes** (ADR 0024): it only contains encrypted values, and that is how the Deck distributes them without reading them (ref/02 §2.4) |
 
-**Um lock por manifesto de entrada**, na mesma pasta: `joker.lock` para o `joker.toml` e `joker.<variante>.lock` para cada overlay de entrada (`joker.rpi.toml` → `joker.rpi.lock`, que é o lock de `jk <comando> --env rpi`; `sites/lisboa-01/joker.toml` → `sites/lisboa-01/joker.lock`). Um overlay usado só através de `extends` (um template) não tem lock (ref/02 §2.1.1).
+**One lock per input manifest**, in the same directory: `joker.lock` for `joker.toml` and `joker.<variant>.lock` for each input overlay (`joker.rpi.toml` → `joker.rpi.lock`, which is the lock of `jk <command> --env rpi`; `sites/lisboa-01/joker.toml` → `sites/lisboa-01/joker.lock`). An overlay used only through `extends` (a template) has no lock (ref/02 §2.1.1).
 
-### 2.3 Artefactos (produzidos, distribuídos, não editados)
+### 2.3 Artifacts (produced, distributed, not edited)
 
-Cada artefacto distribuído tem um tipo de media, e os tipos estão numa só tabela, com o papel de assinatura de cada um: ref/00, §7.1.
+Every distributed artifact has a media type, and the types are in a single table, with the signing role of each one: ref/00 §7.1.
 
-| Artefacto | Produzido por | Conteúdo | Tipo de media | Definido em |
+| Artifact | Produced by | Content | Media type | Defined in |
 |---|---|---|---|---|
-| `*.wasm` | `jk build` | o componente de uma app, com a secção `joker:meta` | `joker.app.v1+wasm` | 04 §2, ref/04 §5 |
-| `*.cwasm` | `jk build --target` ou instalação | o AOT para uma arquitetura | `joker.app.v1+cwasm` | 01 §9 |
-| driver tier W (`*.wasm`) ou tier X (índice multi-plataforma) | build do driver | um driver, com o seu descritor | `joker.driver.v1+wasm`, `joker.driver.v1+tar` | ref/06 §4.7, §5.9 |
-| `*.jktrace` | `jk record`, `jk trace-dump` | um traço reproduzível | `joker.trace.v1` | 16 §7 |
-| firmware do Joker Micro (ELF/UF2/bin) | `jk build --target mcu:…` (`--generic` para o genérico) | runtime + apps + drivers para um MCU | `joker.micro-firmware.v1` | 19 §4, ref/08 §2.12 |
-| `firmware.jkfw` | `jk build --target mcu:… --generic` | descritor do firmware genérico: placa, capacidades, formato e ISA que aceita | (com o firmware) | ref/08 §2.14 |
-| `<site>.jkgen` | `jk build --target mcu:… --generation --firmware <f.jkfw>` | o blob de geração de um MCU, compilado e assinado (papel `config`) | `joker.generation.v1` | 19 §4.1, ref/08 §2.13 |
-| `libjoker_node.a`, `joker_node.h`, `joker_project.h` | `jk build --target mcu:… --lib` | o Joker como biblioteca C: o header fixo da ABI e o header gerado do projeto | — | 19 §4.2, ref/08 §2.2, §2.8 |
-| crate `joker-project` | `jk build --target mcu:… --crate` | a interface tipada do projeto para firmware Rust | — | ref/08 §2.11.4 |
-| `*.contract.json` | `jkc` | a forma canónica de uma classe; vai com cada geração para o nó | `joker.class.contract.v1+json` | 17 §6 |
-| relatório de conformidade | `jk class verify --report`, `jk driver test --report` | o resultado assinado de uma suite, publicado ao lado do artefacto | `joker.conformance-report.v1+json` | ref/03 §2.8, ref/06 §6.5 |
-| geração de um nó Linux | `jk apply` (enviada ao nó) ou `jk publish` (publicada no registo, para o Deck) | manifesto efetivo, lock, contratos e artefactos por digest, assinados pela `jk` com a chave do papel `config`. **O Deck não produz nem assina gerações**: não tem as chaves da organização, calcula o descritor a partir do Git e procura no registo a geração assinada com esse descritor (`J0915` se faltar; documento 20, §4.4.2) | `joker.config.v1+cbor` | ref/10 §2.6, 07 §3 |
-| `*.jkm` | `jk model build` (1.1) | um modelo: `model.toml` (assinatura e guarda), `lineage.toml`, `signature.sig` (COSE_Sign1, ADR 0025), `payload/` | `joker.model.v1+jkm` (reservado) | 06 §2 |
+| `*.wasm` | `jk build` | the component of an app, with the `joker:meta` section | `joker.app.v1+wasm` | 04 §2, ref/04 §5 |
+| `*.cwasm` | `jk build --target` or installation | the AOT for an architecture | `joker.app.v1+cwasm` | 01 §9 |
+| tier W driver (`*.wasm`) or tier X driver (multi-platform index) | driver build | a driver, with its descriptor | `joker.driver.v1+wasm`, `joker.driver.v1+tar` | ref/06 §4.7, §5.9 |
+| `*.jktrace` | `jk record`, `jk trace-dump` | a reproducible trace | `joker.trace.v1` | 16 §7 |
+| Joker Micro firmware (ELF/UF2/bin) | `jk build --target mcu:…` (`--generic` for the generic one) | runtime + apps + drivers for an MCU | `joker.micro-firmware.v1` | 19 §4, ref/08 §2.12 |
+| `firmware.jkfw` | `jk build --target mcu:… --generic` | descriptor of the generic firmware: board, capabilities, format and ISA it accepts | (with the firmware) | ref/08 §2.14 |
+| `<site>.jkgen` | `jk build --target mcu:… --generation --firmware <f.jkfw>` | the generation blob of an MCU, compiled and signed (`config` role) | `joker.generation.v1` | 19 §4.1, ref/08 §2.13 |
+| `libjoker_node.a`, `joker_node.h`, `joker_project.h` | `jk build --target mcu:… --lib` | Joker as a C library: the fixed ABI header and the generated project header | — | 19 §4.2, ref/08 §2.2, §2.8 |
+| crate `joker-project` | `jk build --target mcu:… --crate` | the typed interface of the project for Rust firmware | — | ref/08 §2.11.4 |
+| `*.contract.json` | `jkc` | the canonical form of a class; it goes with each generation to the node | `joker.class.contract.v1+json` | 17 §6 |
+| conformance report | `jk class verify --report`, `jk driver test --report` | the signed result of a suite, published next to the artifact | `joker.conformance-report.v1+json` | ref/03 §2.8, ref/06 §6.5 |
+| generation of a Linux node | `jk apply` (sent to the node) or `jk publish` (published to the registry, for the Deck) | effective manifest, lock, contracts and artifacts by digest, signed by `jk` with the `config` role key. **The Deck neither produces nor signs generations**: it does not have the organization keys; it computes the descriptor from Git and looks up in the registry the generation signed with that descriptor (`J0915` if it is missing; document 20, §4.4.2) | `joker.config.v1+cbor` | ref/10 §2.6, 07 §3 |
+| `*.jkm` | `jk model build` (1.1) | a model: `model.toml` (signature and guard), `lineage.toml`, `signature.sig` (COSE_Sign1, ADR 0025), `payload/` | `joker.model.v1+jkm` (reserved) | 06 §2 |
 
-### 2.4 Segredos
+### 2.4 Secrets
 
-| Ficheiro | O que é | Regra |
+| File | What it is | Rule |
 |---|---|---|
-| `secrets.toml.enc` | segredos (credenciais de brokers, APIs), cada um cifrado com HPKE para a chave KEM de cada nó destinatário e assinado | **versionável** (ADR 0024); o manifesto refere-os por nome (`secret:<nome>`), e as apps por um nome local em `[apps.<app>.secrets]` |
-| ficheiro em claro para `jk secret import` | a entrada de uma importação | **nunca** em git; apaga-se depois de importar |
-| `.joker/secrets.dev.toml` | segredos em claro só para a runtime local do `jk dev` | nunca em git (`.joker/` está no `.gitignore`) |
-| chaves privadas de assinatura e de escrow | em `~/.local/share/joker/keys/`, num HSM ou `pkcs11:` | nunca no projeto (ref/02 §2.5.1) |
+| `secrets.toml.enc` | secrets (broker credentials, APIs), each encrypted with HPKE for the KEM key of each recipient node and signed | **can be version-controlled** (ADR 0024); the manifest refers to them by name (`secret:<name>`), and apps by a local name in `[apps.<app>.secrets]` |
+| plaintext file for `jk secret import` | the input of an import | **never** in git; deleted after importing |
+| `.joker/secrets.dev.toml` | plaintext secrets only for the local runtime of `jk dev` | never in git (`.joker/` is in `.gitignore`) |
+| private signing and escrow keys | in `~/.local/share/joker/keys/`, in an HSM or `pkcs11:` | never in the project (ref/02 §2.5.1) |
 
-### 2.5 No dispositivo
+### 2.5 On the device
 
-**No dispositivo não se editam ficheiros.** Tudo chega por `jk apply` (configuração, artefactos e segredos), por `jk secret push`, pelo Deck (que distribui o que o `jk publish` assinou), ou por `jk node enroll` (identidade). O estado da runtime vive em `/var/lib/joker/` e é gerido pelo `jokerd`. Editar lá à mão é equivalente a um patch não versionado, e o `jk doctor` dá `J0907` se encontrar diferenças.
+**Files are not edited on the device.** Everything arrives through `jk apply` (configuration, artifacts and secrets), through `jk secret push`, through the Deck (which distributes what `jk publish` signed), or through `jk node enroll` (identity). The runtime state lives in `/var/lib/joker/` and is managed by `jokerd`. Editing there by hand is equivalent to a non-version-controlled patch, and `jk doctor` gives `J0907` if it finds differences.
 
-**A exceção é `/etc/joker/node.toml`**, a configuração de arranque do nó: só o que é preciso antes da primeira geração, o que tem de sobreviver a uma geração má (a escuta mínima da API, os administradores mínimos, as âncoras de confiança, a política de modos) e o que é da instalação física. Mesmo este ficheiro **não se edita à mão**: só o `jokerd` o escreve, no enrolamento e na troca de âncoras (`jk node trust set`). A geração só lhe acrescenta, nunca lhe retira (ref/02 §2.2).
+**The exception is `/etc/joker/node.toml`**, the node's startup configuration: only what is needed before the first generation, what must survive a bad generation (the minimal API listener, the minimal administrators, the trust anchors, the mode policy) and what belongs to the physical installation. Even this file **is not edited by hand**: only `jokerd` writes it, at enrollment and on anchor replacement (`jk node trust set`). The generation only adds to it, never removes from it (ref/02 §2.2).
 
-| Onde | O quê |
+| Where | What |
 |---|---|
-| `/etc/joker/` | `node.toml`, `keys/*.pub` (âncoras), `enroll-token` opcional |
-| `/run/joker/` | `api.sock`; `enroll-code` enquanto o nó não tem identidade |
-| `/var/lib/joker/identity/`, `trust/` | certificado e chave do nó, chave KEM, bundle de confiança ativo |
-| `/var/lib/joker/generations/<gen>/` | uma pasta por geração (documento assinado, manifesto efetivo, lock, contratos); `current` e `confirmed` são ligações |
-| `/var/lib/joker/artifacts/`, `aot/` | armazém por conteúdo e AOT |
-| `/var/lib/joker/secrets/` | segredos recebidos, ainda cifrados |
-| `/var/lib/joker/state/`, `kv/`, `store/`, `trace/`, `link/` | trips, alarmes, intenções, `kv` das apps, historian e registo de decisões, anéis de traço, cursores de uplink |
-| `/var/lib/joker/mcu/`, `runtime/a\|b/` | firmware e blobs em espera para os MCUs; slots A/B do `jokerd` |
+| `/etc/joker/` | `node.toml`, `keys/*.pub` (anchors), optional `enroll-token` |
+| `/run/joker/` | `api.sock`; `enroll-code` while the node has no identity |
+| `/var/lib/joker/identity/`, `trust/` | node certificate and key, KEM key, active trust bundle |
+| `/var/lib/joker/generations/<gen>/` | one directory per generation (signed document, effective manifest, lock, contracts); `current` and `confirmed` are links |
+| `/var/lib/joker/artifacts/`, `aot/` | content-addressed store and AOT |
+| `/var/lib/joker/secrets/` | received secrets, still encrypted |
+| `/var/lib/joker/state/`, `kv/`, `store/`, `trace/`, `link/` | trips, alarms, intents, the apps' `kv`, historian and decision log, trace rings, uplink cursors |
+| `/var/lib/joker/mcu/`, `runtime/a\|b/` | firmware and blobs waiting for the MCUs; A/B slots of `jokerd` |
 
-A árvore completa, com dono e permissões de cada entrada, está na ref/02, §2.2.4.
+The complete tree, with the owner and permissions of each entry, is in ref/02 §2.2.4.
 
-### 2.6 No repositório do Joker: `wit/` e `spec/`
+### 2.6 In the Joker repository: `wit/` and `spec/`
 
-Não são ficheiros de um projeto, mas são os que definem as interfaces que um projeto usa. São parte das referências (ADR 0023): se um deles e o texto da referência divergem, é um bug nos dois.
+They are not files of a project, but they are the ones that define the interfaces a project uses. They are part of the references (ADR 0023): if one of them and the text of the reference diverge, it is a bug in both.
 
-| Ficheiro | O que é | Referência |
+| File | What it is | Reference |
 |---|---|---|
-| `wit/joker-runtime.wit` | o mundo das apps (`joker:runtime`) | ref/04 |
-| `wit/joker-driver.wit` | o mundo dos drivers tier W (`joker:driver`) | ref/06 §4 |
-| `wit/joker-sim.wit` | as plantas simuladas em Wasm do driver `sim` | ref/03 §2.4.10 |
-| `spec/cddl/joker-meta.cddl` | a secção `joker:meta` das apps | ref/04 §5 |
-| `spec/cddl/joker-link.cddl` | as mensagens do Joker Link | ref/07 |
-| `spec/cddl/joker-micro.cddl` | o blob `.jkgen` e o descritor `.jkfw` | ref/08 |
-| `spec/cddl/jdp.cddl`, `spec/c/jdp.h` | o protocolo dos drivers tier X | ref/06 §5 |
-| `spec/cddl/agent.cddl` | o protocolo do agente `agent/1` | ref/10 |
-| `spec/cddl/secrets.cddl` | o conjunto de segredos selado para um nó | ref/02 §2.4 |
-| `spec/openapi/joker-api.yaml` | a API HTTP local (OpenAPI 3.1) | ref/09 |
-| `spec/c/joker_node.h`, `spec/c/example/` | a ABI C do Joker Micro e um exemplo com `joker_project.h` | ref/08 |
+| `wit/joker-runtime.wit` | the apps' world (`joker:runtime`) | ref/04 |
+| `wit/joker-driver.wit` | the world of tier W drivers (`joker:driver`) | ref/06 §4 |
+| `wit/joker-sim.wit` | the Wasm simulated plants of the `sim` driver | ref/03 §2.4.10 |
+| `spec/cddl/joker-meta.cddl` | the `joker:meta` section of apps | ref/04 §5 |
+| `spec/cddl/joker-link.cddl` | the Joker Link messages | ref/07 |
+| `spec/cddl/joker-micro.cddl` | the `.jkgen` blob and the `.jkfw` descriptor | ref/08 |
+| `spec/cddl/jdp.cddl`, `spec/c/jdp.h` | the protocol of tier X drivers | ref/06 §5 |
+| `spec/cddl/agent.cddl` | the protocol of the `agent/1` agent | ref/10 |
+| `spec/cddl/secrets.cddl` | the sealed set of secrets for a node | ref/02 §2.4 |
+| `spec/openapi/joker-api.yaml` | the local HTTP API (OpenAPI 3.1) | ref/09 |
+| `spec/c/joker_node.h`, `spec/c/example/` | the C ABI of Joker Micro and an example with `joker_project.h` | ref/08 |
 
 ---
 
-## 3. Quem toca em quê
+## 3. Who touches what
 
-A maioria das pessoas só mexe em três ou quatro destes ficheiros:
+Most people only change three or four of these files:
 
-| Pessoa | Ficheiros |
+| Person | Files |
 |---|---|
-| **Integrador do site** | `joker.toml` e overlays, os locks (via `jk lock`), `secrets.toml.enc` (via `jk secret`), às vezes um perfil |
-| **Integrador de hardware** | `profiles/**`, raramente `boards/**` |
-| **Autor de abstrações** | `classes/**/*.jkc` (definição + conformidade), `apps/<implementação>/` |
-| **Programador de negócio** | `apps/<app>/`, `sim/scenarios/**`, às vezes `sim/*.sim.toml` |
-| **Operador** | nenhum: usa `jk` (write com TTL, alarmes, intenções) |
+| **Site integrator** | `joker.toml` and overlays, the locks (via `jk lock`), `secrets.toml.enc` (via `jk secret`), sometimes a profile |
+| **Hardware integrator** | `profiles/**`, rarely `boards/**` |
+| **Abstraction author** | `classes/**/*.jkc` (definition + conformance), `apps/<implementation>/` |
+| **Business programmer** | `apps/<app>/`, `sim/scenarios/**`, sometimes `sim/*.sim.toml` |
+| **Operator** | none: uses `jk` (write with TTL, alarms, intents) |
 
 ---
 
-## 4. Da pasta vazia ao sistema completo
+## 4. From the empty directory to the complete system
 
-O mesmo mapa aplicado à trilha de estudo (projeto `joker-bancada/`), parte a parte. A lista completa, com o que cada ficheiro é no fim, está no `track/README.md`, "A pasta, no fim da trilha".
+The same map applied to the learning track (project `joker-bancada/`), part by part. The complete list, with what each file is at the end, is in `track/README.md`, "The directory, at the end of the track".
 
-| Parte | Ficheiros novos ou alterados |
+| Part | New or changed files |
 |---|---|
-| 1 | `joker.toml` (comum) e `joker.sim.toml` (overlay) desde o início, `joker.sim.lock`, `sim/pi.sim.toml`, `sim/scenarios/pisca.scenario.toml`, `apps/luz/` (0.1); fora do projeto, `.joker/config.toml` |
-| 2 | `joker.lab.toml` (placa `rpi3b-plus@1`, `[resources]`, o `pi` pelo `sysfs`), `joker.lab.lock`; fora do projeto, `~/org-ca/` e o contexto `lab` em `~/.config/joker/config.toml` |
+| 1 | `joker.toml` (common) and `joker.sim.toml` (overlay) from the start, `joker.sim.lock`, `sim/pi.sim.toml`, `sim/scenarios/pisca.scenario.toml`, `apps/luz/` (0.1); outside the project, `.joker/config.toml` |
+| 2 | `joker.lab.toml` (board `rpi3b-plus@1`, `[resources]`, the `pi` through `sysfs`), `joker.lab.lock`; outside the project, `~/org-ca/` and the `lab` context in `~/.config/joker/config.toml` |
 | 3 | `sim/pi.sim.toml` (`carga`, `cpu_temp`), `joker.toml` (`[calc]`, `[alarms.cpu_quente]`, `[telemetry.record]`), `joker.lab.toml` (`pi.cpu_temp`), `sim/scenarios/aquece.scenario.toml`, `apps/luz/` (0.2) |
-| 4 | `mapa-esp32.csv`, `profiles/local/bench-esp32@1.profile.toml`, `sim/esp.sim.toml`, `joker.sim.toml` e `joker.lab.toml` (`[buses.esp32]` com `dtr`/`rts`, `[devices.esp]`), `joker.toml` (`[outputs."esp.led"]`, debounce), `joker.lab.lock` (perfil, `[fallback]`, `[discovered]`), `sim/scenarios/botao.scenario.toml`, `apps/luz/` (0.3) |
-| 5 | `joker.toml` (`[signals."esp.touch"]`, `calc.toque_nivel`, `[alarms.esp_offline]`), `sim/esp.sim.toml` (tecla de falha), `sim/scenarios/falha_esp.scenario.toml`, `apps/luz/` (0.4 e 0.4.1), `joker.lab.lock` |
-| 6 | `joker.rpi.toml` (o `[devices.pi]` sai do `joker.lab.toml`), `joker.zero.toml`, `joker.zero.lock`, `boards/rpi-zero-w.board.toml`; `joker.lab.toml` passa a estender `joker.rpi.toml` |
-| 7 | `joker.toml` (cinco `[instances.*]` compostas, `bind` da `luz`), `profiles/local/bench-esp32@1.profile.toml` e `sim/esp.sim.toml` (`[implements]`), `apps/luz/` (0.5), os três locks |
-| 8 | `classes/local/status_light.jkc` (+ `status_light.conformance.toml`), `apps/status_light_ctl/`, `joker.toml` (instância virtual `sinal`, as suas saídas, `order` do `main`), `apps/luz/` (0.6), `sim/scenarios/pisca.scenario.toml`, os três locks |
-| 9 | `micro/esp/joker.toml`, `joker.lab-link.toml`, `joker.lab-link.lock`, `secrets.toml.enc` (destinatário `node:esp`) |
-| 10 | `micro/esp/apps/reflexo/`, `micro/esp/joker.lock` (`[wcet]` do chip), `micro/esp/joker.toml` (`[net.wifi]`, `[link]` em UDP), `joker.lab-link.toml`, `secrets.toml.enc` (`wifi_bancada`) |
-| 11 | `keys/*.pub`, `fleet.toml`, `secrets.toml.enc` (`mqtt_bancada`), `joker.toml` (`mode = "prod"`, `[telemetry.uplink]`, `[security]`, `accept_missing_fallback`), `[accepted]` nos locks, `apps/luz/` (0.7 e 0.7.1); fora do projeto, `~/deck/deck.toml` |
+| 4 | `mapa-esp32.csv`, `profiles/local/bench-esp32@1.profile.toml`, `sim/esp.sim.toml`, `joker.sim.toml` and `joker.lab.toml` (`[buses.esp32]` with `dtr`/`rts`, `[devices.esp]`), `joker.toml` (`[outputs."esp.led"]`, debounce), `joker.lab.lock` (profile, `[fallback]`, `[discovered]`), `sim/scenarios/botao.scenario.toml`, `apps/luz/` (0.3) |
+| 5 | `joker.toml` (`[signals."esp.touch"]`, `calc.toque_nivel`, `[alarms.esp_offline]`), `sim/esp.sim.toml` (fault key), `sim/scenarios/falha_esp.scenario.toml`, `apps/luz/` (0.4 and 0.4.1), `joker.lab.lock` |
+| 6 | `joker.rpi.toml` (the `[devices.pi]` leaves `joker.lab.toml`), `joker.zero.toml`, `joker.zero.lock`, `boards/rpi-zero-w.board.toml`; `joker.lab.toml` now extends `joker.rpi.toml` |
+| 7 | `joker.toml` (five composite `[instances.*]`, `bind` of `luz`), `profiles/local/bench-esp32@1.profile.toml` and `sim/esp.sim.toml` (`[implements]`), `apps/luz/` (0.5), the three locks |
+| 8 | `classes/local/status_light.jkc` (+ `status_light.conformance.toml`), `apps/status_light_ctl/`, `joker.toml` (virtual instance `sinal`, its outputs, `order` of `main`), `apps/luz/` (0.6), `sim/scenarios/pisca.scenario.toml`, the three locks |
+| 9 | `micro/esp/joker.toml`, `joker.lab-link.toml`, `joker.lab-link.lock`, `secrets.toml.enc` (recipient `node:esp`) |
+| 10 | `micro/esp/apps/reflexo/`, `micro/esp/joker.lock` (`[wcet]` of the chip), `micro/esp/joker.toml` (`[net.wifi]`, `[link]` over UDP), `joker.lab-link.toml`, `secrets.toml.enc` (`wifi_bancada`) |
+| 11 | `keys/*.pub`, `fleet.toml`, `secrets.toml.enc` (`mqtt_bancada`), `joker.toml` (`mode = "prod"`, `[telemetry.uplink]`, `[security]`, `accept_missing_fallback`), `[accepted]` in the locks, `apps/luz/` (0.7 and 0.7.1); outside the project, `~/deck/deck.toml` |
 
 ---
 
-## 5. Porque são tantos, e porque não menos
+## 5. Why there are so many, and why not fewer
 
-Cada ficheiro existe porque tem **um dono diferente** ou **uma vida diferente**:
+Each file exists because it has **a different owner** or **a different life**:
 
-- o **perfil** é de um modelo de equipamento e reutiliza-se em todos os sites; se vivesse no manifesto, cada site teria a sua cópia dos registos do mesmo medidor;
-- a **classe** é um contrato entre muitas apps e muitos perfis; não pertence a nenhum site;
-- o **lock** muda quando o mundo muda (firmware, descoberta), e não quando alguém edita;
-- os **cenários** são testes e mudam com o comportamento, e não com o hardware;
-- os **overlays** separam o que o sistema faz (comum) de onde está (sim ou hardware, site A ou B).
+- the **profile** belongs to an equipment model and is reused across all sites; if it lived in the manifest, each site would have its own copy of the registers of the same meter;
+- the **class** is a contract between many apps and many profiles; it does not belong to any site;
+- the **lock** changes when the world changes (firmware, discovery), and not when someone edits;
+- the **scenarios** are tests and change with behavior, and not with hardware;
+- the **overlays** separate what the system does (common) from where it is (sim or hardware, site A or B).
 
-Juntá-los reduziria o número de ficheiros e aumentaria o número de cópias. É a mesma separação que o Cargo faz entre `Cargo.toml`, `Cargo.lock` e o registo de crates.
+Merging them would reduce the number of files and increase the number of copies. It is the same separation Cargo makes between `Cargo.toml`, `Cargo.lock` and the crate registry.
