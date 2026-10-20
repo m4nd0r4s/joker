@@ -2,11 +2,13 @@
 //! commit, with the outcomes and decision records of ADR 0033 (docs/01 §4,
 //! §19; docs/16 §1–§2).
 
-use crate::arbiter::{Intake, OutputArbiter, Refusal, check_writers};
+use crate::arbiter::{Intake, LevelEntry, OutputArbiter, Refusal, RemoteWriter, check_writers};
 use crate::envelope::{Applied, Effective, Verdict, check_output, evaluate};
-use crate::image::{ProcessImage, Proposal, WriterId};
+use crate::image::{Intent, ProcessImage, Proposal, WriterId};
 use crate::outcome::{Outcome, RejectReason};
-use crate::output::{Band, ConfigError, Level, OutputConfig, WriterConfig, WriterKind};
+use crate::output::{
+    Band, ClockRequirement, ConfigError, Level, OutputConfig, WriterConfig, WriterKind,
+};
 use crate::quality::Quality;
 use crate::registry::{Direction, Registry, SignalId};
 use crate::slot::Slot;
@@ -63,6 +65,40 @@ pub enum Cause {
     Reset,
     /// The envelope moved on its own (a ramp, docs/16 A7).
     Envelope,
+    /// The writer's level was freed so that this principal could take it
+    /// (`kind = takeover`, docs/16 A13).
+    Takeover(WriterId),
+    /// The writer's level was freed by this principal with `force`.
+    ForcedRelease(WriterId),
+}
+
+/// A change of a manual level, for the persistence of docs/16 A14. The host
+/// stores it with fsync (with the deadline in UTC) and replays it with
+/// [`Outputs::restore_manual`] before the first tick after a restart.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct ManualRecord {
+    /// The output.
+    pub output: SignalId,
+    /// The manual level.
+    pub level: Level,
+    /// The principal's writer.
+    pub writer: WriterId,
+    /// What happened.
+    pub change: ManualChange,
+}
+
+/// What happened to a manual level.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum ManualChange {
+    /// Written or renewed: the value and the monotonic deadline.
+    Set {
+        /// Value bits.
+        value: u64,
+        /// `lease_until`, monotonic ns.
+        lease_until: u64,
+    },
+    /// Freed: relinquished, taken over, force-released or expired.
+    Cleared(Cause),
 }
 
 /// Whether the host must persist a record at once (docs/01 §19).
@@ -124,6 +160,8 @@ pub trait CommitSink {
     fn output(&mut self, _result: &OutputResult) {}
     /// One call per decision record.
     fn decision(&mut self, _record: &DecisionRecord) {}
+    /// One call per change of a manual level (docs/16 A14).
+    fn manual(&mut self, _record: &ManualRecord) {}
 }
 
 impl CommitSink for () {}
@@ -146,6 +184,10 @@ pub enum CommitError {
     NoTick,
     /// The slot table does not cover the outputs.
     MissingSlot(SignalId),
+    /// Not a manual writer, or a value the output cannot take.
+    NotManual(WriterId),
+    /// The output has already been committed once.
+    AlreadyStarted,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -209,6 +251,7 @@ pub struct OutputsStorage<'a> {
 #[derive(Debug)]
 pub struct Outputs<'a> {
     writers: &'a [WriterConfig],
+    remote: &'a [RemoteWriter],
     configs: &'a [OutputConfig<'a>],
     states: &'a mut [OutputState],
     intakes: &'a mut [Option<Intake>],
@@ -255,10 +298,69 @@ impl<'a> Outputs<'a> {
         }
         Ok(Self {
             writers,
+            remote: &[],
             configs,
             states,
             intakes,
         })
+    }
+
+    /// Sets the remote writers of an MCU's outputs (docs/16 A12), indexed by
+    /// `WriterId::remote_slot`.
+    pub fn set_remote_writers(&mut self, remote: &'a [RemoteWriter]) {
+        self.remote = remote;
+    }
+
+    /// The writer occupying a level of an output, for the takeover and
+    /// release checks of the API (docs/16 A13).
+    pub fn occupant(&self, signal: SignalId, level: Level) -> Option<LevelEntry> {
+        self.states[self.find(signal)?].arbiter.level(level)
+    }
+
+    /// Restores a manual level saved before a restart (docs/16 A14): before
+    /// the first commit, the level of manual writer `writer` holds `value`
+    /// for `remaining_ns` from `now_mono`. The host computes `remaining_ns`
+    /// from the UTC deadline, or from the TTL remaining when the clock is not
+    /// synced (and then raises `manual_restored`).
+    pub fn restore_manual(
+        &mut self,
+        signal: SignalId,
+        writer: WriterId,
+        value: u64,
+        remaining_ns: u64,
+        now_mono: u64,
+    ) -> Result<Level, CommitError> {
+        let o = self.find(signal).ok_or(CommitError::NotAnOutput(signal))?;
+        let config = &self.configs[o];
+        let w = self
+            .writers
+            .get(writer.index())
+            .filter(|w| w.kind == WriterKind::Manual && !writer.is_remote())
+            .ok_or(CommitError::NotManual(writer))?;
+        if !config.accepts(value) {
+            return Err(CommitError::NotManual(writer));
+        }
+        let state = &mut self.states[o];
+        if state.started {
+            return Err(CommitError::AlreadyStarted);
+        }
+        state.arbiter.restore(
+            w.level,
+            LevelEntry {
+                writer,
+                value,
+                lease_until: now_mono.saturating_add(remaining_ns.min(config.max_manual_ns)),
+            },
+        );
+        Ok(w.level)
+    }
+
+    fn level_of(&self, writer: WriterId) -> Option<Level> {
+        writer_level(self.writers, self.remote, writer)
+    }
+
+    fn is_manual(&self, writer: WriterId) -> bool {
+        writer_is_manual(self.writers, writer)
     }
 
     fn find(&self, signal: SignalId) -> Option<usize> {
@@ -311,7 +413,7 @@ impl<'a> Outputs<'a> {
     /// (`last_outcome()`, docs/02 §7.1).
     pub fn last_outcome(&self, writer: WriterId, signal: SignalId) -> Option<Outcome> {
         let state = &self.states[self.find(signal)?];
-        let level = self.writers.get(writer.index())?.level;
+        let level = self.level_of(writer)?;
         state.write_tracks[level.index()]
             .filter(|t| t.writer == writer)
             .map(|t| t.span.outcome)
@@ -334,9 +436,49 @@ impl<'a> Outputs<'a> {
         }
         let group = image.group();
         let now = tick.at.mono_ns;
-        for (config, state) in self.configs.iter().zip(self.states.iter_mut()) {
-            if config.group == group {
-                state.expired_now = state.arbiter.expire(now) != 0;
+        for o in 0..self.configs.len() {
+            if self.configs[o].group != group {
+                continue;
+            }
+            let signal = self.configs[o].signal;
+            let mut freed: [Option<(Level, LevelEntry)>; Level::COUNT] = [None; Level::COUNT];
+            let mask = self.states[o].arbiter.expire_each(now, |level, entry| {
+                freed[level.index()] = Some((level, entry));
+            });
+            self.states[o].expired_now = mask != 0;
+            let applied = self.states[o].last;
+            for (level, entry) in freed.into_iter().flatten() {
+                if self.is_manual(entry.writer) {
+                    sink.manual(&ManualRecord {
+                        output: signal,
+                        level,
+                        writer: entry.writer,
+                        change: ManualChange::Cleared(Cause::Expiry),
+                    });
+                }
+                let track = &mut self.states[o].write_tracks[level.index()];
+                let previous = advance(
+                    track,
+                    entry.writer,
+                    applied,
+                    Outcome::None,
+                    None,
+                    tick.index,
+                    true,
+                )
+                .flatten();
+                sink.decision(&DecisionRecord {
+                    kind: RecordKind::Write(entry.writer),
+                    output: signal,
+                    tick: tick.index,
+                    at_mono_ns: now,
+                    applied,
+                    outcome: Outcome::None,
+                    level: None,
+                    cause: Cause::Expiry,
+                    previous,
+                    durability: Durability::Immediate,
+                });
             }
         }
         for (i, proposal) in proposals.iter().enumerate() {
@@ -345,9 +487,24 @@ impl<'a> Outputs<'a> {
                 .binary_search_by(|c| c.signal.cmp(&proposal.signal))
             {
                 Ok(o) if self.configs[o].group == group => {
-                    self.states[o]
-                        .arbiter
-                        .propose(&self.configs[o], self.writers, proposal, now)
+                    if proposal.writer.is_remote() {
+                        match self.remote.get(proposal.writer.remote_slot()) {
+                            Some(remote) => self.states[o].arbiter.propose_remote(
+                                &self.configs[o],
+                                remote,
+                                proposal,
+                                now,
+                            ),
+                            None => Intake::Refused(Refusal::NotOwner),
+                        }
+                    } else {
+                        self.states[o].arbiter.propose(
+                            &self.configs[o],
+                            self.writers,
+                            proposal,
+                            now,
+                        )
+                    }
                 }
                 _ => Intake::Refused(Refusal::NotOwner),
             };
@@ -380,6 +537,8 @@ impl<'a> Outputs<'a> {
                 self.intakes[i] = None;
             }
         }
+        let writers = self.writers;
+        let remote = self.remote;
         for o in 0..self.configs.len() {
             let config = self.configs[o];
             if config.group != group {
@@ -398,7 +557,7 @@ impl<'a> Outputs<'a> {
                 None => Effective::Safe,
                 Some((_, entry)) => Effective::Writer {
                     value: entry.value,
-                    requires_clock: self.writers[entry.writer.index()].requires_clock,
+                    requires_clock: writer_clock(writers, entry.writer),
                 },
             };
             let Verdict {
@@ -462,23 +621,35 @@ impl<'a> Outputs<'a> {
                     applied,
                 };
                 sink.write(&result);
-                let writer = self.writers.get(proposal.writer.index());
-                let manual = writer.is_some_and(|w| w.kind == WriterKind::Manual);
-                let durability = if manual || outcome.is_rejected() || outcome == Outcome::Tripped {
+                let manual = writer_is_manual(writers, proposal.writer);
+                let track_level = writer_level(writers, remote, proposal.writer);
+                let write_cause = match (intake, proposal.intent) {
+                    (Intake::Relinquished(_), Intent::Takeover { by }) => Cause::Takeover(by),
+                    (Intake::Relinquished(_), Intent::ForcedRelease { by }) => {
+                        Cause::ForcedRelease(by)
+                    }
+                    _ => Cause::Proposal(proposal.writer),
+                };
+                let durability = if manual
+                    || outcome.is_rejected()
+                    || outcome == Outcome::Tripped
+                    || write_cause != Cause::Proposal(proposal.writer)
+                {
                     Durability::Immediate
                 } else {
                     Durability::Batch
                 };
-                let level = writer.map(|w| own_level(intake, w.level));
-                let due = match writer {
-                    Some(w) => advance(
-                        &mut state.write_tracks[w.level.index()],
+                let level = track_level.map(|l| own_level(intake, l));
+                let forced = write_cause != Cause::Proposal(proposal.writer);
+                let due = match track_level {
+                    Some(l) => advance(
+                        &mut state.write_tracks[l.index()],
                         proposal.writer,
                         applied,
                         outcome,
                         level,
                         tick.index,
-                        false,
+                        forced,
                     ),
                     None => Some(None),
                 };
@@ -491,10 +662,35 @@ impl<'a> Outputs<'a> {
                         applied,
                         outcome,
                         level,
-                        cause: Cause::Proposal(proposal.writer),
+                        cause: write_cause,
                         previous,
                         durability,
                     });
+                }
+                if manual {
+                    let change = match intake {
+                        Intake::Placed(l) => state.arbiter.level(l).map(|e| {
+                            (
+                                l,
+                                ManualChange::Set {
+                                    value: e.value,
+                                    lease_until: e.lease_until,
+                                },
+                            )
+                        }),
+                        Intake::Relinquished(Some(l)) => {
+                            Some((l, ManualChange::Cleared(write_cause)))
+                        }
+                        _ => None,
+                    };
+                    if let Some((level, change)) = change {
+                        sink.manual(&ManualRecord {
+                            output: config.signal,
+                            level,
+                            writer: proposal.writer,
+                            change,
+                        });
+                    }
                 }
             }
             if tripped {
@@ -563,6 +759,34 @@ impl<'a> Outputs<'a> {
         }
         Ok(())
     }
+}
+
+fn writer_level(
+    writers: &[WriterConfig],
+    remote: &[RemoteWriter],
+    writer: WriterId,
+) -> Option<Level> {
+    if writer.is_remote() {
+        remote.get(writer.remote_slot()).map(|r| r.level)
+    } else {
+        writers.get(writer.index()).map(|w| w.level)
+    }
+}
+
+fn writer_clock(writers: &[WriterConfig], writer: WriterId) -> ClockRequirement {
+    if writer.is_remote() {
+        return ClockRequirement::Any;
+    }
+    writers
+        .get(writer.index())
+        .map_or(ClockRequirement::Any, |w| w.requires_clock)
+}
+
+fn writer_is_manual(writers: &[WriterConfig], writer: WriterId) -> bool {
+    !writer.is_remote()
+        && writers
+            .get(writer.index())
+            .is_some_and(|w| w.kind == WriterKind::Manual)
 }
 
 fn own_level(intake: Intake, fallback: Level) -> Level {

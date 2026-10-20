@@ -6,7 +6,8 @@
 mod common;
 
 use common::*;
-use joker_core::commit::{Cause, Durability, RecordKind};
+use joker_core::arbiter::RemoteWriter;
+use joker_core::commit::{Cause, Durability, ManualChange, RecordKind};
 use joker_core::image::RELINQUISH;
 use joker_core::output::{ClockRequirement, OnRange};
 use joker_core::{ClockQuality, Level, Outcome, Proposal, RejectReason, WriterId};
@@ -248,4 +249,136 @@ fn earlier_proposals_of_a_writer_in_a_tick_are_overridden_by_its_last() {
         Outcome::Overridden(Level::new(13).unwrap())
     );
     assert_eq!(log.writes[1].outcome, Outcome::Accepted);
+}
+
+#[test]
+fn takeover_and_forced_release_are_recorded_with_their_kind() {
+    let mut h = Harness::new(
+        vec![app("optimizer:13", 2_000), manual(60_000), manual(60_000)],
+        |c| c.rate = None,
+    );
+    let log = h.tick(0, &[(1, 5.0, false)]);
+    assert!(matches!(
+        log.manual[0].change,
+        ManualChange::Set { lease_until, .. } if lease_until == 60_000 * MS
+    ));
+    assert_eq!(
+        h.outputs
+            .occupant(h.out(), Level::MANUAL_DEFAULT)
+            .map(|e| e.writer),
+        Some(WriterId(1))
+    );
+    let [release, take] = Proposal::takeover(WriterId(1), proposal(2, h.out(), 7.0));
+    let log = h.stage_raw(1, &[release, take]);
+    assert_eq!(summary(&log), (Outcome::Accepted, kw(7.0), Some(4)));
+    let kinds: Vec<_> = log
+        .decisions
+        .iter()
+        .filter(|d| d.kind == RecordKind::Write(WriterId(1)))
+        .map(|d| (d.cause, d.durability))
+        .collect();
+    assert_eq!(
+        kinds,
+        [(Cause::Takeover(WriterId(2)), Durability::Immediate)]
+    );
+    assert_eq!(log.manual.len(), 2);
+    assert_eq!(
+        log.manual[0].change,
+        ManualChange::Cleared(Cause::Takeover(WriterId(2)))
+    );
+    assert_eq!(log.manual[1].writer, WriterId(2));
+    let force = Proposal::forced_release(WriterId(2), h.out(), WriterId(1));
+    let log = h.stage_raw(2, &[force]);
+    assert_eq!(summary(&log), (Outcome::Accepted, kw(0.0), None));
+    assert_eq!(
+        log.manual[0].change,
+        ManualChange::Cleared(Cause::ForcedRelease(WriterId(1)))
+    );
+}
+
+#[test]
+fn manual_expiry_is_recorded_and_persisted() {
+    let mut h = Harness::new(vec![app("optimizer:13", 2_000), manual(300)], |c| {
+        c.rate = None
+    });
+    h.tick(0, &[(1, 5.0, false)]);
+    h.tick(1, &[]);
+    h.tick(2, &[]);
+    let log = h.tick(3, &[]);
+    assert_eq!(summary(&log), (Outcome::None, kw(0.0), None));
+    let expiry: Vec<_> = log
+        .decisions
+        .iter()
+        .filter(|d| d.kind == RecordKind::Write(WriterId(1)))
+        .collect();
+    assert_eq!(expiry.len(), 1);
+    assert_eq!(expiry[0].cause, Cause::Expiry);
+    assert_eq!(expiry[0].previous.unwrap().repeats, 1);
+    assert_eq!(log.manual[0].change, ManualChange::Cleared(Cause::Expiry));
+}
+
+#[test]
+fn manual_levels_are_restored_before_the_first_tick() {
+    let mut h = Harness::new(vec![app("optimizer:13", 2_000), manual(60_000)], |c| {
+        c.rate = None
+    });
+    assert_eq!(
+        h.outputs
+            .restore_manual(h.out(), WriterId(1), 12.0f64.to_bits(), 250 * MS, 0),
+        Ok(Level::MANUAL_DEFAULT)
+    );
+    assert!(
+        h.outputs
+            .restore_manual(h.out(), WriterId(0), 1, 1, 0)
+            .is_err()
+    );
+    assert_eq!(summary(&h.tick(0, &[(0, 3.0, true)])).2, Some(4));
+    assert_eq!(
+        summary(&h.tick(2, &[(0, 3.0, true)])),
+        (
+            Outcome::Overridden(Level::MANUAL_DEFAULT),
+            kw(12.0),
+            Some(4)
+        )
+    );
+    assert_eq!(
+        summary(&h.tick(3, &[(0, 3.0, true)])),
+        (Outcome::Accepted, kw(3.0), Some(13))
+    );
+    assert!(
+        h.outputs
+            .restore_manual(h.out(), WriterId(1), 1, 1, 0)
+            .is_err()
+    );
+}
+
+#[test]
+fn remote_writers_propose_in_delegated_levels() {
+    let mut h = Harness::new(vec![app("optimizer:13", 2_000)], |c| {
+        c.rate = None;
+        c.remote_levels = 1 << 8;
+    });
+    let remote: &'static [RemoteWriter] = leak(vec![RemoteWriter {
+        level: Level::new(9).unwrap(),
+        lease_ns: 10_000 * MS,
+        link_max_lease_ns: 500 * MS,
+    }]);
+    h.outputs.set_remote_writers(remote);
+    let out = h.out();
+    let p = |slot: u32, value: f64| joker_core::Proposal {
+        writer: WriterId::remote(slot),
+        signal: out,
+        value: value.to_bits(),
+        ..joker_core::Proposal::EMPTY
+    };
+    let first = p(0, 9.0);
+    let log = h.stage_raw(0, &[first, proposal(0, h.out(), 1.0)]);
+    assert_eq!(summary(&log), (Outcome::Accepted, kw(9.0), Some(9)));
+    let log = h.stage_raw(5, &[proposal(0, h.out(), 1.0)]);
+    assert_eq!(summary(&log), (Outcome::Accepted, kw(1.0), Some(13)));
+    let log = h.stage_raw(6, &[p(1, 4.0)]);
+    assert_eq!(
+        log.writes[0].outcome,
+        Outcome::Rejected(joker_core::RejectReason::NotOwner)
+    );
 }

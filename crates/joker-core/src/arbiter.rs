@@ -32,6 +32,19 @@ pub enum Refusal {
     WrongType,
 }
 
+/// A remote writer of an MCU: one (link, level) pair (docs/16 A12). Its
+/// [`WriterId`] is `WriterId::remote(slot)`, with `slot` its index in the
+/// remote table.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct RemoteWriter {
+    /// The delegated level it proposes in.
+    pub level: Level,
+    /// The lease it asks for.
+    pub lease_ns: u64,
+    /// The link session's `max_lease`; the effective lease is the smaller.
+    pub link_max_lease_ns: u64,
+}
+
 /// What the arbiter did with one proposal.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Intake {
@@ -72,16 +85,66 @@ impl OutputArbiter {
     /// Frees every level whose lease ended at `t_latch` (docs/16 A2) and
     /// returns a bit mask of the freed levels (bit `n-1` for level `n`).
     pub fn expire(&mut self, t_latch: u64) -> u16 {
-        let mut freed = 0;
+        self.expire_each(t_latch, |_, _| {})
+    }
+
+    /// Like [`OutputArbiter::expire`], calling `freed` with each freed level
+    /// and what it held, from the highest priority.
+    pub fn expire_each(&mut self, t_latch: u64, mut freed: impl FnMut(Level, LevelEntry)) -> u16 {
+        let mut mask = 0;
         for (i, level) in self.levels.iter_mut().enumerate() {
-            if let Some(entry) = level
+            if let Some(entry) = *level
                 && t_latch >= entry.lease_until
             {
                 *level = None;
-                freed |= 1 << i;
+                mask |= 1 << i;
+                if let Some(l) = Level::new(i as u8 + 1) {
+                    freed(l, entry);
+                }
             }
         }
-        freed
+        mask
+    }
+
+    /// Puts back a level saved before a restart (docs/16 A14), before the
+    /// first tick. It replaces whatever the level holds.
+    pub fn restore(&mut self, level: Level, entry: LevelEntry) {
+        self.levels[level.index()] = Some(entry);
+    }
+
+    /// Takes one proposal of a remote writer (docs/16 A12). The level
+    /// belongs to the level and not to the writer: any remote writer may
+    /// replace or relinquish it, so a new generation of the Linux node, which
+    /// renumbers its origins, keeps the level. A level that is not delegated
+    /// is `NotOwner`. The lease is the smaller of the writer's and the
+    /// link's `max_lease`, and counts from this tick of the consumer.
+    pub fn propose_remote(
+        &mut self,
+        output: &OutputConfig<'_>,
+        remote: &RemoteWriter,
+        proposal: &Proposal,
+        t_tick: u64,
+    ) -> Intake {
+        if !output.delegates(remote.level) {
+            return Intake::Refused(Refusal::NotOwner);
+        }
+        let slot = &mut self.levels[remote.level.index()];
+        if slot.is_some_and(|e| !e.writer.is_remote()) {
+            return Intake::Refused(Refusal::NotOwner);
+        }
+        if proposal.is_relinquish() {
+            return Intake::Relinquished(slot.take().map(|_| remote.level));
+        }
+        if !output.accepts(proposal.value) {
+            return Intake::Refused(Refusal::WrongType);
+        }
+        let lease = remote.lease_ns.min(remote.link_max_lease_ns);
+        *slot = Some(LevelEntry {
+            writer: proposal.writer,
+            value: proposal.value,
+            lease_until: t_tick.saturating_add(lease),
+        });
+        Intake::Placed(remote.level)
     }
 
     /// Takes one proposal at tick instant `t_tick`. `writers` is the writer
@@ -149,8 +212,29 @@ impl OutputArbiter {
     }
 }
 
+/// The first two non-manual writers that share a level on `output`
+/// (`J0210`, docs/16 A5), in writer order.
+pub fn find_level_conflict(
+    output: &OutputConfig<'_>,
+    writers: &[WriterConfig],
+) -> Option<(WriterId, WriterId, Level)> {
+    let mut seen: [Option<WriterId>; Level::COUNT] = [None; Level::COUNT];
+    for (i, w) in writers.iter().enumerate() {
+        let id = WriterId(i as u32);
+        if w.kind == WriterKind::Manual || !output.writers.allows(id, w.kind) {
+            continue;
+        }
+        match seen[w.level.index()] {
+            Some(first) => return Some((first, id, w.level)),
+            None => seen[w.level.index()] = Some(id),
+        }
+    }
+    None
+}
+
 /// Checks the writer table against one output (docs/16 A5, A9, A10;
-/// ref/01 §3.11): only people in the manual band (`J0252`, `J-E1104`), no two non-manual
+/// ref/01 §3.11): only people in the manual band (`J0252`, `J-E1104`), no
+/// local writer on a level delegated to the link (`J0210`), no two non-manual
 /// writers on one level (`J0210`), leases within `max_lease` (`J0213`), and a
 /// TTL for every manual writer within `max_manual`.
 pub fn check_writers(
@@ -188,7 +272,7 @@ pub fn check_writers(
         if lease > output.max_lease_ns {
             return Err(err("J0213", Some(i)));
         }
-        if core::mem::replace(&mut taken[w.level.index()], true) {
+        if output.delegates(w.level) || core::mem::replace(&mut taken[w.level.index()], true) {
             return Err(err("J0210", Some(i)));
         }
     }
@@ -469,5 +553,99 @@ mod tests {
         let mut w = table();
         w[2].lease_ns = None;
         assert_eq!(check_writers(&out, &w, PERIOD).unwrap_err().code, "J-E1101");
+    }
+
+    #[test]
+    fn remote_writers_own_delegated_levels_by_level() {
+        let mut out = output();
+        let w = table();
+        let mut arb = OutputArbiter::new(PERIOD);
+        let remote = RemoteWriter {
+            level: Level::new(9).unwrap(),
+            lease_ns: 5_000 * MS,
+            link_max_lease_ns: 1_000 * MS,
+        };
+        let from = |slot: u32, value: f64| Proposal {
+            writer: WriterId::remote(slot),
+            value: value.to_bits(),
+            ..Proposal::EMPTY
+        };
+        assert_eq!(
+            arb.propose_remote(&out, &remote, &from(0, 1.0), 0),
+            Intake::Refused(Refusal::NotOwner)
+        );
+        out.remote_levels = 1 << 8;
+        assert_eq!(
+            arb.propose_remote(&out, &remote, &from(0, 1.0), 0),
+            Intake::Placed(Level::new(9).unwrap())
+        );
+        assert_eq!(
+            arb.level(Level::new(9).unwrap()).unwrap().lease_until,
+            1_000 * MS
+        );
+        assert_eq!(
+            arb.propose_remote(&out, &remote, &from(7, 2.0), 100 * MS),
+            Intake::Placed(Level::new(9).unwrap())
+        );
+        assert_eq!(arb.level_of(WriterId::remote(7)), Level::new(9));
+        assert_eq!(
+            arb.propose_remote(&out, &remote, &from(0, f64::NAN), 0),
+            Intake::Refused(Refusal::WrongType)
+        );
+        let release = Proposal {
+            flags: RELINQUISH,
+            ..from(3, 0.0)
+        };
+        assert_eq!(
+            arb.propose_remote(&out, &remote, &release, 0),
+            Intake::Relinquished(Level::new(9))
+        );
+        let mut w = w;
+        w[0].level = Level::new(9).unwrap();
+        assert_eq!(check_writers(&out, &w, PERIOD).unwrap_err().code, "J0210");
+    }
+
+    #[test]
+    fn level_conflicts_name_both_writers() {
+        let out = output();
+        let mut w = table();
+        assert_eq!(find_level_conflict(&out, &w), None);
+        w[1].level = Level::new(13).unwrap();
+        assert_eq!(
+            find_level_conflict(&out, &w),
+            Some((WriterId(0), WriterId(1), Level::new(13).unwrap()))
+        );
+    }
+
+    #[test]
+    fn expire_each_reports_what_was_freed() {
+        let (out, w) = (output(), table());
+        let mut arb = OutputArbiter::new(PERIOD);
+        arb.propose(&out, &w, &p(0, 5.0), 0);
+        arb.propose(&out, &w, &p(1, 1.0), 0);
+        let mut seen = [0u8; 2];
+        let mut n = 0;
+        let mask = arb.expire_each(2_000 * MS, |level, entry| {
+            seen[n] = level.get();
+            assert_eq!(
+                entry.lease_until,
+                if level.get() == 1 {
+                    300 * MS
+                } else {
+                    2_000 * MS
+                }
+            );
+            n += 1;
+        });
+        assert_eq!((mask, n, seen), (1 | 1 << 12, 2, [1, 13]));
+        arb.restore(
+            Level::MANUAL_DEFAULT,
+            LevelEntry {
+                writer: WriterId(2),
+                value: 3,
+                lease_until: 9,
+            },
+        );
+        assert_eq!(arb.level_of(WriterId(2)), Some(Level::MANUAL_DEFAULT));
     }
 }

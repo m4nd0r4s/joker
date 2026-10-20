@@ -16,10 +16,47 @@ use crate::value::Sample;
 pub struct WriterId(pub u32);
 
 impl WriterId {
+    /// The bit that marks a remote writer of an MCU (docs/16 §7).
+    pub const REMOTE: u32 = 0x8000_0000;
+
     /// The id as an index into dense tables.
     pub const fn index(self) -> usize {
         self.0 as usize
     }
+
+    /// A remote writer: a (link, level) pair of an MCU (docs/16 A12).
+    pub const fn remote(slot: u32) -> Self {
+        Self(Self::REMOTE | slot)
+    }
+
+    /// True for a remote writer.
+    pub const fn is_remote(self) -> bool {
+        self.0 & Self::REMOTE != 0
+    }
+
+    /// The slot of a remote writer, as an index into the remote table.
+    pub const fn remote_slot(self) -> usize {
+        (self.0 & !Self::REMOTE) as usize
+    }
+}
+
+/// Why a proposal was staged, beyond the writer's own write (docs/16 A13,
+/// ref/09 §5.6). Only a relinquish carries something other than
+/// [`Intent::Write`].
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum Intent {
+    /// The writer's own write or relinquish.
+    Write,
+    /// The occupant's level freed so that `by` can take it over.
+    Takeover {
+        /// The principal taking the level.
+        by: WriterId,
+    },
+    /// The occupant's level freed by `by` with `force`.
+    ForcedRelease {
+        /// The principal releasing it.
+        by: WriterId,
+    },
 }
 
 /// Where a proposal was staged from (docs/01 §4).
@@ -53,6 +90,8 @@ pub struct Proposal {
     /// TTL of a manual write in ns, which is its lease (ref/09 §5.6); 0 uses
     /// the writer's declared TTL. Ignored for other writers.
     pub ttl_ns: u64,
+    /// Takeover or forced release of another writer's level.
+    pub intent: Intent,
 }
 
 impl Proposal {
@@ -65,11 +104,39 @@ impl Proposal {
         source: Source::Cycle,
         ticket: 0,
         ttl_ns: 0,
+        intent: Intent::Write,
     };
 
     /// True when this proposal relinquishes the writer's level.
     pub const fn is_relinquish(&self) -> bool {
         self.flags & RELINQUISH != 0
+    }
+
+    /// The occupant's relinquish and the new proposal that a takeover stages,
+    /// in this order, into the same inbox (docs/16 A13, ref/09 §5.6).
+    pub const fn takeover(occupant: WriterId, new: Proposal) -> [Proposal; 2] {
+        [
+            Proposal {
+                writer: occupant,
+                flags: RELINQUISH,
+                value: 0,
+                intent: Intent::Takeover { by: new.writer },
+                ..new
+            },
+            new,
+        ]
+    }
+
+    /// The relinquish that a forced release by `by` stages for `occupant`.
+    pub const fn forced_release(occupant: WriterId, signal: SignalId, by: WriterId) -> Proposal {
+        Proposal {
+            writer: occupant,
+            signal,
+            flags: RELINQUISH,
+            source: Source::Async,
+            intent: Intent::ForcedRelease { by },
+            ..Proposal::EMPTY
+        }
     }
 }
 

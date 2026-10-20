@@ -23,6 +23,7 @@ pub struct Log {
     pub writes: Vec<WriteResult>,
     pub outputs: Vec<OutputResult>,
     pub decisions: Vec<DecisionRecord>,
+    pub manual: Vec<joker_core::commit::ManualRecord>,
 }
 
 impl CommitSink for Log {
@@ -34,6 +35,9 @@ impl CommitSink for Log {
     }
     fn decision(&mut self, r: &DecisionRecord) {
         self.decisions.push(*r);
+    }
+    fn manual(&mut self, r: &joker_core::commit::ManualRecord) {
+        self.manual.push(*r);
     }
 }
 

@@ -284,6 +284,9 @@ pub struct OutputConfig<'a> {
     pub max_manual_ns: u64,
     /// Who may write.
     pub writers: Writers<'a>,
+    /// Levels delegated to the Joker Link on an MCU, as a mask with bit
+    /// `n-1` for level `n` (`remote_levels`, docs/16 A12); 0 on Linux.
+    pub remote_levels: u16,
 }
 
 impl<'a> OutputConfig<'a> {
@@ -303,7 +306,13 @@ impl<'a> OutputConfig<'a> {
             max_lease_ns: DEFAULT_MAX_LEASE_NS,
             max_manual_ns: DEFAULT_MAX_MANUAL_NS,
             writers: Writers::Any,
+            remote_levels: 0,
         }
+    }
+
+    /// True when `level` is delegated to the link (docs/16 A12).
+    pub const fn delegates(&self, level: Level) -> bool {
+        self.remote_levels & (1 << level.index()) != 0
     }
 
     /// True when `bits` is a value this output can take (docs/16 E10): not
