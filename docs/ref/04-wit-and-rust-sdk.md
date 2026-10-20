@@ -362,7 +362,7 @@ An unbound port (`UNBOUND`) has `quality = bad(not_connected)`. A sample that ne
 
 **Wide section:** the values of `string`, `bytes` and `Internal<T>` (≤ 64 B each, ref/00 §10), each one at an offset that is a multiple of 8. `string` in UTF-8, `bytes` raw, records in CBOR (§4.10).
 
-The `image-len` stays fixed during the generation: it is `64 + 24 × (n_slots + n_outcomes) + 64 × n_largos`, rounded up to 8.
+The `image-len` stays fixed during the generation: it is `64 + 24 × (n_slots + n_outcomes) + 64 × n_wide`, rounded up to 8.
 
 ### 3.3 The proposal buffer
 

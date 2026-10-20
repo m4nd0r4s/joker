@@ -345,7 +345,7 @@ The key `config = { … }` of `[devices.<d>]` in the manifest (for example, on a
 | `unit` | unit | with `quantity` | |
 | `range` | `[min, max]` | no | `integer`, `number`, `quantity` |
 | `default` | value | no | without `default`, the key is required in the manifest |
-| `apply` | list of steps (§2.2.12) | no | write at `connect`, with `"$valor"` as the chosen value; without `apply`, the value goes to the `plan` of the driver (*chip handlers*) |
+| `apply` | list of steps (§2.2.12) | no | write at `connect`, with `"$value"` as the chosen value; without `apply`, the value goes to the `plan` of the driver (*chip handlers*) |
 | `description` | string | no | |
 
 Undeclared `config` key, value outside `values` or `range`, or required key missing: `J0819`. In the manifest, `config` is a table in the drivers that accept it (ref/01 appendix A); the values without `apply` reach the driver in `device-spec.profile-config`, and those with `apply` are written by the core with `write-addr` (ref/06 §2.4.1, §2.10). It is different from the `config` of the driver descriptor, which is the schema of the direct keys of `[devices.<d>]` (`address`, `unit_id`…).

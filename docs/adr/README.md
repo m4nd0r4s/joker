@@ -31,5 +31,6 @@
 | [0027](0027-composite-classes.md) | Composite classes end to end: binding, nested paths, methods, health, profiles and Joker Micro |
 | [0028](0028-stable-equals-implemented.md) | Stable = implemented; what does not ship in 1.0 stays reserved |
 | [0029](0029-english-project-language.md) | English is the project language; code has docstrings only, no comments |
+| [0036](0036-english-identifiers-in-the-specification.md) | English identifiers in the specification: illustrative names renamed, `"$value"` and `n_wide` |
 
 Changing a decision = writing a new ADR that replaces it, and updating the affected documents in the same set of commits.
