@@ -18,7 +18,7 @@ jk model build yolo-defects.onnx \
   --lineage lineage.toml \
   --sign keys/models.key
 jk model inspect yolo-defects-7.0.0.jkm
-jk model bench yolo-defects-7.0.0.jkm --node linha2 --backend hailo,burn:cpu,ort:cpu
+jk model bench yolo-defects-7.0.0.jkm --node line2 --backend hailo,burn:cpu,ort:cpu
 ```
 
 ```
@@ -34,7 +34,7 @@ burn:cpu    — (burn-onnx: missing operators: NonMaxSuppression; use native pos
 
 ```toml
 [project]
-name = "linha2-inspecao"
+name = "line2-inspection"
 mode = "prod"
 joker = "1.1"                       # camera, streams, models, pipelines and timed outputs
 
@@ -164,7 +164,7 @@ async fn decide(io: &TaskIo<Inspector>, d: Detections) -> Result<()> {
 ## 4. Bench test
 
 ```toml
-# sim/scenarios/linha.scenario.toml
+# sim/scenarios/line.scenario.toml
 schema = 1
 
 [scenario]
@@ -189,10 +189,10 @@ equals = 0
 ## 5. A new version, through shadow
 
 ```sh
-jk shadow start detector models/yolo-defects-8.0.0.jkm --node linha2 \
+jk shadow start detector models/yolo-defects-8.0.0.jkm --node line2 \
    --until "frames=50000" \
    --promote-if "agreement>=0.98" --promote-if "latency_p99<=30ms"
-jk shadow status detector --node linha2
+jk shadow status detector --node line2
 ```
 
 ```

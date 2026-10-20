@@ -10,7 +10,7 @@ Block signals, pipelines, models and training are **1.1** (ADR 0019); the manife
 
 ```toml
 [project]
-name = "etar-norte-bombas"
+name = "wwtp-north-pumps"
 joker = "1.1"
 
 [target]
@@ -122,8 +122,8 @@ every week   new candidate → 48 h in shadow → promoted only if it does not i
 ```
 
 ```sh
-jk train status --node etar-norte
-jk model lineage ae_p1 --node etar-norte
+jk train status --node wwtp-north
+jk model lineage ae_p1 --node wwtp-north
 ```
 
 ```

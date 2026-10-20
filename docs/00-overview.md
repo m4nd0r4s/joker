@@ -64,8 +64,8 @@ From this rule come the properties that matter:
 **First contact: five minutes, no hardware.**
 
 ```sh
-jk new tanque --template sim-tank     # simulated plant: tank, pump, level sensor
-cd tanque
+jk new tank --template sim-tank     # simulated plant: tank, pump, level sensor
+cd tank
 jk dev                                # builds, starts the local runtime, hot-reload
 ```
 

@@ -215,7 +215,7 @@ use joker::classes::std::{Led, Button, Pump};
 #[joker::app(name = "demo", version = "0.1.0")]
 pub struct Demo {
     #[device] led: Led,                                 // led.on(), led.off(), led.toggle()
-    #[device] botao: Button,                            // botao.clicked()? (core query)
+    #[device] button: Button,                            // button.clicked()? (core query)
     #[device(requires = ["pressure"])] pumps: Many<Pump, 1, 8>,   // between 1 and 8 instances
 }
 ```
@@ -233,7 +233,7 @@ mod tests {
     use joker_test::prelude::*;
 
     #[test]
-    fn nunca_descarrega_abaixo_da_reserva() {
+    fn never_discharges_below_the_reserve() {
         let mut h = Harness::<PeakShaver>::new()
             .group("control", 200.ms())
             .param("limit", 400.0)
@@ -251,7 +251,7 @@ mod tests {
     }
 
     #[test]
-    fn qualidade_ma_nao_escreve() {
+    fn bad_quality_does_not_write() {
         let mut h = Harness::<PeakShaver>::new()
             .input("grid_power", Series::constant(500.0).with_quality_at(30.s(), Quality::bad(CommFailure)))
             .input("soc", 0.5);
@@ -382,8 +382,8 @@ level = "integrate((inflow - 0.05 m3/h/% * pump) / 3.2 m2, min = 0 m, max = 3 m)
 ## 7. Replay
 
 ```sh
-jk record --for 2h --out incidente.jktrace          # on the device
-jk replay incidente.jktrace --app peak_shaver@1.4.3 # on the laptop, with the fixed version
+jk record --for 2h --out incident.jktrace          # on the device
+jk replay incident.jktrace --app peak_shaver@1.4.3 # on the laptop, with the fixed version
 ```
 
 A trace contains the input snapshot of every tick of the recorded groups, the write results, the outputs of non-deterministic models (M22), the parameters and the configuration generations. Replay re-executes the apps with the same clock and compares the proposals. `--diff` shows where the new version diverges.

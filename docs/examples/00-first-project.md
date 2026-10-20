@@ -9,12 +9,12 @@ Prerequisites: stable Rust with the `wasm32-wasip2` target, and `jk` installed.
 ## 1. Create
 
 ```sh
-jk new tanque --template sim-tank
-cd tanque
+jk new tank --template sim-tank
+cd tank
 ```
 
 ```
-tanque/
+tank/
   joker.toml              the manifest
   apps/level/             Cargo.toml, src/lib.rs
   sim/tank.sim.toml       simulated plant (simulation model)
@@ -41,7 +41,7 @@ level = "integrate((inflow - 0.06 m3/h/% * pump) / 3.2 m2, min = 0 m, max = 3 m)
 ```toml
 # joker.toml
 [project]
-name = "tanque"
+name = "tank"
 mode = "dev"
 
 [devices.tank]
@@ -109,7 +109,7 @@ jk dev
 ```
 
 ```
-joker 0.1.0 · dev · tanque · gen 1
+joker 0.1.0 · dev · tank · gen 1
   cycles   ctl 100ms  jitter p99 0.4ms (no RT)   overruns 0
   devices  tank (sim)  up
   apps     level 0.1.0  running  wcet 3µs
@@ -144,7 +144,7 @@ When the level drops below 0.2 m, the interlock cuts the pump even with the manu
 ## 7. Test
 
 ```toml
-# sim/scenarios/sensor-falha.scenario.toml
+# sim/scenarios/sensor-fault.scenario.toml
 schema = 1
 
 [scenario]
@@ -173,16 +173,16 @@ jk test
 ```
 
 ```
-sim/scenarios/sensor-falha.scenario.toml ........ ok (5m simulated in 0.4 s)
+sim/scenarios/sensor-fault.scenario.toml ........ ok (5m simulated in 0.4 s)
 apps/level (cargo test) ................ ok
 ```
 
 ## 8. Replay
 
 ```sh
-jk record --for 10m --out sessao.jktrace
+jk record --for 10m --out session.jktrace
 # change kp in the app, recompile
-jk replay sessao.jktrace --diff
+jk replay session.jktrace --diff
 ```
 
 `--diff` shows, tick by tick, where the proposals of the new version diverge from the recorded ones.

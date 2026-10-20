@@ -1221,11 +1221,11 @@ from joker_classes.std import Led, Button
 @app(name="hello_world", version="0.5.0")
 class HelloWorld(App):
     led = device(Led)
-    botao = device(Button)
+    button = device(Button)
 
     @cycle("500ms")
     def control(self) -> None:
-        if self.botao.clicked():
+        if self.button.clicked():
             self.led.toggle()
 ```
 
@@ -1498,7 +1498,7 @@ export declare class Harness {
 from joker_testing import Harness, Series, Quality
 from peak_shaver import PeakShaver, Plan
 
-def test_nunca_descarrega_abaixo_da_reserva() -> None:
+def test_never_discharges_below_the_reserve() -> None:
     h = (Harness.for_app(PeakShaver)
          .group("control", "200ms")
          .param("limit", 400.0).param("reserve", 10.0)
@@ -1510,7 +1510,7 @@ def test_nunca_descarrega_abaixo_da_reserva() -> None:
     assert h.output("battery").when(soc.lt(0.1)).all(lambda v: v == 0.0)
     assert h.traps() == []
 
-def test_qualidade_ma_nao_escreve() -> None:
+def test_bad_quality_does_not_write() -> None:
     h = (Harness.for_app(PeakShaver)
          .input("grid_power", Series.constant(500.0).with_quality_at("30s", Quality.bad("comm_failure")))
          .input("soc", 0.5))

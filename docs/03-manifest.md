@@ -513,7 +513,7 @@ contract = "sha256:…"
 "peak_shaver.control" = { p999 = "38us", max = "51us", samples = 100000, board = "revpi-connect-5", runtime = "1.0.3", app = "sha256:9f2c…", measured = "2026-09-20T10:20:00Z" }
 
 [accepted]                           # justified exceptions, with who approved them and the approved value
-accept_missing_fallback."painel.led" = { reason = "indicator LED; no physical consequences", by = "user:dl", at = "2026-09-18T09:02:11Z" }
+accept_missing_fallback."panel.led" = { reason = "indicator LED; no physical consequences", by = "user:dl", at = "2026-09-18T09:02:11Z" }
 widen."pcs.p_set.range" = { reason = "new PCS with 150 kW rated; approved by DL on 2026-09-18", value = ["-150 kW", "150 kW"], by = "user:dl", at = "2026-09-18T09:02:11Z" }
 ```
 

@@ -10,7 +10,7 @@
 2. **Errors in the style of rustc:** code, location in the file, explanation, help. `jk explain J0107` shows the full page.
 3. **Nothing dangerous without being explicit.** Manual writes require `--ttl` and `--reason` and show the envelope before applying; `apply` in `prod` requires `--confirm` when the generation touches network, security, uplinks or the API itself (ADR 0015). The commands that change the node show on the first line the node, the mode and where the choice came from (`→ lisboa-01 (prod) · from JK_NODE`). `--confirm`, `--yes`, `--ttl`, `--reason`, `--level`, `--reveal` and `--allow-dev` **have no environment variable**, on purpose (ref/02, §2.3.3).
 4. **Human output by default and `--json` always available.** The human outputs that appear in the documents and in the track are **illustrative**: the text, the order and the alignment may change between versions without notice. The contract is `--json`, which is the API JSON (ref/09) of the endpoint the command uses (ref/09, §9.1), without a wrapper; for local commands, the one in the command's reference. Scripts and tests use `--json`.
-5. **`--env <variant>`** (or `JK_ENV`) chooses the input overlay by variant: `--env lab` is `--manifest joker.lab.toml` (ADR 0026). This is how you switch between overlays (`--env sim`, `--env rpi`). **`--manifest <file>`** (or `JK_MANIFEST`) accepts any path (`--manifest sites/lisboa-01/joker.verao.toml`); a file whose name is outside the `joker.<variant>.toml` rule gives warning `J0169`. By default, `joker.toml`. Both options together are a usage error; the precedence between options, variables and `.joker/config.toml` (`defaults.env`, `defaults.manifest`) is in ref/01 §7.7. Each input manifest has its lock in the same directory: `joker.lock` for `joker.toml`, `joker.<variant>.lock` for each overlay (`--env rpi` → `joker.rpi.lock`); `--lock <file>` chooses another.
+5. **`--env <variant>`** (or `JK_ENV`) chooses the input overlay by variant: `--env lab` is `--manifest joker.lab.toml` (ADR 0026). This is how you switch between overlays (`--env sim`, `--env rpi`). **`--manifest <file>`** (or `JK_MANIFEST`) accepts any path (`--manifest sites/lisboa-01/joker.summer.toml`); a file whose name is outside the `joker.<variant>.toml` rule gives warning `J0169`. By default, `joker.toml`. Both options together are a usage error; the precedence between options, variables and `.joker/config.toml` (`defaults.env`, `defaults.manifest`) is in ref/01 §7.7. Each input manifest has its lock in the same directory: `joker.lock` for `joker.toml`, `joker.<variant>.lock` for each overlay (`--env rpi` → `joker.rpi.lock`); `--lock <file>` chooses another.
 6. **Global options:** `--node`, `--env`, `--manifest`, `--lock`, `--locked` (no command writes the lock; any necessary change is `J0411`, it is the option for CI), `--offline` (local cache only), `--json`, `--color`, `--timeout`, `--cert`, `--key`, `--ca`, `--sign-key`. Precedence: option > `JK_*` variable > the project's `.joker/config.toml` > the user's `config.toml` > default. `jk config show [--origin]` shows the effective value and where it came from (ref/02, §2.3).
 7. **Strict requests, mixed versions.** `jk` asks the node what version and what features it has and rejects, with a clear message, an option the node does not support (ref/09, §9.3). The 1.1 options exist in `jk` 1.0 and answer `J-E1017`.
 8. **Nothing is ever compiled on the node.** `jokerd`, tier X drivers, apps and AOT (`.cwasm`) are compiled on the laptop or in CI, by cross build for the board's triple (`aarch64-unknown-linux-gnu`, `armv7-unknown-linux-gnueabihf`, `arm-unknown-linux-gnueabihf` for the ARMv6 of the Pi Zero W, `x86_64-unknown-linux-gnu`), and only then sent to the node (`jk apply`, `jk runtime upgrade`, or the Deck). `jk runtime build` and `jk dev --node` compile **on the laptop** and send the result; no command requires a compiler, `cargo` or the kernel headers on the node. A 512 MiB board does not compile `jokerd`, and a production node should not have a toolchain.
@@ -266,28 +266,28 @@ jk confirm --node revpi-porto.local
 
 ```sh
 jk decisions --output pcs.p_set --since "2026-09-24 03:00" --to "03:30"
-jk trace-from-history "03:00..03:30" --app peak_shaver --out incidente.jktrace
+jk trace-from-history "03:00..03:30" --app peak_shaver --out incident.jktrace
 #   ↑ approximate trace: it is only exact if the app's inputs were recorded at the group's rate
 #     (the group's `trace.continuous` keeps an exact trace ring of the last N hours)
-jk replay incidente.jktrace --diff --app peak_shaver@1.4.3
+jk replay incident.jktrace --diff --app peak_shaver@1.4.3
 ```
 
 **A new version of an app, in shadow (1.0):**
 
 ```sh
-jk shadow start peak_shaver peak-shaver-1.5.0.wasm --node linha2
-jk shadow status peak_shaver --node linha2   # 48 h later
-jk shadow promote peak_shaver --node linha2
+jk shadow start peak_shaver peak-shaver-1.5.0.wasm --node line2
+jk shadow status peak_shaver --node line2   # 48 h later
+jk shadow promote peak_shaver --node line2
 ```
 
 **A new model (1.1):**
 
 ```sh
 jk model build yolo-parts-v8.onnx --via ort
-jk model bench yolo-parts-v8.jkm --node linha2 --backend hailo,burn:cpu
-jk shadow start detector yolo-parts-v8.jkm --node linha2
-jk shadow status detector --node linha2   # 48 h later
-jk shadow promote detector --node linha2
+jk model bench yolo-parts-v8.jkm --node line2 --backend hailo,burn:cpu
+jk shadow start detector yolo-parts-v8.jkm --node line2
+jk shadow status detector --node line2   # 48 h later
+jk shadow promote detector --node line2
 ```
 
 **A board that does not have a profile yet, and a piece of equipment with a register map** (ref/03 §2.3.7 and §2.2.19):
@@ -295,7 +295,7 @@ jk shadow promote detector --node linha2
 ```sh
 jk board probe --node zero --name rpi-zero-w           # draft in boards/rpi-zero-w.board.toml, with # REVIEW
 jk board check boards/rpi-zero-w.board.toml --node zero      # after resolving the # REVIEW
-jk profile import csv mapa.csv --name local/xy-md02 --driver modbus
+jk profile import csv map.csv --name local/xy-md02 --driver modbus
 jk profile test local/xy-md02@1 --node zero --uri "modbus-tcp://192.168.1.50:502?unit=1"
 jk check --env zero                                      # joker.zero.toml, lock joker.zero.lock
 ```

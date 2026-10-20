@@ -35,7 +35,7 @@ The track always moves from the simulated to the real, and climbs layer by layer
 
 | Part | What you build | Hardware | Joker concepts |
 |---|---|---|---|
-| [01](01-hello-bench.md) | a project from scratch; the app `luz` 0.1 blinks the **simulated** `ACT` LED, with tests and a scenario | laptop | project, manifest and overlays from the start, `sim` driver, signal, port and binding, output with `safe`, cycle group, hot-reload, `jk read`/`jk trace`, `joker-test` with a virtual clock, scenarios |
+| [01](01-hello-bench.md) | a project from scratch; the app `light` 0.1 blinks the **simulated** `ACT` LED, with tests and a scenario | laptop | project, manifest and overlays from the start, `sim` driver, signal, port and binding, output with `safe`, cycle group, hot-reload, `jk read`/`jk trace`, `joker-test` with a virtual clock, scenarios |
 | [02](02-the-pi-as-a-node.md) | the same LED, now the **real** `ACT` of the Pi 3, with the app unchanged | Pi 3 B+ | installing `jokerd`, CA and enrollment, `jk doctor --rt`, board profile, `[resources]`, `sysfs` driver, lock per manifest, `jk apply --confirm`, generations and rollback, manual write and arbiter, three-layer safe state |
 | [03](03-temperature-sensor.md) | the CPU temperature as a physical process: the LED blinks faster the hotter the Pi is; alarm, historian, API (app 0.2) | Pi 3 B+ | inputs and quality, `calc` with windows, alarms, historian, HTTP API and the Python client, `stress-ng` as load |
 | [04](04-esp32-modbus.md) | the ESP32 as Modbus RTU equipment: the profile written from the register map, the `BOOT` button turns the system on and off (app 0.3) | Pi 3 + ESP32 over USB | buses (`dtr`/`rts`), `jk profile import csv`, `jk profile test`, profile `identity`, edges and `debounce`, `readback`, equipment fallback |
@@ -54,7 +54,7 @@ The track always moves from the simulated to the real, and climbs layer by layer
 | Part | What you build | Hardware | Joker concepts |
 |---|---|---|---|
 | [09](09-joker-micro.md) | the ESP32 now runs Joker Micro; the same signals arrive over Joker Link, and the LED's `safe` lives on the MCU (app 0.6, unchanged) | Pi 3 + ESP32 (Joker firmware) | `jk build --target mcu:esp32-devkit`, `jk flash`, `jk node enroll --link`, `joker.lab-link.toml`, envelope on the MCU, killing `jokerd` with the LED safe |
-| [10](10-logic-on-the-mcu.md) | a native app on the MCU (`reflexo`) and the link over Wi-Fi | ESP32 (+ Pi 3) | native apps on the MCU, `esp32` driver, `[net.wifi]`, encrypted UDP link, standalone node |
+| [10](10-logic-on-the-mcu.md) | a native app on the MCU (`reflex`) and the link over Wi-Fi | ESP32 (+ Pi 3) | native apps on the MCU, `esp32` driver, `[net.wifi]`, encrypted UDP link, standalone node |
 
 ### Module D — Fleet
 
@@ -86,7 +86,7 @@ The ESP32 connects to the Pi 3 with the micro-USB cable. The Pi Zero W has no wa
 ## The directory, at the end of the track
 
 ```
-joker-bancada/
+joker-bench/
   joker.toml                                  common manifest: outputs and envelopes, cycles, calc, alarms, apps, instances
   joker.sim.toml                              overlay: extends joker.toml → everything simulated (laptop)
   joker.rpi.toml                              overlay: extends joker.toml → the `pi` device (sysfs), common to both Raspberry Pis (part 6)
@@ -95,18 +95,18 @@ joker-bancada/
   joker.lab-link.toml                         overlay: extends joker.lab.toml → the ESP32 as Joker Micro over Joker Link (part 9)
   joker.sim.lock  joker.lab.lock  joker.zero.lock  joker.lab-link.lock
                                               one lock per input manifest (joker.rpi.toml only comes in through extends)
-  mapa-esp32.csv                              part 4 (the register map the profile came from)
+  map-esp32.csv                              part 4 (the register map the profile came from)
   boards/rpi-zero-w.board.toml                board profile (part 6)
   profiles/local/bench-esp32@1.profile.toml   equipment profile (part 4; implements in part 7)
   classes/local/status_light.jkc              class (part 8)
   classes/local/status_light.conformance.toml conformance suite of the class (part 8)
   micro/esp/joker.toml  micro/esp/joker.lock  Joker Micro manifest (parts 9–10) and its lock ([wcet] of the chip, part 10)
-  micro/esp/apps/reflexo/                     native MCU app (part 10)
+  micro/esp/apps/reflex/                     native MCU app (part 10)
   sim/pi.sim.toml  sim/esp.sim.toml           simulation models
-  sim/scenarios/*.scenario.toml               scenarios: pisca, aquece, botao, falha_esp
-  apps/luz/                                   the business app, 0.1 → 0.7.1
+  sim/scenarios/*.scenario.toml               scenarios: blink, heat_up, button, esp_fault
+  apps/light/                                   the business app, 0.1 → 0.7.1
   apps/status_light_ctl/                      part 8
-  secrets.toml.enc                            parts 9–11 (recipient node:esp, wifi_bancada, mqtt_bancada)
+  secrets.toml.enc                            parts 9–11 (recipient node:esp, wifi_bench, mqtt_bench)
   keys/*.pub                                  part 11
   fleet.toml                                  part 11 (what the Deck reads from the repository)
 ```
@@ -120,9 +120,9 @@ Up to part 5, `joker.lab.toml` extends `joker.toml` directly and holds `[devices
 ## The two rules
 
 1. **The app changes only when the behavior or the layer changes.** The behavior changes in parts 3, 4, 5 and 11; the layer changes in parts 7 (classes) and 8 (your own class). Moving from the simulator to hardware (part 2), from one board to another (part 6) or from Modbus to Joker Link (part 9) touches only manifests.
-2. **Changing layer or board does not change the behavior.** The scenario `sim/scenarios/falha_esp.scenario.toml`, written in part 5, passes unchanged on versions 0.4 (and the 0.4.1 fix), 0.5 and 0.6 of the app, and the same common manifest runs on the Pi 3 and on the Pi Zero W.
+2. **Changing layer or board does not change the behavior.** The scenario `sim/scenarios/esp_fault.scenario.toml`, written in part 5, passes unchanged on versions 0.4 (and the 0.4.1 fix), 0.5 and 0.6 of the app, and the same common manifest runs on the Pi 3 and on the Pi Zero W.
 
-| Version of `luz` | Part | What changed |
+| Version of `light` | Part | What changed |
 |---|---|---|
 | 0.1 | 01 | blinks the `led` with `half_period` |
 | 0.2 | 03 | blinks faster the hotter the CPU is; `Err` without a `good` temperature → `safe` |
@@ -130,8 +130,8 @@ Up to part 5, `joker.lab.toml` extends `joker.toml` directly and holds `[devices
 | 0.4 | 05 | the touch adjusts the sensitivity; tolerant of the loss of the ESP32 |
 | 0.4.1 | 05 | fix seen in the replay: without the ESP32, it does not propose its LED (stays until part 6) |
 | 0.5 | 07 | the same, on top of class handles |
-| 0.6 | 08 | the same, on top of the instance `sinal` (`status_light@1`) |
-| 0.7 | 11 | `alert` mode with the alarm `cpu_quente` |
+| 0.6 | 08 | the same, on top of the instance `indicator` (`status_light@1`) |
+| 0.7 | 11 | `alert` mode with the alarm `cpu_hot` |
 | 0.7.1 | 11 | a deliberately bad "improvement": overruns on the Pi Zero W, stopped at the canary |
 
 ## Conventions
@@ -144,7 +144,7 @@ Up to part 5, `joker.lab.toml` extends `joker.toml` directly and holds `[devices
 - **Cycle group:** `main`, 20 ms.
 - **Outputs:** blocks without a language, short, with the codes from `spec/codes.toml`. In `mode = "dev"`, codes of severity `error-in-prod` appear as `W` warnings with the same number (`W0205`); pure warnings keep the `J` (`J0352`).
 - **Versions.** Each part ends with a commit (`git commit`; with jj, `jj describe && jj new`) and states what it leaves behind: the app version, the new files and the generation of each node.
-- **Example names:** the user `dl`, the organization `bancada` (`jk ca init ~/org-ca --org bancada`), `example.com` domains.
+- **Example names:** the user `dl`, the organization `bench` (`jk ca init ~/org-ca --org bench`), `example.com` domains.
 
 ## Estimated time
 

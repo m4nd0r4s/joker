@@ -18,7 +18,7 @@ A project has many TOML files of different types: manifests and overlays, equipm
    | equipment profile | `<model>@<major>.profile.toml` | `profiles/local/bench-esp32@1.profile.toml` |
    | board profile | `<board>.board.toml` | `boards/rpi-zero-w.board.toml` |
    | simulation model | `<name>.sim.toml` | `sim/esp.sim.toml`, `classes/std/valve.sim.toml` |
-   | scenario | `<name>.scenario.toml` | `sim/scenarios/falha_esp.scenario.toml` |
+   | scenario | `<name>.scenario.toml` | `sim/scenarios/esp_fault.scenario.toml` |
    | conformance suite | `<name>.conformance.toml` | `classes/local/status_light.conformance.toml`, `conformance/envelope/rate.conformance.toml` |
    | class package | `<package>.package.toml` | `classes/acme/water/water.package.toml` |
    | driver fixture | `<driver>.fixture.toml` | `drivers/modbus/conformance/modbus-tcp.fixture.toml` |

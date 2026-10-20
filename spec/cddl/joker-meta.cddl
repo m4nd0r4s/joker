@@ -2,7 +2,7 @@
 ; Normative reference: docs/ref/04-wit-and-rust-sdk.md, §5. Representation: docs/ref/00-conventions.md.
 ;
 ; Encoding: deterministic CBOR (RFC 8949 §4.2.1), integer map keys (ref/00 §7).
-; Readers ignore unknown keys (ref/00 §1, regra 2); writers never reuse a removed key (ref/00 §1, regra 4).
+; Readers ignore unknown keys (ref/00 §1, rule 2); writers never reuse a removed key (ref/00 §1, rule 4).
 ;
 ; Where it lives (ref/04 §5.1):
 ;   - Wasm: custom section named "joker:meta" at component level (written by `jk build`), or, in a

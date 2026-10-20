@@ -132,8 +132,8 @@ docker run -d -p 8443:8443 -v /srv/deck:/srv/deck registry.example.com/joker/dec
 ```toml
 # deck.toml — a small Deck, on a single server
 [deck]
-id     = "bancada-deck"
-url    = "https://portatil.local:8443"
+id     = "bench-deck"
+url    = "https://laptop.local:8443"
 listen = "0.0.0.0:8443"
 data   = "~/deck/data"
 
@@ -141,7 +141,7 @@ data   = "~/deck/data"
 url = "sqlite:deck.db"                  # in production: "postgres://deck@db.example.com/deck"
 
 [git]
-repo   = "~/joker-bancada"
+repo   = "~/joker-bench"
 branch = "main"
 poll   = "30s"
 
@@ -183,11 +183,11 @@ version = 1
 
 [nodes.zero]
 manifest = "joker.zero.toml"
-cohort   = "canario"
+cohort   = "canary"
 
 [nodes.lab]
 manifest = "joker.lab-link.toml"
-cohort   = "estavel"
+cohort   = "stable"
 
 [rollout]
 wait    = "10m"
@@ -195,10 +195,10 @@ confirm = { mode = "auto", window = "15m", stable_for = "5m" }
 halt_if = ["overruns_rate > 0.001", "trips_rate > 0", "rollbacks > 0"]
 
 [[rollout.wave]]
-cohorts = ["canario"]
+cohorts = ["canary"]
 
 [[rollout.wave]]
-cohorts = ["estavel"]
+cohorts = ["stable"]
 ```
 
 | Key | Type | Req. | Default | Meaning |

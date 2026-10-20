@@ -4,7 +4,7 @@
 
 **You will learn:** installing `jokerd` · the organization CA and enrollment without open ports · `jk doctor --rt` · the board profile and `[resources]` · the `sysfs` driver · one lock per manifest · `jk apply --confirm`, generations and rollback · manual write and arbiter · the three-layer safe state, and what it does not cover.
 
-**Before you start:** part 1 done (app `luz` 0.1). The Pi 3 B+ with a microSD card and its power supply, on the same Wi-Fi network as the laptop. No wire besides the power.
+**Before you start:** part 1 done (app `light` 0.1). The Pi 3 B+ with a microSD card and its power supply, on the same Wi-Fi network as the laptop. No wire besides the power.
 
 ---
 
@@ -45,13 +45,13 @@ Without an identity, `jokerd` listens **only** on the Unix socket, even if you a
 On the laptop, create the CA that will sign the nodes' certificates and yours. Once, and outside the project:
 
 ```sh
-$ jk ca init ~/org-ca --org bancada
+$ jk ca init ~/org-ca --org bench
 ```
 
 ```
 created ~/org-ca/root.key        Ed25519 root (signs trust bundles; keep it safe)
 created ~/org-ca/ca.key, ca.crt  P-256 issuer (signs node and user certificates)
-created ~/org-ca/org             bancada
+created ~/org-ca/org             bench
 user certificate                 admin-dl → ~/.local/share/joker/certs/admin-dl.{crt,key}
 recorded in [user] of ~/.config/joker/config.toml
 ```
@@ -67,8 +67,8 @@ $ jk node enroll ssh://pi@lab.local --ca ~/org-ca --name lab --allow-dev
 ```
 → ssh://pi@lab.local · socket /run/joker/api.sock · principal unix:pi (joker-admin)
 CSR received          lab · P-256 key in a file (no TPM) · KEM x25519
-certificate issued    CN=lab · SAN DNS:lab · CA bancada (~/org-ca)
-trust                 anchor ed25519:5e0c… (root bancada) · bundle without Deck
+certificate issued    CN=lab · SAN DNS:lab · CA bench (~/org-ca)
+trust                 anchor ed25519:5e0c… (root bench) · bundle without Deck
 policy                allow_dev = true (--allow-dev)
 client                [nodes.lab] added to ~/.config/joker/config.toml
 node enrolled. listeners: unix:/run/joker/api.sock
@@ -202,7 +202,7 @@ $ jk check --env lab
 
 ```
 ✓ manifest           joker.lab.toml ← joker.toml · board rpi3b-plus@1 · 1 device (sysfs), 1 output, 1 app, 1 group
-✓ bindings           luz.led → pi.act_led (bool)
+✓ bindings           light.led → pi.act_led (bool)
 ✓ resources          rt [3] · io [2] · bg [0, 1]
 ✓ RT admission       main 20ms → cpu 3: 5 µs declared (0.03%)
 ✓ memory             estimated 38 MiB of 1 GiB
@@ -211,7 +211,7 @@ warning[W0205]: device fallback missing or inconsistent with `safe`: `pi.act_led
    = note: an LED in sysfs has no watchdog of its own; if jokerd dies, it stays at the last value
    = help: in `mode = "prod"` this is an error; accept it with `accept_missing_fallback = "<justification>"`,
             or use hardware with a fallback
-note: joker.lab.lock updated (boards, apps.luz)
+note: joker.lab.lock updated (boards, apps.light)
 ```
 
 Keep the `W0205` in mind: you will see it happen in section 12.
@@ -242,7 +242,7 @@ $ jk lock --env lab --node lab
 ```
 joker.lab.lock
   = boards."rpi3b-plus@1"   1.0.0   (oci://hub.example.com/joker/boards/rpi3b-plus:1.0.0)
-  = apps.luz                0.1.0   (path:apps/luz)
+  = apps.light                0.1.0   (path:apps/light)
   + runtime 1.0.0 · node lab
 ```
 
@@ -258,11 +258,11 @@ digest = "sha256:…"
 source = "oci://hub.example.com/joker/boards/rpi3b-plus:1.0.0"
 oci = "sha256:…"
 
-[apps.luz]
+[apps.light]
 version = "0.1.0"
 digest = "sha256:…"
 wit = "joker:runtime@1.0.0"
-source = "path:apps/luz"
+source = "path:apps/light"
 ```
 
 One lock per input manifest (`joker.lab.toml` → `joker.lab.lock`, next to the `joker.sim.lock` from part 1), because the simulator and the board resolve different things (ref/02 §2.1.1). With `--node`, `jk` asks the node, with reads only, for the facts that depend on it and writes `runtime` and `node`; applying this lock on another node gives `J0480`. Here there is no discovery and no fallback to capture: `sysfs` has none. Put `joker.lab.lock` under version control.
@@ -278,7 +278,7 @@ $ jk apply --env lab --node lab --confirm 5m
 plan of generation 1
   + board rpi3b-plus@1 · resources rt [3] io [2] bg [0, 1]
   + device pi (sysfs, 1 signal)
-  + app luz 0.1.0 (aarch64 AOT, 208 KiB)
+  + app light 0.1.0 (aarch64 AOT, 208 KiB)
   + group main 20ms (rt, cpu 3)
   + api tcp:[::]:7443 (mTLS)                       ← touches the API: asks for confirmation
 applied. confirmation pending: `jk confirm` within 5 min, or automatic rollback
@@ -309,7 +309,7 @@ $ jk generations --node lab
 
 ```
 gen  state        origin   who             when                  hash
-  2  confirmed    local    cert:admin-dl   2026-09-25 10:31:07   sha256:9e41…   ~ apps.luz.params.half_period 500 ms → 250 ms
+  2  confirmed    local    cert:admin-dl   2026-09-25 10:31:07   sha256:9e41…   ~ apps.light.params.half_period 500 ms → 250 ms
   1  confirmed    local    cert:admin-dl   2026-09-25 10:24:52   sha256:3b0c…
 ```
 
@@ -338,7 +338,7 @@ $ jk write pi.act_led true --ttl 30s --reason "arbiter test" --node lab
 → lab (dev) · from --node · lab.local:7443
 pi.act_led: manual write (manual:4) for 30 s
   envelope: safe = false · no range, rate or interlock
-  prevails over: control:12 (app:luz)
+  prevails over: control:12 (app:light)
 confirm? [y/N] y
 accepted · manual:4 · until 10:42:37
 ```
@@ -356,7 +356,7 @@ pi.act_led   bool · output · device pi (sysfs, led ACT)                  joker
   envelope   safe = false                                                joker.toml:9
   owning group main 20ms (the highest-priority app that writes it in a cycle, A11)
   levels     manual:4     true    user:cert:admin-dl · "arbiter test" · until 10:42:37   ← active
-             control:12   false   app:luz · lease 60 ms (default, 3 × 20 ms)
+             control:12   false   app:light · lease 60 ms (default, 3 × 20 ms)
   applied    true   (overridden: control:12 loses to manual:4)
   last       control:12 → overridden(manual:4) · manual:4 → accepted
 ```
@@ -382,10 +382,10 @@ Three experiments, in the right order (document 01, §8).
 **(a) The app stops.**
 
 ```sh
-$ jk app stop luz --node lab
+$ jk app stop light --node lab
 ```
 
-The LED goes off within ≤ 60 ms. Nobody wrote `false`: the app's lease expired, no level was left active, and the arbiter applied the `safe` (document 16, A6). **First layer: the lease.** It covers the app that is dead, stuck or in a *crashloop*. Turn it back on with `jk app start luz --node lab`.
+The LED goes off within ≤ 60 ms. Nobody wrote `false`: the app's lease expired, no level was left active, and the arbiter applied the `safe` (document 16, A6). **First layer: the lease.** It covers the app that is dead, stuck or in a *crashloop*. Turn it back on with `jk app start light --node lab`.
 
 **(b) `jokerd` gets stuck.** You will not provoke it, but it is there: the `jokerd` supervisor thread arms the board's hardware watchdog (`/dev/watchdog0`, 15 s, what `jk board show` showed) and systemd's `WatchdogSec`. If a group gets stuck, the supervisor restarts the runtime; if the whole process stops responding, the watchdog reboots the board. **Second layer: the supervisor.** It covers what the first does not, because a lease only expires if there is someone to count it.
 
@@ -395,7 +395,7 @@ The LED goes off within ≤ 60 ms. Nobody wrote `false`: the app's lease expired
 lab$ sudo systemctl kill -s KILL jokerd
 ```
 
-**The LED stays on.** With the process dead, nobody writes to `brightness` or restores the *trigger*, and the kernel keeps the last value. systemd restarts `jokerd` within 1–2 s; `jokerd` starts with every output in `safe` (document 16, A8), the LED goes off, and `luz` blinks again. With the LED off at the instant of the `kill`, you would see no difference at all: do it both ways.
+**The LED stays on.** With the process dead, nobody writes to `brightness` or restores the *trigger*, and the kernel keeps the last value. systemd restarts `jokerd` within 1–2 s; `jokerd` starts with every output in `safe` (document 16, A8), the LED goes off, and `light` blinks again. With the LED off at the instant of the `kill`, you would see no difference at all: do it both ways.
 
 This is the **honest lesson of part 2: the `ACT` LED has no hardware fallback.** The third layer of the safe state is the **device fallback** (M1): the equipment itself goes to a safe value when it stops hearing from Joker, and it is the only layer that covers a dead `jokerd`, a board without power and a cut cable. An LED in `sysfs` has none of that, and the board declares none. It is exactly the `W0205` of section 8, and in `prod` it would be the error `J0205`.
 
@@ -417,9 +417,9 @@ On an LED it does no harm. On a heater or a motor, "stays as it was" can mean "s
 4. Do experiment 12(c) with the LED off and then on. Explain the difference to someone, using the words "lease", "supervisor" and "device fallback".
 
 ```sh
-$ git add -A && git commit -qm "track(02): the Pi 3 as node lab; real ACT LED with luz 0.1"
+$ git add -A && git commit -qm "track(02): the Pi 3 as node lab; real ACT LED with light 0.1"
 ```
 
-**State at the end of this part:** app `luz` **0.1, unchanged**: only the manifests changed. New files: `joker.lab.toml`, `joker.lab.lock`. Outside the project: `~/org-ca/`, the `lab` context in `~/.config/joker/config.toml`, and the node `lab` enrolled, at confirmed generation 1.
+**State at the end of this part:** app `light` **0.1, unchanged**: only the manifests changed. New files: `joker.lab.toml`, `joker.lab.lock`. Outside the project: `~/org-ca/`, the `lab` context in `~/.config/joker/config.toml`, and the node `lab` enrolled, at confirmed generation 1.
 
 **Next:** [Part 3 — A real sensor: the CPU temperature, alarms, historian and the API](03-temperature-sensor.md).

@@ -583,7 +583,7 @@ The prediction uses the same functions of the core over the current values, outs
 
 - **Method** (document 17, §4.1): `args` by name, `ttl`, `level`, `reason`, `takeover`, `wait`, `wait_timeout`, with the same rules as §5.6. The core stores a method record at the level of the caller and expands it in step 5a of the tick of the owning group. The response carries one ticket per expanded `out`. A method that writes `out`s of different groups produces one write per group, and the response waits for all of them. Nonexistent method: `J-E1411`; invalid arguments: `J-E1412`.
 - **Health** (document 17, §4.5): `ok`, `degraded`, `failed`, with the responsible members in `health_detail`.
-- **Tree** (document 17, §8): a class member appears in `members` with `kind = "member"`, the `class`, the `bounds` in a collection and `elements`, one `InstanceNode` per bound instance, in the order of the collection. Each node has the nested `path` (`esp_io.boot`, `station.pumps.p1`), the `instance` (null in an unnamed profile submember), the health and its own `members`, recursively, down to depth 3. The top-level health is already that of the tree. With `values=false`, the nodes come without samples. A virtual instance with the implementation stopped shows `implementation.state = stopped` (the `sinal` instance of the track, part 8, if `status_light_ctl` stops).
+- **Tree** (document 17, §8): a class member appears in `members` with `kind = "member"`, the `class`, the `bounds` in a collection and `elements`, one `InstanceNode` per bound instance, in the order of the collection. Each node has the nested `path` (`esp_io.boot`, `station.pumps.p1`), the `instance` (null in an unnamed profile submember), the health and its own `members`, recursively, down to depth 3. The top-level health is already that of the tree. With `values=false`, the nodes come without samples. A virtual instance with the implementation stopped shows `implementation.state = stopped` (the `indicator` instance of the track, part 8, if `status_light_ctl` stops).
 - **Verify:** `conformance` (blob or content), `cases`, `level` (default `manual:3`: the harness writes like an operator), `max_duration`, `allow_prod`, `reason`. In `mode = "prod"` it requires `allow_prod: true` (`J-E1414`), because the cases write to the equipment. In simulation, `jk class verify` is local.
 
 ### 5.12 Devices and lock facts
@@ -1272,7 +1272,7 @@ $J -X POST http://joker/v1/discovery $H -d '{"uri":"sunspec://192.168.10.30"}'
 
 # jk lock --node: the manifest is not on the node yet
 $J -X POST http://joker/v1/lock/probe $H \
-   -d "$(jq -n --rawfile m /tmp/efetivo.toml '{manifest:{content:$m}}')"
+   -d "$(jq -n --rawfile m /tmp/effective.toml '{manifest:{content:$m}}')"
 #   → job lock_probe; result.lock_toml is the [discovered.*]/[fallback.*] excerpt
 
 # jk bench: upload the app and measure
@@ -1280,7 +1280,7 @@ D=sha256:$(sha256sum target/peak_shaver.wasm | cut -d' ' -f1)
 $J -X POST http://joker/v1/blobs/missing $H -d "{\"digests\":[\"$D\"]}"
 $J -X POST "http://joker/v1/blobs/uploads?digest=$D&kind=joker.app.v1%2Bwasm" \
    -H Content-Type:application/octet-stream --data-binary @target/peak_shaver.wasm
-$J -X POST http://joker/v1/bench $H -d "$(jq -n --rawfile m /tmp/efetivo.toml --arg d "$D" \
+$J -X POST http://joker/v1/bench $H -d "$(jq -n --rawfile m /tmp/effective.toml --arg d "$D" \
    '{manifest:{content:$m}, apps:[{digest:$d, kind:"joker.app.v1+wasm", name:"apps.peak_shaver"}]}')"
 
 # jk check: local (and, if desired, on the node)
@@ -1323,21 +1323,21 @@ $J -X POST http://joker/v1/generations/confirming/confirm $H -d '{}'
 ```sh
 # jk decisions --output pcs.p_set --since "2026-09-24 03:00" --to "03:30"
 $J 'http://joker/v1/decisions?output=pcs.p_set&from=2026-09-24T03:00:00Z&to=2026-09-24T03:30:00Z&order=asc' \
-   -H Accept:text/csv > decisoes.csv
+   -H Accept:text/csv > decisions.csv
 
 # only the writes that read meter.p_total
 $J 'http://joker/v1/decisions?output=pcs.p_set&cause=meter.p_total&since=1h' | jq '.items[] | {ts, outcome, applied}'
 
-# jk trace-from-history "03:00..03:30" --app peak_shaver --out incidente.jktrace
+# jk trace-from-history "03:00..03:30" --app peak_shaver --out incident.jktrace
 $J -X POST http://joker/v1/traces $H \
    -d '{"source":"history","from":"2026-09-24T03:00:00Z","to":"2026-09-24T03:30:00Z","app":"peak_shaver"}'
 #   → 201, id 01J8Z5…, approximate: true, warnings
-$J -o incidente.jktrace http://joker/v1/traces/01J8Z5B2N4P6R8T0V2X4Z6A8CD/file
+$J -o incident.jktrace http://joker/v1/traces/01J8Z5B2N4P6R8T0V2X4Z6A8CD/file
 
 # or, exact, from the continuous ring of the group
 $J -X POST http://joker/v1/traces $H -d '{"source":"ring","groups":["fast"],"from":"2026-09-24T03:00:00Z","to":"2026-09-24T03:30:00Z"}'
 
-# jk replay incidente.jktrace --diff --app peak_shaver@1.4.3: local
+# jk replay incident.jktrace --diff --app peak_shaver@1.4.3: local
 ```
 
 ### 10.3 Day-to-day operation

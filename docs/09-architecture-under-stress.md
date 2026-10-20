@@ -307,7 +307,7 @@ The minimal manifest has 16 lines, and a beginner only needs 4 concepts (signal,
 
 ```toml
 [project]
-name = "bomba"
+name = "pump"
 mode = "dev"
 
 [devices.io]

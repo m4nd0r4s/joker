@@ -1605,7 +1605,7 @@ The 39 `rust` blocks of `docs/**/*.md` outside `docs/ref/`, extracted by script.
 | 31 | track 7 §6 | `joker::classes::std`, `#[device]` (`Led`, `Button`, `TempSensor`, `AnalogIn`), `clicked()`, `pressed()`, `temperature()`, `raw()`, `off()`, `set`, `get_or` | ✓; the members are those of the `std/` classes (document 14) |
 | 32 | track 8 §4 | `#[joker::implements(StatusLight)]`, `#[device] Led`, the `enum LightMode` generated from the `.jkc`, `Option` in the state | ✓; `LightMode` and the members come from the code generated from the `local/` class (§4.8.4) |
 | 33 | track 8 §4 (tests) | `group`, `device`, `command`, `member`, `after`, `toggles_every`, `Sim::of` | ✓ |
-| 34 | track 8 §6 | `#[device] sinal: StatusLight`, methods `blink`/`off`, `clicked()`, `pressed()`, `temperature()`, `raw()` | ✓ |
+| 34 | track 8 §6 | `#[device] indicator: StatusLight`, methods `blink`/`off`, `clicked()`, `pressed()`, `temperature()`, `raw()` | ✓ |
 | 35 | track 10 §2 | native MCU app: `app`, `#[input]`, `#[output]`, `#[param(unit, range, default)]`, `cycle(period)` without `wcet`, `dt().as_secs_f32()` | ✓ (ref/08 §2.11; `as_secs_f32` is from `core::time::Duration`) |
 | 36 | track 10 §4 | `#[joker::task(every)]`, `history`, `now()`, `h()`, `mins()` on an MCU target | error on purpose: `J0720` (`history` does not exist on Joker Micro, ref/08 §2.11.5) |
 | 37 | track 10 §4 (line) | `#[param(unit, range, default)]` with `Param<f64>` on an MCU with `fpu = "sp"` | warning on purpose: `J0721` |

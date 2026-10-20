@@ -27,7 +27,7 @@ Normative reference. It applies `ref/00-conventions.md` (representation) and ref
 
 #### 2.1.1 Which lock, and where
 
-- There is **one lock per input manifest**, in the same directory (ADR 0026): `joker.lock` for `joker.toml` and `joker.<variant>.lock` for each input overlay `joker.<variant>.toml`. Examples: `joker.toml` → `joker.lock`, `joker.rpi.toml` → `joker.rpi.lock` (it is the lock of `jk <command> --env rpi`), `sites/lisboa-01/joker.verao.toml` → `sites/lisboa-01/joker.verao.lock`. An overlay that is used only through `extends` (a template) has no lock.
+- There is **one lock per input manifest**, in the same directory (ADR 0026): `joker.lock` for `joker.toml` and `joker.<variant>.lock` for each input overlay `joker.<variant>.toml`. Examples: `joker.toml` → `joker.lock`, `joker.rpi.toml` → `joker.rpi.lock` (it is the lock of `jk <command> --env rpi`), `sites/lisboa-01/joker.summer.toml` → `sites/lisboa-01/joker.summer.lock`. An overlay that is used only through `extends` (a template) has no lock.
 - An input manifest with a name outside the rule, accepted only through `--manifest` (with the warning `J0169`, ref/01 §7.7), has the lock with the same name and `.lock` in place of `.toml`.
 - `--lock <file>` (or `JK_LOCK`) chooses another path.
 - Reason: `joker.sim.toml` and `joker.rpi.toml` resolve different things (the hardware overlay has profiles, discovery and WCET; the simulator one does not). A shared lock would be rewritten at every overlay switch.
@@ -141,7 +141,7 @@ verified = "2026-09-20T10:14:05Z"
 "peak_shaver.control" = { p999 = "38us", max = "51us", samples = 100000, board = "revpi-connect-5", runtime = "1.0.3", app = "sha256:9f2c…", measured = "2026-09-20T10:20:00Z" }
 
 [accepted]
-accept_missing_fallback."painel.led" = { reason = "Indicator LED; no physical consequences", by = "user:dl", at = "2026-09-18T09:02:11Z" }
+accept_missing_fallback."panel.led" = { reason = "Indicator LED; no physical consequences", by = "user:dl", at = "2026-09-18T09:02:11Z" }
 widen."pcs.p_set.range" = { reason = "New PCS with 150 kW rated power; approved by DL on 2026-09-18", value = ["-150 kW", "150 kW"], by = "user:dl", at = "2026-09-18T09:02:11Z" }
 ```
 
@@ -598,7 +598,7 @@ signing_key = "pkcs11:token=ops;object=site-ops-config"
 secrets_key = "~/.local/share/joker/keys/dl.x25519.key"
 
 [defaults]
-node = "pi-trilha"
+node = "pi-track"
 ca = "~/.local/share/joker/certs/example-ca.crt"
 output = "human"
 color = "auto"
@@ -606,8 +606,8 @@ timeout = "30s"
 registry = "oci://registry.example.com/joker"
 search = ["oci://registry.example.com/joker", "builtin:", "oci://hub.example.com/joker"]
 
-[nodes.pi-trilha]
-address = "pi-trilha.local:7443"
+[nodes.pi-track]
+address = "pi-track.local:7443"
 ca = "~/.joker/dev-ca/ca.crt"
 
 [nodes.lisboa-01]
@@ -1163,7 +1163,7 @@ In this order, with the value of `--node`, `JK_NODE` or `defaults.node`:
 1. `local` → the local runtime: `.joker/run/api.sock` of the project, if a `jk dev` is running; otherwise `/run/joker/api.sock`; otherwise `J0911`.
 2. Starts with `unix:` or `ssh://`, or has the form `<host>:<port>` → literal address. If some context has that address, its `ca` is used; otherwise, `defaults.ca`. There are no other forms (neither `tcp:` nor `ssh:` without `//`): `--node` accepts `local`, a context name, `unix:<path>`, `<host>:<port>` and `ssh://[<user>@]<host>[:<port>]`, and only those, the same in ref/05 §22.1, in ref/09 §2.1 and in document 07, §1.
 3. Exact name in `[nodes]` → that context.
-4. Equal to the host of the `address` of **a single** context → that context (`--node pi-trilha.local` finds `[nodes.pi-trilha]`). Of more than one → `J0911` (ambiguous), with the list.
+4. Equal to the host of the `address` of **a single** context → that context (`--node pi-track.local` finds `[nodes.pi-track]`). Of more than one → `J0911` (ambiguous), with the list.
 5. Otherwise → `<value>:7443` (TCP with mTLS) with `defaults.ca`.
 
 Without `--node`, `JK_NODE` or `defaults.node`, the commands that talk to a node use step 1.

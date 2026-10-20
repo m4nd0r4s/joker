@@ -4,7 +4,7 @@
 
 **You will learn:** what `prod` changes · keys per role and the trust bundle · `accept_missing_fallback` and `max_manual` · secrets encrypted per recipient · the Deck MVP · enrollment with a token · desired state, waves and confirmation · `halt_if` and rollback · an offline node · what the Deck cannot do.
 
-**Before you start:** parts 1–10. `lab` (Pi 3) runs `joker.lab-link.toml` (generation 15), with the ESP32 as Joker Micro over Wi-Fi (parts 9–10) and `luz` 0.6; the CA `~/org-ca` is the one from part 2 (`--org bancada`). `zero` has been stopped since part 7, at generation 2 of `joker.zero.toml` (`luz` 0.5): turn it on (`zero$ sudo systemctl start jokerd`). **The `esp` of `zero` becomes `bad(comm_failure)`**, and `esp_offline` active: since part 9, the ESP32's firmware is Joker Micro, which no longer serves Modbus TCP. It is the tolerant behavior of 0.4 (part 5): `zero` keeps blinking with its `ACT` LED. The laptop and the two Pis are on the same network.
+**Before you start:** parts 1–10. `lab` (Pi 3) runs `joker.lab-link.toml` (generation 15), with the ESP32 as Joker Micro over Wi-Fi (parts 9–10) and `light` 0.6; the CA `~/org-ca` is the one from part 2 (`--org bench`). `zero` has been stopped since part 7, at generation 2 of `joker.zero.toml` (`light` 0.5): turn it on (`zero$ sudo systemctl start jokerd`). **The `esp` of `zero` becomes `bad(comm_failure)`**, and `esp_offline` active: since part 9, the ESP32's firmware is Joker Micro, which no longer serves Modbus TCP. It is the tolerant behavior of 0.4 (part 5): `zero` keeps blinking with its `ACT` LED. The laptop and the two Pis are on the same network.
 
 ---
 
@@ -14,7 +14,7 @@ In `dev`, Joker lets through what is not ready yet and warns. In `prod`, the sam
 
 ```toml
 [project]
-name  = "bancada"
+name  = "bench"
 joker = "1.0"
 mode  = "prod"
 ```
@@ -74,7 +74,7 @@ In `prod`, the MCU's checks are errors like the node's. The board `esp32-devkit`
 ```toml
 # micro/esp/joker.toml ([project] and [target] change)
 [project]
-name  = "bancada-esp"
+name  = "bench-esp"
 joker = "1.0"
 mode  = "prod"
 
@@ -122,7 +122,7 @@ In `prod`, every artifact must come signed by a key with the right role (ref/02 
 ```sh
 $ jk key gen config --kind signing
 $ jk key gen apps --kind signing
-$ jk key gen segredos --kind signing
+$ jk key gen secrets --kind signing
 $ jk key gen deck --kind signing
 $ jk key gen dl --kind secrets
 ```
@@ -130,12 +130,12 @@ $ jk key gen dl --kind secrets
 ```
 ed25519:2b7f41c09e8d3a5f6c1e2d4b7a9f0c3e  ~/.local/share/joker/keys/config.key · keys/config.pub
 ed25519:91c4e0a7b3d2f6158e4c7a0b9d3f2e61  ~/.local/share/joker/keys/apps.key · keys/apps.pub
-ed25519:4d0a6e2c8b1f7394a5e0c6d2b8f41a73  ~/.local/share/joker/keys/segredos.key · keys/segredos.pub
+ed25519:4d0a6e2c8b1f7394a5e0c6d2b8f41a73  ~/.local/share/joker/keys/secrets.key · keys/secrets.pub
 ed25519:e6f39b0c4a7d2e81f5c0a3b6d9e24c17  ~/.local/share/joker/keys/deck.key · keys/deck.pub
 x25519:7a1c5e9f3b0d4c28e6a1f7b3c5d09e42   ~/.local/share/joker/keys/dl.x25519.key · keys/dl.x25519.pub
 ```
 
-The private keys stay outside the project (`J0913` if they are inside); the `keys/` directory only has `.pub` files. The first four are signing keys (Ed25519): `config` signs generations, `apps` the apps, `segredos` the secret entries, `deck` the Deck's documents. The last one is your *escrow* key (X25519), the one that lets you read and re-encrypt secrets; tell `jk` where it is, with `secrets_key = "~/.local/share/joker/keys/dl.x25519.key"` in `[user]` of `~/.config/joker/config.toml` (ref/02 §2.3.2).
+The private keys stay outside the project (`J0913` if they are inside); the `keys/` directory only has `.pub` files. The first four are signing keys (Ed25519): `config` signs generations, `apps` the apps, `secrets` the secret entries, `deck` the Deck's documents. The last one is your *escrow* key (X25519), the one that lets you read and re-encrypt secrets; tell `jk` where it is, with `secrets_key = "~/.local/share/joker/keys/dl.x25519.key"` in `[user]` of `~/.config/joker/config.toml` (ref/02 §2.3.2).
 
 ### 1.3 The trust bundle
 
@@ -143,15 +143,15 @@ File names give nobody a role. What says "this key signs apps" is the **trust bu
 
 ```sh
 $ jk ca bundle ~/org-ca --key config=keys/config.pub --key apps=keys/apps.pub \
-    --key secrets=keys/segredos.pub --deck bancada-deck=keys/deck.pub \
-    --deck-url https://portatil.local:8443 --min-mode prod --out ~/org-ca/trust.cose
+    --key secrets=keys/secrets.pub --deck bench-deck=keys/deck.pub \
+    --deck-url https://laptop.local:8443 --min-mode prod --out ~/org-ca/trust.cose
 ```
 
 ```
-trust bundle · org bancada · version 2 · signed by ed25519:5e0c9a17… (root)
+trust bundle · org bench · version 2 · signed by ed25519:5e0c9a17… (root)
   config   ed25519:2b7f41c0…   secrets  ed25519:4d0a6e2c…
-  apps     ed25519:91c4e0a7…   deck     ed25519:e6f39b0c… (bancada-deck)
-  authority bancada-deck · deck_urls https://portatil.local:8443 · min_mode prod
+  apps     ed25519:91c4e0a7…   deck     ed25519:e6f39b0c… (bench-deck)
+  authority bench-deck · deck_urls https://laptop.local:8443 · min_mode prod
 ```
 
 The root is only for this (and for changing anchors). Take it off the laptop: `mv ~/org-ca/root.key` to a USB stick, and put the stick away. The Deck never reads it (document 20, §4.4.2).
@@ -160,7 +160,7 @@ The root is only for this (and for changing anchors). Take it off the laptop: `m
 
 ```toml
 [security]
-trust = { config = ["keys/config.pub"], apps = ["keys/apps.pub"], secrets = ["keys/segredos.pub"] }
+trust = { config = ["keys/config.pub"], apps = ["keys/apps.pub"], secrets = ["keys/secrets.pub"] }
 
 [security.roles]
 operator = ["cert:CN=admin-*"]
@@ -174,13 +174,13 @@ admin    = ["cert:CN=admin-*"]
 Version 0.7 of the project publishes the temperature and the alarms over MQTT to a `mosquitto` on the Pi 3. What publishes is the **node**, through an uplink in the manifest, and not the app: a Wasm app does not open sockets. In `joker.toml` (ref/01 §5.17.3):
 
 ```toml
-[telemetry.uplink.bancada]
+[telemetry.uplink.bench]
 kind     = "mqtt"
 broker   = "mqtt://lab.local:1883"
-classes  = { alarms = "alarm.**", high = ["pi.cpu_temp", "calc.temp_media"] }
+classes  = { alarms = "alarm.**", high = ["pi.cpu_temp", "calc.temp_avg"] }
 live     = { every = "5s" }
-username = "bancada"
-password = "secret:mqtt_bancada"
+username = "bench"
+password = "secret:mqtt_bench"
 ```
 
 ```
@@ -203,15 +203,15 @@ $ scp mosquitto.key mosquitto.crt ~/org-ca/ca.crt pi@lab.local:/tmp/ && rm mosqu
 
 ```sh
 lab$ sudo apt install -y mosquitto && sudo install -m 0640 -g mosquitto /tmp/mosquitto.* /tmp/ca.crt /etc/mosquitto/certs/
-lab$ printf 'listener 8883\ncafile /etc/mosquitto/certs/ca.crt\ncertfile /etc/mosquitto/certs/mosquitto.crt\nkeyfile /etc/mosquitto/certs/mosquitto.key\npassword_file /etc/mosquitto/passwd\nallow_anonymous false\n' | sudo tee /etc/mosquitto/conf.d/bancada.conf
-lab$ sudo mosquitto_passwd -c /etc/mosquitto/passwd bancada && sudo systemctl restart mosquitto
+lab$ printf 'listener 8883\ncafile /etc/mosquitto/certs/ca.crt\ncertfile /etc/mosquitto/certs/mosquitto.crt\nkeyfile /etc/mosquitto/certs/mosquitto.key\npassword_file /etc/mosquitto/passwd\nallow_anonymous false\n' | sudo tee /etc/mosquitto/conf.d/bench.conf
+lab$ sudo mosquitto_passwd -c /etc/mosquitto/passwd bench && sudo systemctl restart mosquitto
 ```
 
 The password you chose in `mosquitto_passwd` is the secret. It enters the project without ever being in clear text (ref/02 §2.4):
 
 ```sh
 $ jk secret recipient add --user dl --key keys/dl.x25519.pub
-$ jk secret set mqtt_bancada --description "lab's mosquitto" --sign-key ~/.local/share/joker/keys/segredos.key
+$ jk secret set mqtt_bench --description "lab's mosquitto" --sign-key ~/.local/share/joker/keys/secrets.key
 value: ••••••••••••  (again) ••••••••••••
 $ jk secret recipient add --node lab
 $ jk secret recipient add --node zero
@@ -219,18 +219,18 @@ $ jk secret list
 ```
 
 ```
-mqtt_bancada  rev 1  string  nodes: all  signer ed25519:4d0a6e2c…  recipients: node:lab, node:zero, user:dl
+mqtt_bench  rev 1  string  nodes: all  signer ed25519:4d0a6e2c…  recipients: node:lab, node:zero, user:dl
 ```
 
 The value is never a command-line argument (it would stay in the shell history). `recipient add --node` gets the node's KEM key **from its certificate**, verified by your CA (`J0929` if it is not attested): nobody can make you encrypt for a key that is not the node's. `secrets.toml.enc` goes into Git (ADR 0024): it has the names and the recipients in clear text, and the values encrypted for three keys that the Deck does not have.
 
 ```sh
-$ git add -A && git commit -m "bancada: prod, keys, MQTT telemetry with a secret"
+$ git add -A && git commit -m "bench: prod, keys, MQTT telemetry with a secret"
 ```
 
 ## 3. The Deck on the laptop
 
-The Deck is another binary, with its own `deck.toml`. The example of document 20, §4.4.2, is exactly that of this bench: copy it to `~/deck/deck.toml`, outside the project. It has the `id` `bancada-deck` and the `url` you put in the bundle, the project repository (`[git] repo = "~/joker-bancada"`, branch `main`, read every 30 s), the CA from part 2 (`[ca] dir = "~/org-ca"`), SQLite and the embedded store (in production, PostgreSQL and an OCI registry), and in `[signing]` the key `deck`. It is the only private key the Deck has: in a real installation, the Deck runs on another machine, and the keys `config`, `apps` and `segredos` never get there.
+The Deck is another binary, with its own `deck.toml`. The example of document 20, §4.4.2, is exactly that of this bench: copy it to `~/deck/deck.toml`, outside the project. It has the `id` `bench-deck` and the `url` you put in the bundle, the project repository (`[git] repo = "~/joker-bench"`, branch `main`, read every 30 s), the CA from part 2 (`[ca] dir = "~/org-ca"`), SQLite and the embedded store (in production, PostgreSQL and an OCI registry), and in `[signing]` the key `deck`. It is the only private key the Deck has: in a real installation, the Deck runs on another machine, and the keys `config`, `apps` and `secrets` never get there.
 
 In the project repository, `fleet.toml` says which node runs which manifest and in which cohort. `zero` is the **canary**: the weakest node is the one that receives first.
 
@@ -240,11 +240,11 @@ version = 1
 
 [nodes.zero]
 manifest = "joker.zero.toml"
-cohort   = "canario"
+cohort   = "canary"
 
 [nodes.lab]
 manifest = "joker.lab-link.toml"
-cohort   = "estavel"
+cohort   = "stable"
 
 [rollout]
 wait    = "10m"
@@ -252,20 +252,20 @@ confirm = { mode = "auto", window = "15m", stable_for = "5m" }
 halt_if = ["overruns_rate > 0.001", "trips_rate > 0", "rollbacks > 0"]
 
 [[rollout.wave]]
-cohorts = ["canario"]
+cohorts = ["canary"]
 
 [[rollout.wave]]
-cohorts = ["estavel"]
+cohorts = ["stable"]
 ```
 
 ```sh
-$ git add fleet.toml && git commit -m "bancada: fleet.toml"
+$ git add fleet.toml && git commit -m "bench: fleet.toml"
 $ joker-deck serve --config ~/deck/deck.toml
 ```
 
 ```
-bancada-deck · https://portatil.local:8443 · sqlite:deck.db · embedded store · deck key ed25519:e6f39b0c…
-git    main 3c8e1f2 "bancada: fleet.toml" · 2 nodes, 2 cohorts, 2 waves
+bench-deck · https://laptop.local:8443 · sqlite:deck.db · embedded store · deck key ed25519:e6f39b0c…
+git    main 3c8e1f2 "bench: fleet.toml" · 2 nodes, 2 cohorts, 2 waves
 lab    generation sha256:61f0… · error[J0915]: unsigned artifact or generation in `prod` · nothing issued
 zero   generation sha256:a3d7… · error[J0915]: unsigned artifact or generation in `prod` · nothing issued
 ```
@@ -273,12 +273,12 @@ zero   generation sha256:a3d7… · error[J0915]: unsigned artifact or generatio
 This is the "what the Deck says" moment. The Deck validated both generations like `jk check`, and stopped where it had to stop: it does not have the `config` key, so it cannot sign what it read from Git. The one who signs is you, with your keys, and you upload to the Deck's store:
 
 ```sh
-$ jk publish --env lab-link --env zero --registry oci://portatil.local:8443/bancada \
+$ jk publish --env lab-link --env zero --registry oci://laptop.local:8443/bench \
     --sign-key config=~/.local/share/joker/keys/config.key --sign-key apps=~/.local/share/joker/keys/apps.key
 ```
 
 ```
-joker.lab-link.toml  generation sha256:61f0…  config ✓ · luz 0.6.0 apps ✓ · status_light_ctl 1.0.0 apps ✓ · MCU blob esp (prod) config ✓ · 7 artifacts uploaded
+joker.lab-link.toml  generation sha256:61f0…  config ✓ · light 0.6.0 apps ✓ · status_light_ctl 1.0.0 apps ✓ · MCU blob esp (prod) config ✓ · 7 artifacts uploaded
 joker.zero.toml      generation sha256:a3d7…  config ✓ · 2 new artifacts (the others were already there, by digest)
 ```
 
@@ -288,15 +288,15 @@ The MCU's blob (`micro/esp/joker.toml`, now in `prod`) is signed here, with the 
 
 ```sh
 $ joker-deck token create --node lab --ttl 1d
-jkt1_bancada_5e0c9a17d2b84f6e91a3c07d58e2f4b1_K7Q2M9XW4TPA6RZC3HNV8JDF5LBY1SEG  (lab · expires 2026-09-26T10:05Z · single use)
-$ jk node enroll ssh://pi@lab.local --deck https://portatil.local:8443 --token jkt1_bancada_5e0c9a17… --force
+jkt1_bench_5e0c9a17d2b84f6e91a3c07d58e2f4b1_K7Q2M9XW4TPA6RZC3HNV8JDF5LBY1SEG  (lab · expires 2026-09-26T10:05Z · single use)
+$ jk node enroll ssh://pi@lab.local --deck https://laptop.local:8443 --token jkt1_bench_5e0c9a17… --force
 ```
 
 ```
 → ssh://pi@lab.local · already enrolled with ~/org-ca: --force generates a new identity
 warning[J0933]: identity key in a file, without a TPM or secure element (or required attestation missing)
-certificate CN=lab, O=bancada · until 2027-09-25 · issued by bancada-deck
-anchors: ed25519:5e0c9a17… (matches the token) · bundle version 2 · authority bancada-deck
+certificate CN=lab, O=bench · until 2027-09-25 · issued by bench-deck
+anchors: ed25519:5e0c9a17… (matches the token) · bundle version 2 · authority bench-deck
 policy.allow_dev = false
 ```
 
@@ -304,7 +304,7 @@ The token carries the root's `kid`: that is how the node verifies the bundle it 
 
 ```sh
 $ jk agent status --node lab
-authority    bancada-deck · https://portatil.local:8443 · https, long-poll · connected for 40 s · skew 9 ms
+authority    bench-deck · https://laptop.local:8443 · https, long-poll · connected for 40 s · skew 9 ms
 desired      none accepted yet (seq 0) · queue 0 · paused: no · local changes: hold
 ```
 
@@ -312,14 +312,14 @@ And the Deck's log:
 
 ```
 lab    enrolled · hello agent/1.0 · full report
-lab    error[J0922]: secret not encrypted for this node: mqtt_bancada was encrypted for another certificate · on hold
+lab    error[J0922]: secret not encrypted for this node: mqtt_bench was encrypted for another certificate · on hold
 ```
 
 `--force` gave `lab` a new identity, and with it a new KEM key (ref/02 §3.2.3). The secret was encrypted for the old one. The Deck cannot read it, but it sees that the `wrap` is for a certificate that is no longer the node's, and it does not send a generation that would fail on the node. The fix is the usual one:
 
 ```sh
 $ jk secret recipient add --node lab && jk secret recipient add --node zero
-$ git commit -am "bancada: secrets for the new identities" && jk check --env zero --node zero
+$ git commit -am "bench: secrets for the new identities" && jk check --env zero --node zero
 ```
 
 `jk check --node` already knows the node's bundle, and this is where `J0292` would appear if `[security.trust]` put, for example, `keys/deck.pub` in the `apps` list: "it has only the role `deck` in the bundle". The manifest does not widen trust.
@@ -328,44 +328,44 @@ The Deck sees the commit and does the first rollout: today's generation, now in 
 
 ## 4. A good rollout: 0.7
 
-0.7 adds a mode: with the alarm `cpu_quente` active, the light switches to `alert`.
+0.7 adds a mode: with the alarm `cpu_hot` active, the light switches to `alert`.
 
 ```rust
-// apps/luz/src/lib.rs — what changes from 0.6 to 0.7
-#[joker::app(name = "luz", version = "0.7.0")]
-pub struct Luz {
+// apps/light/src/lib.rs — what changes from 0.6 to 0.7
+#[joker::app(name = "light", version = "0.7.0")]
+pub struct Light {
     // … the ports of 0.6, unchanged …
-    #[input] quente: Input<bool>,        // alarm.cpu_quente.active
+    #[input] hot: Input<bool>,        // alarm.cpu_hot.active
 }
 
-    // in the task `pisca`, right after `if !st.ligado { … }`:
-    if io.quente.get_or(false) {
-        io.sinal.alert();
+    // in the task `blink`, right after `if !st.enabled { … }`:
+    if io.hot.get_or(false) {
+        io.indicator.alert();
         return Ok(());
     }
 ```
 
-In `joker.toml`, the `bind` of `luz` gains `quente = "alarm.cpu_quente.active"` (every alarm creates that signal, ref/01 §5.15). Then, the path of a new version in `prod`:
+In `joker.toml`, the `bind` of `light` gains `hot = "alarm.cpu_hot.active"` (every alarm creates that signal, ref/01 §5.15). Then, the path of a new version in `prod`:
 
 ```sh
-$ jk test                                                   # the scenarios, including falha_esp.scenario.toml
-$ jk bench luz --env lab-link --node lab          # the app changed digest: the old WCET is J0431
-$ jk bench luz --env zero --node zero
+$ jk test                                                   # the scenarios, including esp_fault.scenario.toml
+$ jk bench light --env lab-link --node lab          # the app changed digest: the old WCET is J0431
+$ jk bench light --env zero --node zero
 $ jk check --env lab-link && jk check --env zero
-$ jk publish --env lab-link --env zero --registry oci://portatil.local:8443/bancada \
+$ jk publish --env lab-link --env zero --registry oci://laptop.local:8443/bench \
     --sign-key config=~/.local/share/joker/keys/config.key --sign-key apps=~/.local/share/joker/keys/apps.key
-$ git commit -am "luz 0.7: alert mode with cpu_quente"
+$ git commit -am "light 0.7: alert mode with cpu_hot"
 ```
 
 In the Deck's terminal:
 
 ```
-10:02:11 git      main a41c0de "luz 0.7: alert mode with cpu_quente"
+10:02:11 git      main a41c0de "light 0.7: alert mode with cpu_hot"
 10:02:12 rollout  01JAXQ7M… · lab sha256:7d2e… ✓ · zero sha256:c0a9… ✓ · 2 waves
-10:02:12 wave 1   canario: zero · seq 2
+10:02:12 wave 1   canary: zero · seq 2
 10:03:40 zero     applying → confirming · window 15m · stable_for 5m
 10:08:52 zero     confirmed · overruns_rate 0 · trips_rate 0 · rollbacks 0
-10:18:52 wave 1   passed (10m without halt_if) · wave 2 estavel: lab · seq 2
+10:18:52 wave 1   passed (10m without halt_if) · wave 2 stable: lab · seq 2
 10:25:30 lab      confirmed · rollout completed
 ```
 
@@ -373,7 +373,7 @@ On `zero`, while it confirms:
 
 ```sh
 $ jk agent desired --node zero
-seq 2 · rollout 01JAXQ7M… wave 1 (canario) · luz 0.7: alert mode with cpu_quente
+seq 2 · rollout 01JAXQ7M… wave 1 (canary) · light 0.7: alert mode with cpu_hot
 phase generation · confirming · 3m12s of 5m consecutive healthy · window until 10:18:40
 health  H1 groups ok · H2 apps ok · H3 no trips · H4 devices as before · H5 no alarms ≥ critical · H7 report-ack ✓
 ```
@@ -386,17 +386,17 @@ Now watch 0.7 do what it says, on `lab`:
 lab$ stress-ng --cpu 4 --timeout 5m
 ```
 
-The 10 s average passes 70 °C, `cpu_quente` becomes active 10 s later, and the `ACT` LED switches to the alert pattern. On `mosquitto`, `mosquitto_sub -h lab.local -p 8883 --cafile ~/org-ca/ca.crt -u bancada -P … -t 'joker/#'` shows the alarm transition.
+The 10 s average passes 70 °C, `cpu_hot` becomes active 10 s later, and the `ACT` LED switches to the alert pattern. On `mosquitto`, `mosquitto_sub -h lab.local -p 8883 --cafile ~/org-ca/ca.crt -u bench -P … -t 'joker/#'` shows the alarm transition.
 
 ## 5. A bad rollout: 0.7.1
 
 0.7.1 is an "improvement": instead of the `calc` average, a median of the last 2,048 ticks (41 s), computed in the cycle task.
 
 ```rust
-fn mediana(janela: &mut Vec<f64>, x: f64) -> f64 {
-    if janela.len() == 2048 { janela.remove(0); }   // shifts 2,047 values
-    janela.push(x);
-    let mut v = janela.clone();                      // 16 KiB copied on every tick
+fn median(window: &mut Vec<f64>, x: f64) -> f64 {
+    if window.len() == 2048 { window.remove(0); }   // shifts 2,047 values
+    window.push(x);
+    let mut v = window.clone();                      // 16 KiB copied on every tick
     v.sort_by(f64::total_cmp);                       // ~22,000 comparisons, every 20 ms
     v[v.len() / 2]
 }
@@ -405,8 +405,8 @@ fn mediana(janela: &mut Vec<f64>, x: f64) -> f64 {
 The tests pass (on the laptop, the cost cannot be seen). `jk bench` measures it:
 
 ```
-lab   luz.pisca  p99.9 = 0.41 ms   max = 0.66 ms   rpi3b-plus
-zero  luz.pisca  p99.9 = 12.6 ms   max = 15.3 ms   rpi-zero-w
+lab   light.blink  p99.9 = 0.41 ms   max = 0.66 ms   rpi3b-plus
+zero  light.blink  p99.9 = 12.6 ms   max = 15.3 ms   rpi-zero-w
 ```
 
 ```sh
@@ -418,7 +418,7 @@ warning[J0352]: group ≥ 10 ms without PREEMPT_RT: jitter not guaranteed
 On the Zero, without Cranelift, Wasm is interpreted (document 23, §5.2), and the task goes from 0.4 to 12.6 ms. Admission accepts it: 63% fits in the schedulability test. But `bench` measures the task alone, and on the Zero there is one CPU core for everything: the historian, the TLS uplink, the Wi-Fi, the retries to the `esp` that does not answer. `jk publish`, commit, and the Deck starts with the canary:
 
 ```
-11:40:05 wave 1   canario: zero · seq 3
+11:40:05 wave 1   canary: zero · seq 3
 11:40:31 zero     applying → confirming
 11:41:02 zero     overruns_rate 0.061 (94 of 1,550 ticks) · halt_if "overruns_rate > 0.001"
 11:41:02 rollout  01JAXW2P… halted · wave 2 not issued · reject → zero (seq 3, generation)
@@ -432,7 +432,7 @@ And `lab`:
 
 ```sh
 $ jk agent desired --node lab
-seq 2 · confirmed · luz 0.7: alert mode with cpu_quente
+seq 2 · confirmed · light 0.7: alert mode with cpu_hot
 ```
 
 It never received 0.7.1: the Deck issued nothing for wave 2 (document 20, D2). Undo the commit (`git revert HEAD`); the Deck sees that both nodes already have those generations as desired, and issues nothing. Fixing it for real is another version (exercise 3).
@@ -450,17 +450,17 @@ zero$ sudo rfkill block wifi
 
 ```
 12:10:40 zero     no poll for 2m · pending
-12:11:05 rollout  01JAY1C8… (400 ms) · wave 1 canario: zero pending (offline) · waiting
+12:11:05 rollout  01JAY1C8… (400 ms) · wave 1 canary: zero pending (offline) · waiting
 12:16:30 rollout  01JAY1C8… superseded · 01JAY1J3… (300 ms) · wave 1: zero pending (offline) · waiting
 12:49:12 zero     hello · desired_seq 4 · full report · queue: 212 events
-12:49:14 zero     seq 6 accepted · …confirmed 12:55:02 · wave 2 estavel: lab · seq 3
+12:49:14 zero     seq 6 accepted · …confirmed 12:55:02 · wave 2 stable: lab · seq 3
 ```
 
 Wave 1 waited, because it only passes with at least one confirmed node: an offline canary authorizes nothing. When `zero` came back, it received **only today's state**, the 300 ms. `seq 5` (400 ms) never reached it: the Deck keeps the last desired state of each node, and never a queue (ref/10, D1). The full report came before the accumulated event queue, so that the Deck knows the present before digesting the past.
 
 ```sh
 $ jk agent status --node zero
-authority    bancada-deck · connected for 6 min · offline 39 min (12:10–12:49) · clock synced
+authority    bench-deck · connected for 6 min · offline 39 min (12:10–12:49) · clock synced
 desired      seq 6 · confirmed · queue 0 · lost 0
 ```
 
@@ -471,7 +471,7 @@ Receiving the same desired state twice does nothing; receiving today's after mis
 The principles of document 20, §2, seen on your bench:
 
 - **It does not write to signals.** Look in `deck.toml`, in `fleet.toml` or in ref/10: there is no write message (D9). The Deck changed `zero`'s blink with a commit, a signed generation and a confirmation window, and the node's arbiter and envelope decided the rest. A remote write will only exist inside a session (1.3), through the local API, like yours: with a TTL, up to `max_manual`, in the decision log.
-- **It does not read secrets.** The `secrets.toml.enc` it reads from Git has `mqtt_bancada` encrypted for `node:lab`, `node:zero` and `user:dl`, and the Deck has none of those keys. What the nodes report to it are names and revisions (`mqtt_bancada rev 1 ok`), never values.
+- **It does not read secrets.** The `secrets.toml.enc` it reads from Git has `mqtt_bench` encrypted for `node:lab`, `node:zero` and `user:dl`, and the Deck has none of those keys. What the nodes report to it are names and revisions (`mqtt_bench rev 1 ok`), never values.
 - **It does not sign artifacts.** You saw it in section 3: without `jk publish`, `J0915`. Even compromised, with the `deck` key, it can only choose among generations already signed by you, within the windows and the `max_applies_per_day` of each node; it cannot downgrade to `dev` (`min_mode = prod`, `J0956`), nor make the node accept an app signed by another key (`J0951`), nor change the bundle without the root that is on your USB stick (ref/10 §4, S1).
 
 ## 8. What happened underneath
@@ -486,7 +486,7 @@ The principles of document 20, §2, seen on your bench:
 ## 9. Exercises
 
 1. With a rollout in progress, do `jk apply --env lab-link --node lab --confirm 5m` with a local change. What does `jk agent status` say? Take the same change to Git and watch the hold end by itself (ref/10 S12).
-2. Rotate the password: `mosquitto_passwd` on `lab` and `jk secret set mqtt_bancada` again (rev 2). How many new generations were there? What did the Deck issue? (ref/02 §3.4.4)
+2. Rotate the password: `mosquitto_passwd` on `lab` and `jk secret set mqtt_bench` again (rev 2). How many new generations were there? What did the Deck issue? (ref/02 §3.4.4)
 3. Make a 0.7.2 that keeps the median without the cost: a ring with the median computed in an async task every second, and an `Internal` for the cycle task. Does it pass the canary?
 4. Swap the cohorts: `lab` canary, `zero` stable. With 0.7.1, how far would the rollout get, and which node would receive it with the overruns?
 
@@ -494,7 +494,7 @@ The principles of document 20, §2, seen on your bench:
 $ git add -A && git commit -m "track(11): production and fleet"
 ```
 
-**State at the end:** app `luz` 0.7 with `half_period = "300 ms"`; `mode = "prod"`; new files `keys/*.pub`, `secrets.toml.enc`, `fleet.toml`; `[telemetry.uplink.bancada]`, `[security]` and `accept_missing_fallback` in `joker.toml`; `micro/esp/joker.toml` in `prod`, with `accept_unsafe_reset`; `[accepted]` in the locks (also in `micro/esp/joker.lock`); both nodes enrolled in `bancada-deck`; outside the project, `~/deck/deck.toml` and the root on a USB stick.
+**State at the end:** app `light` 0.7 with `half_period = "300 ms"`; `mode = "prod"`; new files `keys/*.pub`, `secrets.toml.enc`, `fleet.toml`; `[telemetry.uplink.bench]`, `[security]` and `accept_missing_fallback` in `joker.toml`; `micro/esp/joker.toml` in `prod`, with `accept_unsafe_reset`; `[accepted]` in the locks (also in `micro/esp/joker.lock`); both nodes enrolled in `bench-deck`; outside the project, `~/deck/deck.toml` and the root on a USB stick.
 
 ---
 

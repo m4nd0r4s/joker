@@ -17,7 +17,7 @@ In the track there are four different "physical things", and each has its own na
 | **Profile** | the description of a device **model**: registers, scales, units, fallback | `local/bench-esp32@1` | one file per model, in `profiles/` or in the registry |
 | **Signal** | a quantity of a device (or computed) | `pi.cpu_temp`, `esp.led` | in the profile, in the simulation model or in the manifest |
 | **Class** | a **type** of equipment, for programs | `temp_sensor@1`, `led@1` | one file per class, in `classes/` or in the registry |
-| **Instance** | a concrete piece of equipment that fulfills a class | `cpu` (a `temp_sensor@1`), `led_pi`, `sinal` (a virtual `status_light@1`) | implicit (profile), in the manifest (`[instances.*]`) or virtual (app) |
+| **Instance** | a concrete piece of equipment that fulfills a class | `cpu` (a `temp_sensor@1`), `led_pi`, `indicator` (a virtual `status_light@1`) | implicit (profile), in the manifest (`[instances.*]`) or virtual (app) |
 
 Two relations that need to be clear:
 
@@ -35,7 +35,7 @@ Two relations that need to be clear:
 | File | Format | What it describes | Who writes it | When it changes | Defined in |
 |---|---|---|---|---|---|
 | `joker.toml` | TOML | **the site**: board, buses, devices, outputs and envelopes, cycles, apps and bindings, instances, models, pipelines, `calc`, alarms, telemetry, bridges, security | integrator / site engineer | always; it is the main file | 03, ref/01 |
-| overlays `joker.<variant>.toml` (`joker.sim.toml`, `joker.rpi.toml`, `templates/joker.bess-v2.toml`, `sites/lisboa-01/joker.verao.toml`) | TOML, with `extends` | variations of the manifest: simulator vs hardware, shared template vs concrete site; chosen with `--env <variant>` | integrator | when the same system has more than one environment or site | 03 §2, ref/01 §7 |
+| overlays `joker.<variant>.toml` (`joker.sim.toml`, `joker.rpi.toml`, `templates/joker.bess-v2.toml`, `sites/lisboa-01/joker.summer.toml`) | TOML, with `extends` | variations of the manifest: simulator vs hardware, shared template vs concrete site; chosen with `--env <variant>` | integrator | when the same system has more than one environment or site | 03 §2, ref/01 §7 |
 | `profiles/<vendor>/<model>@<major>.profile.toml` | TOML | a **device model**: registers, types, scales, units, limits, enums, coherence, fallback, actions, `implements` | hardware integrator | when a piece of equipment appears that is not yet in the registry | 05 §6, ref/03 §2.2 |
 | `boards/<board>.board.toml` | TOML | a **board model**, with `version`: recommended cores, watchdog, fixed IO (with `fallback`), serial ports, accelerators; on an MCU, flash, FPU, capabilities and probe | whoever supports a new board (rare) | almost never: they come from the registry | 05 §11, ref/03 §2.3 |
 | `classes/<package>/<name>.jkc` | `.jkc` (document 17) | a **class**: members, capabilities, methods, actions, events, queries, health | abstraction author | when a new equipment type is created | 17, ref/03 §2.7 |
@@ -142,21 +142,21 @@ Most people only change three or four of these files:
 
 ## 4. From the empty directory to the complete system
 
-The same map applied to the learning track (project `joker-bancada/`), part by part. The complete list, with what each file is at the end, is in `track/README.md`, "The directory, at the end of the track".
+The same map applied to the learning track (project `joker-bench/`), part by part. The complete list, with what each file is at the end, is in `track/README.md`, "The directory, at the end of the track".
 
 | Part | New or changed files |
 |---|---|
-| 1 | `joker.toml` (common) and `joker.sim.toml` (overlay) from the start, `joker.sim.lock`, `sim/pi.sim.toml`, `sim/scenarios/pisca.scenario.toml`, `apps/luz/` (0.1); outside the project, `.joker/config.toml` |
+| 1 | `joker.toml` (common) and `joker.sim.toml` (overlay) from the start, `joker.sim.lock`, `sim/pi.sim.toml`, `sim/scenarios/blink.scenario.toml`, `apps/light/` (0.1); outside the project, `.joker/config.toml` |
 | 2 | `joker.lab.toml` (board `rpi3b-plus@1`, `[resources]`, the `pi` through `sysfs`), `joker.lab.lock`; outside the project, `~/org-ca/` and the `lab` context in `~/.config/joker/config.toml` |
-| 3 | `sim/pi.sim.toml` (`carga`, `cpu_temp`), `joker.toml` (`[calc]`, `[alarms.cpu_quente]`, `[telemetry.record]`), `joker.lab.toml` (`pi.cpu_temp`), `sim/scenarios/aquece.scenario.toml`, `apps/luz/` (0.2) |
-| 4 | `mapa-esp32.csv`, `profiles/local/bench-esp32@1.profile.toml`, `sim/esp.sim.toml`, `joker.sim.toml` and `joker.lab.toml` (`[buses.esp32]` with `dtr`/`rts`, `[devices.esp]`), `joker.toml` (`[outputs."esp.led"]`, debounce), `joker.lab.lock` (profile, `[fallback]`, `[discovered]`), `sim/scenarios/botao.scenario.toml`, `apps/luz/` (0.3) |
-| 5 | `joker.toml` (`[signals."esp.touch"]`, `calc.toque_nivel`, `[alarms.esp_offline]`), `sim/esp.sim.toml` (fault key), `sim/scenarios/falha_esp.scenario.toml`, `apps/luz/` (0.4 and 0.4.1), `joker.lab.lock` |
+| 3 | `sim/pi.sim.toml` (`load`, `cpu_temp`), `joker.toml` (`[calc]`, `[alarms.cpu_hot]`, `[telemetry.record]`), `joker.lab.toml` (`pi.cpu_temp`), `sim/scenarios/heat_up.scenario.toml`, `apps/light/` (0.2) |
+| 4 | `map-esp32.csv`, `profiles/local/bench-esp32@1.profile.toml`, `sim/esp.sim.toml`, `joker.sim.toml` and `joker.lab.toml` (`[buses.esp32]` with `dtr`/`rts`, `[devices.esp]`), `joker.toml` (`[outputs."esp.led"]`, debounce), `joker.lab.lock` (profile, `[fallback]`, `[discovered]`), `sim/scenarios/button.scenario.toml`, `apps/light/` (0.3) |
+| 5 | `joker.toml` (`[signals."esp.touch"]`, `calc.touch_level`, `[alarms.esp_offline]`), `sim/esp.sim.toml` (fault key), `sim/scenarios/esp_fault.scenario.toml`, `apps/light/` (0.4 and 0.4.1), `joker.lab.lock` |
 | 6 | `joker.rpi.toml` (the `[devices.pi]` leaves `joker.lab.toml`), `joker.zero.toml`, `joker.zero.lock`, `boards/rpi-zero-w.board.toml`; `joker.lab.toml` now extends `joker.rpi.toml` |
-| 7 | `joker.toml` (five composite `[instances.*]`, `bind` of `luz`), `profiles/local/bench-esp32@1.profile.toml` and `sim/esp.sim.toml` (`[implements]`), `apps/luz/` (0.5), the three locks |
-| 8 | `classes/local/status_light.jkc` (+ `status_light.conformance.toml`), `apps/status_light_ctl/`, `joker.toml` (virtual instance `sinal`, its outputs, `order` of `main`), `apps/luz/` (0.6), `sim/scenarios/pisca.scenario.toml`, the three locks |
+| 7 | `joker.toml` (five composite `[instances.*]`, `bind` of `light`), `profiles/local/bench-esp32@1.profile.toml` and `sim/esp.sim.toml` (`[implements]`), `apps/light/` (0.5), the three locks |
+| 8 | `classes/local/status_light.jkc` (+ `status_light.conformance.toml`), `apps/status_light_ctl/`, `joker.toml` (virtual instance `indicator`, its outputs, `order` of `main`), `apps/light/` (0.6), `sim/scenarios/blink.scenario.toml`, the three locks |
 | 9 | `micro/esp/joker.toml`, `joker.lab-link.toml`, `joker.lab-link.lock`, `secrets.toml.enc` (recipient `node:esp`) |
-| 10 | `micro/esp/apps/reflexo/`, `micro/esp/joker.lock` (`[wcet]` of the chip), `micro/esp/joker.toml` (`[net.wifi]`, `[link]` over UDP), `joker.lab-link.toml`, `secrets.toml.enc` (`wifi_bancada`) |
-| 11 | `keys/*.pub`, `fleet.toml`, `secrets.toml.enc` (`mqtt_bancada`), `joker.toml` (`mode = "prod"`, `[telemetry.uplink]`, `[security]`, `accept_missing_fallback`), `[accepted]` in the locks, `apps/luz/` (0.7 and 0.7.1); outside the project, `~/deck/deck.toml` |
+| 10 | `micro/esp/apps/reflex/`, `micro/esp/joker.lock` (`[wcet]` of the chip), `micro/esp/joker.toml` (`[net.wifi]`, `[link]` over UDP), `joker.lab-link.toml`, `secrets.toml.enc` (`wifi_bench`) |
+| 11 | `keys/*.pub`, `fleet.toml`, `secrets.toml.enc` (`mqtt_bench`), `joker.toml` (`mode = "prod"`, `[telemetry.uplink]`, `[security]`, `accept_missing_fallback`), `[accepted]` in the locks, `apps/light/` (0.7 and 0.7.1); outside the project, `~/deck/deck.toml` |
 
 ---
 

@@ -4,7 +4,7 @@
 
 **You will learn:** Modbus RTU over a USB-serial bridge · equipment profiles, from the CSV to the reviewed file · `jk profile import`, `check` and `test` · readback and `safe_hint` · equipment fallback (M1) · edges and debounce · bus budget · `jk lock --node`.
 
-**Before you start:** part 3 done (`luz` 0.2 blinking with the temperature). The ESP32 connected by micro-USB to a USB port of the Pi 3. On the laptop, the Rust toolchain for Xtensa (`espup`) and `espflash`.
+**Before you start:** part 3 done (`light` 0.2 blinking with the temperature). The ESP32 connected by micro-USB to a USB port of the Pi 3. On the laptop, the Rust toolchain for Xtensa (`espup`) and `espflash`.
 
 ---
 
@@ -31,7 +31,7 @@ The firmware is in `tools/bench/esp32-modbus/` in the Joker repository. It serve
 
 ```sh
 $ git clone https://git.example.com/joker/joker.git && cd joker/tools/bench/esp32-modbus
-$ export BENCH_WIFI_SSID="bancada"
+$ export BENCH_WIFI_SSID="bench"
 $ read -rs BENCH_WIFI_PASSWORD && export BENCH_WIFI_PASSWORD      # no echo, out of the history
 $ cargo build --release
 $ espflash flash --monitor target/xtensa-esp32-none-elf/release/esp32-modbus
@@ -39,7 +39,7 @@ $ espflash flash --monitor target/xtensa-esp32-none-elf/release/esp32-modbus
 
 ```
 esp32-modbus 1.0.0 · Modbus RTU on UART0, 115200 8N1, unit 1
-wifi: connected to "bancada", IP 192.168.1.57 · Modbus TCP on :502
+wifi: connected to "bench", IP 192.168.1.57 · Modbus TCP on :502
 fallback: LED turns off without requests for 2 s
 uart0: from here on, Modbus only
 ```
@@ -56,7 +56,7 @@ Modbus does not describe itself: what each register means is in the datasheet, a
 
 ### 4.1 From the CSV to the draft
 
-The table from §1, copied into a spreadsheet and exported to `mapa-esp32.csv`, at the project root. The header is required and fixed, and empty columns take the default:
+The table from §1, copied into a spreadsheet and exported to `map-esp32.csv`, at the project root. The header is required and fixed, and empty columns take the default:
 
 ```
 signal,fc,at,type,direction,unit,scale,offset,label,description
@@ -73,7 +73,7 @@ fw,3,0,u16,param,,,,,
 - `at` is the protocol address, 0-based. A datasheet that says "30001" means input register 0.
 
 ```sh
-$ jk profile import csv mapa-esp32.csv --name local/bench-esp32 --driver modbus --out profiles/local/bench-esp32@1.profile.toml
+$ jk profile import csv map-esp32.csv --name local/bench-esp32 --driver modbus --out profiles/local/bench-esp32@1.profile.toml
 ```
 
 ```
@@ -233,11 +233,11 @@ safe = false
 [signals."esp.button"]
 debounce = "20ms"
 
-[apps.luz]
-path   = "apps/luz"
-bind   = { led = "pi.act_led", temp = "calc.temp_media", botao = "esp.button", led_estado = "esp.led" }
-params = { half_period = "500 ms", t_frio = "45 °C", t_quente = "70 °C" }
-cycles = { pisca = "main" }
+[apps.light]
+path   = "apps/light"
+bind   = { led = "pi.act_led", temp = "calc.temp_avg", button = "esp.button", led_status = "esp.led" }
+params = { half_period = "500 ms", t_cold = "45 °C", t_hot = "70 °C" }
+cycles = { blink = "main" }
 ```
 
 Forget `[outputs."esp.led"]` and `jk check` reminds you, with the profile's suggestion:
@@ -256,55 +256,55 @@ The `debounce` stays in the common part, so that both worlds behave the same. Th
 Rule: each rising edge of the button turns the system on or off; when off, the `ACT` stays off; the ESP32's LED shows whether it is on.
 
 ```rust
-// apps/luz/src/lib.rs — what changes compared with 0.2
-#[joker::app(name = "luz", version = "0.3.0")]
-pub struct Luz {
+// apps/light/src/lib.rs — what changes compared with 0.2
+#[joker::app(name = "light", version = "0.3.0")]
+pub struct Light {
     #[output] led: Output<bool>,
     #[input(unit = "°C")] temp: Input<f64>,
-    #[input] botao: Input<bool>,
-    #[output] led_estado: Output<bool>,
-    // half_period, t_frio, t_quente: as in 0.2
+    #[input] button: Input<bool>,
+    #[output] led_status: Output<bool>,
+    // half_period, t_cold, t_hot: as in 0.2
 }
 
 #[derive(Default)]
-struct Pisca {
+struct Blink {
     elapsed_ms: f64,
     on: bool,
-    ligado: bool,
-    premido_antes: bool,
+    enabled: bool,
+    was_pressed: bool,
 }
 
-fn arranque(_io: &CycleIo<Luz>) -> Pisca {
-    Pisca { ligado: true, ..Default::default() }     // starts on, like 0.2
+fn startup(_io: &CycleIo<Light>) -> Blink {
+    Blink { enabled: true, ..Default::default() }     // starts on, like 0.2
 }
 
-#[joker::cycle(period = "20ms", wcet = "5us", init = arranque)]
-fn pisca(io: &mut CycleIo<Luz>, st: &mut Pisca) -> Result<()> {
+#[joker::cycle(period = "20ms", wcet = "5us", init = startup)]
+fn blink(io: &mut CycleIo<Light>, st: &mut Blink) -> Result<()> {
     // 1. Both inputs before any proposal: without them, nothing is proposed in this tick.
     let t = io.temp.get()?;
-    let premido = io.botao.get()?;
+    let pressed = io.button.get()?;
 
     // 2. Rising edge: pressed now, released in the previous tick.
-    if premido && !st.premido_antes {
-        st.ligado = !st.ligado;
+    if pressed && !st.was_pressed {
+        st.enabled = !st.enabled;
         st.elapsed_ms = 0.0;
-        st.on = st.ligado;                       // when turning on, light up at once: immediate feedback
+        st.on = st.enabled;                       // when turning on, light up at once: immediate feedback
     }
-    st.premido_antes = premido;
-    io.led_estado.set(st.ligado);
+    st.was_pressed = pressed;
+    io.led_status.set(st.enabled);
 
-    if !st.ligado {
+    if !st.enabled {
         io.led.set(false);
         return Ok(());
     }
     // 3. The blink from 0.2, unchanged.
-    let (frio, quente) = (io.t_frio.get(), io.t_quente.get());
-    let x = ((t - frio) / (quente - frio)).clamp(0.0, 1.0);
-    let meio = io.half_period.get() + x * (RAPIDO_MS - io.half_period.get());
+    let (cold, hot) = (io.t_cold.get(), io.t_hot.get());
+    let x = ((t - cold) / (hot - cold)).clamp(0.0, 1.0);
+    let half = io.half_period.get() + x * (FAST_MS - io.half_period.get());
     st.elapsed_ms += io.dt().as_secs_f64() * 1000.0;
-    if st.elapsed_ms >= meio {
-        st.elapsed_ms -= meio;
-        if st.elapsed_ms > meio {
+    if st.elapsed_ms >= half {
+        st.elapsed_ms -= half;
+        if st.elapsed_ms > half {
             st.elapsed_ms = 0.0;
         }
         st.on = !st.on;
@@ -314,14 +314,14 @@ fn pisca(io: &mut CycleIo<Luz>, st: &mut Pisca) -> Result<()> {
 }
 ```
 
-- **The edge lives in the task state** (`premido_antes`), because `ligado` is the app's memory. The manifest also has `rose(cond)` in expressions, and it serves alarms and permissives (document 02, §10), but what a press does is decided by the app.
-- **It starts on** (`init = arranque`), so that `pisca.scenario.toml` and `aquece.scenario.toml` pass unchanged.
-- **`botao` with `get()?`**: without the ESP32, the app stops proposing on **both** outputs, and both LEDs go to `safe`. It is a deliberately harsh choice; part 5 makes the app tolerant of ESP32 faults.
+- **The edge lives in the task state** (`was_pressed`), because `enabled` is the app's memory. The manifest also has `rose(cond)` in expressions, and it serves alarms and permissives (document 02, §10), but what a press does is decided by the app.
+- **It starts on** (`init = startup`), so that `blink.scenario.toml` and `heat_up.scenario.toml` pass unchanged.
+- **`button` with `get()?`**: without the ESP32, the app stops proposing on **both** outputs, and both LEDs go to `safe`. It is a deliberately harsh choice; part 5 makes the app tolerant of ESP32 faults.
 
-## 8. Scenario `botao.scenario.toml`
+## 8. Scenario `button.scenario.toml`
 
 ```toml
-# sim/scenarios/botao.scenario.toml
+# sim/scenarios/button.scenario.toml
 schema = 1
 
 [scenario]
@@ -364,10 +364,10 @@ $ jk test
 ```
 
 ```
-apps/luz (cargo test) ........................ ok
-sim/scenarios/pisca.scenario.toml ..................... ok
-sim/scenarios/aquece.scenario.toml .................... ok (460 simulated s in 0.5 s)
-sim/scenarios/botao.scenario.toml ..................... ok (8 simulated s in 14 ms)
+apps/light (cargo test) ........................ ok
+sim/scenarios/blink.scenario.toml ..................... ok
+sim/scenarios/heat_up.scenario.toml .................... ok (460 simulated s in 0.5 s)
+sim/scenarios/button.scenario.toml ..................... ok (8 simulated s in 14 ms)
 ```
 
 Remove the `debounce` from `joker.toml` and run again: `toggles = 2` fails on some presses (`J0842`), with the instant and the decision chain in the report. That is the bounce, caught on the laptop. In `jk dev --env sim --panel`, the `b` key is `BOOT`.
@@ -398,7 +398,7 @@ $ jk check --env lab
 
 ```
 ✓ manifest           2 devices (sysfs, modbus-rtu), 2 outputs, 1 app, 1 group, 1 calc, 1 alarm
-✓ bindings           luz: led → pi.act_led · temp → calc.temp_media (°C) · botao → esp.button · led_estado → esp.led
+✓ bindings           light: led → pi.act_led · temp → calc.temp_avg (°C) · button → esp.button · led_status → esp.led
 ✓ profile            local/bench-esp32@1 · equipment fallback: esp.led → false in 2 s (consistent with safe)
 ✓ bus esp32          115200 8N1, poll 100 ms: FC1 (14 B), FC2 (14 B), FC4 (21 B)
                      4.3 ms on the wire + 3 × 0.3 ms of silence + 3 × 10 ms of latency (default) ≈ 35 ms
@@ -445,7 +445,7 @@ $ jk read 'esp.*' --watch --node lab
 ```
 
 ```
-esp.led      true      good    (control:12 · luz)
+esp.led      true      good    (control:12 · light)
 esp.led_rb   true      good    age 0.07 s
 esp.button   false     good    age 0.07 s
 …            (touch 61, rssi -54, uptime 1,391 s: good, age 0.07 s; fw 1, param, on request)
@@ -472,14 +472,14 @@ Within 2 s, the ESP32's LED goes off. Nobody told it to: the firmware stopped re
 ## 11. Exercises
 
 1. With the system off, write `true` to coil 0 through the Wi-Fi Modbus TCP (the firmware serves both at the same time), with a tool like `mbpoll`. The ESP32's LED turns on and off again: in how long, and who turned it off? Then add `verify = { readback = "esp.led_rb" }` to `[outputs."esp.led"]` and repeat.
-2. With the latency measured in `jk profile test`, add `quirks = { latency = "5ms" }` to a **copy** of the profile (`local/bench-esp32-rapido@1`) and compare the occupancy in `jk check`. What is the minimum poll that fits in 80%?
+2. With the latency measured in `jk profile test`, add `quirks = { latency = "5ms" }` to a **copy** of the profile (`local/bench-esp32-fast@1`) and compare the occupancy in `jk check`. What is the minimum poll that fits in 80%?
 3. Make a long press (> 2 s) on `BOOT` put the system into "always blink fast", until the next press. Write the scenario first.
 4. Repeat the fallback test with the system off (ESP32 LED off). What does it prove, and what does it not prove?
 
 ```sh
-$ git add -A && git commit -qm "track(04): ESP32 as Modbus RTU equipment; profile local/bench-esp32; luz 0.3"
+$ git add -A && git commit -qm "track(04): ESP32 as Modbus RTU equipment; profile local/bench-esp32; light 0.3"
 ```
 
-**State at the end of this part:** app `luz` 0.3.0, on lab at generation 4; `profiles/local/bench-esp32@1.profile.toml` (and the `mapa-esp32.csv` it came from); `sim/esp.sim.toml` and `[devices.esp]` in `joker.sim.toml`; `joker.toml` with `[outputs."esp.led"]`, the debounce of `esp.button` and the new `bind`; `joker.lab.toml` with `[buses.esp32]` (with `dtr`/`rts`) and `[devices.esp]`; `joker.lab.lock` with the profile, `[fallback.esp]` and `[discovered.esp]`; new scenario `sim/scenarios/botao.scenario.toml`.
+**State at the end of this part:** app `light` 0.3.0, on lab at generation 4; `profiles/local/bench-esp32@1.profile.toml` (and the `map-esp32.csv` it came from); `sim/esp.sim.toml` and `[devices.esp]` in `joker.sim.toml`; `joker.toml` with `[outputs."esp.led"]`, the debounce of `esp.button` and the new `bind`; `joker.lab.toml` with `[buses.esp32]` (with `dtr`/`rts`) and `[devices.esp]`; `joker.lab.lock` with the profile, `[fallback.esp]` and `[discovered.esp]`; new scenario `sim/scenarios/button.scenario.toml`.
 
 **Next:** [Part 5 — touch as an adjustment, quality, faults, fallback and replay](05-touch-and-faults.md).

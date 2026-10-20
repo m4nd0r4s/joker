@@ -160,7 +160,7 @@ Up to v1.5, a node is the unit: each `jokerd` has its own signals, and the MCUs 
 | Area | Contents | Document |
 |---|---|---|
 | **active/standby redundancy** | two nodes with the same generation; the standby keeps the process image hot; switchover when the active node's lease expires; a quorum arbiter (a third lightweight node or a Joker Micro) prevents *split-brain* | 12 §16 |
-| **node mesh** | a site signal space shared between nodes (over Zenoh), with per-node qualified paths (`@caldeira/pump.run_cmd`); instances that span nodes; alarms and arbiters per site | new |
+| **node mesh** | a site signal space shared between nodes (over Zenoh), with per-node qualified paths (`@boiler/pump.run_cmd`); instances that span nodes; alarms and arbiters per site | new |
 | **WIT world 2** | if the *shared-everything threads* are stable in the Component Model, one instance per app instead of two (document 09, attack 6); removal of the world 0.x adapters | 04, 09 |
 | **site manifest** | one manifest for several nodes, with the placement of the apps and instances decided by `jk check` or declared | 03 |
 | **Joker OS** (if there is demand) | reference image (Yocto/Buildroot) with PREEMPT_RT, system A/B and `jokerd` preinstalled | 12 §11 |

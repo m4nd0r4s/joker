@@ -596,10 +596,10 @@ An **app** only invokes an action through an `Action` port bound in its `bind`: 
 Adjustments independent of the device that provides the signal. They serve the common manifest of a sim/hardware pair of overlays (track, parts 4–5):
 
 ```toml
-[signals."painel.botao"]
+[signals."panel.button"]
 debounce = "20ms"
 
-[signals."painel.pot"]
+[signals."panel.pot"]
 deadband = "0.01 V"
 ```
 
@@ -680,7 +680,7 @@ An output that does not confirm becomes `Uncertain(NotConfirmed)` and fires `jok
 **Rules that involve several keys:**
 
 - A key that is not an output path (direction ≠ `output`) is `J0234`. The outputs of a `joker-link` device are governed by the envelope of the Joker Micro: declaring them here too is `J0234` (document 19, §6).
-- The virtual commands of an instance implemented by an app (`p1.run_cmd`, `luz.mode`) are outputs like the others and need an envelope (document 14, §7.2).
+- The virtual commands of an instance implemented by an app (`p1.run_cmd`, `light.mode`) are outputs like the others and need an envelope (document 14, §7.2).
 - **Owning group** (A11): `group`, if declared; otherwise, the group of the highest-priority app that writes the output in a cycle; otherwise, the implicit group `default` (100 ms).
 - **Arbiter defaults** (A9, A10): `lease` = 3 × period of the owning group; `max_lease` = 15 min; `max_manual` = 8 h.
 
@@ -792,7 +792,7 @@ An app has **one** writer (A1): the cycle and async instances count as the same 
 | Form | Port | Example | Validation |
 |---|---|---|---|
 | `"<path>"` | scalar (`Input`, `Output`, `Action`, `EventInput`, `EventOutput`) | `grid_power = "meter.p_total"` | type and unit (`J0107`, `J0108`); unknown path `J0101` |
-| `"<instance>"` | class (`#[device] led: Led`) | `led = "painel_led"` | class and major (`J0630`); requested capabilities (`J0602`) |
+| `"<instance>"` | class (`#[device] led: Led`) | `led = "panel_led"` | class and major (`J0630`); requested capabilities (`J0602`) |
 | `"<selector>"` | `InputMany`, `OutputMany`, `Many<T>` | `inverters = "inv*.w_max_lim_pct"`, `vavs = "vav_3*"` | no matches `J0155`; limits of `Many` `J0610` |
 | `["a", "b", …]` | `InputMany`, `OutputMany`, `Many<T>` | `pumps = ["p1", "p2", "p3"]` | the order of the list is the order in the app |
 | `"class:<class>"` | `Many<T>` | `valves = "class:valve.motor@1"` | all the instances of the class, in name order |
@@ -891,7 +891,7 @@ The app must implement the class (`#[implements]`, with the same major and the c
 | `{ signal, enum_map = { variant = n } }` | enum | `mode = { signal = "op_mode", enum_map = { off = 0, standby = 3 } }` |
 | `{ edge = { rise = "<action>", fall = "<action>" } }` | `out` `bool` | document 17, §5.2 |
 | `{ on_rise = "<path>" }`, `{ on_change = "<path>" }`, with `fields = { field = "<path>" }` | `event` | `tripped = { on_rise = "io.di_2" }` |
-| `"<instance>"` | fixed class member (`member boot: std/button@1`) | `boot = "botao"` |
+| `"<instance>"` | fixed class member (`member boot: std/button@1`) | `boot = "button"` |
 | `["<instance>", …]` | collection class member (`member pumps: std/pump@1[1..8]`) | `pumps = ["p1", "p2", "p3"]` |
 
 The members of an instance are aliases `<instance>.<member>` (16, P3); the collision rules are those of P3 (`J0604`).
@@ -919,7 +919,7 @@ The members of an instance are aliases `<instance>.<member>` (16, P3); the colli
 site_load  = "meter.p_total - pcs.p_ac"
 rse_limit  = "if rse.k4 then 0 % else if rse.k3 then 30 % else if rse.k2 then 60 % else 100 %"
 grid_limit = "400 kW"
-velocidade = { expr = "clamp(avg(painel.pot, 200ms) / 3.3 V, 0, 1)", group = "main" }
+speed = { expr = "clamp(avg(panel.pot, 200ms) / 3.3 V, 0, 1)", group = "main" }
 ```
 
 | Form | Type | Validation | Origin | Phase |
@@ -1232,10 +1232,10 @@ The form of the messages, the negotiation, the link key and the defaults of the 
 ```toml
 # micro/esp/joker.toml (excerpt)
 [net.wifi]
-ssid     = "bancada"
-password = "secret:wifi_bancada"
+ssid     = "bench"
+password = "secret:wifi_bench"
 country  = "PT"
-hostname = "esp-bancada"
+hostname = "esp-bench"
 ```
 
 | Key | Type | Req. | Default | Validation | Origin |
@@ -1506,7 +1506,7 @@ Merging is done by **literal key**: `[outputs."inv*.w_max_lim_pct"]` in a templa
 
 ### 7.7 Layer names and choice of the input manifest
 
-**Names** (ADR 0026). A manifest layer is named `joker.toml` or `joker.<variant>.toml`, in **any** directory: `joker.sim.toml` and `joker.lab.toml` at the root, `templates/joker.bess-v2.toml`, `sites/lisboa-01/joker.verao.toml`, `micro/esp/joker.toml`. `<variant>` follows the grammar of board names (`[a-z0-9]+ ("-" [a-z0-9]+)*`, ≤ 32 characters; ref/00 §2); outside it, `J0150`. The content of a layer has only manifest sections (§4) and no identification table of another type (`[profile]`, `[board]`, `[scenario]`, `[suite]`, …); a `joker.*.toml` that is something else is `J0803` (ref/03 §2.1.6).
+**Names** (ADR 0026). A manifest layer is named `joker.toml` or `joker.<variant>.toml`, in **any** directory: `joker.sim.toml` and `joker.lab.toml` at the root, `templates/joker.bess-v2.toml`, `sites/lisboa-01/joker.summer.toml`, `micro/esp/joker.toml`. `<variant>` follows the grammar of board names (`[a-z0-9]+ ("-" [a-z0-9]+)*`, ≤ 32 characters; ref/00 §2); outside it, `J0150`. The content of a layer has only manifest sections (§4) and no identification table of another type (`[profile]`, `[board]`, `[scenario]`, `[suite]`, …); a `joker.*.toml` that is something else is `J0803` (ref/03 §2.1.6).
 
 - **In `extends`**, only files with one of these names are accepted; another name is `J0803` (the reference asks for a manifest layer). This is what lets the overlay chain be read in a listing (`ls joker.*`).
 - **As input manifest**, a file with another name is only accepted through `--manifest` (or `JK_MANIFEST`), with the warning `J0169`; `jk migrate` proposes the new name.
@@ -1519,7 +1519,7 @@ Merging is done by **literal key**: `[outputs."inv*.w_max_lim_pct"]` in a templa
 | `--env <variant>` or `JK_ENV=<variant>` | `joker.<variant>.toml` in the current directory | `joker.<variant>.lock` |
 | `--manifest <file>` or `JK_MANIFEST=<file>` | the given file | the same name with `.lock` in place of `.toml`, in the same directory |
 
-- `--env lab` is exactly `--manifest joker.lab.toml`. For an overlay in another directory, `--manifest sites/lisboa-01/joker.verao.toml` (or `cd sites/lisboa-01` and `--env verao`).
+- `--env lab` is exactly `--manifest joker.lab.toml`. For an overlay in another directory, `--manifest sites/lisboa-01/joker.summer.toml` (or `cd sites/lisboa-01` and `--env summer`).
 - **Precedence:** option > `JK_*` variable > `.joker/config.toml` > default (that of ref/02 §2.3.3). `--env` and `--manifest` are the same choice: an option of either of the two wins over either of the variables, and a variable of either of the two wins over the project configuration. Both options together, or both variables together, are a usage error (exit code 1, document 07, §8), and not a precedence rule that someone has to guess.
 - `--env <variant>` for a file that does not exist is `J0160`, with the list of the `joker.*.toml` in the directory.
 - `--lock <file>` (or `JK_LOCK`) replaces only the lock, with any of the forms.
@@ -1564,7 +1564,7 @@ $ jk explain 'outputs."pcs.p_set".range'
 outputs."pcs.p_set".range = ["-150 kW", "150 kW"]
   templates/joker.bess-v2.toml:31   (not declared)
   sites/lisboa-01/joker.toml:74   ["-125 kW", "125 kW"]     origin
-  sites/lisboa-01/joker.verao.toml:9    ["-150 kW", "150 kW"]     widens · widen: "New PCS with 150 kW rated power; …" (joker.lock:88)
+  sites/lisboa-01/joker.summer.toml:9    ["-150 kW", "150 kW"]     widens · widen: "New PCS with 150 kW rated power; …" (joker.lock:88)
 ```
 
 ### 8.3 Hash of the effective manifest
@@ -2117,7 +2117,7 @@ pub struct Selector(String);
 
 **7 — A 1.1 manifest on a 1.0 node.** The Deck sends a 1.0 node a site that uses `schedule_depth`. **What happens:** the 1.0 `jk check` knows the key (reserved) and gives `J0290`; the agent rejects the generation before applying it. With a key that 1.0 does not know at all (a new key from 1.3), it gives `J0148` if the manifest declares `joker = "1.3"`, or `J0147` ("this manifest requires runtime 1.3"). A key is never silently ignored because it is new.
 
-**8 — Security: a site's overlay adds a trust key.** A site repository with broad permissions adds `trust.apps = ["keys/minha.pub"]` to install an app signed by a key of its own. **Broke** in the design of document 03, §13: the configuration declared its own trust. **Fix incorporated:** `[security.trust]` only restricts the node's anchors (`J0292`, §5.19). A role `admin = ["cert:CN=*"]` passes, but with `J0293`, and in `prod` `jk apply` requires `--confirm` for any change in `[security]`.
+**8 — Security: a site's overlay adds a trust key.** A site repository with broad permissions adds `trust.apps = ["keys/mine.pub"]` to install an app signed by a key of its own. **Broke** in the design of document 03, §13: the configuration declared its own trust. **Fix incorporated:** `[security.trust]` only restricts the node's anchors (`J0292`, §5.19). A role `admin = ["cert:CN=*"]` passes, but with `J0293`, and in `prod` `jk apply` requires `--confirm` for any change in `[security]`.
 
 **9 — A secret pasted into the manifest.** `password = "hunter2"` in an uplink. **What happens:** `J0294` (error in `prod`): the key is of the secret type and only accepts `secret:<name>`. The value never appears in the diagnostics, in `jk diff` or in the API: it is masked (`"****"`) in the message.
 
@@ -2157,7 +2157,7 @@ pub struct Selector(String);
 | **1.1** (reserved in the 1.0 schema, `J0290`) | `[models]`, `[streams]`, `[pipelines]`, `[training]`; `writer.kind = "proposal"`; `apps.*.fallback`; `outputs.*.schedule_depth`, `timed`, `on_late`, `late_margin`; signals `kind = "block"`; `telemetry.record` with `blocks`/`trigger`/`pre`/`post`; `resources.ml.accel`; `bind` with `model:`/`pipe:`; `source = "training:…"`; `security.trust.models`; drivers `v4l2`, `libcamera`, `spi-adc` |
 | **1.2** | drivers `ethercat` and native `bacnet-ip` (document 21, §4); tier W becomes stable and open to third parties (`ref/06` §4; in 1.0 it is unstable, only for in-tree drivers) |
 | **1.4** | Wasm apps on M2 MCUs: `[apps.*] source` on an MCU target (today `J0720`) |
-| **2.0** | node-qualified paths (`@caldeira/pump.run_cmd`, `@` prefix already reserved); site manifest for several nodes (document 21, §8) |
+| **2.0** | node-qualified paths (`@boiler/pump.run_cmd`, `@` prefix already reserved); site manifest for several nodes (document 21, §8) |
 
 ---
 
@@ -2204,7 +2204,7 @@ The common keys are in §5.8. For each catalog driver, the "Device keys" column 
 
 ## Appendix B — Coverage table
 
-**Method.** A script extracted **all** the ` ```toml ` blocks from all the project's `.md` files outside `docs/ref/` (area documents, examples, track, ADRs, proposals; the blocks of the references are the definitions themselves, and are not included): 125 blocks, all valid TOML. Of these, 80 are manifests, overlays or manifest fragments (2 fragments of `[apps.luz]` from the track, read as `apps.*.…`); the others are locks, profiles, boards, simulation models, scenarios, conformance cases, the configuration of `jk` and of the node, `fleet.toml` and `model.toml`, which belong to `ref/02`, `ref/03` and `ref/10`. The script walked through each manifest and normalized the keys, replacing the free names with `*` (`devices.esp.poll` → `devices.*.poll`; the elements of arrays of tables with `[]`; the overlay directives `unset`, `append` and `widen` stay as the last component). The result is **371 distinct keys**. Each one was assigned to the section of this reference that defines it, and a second pass confirmed that the name of the key appears in that section; none was left without a section or without a definition. The table was regenerated after the rewrite of the track (eleven parts on the bench of document 23).
+**Method.** A script extracted **all** the ` ```toml ` blocks from all the project's `.md` files outside `docs/ref/` (area documents, examples, track, ADRs, proposals; the blocks of the references are the definitions themselves, and are not included): 125 blocks, all valid TOML. Of these, 80 are manifests, overlays or manifest fragments (2 fragments of `[apps.light]` from the track, read as `apps.*.…`); the others are locks, profiles, boards, simulation models, scenarios, conformance cases, the configuration of `jk` and of the node, `fleet.toml` and `model.toml`, which belong to `ref/02`, `ref/03` and `ref/10`. The script walked through each manifest and normalized the keys, replacing the free names with `*` (`devices.esp.poll` → `devices.*.poll`; the elements of arrays of tables with `[]`; the overlay directives `unset`, `append` and `widen` stay as the last component). The result is **371 distinct keys**. Each one was assigned to the section of this reference that defines it, and a second pass confirmed that the name of the key appears in that section; none was left without a section or without a definition. The table was regenerated after the rewrite of the track (eleven parts on the bench of document 23).
 
 | Status | Keys |
 |---|---|

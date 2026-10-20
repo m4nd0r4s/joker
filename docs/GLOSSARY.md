@@ -47,7 +47,7 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 
 ### 1.4 What is never translated
 
-- **Identifiers and literals**: crate names, types, traits, functions, WIT names, TOML keys and values, JSON fields, enum variants, quality reasons (`clock_unsynced`), CLI commands and flags, file names inside code, environment variables, media types, URNs.
+- **Identifiers and literals**: crate names, types, traits, functions, WIT names, TOML keys and values, JSON fields, enum variants, quality reasons (`clock_unsynced`), CLI commands and flags, file names inside code, environment variables, media types, URNs. A translator does not rename them; an identifier changes only by a decision, as ADR 0036 did for the Portuguese illustrative identifiers (Appendix B).
 - **Codes**: `J0795`, `J-E0001`, M-numbers (`M15`), C/D/E/X item ids used in the stress documents, ADR numbers.
 - **Section and document numbers**: `docs/16 §3`, `ref/02 §2.1.13`, "document 23", "ADR 0015". Remissions point at numbers, so they survive the translation unchanged.
 - **Text inside code blocks** is code: keep it, except comments and human-readable strings in illustrative examples, which are translated (AGENTS.md rules 11 and 12). A string that is a normative message (a code's `message` in `spec/codes.toml`, an error text quoted from a reference) is taken from its source, never retranslated by hand.
@@ -930,3 +930,171 @@ Every file under `docs/` keeps its number and gets an English slug (ADR 0029, de
 <!-- spec-lint: links-on -->
 
 Unchanged: `docs/04-sdk.md`, `docs/05-drivers.md`, `docs/06-ml.md`, `docs/07-cli.md`, `docs/08-stress-tests.md`, `docs/11-roadmap.md`, `docs/17-jkc.md`, `docs/19-joker-micro.md`, `docs/README.md`, `docs/adr/0029-english-project-language.md`, `docs/adr/README.md`, `docs/ref/06-drivers.md`, `docs/ref/07-joker-link.md`, `docs/ref/08-joker-micro-abi.md`.
+
+---
+
+## Appendix B. Identifier map (ADR 0036)
+
+The illustrative identifiers of the corpus (names of example apps, cycles, state fields, signals, instances, devices, alarms, scenarios, files, projects, nodes, keys and cohorts) were Portuguese, and were renamed to English in one pass across `docs/`, `spec/` and `wit/` (ADR 0036). The map is case-sensitive and applies to whole identifiers: `luz.pisca` became `light.blink`, `sim/scenarios/falha_esp.scenario.toml` became `sim/scenarios/esp_fault.scenario.toml`, `[alarms.cpu_quente]` became `[alarms.cpu_hot]`. A reader who meets an old name in git history, in an issue or in a branch finds the new one here.
+
+Proper nouns stay as they are: place names used as site and node names (`lisboa-01`, `revpi-porto`), product and vendor names, and third-party identifiers (`jefe` of Hubris, `modbus-slave`).
+
+**Learning track: the app, its cycle and its tests**
+
+| Old | New |
+|---|---|
+| `luz` | `light` |
+| `Luz` | `Light` |
+| `zz_luz` | `zz_light` |
+| `pisca` | `blink` |
+| `Pisca` | `Blink` |
+| `pisca_a_1hz` | `blinks_at_1hz` |
+| `parar_a_app_apaga_o_led` | `stopping_the_app_turns_off_the_led` |
+| `quente_pisca_a_100ms` | `hot_blinks_at_100ms` |
+| `sem_temperatura_apaga` | `no_temperature_turns_off` |
+| `blink_de_200ms_alterna_a_cada_100ms` | `blink_of_200ms_toggles_every_100ms` |
+| `arranque` | `startup` |
+| `Estado` | `State` |
+| `Padrao` | `Pattern` |
+| `modo` | `mode` |
+
+**Learning track: state fields, locals and constants**
+
+| Old | New |
+|---|---|
+| `ligado` | `enabled` |
+| `aceso` | `lit` |
+| `premido` | `pressed` |
+| `premido_antes` | `was_pressed` |
+| `antes` | `was_pressed` |
+| `decorrido_ms` | `elapsed_ms` |
+| `meio` | `half` |
+| `meio_ms` | `half_ms` |
+| `lento` | `slow` |
+| `RAPIDO_MS` | `FAST_MS` |
+| `rapido` | `fast` |
+| `frio` | `cold` |
+| `quente` | `hot` |
+| `t_frio` | `t_cold` |
+| `t_quente` | `t_hot` |
+| `ajuste` | `adjust` |
+| `AJUSTE_NEUTRO` | `NEUTRAL_ADJUST` |
+| `RECUO_K` | `BACKOFF_K` |
+| `FAIXA_K` | `SPAN_K` |
+| `led_estado` | `led_status` |
+| `fim` | `end` |
+| `reflexo` | `reflex` |
+| `Reflexo` | `Reflex` |
+| `bloqueio` | `lockout` |
+| `desde_ms` | `since_ms` |
+| `estatistica` | `statistics` |
+| `mediana` | `median` |
+| `janela` | `window` |
+
+**Signals, instances, ports, devices and alarms**
+
+| Old | New |
+|---|---|
+| `botao` | `button` |
+| `toque` | `touch` |
+| `toque_nivel` | `touch_level` |
+| `sinal` | `indicator` |
+| `carga` | `load` |
+| `temp_media` | `temp_avg` |
+| `cpu_quente` | `cpu_hot` |
+| `painel` | `panel` |
+| `painel_led` | `panel_led` |
+| `painel_botao` | `panel_button` |
+| `placa` | `board` |
+| `velocidade` | `speed` |
+| `sala` | `room` |
+| `sala_quente` | `room_hot` |
+| `conforto` | `comfort` |
+| `Conforto` | `Comfort` |
+| `limite` | `limit` |
+| `erro_k` | `error_k` |
+| `t_ida` | `supply_temp` |
+| `t_retorno` | `return_temp` |
+| `bomba_calor` | `heat_pump` |
+| `bomba` | `pump` |
+| `rega` | `irrigation` |
+| `jardim` | `garden` |
+| `valvula` | `valve` |
+| `meteo` | `weather` |
+| `caldeira` | `boiler` |
+
+**Scenarios, tags, traces and other file names**
+
+| Old | New |
+|---|---|
+| `aquece` | `heat_up` |
+| `falha_esp` | `esp_fault` |
+| `falha` | `fault` |
+| `falhas` | `faults` |
+| `incidente` | `incident` |
+| `decisoes` | `decisions` |
+| `efetivo` | `effective` |
+| `sessao` | `session` |
+| `temperatura` | `temperature` |
+| `frequencia` | `frequency` |
+| `mapa` | `map` |
+| `minha` | `mine` |
+
+**Projects, sites, nodes, keys, cohorts and templates**
+
+| Old | New |
+|---|---|
+| `bancada` | `bench` |
+| `wifi_bancada` | `wifi_bench` |
+| `mqtt_bancada` | `mqtt_bench` |
+| `jkt1_bancada_5e0c9a17` | `jkt1_bench_5e0c9a17` |
+| `segredos` | `secrets` |
+| `canario` | `canary` |
+| `estavel` | `stable` |
+| `portatil` | `laptop` |
+| `verao` | `summer` |
+| `trilha` | `track` |
+| `tanque` | `tank` |
+| `linha` | `line` |
+| `linha2` | `line2` |
+| `inspecao` | `inspection` |
+| `etar` | `wwtp` |
+| `norte` | `north` |
+| `bombas` | `pumps` |
+| `sem` | `no` |
+
+**SDK test names**
+
+| Old | New |
+|---|---|
+| `nunca_descarrega_abaixo_da_reserva` | `never_discharges_below_the_reserve` |
+| `test_nunca_descarrega_abaixo_da_reserva` | `test_never_discharges_below_the_reserve` |
+| `qualidade_ma_nao_escreve` | `bad_quality_does_not_write` |
+| `test_qualidade_ma_nao_escreve` | `test_bad_quality_does_not_write` |
+
+**Grammar nonterminal**
+
+| Old | New |
+|---|---|
+| `nome` | `name` |
+
+**Literals and strings**
+
+| Old | New |
+|---|---|
+| `bench-esp32-antes` | `bench-esp32-before` |
+| `"$valor"` | `"$value"` |
+| `"01 §7 passo 5"` | `"01 §7 step 5"` |
+| `@hmi.label("Bomba")` | `@hmi.label("Pump")` |
+| `classes/<pacote>/<nome>.sim.toml` | `classes/<package>/<name>.sim.toml` |
+| `@joker/classes-<pacote>` | `@joker/classes-<package>` |
+| `(ref/00 §1, regra 2)` | `(ref/00 §1, rule 2)` |
+| `(ref/00 §1, regra 4)` | `(ref/00 §1, rule 4)` |
+| `automacao@example.com` | `automation@example.com` |
+
+**Normative literals (ADR 0036, decision 2)**
+
+| Old | New | Where |
+|---|---|---|
+| `"$valor"` | `"$value"` | ref/03 §2.2.10, the chosen value in the `apply` steps of a `[config]` key |
+| `n_largos` | `n_wide` | ref/04 §3.2, the number of wide-section entries in the `image-len` formula |

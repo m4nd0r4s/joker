@@ -1,6 +1,6 @@
 # Part 1 — Hello, bench: an LED in the simulator
 
-**Goal:** start from an empty directory and end with the app `luz` blinking the `ACT` LED of a **simulated** Raspberry Pi, with app tests and a site scenario that prove it.
+**Goal:** start from an empty directory and end with the app `light` blinking the `ACT` LED of a **simulated** Raspberry Pi, with app tests and a site scenario that prove it.
 
 **You will learn:** project and manifest · overlays from day one · the type in the file name · `sim` device · signal, port and binding · output with `safe` · cycle group · hot-reload of parameters and code · `jk read` and `jk trace` · `joker-test` and the virtual clock · scenarios.
 
@@ -11,9 +11,9 @@
 ## 1. Empty directory → project
 
 ```sh
-$ mkdir joker-bancada && cd joker-bancada
+$ mkdir joker-bench && cd joker-bench
 $ git init -q
-$ jk init --name bancada
+$ jk init --name bench
 ```
 
 ```
@@ -27,7 +27,7 @@ The `joker.toml` that `init` writes has only the project:
 
 ```toml
 [project]
-name  = "bancada"
+name  = "bench"
 joker = "1.0"           # minimum runtime version that accepts this manifest
 mode  = "dev"           # dev: warnings instead of errors for what only matters in production
 ```
@@ -37,11 +37,11 @@ The default of `mode` is `prod` (ref/01 §5.2): forgetting the key on a real sit
 ## 2. Create the app
 
 ```sh
-$ jk app new luz --lang rust
+$ jk app new light --lang rust
 ```
 
 ```
-apps/luz/
+apps/light/
   Cargo.toml            depends on `joker-sdk` (the API), `joker-build`, and `joker-test` in the tests
   build.rs
   src/lib.rs
@@ -74,7 +74,7 @@ The manifest separates **what the system does** (the app, the output and its `sa
 ```toml
 # joker.toml — the common part. No device here.
 [project]
-name  = "bancada"
+name  = "bench"
 joker = "1.0"
 mode  = "dev"
 
@@ -87,11 +87,11 @@ safe = false
 period = "20ms"
 
 # The app, and the binding of its port `led` to the signal `pi.act_led`.
-[apps.luz]
-path   = "apps/luz"
+[apps.light]
+path   = "apps/light"
 bind   = { led = "pi.act_led" }
 params = { half_period = "500 ms" }
-cycles = { pisca = "main" }
+cycles = { blink = "main" }
 ```
 
 ```toml
@@ -113,15 +113,15 @@ Three things to notice:
 - **`safe = false` is not optional.** There is no "default safe value" (ADR 0006). `safe` is a decision about the system, and so it lives in the common part, and not in the hardware overlay.
 - **We did not declare `writer`.** With a single writer on the output, the default applies: level `control:12` and a lease of 3 periods of the owning group, 60 ms (document 16, A9 and A11; ref/01 §3.11). This only starts to matter in part 2.
 
-## 5. The app `luz` 0.1
+## 5. The app `light` 0.1
 
 ```rust
-// apps/luz/src/lib.rs
+// apps/light/src/lib.rs
 use joker::prelude::*;
 
 /// Blinks an LED. Version 0.1 of the track.
-#[joker::app(name = "luz", version = "0.1.0")]
-pub struct Luz {
+#[joker::app(name = "light", version = "0.1.0")]
+pub struct Light {
     /// The LED. The app only knows it is an output bool.
     #[output]
     led: Output<bool>,
@@ -133,13 +133,13 @@ pub struct Luz {
 
 /// Local state of the cycle task: lives between ticks, in the app's memory.
 #[derive(Default)]
-struct Pisca {
+struct Blink {
     elapsed_ms: f64,
     on: bool,
 }
 
 #[joker::cycle(period = "20ms", wcet = "5us")]
-fn pisca(io: &mut CycleIo<Luz>, st: &mut Pisca) -> Result<()> {
+fn blink(io: &mut CycleIo<Light>, st: &mut Blink) -> Result<()> {
     // The real period of the group (io.dt()), and not a constant: the manifest may change it.
     st.elapsed_ms += io.dt().as_secs_f64() * 1000.0;
 
@@ -156,7 +156,7 @@ fn pisca(io: &mut CycleIo<Luz>, st: &mut Pisca) -> Result<()> {
 
 Why write the LED on every tick, and not only when it changes? Because **proposing is renewing the lease** (document 16, A2). Joker sends nothing to the driver when the applied value does not change, but it learns that the app is alive. That is what guarantees that, if the app dies, the LED goes to `safe` within 60 ms.
 
-The macro's `period` is a **request**: what decides is the group the manifest binds the task to (`cycles = { pisca = "main" }`). If they differ beyond the app's tolerance, `jk check` warns with `J0130`.
+The macro's `period` is a **request**: what decides is the group the manifest binds the task to (`cycles = { blink = "main" }`). If they differ beyond the app's tolerance, `jk check` warns with `J0130`.
 
 ## 6. Check
 
@@ -166,13 +166,13 @@ $ jk check --env sim            # the same as --manifest joker.sim.toml
 
 ```
 ✓ manifest           joker.sim.toml ← joker.toml · 1 device (sim), 1 output, 1 app, 1 group
-✓ bindings           luz.led → pi.act_led (bool)
-✓ parameters         luz.half_period = 500 ms (20..5000 ms)
+✓ bindings           light.led → pi.act_led (bool)
+✓ parameters         light.half_period = 500 ms (20..5000 ms)
 ✓ RT admission       main 20ms: 5 µs declared (0.03%)
 warning[J0352]: group ≥ 10 ms without PREEMPT_RT: jitter not guaranteed: group `main` (20 ms)
    = note: on the laptop, with the simulator, it is irrelevant
 note: without `[target] board`, the checks that depend on the board are left undone
-note: joker.sim.lock updated (apps.luz)
+note: joker.sim.lock updated (apps.light)
 ```
 
 Notice the last line: each input manifest has its lock in the same directory (`joker.sim.toml` → `joker.sim.lock`), and in `dev` `jk check` keeps it up to date by itself (ref/02 §2.1.1 and §3.1.2). Put it under version control.
@@ -226,13 +226,13 @@ $ jk dev --panel --env sim
 ```
 
 ```
-joker 1.0.0 · dev · bancada · generation 1 · local target (sim)
+joker 1.0.0 · dev · bench · generation 1 · local target (sim)
 ┌ pi (sim) ──────────────────────────────────┐
 │ ACT        ●                               │   ← toggles every 500 ms
 └────────────────────────────────────────────┘
  groups   main 20ms   jitter p99 0.7 ms   overruns 0
- apps     luz 0.1.0  running  measured wcet 1.6 µs
- outputs  pi.act_led = true  (accepted · control:12 · app:luz)
+ apps     light 0.1.0  running  measured wcet 1.6 µs
+ outputs  pi.act_led = true  (accepted · control:12 · app:light)
  [q] quit  [r] reload  [t] trace pi.act_led  [?] help
 ```
 
@@ -244,7 +244,7 @@ params = { half_period = "100 ms" }
 
 `jk dev` applies a new generation (generation 2). The LED starts blinking at 5 Hz **without restarting the app**: the new value reaches the cycle instance in the image of the next tick (ref/04 §4.3.4). Try `"10 ms"`: the generation is rejected with `J0120` (outside the range `20..5000` that the app declares), and generation 2 keeps running. Go back to `"500 ms"`.
 
-**Code hot-reload.** Change the app, for example to an asymmetric blink (`if st.on { … }` with two times), and save. `jk dev` recompiles the component and swaps it between two ticks. The task state starts again at `Default` (LED off, counter at zero), because `Pisca` does not have `#[joker::state(persist)]`; with it, the swap would migrate the state (ref/04 §4.12). The previous version stays warm for `keep_previous` (10 min), so you can go back without recompiling. Undo the change before you continue.
+**Code hot-reload.** Change the app, for example to an asymmetric blink (`if st.on { … }` with two times), and save. `jk dev` recompiles the component and swaps it between two ticks. The task state starts again at `Default` (LED off, counter at zero), because `Blink` does not have `#[joker::state(persist)]`; with it, the swap would migrate the state (ref/04 §4.12). The previous version stays warm for `keep_previous` (10 min), so you can go back without recompiling. Undo the change before you continue.
 
 ## 8. Look inside
 
@@ -255,8 +255,8 @@ $ jk read pi.act_led --watch
 ```
 
 ```
-pi.act_led   true    good   age 4 ms    control:12 · app:luz
-pi.act_led   false   good   age 2 ms    control:12 · app:luz
+pi.act_led   true    good   age 4 ms    control:12 · app:light
+pi.act_led   false   good   age 2 ms    control:12 · app:light
 …
 ```
 
@@ -266,12 +266,12 @@ $ jk trace pi.act_led
 
 ```
 tick 1250  t=25.000s  main
-  app:luz.pisca     proposes true   (control:12, lease until 25.060s)
+  app:light.blink     proposes true   (control:12, lease until 25.060s)
   arbiter           active level control:12 → true
   envelope          accepted
   commit            true → driver sim (changed)
 tick 1251  t=25.020s  main
-  app:luz.pisca     proposes true   (control:12, lease until 25.080s)
+  app:light.blink     proposes true   (control:12, lease until 25.080s)
   arbiter           active level control:12 → true
   envelope          accepted
   commit            — (same as applied)
@@ -284,16 +284,16 @@ tick 1251  t=25.020s  main
 A blinking LED seems not to need tests, but this one shows what Joker gives you for free: a **virtual clock**. Ten seconds run in milliseconds, deterministically, with the real arbiter and envelope (ref/04 §6.1).
 
 ```rust
-// apps/luz/src/lib.rs (at the end)
+// apps/light/src/lib.rs (at the end)
 #[cfg(test)]
 mod tests {
     use super::*;
     use joker_test::prelude::*;
 
     #[test]
-    fn pisca_a_1hz() {
-        let mut h = Harness::<Luz>::new()
-            .group("pisca", 20.ms())
+    fn blinks_at_1hz() {
+        let mut h = Harness::<Light>::new()
+            .group("blink", 20.ms())
             .param("half_period", 500.0);
 
         h.run_for(10.s());
@@ -304,9 +304,9 @@ mod tests {
     }
 
     #[test]
-    fn parar_a_app_apaga_o_led() {
-        let mut h = Harness::<Luz>::new()
-            .group("pisca", 20.ms())
+    fn stopping_the_app_turns_off_the_led() {
+        let mut h = Harness::<Light>::new()
+            .group("blink", 20.ms())
             .safe("led", false);
         h.run_for(520.ms());                            // LED on since 500 ms
         assert_eq!(h.output("led").last(), Some(true));
@@ -322,7 +322,7 @@ $ jk test
 ```
 
 ```
-apps/luz (cargo test, wasm component on wasmtime) ... 2 passed
+apps/light (cargo test, wasm component on wasmtime) ... 2 passed
 ```
 
 `jk test` runs the **real `.wasm` component**, and not a native build of the app: it is what goes to the node. `cargo test` also works, with the native backend, and warns that it is not the production component.
@@ -332,7 +332,7 @@ apps/luz (cargo test, wasm component on wasmtime) ... 2 passed
 The app tests run the app alone. A **scenario** runs the **site**: the complete manifest, the simulated model, the real core and the virtual clock (ref/03 §2.5).
 
 ```toml
-# sim/scenarios/pisca.scenario.toml
+# sim/scenarios/blink.scenario.toml
 schema = 1
 
 [scenario]
@@ -347,7 +347,7 @@ toggles_every = "500ms ± 20ms"
 
 [[app]]
 at  = "8s"
-app = "luz"
+app = "light"
 do  = "stop"
 
 [[expect]]
@@ -364,8 +364,8 @@ $ jk test
 ```
 
 ```
-apps/luz (cargo test, wasm component on wasmtime) ... 2 passed
-sim/scenarios/pisca.scenario.toml (joker.sim.toml, 10 virtual s in 41 ms) ... passed
+apps/light (cargo test, wasm component on wasmtime) ... 2 passed
+sim/scenarios/blink.scenario.toml (joker.sim.toml, 10 virtual s in 41 ms) ... passed
 ```
 
 A failing expectation is `J0842`, with the instant, the value seen and the decision chain from `jk trace`. Try it: set `toggles_every = "400ms ± 20ms"` and read the report. `jk test` exits with code 6 (document 07, §8), which is what CI uses.
@@ -375,7 +375,7 @@ A failing expectation is `J0842`, with the instant, the value seen and the decis
 Every 20 ms, the group `main` runs a **tick** (document 01, §4):
 
 1. **latch:** freezes the inputs into a process image (there are none yet);
-2. **tasks:** calls `pisca` in the app's Wasm instance, which proposes `led = true/false`;
+2. **tasks:** calls `blink` in the app's Wasm instance, which proposes `led = true/false`;
 3. **arbiter:** the proposal takes level `control:12` and renews the lease (document 16, A2);
 4. **envelope:** everything passes, because for a `bool` we only declared `safe` (document 01, §7);
 5. **commit:** if the applied value changed, it goes to the `sim` driver, which shows it in the panel.
@@ -391,9 +391,9 @@ The manifest layers are resolved before anything else: `joker.sim.toml` extends 
 3. In the scenario, add a manual write (`[[write]]`, with `output`, `value = true`, `ttl = "2s"`, `at = "3s"`) and an expectation `level = "manual:4"` during that interval. What happens to `toggles_every` between 3 s and 5 s?
 
 ```sh
-$ git add -A && git commit -qm "track(01): luz 0.1 blinks the simulated ACT LED; tests and scenario"
+$ git add -A && git commit -qm "track(01): light 0.1 blinks the simulated ACT LED; tests and scenario"
 ```
 
-**State at the end of this part:** app `luz` **0.1**. Files: `joker.toml`, `joker.sim.toml`, `joker.sim.lock`, `sim/pi.sim.toml`, `sim/scenarios/pisca.scenario.toml`, `apps/luz/`.
+**State at the end of this part:** app `light` **0.1**. Files: `joker.toml`, `joker.sim.toml`, `joker.sim.lock`, `sim/pi.sim.toml`, `sim/scenarios/blink.scenario.toml`, `apps/light/`.
 
 **Next:** [Part 2 — The Pi 3 as a node: install, enroll, the board, the real LED](02-the-pi-as-a-node.md).

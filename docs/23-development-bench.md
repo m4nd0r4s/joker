@@ -84,11 +84,11 @@ Both read and write the **same** register table, and any valid request, wherever
 
 ```sh
 cd tools/bench/esp32-modbus
-BENCH_WIFI_SSID="bancada" BENCH_WIFI_PASSWORD="…" cargo build --release
+BENCH_WIFI_SSID="bench" BENCH_WIFI_PASSWORD="…" cargo build --release
 espflash flash --monitor target/xtensa-esp32-none-elf/release/esp32-modbus
 ```
 
-Without the two variables, the firmware compiles with RTU only (and the RSSI stays at 0). At boot, before `UART0` starts serving Modbus, the firmware writes a line to the serial console with the version, the SSID and the **IP** obtained by DHCP (`bench-esp32 v1 · wifi bancada · ip 192.168.1.60 · modbus-tcp :502 · modbus-rtu uart0 115200 8N1`), and repeats it on each Wi-Fi connection. `espflash --monitor` shows it right after flashing; later, it is read on the Pi 3 with `picocom -b 115200` on the `by-id` port, **with `jokerd` stopped** (it is the same port). The address in `joker.zero.toml` (§6.4) is this IP: it is pinned with a DHCP reservation on the router.
+Without the two variables, the firmware compiles with RTU only (and the RSSI stays at 0). At boot, before `UART0` starts serving Modbus, the firmware writes a line to the serial console with the version, the SSID and the **IP** obtained by DHCP (`bench-esp32 v1 · wifi bench · ip 192.168.1.60 · modbus-tcp :502 · modbus-rtu uart0 115200 8N1`), and repeats it on each Wi-Fi connection. `espflash --monitor` shows it right after flashing; later, it is read on the Pi 3 with `picocom -b 115200` on the `by-id` port, **with `jokerd` stopped** (it is the same port). The address in `joker.zero.toml` (§6.4) is this IP: it is pinned with a DHCP reservation on the router.
 
 **The equipment's own fallback (M1):** if it receives no Modbus request, over either transport, for 2 s, the firmware turns the LED off. It is the behavior that the profile's `[fallback]` declares, and it is what `jk doctor` checks.
 
@@ -183,7 +183,7 @@ In Phase 2, the **same ESP32** receives the Joker Micro firmware, and the same s
 
 ## 6. Bench manifests
 
-They are the files of the track project, `joker-bancada/` (`[project] name = "bancada"`), in the state they are in after part 6: a common manifest and one overlay per node (ref/01 §7). The following parts add instances, classes and apps to `joker.toml`, and `joker.lab-link.toml` (part 9); the node files do not change. Each input manifest has its own lock (`joker.sim.lock`, `joker.lab.lock`, `joker.zero.lock`, `joker.lab-link.lock`; document 07, §1); `joker.rpi.toml` only comes in through `extends` and has no lock. The overlays are called `joker.<variant>.toml` and are chosen with `--env <variant>` (`jk apply --env zero` is `joker.zero.toml`; ADR 0026).
+They are the files of the track project, `joker-bench/` (`[project] name = "bench"`), in the state they are in after part 6: a common manifest and one overlay per node (ref/01 §7). The following parts add instances, classes and apps to `joker.toml`, and `joker.lab-link.toml` (part 9); the node files do not change. Each input manifest has its own lock (`joker.sim.lock`, `joker.lab.lock`, `joker.zero.lock`, `joker.lab-link.lock`; document 07, §1); `joker.rpi.toml` only comes in through `extends` and has no lock. The overlays are called `joker.<variant>.toml` and are chosen with `--env <variant>` (`jk apply --env zero` is `joker.zero.toml`; ADR 0026).
 
 ```
 joker.toml ◀── joker.sim.toml                                          (laptop, everything simulated)
@@ -196,9 +196,9 @@ joker.toml ◀── joker.sim.toml                                          (la
 ### 6.1 `joker.toml`: what is the same everywhere
 
 ```toml
-# joker-bancada/joker.toml — common: outputs and envelopes, cycles, calc, alarms, apps
+# joker-bench/joker.toml — common: outputs and envelopes, cycles, calc, alarms, apps
 [project]
-name  = "bancada"
+name  = "bench"
 joker = "1.0"
 mode  = "dev"
 
@@ -212,14 +212,14 @@ safe = false
 period = "20ms"
 
 [calc]
-temp_media  = "avg(pi.cpu_temp, 10s)"
-toque_nivel = "clamp((60 - esp.touch) / 45, 0, 1)"
+temp_avg  = "avg(pi.cpu_temp, 10s)"
+touch_level = "clamp((60 - esp.touch) / 45, 0, 1)"
 
-[alarms.cpu_quente]
-when     = "calc.temp_media > 70 °C"
+[alarms.cpu_hot]
+when     = "calc.temp_avg > 70 °C"
 delay_on = "10s"
 severity = "medium"
-message  = "CPU at {calc.temp_media}"
+message  = "CPU at {calc.temp_avg}"
 
 [alarms.esp_offline]
 when     = "!good(esp.uptime)"
@@ -227,11 +227,11 @@ delay_on = "5s"
 severity = "high"
 message  = "ESP32 not communicating"
 
-[apps.luz]
-path   = "apps/luz"
-bind   = { led = "pi.act_led", temp = "calc.temp_media", botao = "esp.button", led_estado = "esp.led", ajuste = "calc.toque_nivel" }
-params = { half_period = "500 ms", t_frio = "45 °C", t_quente = "70 °C" }
-cycles = { pisca = "main" }
+[apps.light]
+path   = "apps/light"
+bind   = { led = "pi.act_led", temp = "calc.temp_avg", button = "esp.button", led_status = "esp.led", adjust = "calc.touch_level" }
+params = { half_period = "500 ms", t_cold = "45 °C", t_hot = "70 °C" }
+cycles = { blink = "main" }
 ```
 
 It has no `[target]` nor `[devices]`: the `pi.*` and `esp.*` signals come from the overlays, and that is why the same `joker.toml` runs in the simulator (`joker.sim.toml`, with `driver = "sim"` on both devices) and on the two boards.
@@ -239,7 +239,7 @@ It has no `[target]` nor `[devices]`: the `pi.*` and `esp.*` signals come from t
 ### 6.2 `joker.rpi.toml`: what the two Raspberry Pis have in common
 
 ```toml
-# joker-bancada/joker.rpi.toml — the "pi" device of any Raspberry Pi (sysfs)
+# joker-bench/joker.rpi.toml — the "pi" device of any Raspberry Pi (sysfs)
 extends = ["joker.toml"]
 
 [devices.pi]
@@ -256,7 +256,7 @@ Up to part 5, this `[devices.pi]` lives in `joker.lab.toml`; part 6 moves it her
 ### 6.3 `joker.lab.toml`: the Pi 3, with the ESP32 over Modbus RTU
 
 ```toml
-# joker-bancada/joker.lab.toml — node "lab" (Raspberry Pi 3 B+)
+# joker-bench/joker.lab.toml — node "lab" (Raspberry Pi 3 B+)
 extends = ["joker.rpi.toml"]
 
 [target]
@@ -284,7 +284,7 @@ The name of the serial port depends on the bridge of the ESP32 board (CP2102 or 
 ### 6.4 `joker.zero.toml`: the Pi Zero W, with the ESP32 over Modbus TCP
 
 ```toml
-# joker-bancada/joker.zero.toml — node "zero" (Raspberry Pi Zero W)
+# joker-bench/joker.zero.toml — node "zero" (Raspberry Pi Zero W)
 extends = ["joker.rpi.toml"]
 
 [target]
@@ -305,7 +305,7 @@ profile = "local/bench-esp32@1"
 ### 6.5 `joker.lab-link.toml`: the same ESP32 over Joker Link (Phase 2)
 
 ```toml
-# joker-bancada/joker.lab-link.toml — the ESP32 becomes a Joker Micro
+# joker-bench/joker.lab-link.toml — the ESP32 becomes a Joker Micro
 extends = ["joker.lab.toml"]
 
 [buses.esp32]

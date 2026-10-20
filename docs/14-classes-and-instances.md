@@ -51,7 +51,7 @@ The same person can do all three things, and in the learning track did. What mat
 | **Query** | value derived from the members, computed **by the core** | `button.clicked` = `rose(pressed)` |
 | **Instance** | a concrete piece of equipment that fulfills a class, with the members bound to signals | `p1: pump@1` |
 
-**A class describes the role, not the chip.** The track's ESP32 is a *device* (it speaks Modbus RTU with the bench firmware and has a profile, `local/bench-esp32@1`). Its touch sensor, pad T0, is an *instance* of `analog_in@1`: the profile's implicit one, `esp`, with the firmware's nominal scale, and the site's composite `toque`, with that bench's calibration (track, part 7, §5). The app wants "a normalized analog value", not "pad T0 of an ESP32". The practical rule: if swapping the component for another equivalent one should not touch the app, then the component is a device, and the role is a class.
+**A class describes the role, not the chip.** The track's ESP32 is a *device* (it speaks Modbus RTU with the bench firmware and has a profile, `local/bench-esp32@1`). Its touch sensor, pad T0, is an *instance* of `analog_in@1`: the profile's implicit one, `esp`, with the firmware's nominal scale, and the site's composite `touch`, with that bench's calibration (track, part 7, §5). The app wants "a normalized analog value", not "pad T0 of an ESP32". The practical rule: if swapping the component for another equivalent one should not touch the app, then the component is a device, and the role is a class.
 
 The same rule holds for composite classes. `local/bench_io@1` (track, part 8, "Extra") is acceptable: it describes **the bench's I/O node**, with a status LED, a button, a touch input and a heartbeat signal, and another node with the same parts would fulfill it without touching the app. A class called `esp32@1` is the mistake: it names the chip, not the role, and the day the node becomes an RP2350 the class lies. A class's name answers "what is this for in the program?", and never "what part is this?".
 
@@ -157,7 +157,7 @@ Using a composite class, end to end:
 | Step | How | Where the rule is |
 |---|---|---|
 | bind the members | in the `map`, the value of a class member is the name of an instance; in a collection, a list of names | §5.2; ref/01 §5.13 |
-| reach the signals | nested paths: `esp_io.boot.clicked` is the same signal as `botao.clicked`; in a collection, `station.pumps.p1.running` | document 16, P6 |
+| reach the signals | nested paths: `esp_io.boot.clicked` is the same signal as `button.clicked`; in a collection, `station.pumps.p1.running` | document 16, P6 |
 | share a member | an instance may be a member of several compositions; a single envelope and a single arbiter per `out`; warning `J0655` when the sharing reaches different apps | document 16, P6 |
 | call methods of the members | in a method of the class, only of fixed members (`drive.stop()`) | document 17, §4.1 |
 | health | the worst of the class's and that of the required members | document 17, §4.5 |
@@ -232,12 +232,12 @@ use joker::classes::std::{Led, Button};
 #[joker::app(name = "hello_world", version = "0.5.0")]
 pub struct HelloWorld {
     #[device] led: Led,
-    #[device] botao: Button,
+    #[device] button: Button,
 }
 
 #[joker::cycle(period = "10ms")]
 fn control(io: &mut CycleIo<HelloWorld>, _st: &mut ()) -> Result<()> {
-    if io.botao.clicked()? {
+    if io.button.clicked()? {
         io.led.toggle();
     }
     Ok(())
@@ -246,11 +246,11 @@ fn control(io: &mut CycleIo<HelloWorld>, _st: &mut ()) -> Result<()> {
 
 ```toml
 [apps.hello_world.bind]
-led   = "painel_led"         # an instance of led@1
-botao = "painel_botao"       # an instance of button@1
+led   = "panel_led"         # an instance of led@1
+button = "panel_button"       # an instance of button@1
 ```
 
-The `st.premido_antes` of part 4 of the track is gone: the edge detection is the class's `clicked` query, computed by the core (track, part 7).
+The `st.was_pressed` of part 4 of the track is gone: the edge detection is the class's `clicked` query, computed by the core (track, part 7).
 
 ### 6.2 Many pieces of equipment
 
@@ -338,8 +338,8 @@ import { Led, Button } from "@joker/classes-std";
 
 export default app({
   name: "hello_world", version: "0.5.0",
-  devices: { led: device(Led), botao: device(Button) },
-  cycles: { control: cycle("100ms", (io) => { if (io.botao.clicked()) io.led.toggle(); }) },
+  devices: { led: device(Led), button: device(Button) },
+  cycles: { control: cycle("100ms", (io) => { if (io.button.clicked()) io.led.toggle(); }) },
 });
 ```
 
@@ -350,11 +350,11 @@ from joker_classes.std import Led, Button
 @app(name="hello_world", version="0.5.0")
 class HelloWorld(App):
     led = device(Led)
-    botao = device(Button)
+    button = device(Button)
 
     @cycle("500ms")
     def control(self) -> None:
-        if self.botao.clicked():
+        if self.button.clicked():
             self.led.toggle()
 ```
 
@@ -364,7 +364,7 @@ The periods are the tier 2 minimums (100 ms in TypeScript, 500 ms in Python, `J-
 
 ### 6.7 Free Rust: where behavior lives
 
-The methods of a shared class are declarative (§4.5) because **anyone can call them**: apps in Rust, TypeScript or Python, the CLI (`jk write luz.mode fault`), the OPC UA bridge, an approved intent. For all of them to execute the same `toggle`, the core must know how to execute it, and `jk check` must know which outputs it writes. That does not rule out free Rust: it only puts it in the right place. There are three, depending on **whom the behavior belongs to**.
+The methods of a shared class are declarative (§4.5) because **anyone can call them**: apps in Rust, TypeScript or Python, the CLI (`jk write light.mode fault`), the OPC UA bridge, an approved intent. For all of them to execute the same `toggle`, the core must know how to execute it, and `jk check` must know which outputs it writes. That does not rule out free Rust: it only puts it in the right place. There are three, depending on **whom the behavior belongs to**.
 
 | Where | Free Rust? | Runs | State | Who can use it | What for |
 |---|---|---|---|---|---|
@@ -543,7 +543,7 @@ A profile with `implements` and an app with `#[implements]` can only be publishe
 
 **A12 — Performance.** Classes are resolved at build and in `jk check`: each member is a port, each method is a ~16 B record expanded by the core, each query is a derived signal. There is no dynamic dispatch, reflection or lookup by name in the tick. An app with 15 pieces of equipment × 5 members has 75 ports, 1.8 KB of image, and the same cost as an app written with raw ports.
 
-**A13 — Testing without hardware.** Each standard class has a **class simulator** (`classes/<pacote>/<nome>.sim.toml`, ref/03 §2.4.11): `[instances.p1] class = "pump@1", sim = true` creates a simulated pump with plausible dynamics (delayed start, injectable faults, pressure proportional to speed) and presence in the `jk dev` dashboard. The class conformance tests (§7.3) run against it.
+**A13 — Testing without hardware.** Each standard class has a **class simulator** (`classes/<package>/<name>.sim.toml`, ref/03 §2.4.11): `[instances.p1] class = "pump@1", sim = true` creates a simulated pump with plausible dynamics (delayed start, injectable faults, pressure proportional to speed) and presence in the `jk dev` dashboard. The class conformance tests (§7.3) run against it.
 
 **A14 — Too many classes.** The opposite risk: a class for everything, 400 classes in a registry nobody masters. Containment: the `std/` library is small and reviewed (§10); project classes are free; app-local classes (§6.5) do not enter the registry. And the golden rule: **if two apps from different sites do not need to talk about the same concept, it is not a shared class.**
 
@@ -775,11 +775,11 @@ profile = "acme/em3@1"
 class = "local/compressor@1"
 map   = { drive = "vfd1", discharge_temp = "ai.ch3" }
 
-[instances.t_ida]
+[instances.supply_temp]
 class = "std/temp_sensor@1"
 map   = { temperature = "ai.ch1" }
 
-[instances.t_retorno]
+[instances.return_temp]
 class = "std/temp_sensor@1"
 map   = { temperature = "ai.ch2" }
 
@@ -790,7 +790,7 @@ map   = { c1 = "io.do_1", c2 = "io.do_2" }
 [instances.hp]
 class          = "local/heat_pump@1"
 implemented_by = "app:hp_ctl"
-map            = { compressor = "comp1", t_supply = "t_ida", t_return = "t_retorno", meter = "em1", grid = "sg" }   # class members only
+map            = { compressor = "comp1", t_supply = "supply_temp", t_return = "return_temp", meter = "em1", grid = "sg" }   # class members only
 
 [outputs."hp.mode"]
 safe = "off"
@@ -800,11 +800,11 @@ safe = "35 °C"
 
 [apps.hp_ctl]
 path = "apps/hp_ctl"
-bind = { compressor = "comp1", supply = "t_ida", ret = "t_retorno", grid = "sg" }
+bind = { compressor = "comp1", supply = "supply_temp", ret = "return_temp", grid = "sg" }
 
-[apps.conforto]
-path = "apps/conforto"
-bind = { hp = "hp", exterior = "meteo.t_ext" }
+[apps.comfort]
+path = "apps/comfort"
+bind = { hp = "hp", exterior = "weather.t_ext" }
 ```
 
 In a virtual instance, the `map` only binds the class members; the scalars (`mode`, `flow_sp`) are virtual commands, and the `in`s, if there were any, would be published by the implementation (ref/01 §5.13).
@@ -826,8 +826,8 @@ fn run(io: &mut CycleIo<HpCtl>, _st: &mut ()) -> Result<()> {
     match mode {
         HpMode::Off => io.compressor.stop(),
         _ => {
-            let erro_k = io.cmd.flow_sp.get()? - io.supply.temperature()?;
-            io.compressor.start((30.0 + 10.0 * erro_k).clamp(0.0, 100.0));   // in %
+            let error_k = io.cmd.flow_sp.get()? - io.supply.temperature()?;
+            io.compressor.start((30.0 + 10.0 * error_k).clamp(0.0, 100.0));   // in %
         }
     }
     if let Some(g) = &io.grid {
@@ -838,15 +838,15 @@ fn run(io: &mut CycleIo<HpCtl>, _st: &mut ()) -> Result<()> {
 ```
 
 ```rust
-// apps/conforto/src/lib.rs: the business app
-#[joker::app(name = "conforto", version = "1.0.0")]
-pub struct Conforto {
+// apps/comfort/src/lib.rs: the business app
+#[joker::app(name = "comfort", version = "1.0.0")]
+pub struct Comfort {
     #[device] hp: HeatPump,
     #[input(unit = "°C")] exterior: Input<f64>,
 }
 
 #[joker::cycle(period = "10s")]
-fn run(io: &mut CycleIo<Conforto>, _st: &mut ()) -> Result<()> {
+fn run(io: &mut CycleIo<Comfort>, _st: &mut ()) -> Result<()> {
     io.hp.heat((45.0 - 0.8 * io.exterior.get()?).clamp(25.0, 55.0));   // heating curve
     if io.hp.compressor.overheated()? {                                  // read through the nested member
         log::warn!("compressor hot: supply {:.1} °C", io.hp.t_supply.temperature()?);
@@ -855,7 +855,7 @@ fn run(io: &mut CycleIo<Conforto>, _st: &mut ()) -> Result<()> {
 }
 ```
 
-`conforto` reads the compressor and the probes through the nested handles (ref/04 §4.8.6), but does not write to them: they belong to `hp_ctl`. The paths `hp.compressor.drive.speed`, `comp1.drive.speed` and `vfd1.speed` are the same signal (document 16, P6).
+`comfort` reads the compressor and the probes through the nested handles (ref/04 §4.8.6), but does not write to them: they belong to `hp_ctl`. The paths `hp.compressor.drive.speed`, `comp1.drive.speed` and `vfd1.speed` are the same signal (document 16, P6).
 
 ```sh
 $ jk explain hp
@@ -863,33 +863,33 @@ $ jk explain hp
 
 ```
 hp · local/heat_pump@1 · virtual instance, implemented by app:hp_ctl (joker.toml:31)
-  mode          out HpMode    writers: conforto (control:12) · safe = off
-  flow_sp       out f64 °C    writers: conforto (control:12) · safe = 35 °C
+  mode          out HpMode    writers: comfort (control:12) · safe = off
+  flow_sp       out f64 °C    writers: comfort (control:12) · safe = 35 °C
   delta_t       query         t_supply.temperature - t_return.temperature
   overheated    query         compressor.overheated
   compressor    comp1 · local/compressor@1 · composite · Ok
     drive       vfd1 · std/drive@1 · implicit (acme/hp-drive@2) · Ok
-  t_supply      t_ida · std/temp_sensor@1 · composite · Ok
-  t_return      t_retorno · std/temp_sensor@1 · composite · Ok
+  t_supply      supply_temp · std/temp_sensor@1 · composite · Ok
+  t_return      return_temp · std/temp_sensor@1 · composite · Ok
   meter         em1 · std/meter.ac3@1 · implicit (acme/em3@1) · Ok
   grid          sg · local/sg_ready@1 · composite · Ok · optional
   health        Ok
   depth         3: heat_pump → compressor → drive (JC0501: maximum 3)
-  layers        conforto → hp → hp_ctl: 1 virtual layer (J0620: maximum 3)
+  layers        comfort → hp → hp_ctl: 1 virtual layer (J0620: maximum 3)
 ```
 
-**With `hp_ctl` on a Joker Micro.** On the U2 controller (ESP32-C6), `hp_ctl` is a native MCU app, and the instances `comp1`, `t_ida`, `t_retorno`, `sg`, `em1`, `vfd1` and `hp` are in the MCU manifest (`micro/hp/joker.toml`), with the same blocks as above. The Pi sees the MCU as a device:
+**With `hp_ctl` on a Joker Micro.** On the U2 controller (ESP32-C6), `hp_ctl` is a native MCU app, and the instances `comp1`, `supply_temp`, `return_temp`, `sg`, `em1`, `vfd1` and `hp` are in the MCU manifest (`micro/hp/joker.toml`), with the same blocks as above. The Pi sees the MCU as a device:
 
 ```toml
 # the Pi's joker.toml (excerpt)
-[devices.bomba]
+[devices.pump]
 driver    = "joker-link"
 bus       = "rs485"
 micro     = "micro/hp/joker.toml"
-instances = { hp = "bomba_calor" }          # only the top-level name is renamed
+instances = { hp = "heat_pump" }          # only the top-level name is renamed
 ```
 
-The `HELLO` catalog carries the composite instance with the member tree (ref/07 §6.3). The Pi sees **one** instance, `bomba_calor`, of `local/heat_pump@1`, with the same nested paths: `bomba_calor.compressor.drive.speed`, `bomba_calor.t_supply.temperature`. The instances that on the MCU are only members (`comp1`, `t_ida`…) do not get a name on the Pi: they exist through the paths of `bomba_calor`. `conforto` runs on the Pi without changing a line, with `bind = { hp = "bomba_calor" }`; its writes to `bomba_calor.mode` are proposals over the link, and the `safe` of `mode` is applied on the MCU (document 19, §6).
+The `HELLO` catalog carries the composite instance with the member tree (ref/07 §6.3). The Pi sees **one** instance, `heat_pump`, of `local/heat_pump@1`, with the same nested paths: `heat_pump.compressor.drive.speed`, `heat_pump.t_supply.temperature`. The instances that on the MCU are only members (`comp1`, `supply_temp`…) do not get a name on the Pi: they exist through the paths of `heat_pump`. `comfort` runs on the Pi without changing a line, with `bind = { hp = "heat_pump" }`; its writes to `heat_pump.mode` are proposals over the link, and the `safe` of `mode` is applied on the MCU (document 19, §6).
 
 **Where it hits the limit.** An apartment building with four heat pumps asks for a site class:
 
@@ -918,22 +918,22 @@ The site is not a piece of equipment: it is a policy over four. It goes into an 
 #[joker::app(name = "site_ctl", version = "1.0.0")]
 pub struct SiteCtl {
     #[device] hps: Many<HeatPump, 1, 4>,
-    #[input(unit = "kW")] limite: Input<f64>,
+    #[input(unit = "kW")] limit: Input<f64>,
 }
 
 #[joker::cycle(period = "5s")]
 fn run(io: &mut CycleIo<SiteCtl>, _st: &mut ()) -> Result<()> {
-    let limite = io.limite.get()?;
+    let limit = io.limit.get()?;
     let mut total = 0.0;
     for h in io.hps.iter() {                          // bind order: the last ones are cut first
         total += h.meter.p_total().unwrap_or(0.0);    // p_total: active power of meter.ac3@1
-        if total > limite { h.off() }                 // with no proposal, conforto is in command
+        if total > limit { h.off() }                 // with no proposal, comfort is in command
     }
     Ok(())
 }
 ```
 
-`site_ctl` and `conforto` both write to the `mode` of each heat pump. With `site_ctl` at `writer = { level = "supervisor" }`, the cut wins over the heating curve while it lasts, and when `site_ctl` stops proposing, the lease expires and `conforto` is in command again (document 16, A5). At the same level, it would be `J0210`.
+`site_ctl` and `comfort` both write to the `mode` of each heat pump. With `site_ctl` at `writer = { level = "supervisor" }`, the cut wins over the heating curve while it lasts, and when `site_ctl` stops proposing, the lease expires and `comfort` is in command again (document 16, A5). At the same level, it would be `J0210`.
 
 ---
 

@@ -103,7 +103,7 @@ If RT fails, the promise on Linux drops to groups ≥ 10 ms, and the fast loops 
 - **Joker Deck MVP**: inventory, desired state from Git, rollouts in waves with KPI stop, fleet health. **Minimal Joker Hub**: OCI registry + publication checks.
 - Uplink budgets (M12), complete overlays (M13), shadow mode **for apps** (M16).
 - Zenoh/ROS 2 bridge; Zenoh and OTLP uplink.
-- **TypeScript SDK** (`@joker/sdk`, `@joker/test`, `@joker/classes-<pacote>`) and Python and TypeScript client libraries of the API (ref/05). The Python SDK has its API closed in ref/05 and ships in 1.2.
+- **TypeScript SDK** (`@joker/sdk`, `@joker/test`, `@joker/classes-<package>`) and Python and TypeScript client libraries of the API (ref/05). The Python SDK has its API closed in ref/05 and ships in 1.2.
 
 **Exit gates:**
 

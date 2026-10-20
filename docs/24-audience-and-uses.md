@@ -62,7 +62,7 @@ Certified safety functions (SIL), motion control below 1 ms, control room SCADA 
 |---|---|---|
 | Integrator (new site) | `jk new site --template bess`, `jk check`, `jk dev --env sim` | profiles from the Hub, site overlay, `jk lock --node`, `jk apply --confirm`, Deck with the canary |
 | Control programmer | `jk app new`, scenario, `jk test` with a virtual clock | the app with classes, replay of a real incident (`jk replay --diff`) |
-| Hardware integrator | `jk profile import csv mapa.csv`, `jk profile check` | `jk profile test --uri …` on the equipment, `implements`, publication in the Hub with a conformance report |
+| Hardware integrator | `jk profile import csv map.csv`, `jk profile check` | `jk profile test --uri …` on the equipment, `implements`, publication in the Hub with a conformance report |
 | Field technician | `jk status`, `jk read 'pcs.**' --watch` | `jk write … --ttl --reason`, `jk alarm ack`, `jk doctor`; today **only through the CLI** (§4) |
 | Fleet | `jk ca init`, `jk node enroll … --deck` | `fleet.toml`, waves, `halt_if`, secret rotation |
 | OEM | `jk build --target mcu:<board> --lib`, `joker_node.h` | the product exporting its class over Joker Link; profile and class in the Hub |
@@ -98,13 +98,13 @@ Today the board profile describes the fixed hardware (`[io.<name>]` → `board.<
 [target]
 board = "rpi3b-plus@1"
 
-[devices.placa]
+[devices.board]
 driver = "board"                       # proposal: exposes what the board profile describes
 lines  = { gpio17 = "output", gpio27 = { direction = "input", bias = "pull-up" } }
 ```
 
-- The `board` driver exposes the fixed IO (LEDs, temperature, board buttons) and the header lines that the manifest asks for, with the names printed on the board (`placa.gpio17`, `placa.act_led`, `placa.cpu_temp`), using the drivers that already exist (`gpio`, `sysfs`) underneath.
-- The board profile gains `implements` for the fixed IO: the `ACT` LED fulfills `std/led@1`, and the app writes `io.placa.act_led.on()`.
+- The `board` driver exposes the fixed IO (LEDs, temperature, board buttons) and the header lines that the manifest asks for, with the names printed on the board (`board.gpio17`, `board.act_led`, `board.cpu_temp`), using the drivers that already exist (`gpio`, `sysfs`) underneath.
+- The board profile gains `implements` for the fixed IO: the `ACT` LED fulfills `std/led@1`, and the app writes `io.board.act_led.on()`.
 - `jk init --board rpi3b-plus` creates this device, and `jk board show` says which lines are free.
 - It is not an `rpi3@1` class: a board is a **device** (ADR 0027, "a role, not a chip"); the roles (LED, button, sensor) are what the classes are.
 
@@ -123,11 +123,11 @@ It serves the maker ("I use an ESP32 as an extension of the Pi"), the integrator
 An app that runs **outside** `jokerd`, in any language, and talks through the API with the client (`joker_client`, ref/05 part B), but **declared in the manifest as a writer**, with a level and a lease:
 
 ```toml
-[apps.rega]
+[apps.irrigation]
 kind   = "api"                         # proposal (not to be confused with the Joker Micro `kind = "extern"`, ref/08)
 writer = { level = "control:12", lease = "5s" }
-writes = ["jardim.valvula"]
-reads  = ["jardim.**", "meteo.**"]
+writes = ["garden.valve"]
+reads  = ["garden.**", "weather.**"]
 ```
 
 - It writes through the arbiter and the envelope like any writer; if the process dies, the lease expires and the output goes to `safe`.

@@ -1,10 +1,10 @@
 # Part 6 — Switching boards: the same project on the Pi Zero W, and the board that does not exist yet
 
-**Goal:** get the project `bancada` running on a Raspberry Pi Zero W without changing a line of the app `luz`: separate in the overlays what belongs to Raspberry Pis from what belongs to the Pi 3, write the profile of a board the registry does not know, and talk to the same ESP32 over Wi-Fi instead of USB.
+**Goal:** get the project `bench` running on a Raspberry Pi Zero W without changing a line of the app `light`: separate in the overlays what belongs to Raspberry Pis from what belongs to the Pi 3, write the profile of a board the registry does not know, and talk to the same ESP32 over Wi-Fi instead of USB.
 
 **You will learn:** refactoring overlays without changing the effective manifest · the effective manifest hash · what a board profile is (and what it is not) · `jk board probe`, `jk board check`, `jk board new` · support levels and when a board is published · resources on a single-core board · Modbus RTU and Modbus TCP with the same profile · two clients on the same equipment · one lock per manifest and WCET per board · `jk diff --against`.
 
-**Before you start:** part 5 done (app `luz` 0.4.1 on lab). The Pi Zero W with an SD card and a micro-USB power supply. The ESP32 stays connected to the Pi 3 (that is where its power comes from) and is on the same 2.4 GHz Wi-Fi network. You need the ESP32's IP: the serial console showed it when you flashed the bench firmware in part 4 (or look it up in the router's DHCP table, and reserve it there).
+**Before you start:** part 5 done (app `light` 0.4.1 on lab). The Pi Zero W with an SD card and a micro-USB power supply. The ESP32 stays connected to the Pi 3 (that is where its power comes from) and is on the same 2.4 GHz Wi-Fi network. You need the ESP32's IP: the serial console showed it when you flashed the bench firmware in part 4 (or look it up in the router's DHCP table, and reserve it there).
 
 ---
 
@@ -344,11 +344,11 @@ Modbus TCP has no authentication: any machine on the network can write to coil 0
 
 The `led_rb` at `true` in the table above is lab: the Pi 3 keeps talking to the ESP32 over RTU, and the firmware answers both transports at the same time. **Do not connect both nodes to the same LED.**
 
-- **Each node arbitrates its own outputs, and only its own.** The arbiter, the envelope and the lease of `esp.led` on lab do not know that zero exists. Both would write their own `ligado` to coil 0, and the LED would follow the last request to arrive. Each node would see, in the readback, a value it did not write.
+- **Each node arbitrates its own outputs, and only its own.** The arbiter, the envelope and the lease of `esp.led` on lab do not know that zero exists. Both would write their own `enabled` to coil 0, and the LED would follow the last request to arrive. Each node would see, in the readback, a value it did not write.
 - **The equipment fallback stops protecting.** The firmware turns the LED off after 2 s *without requests from anyone*. With two clients, if zero goes down, lab's requests keep the ESP32 "company", and the LED stays at the last value zero wrote.
 - In v1 there is no arbiter between nodes: a signal belongs to one node. A site signal space shared by several nodes is the v2 mesh (document 21, §8).
 
-So, before applying on zero, take the ESP32 away from lab. The clean way is to go back to a lab generation that did not have `esp`: `jk generations --node lab` shows it, number 3, from part 3 (`luz` 0.2.0).
+So, before applying on zero, take the ESP32 away from lab. The clean way is to go back to a lab generation that did not have `esp`: `jk generations --node lab` shows it, number 3, from part 3 (`light` 0.2.0).
 
 ```sh
 $ jk rollback 3 --node lab
@@ -368,11 +368,11 @@ One lock per input manifest (D8): `joker.zero.toml` gives `joker.zero.lock`, nex
 
 ```
 → zero (dev) · from --node
-luz.pisca  100,000 runs · Pulley · p50 150 µs · p99.9 240 µs · max 610 µs
+light.blink  100,000 runs · Pulley · p50 150 µs · p99.9 240 µs · max 610 µs
 warning[J0432]: measured WCET above the one declared by the app: 240 µs measured, 20 µs declared
   = note: the declared one is the author's estimate; RT admission uses the measured one, from the lock, for this board
 RT admission  main 20 ms · 240 µs · 1.2% of the period ✓
-written       joker.zero.lock [wcet] "luz.pisca" (board = "rpi-zero-w")
+written       joker.zero.lock [wcet] "light.blink" (board = "rpi-zero-w")
 ```
 
 ```toml
@@ -397,7 +397,7 @@ verified = "2026-09-25T15:02:11Z"
 firmware = "1"
 
 [wcet]
-"luz.pisca" = { p999 = "240us", max = "610us", samples = 100000, board = "rpi-zero-w", runtime = "1.0.0", app = "sha256:…", measured = "2026-09-25T15:10:40Z" }
+"light.blink" = { p999 = "240us", max = "610us", samples = 100000, board = "rpi-zero-w", runtime = "1.0.0", app = "sha256:…", measured = "2026-09-25T15:10:40Z" }
 ```
 
 In `joker.lab.lock`, the same task has `p999 = "7us"` and `board = "rpi3b-plus"`: the same app, some 35 times slower on an interpreted ARMv6 core. A WCET entry is only valid for the board, the app and the runtime it was measured on (`J0431`, ref/02 §2.1.13). That is why the WCET lives in each node's lock and not in the app, and part 11 will need this.
@@ -447,10 +447,10 @@ effective manifest  joker.zero.toml (sha256:9d0e77b2…)  versus  joker.lab.toml
 +address = "192.168.1.57:502"
 
 same: [project], [devices.pi], [security.api], [signals] (2), [outputs] (2), [cycles.main],
-      [calc] (2), [alarms] (2), [telemetry.record] (2), [apps.luz] (luz 0.4.1, the same binds and params)
+      [calc] (2), [alarms] (2), [telemetry.record] (2), [apps.light] (light 0.4.1, the same binds and params)
 ```
 
-The difference between the two boards is **board, resources and transport**. The app, the equipment profile, the alarms, the `calc`s and the scenarios did not change. `sim/scenarios/falha_esp.scenario.toml` remains the test of both nodes, because it tests the site and not the board.
+The difference between the two boards is **board, resources and transport**. The app, the equipment profile, the alarms, the `calc`s and the scenarios did not change. `sim/scenarios/esp_fault.scenario.toml` remains the test of both nodes, because it tests the site and not the board.
 
 ## 10. What happened underneath
 
@@ -476,6 +476,6 @@ The difference between the two boards is **board, resources and transport**. The
 $ git add -A && git commit -qm "track(06): joker.rpi.toml, board rpi-zero-w and the ESP32 over Modbus TCP on node zero"
 ```
 
-**State at the end of this part:** app `luz` 0.4.1, unchanged, running on zero (generation 1, context `zero.local:7443`); lab at generation 3 (the one from part 3, without `esp`). New: `joker.rpi.toml`, `joker.zero.toml`, `joker.zero.lock`, `boards/rpi-zero-w.board.toml`; `joker.lab.toml` now has `extends = ["joker.rpi.toml"]`, without changing the effective manifest. One client at a time: part 7 starts by restoring lab.
+**State at the end of this part:** app `light` 0.4.1, unchanged, running on zero (generation 1, context `zero.local:7443`); lab at generation 3 (the one from part 3, without `esp`). New: `joker.rpi.toml`, `joker.zero.toml`, `joker.zero.lock`, `boards/rpi-zero-w.board.toml`; `joker.lab.toml` now has `extends = ["joker.rpi.toml"]`, without changing the effective manifest. One client at a time: part 7 starts by restoring lab.
 
 **Next:** [Part 7 — Classes: the same system at the equipment layer](07-classes.md).

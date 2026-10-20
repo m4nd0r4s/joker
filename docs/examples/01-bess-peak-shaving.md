@@ -273,7 +273,7 @@ max = "1 kW"
 ```
 
 ```toml
-# sim/scenarios/frequencia.scenario.toml
+# sim/scenarios/frequency.scenario.toml
 schema = 1
 
 [scenario]

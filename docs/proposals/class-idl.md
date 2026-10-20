@@ -150,7 +150,7 @@ Three deliberate syntax choices:
 
 - **The expressions are those of the manifest.** The same parser and the same bytecode: what works in a `calc` works in a `query`.
 - **Methods only have assignments.** There is no `if` as a statement (there is `if … then … else` as an expression), no loops, no calls to other methods. A method is a pure function `(arguments, snapshot, own proposals) → assignments`.
-- **Annotations are open but namespaced.** Joker's (`@safe_hint`, `@optional`, `@timeout`…) are validated. Third-party ones (`@opcua.node(…)`, `@brick("Pump")`, `@hmi.label("Bomba")`) pass through intact into the metadata, and that is how alignment with standards and the HMI is done.
+- **Annotations are open but namespaced.** Joker's (`@safe_hint`, `@optional`, `@timeout`…) are validated. Third-party ones (`@opcua.node(…)`, `@brick("Pump")`, `@hmi.label("Pump")`) pass through intact into the metadata, and that is how alignment with standards and the HMI is done.
 
 ### 3.3 Types, units and records
 

@@ -69,7 +69,7 @@ It is **normative**, with the same precedence as document 16 (ADR 0023). Everyth
 | equipment profile | `<model>@<major>.profile.toml` | `profiles/local/bench-esp32@1.profile.toml` | ref/03 §2.2 |
 | board profile | `<board>.board.toml` | `boards/rpi-zero-w.board.toml` | ref/03 §2.3 |
 | simulation model | `<name>.sim.toml` | `sim/esp.sim.toml`, `classes/std/valve.sim.toml` | ref/03 §2.4 |
-| scenario | `<name>.scenario.toml` | `sim/scenarios/falha_esp.scenario.toml` | ref/03 §2.5 |
+| scenario | `<name>.scenario.toml` | `sim/scenarios/esp_fault.scenario.toml` | ref/03 §2.5 |
 | conformance suite | `<name>.conformance.toml` | `conformance/envelope/rate.conformance.toml` | ref/03 §2.6 |
 | driver fixture | `<driver>.fixture.toml` | `drivers/modbus/conformance/modbus-tcp.fixture.toml` | ref/06 §6.2 |
 | driver descriptor (TOML source) | `<driver>.driver.toml` | `joker-drv-acme.driver.toml` | ref/06 §5.8 |

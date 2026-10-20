@@ -4,7 +4,7 @@
 
 **You will learn:** a simulated dynamic · `calc` signals with windows · units end to end (`°C` versus `K`) · quality, the `?` and the `safe` · alarms (lifecycle, `ack`, `shelve`) · historian · the HTTP and WebSocket API · roles · the Python client.
 
-**Before you start:** part 2 done. The node `lab` is enrolled, `joker.lab.toml` has `[devices.pi]` with the `sysfs` driver, and the app `luz` 0.1 blinks the `ACT`.
+**Before you start:** part 2 done. The node `lab` is enrolled, `joker.lab.toml` has `[devices.pi]` with the `sysfs` driver, and the app `light` 0.1 blinks the `ACT`.
 
 ---
 
@@ -21,16 +21,16 @@ description = "Raspberry Pi 3: ACT LED and CPU temperature"
 
 [signals]
 act_led  = { type = "bool", direction = "output", panel = { label = "ACT", kind = "lamp" } }
-carga    = { type = "f64", unit = "1", init = 0.0,
+load    = { type = "f64", unit = "1", init = 0.0,
              panel = { label = "Load", kind = "slider", keys = ["left", "right"], step = 0.1, min = 0.0, max = 1.0 } }
 cpu_temp = { type = "f64", unit = "°C", init = "45 °C", panel = { label = "CPU", kind = "gauge" } }
 
 [dynamics]
 # First order: tends to 45 °C at rest and to 75 °C at full load, with τ = 60 s.
-cpu_temp = "lag(45 °C + 30 K * carga, 60s)"
+cpu_temp = "lag(45 °C + 30 K * load, 60s)"
 ```
 
-- `carga` is a signal that **only exists in the simulator**: it stands in for `stress-ng`. No app reads it.
+- `load` is a signal that **only exists in the simulator**: it stands in for `stress-ng`. No app reads it.
 - `30 K` and not `30 °C`: it is a temperature **difference**. `°C + K` gives `°C`; `°C + °C` is `J0301` (document 16, §4).
 - `lag` has state, so `init` is required (`J0833` without it, ref/03 §2.4.6).
 
@@ -43,24 +43,24 @@ The raw temperature has steps and noise (the real Pi's does). The app should not
 ```toml
 # joker.toml (add)
 [calc]
-temp_media = "avg(pi.cpu_temp, 10s)"
+temp_avg = "avg(pi.cpu_temp, 10s)"
 ```
 
-`calc.temp_media` is a signal like the others: it has a value, a unit (`°C`, inferred), a quality and a path. You read it with `jk read calc.temp_media` and record it in the historian.
+`calc.temp_avg` is a signal like the others: it has a value, a unit (`°C`, inferred), a quality and a path. You read it with `jk read calc.temp_avg` and record it in the historian.
 
 ## 3. The app, version 0.2
 
-The rule from the track bible: the half period goes down linearly from `half_period` (at `t_frio`) to 100 ms (at `t_quente`), and stays at those extremes outside the range.
+The rule from the track bible: the half period goes down linearly from `half_period` (at `t_cold`) to 100 ms (at `t_hot`), and stays at those extremes outside the range.
 
 ```rust
-// apps/luz/src/lib.rs
+// apps/light/src/lib.rs
 use joker::prelude::*;
 
 /// Minimum half period, when hot.
-const RAPIDO_MS: f64 = 100.0;
+const FAST_MS: f64 = 100.0;
 
-#[joker::app(name = "luz", version = "0.2.0")]
-pub struct Luz {
+#[joker::app(name = "light", version = "0.2.0")]
+pub struct Light {
     #[output]
     led: Output<bool>,
 
@@ -71,33 +71,33 @@ pub struct Luz {
     #[param(unit = "ms", range = "20..5000", default = 500.0)]
     half_period: Param<f64>,
     #[param(unit = "°C", range = "0..100", default = 45.0)]
-    t_frio: Param<f64>,
+    t_cold: Param<f64>,
     #[param(unit = "°C", range = "0..110", default = 70.0)]
-    t_quente: Param<f64>,
+    t_hot: Param<f64>,
 }
 
 #[derive(Default)]
-struct Pisca {
+struct Blink {
     elapsed_ms: f64,
     on: bool,
 }
 
 #[joker::cycle(period = "20ms", wcet = "5us")]
-fn pisca(io: &mut CycleIo<Luz>, st: &mut Pisca) -> Result<()> {
+fn blink(io: &mut CycleIo<Light>, st: &mut Blink) -> Result<()> {
     // 1. The temperature first. If it is not Good, the task ends here without proposing anything.
     let t = io.temp.get()?;
 
     // 2. x = 0 when cold, 1 when hot.
-    let (frio, quente) = (io.t_frio.get(), io.t_quente.get());
-    let x = ((t - frio) / (quente - frio)).clamp(0.0, 1.0);
-    let lento = io.half_period.get();
-    let meio = lento + x * (RAPIDO_MS - lento);
+    let (cold, hot) = (io.t_cold.get(), io.t_hot.get());
+    let x = ((t - cold) / (hot - cold)).clamp(0.0, 1.0);
+    let slow = io.half_period.get();
+    let half = slow + x * (FAST_MS - slow);
 
     // 3. The blink from part 1, with a half period that changes.
     st.elapsed_ms += io.dt().as_secs_f64() * 1000.0;
-    if st.elapsed_ms >= meio {
-        st.elapsed_ms -= meio;
-        if st.elapsed_ms > meio {
+    if st.elapsed_ms >= half {
+        st.elapsed_ms -= half;
+        if st.elapsed_ms > half {
             st.elapsed_ms = 0.0;          // the half period suddenly shrank
         }
         st.on = !st.on;
@@ -109,11 +109,11 @@ fn pisca(io: &mut CycleIo<Luz>, st: &mut Pisca) -> Result<()> {
 
 ```toml
 # joker.toml
-[apps.luz]
-path   = "apps/luz"
-bind   = { led = "pi.act_led", temp = "calc.temp_media" }
-params = { half_period = "500 ms", t_frio = "45 °C", t_quente = "70 °C" }
-cycles = { pisca = "main" }
+[apps.light]
+path   = "apps/light"
+bind   = { led = "pi.act_led", temp = "calc.temp_avg" }
+params = { half_period = "500 ms", t_cold = "45 °C", t_hot = "70 °C" }
+cycles = { blink = "main" }
 ```
 
 The app does not know that the temperature comes from a kernel file, or that it is a 10 s average. It knows it has a port `temp` in `°C`.
@@ -126,14 +126,14 @@ By mistake, change the port's unit to `K` (`#[input(unit = "K")]`) and run `jk c
 error[J0108]: incompatible quantity in the binding
   --> joker.toml:24:39
    |
-24 | bind   = { led = "pi.act_led", temp = "calc.temp_media" }
-   |                                       ^^^^^^^^^^^^^^^^^ `calc.temp_media` is a temperature (°C);
+24 | bind   = { led = "pi.act_led", temp = "calc.temp_avg" }
+   |                                       ^^^^^^^^^^^^^^^^^ `calc.temp_avg` is a temperature (°C);
    |                                                         the port `temp` expects a temperature difference (K)
    = note: °C is affine: an absolute value is written in °C, a difference in K (document 16, §4)
    = help: declare the port with `unit = "°C"`
 ```
 
-`K` and `°C` have the same dimension, but not the same **quantity**: a 70 K difference is not 70 °C. With `unit = "%"` the error would be `J0107` (incompatible unit), because there not even the dimension matches. The same holds for values: `t_quente = "70 K"` in `params` is `J0108`, and `when = "calc.temp_media > 70"` (without a unit) is `J0301`. Put back `°C`.
+`K` and `°C` have the same dimension, but not the same **quantity**: a 70 K difference is not 70 °C. With `unit = "%"` the error would be `J0107` (incompatible unit), because there not even the dimension matches. The same holds for values: `t_hot = "70 K"` in `params` is `J0108`, and `when = "calc.temp_avg > 70"` (without a unit) is `J0301`. Put back `°C`.
 
 ## 5. Quality and the `?`
 
@@ -141,17 +141,17 @@ error[J0108]: incompatible quantity in the binding
 
 Why this is the right choice here: without a temperature, the app does not know at what rhythm to blink, and blinking at an invented rhythm would lie to whoever is watching. An `Err` is not a trap: it does not count toward the crashloop, and the app proposes again on the first tick in which the temperature comes back (ref/04 §8, item 8).
 
-**How quality reaches the average.** `calc.temp_media` is a window: it becomes `Bad` when `Bad` samples cover at least 10% of the window (1 s out of 10 s), and goes back to `Good` when they fall below that, that is, about 9 s after the sensor recovers (document 16, §3.2). You will see both instants in the scenario of §7.
+**How quality reaches the average.** `calc.temp_avg` is a window: it becomes `Bad` when `Bad` samples cover at least 10% of the window (1 s out of 10 s), and goes back to `Good` when they fall below that, that is, about 9 s after the sensor recovers (document 16, §3.2). You will see both instants in the scenario of §7.
 
 ## 6. An alarm
 
 ```toml
 # joker.toml (add)
-[alarms.cpu_quente]
-when     = "calc.temp_media > 70 °C"
+[alarms.cpu_hot]
+when     = "calc.temp_avg > 70 °C"
 delay_on = "10s"
 severity = "medium"
-message  = "CPU at {calc.temp_media}"
+message  = "CPU at {calc.temp_avg}"
 ```
 
 The lifecycle is a simplified ISA-18.2 (document 02, §11):
@@ -165,7 +165,7 @@ normal ──(condition 10 s)──▶ active_unacked ──ack──▶ active_
    └────────────────────────────────────────────────────┘
 ```
 
-With `calc.temp_media` `Bad`, the alarm becomes `unknown`: it is not known whether it is hot. With `jk dev` running and the load at 1, wait two minutes:
+With `calc.temp_avg` `Bad`, the alarm becomes `unknown`: it is not known whether it is hot. With `jk dev` running and the load at 1, wait two minutes:
 
 ```sh
 $ jk alarms
@@ -173,25 +173,25 @@ $ jk alarms
 
 ```
 id           severity    state            since      message
-cpu_quente   medium      active_unacked   12 s ago   CPU at 70.9 °C
+cpu_hot   medium      active_unacked   12 s ago   CPU at 70.9 °C
 ```
 
 ```sh
-$ jk alarm ack cpu_quente
-$ jk alarm shelve cpu_quente 30m "load test on the bench"
+$ jk alarm ack cpu_hot
+$ jk alarm shelve cpu_hot 30m "load test on the bench"
 ```
 
 ```
-cpu_quente: active_acked
-cpu_quente: shelved until 11:32 (30 min) · "load test on the bench"
+cpu_hot: active_acked
+cpu_hot: shelved until 11:32 (30 min) · "load test on the bench"
 ```
 
-Shelving does not change the state of the alarm: it suppresses the notification during the TTL, which is required and limited by `max_shelve` (default 24 h). `jk alarm shelve cpu_quente 48h "…"` gives `J-E1202`. An `ack` on a `normal` alarm gives `J-E1204`: there is nothing to acknowledge. Every alarm is also a signal: `jk read alarm.cpu_quente.state`.
+Shelving does not change the state of the alarm: it suppresses the notification during the TTL, which is required and limited by `max_shelve` (default 24 h). `jk alarm shelve cpu_hot 48h "…"` gives `J-E1202`. An `ack` on a `normal` alarm gives `J-E1204`: there is nothing to acknowledge. Every alarm is also a signal: `jk read alarm.cpu_hot.state`.
 
-## 7. The scenario `aquece.scenario.toml`
+## 7. The scenario `heat_up.scenario.toml`
 
 ```toml
-# sim/scenarios/aquece.scenario.toml
+# sim/scenarios/heat_up.scenario.toml
 schema = 1
 
 [scenario]
@@ -205,34 +205,34 @@ signal        = "pi.act_led"
 toggles_every = "500ms ± 20ms"      # 45 °C: half period of 500 ms
 [[set]]
 at     = "10s"
-signal = "pi.carga"
+signal = "pi.load"
 value  = 1.0
 [[expect]]
 at    = "125s"
-alarm = "cpu_quente"
+alarm = "cpu_hot"
 state = "normal"                    # the average passes 70 °C at around 123 s; the 10 s of delay_on are still missing
 [[expect]]
 at    = "140s"
-alarm = "cpu_quente"
+alarm = "cpu_hot"
 state = "active_unacked"
 [[ack]]
 at    = "200s"
-alarm = "cpu_quente"
+alarm = "cpu_hot"
 [[expect]]
 at    = "201s"
-alarm = "cpu_quente"
+alarm = "cpu_hot"
 state = "active_acked"
 [[expect]]
 during        = "320s .. 340s"
 signal        = "pi.act_led"
-toggles_every = "100ms ± 20ms"      # ~75 °C: above t_quente, minimum half period
+toggles_every = "100ms ± 20ms"      # ~75 °C: above t_hot, minimum half period
 [[set]]
 at     = "360s"
-signal = "pi.carga"
+signal = "pi.load"
 value  = 0.0
 [[expect]]
 at    = "390s"
-alarm = "cpu_quente"
+alarm = "cpu_hot"
 state = "normal"                    # it cooled down, and it was already acknowledged
 [[inject]]
 at      = "420s"
@@ -241,7 +241,7 @@ quality = "bad(comm_failure)"
 for     = "20s"
 [[expect]]
 at      = "430s"
-signal  = "calc.temp_media"
+signal  = "calc.temp_avg"
 quality = "bad"
 [[expect]]
 during = "422s .. 439s"
@@ -249,7 +249,7 @@ signal = "pi.act_led"
 equals = false                      # without temperature: no proposal, lease expired, safe
 [[expect]]
 at    = "430s"
-alarm = "cpu_quente"
+alarm = "cpu_hot"
 state = "unknown"
 [[expect]]
 within = "450s .. 452s"
@@ -262,12 +262,12 @@ $ jk test
 ```
 
 ```
-apps/luz (cargo test) ........................ ok
-sim/scenarios/pisca.scenario.toml ..................... ok
-sim/scenarios/aquece.scenario.toml .................... ok (460 simulated s in 0.4 s)
+apps/light (cargo test) ........................ ok
+sim/scenarios/blink.scenario.toml ..................... ok
+sim/scenarios/heat_up.scenario.toml .................... ok (460 simulated s in 0.4 s)
 ```
 
-The `pisca.scenario.toml` from part 1 keeps passing unchanged: at rest the simulator is at 45 °C, and at 45 °C the half period is `half_period`. The unit tests from part 1 need one more line, `.input("temp", 45.0)`: without it the port `temp` has no sample, `get()?` fails, and the LED never turns on. The two new tests, with `joker-test` (ref/04 §6):
+The `blink.scenario.toml` from part 1 keeps passing unchanged: at rest the simulator is at 45 °C, and at 45 °C the half period is `half_period`. The unit tests from part 1 need one more line, `.input("temp", 45.0)`: without it the port `temp` has no sample, `get()?` fails, and the LED never turns on. The two new tests, with `joker-test` (ref/04 §6):
 
 ```rust
 #[cfg(test)]
@@ -276,16 +276,16 @@ mod tests {
     use joker_test::prelude::*;
 
     #[test]
-    fn quente_pisca_a_100ms() {
-        let mut h = Harness::<Luz>::new().group("pisca", 20.ms()).input("temp", 72.0);
+    fn hot_blinks_at_100ms() {
+        let mut h = Harness::<Light>::new().group("blink", 20.ms()).input("temp", 72.0);
         h.run_for(5.s());
         assert!(h.output("led").after(1.s()).toggles_every(100.ms()));
     }
 
     #[test]
-    fn sem_temperatura_apaga() {
+    fn no_temperature_turns_off() {
         let temp = Series::constant(50.0).with_quality(2.s(), 3.s(), Quality::bad(CommFailure));
-        let mut h = Harness::<Luz>::new().group("pisca", 20.ms()).input("temp", temp);
+        let mut h = Harness::<Light>::new().group("blink", 20.ms()).input("temp", temp);
         h.run_for(4.s());
         assert!(h.output("led").between(2100.ms(), 3.s()).all(|v| v == false));
         assert!(!h.errors().is_empty());           // the Errs from `?`, recorded; no trap
@@ -310,7 +310,7 @@ And ask the historian to record the temperature (a signal that no entry picks up
 # joker.toml (add)
 [telemetry.record]
 "pi.cpu_temp"     = { every = "1s", keep = { raw = "7d", "1m" = "90d" } }
-"calc.temp_media" = { every = "1s", keep = { raw = "7d" } }
+"calc.temp_avg" = { every = "1s", keep = { raw = "7d" } }
 ```
 
 ```sh
@@ -318,14 +318,14 @@ $ jk check --env lab
 $ jk build --target rpi3b-plus
 $ jk apply --env lab --node lab --confirm 5m
 $ jk confirm --node lab
-$ jk read pi.cpu_temp calc.temp_media alarm.cpu_quente.state pi.act_led --watch --node lab
+$ jk read pi.cpu_temp calc.temp_avg alarm.cpu_hot.state pi.act_led --watch --node lab
 ```
 
 ```
 pi.cpu_temp              47.2 °C   good    age 0.6 s
-calc.temp_media          47.0 °C   good
-alarm.cpu_quente.state   normal    good
-pi.act_led               true      good    (control:12 · luz)
+calc.temp_avg          47.0 °C   good
+alarm.cpu_hot.state   normal    good
+pi.act_led               true      good    (control:12 · light)
 ```
 
 Now heat the CPU for real, in another terminal:
@@ -335,7 +335,7 @@ lab$ sudo apt install stress-ng
 lab$ stress-ng --cpu 4 --timeout 5m
 ```
 
-In two or three minutes, the `ACT` starts blinking fast and, without a heat sink, the average passes 70 °C and the alarm goes off (the Pi 3 B+ lowers its clock from 60 °C upward, so the rise slows down near the end). When `stress-ng` finishes, the temperature goes down by itself, and the alarm goes to `rtn_unacked`: the condition passed, but nobody saw it. A `jk alarm ack cpu_quente --node lab` closes it.
+In two or three minutes, the `ACT` starts blinking fast and, without a heat sink, the average passes 70 °C and the alarm goes off (the Pi 3 B+ lowers its clock from 60 °C upward, so the rise slows down near the end). When `stress-ng` finishes, the temperature goes down by itself, and the alarm goes to `rtn_unacked`: the condition passed, but nobody saw it. A `jk alarm ack cpu_hot --node lab` closes it.
 
 The historian has everything:
 
@@ -370,13 +370,13 @@ It is the sample of ref/00 §4.2: the value in the signal's unit, **always with 
 
 ```sh
 lab$ websocat --protocol joker.v1 --ws-c-uri ws://joker/v1/ws ws-c:unix:/run/joker/api.sock
-{"op":"subscribe","id":"1","topic":"signals","sel":["pi.cpu_temp","calc.temp_media"],"min_interval":"1s"}
+{"op":"subscribe","id":"1","topic":"signals","sel":["pi.cpu_temp","calc.temp_avg"],"min_interval":"1s"}
 ```
 
 ```
 {"op":"welcome","session":"01J8ZC…","role":"admin","heartbeat":"15s","resume_window":"60s",…}
 {"op":"subscribed","id":"1","sub":"s1","topic":"signals","resolved":2,"min_interval":"1s"}
-{"op":"resync","sub":"s1","seq":1,"items":[{"path":"pi.cpu_temp","value":52.6,…},{"path":"calc.temp_media",…}]}
+{"op":"resync","sub":"s1","seq":1,"items":[{"path":"pi.cpu_temp","value":52.6,…},{"path":"calc.temp_avg",…}]}
 {"op":"data","sub":"s1","seq":2,"items":[{"path":"pi.cpu_temp","value":52.9,"unit":"°C","quality":"good",…}]}
 ```
 
@@ -385,13 +385,13 @@ State topics are **sampled**, not queued: a slow client receives less often, and
 **From the laptop, in Python.** The client `joker_client` resolves the node by the same rules as `jk` (ref/05 §22.2): the `lab` context from part 2 serves both.
 
 ```python
-# temperatura.py   (pip install "joker-client[pandas]")
+# temperature.py   (pip install "joker-client[pandas]")
 from datetime import datetime, timedelta, timezone
 from joker_client import Client
 
 jk = Client.from_config("lab")
-fim = datetime.now(timezone.utc)
-h = jk.history(["pi.cpu_temp", "calc.temp_media"], start=fim - timedelta(hours=1), end=fim, step="10s")
+end = datetime.now(timezone.utc)
+h = jk.history(["pi.cpu_temp", "calc.temp_avg"], start=end - timedelta(hours=1), end=end, step="10s")
 df = h.to_pandas()                                   # columns (path, field)
 temp = df.xs("value", axis=1, level="field")
 ok = df.xs("quality", axis=1, level="field") == "good"
@@ -426,24 +426,24 @@ With `"ttl":"30s"` it passes, and it is the same as `jk write pi.act_led true --
 
 ## 10. What happened underneath
 
-- **Derived signals.** `calc.temp_media` runs in the fastest group that consumes it (`main`, because the app reads it), with the window ring preallocated (ref/01 §3.7; document 02, §10).
+- **Derived signals.** `calc.temp_avg` runs in the fastest group that consumes it (`main`, because the app reads it), with the window ring preallocated (ref/01 §3.7; document 02, §10).
 - **Quality.** The windows rule and the `get()` rule are those of document 16, §3; the alarm without a good input goes to `unknown` and not to `normal`.
 - **The `?`** ends the task without proposals; the lease (16, A2 and A9) does the rest. It is the first layer of the safe state from part 2, now triggered by an input and not by a stopped app.
-- **Alarms** are signals (`alarm.cpu_quente.state`, `.active`) and events recorded with `fsync` (ref/01 §5.15; ref/09 §5.8).
+- **Alarms** are signals (`alarm.cpu_hot.state`, `.active`) and events recorded with `fsync` (ref/01 §5.15; ref/09 §5.8).
 - **Historian:** it only records what `[telemetry.record]` asks for, in tiers (`raw`, `1m`) with their own retention (document 01, §12).
 - **The API** is the node's only door; `jk`, `curl`, `websocat` and Python are its clients, with the same roles and the same audit (document 01, §14; ref/09).
 
 ## 11. Exercises
 
 1. Add `delay_off = "30s"` to the alarm and repeat the `stress-ng`. What changes at the end of the test? (If your Pi has a heat sink and does not go above 65 °C, lower the limit to `"60 °C"` just for the test, and put it back.)
-2. Replace the 10 s average with `"avg(pi.cpu_temp, 1m)"`. Which instants of `aquece.scenario.toml` stop passing, and why? Fix the scenario, not the app.
-3. Write a Python script that subscribes to the topic `alarms` (`jk.subscribe(alarms=True)`) and prints every transition of `cpu_quente`.
+2. Replace the 10 s average with `"avg(pi.cpu_temp, 1m)"`. Which instants of `heat_up.scenario.toml` stop passing, and why? Fix the scenario, not the app.
+3. Write a Python script that subscribes to the topic `alarms` (`jk.subscribe(alarms=True)`) and prints every transition of `cpu_hot`.
 4. With `jk decisions --output pi.act_led --since 5m --node lab`, find the manual write from §9 and its reason.
 
 ```sh
-$ git add -A && git commit -qm "track(03): CPU temperature, alarm cpu_quente, historian and API; luz 0.2"
+$ git add -A && git commit -qm "track(03): CPU temperature, alarm cpu_hot, historian and API; light 0.2"
 ```
 
-**State at the end of this part:** app `luz` 0.2.0, on lab at generation 3; `sim/pi.sim.toml` with `carga` and `cpu_temp`; `joker.toml` with `[calc] temp_media`, `[alarms.cpu_quente]` and `[telemetry.record]`; `joker.lab.toml` with `pi.cpu_temp`; new scenario `sim/scenarios/aquece.scenario.toml`.
+**State at the end of this part:** app `light` 0.2.0, on lab at generation 3; `sim/pi.sim.toml` with `load` and `cpu_temp`; `joker.toml` with `[calc] temp_avg`, `[alarms.cpu_hot]` and `[telemetry.record]`; `joker.lab.toml` with `pi.cpu_temp`; new scenario `sim/scenarios/heat_up.scenario.toml`.
 
 **Next:** [Part 4 — the ESP32 as Modbus equipment: writing the profile, the button and the LED](04-esp32-modbus.md).
