@@ -237,6 +237,17 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | planta simulada | **simulated plant** | |
 | semente | **seed** | random seed |
 | lógica de negócio | **business logic** | |
+| SDK de tier 2 | **tier 2 SDK** | Python, TypeScript; ref/05 |
+| objeto de definição | **definition object** | TS `app({...})`; ref/05 §5.1 |
+| vista (de I/O) | **(I/O) view** | `CycleIo`, `TaskIo`, `self`; ref/05 §13 |
+| marcador (de tipo) | **(type) marker** | `i64`, `f32` in Python; ref/05 §5.2 |
+| imagem empacotada | **packed image** | the `on-cycle` input; ref/04 §3 |
+| disparo (de uma tarefa) | **firing** | one `run-task` per firing; ref/05 §9.2 |
+| modo nativo | **native mode** | SDK outside Wasm; ref/05 §17.4 |
+| biblioteca cliente | **client library** | `joker-client`; ref/05 Part B |
+| camada gerada, camada escrita à mão | **generated layer**, **hand-written layer** | ref/05 §21 |
+| tabela de operações | **operation table** | by `operationId`; ref/05 §21 |
+| nova tentativa | **retry** | ref/05 §24.4, ref/06 §2.14 |
 
 ---
 
@@ -321,6 +332,20 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | debounce, flanco | **debounce**, **edge** | |
 | integrador de hardware | **hardware integrator** | |
 | fabricante | **vendor** / **manufacturer** | vendor for software and NPUs, manufacturer for equipment |
+| lote (de leitura) | **batch** | `batch-spec`; ref/06 §2.6 |
+| pedido de plano | **plan request** | `plan-request`; ref/06 §2.4 |
+| preparação da geração | **generation preparation** | ref/06 §2.1 |
+| falha de lote | **batch failure** | `batch-failure`; ref/06 §2.8 |
+| valor cru, tipo cru | **raw value**, **raw type** | ref/06 §2.7 |
+| escalonador do barramento | **bus scheduler** | 05 §5, ref/06 §2.14 |
+| caixa latest-wins, fila ordenada | **latest-wins box**, **ordered queue** | 01 §3.4 |
+| anel (SPSC, JDP) | **ring** | `up` ring, `down` ring; ref/06 §5.5 |
+| duplo (de equipamento) | **double** | conformance; ref/06 §6.2 |
+| fixture | **fixture** | `<driver>.fixture.toml`; ref/06 §6.2 |
+| carimbo (temporal) | **stamp** | `ts_src`, `ts_hw` |
+| encravamento, encravado | **hang**, **hung** | a tier X process; ref/06 §5.7 |
+| arredondamento com empates para o par | **rounding with ties to even** | `round_ties_even`; ref/06 §2.7 |
+| permilagem | **per mille** | action progress; ref/06 §5.3.2 |
 
 ---
 
