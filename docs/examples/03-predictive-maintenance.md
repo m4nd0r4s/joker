@@ -1,12 +1,12 @@
-# 03 — Manutenção preditiva por vibração, com treino no dispositivo
+# 03 — Predictive maintenance by vibration, with on-device training
 
-O projeto da rodada 3 do documento 08: 8 bombas, acelerómetros triaxiais numa placa ADC com relógio próprio, features por pipeline nativo, um autoencoder Burn **por bomba** treinado no local, e alarmes que a equipa de operação não desliga ao terceiro dia.
+The project of round 3 of document 08: 8 pumps, triaxial accelerometers on an ADC board with its own clock, features through a native pipeline, a Burn autoencoder **per pump** trained on site, and alarms that the operations team does not switch off on the third day.
 
-Sinais em bloco, pipelines, modelos e treino são **1.1** (ADR 0019); o manifesto declara-o em `joker = "1.1"`, e cada bloco vai marcado "(1.1)".
+Block signals, pipelines, models and training are **1.1** (ADR 0019); the manifest declares it in `joker = "1.1"`, and each block is marked "(1.1)".
 
 ---
 
-## 1. Manifesto (excerto para a bomba 1; as outras são geradas por template)
+## 1. Manifest (excerpt for pump 1; the others are generated from a template)
 
 ```toml
 [project]
@@ -35,7 +35,7 @@ drdy    = "gpio.line_5"
 rate    = "25600 Hz"
 
 [devices.adc.signals]
-# (1.1) sinais em bloco
+# (1.1) block signals
 ch1 = { alias = "p1.acc.x", kind = "block", unit = "gn", block = 2560 }
 ch2 = { alias = "p1.acc.y", kind = "block", unit = "gn", block = 2560 }
 ch3 = { alias = "p1.acc.z", kind = "block", unit = "gn", block = 2560 }
@@ -44,7 +44,7 @@ ch3 = { alias = "p1.acc.z", kind = "block", unit = "gn", block = 2560 }
 driver  = "modbus-rtu"
 bus     = "rs485"
 unit_id = 11
-profile = "acme/vfd@3"              # dá p1.speed_hz e p1.running
+profile = "acme/vfd@3"              # gives p1.speed_hz and p1.running
 
 [devices.vfd1.signals]
 freq_hz = { alias = "p1.speed_hz" }
@@ -53,26 +53,26 @@ running = { alias = "p1.running" }
 [pipelines.p1_features]             # (1.1)
 from  = ["p1.acc.x", "p1.acc.y", "p1.acc.z"]
 steps = [
-  { op = "window", n = 4096, hop = 25600 },    # 1 janela por segundo por eixo
+  { op = "window", n = 4096, hop = 25600 },    # 1 window per second per axis
   { op = "detrend" },
   { op = "fft", n = 4096, window = "hann" },
   { op = "bands", edges_hz = [10, 50, 100, 200, 500, 1000, 2000, 5000, 10000] },
   { op = "stats", fields = ["rms", "peak", "crest", "kurtosis"] },
-  { op = "append", signals = ["p1.speed_hz"] },          # o regime entra nas features (ver §4)
+  { op = "append", signals = ["p1.speed_hz"] },          # the operating regime enters the features (see §4)
 ]
 to = "p1.features"
 
 [pipelines.p1_anomaly]              # (1.1)
 from  = "p1.features"
 steps = [
-  { op = "when", expr = "p1.running && held(p1.running, 2m)" },   # ignora arranques
+  { op = "when", expr = "p1.running && held(p1.running, 2m)" },   # ignores startups
   { op = "model", name = "ae_p1" },
   { op = "to_signal", field = "recon_error" },
 ]
 to = "p1.anomaly"
 
 [models.ae_p1]                      # (1.1)
-source   = "training:ae_p1"          # o modelo corrente do treino local (não um caminho interno do nó)
+source   = "training:ae_p1"          # the current model of the local training (not an internal path of the node)
 backend  = ["burn:cpu"]
 resources = "ml"
 deadline = "200ms"
@@ -90,7 +90,7 @@ validate  = { holdout = "20%", metric = "recon_p99", max = 0.08, threshold = "p9
 output    = "candidate"
 
 [models.ae_p1.shadow]
-auto      = true                     # cada candidato entra em sombra sozinho
+auto      = true                     # each candidate enters shadow by itself
 until     = { duration = "48h" }
 promote_if = ["false_alarm_rate(candidate, 48h) <= false_alarm_rate(current, 48h)"]
 
@@ -100,25 +100,25 @@ delay_on  = "5m"
 delay_off = "10m"
 severity  = "medium"
 suppress_when = "site.mode == SiteMode.maintenance"
-message   = "Bomba 1: vibração anómala (score {p1.anomaly})"
+message   = "Pump 1: anomalous vibration (score {p1.anomaly})"
 
 [telemetry.record]
-# (1.1) gravação de blocos por gatilho
+# (1.1) triggered block recording
 "p1.acc.*"    = { blocks = "on_trigger", trigger = "rose(alarm.p1_anomaly.active)", pre = "10s", post = "60s", keep = { raw = "180d" } }
 "p1.features" = { every = "1s", keep = { raw = "30d", "1m" = "730d" } }
 "p1.anomaly"  = { every = "1s", keep = { raw = "90d", "1m" = "1825d" } }
 ```
 
-Não há nenhuma app Wasm: a monitorização inteira é declarativa (pipelines, modelo, treino, alarme). Uma app entra quando for preciso decidir alguma coisa, por exemplo abrir uma ordem de trabalho no CMMS por uma tarefa async.
+There is no Wasm app: the whole monitoring is declarative (pipelines, model, training, alarm). An app comes in when something needs to be decided, for example opening a work order in the CMMS through an async task.
 
-## 2. O ciclo de vida do modelo
+## 2. The lifecycle of the model
 
 ```
-dia 0        instalação: sem modelo; p1.anomaly = Bad(NotConnected); alarme em Unknown (não dispara)
-dia 0–7      o historian acumula p1.features (~600 k janelas)
-dia 7        treino (SCHED_IDLE, ~minutos a medir) → candidato v1 → sombra (sem modelo atual: promoção direta, com aviso)
-dia 7+       p1.anomaly ativo; limiar = p99,9 do erro no holdout, guardado no .jkm
-cada semana  novo candidato → 48 h em sombra → promovido só se não aumentar os falsos alarmes
+day 0        installation: no model; p1.anomaly = Bad(NotConnected); alarm in Unknown (does not fire)
+day 0–7      the historian accumulates p1.features (~600 k windows)
+day 7        training (SCHED_IDLE, ~minutes, to be measured) → candidate v1 → shadow (no current model: direct promotion, with a warning)
+day 7+       p1.anomaly active; threshold = p99.9 of the error on the holdout, kept in the .jkm
+every week   new candidate → 48 h in shadow → promoted only if it does not increase false alarms
 ```
 
 ```sh
@@ -127,22 +127,22 @@ jk model lineage ae_p1 --node etar-norte
 ```
 
 ```
-ae_p1  v4 (atual)   treinado 2026-09-21 03:10  dados 2026-09-14..21 (p1.features, 583 214 janelas, filtro: running && !alarm)
-                    recon_p99 0.061 · limiar 0.094 · burn 0.22.1 · pai: v3
-       v3           treinado 2026-09-14 …
+ae_p1  v4 (current)  trained 2026-09-21 03:10  data 2026-09-14..21 (p1.features, 583,214 windows, filter: running && !alarm)
+                     recon_p99 0.061 · threshold 0.094 · burn 0.22.1 · parent: v3
+       v3            trained 2026-09-14 …
 ```
 
-## 3. Quando o alarme dispara
+## 3. When the alarm fires
 
-1. O anel de 10 s por canal é despejado para o historian (`on_trigger`), e os 60 s seguintes são escritos diretamente.
-2. O alarme vai por uplink com a prioridade `alarms`.
-3. O engenheiro abre a forma de onda: `jk history 'p1.acc.*' --around alarm:p1_anomaly@latest --export wav`.
+1. The 10 s ring of each channel is dumped to the historian (`on_trigger`), and the following 60 s are written directly.
+2. The alarm goes over the uplink with the `alarms` priority.
+3. The engineer opens the waveform: `jk history 'p1.acc.*' --around alarm:p1_anomaly@latest --export wav`.
 
-## 4. Nota de modelação: regimes de funcionamento
+## 4. Modeling note: operating regimes
 
-Uma bomba com variador trabalha a 30 Hz de dia e a 45 Hz à noite. Um autoencoder treinado sobretudo com dados diurnos marca a noite como anomalia. Há duas saídas:
+A pump with a drive runs at 30 Hz by day and at 45 Hz at night. An autoencoder trained mostly on daytime data flags the night as an anomaly. There are two ways out:
 
-- incluir a velocidade nas features (o passo `append` acima), para o modelo aprender a relação;
-- ou um modelo por regime, com `when` no pipeline a escolher o modelo pela banda de velocidade.
+- include the speed in the features (the `append` step above), so that the model learns the relationship;
+- or one model per regime, with `when` in the pipeline choosing the model by speed band.
 
-Não é um problema da runtime, mas é o erro de modelação mais comum neste tipo de projeto, e por isso fica aqui.
+It is not a problem of the runtime, but it is the most common modeling mistake in this kind of project, and that is why it is here.

@@ -1,14 +1,14 @@
-# 02 — Inspeção visual com ejeção temporizada
+# 02 — Visual inspection with timed ejection
 
-O projeto da rodada 2 do documento 08, do modelo treinado à promoção de uma versão nova por modo sombra. Hardware: Raspberry Pi 5, AI HAT+ (Hailo-8L), câmara com trigger de hardware, fotocélula e válvula de ejeção em GPIO.
+The project of round 2 of document 08, from the trained model to the promotion of a new version through shadow mode. Hardware: Raspberry Pi 5, AI HAT+ (Hailo-8L), camera with hardware trigger, photoeye and ejection valve on GPIO.
 
-Quase tudo aqui é **1.1** (ADR 0019): modelos, streams e pipelines, a câmara `v4l2`, as saídas temporizadas (`timed`, `schedule_depth`, `on_late`), `write_at` e o simulador de câmara. Vai marcado "(1.1)" nos blocos; numa runtime 1.0 estas chaves dão `J0290`.
+Almost everything here is **1.1** (ADR 0019): models, streams and pipelines, the `v4l2` camera, timed outputs (`timed`, `schedule_depth`, `on_late`), `write_at` and the camera simulator. It is marked "(1.1)" in the blocks; on a 1.0 runtime these keys give `J0290`.
 
 ---
 
-## 1. Do modelo ao `.jkm`
+## 1. From the model to the `.jkm`
 
-O modelo é treinado fora do dispositivo (por exemplo, um YOLO pequeno em PyTorch). O payload para a Hailo (HEF) é compilado com a ferramenta do fabricante. O `.jkm` junta os dois payloads, o HEF para produção e o ONNX para fallback e bancada:
+The model is trained off the device (for example, a small YOLO in PyTorch). The payload for the Hailo (HEF) is compiled with the vendor's tool. The `.jkm` bundles the two payloads, the HEF for production and the ONNX for fallback and the bench:
 
 ```sh
 jk model build yolo-defects.onnx \
@@ -22,21 +22,21 @@ jk model bench yolo-defects-7.0.0.jkm --node linha2 --backend hailo,burn:cpu,ort
 ```
 
 ```
-backend     p50      p99      memória
+backend     p50      p99      memory
 hailo       11.8 ms  14.1 ms  48 MB
 ort:cpu     212 ms   240 ms   180 MB
-burn:cpu    — (burn-onnx: operadores em falta: NonMaxSuppression; use pós-processamento nativo `nms`)
+burn:cpu    — (burn-onnx: missing operators: NonMaxSuppression; use native postprocessing `nms`)
 ```
 
-*(números ilustrativos; a medir)*
+*(illustrative figures; to be measured)*
 
-## 2. Manifesto
+## 2. Manifest
 
 ```toml
 [project]
 name = "linha2-inspecao"
 mode = "prod"
-joker = "1.1"                       # câmara, streams, modelos, pipelines e saídas temporizadas
+joker = "1.1"                       # camera, streams, models, pipelines and timed outputs
 
 [target]
 board = "rpi5"
@@ -66,7 +66,7 @@ trigger = { kind = "hardware", input = "line.photoeye" }
 [streams."cam0.frames"]              # (1.1)
 pool = 6
 mode = "latest"
-record = false                      # imagens não são gravadas por omissão
+record = false                      # images are not recorded by default
 
 [models.detector]                    # (1.1)
 source = "models/yolo-defects-7.0.0.jkm"
@@ -95,8 +95,8 @@ schedule_depth = 16                  # (1.1)
 pulse = "50ms"
 on_late = "apply_now"                # (1.1)
 interlock = "line.running"
-max_actuations = "7200/h"           # 2 peças/s no máximo
-accept_missing_fallback = "ejetor pneumático com retorno por mola: sem impulso, não atua"   # GPIO sem fallback (J0205 em prod)
+max_actuations = "7200/h"           # 2 parts/s at most
+accept_missing_fallback = "pneumatic ejector with spring return: without a pulse, it does not actuate"   # GPIO without fallback (J0205 in prod)
 
 [apps.inspector]
 path = "apps/inspector"
@@ -105,17 +105,17 @@ bind = { detections = "vision.detections", ejector = "line.ejector" }
 params = { travel = "400 ms", min_score = 0.6 }
 
 [alarms.eject_rate_high]
-when = "rate(app.inspector.ejected, 10m) > 0.1 * rate(app.inspector.inspected, 10m)"   # > 10% de rejeições
+when = "rate(app.inspector.ejected, 10m) > 0.1 * rate(app.inspector.inspected, 10m)"   # > 10% rejections
 delay_on = "2m"
 severity = "high"
-message = "taxa de rejeição acima de 10%"
+message = "rejection rate above 10%"
 
 [telemetry.record]
 "app.inspector.**" = { every = "1s", keep = { raw = "30d" } }
-"vision.detections" = { keep = { raw = "7d" } }       # só as caixas, sem imagens
+"vision.detections" = { keep = { raw = "7d" } }       # only the boxes, no images
 ```
 
-## 3. A app
+## 3. The app
 
 ```rust
 use joker::prelude::*;
@@ -123,9 +123,9 @@ use joker::prelude::*;
 #[derive(Event, Clone)]
 pub struct Detections {
     frame_seq: u64,
-    frame_ts_hw: MonoNanos,           // flanco da fotocélula (via correlate), relógio monotónico
+    frame_ts_hw: MonoNanos,           // photoeye edge (via correlate), monotonic clock
     items: BoundedVec<BBox, 16>,
-    quality: Quality,                 // Bad(Deadline) se o pipeline não terminou a tempo
+    quality: Quality,                 // Bad(Deadline) if the pipeline did not finish in time
 }
 
 #[derive(joker::Enum)]
@@ -148,36 +148,36 @@ pub struct Inspector {
 async fn decide(io: &TaskIo<Inspector>, d: Detections) -> Result<()> {
     io.inspected.inc();
 
-    // Decisão atrasada ou pipeline falhado: o lado seguro desta linha é ejetar.
+    // Late decision or failed pipeline: the safe side on this line is to eject.
     let defect = d.quality.is_bad()
         || d.items.iter().any(|b| b.class == Class::Defect && b.score as f64 >= io.min_score.get());
 
     if defect {
         let t = d.frame_ts_hw + io.travel.get().ms();
-        io.ejector.write_at(true, t).await?;           // (1.1) impulso de 50 ms (manifesto)
+        io.ejector.write_at(true, t).await?;           // (1.1) 50 ms pulse (manifest)
         io.ejected.inc();
     }
     Ok(())
 }
 ```
 
-## 4. Teste de bancada
+## 4. Bench test
 
 ```toml
 # sim/scenarios/linha.scenario.toml
 schema = 1
 
 [scenario]
-name = "10 000 peças, 3% defeituosas, 1% de frames atrasados"
+name = "10,000 parts, 3% defective, 1% late frames"
 duration = "84m"
 
-[devices.cam0]                       # (1.1) simulador de câmara
+[devices.cam0]                       # (1.1) camera simulator
 driver = "sim-camera"
-frames = "sim/frames/*.png"          # imagens reais com etiquetas
+frames = "sim/frames/*.png"          # real images with labels
 defect_rate = 0.03
 late_rate = 0.01
 
-[[expect]]                           # (1.1) expectativas sobre métricas
+[[expect]]                           # (1.1) expectations on metrics
 metric = "eject_timing_error_p99"
 max = "5ms"
 
@@ -186,7 +186,7 @@ metric = "missed_defects"
 equals = 0
 ```
 
-## 5. Uma versão nova, por sombra
+## 5. A new version, through shadow
 
 ```sh
 jk shadow start detector models/yolo-defects-8.0.0.jkm --node linha2 \
@@ -196,13 +196,13 @@ jk shadow status detector --node linha2
 ```
 
 ```
-detector: 7.0.0 (ativo) vs 8.0.0 (sombra) — 31 204 frames
-  concordância             98,7 %
-  7.0 defeito / 8.0 ok     112   (ver: jk shadow diff detector --disagree --frames)
-  7.0 ok / 8.0 defeito     294
-  latência p99             13,9 ms / 15,2 ms
-  OOD                      0,2 % / 0,1 %
-  critérios                agreement ✓  latency ✓   → promoção automática a 50 000 frames
+detector: 7.0.0 (active) vs 8.0.0 (shadow) — 31,204 frames
+  agreement                98.7%
+  7.0 defect / 8.0 ok      112   (see: jk shadow diff detector --disagree --frames)
+  7.0 ok / 8.0 defect      294
+  p99 latency              13.9 ms / 15.2 ms
+  OOD                      0.2% / 0.1%
+  criteria                 agreement ✓  latency ✓   → automatic promotion at 50,000 frames
 ```
 
-Os frames dos casos em desacordo ficam guardados temporariamente (com `record_disagreements = true` e retenção curta) para revisão humana antes da promoção.
+The frames of the cases in disagreement are kept temporarily (with `record_disagreements = true` and short retention) for human review before the promotion.
