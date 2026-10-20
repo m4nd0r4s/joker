@@ -994,318 +994,318 @@ Ranges: `J0410`–`J0499` (lock) and `J0900`–`J0929` (node, client, trust, sec
 
 ---
 
-## 3. Comportamento
+## 3. Behavior
 
-### 3.1 O lock
+### 3.1 The lock
 
-#### 3.1.1 Princípio da mudança mínima
+#### 3.1.1 Principle of minimal change
 
-O `jk lock` **nunca atualiza nada que não precise de atualizar**. Mantém as versões resolvidas existentes enquanto satisfizerem o manifesto; acrescenta só as entradas em falta; remove as que já não correspondem a nada no manifesto (órfãs). Subir de versão dentro da major é explícito: `jk lock --upgrade [<referência>…]`.
+`jk lock` **never updates anything that does not need updating**. It keeps the existing resolved versions as long as they satisfy the manifest; it adds only the missing entries; it removes those that no longer correspond to anything in the manifest (orphans). Upgrading within the major is explicit: `jk lock --upgrade [<reference>…]`.
 
-#### 3.1.2 `jk lock` e as outras escritas automáticas
+#### 3.1.2 `jk lock` and the other automatic writes
 
-| Opção | Faz |
+| Option | Does |
 |---|---|
-| `jk lock` | resolve `boards`, `profiles`, `classes`, `apps`, `drivers`, `mcu`; copia `accepted`; poda órfãs |
-| `--node <nó>` | também captura `discovered` e `fallback` **em falta**, pelo nó (só leituras, 05 §7), e escreve `runtime` e `node` |
-| `--update <seletor>` | com `--node`: recaptura os dispositivos indicados (glob sobre nomes) |
-| `--rebind` | com `--node`: aceita um nó diferente de `node`, recaptura todos os dispositivos; mantém o `[wcet]` se a placa for a mesma |
-| `--upgrade [<ref>…]` | volta a resolver para a versão mais recente dentro da major |
-| `--check` | não escreve; §3.1.4 |
-| `--offline` | só a cache local; sem ela, `J0411` para o que não conseguir resolver |
-| `--env`, `--manifest`, `--lock`, `--json` | como sempre |
+| `jk lock` | resolves `boards`, `profiles`, `classes`, `apps`, `drivers`, `mcu`; copies `accepted`; prunes orphans |
+| `--node <node>` | also captures the **missing** `discovered` and `fallback`, through the node (reads only, 05 §7), and writes `runtime` and `node` |
+| `--update <selector>` | with `--node`: recaptures the given devices (glob over names) |
+| `--rebind` | with `--node`: accepts a node different from `node`, recaptures all devices; keeps the `[wcet]` if the board is the same |
+| `--upgrade [<ref>…]` | resolves again to the most recent version within the major |
+| `--check` | does not write; §3.1.4 |
+| `--offline` | only the local cache; without it, `J0411` for whatever it cannot resolve |
+| `--env`, `--manifest`, `--lock`, `--json` | as always |
 
-**Escrita automática em `dev`:** `jk check`, `jk build`, `jk dev` e `jk test` resolvem as secções que não precisam do nó (as mesmas do `jk lock` sem `--node`) e escrevem-nas, com uma nota. Nunca tocam em `discovered`, `fallback`, `wcet` nem `accepted`. Em `prod` nunca escrevem: um lock desatualizado é `J0411`. Com `--locked` (ou `JK_LOCKED=1`), nenhum comando escreve o lock, em nenhum modo, e qualquer mudança necessária é `J0411` (é a opção para CI).
+**Automatic write in `dev`:** `jk check`, `jk build`, `jk dev` and `jk test` resolve the sections that do not need the node (the same as `jk lock` without `--node`) and write them, with a note. They never touch `discovered`, `fallback`, `wcet` or `accepted`. In `prod` they never write: an out-of-date lock is `J0411`. With `--locked` (or `JK_LOCKED=1`), no command writes the lock, in any mode, and any necessary change is `J0411` (this is the option for CI).
 
-O `jk apply` nunca escreve o lock.
+`jk apply` never writes the lock.
 
-#### 3.1.3 Captura pelo nó
+#### 3.1.3 Capture through the node
 
-A `jk` pede ao nó (ref/09) que, **sem ligar saídas nem escrever no equipamento**:
+`jk` asks the node (ref/09), **without enabling outputs or writing to the equipment**, to:
 
-- faça a descoberta de um dispositivo a partir da sua secção do manifesto (enviada no pedido, porque na primeira instalação o nó ainda não tem a geração) e devolva identidade, mapa efetivo e digest;
-- leia os registos de fallback e devolva os valores atuais;
-- para um dispositivo `joker-link`, devolva o `HELLO` do MCU;
-- para um dispositivo sem descoberta cujo perfil declara `[profile] identity` (ref/03 §2.2.2), leia esses pontos e devolva-os como identidade. Nesse caso a `jk` escreve um `[discovered.<d>]` só com `driver`, `profile`, `at`, `firmware` e o `digest` do mapa do perfil, e a verificação 9 do §3.1.4 aplica-se-lhe como se tivesse `discover = true`.
+- perform the discovery of a device from its section of the manifest (sent in the request, because on the first installation the node does not have the generation yet) and return identity, effective map and digest;
+- read the fallback registers and return the current values;
+- for a `joker-link` device, return the `HELLO` of the MCU;
+- for a device without discovery whose profile declares `[profile] identity` (ref/03 §2.2.2), read those points and return them as identity. In that case `jk` writes a `[discovered.<d>]` with only `driver`, `profile`, `at`, `firmware` and the `digest` of the profile's map, and check 9 of §3.1.4 applies to it as if it had `discover = true`.
 
-A `jk` escreve o resultado. Se `fallback.configure = true` e o equipamento ainda não tem os valores, a entrada fica com os valores esperados e sem `verified`. O `jk bench` pede ao nó que meça cada tarefa de ciclo no próprio hardware.
+`jk` writes the result. If `fallback.configure = true` and the equipment does not have the values yet, the entry gets the expected values and no `verified`. `jk bench` asks the node to measure each cycle task on the hardware itself.
 
-Os endpoints são os da ref/09: `POST /v1/lock/probe` (dispositivos de um manifesto ainda não aplicado, enviado no pedido; só leituras), `GET /v1/lock/facts` (os da geração em execução), `GET /v1/lock/drift` e `POST /v1/bench` (§5.12, §5.16 da ref/09). As respostas já vêm com a forma das secções deste lock.
+The endpoints are those of ref/09: `POST /v1/lock/probe` (devices of a manifest not yet applied, sent in the request; reads only), `GET /v1/lock/facts` (those of the running generation), `GET /v1/lock/drift` and `POST /v1/bench` (§5.12, §5.16 of ref/09). The responses already come in the shape of the sections of this lock.
 
-#### 3.1.4 `jk lock --check`: o que compara
+#### 3.1.4 `jk lock --check`: what it compares
 
-| # | Verificação | Precisa de | Falha |
+| # | Check | Needs | Failure |
 |---|---|---|---|
-| 1 | sintaxe TOML, `version`, chaves conhecidas | — | `J0412`, `J0140` |
-| 2 | marcadores de conflito do Git (`<<<<<<<`) | — | `J0414` |
-| 3 | forma canónica | — | `J0413` (aviso) |
-| 4 | cada `path:` existe e está dentro do projeto | — | `J0415` |
-| 5 | as secções resolvíveis coincidem com uma resolução nova **com as versões fixadas**: nada em falta, nada a mais | cache ou registo | `J0411` |
-| 6 | cada artefacto obtido tem o `digest`, `oci` e `contract` fixados | cache ou registo | `J0420`, `J0422` |
-| 7 | o `digest` fixado no manifesto (`[apps.*] digest`) coincide | — | `J0423` |
-| 8 | versões fixadas retiradas do registo | registo | `J0421` (aviso) |
-| 9 | cada dispositivo com `discover = true` tem `[discovered]`, com o mesmo `driver` e `profile` | — | `J0450`, `J0452` |
-| 10 | cada dispositivo cujo perfil declara `[fallback]` e tem saídas no manifesto tem `[fallback]` com essas `outputs`; cada saída sem fallback tem `accept_missing_fallback` | — | `J0451` |
-| 11 | cada tarefa de ciclo tem `[wcet]` válido (§2.1.13) | — | `J0430`, `J0431` |
-| 12 | cada `widen`, `accept_missing_fallback` e `accept_unsafe_reset` do manifesto tem entrada em `[accepted]`, com o mesmo `value` (`widen`) ou a mesma placa (`accept_unsafe_reset`); nenhuma entrada órfã | — | `J0440`, `J0441` |
-| 13 | `[models]` só com `joker ≥ 1.1` | — | `J0490` |
-| 14 | com `--node`: estado real de cada dispositivo contra `[discovered]`, `[fallback]` e `[mcu]` (só leituras) | nó | `J0401`, `J0460`, `J0461` |
-| 15 | com `--node`: `node` e `runtime` contra o nó | nó | `J0480`, `J0470` (aviso) |
+| 1 | TOML syntax, `version`, known keys | — | `J0412`, `J0140` |
+| 2 | Git conflict markers (`<<<<<<<`) | — | `J0414` |
+| 3 | canonical form | — | `J0413` (warning) |
+| 4 | each `path:` exists and is inside the project | — | `J0415` |
+| 5 | the resolvable sections match a fresh resolution **with the pinned versions**: nothing missing, nothing extra | cache or registry | `J0411` |
+| 6 | each obtained artifact has the pinned `digest`, `oci` and `contract` | cache or registry | `J0420`, `J0422` |
+| 7 | the `digest` pinned in the manifest (`[apps.*] digest`) matches | — | `J0423` |
+| 8 | pinned versions withdrawn from the registry | registry | `J0421` (warning) |
+| 9 | each device with `discover = true` has `[discovered]`, with the same `driver` and `profile` | — | `J0450`, `J0452` |
+| 10 | each device whose profile declares `[fallback]` and has outputs in the manifest has `[fallback]` with those `outputs`; each output without fallback has `accept_missing_fallback` | — | `J0451` |
+| 11 | each cycle task has a valid `[wcet]` (§2.1.13) | — | `J0430`, `J0431` |
+| 12 | each `widen`, `accept_missing_fallback` and `accept_unsafe_reset` of the manifest has an entry in `[accepted]`, with the same `value` (`widen`) or the same board (`accept_unsafe_reset`); no orphan entry | — | `J0440`, `J0441` |
+| 13 | `[models]` only with `joker ≥ 1.1` | — | `J0490` |
+| 14 | with `--node`: real state of each device against `[discovered]`, `[fallback]` and `[mcu]` (reads only) | node | `J0401`, `J0460`, `J0461` |
+| 15 | with `--node`: `node` and `runtime` against the node | node | `J0480`, `J0470` (warning) |
 
-Com `--offline`, 5, 6 e 8 usam só a cache e as entradas sem cache são reportadas como não verificadas (aviso), não como falha.
+With `--offline`, 5, 6 and 8 use only the cache, and the entries without cache are reported as not verified (warning), not as a failure.
 
-**Códigos de saída** (07 §8): `0` sem falhas (avisos não contam); `2` lock inválido (1, 2, 4, 6, 7, 13); `7` lock desatualizado ou deriva (5, 9–12, 14, 15).
+**Exit codes** (07 §8): `0` no failures (warnings do not count); `2` invalid lock (1, 2, 4, 6, 7, 13); `7` out-of-date lock or drift (5, 9–12, 14, 15).
 
-#### 3.1.5 Deriva no nó
+#### 3.1.5 Drift on the node
 
-Em cada `connect` de um driver (arranque e cada religação), o driver compara o estado real com o lock da geração ativa e gera `J0401` com um `kind`:
+On each `connect` of a driver (startup and each reconnection), the driver compares the real state with the lock of the active generation and raises `J0401` with a `kind`:
 
-| `kind` | Diferença |
+| `kind` | Difference |
 |---|---|
-| `firmware` | `firmware` reportado diferente (num equipamento sem descoberta, o ponto de `[profile] identity.firmware`, lido no `connect`) |
-| `serial` | `serial` diferente: **o equipamento foi trocado** |
-| `identity` | `vendor` ou `model` diferentes |
-| `map` | digest do mapa efetivo diferente (p. ex. a cadeia SunSpec mudou) |
-| `fallback` | registos de fallback diferentes (depois de os escrever, se `configured = true`) |
-| `cert` | certificado do servidor diferente do fixado |
+| `firmware` | different reported `firmware` (on equipment without discovery, the point of `[profile] identity.firmware`, read at `connect`) |
+| `serial` | different `serial`: **the equipment was replaced** |
+| `identity` | different `vendor` or `model` |
+| `map` | different digest of the effective map (e.g. the SunSpec chain changed) |
+| `fallback` | different fallback registers (after writing them, if `configured = true`) |
+| `cert` | server certificate different from the pinned one |
 
-Para um MCU, o `HELLO` (ref/07, tabela de decisão do handshake) é comparado assim, e cada diferença é `J0460` com um `kind`:
+For an MCU, the `HELLO` (ref/07, decision table of the handshake) is compared as follows, and each difference is `J0460` with a `kind`:
 
-| `kind` | Diferença |
+| `kind` | Difference |
 |---|---|
-| `firmware` | digest da imagem ou versão do firmware diferentes de `[mcu.<d>] firmware` |
-| `runtime` | versão do Joker Micro diferente de `[mcu.<d>] runtime` |
-| `core` | versão do núcleo diferente de `[mcu.<d>] core` |
-| `features` | features compiladas diferentes de `[mcu.<d>] features` |
-| `generation` | hash da geração do MCU diferente do que o `jk build` calculou para a geração ativa do nó (o lock não o fixa, §2.1.10) |
-| `catalog` | hash do catálogo diferente de `[discovered.<d>] digest` |
+| `firmware` | image digest or firmware version different from `[mcu.<d>] firmware` |
+| `runtime` | Joker Micro version different from `[mcu.<d>] runtime` |
+| `core` | core version different from `[mcu.<d>] core` |
+| `features` | compiled features different from `[mcu.<d>] features` |
+| `generation` | hash of the MCU generation different from the one `jk build` computed for the active generation of the node (the lock does not pin it, §2.1.10) |
+| `catalog` | catalog hash different from `[discovered.<d>] digest` |
 
-Um id de hardware diferente de `[discovered.<d>] serial` é `J0401 kind=serial`. Uma major de `link` ou `abi` incompatível é `J0461`, e o nó não usa o link. Com deriva, a sessão fica em `observe` em `prod` (ref/07).
+A hardware id different from `[discovered.<d>] serial` is `J0401 kind=serial`. An incompatible major of `link` or `abi` is `J0461`, and the node does not use the link. With drift, the session stays in `observe` in `prod` (ref/07).
 
-**Reação** (05 §12, `Drift`): em `prod`, as saídas desse dispositivo não são ligadas (o `jokerd` não escreve nelas) até haver uma geração nova com o lock atualizado; em `dev`, é um aviso e o driver usa o estado real. Em ambos, o alarme `joker.device.<d>.drift` fica ativo, e o `kind` e os dois valores vão para o registo de decisões e para o estado reportado ao Deck. A deriva **não se resolve sozinha**: `jk lock --update <d> --node <nó>`, revisão do diff, `jk apply`.
+**Reaction** (05 §12, `Drift`): in `prod`, the outputs of that device are not enabled (`jokerd` does not write to them) until there is a new generation with the updated lock; in `dev`, it is a warning and the driver uses the real state. In both, the alarm `joker.device.<d>.drift` is active, and the `kind` and the two values go to the decision log and to the state reported to the Deck. Drift **does not resolve itself**: `jk lock --update <d> --node <node>`, review of the diff, `jk apply`.
 
-#### 3.1.6 Versões do lock e compatibilidade
+#### 3.1.6 Lock versions and compatibility
 
-- `version = 1` durante toda a série 1.x. Numa minor só se acrescentam secções ou campos opcionais (ref/00 §1).
-- **A `jk` escreve o lock no subconjunto da versão `[project] joker`:** nunca emite uma secção ou campo introduzido depois dessa minor. Um nó da 1.0 nunca recebe um lock com campos da 1.3, a não ser que o projeto declare `joker = "1.3"`, e nesse caso o próprio manifesto já o impede de ir para uma 1.0.
-- A leitura é estrita: um campo desconhecido é `J0140`, com a ajuda "escrito por uma `jk` mais nova, ou editado à mão".
-- A v2 lê `version = 1` e escreve `version = 2` só depois de `jk migrate` (21 §1.1).
+- `version = 1` throughout the whole 1.x series. A minor only adds sections or optional fields (ref/00 §1).
+- **`jk` writes the lock in the subset of the `[project] joker` version:** it never emits a section or field introduced after that minor. A 1.0 node never receives a lock with fields from 1.3, unless the project declares `joker = "1.3"`, and in that case the manifest itself already prevents it from going to a 1.0.
+- Reading is strict: an unknown field is `J0140`, with the help "written by a newer `jk`, or edited by hand".
+- v2 reads `version = 1` and writes `version = 2` only after `jk migrate` (21 §1.1).
 
-#### 3.1.7 Conflitos de merge
+#### 3.1.7 Merge conflicts
 
-A forma canónica (uma entrada por bloco, ordem fixa) faz com que duas PRs que mexem em perfis, apps ou dispositivos diferentes não entrem em conflito. Quando entram (a mesma entrada em ambas), o `jk lock` num lock com marcadores:
+The canonical form (one entry per block, fixed order) means that two PRs that touch different profiles, apps or devices do not conflict. When they do (the same entry in both), `jk lock` on a lock with markers:
 
-1. descarta as duas versões das secções resolvíveis e resolve de novo (com as versões do ramo atual como preferência);
-2. para `discovered`, `fallback`, `wcet` e `accepted`, recusa (`J0414`) e indica as entradas em conflito: são factos medidos ou aprovações, e escolher entre eles é uma decisão humana (ou uma nova captura com `--update`, ou um novo `jk bench`).
+1. discards both versions of the resolvable sections and resolves again (with the versions of the current branch as preference);
+2. for `discovered`, `fallback`, `wcet` and `accepted`, refuses (`J0414`) and indicates the conflicting entries: they are measured facts or approvals, and choosing between them is a human decision (or a new capture with `--update`, or a new `jk bench`).
 
-#### 3.1.8 O lock na geração
+#### 3.1.8 The lock in the generation
 
-- A geração leva o lock na forma canónica e o seu digest (§2.1.16). O descritor da geração (`generation.cbor`, `joker.config.v1+cbor`) e o **hash da geração** são os da ref/10 §2.6 e §2.6.2; o lock entra **pelo digest canónico** (§2.1.16), e não pelos bytes do ficheiro, para que um lock reformatado à mão não mude a geração. O hash do manifesto efetivo que o hash da geração cobre é o da ref/01 §8.3.
-- No `jk apply`, com o lock já na geração, o nó verifica cada artefacto pelo `digest` antes de o instalar (`J0420`) e aplica o §3.5.
-- Se `node` estiver definido e não for o nó que recebe a geração, é `J0480` (erro em `prod`, aviso em `dev`): os factos de dispositivo foram capturados noutro sítio.
-- Se a major.minor de `runtime` não for a do nó, é `J0470` (aviso), e o WCET correspondente é `J0431`.
+- The generation carries the lock in canonical form and its digest (§2.1.16). The generation descriptor (`generation.cbor`, `joker.config.v1+cbor`) and the **generation hash** are those of ref/10 §2.6 and §2.6.2; the lock enters **through the canonical digest** (§2.1.16), and not through the bytes of the file, so that a lock reformatted by hand does not change the generation. The hash of the effective manifest that the generation hash covers is that of ref/01 §8.3.
+- On `jk apply`, with the lock already in the generation, the node verifies each artifact by its `digest` before installing it (`J0420`) and applies §3.5.
+- If `node` is defined and is not the node that receives the generation, it is `J0480` (error in `prod`, warning in `dev`): the device facts were captured somewhere else.
+- If the major.minor of `runtime` is not that of the node, it is `J0470` (warning), and the corresponding WCET is `J0431`.
 
-### 3.2 O nó
+### 3.2 The node
 
-#### 3.2.1 Estados de arranque
+#### 3.2.1 Startup states
 
-| Estado | Condição | O que o `jokerd` faz |
+| State | Condition | What `jokerd` does |
 |---|---|---|
-| **sem identidade** | não há `node.name` ou certificado válido | escuta **só** o socket Unix, mesmo que `api.listen` tenha TCP: não há porta de enrolamento aberta à rede (§3.2.3); cria `/run/joker/enroll-code`; nenhuma geração; aviso `J0902` |
-| **enrolado, sem geração** | identidade válida, `generations/confirmed` ausente ou `boot = "none"` | API completa em `api.listen`, papéis de `[roles]`; contacta o Deck se houver; espera por uma geração |
-| **em geração** | há geração confirmada | arranca na geração `confirmed` (ou `current`, se estiver `confirming` e dentro da janela: 01 §15); a API passa a ter também as escutas e os papéis da geração |
+| **without identity** | there is no `node.name` or valid certificate | listens **only** on the Unix socket, even if `api.listen` has TCP: there is no enrollment port open to the network (§3.2.3); creates `/run/joker/enroll-code`; no generation; warning `J0902` |
+| **enrolled, without generation** | valid identity, `generations/confirmed` absent or `boot = "none"` | full API on `api.listen`, roles from `[roles]`; contacts the Deck if there is one; waits for a generation |
+| **in generation** | there is a confirmed generation | starts in the `confirmed` generation (or `current`, if it is `confirming` and within the window: 01 §15); the API then also has the listeners and the roles of the generation |
 
-**A configuração do nó nunca impede o controlo.** Um `node.toml` inválido (`J0900`, `J0901`) não impede o arranque: o `jokerd` usa as omissões para todas as chaves (com a identidade nos caminhos por omissão), arranca na última geração confirmada, escuta só o socket Unix, ativa o alarme `joker.node.config_invalid` e reporta o erro. As exceções são as que tornariam o arranque inseguro: `J0904` (permissões), `J0905` (layout mais novo) e `J0908` (outro `jokerd`), que fazem o `jokerd` sair com código 2. Nesse caso as saídas ficam com o fallback do equipamento (01 §8).
+**The node configuration never prevents control.** An invalid `node.toml` (`J0900`, `J0901`) does not prevent startup: `jokerd` uses the defaults for all keys (with the identity in the default paths), starts in the last confirmed generation, listens only on the Unix socket, activates the alarm `joker.node.config_invalid` and reports the error. The exceptions are those that would make startup unsafe: `J0904` (permissions), `J0905` (newer layout) and `J0908` (another `jokerd`), which make `jokerd` exit with code 2. In that case the outputs stay with the equipment fallback (01 §8).
 
-#### 3.2.2 Regras de coexistência entre `node.toml` e geração
+#### 3.2.2 Coexistence rules between `node.toml` and generation
 
-| Coisa | Efetivo |
+| Thing | Effective |
 |---|---|
-| escutas da API | `api.listen` ∪ `[security.api] listen` da geração |
-| papéis | `[roles]` ∪ `[security.roles]` da geração |
-| confiança | bundle ativo (ou as âncoras, sem bundle) ∩ `[security.trust]` da geração; revogadas = união |
-| modo | o da geração, se `policy.allow_dev` e o `min_mode` do bundle o permitirem |
-| tudo o resto | só a geração |
+| API listeners | `api.listen` ∪ `[security.api] listen` of the generation |
+| roles | `[roles]` ∪ `[security.roles]` of the generation |
+| trust | active bundle (or the anchors, without a bundle) ∩ `[security.trust]` of the generation; revoked = union |
+| mode | that of the generation, if `policy.allow_dev` and the `min_mode` of the bundle allow it |
+| everything else | only the generation |
 
-Uma geração nunca consegue retirar a escuta mínima, os administradores mínimos nem as âncoras, nem alargar a confiança. É o que garante que uma geração má não tranca ninguém fora do nó, mesmo depois de confirmada.
+A generation can never remove the minimal listener, the minimal administrators or the anchors, nor widen trust. This is what guarantees that a bad generation does not lock anyone out of the node, even after being confirmed.
 
-#### 3.2.3 Enrolamento
+#### 3.2.3 Enrollment
 
 ```
-jk node enroll <alvo> --ca <pasta|url> [--name <nó>] [--site <s>] [--org <o>]
+jk node enroll <target> --ca <directory|url> [--name <node>] [--site <s>] [--org <o>]
                [--deck <url>] [--anchor <keys/x.pub>]… [--allow-dev]
-               [--code <código>] [--tpm required|preferred|off]
+               [--code <code>] [--tpm required|preferred|off]
 ```
 
-1. **Canal de arranque.** **Nunca há uma porta de enrolamento aberta à rede:** o enrolamento corre sempre sobre o socket Unix do nó, ou é o nó que liga para fora (Deck). `<alvo>` é `local` (a `jk` corre no próprio nó: acesso físico) ou um endereço `ssh://[<utilizador>@]<host>[:<porta>]` (§3.3.1), e então a `jk` fala com o socket Unix pelo túnel SSH; um nome de host sem esquema é lido como `ssh://<host>`. Sem `--code`, o principal do socket tem de ser `root` ou do grupo `joker-admin` (que o pacote cria; por SSH, é o utilizador SSH, §3.3.2). Com `--code`, basta um principal que chegue ao socket (grupo `api.socket_group`) e apresente o código de uso único que o nó mostra (`jokerd enroll-code`, só para `root` e `joker-admin`, ou a consola de uma imagem de fábrica: 16 caracteres base32, válido 15 min, 5 tentativas): o código prova que quem enrola teve acesso ao nó, e vai em cada pedido de enrolamento (ref/09 §2.1). O enrolamento pelo Deck (`--deck`, ou `jokerd enroll --deck` no nó) usa o token, e o nó liga ao Deck (ref/10 §3.1.2).
-2. **Chaves.** O `jokerd` gera a chave de identidade (no TPM se existir; `--tpm required` falha sem ele) e a chave KEM X25519, e devolve um CSR. O CSR leva o nome do nó no CN e no SAN DNS, e a chave KEM num SAN URI `urn:joker:kem:x25519:<base64url>`.
-3. **Certificado.** Com `--ca <pasta>`, a `jk` assina o CSR com a CA local (a pasta do `jk ca init`, ref/10 §3.1.1, com `root.key`, `ca.key`, `ca.crt` e `org`). **Se a pasta não existir**, faz o mesmo que `jk ca init <pasta> --org <o> --dev` (§3.3.3): cria uma CA de desenvolvimento e o certificado de utilizador `admin-<utilizador>`, e regista-o em `[user]`. Com `--ca <url>`, o pedido vai à CA do Deck (ref/10).
-4. **Escrita no nó.** A `jk` envia o certificado, a cadeia e os parâmetros; o `jokerd` escreve a identidade em `identity/` e o `/etc/joker/node.toml` (chaves `node`, `identity`, `trust`, `policy`, `deck`; as restantes ficam como estavam ou na omissão). `policy.allow_dev = true` se a CA for de desenvolvimento ou houver `--allow-dev`; senão `false`. As âncoras vêm de `--anchor`, ou da resposta de enrolamento do Deck, que traz também o primeiro bundle (ref/10).
-5. **Escrita no cliente.** A `jk` acrescenta `[nodes.<nó>]` ao `config.toml` do utilizador, com `ca` (o `ca.crt` da pasta) e `address` igual ao **endereço de arranque** por onde enrolou (`ssh://…`, ou `unix:/run/joker/api.sock` com `<alvo>` `local`). A `jk` não adivinha a escuta TCP: quando o nó passa a escutar TCP (`api.listen` ou `[security.api] listen`), muda-se o `address` à mão ou com `jk config set nodes.<nó>.address <host>:7443` (§2.3.2). Se o contexto já existir, a `jk` só muda o `ca`, e avisa se o `address` for diferente do de arranque.
-6. O `jokerd` reinicia as escutas com mTLS e passa ao estado "enrolado".
+1. **Bootstrap channel.** **There is never an enrollment port open to the network:** enrollment always runs over the Unix socket of the node, or it is the node that connects outward (Deck). `<target>` is `local` (`jk` runs on the node itself: physical access) or an address `ssh://[<user>@]<host>[:<port>]` (§3.3.1), and then `jk` talks to the Unix socket through the SSH tunnel; a host name without a scheme is read as `ssh://<host>`. Without `--code`, the principal of the socket must be `root` or in the group `joker-admin` (which the package creates; over SSH, it is the SSH user, §3.3.2). With `--code`, it is enough for a principal to reach the socket (group `api.socket_group`) and present the single-use code that the node shows (`jokerd enroll-code`, only for `root` and `joker-admin`, or the console of a factory image: 16 base32 characters, valid for 15 min, 5 attempts): the code proves that whoever enrolls had access to the node, and it goes in each enrollment request (ref/09 §2.1). Enrollment through the Deck (`--deck`, or `jokerd enroll --deck` on the node) uses the token, and the node connects to the Deck (ref/10 §3.1.2).
+2. **Keys.** `jokerd` generates the identity key (in the TPM if there is one; `--tpm required` fails without it) and the X25519 KEM key, and returns a CSR. The CSR carries the node name in the CN and in the DNS SAN, and the KEM key in a URI SAN `urn:joker:kem:x25519:<base64url>`.
+3. **Certificate.** With `--ca <directory>`, `jk` signs the CSR with the local CA (the directory of `jk ca init`, ref/10 §3.1.1, with `root.key`, `ca.key`, `ca.crt` and `org`). **If the directory does not exist**, it does the same as `jk ca init <directory> --org <o> --dev` (§3.3.3): it creates a development CA and the user certificate `admin-<user>`, and records it in `[user]`. With `--ca <url>`, the request goes to the CA of the Deck (ref/10).
+4. **Write on the node.** `jk` sends the certificate, the chain and the parameters; `jokerd` writes the identity in `identity/` and the `/etc/joker/node.toml` (keys `node`, `identity`, `trust`, `policy`, `deck`; the remaining ones stay as they were or at the default). `policy.allow_dev = true` if the CA is a development one or there is `--allow-dev`; otherwise `false`. The anchors come from `--anchor`, or from the enrollment response of the Deck, which also brings the first bundle (ref/10).
+5. **Write on the client.** `jk` adds `[nodes.<node>]` to the user's `config.toml`, with `ca` (the `ca.crt` of the directory) and `address` equal to the **bootstrap address** through which it enrolled (`ssh://…`, or `unix:/run/joker/api.sock` with `<target>` `local`). `jk` does not guess the TCP listener: when the node starts listening on TCP (`api.listen` or `[security.api] listen`), the `address` is changed by hand or with `jk config set nodes.<node>.address <host>:7443` (§2.3.2). If the context already exists, `jk` only changes the `ca`, and warns if the `address` is different from the bootstrap one.
+6. `jokerd` restarts the listeners with mTLS and moves to the "enrolled" state.
 
-**Quem escreve o `node.toml`:** só o `jokerd`, em duas operações: o enrolamento e `jk node trust set --anchors … [--revoked …]` (troca de âncoras, assinada por uma âncora atual). Qualquer outra diferença face à última escrita do `jokerd` é `J0907` no `jk doctor`. O pacote instala um `node.toml` só com `version = 1`; uma imagem de fábrica pode trazer `[deck]` e `/etc/joker/enroll-token` para o enrolamento sem intervenção (ref/10).
+**Who writes `node.toml`:** only `jokerd`, in two operations: enrollment and `jk node trust set --anchors … [--revoked …]` (anchor swap, signed by a current anchor). Any other difference from the last write by `jokerd` is `J0907` in `jk doctor`. The package installs a `node.toml` with only `version = 1`; a factory image may bring `[deck]` and `/etc/joker/enroll-token` for zero-touch enrollment (ref/10).
 
-**Renovação:** o certificado renova-se antes de `renew_before`, pelo Deck (ref/10) ou por `jk node renew`. A chave KEM **mantém-se** entre renovações, e o certificado novo leva-a no mesmo SAN URI; só muda num novo enrolamento, e então os segredos têm de ser re-cifrados (`jk secret recipient add --node`).
+**Renewal:** the certificate is renewed before `renew_before`, through the Deck (ref/10) or with `jk node renew`. The KEM key **is kept** across renewals, and the new certificate carries it in the same URI SAN; it only changes on a new enrollment, and then the secrets must be re-encrypted (`jk secret recipient add --node`).
 
-**Pela API e pelo Deck.** O enrolamento local usa os endpoints da ref/09 (`/v1/node/enrollment/csr` e `/certificate`, só pelo socket Unix, a que a `jk` chega no próprio nó ou por SSH); a resposta de enrolamento do Deck traz também as âncoras e o primeiro bundle de confiança (ref/10).
+**Through the API and through the Deck.** Local enrollment uses the endpoints of ref/09 (`/v1/node/enrollment/csr` and `/certificate`, only through the Unix socket, which `jk` reaches on the node itself or over SSH); the enrollment response of the Deck also brings the anchors and the first trust bundle (ref/10).
 
-#### 3.2.4 Relógio sem NTP
+#### 3.2.4 Clock without NTP
 
-O relógio do nó é o do sistema operativo (ref/01 §5.5). Sem NTP nem outra fonte, o `jokerd` pode usar o tempo do Deck (cabeçalhos do protocolo do agente, ref/10) como **fonte grosseira**: a qualidade do relógio nunca passa de `holdover` por essa via, e nunca `synced`. Chega para ordenar eventos e para o `not_after` não aceitar chaves com anos de atraso; não chega para a janela anti-replay de ±30 s (ref/00 §9), que continua a exigir `synced`.
+The clock of the node is that of the operating system (ref/01 §5.5). Without NTP or another source, `jokerd` may use the time of the Deck (headers of the agent protocol, ref/10) as a **coarse source**: the clock quality never goes beyond `holdover` through that route, and never `synced`. It is enough to order events and for `not_after` not to accept keys years behind; it is not enough for the anti-replay window of ±30 s (ref/00 §9), which still requires `synced`.
 
-### 3.3 O cliente
+### 3.3 The client
 
-#### 3.3.1 Resolução de `--node`
+#### 3.3.1 Resolution of `--node`
 
-Por esta ordem, com o valor de `--node`, `JK_NODE` ou `defaults.node`:
+In this order, with the value of `--node`, `JK_NODE` or `defaults.node`:
 
-1. `local` → a runtime local: `.joker/run/api.sock` do projeto, se houver um `jk dev` a correr; senão `/run/joker/api.sock`; senão `J0911`.
-2. Começa por `unix:` ou `ssh://`, ou tem a forma `<host>:<porta>` → endereço literal. Se algum contexto tiver esse endereço, usa a sua `ca`; senão, `defaults.ca`. Não há outras formas (nem `tcp:`, nem `ssh:` sem `//`): o `--node` aceita `local`, um nome de contexto, `unix:<caminho>`, `<host>:<porta>` e `ssh://[<utilizador>@]<host>[:<porta>]`, e só isso, igual na ref/05 §22.1, na ref/09 §2.1 e no documento 07 §1.
-3. Nome exato em `[nodes]` → esse contexto.
-4. Igual ao host do `address` de **um só** contexto → esse contexto (`--node pi-trilha.local` encontra `[nodes.pi-trilha]`). De mais de um → `J0911` (ambíguo), com a lista.
-5. Senão → `<valor>:7443` (TCP com mTLS) com `defaults.ca`.
+1. `local` → the local runtime: `.joker/run/api.sock` of the project, if a `jk dev` is running; otherwise `/run/joker/api.sock`; otherwise `J0911`.
+2. Starts with `unix:` or `ssh://`, or has the form `<host>:<port>` → literal address. If some context has that address, its `ca` is used; otherwise, `defaults.ca`. There are no other forms (neither `tcp:` nor `ssh:` without `//`): `--node` accepts `local`, a context name, `unix:<path>`, `<host>:<port>` and `ssh://[<user>@]<host>[:<port>]`, and only those, the same in ref/05 §22.1, in ref/09 §2.1 and in document 07, §1.
+3. Exact name in `[nodes]` → that context.
+4. Equal to the host of the `address` of **a single** context → that context (`--node pi-trilha.local` finds `[nodes.pi-trilha]`). Of more than one → `J0911` (ambiguous), with the list.
+5. Otherwise → `<value>:7443` (TCP with mTLS) with `defaults.ca`.
 
-Sem `--node`, `JK_NODE` nem `defaults.node`, os comandos que falam com um nó usam o passo 1.
+Without `--node`, `JK_NODE` or `defaults.node`, the commands that talk to a node use step 1.
 
-**Nunca há confiança no primeiro uso em TCP**, a não ser no enrolamento: um certificado que não verifica pela CA, ou sem o nome esperado, é `J0912`.
+**There is never trust on first use over TCP**, except during enrollment: a certificate that does not verify against the CA, or without the expected name, is `J0912`.
 
-**Os comandos que mudam o nó** (`apply`, `write`, `release`, `reset`, `action`, `call`, `secret push`, `runtime upgrade`, `rollback`) mostram na primeira linha o nó, o modo da geração ativa e a origem da escolha: `→ lisboa-01 (prod) · de JK_NODE`.
+**The commands that change the node** (`apply`, `write`, `release`, `reset`, `action`, `call`, `secret push`, `runtime upgrade`, `rollback`) show on the first line the node, the mode of the active generation and the origin of the choice: `→ lisboa-01 (prod) · from JK_NODE`.
 
-#### 3.3.2 Identidade do utilizador
+#### 3.3.2 User identity
 
-- O certificado de `[user]` (ou do contexto) é o da ligação mTLS; o CN decide o papel no nó.
-- Sobre `unix:` não há mTLS: o papel vem do utilizador e grupos do processo (`local:user=…`, `local:group=…`).
-- Sobre `ssh://`, o papel é o do utilizador SSH no nó, pela mesma regra.
+- The certificate of `[user]` (or of the context) is the one of the mTLS connection; the CN decides the role on the node.
+- Over `unix:` there is no mTLS: the role comes from the user and groups of the process (`local:user=…`, `local:group=…`).
+- Over `ssh://`, the role is that of the SSH user on the node, by the same rule.
 
-#### 3.3.3 A CA local e o certificado de administrador: `jk ca init`
-
-```
-jk ca init <pasta> --org <org> [--user <nome>] [--dev] [--force]
-```
-
-1. **Cria a CA** na pasta (que não pode existir, a não ser com `--force` numa pasta vazia): `root.key` (Ed25519, a raiz, modo `0600`), `ca.key` (P-256, a emissora, `0600`), `ca.crt` (a emissora, assinada pela raiz), `org` (o nome, gramática de `node.org`) e, com `--dev`, o ficheiro vazio `dev`, que marca uma CA de desenvolvimento: os nós enrolados por ela ficam com `policy.allow_dev = true` (§3.2.3, passo 4). Layout na ref/10 §3.1.1.
-2. **Cria o certificado de utilizador** `admin-<utilizador>`, emitido por `ca.key`: `<utilizador>` é `--user`, ou `user.name`, ou o utilizador do sistema (`$USER`), reduzido à gramática de `user.name`. O certificado leva `CN=admin-<utilizador>` e o SAN URI `urn:joker:role:admin`, e a chave P-256 fica em `$XDG_DATA_HOME/joker/certs/admin-<utilizador>.key` (`0600`), ao lado do `.crt`.
-3. **Regista-o no cliente:** escreve `user.cert` e `user.key` em `[user]` do `config.toml` do utilizador e, se estiver vazio, `user.name`. Se `[user]` já tiver um certificado, não o substitui: avisa e mostra o caminho do novo.
-
-**O papel é do nó**, não do certificado (ref/09 §2.3): em `dev`, qualquer principal autenticado é `admin` (ref/01 §5.20); em `prod`, é preciso uma regra que nomeie o certificado (`admin = ["cert:SAN=urn:joker:role:admin"]` ou `["cert:CN=admin-*"]`) em `[security.roles]` ou em `[roles]` do `node.toml`. O `jk ca init` não escreve nada no nó.
-
-### 3.4 Segredos
-
-#### 3.4.1 Fluxos
+#### 3.3.3 The local CA and the administrator certificate: `jk ca init`
 
 ```
-jk secret set ──▶ secrets.toml.enc (cifrado, assinado) ──▶ Git ──▶ Deck (só transporta)
+jk ca init <directory> --org <org> [--user <name>] [--dev] [--force]
+```
+
+1. **Creates the CA** in the directory (which must not exist, except with `--force` on an empty directory): `root.key` (Ed25519, the root, mode `0600`), `ca.key` (P-256, the issuer, `0600`), `ca.crt` (the issuer, signed by the root), `org` (the name, grammar of `node.org`) and, with `--dev`, the empty file `dev`, which marks a development CA: the nodes enrolled by it get `policy.allow_dev = true` (§3.2.3, step 4). Layout in ref/10 §3.1.1.
+2. **Creates the user certificate** `admin-<user>`, issued by `ca.key`: `<user>` is `--user`, or `user.name`, or the system user (`$USER`), reduced to the grammar of `user.name`. The certificate carries `CN=admin-<user>` and the SAN URI `urn:joker:role:admin`, and the P-256 key is stored in `$XDG_DATA_HOME/joker/certs/admin-<user>.key` (`0600`), next to the `.crt`.
+3. **Registers it in the client:** writes `user.cert` and `user.key` in `[user]` of the user's `config.toml` and, if it is empty, `user.name`. If `[user]` already has a certificate, it does not replace it: it warns and shows the path of the new one.
+
+**The role belongs to the node**, not to the certificate (ref/09 §2.3): in `dev`, any authenticated principal is `admin` (ref/01 §5.20); in `prod`, a rule that names the certificate (`admin = ["cert:SAN=urn:joker:role:admin"]` or `["cert:CN=admin-*"]`) is required in `[security.roles]` or in `[roles]` of `node.toml`. `jk ca init` writes nothing on the node.
+
+### 3.4 Secrets
+
+#### 3.4.1 Flows
+
+```
+jk secret set ──▶ secrets.toml.enc (encrypted, signed) ──▶ Git ──▶ Deck (only transports)
                                    │                                 │
-                                   └── jk apply / jk secret push ────┴──▶ nó: verifica, guarda cifrado
+                                   └── jk apply / jk secret push ────┴──▶ node: verifies, stores encrypted
 ```
 
-#### 3.4.2 A chave KEM do nó é atestada
+#### 3.4.2 The KEM key of the node is attested
 
-A chave X25519 do nó só é aceite como destinatário se vier **no certificado do nó** (SAN URI do §3.2.3), verificado pela CA da organização. `jk secret recipient add --node` obtém-na na ligação mTLS ao nó, confirma a cadeia e grava a impressão digital do certificado em `cert`. Uma chave sem atestação é `J0929`. Assim, um Deck comprometido não consegue fazer um operador cifrar segredos para uma chave do atacante.
+The X25519 key of the node is only accepted as a recipient if it comes **in the node certificate** (SAN URI of §3.2.3), verified by the organization's CA. `jk secret recipient add --node` obtains it over the mTLS connection to the node, confirms the chain and records the fingerprint of the certificate in `cert`. A key without attestation is `J0929`. This way, a compromised Deck cannot make an operator encrypt secrets for an attacker's key.
 
-#### 3.4.3 Entrega
+#### 3.4.3 Delivery
 
-- O `jk apply` envia, junto com a geração, as entradas cifradas para esse nó que a geração refere, só com o `wrap` do nó (formato `secret-bundle`, tipo de media `joker.secrets.v1`). O `jk secret push` envia sem geração. No estado desejado do Deck, vai na chave 22 (`secret-bundle`, ref/10 §2.6). O Deck só o transporta: as entradas vêm assinadas pelo papel `secrets` e cifradas para o nó.
-- O nó verifica, por entrada: assinatura (`secrets` da política efetiva; `J0926`), `wrap` para si (`J0922`), decifração de teste (`J0923`) e `rev` ≥ à guardada (`J0924`). Uma entrada que falha é rejeitada sozinha; se a geração a exigir, a geração falha no passo de validação (01 §15).
-- Em `dev` a assinatura é opcional; se existir, é verificada.
-- **O Deck verifica o `wrap` sem o ler.** Antes de emitir um estado desejado com segredos para um nó, o Deck compara `recipients."node:<nó>".cert` do `secrets.toml.enc` do commit com o SHA-256 do certificado atual desse nó (o do último `hello` ou `renew`, ref/10). Iguais, o `wrap` é para este nó. Diferentes, o Deck lê a chave KEM do SAN URI do certificado atual (§3.2.3, passo 2): se for a mesma de `recipients."node:<nó>".key` (uma renovação, que mantém a chave KEM, §3.2.3), o `wrap` continua válido, o nó não é retido, e o Deck avisa que o `cert` do ficheiro está desatualizado; se for outra (um novo enrolamento), o `wrap` não decifra no nó, e o Deck **retém esse nó** com `J0922` (não lhe emite nada até um commit com o segredo re-cifrado, `jk secret recipient add --node <nó>`), sem parar os outros nós da onda (documento 20, §4.4.3, passo 2). O Deck nunca decifra nada: só compara digests e chaves públicas.
+- `jk apply` sends, together with the generation, the entries encrypted for that node that the generation references, only with the node's `wrap` (format `secret-bundle`, media type `joker.secrets.v1`). `jk secret push` sends without a generation. In the desired state of the Deck, it goes in key 22 (`secret-bundle`, ref/10 §2.6). The Deck only transports it: the entries come signed by the `secrets` role and encrypted for the node.
+- The node verifies, per entry: signature (`secrets` of the effective policy; `J0926`), `wrap` for itself (`J0922`), test decryption (`J0923`) and `rev` ≥ the stored one (`J0924`). An entry that fails is rejected on its own; if the generation requires it, the generation fails at the validation step (01 §15).
+- In `dev` the signature is optional; if present, it is verified.
+- **The Deck verifies the `wrap` without reading it.** Before issuing a desired state with secrets for a node, the Deck compares `recipients."node:<node>".cert` of the `secrets.toml.enc` of the commit with the SHA-256 of the current certificate of that node (the one from the last `hello` or `renew`, ref/10). If equal, the `wrap` is for this node. If different, the Deck reads the KEM key from the SAN URI of the current certificate (§3.2.3, step 2): if it is the same as `recipients."node:<node>".key` (a renewal, which keeps the KEM key, §3.2.3), the `wrap` remains valid, the node is not held back, and the Deck warns that the `cert` of the file is out of date; if it is a different one (a new enrollment), the `wrap` does not decrypt on the node, and the Deck **holds back that node** with `J0922` (it issues nothing to it until a commit with the re-encrypted secret, `jk secret recipient add --node <node>`), without stopping the other nodes of the wave (document 20, §4.4.3, step 2). The Deck never decrypts anything: it only compares digests and public keys.
 
-#### 3.4.4 Armazenamento e rotação no nó
+#### 3.4.4 Storage and rotation on the node
 
-- `secrets/store.cbor` guarda, por nome, a última entrada aceite (cifrada) e a `rev` mais alta vista. Uma `rev` inferior é recusada para sempre (anti-rollback); para voltar a um valor antigo, faz-se um `set` novo com esse valor.
-- Rodar um segredo **não cria uma geração** (num MCU, o segredo vai no blob, e rodá-lo produz um blob novo com o mesmo manifesto e a mesma geração Linux: ref/08 §2.17): os consumidores (drivers, uplinks, pontes) religam-se com o valor novo; as apps recebem o valor novo no próximo `reveal`. O evento `joker.secret.<nome>.rotated` (com a `rev`) vai para o registo e para o Deck.
-- Um segredo removido do ficheiro mantém-se no nó enquanto uma geração o referir; é apagado quando nenhuma geração guardada o referir.
+- `secrets/store.cbor` stores, per name, the last accepted entry (encrypted) and the highest `rev` seen. A lower `rev` is rejected forever (anti-rollback); to go back to an old value, a new `set` is made with that value.
+- Rotating a secret **does not create a generation** (on an MCU, the secret goes in the blob, and rotating it produces a new blob with the same manifest and the same Linux generation: ref/08 §2.17): the consumers (drivers, uplinks, bridges) reconnect with the new value; the apps receive the new value on the next `reveal`. The event `joker.secret.<name>.rotated` (with the `rev`) goes to the log and to the Deck.
+- A secret removed from the file remains on the node while a generation references it; it is deleted when no stored generation references it.
 
-### 3.5 Verificação de confiança e rotação
+### 3.5 Trust verification and rotation
 
-#### 3.5.1 Ao aplicar uma geração
+#### 3.5.1 When applying a generation
 
-Por esta ordem (primeira falha para):
+In this order (the first failure stops):
 
-1. `mode = "dev"` e (`policy.allow_dev = false` ou bundle com `min_mode = prod`) → `J0906`.
-2. `policy.apply_from` não inclui a origem (`local` para `local`; `deck` para `agent`, `import` e `session`, §2.2.2) → recusada: `J-E1615` na API (ref/09), `J0992` no agente (ref/10).
-3. `[security.trust]` da geração não é um subconjunto do bundle ativo → `J0292` (ref/01 §5.19).
-4. Em `prod`: assinatura `config` por uma chave da política efetiva (§2.5.4) **atual** → senão `J0915` (sem assinatura), `J0916` (chave sem esse papel), `J0917` (revogada ou expirada).
-5. Cada artefacto contra a política efetiva **com as restrições da geração nova**, pelo papel do §2.5.3 → `J0915`/`J0916`/`J0917`. Em `prod`, apps, drivers, runtime e firmware têm sempre de estar assinados; perfis, placas e classes são aceites pelo digest do lock.
-6. Segredos: §3.4.3.
+1. `mode = "dev"` and (`policy.allow_dev = false` or bundle with `min_mode = prod`) → `J0906`.
+2. `policy.apply_from` does not include the origin (`local` for `local`; `deck` for `agent`, `import` and `session`, §2.2.2) → rejected: `J-E1615` in the API (ref/09), `J0992` in the agent (ref/10).
+3. `[security.trust]` of the generation is not a subset of the active bundle → `J0292` (ref/01 §5.19).
+4. In `prod`: `config` signature by a **current** key of the effective policy (§2.5.4) → otherwise `J0915` (no signature), `J0916` (key without that role), `J0917` (revoked or expired).
+5. Each artifact against the effective policy **with the restrictions of the new generation**, by the role of §2.5.3 → `J0915`/`J0916`/`J0917`. In `prod`, apps, drivers, runtime and firmware must always be signed; profiles, boards and classes are accepted by the digest of the lock.
+6. Secrets: §3.4.3.
 
-O Deck faz as mesmas verificações antes de enviar, com os mesmos crates (20 §4.2), mas o nó não confia nisso.
+The Deck makes the same checks before sending, with the same crates (20 §4.2), but the node does not rely on that.
 
-#### 3.5.2 Rotação e revogação
+#### 3.5.2 Rotation and revocation
 
-1. `jk key gen <nome> --kind signing` cria a chave nova K2 (fora do projeto) e o `.pub`.
-2. Publica-se um bundle com `version` + 1 que tem K1 e K2 com o mesmo papel, assinado pela raiz, e entrega-se aos nós (Deck ou `jk node trust push`).
-3. Se o manifesto restringir esse papel, acrescenta-se `keys/k2.pub` à lista; a geração é assinada por K1. A partir daqui assina-se com K2.
-4. Um bundle seguinte retira K1 (e o manifesto também).
+1. `jk key gen <name> --kind signing` creates the new key K2 (outside the project) and the `.pub`.
+2. A bundle with `version` + 1 that has K1 and K2 with the same role, signed by the root, is published and delivered to the nodes (Deck or `jk node trust push`).
+3. If the manifest restricts that role, `keys/k2.pub` is added to the list; the generation is signed by K1. From here on, signing is done with K2.
+4. A following bundle removes K1 (and so does the manifest).
 
-**Chave comprometida:** um bundle novo sem ela e o id em `revoked` do manifesto; a `version` monotónica impede que um bundle antigo, que ainda a tinha, volte. **Âncora comprometida:** `jk node trust set --anchors <nova> --revoked <id>` em cada nó, assinado por outra âncora. Sem nenhuma âncora válida, a recuperação é um novo enrolamento com acesso ao nó (SSH ou consola). É deliberado: nenhuma chave remota substitui as âncoras sem uma âncora.
-
----
-
-## 4. Estresse
-
-**S1 — O firmware do PCS muda e desloca o modelo 704 (08, rodada 1b).** No `connect`, o digest do mapa descoberto difere: `J0401 kind=map`. Em `prod`, as saídas do PCS não são ligadas e o alarme de deriva dispara; as leituras continuam. `jk lock --update pcs --node lisboa-01` mostra o diff (novo `firmware`, `models` deslocados, novo `digest`), a pessoa revê, faz commit e `jk apply`. **Aguenta.**
-
-**S2 — Troca do PCS avariado por outro igual.** Mesmo modelo e firmware, mapa igual. A primeira versão só comparava firmware e mapa, e o equipamento novo, **sem os registos de fallback configurados**, seria aceite em silêncio. **Correção incorporada:** `serial` no `[discovered]` e `kind = serial`, e o fallback é sempre relido (e reescrito, se `configured`) em cada `connect`, com `kind = fallback` se não bater.
-
-**S3 — Duas PRs mexem no lock ao mesmo tempo.** Uma sobe o perfil do medidor, a outra acrescenta uma app. Com a ordem fixa e uma entrada por bloco, o Git junta sem conflito. Se as duas mexem no `[wcet]` da mesma tarefa, há conflito: o `jk lock` resolve o que é resolúvel e recusa escolher entre duas medições (`J0414`), pedindo um `jk bench`. **Aguenta.**
-
-**S4 — Uma aprovação de `widen` reaproveitada.** Aprovou-se `widen` para ±150 kW. Meses depois, alguém muda o overlay para ±200 kW e deixa a justificação. No 03 §14 o lock guardava só o texto, e a aprovação passaria. **Correção incorporada:** `[accepted.widen]` guarda o `value` alargado; um valor diferente é `J0440`, e a nova aprovação fica com o seu `by` e `at` no diff.
-
-**S5 — A app muda e o WCET fica.** O exemplo do 03 não ligava a medição ao binário: uma app reescrita, com o dobro do custo, continuaria a passar a admissão com o WCET antigo. **Correção incorporada:** `app`, `board` e `runtime` em cada entrada de `[wcet]` e `J0431`.
-
-**S6 — Um template copiado com o lock de outro site.** Um integrador copia `sites/lisboa-01/` para `sites/porto-02/` e aplica. Os seriais e os mapas são os de Lisboa. **Correção incorporada:** `node` no lock e `J0480` no `jk apply`; `jk lock --rebind --node porto-02` recaptura tudo e mantém o WCET, que é da placa, e não do site.
-
-**S7 — O digest da geração do MCU no lock.** A primeira ideia fixava no `[mcu]` o digest do blob de geração. Mas o blob é compilado a partir do manifesto **e do lock**: cada `jk lock` mudaria o blob, que mudaria o lock. **Correção incorporada:** o lock fixa só o firmware genérico, a versão e as capacidades (§2.1.10); o digest da geração é verificado pelo `HELLO`.
-
-**S8 — O Deck comprometido tenta contornar as assinaturas.** (a) Envia uma geração `mode = "dev"`, que não exige assinaturas: recusada por `policy.allow_dev = false` (`J0906`), que é a omissão fora de CAs de desenvolvimento. (b) Tenta que um operador cifre um segredo para uma chave sua, apresentando-a como a de um nó: recusada por falta de atestação no certificado (`J0929`). (c) Injeta um segredo novo cifrado para a chave pública do nó: recusado sem assinatura `secrets` (`J0926`). **Aguenta**, e os três controlos saíram deste caso.
-
-**S9 — A chave `config` é roubada.** O atacante assina uma geração que acrescenta a sua chave à lista `apps` e instala uma app sua. **Correção incorporada:** as listas de chaves por papel vêm do bundle de confiança, assinado pela raiz da organização (guardada offline ou em HSM), e o manifesto só as pode restringir (`J0292`); uma app assinada por uma chave sem o papel `apps` é `J0916`. Com a chave `config`, o atacante só consegue aplicar gerações com apps já assinadas pelas chaves `apps` legítimas, e cada escrita continua a passar pelo envelope (20, D3).
-
-**S10 — Rodar a palavra-passe MQTT em 3 000 nós.** `jk secret set mqtt_password` (uma entrada, `rev` 4, cifrada para 3 000 destinatários: ~3 000 × 80 B de `wrap` ≈ 240 KB, dentro do limite de 4 MiB), commit, e o Deck distribui. Não há geração nova, e o digest das gerações não muda. Um nó offline recebe-a quando volta; uma cópia antiga do ficheiro reposta por engano não passa (`J0924`). **Achado:** 3 000 nós num único ficheiro é o limite prático. Um ficheiro por site (a pasta do manifesto de entrada) é a organização normal, e o limite fica como está.
-
-**S11 — Alguém edita o `node.toml` à mão e parte-o.** Uma vírgula a mais depois de uma atualização de SO. Se o `jokerd` recusasse arrancar, o controlo parava por causa de um ficheiro de administração. **Correção incorporada:** arranque com omissões e com a última geração confirmada, só com o socket Unix e o alarme `joker.node.config_invalid` (§3.2.1). As exceções (permissões, layout, dois `jokerd`) são as que tornam o arranque inseguro.
-
-**S12 — `JK_NODE` esquecido na shell.** Uma pessoa com `JK_NODE=lisboa-01` de uma sessão anterior corre `jk write pcs.p_set 0 --ttl 5m`, a pensar que está no simulador. **Correção incorporada:** a linha `→ lisboa-01 (prod) · de JK_NODE` antes de qualquer comando que muda o nó, e nenhuma variável para `--yes` ou `--confirm`.
+**Compromised key:** a new bundle without it and the id in `revoked` of the manifest; the monotonic `version` prevents an old bundle, which still had it, from coming back. **Compromised anchor:** `jk node trust set --anchors <new> --revoked <id>` on each node, signed by another anchor. Without any valid anchor, recovery is a new enrollment with access to the node (SSH or console). This is deliberate: no remote key replaces the anchors without an anchor.
 
 ---
 
-## 5. Decisões e alternativas rejeitadas
+## 4. Stress
 
-- **Um lock por manifesto de entrada**, e não um por projeto. Um lock único obrigaria a secções por overlay, ou seria reescrito a cada troca de `joker.sim.toml` para `joker.rpi.toml`. Custa um ficheiro por overlay de entrada, que é o que tem factos diferentes. O nome do lock segue o da variante (`joker.lab.toml` → `joker.lab.lock`, ADR 0026), e por isso os ficheiros de um ambiente ficam juntos numa listagem.
-- **Digest canónico do lock**, e não dos bytes. Reformatar à mão não muda a geração, e o Deck calcula o mesmo digest a partir do Git.
-- **Aprovações com `value`, `by` e `at`**, e não só o texto. O texto sozinho aprovava qualquer alargamento futuro com a mesma chave.
-- **O lock nunca contém digests derivados dele próprio** (gerações do MCU, `.cwasm`). Evita ciclos e alterações sem significado.
-- **`node.toml` escrito pelo `jokerd`**, e não por um instalador como `root`. Alternativa rejeitada: `/var/lib/joker/node.toml` só gerido pelo `jokerd` e `/etc` só para o instalador. Duas fontes para a mesma chave pediam regras de fusão; uma fonte escrita em duas operações bem definidas é mais simples de auditar (`J0907`).
-- **O `node.toml` é um mínimo que a geração só acrescenta**, e não uma alternativa ao manifesto. É o que permite recuperar de uma geração má sem acesso físico.
-- **Um `node.toml` inválido não para o controlo.** A alternativa (recusar arrancar) é o comportamento clássico de um daemon, mas aqui trocaria um erro administrativo por uma paragem da planta.
-- **HPKE + ChaCha20-Poly1305 por segredo**, e não age nem sops. HPKE é uma norma (RFC 9180), tem implementações `no_std` (o Joker Micro precisa dela) e dá um `wrap` por destinatário, o que permite restringir segredos por nó. O age cifra o ficheiro inteiro para todos; o sops traz um formato e dependências que não controlamos.
-- **Segredos versionáveis.** O 03 e o 15 diziam "nunca em git". Com os valores cifrados para chaves de nós atestadas, versionar é seguro e é a única forma de o Deck os distribuir por GitOps sem os ler.
-- **Rodar um segredo não é uma geração.** Se fosse, o digest da geração mudaria com cada palavra-passe, e o Deck teria de ver algo dependente do valor.
-- **Política no bundle de confiança assinado pela raiz, e o manifesto só restringe** (alinhado com ref/01 e ref/10). Rejeitada: a política no manifesto com uma segunda assinatura para a mudar. Funcionava, mas punha a política a variar por site e obrigava a duas assinaturas por geração. Com o bundle, a chave `config`, que se usa todos os dias, não é a chave de tudo.
-- **Sem bundle, as âncoras valem para todos os papéis.** Uma instalação pequena, sem Deck, funciona com uma só chave; a separação de funções liga-se publicando um bundle.
-- **O digest de um perfil ou de uma placa é o dos bytes do ficheiro**, e não o de um CBOR do ficheiro analisado (como dizia a primeira versão desta referência). É o digest da camada OCI (ref/03 §2.8.2), igual para um ficheiro local e para o publicado, e verificável sem o analisador do Joker. Custa que reformatar um perfil local mude o lock, o que é aceitável: um perfil é um artefacto versionado, e não um ficheiro de trabalho.
-- **Perfis, placas e classes verificados pelo digest do lock no nó**, e não por assinatura própria. O lock já está dentro de uma geração assinada; exigir mais uma assinatura no nó não acrescenta segurança e complica os perfis locais.
-- **Sem variáveis de ambiente para decisões perigosas** (`--yes`, `--confirm`), e com a linha do alvo antes de cada mudança.
-- **Chave KEM no certificado do nó (SAN URI)**, e não uma extensão X.509 privada (que precisaria de um OID) nem um documento assinado à parte (que precisaria de mais um formato).
+**S1 — The PCS firmware changes and shifts model 704 (08, round 1b).** On `connect`, the digest of the discovered map differs: `J0401 kind=map`. In `prod`, the PCS outputs are not enabled and the drift alarm fires; the readings continue. `jk lock --update pcs --node lisboa-01` shows the diff (new `firmware`, shifted `models`, new `digest`), the person reviews, commits and runs `jk apply`. **Holds.**
+
+**S2 — Replacing the faulty PCS with an identical one.** Same model and firmware, same map. The first version compared only firmware and map, and the new equipment, **without the fallback registers configured**, would be accepted silently. **Fix incorporated:** `serial` in `[discovered]` and `kind = serial`, and the fallback is always reread (and rewritten, if `configured`) on each `connect`, with `kind = fallback` if it does not match.
+
+**S3 — Two PRs touch the lock at the same time.** One bumps the meter profile, the other adds an app. With the fixed order and one entry per block, Git merges without conflict. If both touch the `[wcet]` of the same task, there is a conflict: `jk lock` resolves what is resolvable and refuses to choose between two measurements (`J0414`), asking for a `jk bench`. **Holds.**
+
+**S4 — A reused `widen` approval.** A `widen` to ±150 kW was approved. Months later, someone changes the overlay to ±200 kW and leaves the justification. In 03 §14 the lock stored only the text, and the approval would pass. **Fix incorporated:** `[accepted.widen]` stores the widened `value`; a different value is `J0440`, and the new approval gets its `by` and `at` in the diff.
+
+**S5 — The app changes and the WCET stays.** The example in 03 did not tie the measurement to the binary: a rewritten app, with twice the cost, would keep passing admission with the old WCET. **Fix incorporated:** `app`, `board` and `runtime` in each entry of `[wcet]` and `J0431`.
+
+**S6 — A template copied with the lock of another site.** An integrator copies `sites/lisboa-01/` to `sites/porto-02/` and applies. The serials and the maps are those of Lisbon. **Fix incorporated:** `node` in the lock and `J0480` in `jk apply`; `jk lock --rebind --node porto-02` recaptures everything and keeps the WCET, which belongs to the board, not to the site.
+
+**S7 — The digest of the MCU generation in the lock.** The first idea pinned in `[mcu]` the digest of the generation blob. But the blob is compiled from the manifest **and from the lock**: each `jk lock` would change the blob, which would change the lock. **Fix incorporated:** the lock pins only the generic firmware, the version and the capabilities (§2.1.10); the digest of the generation is verified by the `HELLO`.
+
+**S8 — The compromised Deck tries to bypass the signatures.** (a) It sends a generation with `mode = "dev"`, which does not require signatures: rejected by `policy.allow_dev = false` (`J0906`), which is the default outside development CAs. (b) It tries to make an operator encrypt a secret for a key of its own, presenting it as a node's key: rejected for lack of attestation in the certificate (`J0929`). (c) It injects a new secret encrypted for the node's public key: rejected without a `secrets` signature (`J0926`). **Holds**, and the three controls came out of this case.
+
+**S9 — The `config` key is stolen.** The attacker signs a generation that adds their key to the `apps` list and installs an app of their own. **Fix incorporated:** the key lists per role come from the trust bundle, signed by the organization's root (kept offline or in an HSM), and the manifest can only restrict them (`J0292`); an app signed by a key without the `apps` role is `J0916`. With the `config` key, the attacker can only apply generations with apps already signed by the legitimate `apps` keys, and every write still goes through the envelope (20, D3).
+
+**S10 — Rotating the MQTT password on 3,000 nodes.** `jk secret set mqtt_password` (one entry, `rev` 4, encrypted for 3,000 recipients: ~3,000 × 80 B of `wrap` ≈ 240 KB, within the 4 MiB limit), commit, and the Deck distributes. There is no new generation, and the digest of the generations does not change. An offline node receives it when it comes back; an old copy of the file restored by mistake does not pass (`J0924`). **Finding:** 3,000 nodes in a single file is the practical limit. One file per site (the folder of the input manifest) is the normal organization, and the limit stays as it is.
+
+**S11 — Someone edits `node.toml` by hand and breaks it.** An extra comma after an OS update. If `jokerd` refused to start, control would stop because of an administration file. **Fix incorporated:** startup with defaults and with the last confirmed generation, only with the Unix socket and the alarm `joker.node.config_invalid` (§3.2.1). The exceptions (permissions, layout, two `jokerd`) are the ones that make startup unsafe.
+
+**S12 — `JK_NODE` forgotten in the shell.** A person with `JK_NODE=lisboa-01` from a previous session runs `jk write pcs.p_set 0 --ttl 5m`, thinking they are on the simulator. **Fix incorporated:** the line `→ lisboa-01 (prod) · from JK_NODE` before any command that changes the node, and no variable for `--yes` or `--confirm`.
 
 ---
 
-## 6. Marcações de versão
+## 5. Decisions and rejected alternatives
 
-| Coisa | v1.0 | Depois |
+- **One lock per input manifest**, and not one per project. A single lock would require sections per overlay, or would be rewritten on each switch from `joker.sim.toml` to `joker.rpi.toml`. It costs one file per input overlay, which is what has different facts. The name of the lock follows that of the variant (`joker.lab.toml` → `joker.lab.lock`, ADR 0026), and so the files of an environment stay together in a listing.
+- **Canonical digest of the lock**, and not of the bytes. Reformatting by hand does not change the generation, and the Deck computes the same digest from Git.
+- **Approvals with `value`, `by` and `at`**, and not only the text. The text alone approved any future widening with the same key.
+- **The lock never contains digests derived from itself** (MCU generations, `.cwasm`). This avoids cycles and meaningless changes.
+- **`node.toml` written by `jokerd`**, and not by an installer as `root`. Rejected alternative: `/var/lib/joker/node.toml` managed only by `jokerd` and `/etc` only for the installer. Two sources for the same key called for merge rules; one source written in two well-defined operations is simpler to audit (`J0907`).
+- **`node.toml` is a minimum that the generation only adds to**, and not an alternative to the manifest. It is what allows recovering from a bad generation without physical access.
+- **An invalid `node.toml` does not stop control.** The alternative (refusing to start) is the classic behavior of a daemon, but here it would trade an administrative error for a plant stop.
+- **HPKE + ChaCha20-Poly1305 per secret**, and not age or sops. HPKE is a standard (RFC 9180), has `no_std` implementations (Joker Micro needs one) and gives one `wrap` per recipient, which allows restricting secrets per node. age encrypts the whole file for everyone; sops brings a format and dependencies that we do not control.
+- **Versionable secrets.** 03 and 15 said "never in git". With the values encrypted for attested node keys, versioning is safe and is the only way for the Deck to distribute them through GitOps without reading them.
+- **Rotating a secret is not a generation.** If it were, the digest of the generation would change with each password, and the Deck would have to see something dependent on the value.
+- **Policy in the trust bundle signed by the root, and the manifest only restricts** (aligned with ref/01 and ref/10). Rejected: the policy in the manifest with a second signature to change it. It worked, but it made the policy vary per site and required two signatures per generation. With the bundle, the `config` key, which is used every day, is not the key to everything.
+- **Without a bundle, the anchors are valid for all roles.** A small installation, without a Deck, works with a single key; separation of duties is turned on by publishing a bundle.
+- **The digest of a profile or of a board is that of the bytes of the file**, and not that of a CBOR of the parsed file (as the first version of this reference said). It is the digest of the OCI layer (ref/03 §2.8.2), the same for a local file and for the published one, and verifiable without the Joker parser. The cost is that reformatting a local profile changes the lock, which is acceptable: a profile is a versioned artifact, not a working file.
+- **Profiles, boards and classes verified by the digest of the lock on the node**, and not by their own signature. The lock is already inside a signed generation; requiring one more signature on the node adds no security and complicates local profiles.
+- **No environment variables for dangerous decisions** (`--yes`, `--confirm`), and with the target line before each change.
+- **KEM key in the node certificate (SAN URI)**, and not a private X.509 extension (which would need an OID) nor a separately signed document (which would need one more format).
+
+---
+
+## 6. Version markers
+
+| Item | v1.0 | Later |
 |---|---|---|
-| lock: `version`, `runtime`, `node`, `boards`, `profiles`, `classes`, `apps`, `drivers`, `mcu`, `discovered`, `fallback`, `wcet`, `accepted` | sim | — |
-| lock: `[models]`, tipo de confiança `models`, `ml-cache/` | **reservados** (Preparado para ML) | 1.1 |
-| lock: `[extends]` (templates remotos) | nome reservado | se o ref/01 os admitir |
-| lock: `[nodes]` e locks de site com vários nós | nome reservado | v2 (21 §8) |
-| `node.toml` completo (com `[agent]` da ref/10 e `[limits]`), `jokerd` flags e variáveis, layout de `/var/lib/joker` | sim | — |
-| enrolamento por SSH, por código e com CA local | sim | — |
-| enrolamento pelo Deck (`jokerd enroll --deck`, `enroll-token`) | sim, com o Deck MVP (20 §5) | — |
-| cliente: `[user]`, `[defaults]`, `[nodes]`, `[decks]` com `auth = "cert"`, `[registries]`, `JK_*` | sim | — |
-| cliente: `nodes.*.via = "deck:…"`, `decks.*.auth = "oidc"` | reservados | 1.3 (operação remota no Deck) |
-| segredos: ficheiro, HPKE, `jk secret`, entrega por `jk apply` e `jk secret push`, apps | sim | — |
-| segredos em MCUs autónomos (blob de geração) | sim | escala: 1.5 |
-| bundle de confiança, âncoras, papéis `config`, `runtime`, `firmware`, `apps`, `drivers`, `profiles`, `boards`, `classes`, `secrets`, `deck`; `jk node trust show \| push \| set` | sim | — |
-| suites criptográficas além de `hpke-x25519-sha256-chacha20poly1305` e Ed25519 | — | só por ADR, com o campo `suite` já preparado |
+| lock: `version`, `runtime`, `node`, `boards`, `profiles`, `classes`, `apps`, `drivers`, `mcu`, `discovered`, `fallback`, `wcet`, `accepted` | yes | — |
+| lock: `[models]`, trust type `models`, `ml-cache/` | **reserved** (Prepared for ML) | 1.1 |
+| lock: `[extends]` (remote templates) | reserved name | if ref/01 admits them |
+| lock: `[nodes]` and site locks with several nodes | reserved name | v2 (21 §8) |
+| complete `node.toml` (with `[agent]` of ref/10 and `[limits]`), `jokerd` flags and variables, layout of `/var/lib/joker` | yes | — |
+| enrollment over SSH, by code and with a local CA | yes | — |
+| enrollment through the Deck (`jokerd enroll --deck`, `enroll-token`) | yes, with the Deck MVP (20 §5) | — |
+| client: `[user]`, `[defaults]`, `[nodes]`, `[decks]` with `auth = "cert"`, `[registries]`, `JK_*` | yes | — |
+| client: `nodes.*.via = "deck:…"`, `decks.*.auth = "oidc"` | reserved | 1.3 (remote operation on the Deck) |
+| secrets: file, HPKE, `jk secret`, delivery by `jk apply` and `jk secret push`, apps | yes | — |
+| secrets on standalone MCUs (generation blob) | yes | scale: 1.5 |
+| trust bundle, anchors, roles `config`, `runtime`, `firmware`, `apps`, `drivers`, `profiles`, `boards`, `classes`, `secrets`, `deck`; `jk node trust show \| push \| set` | yes | — |
+| cryptographic suites beyond `hpke-x25519-sha256-chacha20poly1305` and Ed25519 | — | only by ADR, with the `suite` field already prepared |
