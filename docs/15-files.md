@@ -142,7 +142,7 @@ A maioria das pessoas só mexe em três ou quatro destes ficheiros:
 
 ## 4. Da pasta vazia ao sistema completo
 
-O mesmo mapa aplicado à trilha de estudo (projeto `joker-bancada/`), parte a parte. A lista completa, com o que cada ficheiro é no fim, está no `trilha/README.md`, "A pasta, no fim da trilha".
+O mesmo mapa aplicado à trilha de estudo (projeto `joker-bancada/`), parte a parte. A lista completa, com o que cada ficheiro é no fim, está no `track/README.md`, "A pasta, no fim da trilha".
 
 | Parte | Ficheiros novos ou alterados |
 |---|---|

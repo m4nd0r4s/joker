@@ -1,7 +1,7 @@
 /// joker:runtime — the world of Joker apps.
 ///
-/// Normative reference: docs/ref/04-wit-e-sdk-rust.md. Representation rules: docs/ref/00-convencoes.md.
-/// Semantics (arbiter, envelope, quality): docs/16-semantica-do-nucleo.md.
+/// Normative reference: docs/ref/04-wit-and-rust-sdk.md. Representation rules: docs/ref/00-conventions.md.
+/// Semantics (arbiter, envelope, quality): docs/16-core-semantics.md.
 ///
 /// Versioning (ADR 0022, ref/04 §2.9):
 /// - items without a gate exist since the first version of the package;

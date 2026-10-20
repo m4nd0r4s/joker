@@ -8,17 +8,17 @@ Esta rodada pegou em **todas as interfaces** do Joker e escreveu-as como referê
 
 | Referência | Superfície | Máquina-legível |
 |---|---|---|
-| `ref/00-convencoes.md` | representação comum: versões, nomes, tempo, valores, códigos numéricos, identificadores, codificações, erros, segurança, limites | — |
-| `ref/01-manifesto.md` | `joker.toml` e overlays: todas as secções e chaves, gramática dos valores, manifesto efetivo | (esquema JSON gerado dos tipos, 16 §10) |
-| `ref/02-lock-no-e-cliente.md` | `joker.lock`, `/etc/joker/node.toml`, `/var/lib/joker/`, cliente `jk`, segredos, confiança | `spec/cddl/secrets.cddl` |
-| `ref/03-perfis-placas-sim.md` | perfis, placas, simulação, cenários, conformidade (núcleo e classes), pacotes e Hub | `wit/joker-sim.wit` |
-| `ref/04-wit-e-sdk-rust.md` | mundo `joker:runtime`, ABI de ciclo, `joker:meta`, SDK Rust, `joker-test`, erros `J-E0xxx` | `wit/joker-runtime.wit`, `spec/cddl/joker-meta.cddl` |
-| `ref/05-sdk-python-typescript.md` | SDKs de tier 2 (Python, TypeScript) e bibliotecas cliente (Rust, Python, TypeScript) | — |
+| `ref/00-conventions.md` | representação comum: versões, nomes, tempo, valores, códigos numéricos, identificadores, codificações, erros, segurança, limites | — |
+| `ref/01-manifest.md` | `joker.toml` e overlays: todas as secções e chaves, gramática dos valores, manifesto efetivo | (esquema JSON gerado dos tipos, 16 §10) |
+| `ref/02-lock-node-and-client.md` | `joker.lock`, `/etc/joker/node.toml`, `/var/lib/joker/`, cliente `jk`, segredos, confiança | `spec/cddl/secrets.cddl` |
+| `ref/03-profiles-boards-sim.md` | perfis, placas, simulação, cenários, conformidade (núcleo e classes), pacotes e Hub | `wit/joker-sim.wit` |
+| `ref/04-wit-and-rust-sdk.md` | mundo `joker:runtime`, ABI de ciclo, `joker:meta`, SDK Rust, `joker-test`, erros `J-E0xxx` | `wit/joker-runtime.wit`, `spec/cddl/joker-meta.cddl` |
+| `ref/05-python-and-typescript-sdks.md` | SDKs de tier 2 (Python, TypeScript) e bibliotecas cliente (Rust, Python, TypeScript) | — |
 | `ref/06-drivers.md` | tier N (traits), tier W (`joker:driver`), tier X (JDP), suite de conformidade de drivers | `wit/joker-driver.wit`, `spec/cddl/jdp.cddl`, `spec/c/jdp.h` |
 | `ref/07-joker-link.md` | Joker Link ao nível do fio: enquadramento, segurança, sessão, as mensagens (lista na ref/07 §6.1), OTA, orçamentos | `spec/cddl/joker-link.cddl` |
 | `ref/08-joker-micro-abi.md` | ABI C, crate `joker-micro`, modo firmware, blob `.jkgen`, descritor `.jkfw`, alvos | `spec/c/joker_node.h`, `spec/c/example/`, `spec/cddl/joker-micro.cddl` |
-| `ref/09-api-http.md` | API HTTP local, WebSocket e SSE (as operações são as do OpenAPI) | `spec/openapi/joker-api.yaml` |
-| `ref/10-protocolo-do-agente.md` | nó ↔ Deck: enrolamento, estado desejado, relatórios, eventos, sessões, HTTPS e MQTT, perfil micro | `spec/cddl/agent.cddl` |
+| `ref/09-http-api.md` | API HTTP local, WebSocket e SSE (as operações são as do OpenAPI) | `spec/openapi/joker-api.yaml` |
+| `ref/10-agent-protocol.md` | nó ↔ Deck: enrolamento, estado desejado, relatórios, eventos, sessões, HTTPS e MQTT, perfil micro | `spec/cddl/agent.cddl` |
 
 **Validação feita:** todos os blocos TOML, JSON e YAML passam num parser; o OpenAPI passa no `openapi-spec-validator`; os três pacotes WIT (`joker:runtime`, `joker:driver`, `joker:sim`) passam no parser oficial (via `jco`), e o `joker:driver` resolve contra o `joker:runtime`; os headers C compilam com `-std=c11 -Wall -Wextra -pedantic` e em C++17; o CDDL do `joker:meta` foi validado com `zcbor` contra instâncias, e os restantes passam num parser de CDDL; os vetores de teste do Joker Link (CRC, COBS, ChaCha20-Poly1305, COSE) foram gerados e verificados por código.
 

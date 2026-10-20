@@ -1,5 +1,5 @@
 ; joker:meta — the metadata custom section of a Joker app component.
-; Normative reference: docs/ref/04-wit-e-sdk-rust.md, §5. Representation: docs/ref/00-convencoes.md.
+; Normative reference: docs/ref/04-wit-and-rust-sdk.md, §5. Representation: docs/ref/00-conventions.md.
 ;
 ; Encoding: deterministic CBOR (RFC 8949 §4.2.1), integer map keys (ref/00 §7).
 ; Readers ignore unknown keys (ref/00 §1, regra 2); writers never reuse a removed key (ref/00 §1, regra 4).

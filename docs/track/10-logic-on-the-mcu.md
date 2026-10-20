@@ -360,4 +360,4 @@ $ git add -A && git commit -qm "trilha(10): app reflexo no MCU; Joker Link por W
 
 **Estado no fim desta parte:** app `luz` **0.6, sem mudanças**; app de MCU **`reflexo` 0.1.0**. Ficheiros novos: `micro/esp/apps/reflexo/`, `micro/esp/joker.lock` (o `[wcet]` do chip). Mudaram: `secrets.toml.enc` (a entrada `wifi_bancada`), `micro/esp/joker.toml` (a app, `[net.wifi]`, `[link]` em UDP) e `joker.lab-link.toml` (o `esp` por UDP, `report` e `refresh`, lease de 1 s). O ESP32 corre o firmware com o `reflexo` e a geração 6, pelo Wi-Fi; o Pi 3 na geração 15 do `joker.lab-link.toml`, confirmada. Fim do Módulo C.
 
-**Próximo:** [Parte 11 — Produção e frota: assinaturas, segredos, o Deck e dois nós](11-producao-e-frota.md).
+**Próximo:** [Parte 11 — Produção e frota: assinaturas, segredos, o Deck e dois nós](11-production-and-fleet.md).

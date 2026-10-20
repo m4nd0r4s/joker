@@ -424,4 +424,4 @@ $ git add -A && git commit -qm "trilha(07): luz 0.5 sobre classes; implements no
 
 **Estado no fim desta parte:** app `luz` **0.5**, no lab (geração 8) e no zero (geração 2, parado). Instâncias: `led_pi`, `led_esp`, `botao`, `cpu`, `toque` (compostas, no `joker.toml`) e `esp` (implícita, pelo perfil). Ficheiros alterados: `joker.toml` (as cinco `[instances.*]` e o `bind` da `luz`), `profiles/local/bench-esp32@1.profile.toml` (três `[implements]`, versão 1.1.0), `sim/esp.sim.toml` (os mesmos `[implements]`), `apps/luz/`, `joker.sim.lock`, `joker.lab.lock`, `joker.zero.lock`. Os cenários em `sim/scenarios/` não mudaram.
 
-**Próximo:** [Parte 8 — A tua classe: `status_light@1`](08-a-tua-classe.md).
+**Próximo:** [Parte 8 — A tua classe: `status_light@1`](08-your-own-class.md).

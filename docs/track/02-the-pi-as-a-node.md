@@ -422,4 +422,4 @@ $ git add -A && git commit -qm "trilha(02): o Pi 3 como nó lab; LED ACT real co
 
 **Estado no fim desta parte:** app `luz` **0.1, sem mudanças**: só os manifestos mudaram. Ficheiros novos: `joker.lab.toml`, `joker.lab.lock`. Fora do projeto: `~/org-ca/`, o contexto `lab` em `~/.config/joker/config.toml`, e o nó `lab` enrolado, na geração 1 confirmada.
 
-**Próximo:** [Parte 3 — Um sensor real: a temperatura do CPU, alarmes, historian e a API](03-sensor-temperatura.md).
+**Próximo:** [Parte 3 — Um sensor real: a temperatura do CPU, alarmes, historian e a API](03-temperature-sensor.md).

@@ -485,4 +485,4 @@ $ git add -A && git commit -qm "trilha(05): toque como ajuste, falhas do ESP32, 
 
 **Estado no fim desta parte:** app `luz` 0.4.1, a correr no lab (geração 6; a 0.4.0 foi a 5). Novos ou mudados: `joker.toml` (`[signals."esp.touch"]`, `calc.toque_nivel`, `[alarms.esp_offline]`, porta `ajuste`), `sim/esp.sim.toml` (tecla de falha), `sim/scenarios/falha_esp.scenario.toml`, `apps/luz/`, `joker.lab.lock`.
 
-**Próximo:** [Parte 6 — Trocar de placa: o mesmo projeto no Pi Zero W, e a placa que ainda não existe](06-trocar-de-placa.md).
+**Próximo:** [Parte 6 — Trocar de placa: o mesmo projeto no Pi Zero W, e a placa que ainda não existe](06-switching-boards.md).

@@ -403,4 +403,4 @@ $ git add -A && git commit -qm "trilha(09): o ESP32 como Joker Micro pelo Joker 
 
 **Estado no fim desta parte:** app `luz` **0.6, sem mudanças**. Ficheiros novos: `micro/esp/joker.toml`, `joker.lab-link.toml`, `joker.lab-link.lock`, e `secrets.toml.enc`, por agora só com o destinatário `node:esp`. O `micro/esp/target/` fica fora do Git. Fora do projeto: a toolchain `esp`; o ESP32 com o Joker Micro (firmware com traço de 32 KiB, geração 4) e enrolado no nó `lab` (`secret:link.esp`); o nó `lab` na geração 13 (a do `joker.lab-link.toml` com o firmware novo), confirmada.
 
-**Próximo:** [Parte 10 — Lógica no MCU: uma app nativa e o link por Wi-Fi](10-logica-no-mcu.md).
+**Próximo:** [Parte 10 — Lógica no MCU: uma app nativa e o link por Wi-Fi](10-logic-on-the-mcu.md).

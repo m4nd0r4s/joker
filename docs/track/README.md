@@ -35,32 +35,32 @@ A trilha avança sempre do simulado para o real, e sobe de camada em camada:
 
 | Parte | O que constróis | Hardware | Conceitos do Joker |
 |---|---|---|---|
-| [01](01-ola-bancada.md) | um projeto do zero; a app `luz` 0.1 pisca o LED `ACT` **simulado**, com testes e um cenário | portátil | projeto, manifesto e overlays desde o início, driver `sim`, sinal, porta e ligação, saída com `safe`, grupo de ciclo, hot-reload, `jk read`/`jk trace`, `joker-test` com relógio virtual, cenários |
-| [02](02-o-pi-como-no.md) | o mesmo LED, agora o `ACT` **real** do Pi 3, com a app sem mudanças | Pi 3 B+ | instalação do `jokerd`, CA e enrolamento, `jk doctor --rt`, perfil de placa, `[resources]`, driver `sysfs`, lock por manifesto, `jk apply --confirm`, gerações e rollback, escrita manual e árbitro, estado seguro em três camadas |
-| [03](03-sensor-temperatura.md) | a temperatura do CPU como processo físico: o LED pisca mais depressa quanto mais quente está o Pi; alarme, historian, API (app 0.2) | Pi 3 B+ | entradas e qualidade, `calc` com janelas, alarmes, historian, API HTTP e o cliente Python, `stress-ng` como carga |
+| [01](01-hello-bench.md) | um projeto do zero; a app `luz` 0.1 pisca o LED `ACT` **simulado**, com testes e um cenário | portátil | projeto, manifesto e overlays desde o início, driver `sim`, sinal, porta e ligação, saída com `safe`, grupo de ciclo, hot-reload, `jk read`/`jk trace`, `joker-test` com relógio virtual, cenários |
+| [02](02-the-pi-as-a-node.md) | o mesmo LED, agora o `ACT` **real** do Pi 3, com a app sem mudanças | Pi 3 B+ | instalação do `jokerd`, CA e enrolamento, `jk doctor --rt`, perfil de placa, `[resources]`, driver `sysfs`, lock por manifesto, `jk apply --confirm`, gerações e rollback, escrita manual e árbitro, estado seguro em três camadas |
+| [03](03-temperature-sensor.md) | a temperatura do CPU como processo físico: o LED pisca mais depressa quanto mais quente está o Pi; alarme, historian, API (app 0.2) | Pi 3 B+ | entradas e qualidade, `calc` com janelas, alarmes, historian, API HTTP e o cliente Python, `stress-ng` como carga |
 | [04](04-esp32-modbus.md) | o ESP32 como equipamento Modbus RTU: o perfil escrito a partir do mapa de registos, o botão `BOOT` liga e desliga o sistema (app 0.3) | Pi 3 + ESP32 por USB | barramentos (`dtr`/`rts`), `jk profile import csv`, `jk profile test`, `identity` do perfil, flancos e `debounce`, `readback`, fallback do equipamento |
-| [05](05-toque-e-falhas.md) | o sensor de toque como botão rotativo; o sistema tolera a perda do ESP32 (app 0.4); um replay prova a correção (app 0.4.1) | Pi 3 + ESP32 | sinais analógicos ruidosos, `deadband`, `get_or` e qualidade substituída, falhas simuladas, `jk device stop`, fallback M1 real, `jk record`/`jk replay` a partir do estado gravado |
-| [06](06-trocar-de-placa.md) | o mesmo projeto no Pi Zero W, com o ESP32 por Wi-Fi; o perfil de uma placa que ainda não existe (app 0.4.1, sem mudar) | Pi Zero W + ESP32 por Wi-Fi | overlays por refatoração (`joker.rpi.toml`), `modbus-tcp`, `jk board probe`/`check`/`new`, nível `dev`, degradação sem RT |
+| [05](05-touch-and-faults.md) | o sensor de toque como botão rotativo; o sistema tolera a perda do ESP32 (app 0.4); um replay prova a correção (app 0.4.1) | Pi 3 + ESP32 | sinais analógicos ruidosos, `deadband`, `get_or` e qualidade substituída, falhas simuladas, `jk device stop`, fallback M1 real, `jk record`/`jk replay` a partir do estado gravado |
+| [06](06-switching-boards.md) | o mesmo projeto no Pi Zero W, com o ESP32 por Wi-Fi; o perfil de uma placa que ainda não existe (app 0.4.1, sem mudar) | Pi Zero W + ESP32 por Wi-Fi | overlays por refatoração (`joker.rpi.toml`), `modbus-tcp`, `jk board probe`/`check`/`new`, nível `dev`, degradação sem RT |
 
 ### Módulo B — Classes
 
 | Parte | O que constróis | Hardware | Conceitos do Joker |
 |---|---|---|---|
 | [07](07-classes.md) | a mesma app sobre `Led`, `Button`, `TempSensor`, `AnalogIn`; o cenário da parte 5 passa sem alterações (app 0.5) | sim → Pi 3 (e Zero) | classes e instâncias (implícita e compostas), `implements` no perfil, `jk class show`, `jk explain <instância>`, `jk status --instances`, `jk class verify` no hardware |
-| [08](08-a-tua-classe.md) | uma classe tua, `status_light@1`, e a sua implementação; a app de negócio fica com ~20 linhas (app 0.6) | sim → Pi 3 | `jk class new`, `.jkc`, instâncias virtuais, `#[joker::implements]`, conformidade, as quatro pessoas do documento 14; extra opcional: uma classe composta, `local/bench_io@1` |
+| [08](08-your-own-class.md) | uma classe tua, `status_light@1`, e a sua implementação; a app de negócio fica com ~20 linhas (app 0.6) | sim → Pi 3 | `jk class new`, `.jkc`, instâncias virtuais, `#[joker::implements]`, conformidade, as quatro pessoas do documento 14; extra opcional: uma classe composta, `local/bench_io@1` |
 
 ### Módulo C — Joker Micro
 
 | Parte | O que constróis | Hardware | Conceitos do Joker |
 |---|---|---|---|
 | [09](09-joker-micro.md) | o ESP32 passa a correr o Joker Micro; os mesmos sinais chegam pelo Joker Link, e o `safe` do LED vive no MCU (app 0.6, sem mudar) | Pi 3 + ESP32 (firmware Joker) | `jk build --target mcu:esp32-devkit`, `jk flash`, `jk node enroll --link`, `joker.lab-link.toml`, envelope no MCU, matar o `jokerd` com o LED seguro |
-| [10](10-logica-no-mcu.md) | uma app nativa no MCU (`reflexo`) e o link por Wi-Fi | ESP32 (+ Pi 3) | apps nativas no MCU, driver `esp32`, `[net.wifi]`, link UDP com cifra, nó autónomo |
+| [10](10-logic-on-the-mcu.md) | uma app nativa no MCU (`reflexo`) e o link por Wi-Fi | ESP32 (+ Pi 3) | apps nativas no MCU, driver `esp32`, `[net.wifi]`, link UDP com cifra, nó autónomo |
 
 ### Módulo D — Frota
 
 | Parte | O que constróis | Hardware | Conceitos do Joker |
 |---|---|---|---|
-| [11](11-producao-e-frota.md) | produção (assinaturas, segredos), o Deck no portátil com dois nós, um rollout em ondas que para no canário (apps 0.7 e 0.7.1) | portátil (Deck) + Pi 3 + Pi Zero W | `mode = "prod"`, chaves e confiança, `secrets.toml.enc`, `joker-deck`, `fleet.toml`, coortes, ondas e `halt_if` |
+| [11](11-production-and-fleet.md) | produção (assinaturas, segredos), o Deck no portátil com dois nós, um rollout em ondas que para no canário (apps 0.7 e 0.7.1) | portátil (Deck) + Pi 3 + Pi Zero W | `mode = "prod"`, chaves e confiança, `secrets.toml.enc`, `joker-deck`, `fleet.toml`, coortes, ondas e `halt_if` |
 
 ---
 

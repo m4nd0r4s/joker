@@ -4,7 +4,7 @@ info:
   version: 1.0.0
   summary: API HTTP local e WebSocket do jokerd. A CLI jk é apenas um cliente desta API.
   description: >-
-    Referência normativa: docs/ref/09-api-http.md. Convenções transversais: docs/ref/00-convencoes.md.
+    Referência normativa: docs/ref/09-http-api.md. Convenções transversais: docs/ref/00-conventions.md.
     Transportes: socket Unix /run/joker/api.sock (omissão; autenticação pelas permissões do ficheiro
     e pelas credenciais do par, SO_PEERCRED) e TCP com TLS 1.3 e mTLS obrigatório (porta de omissão 7443).
     HTTP/1.1 e HTTP/2. Todos os caminhos começam por /v1 (ADR 0022). Erros em application/problem+json
@@ -298,7 +298,7 @@ paths:
         ocupadas), LEDs, zonas térmicas, watchdogs, portas série (com os caminhos by-id), I2C, SPI,
         interfaces de rede, dispositivos USB e TPM. Lido a cada pedido; nada é aberto para escrita e
         nenhuma linha GPIO é reservada. Um campo ilegível vem null e aparece em unreadable.
-        Referência - docs/ref/09-api-http.md §5.2; uso - jk board probe e jk board check --node (ref/03 §2.3.7).
+        Referência - docs/ref/09-http-api.md §5.2; uso - jk board probe e jk board check --node (ref/03 §2.3.7).
       x-joker-role: viewer
       x-joker-cli: [jk board probe, jk board check --node]
       x-joker-since: '1.0'

@@ -153,10 +153,10 @@ O Joker **não concorre** com o SO nem com o SCADA, e integra-se com os dois (do
 | **24 Público e usos** | quem decide o produto | antes de priorizar a 1.x |
 | **25 Ecossistema Rust embedded** | quem implementa o Joker Micro e os drivers | antes da Fase 2 |
 | **26 Revisão final** | quem decide começar | **antes do primeiro commit** |
-| **ref/** Referências | quem implementa uma interface | referência normativa da sua superfície, acima dos documentos por área; começa em `ref/00-convencoes.md` |
-| **trilha/** | quem aprende | primeiro, se nunca usaste o Joker |
+| **ref/** Referências | quem implementa uma interface | referência normativa da sua superfície, acima dos documentos por área; começa em `ref/00-conventions.md` |
+| **track/** | quem aprende | primeiro, se nunca usaste o Joker |
 | **adr/** | quem questiona uma decisão | quando questionar |
-| **exemplos/** | quem aprende | a seguir ao 02 |
+| **examples/** | quem aprende | a seguir ao 02 |
 
 ---
 

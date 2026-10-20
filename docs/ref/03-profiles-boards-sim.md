@@ -1867,13 +1867,13 @@ Os achados A1–A24 (§9) foram escritos contra o corpus de então, que incluía
 | `fallback.{applies_to,timeout,value}` | 05 §6; 23 §4; trilha 4 §4.2 | §2.2.11 |
 | `fallback.timeout_register.{at,fc,type,unit}` | 05 §6 | §2.2.11 |
 | `fallback.value_register.{at,fc,scale,type,unit}` | 05 §6 | §2.2.11 |
-| `implements.*.{capabilities,fault,fault_code,hours,reset,run_cmd,running,speed}` | 05 §6; 14 §5.1; 17 §5.1; propostas/idl-classes | §2.2.14 |
+| `implements.*.{capabilities,fault,fault_code,hours,reset,run_cmd,running,speed}` | 05 §6; 14 §5.1; 17 §5.1; proposals/class-idl | §2.2.14 |
 | `implements.*.instances.*.pressed` | trilha 7 §4 | §2.2.14 |
 | `implements.*.map.*.fields.code` | 17 §5.1 | §2.2.14 |
 | `implements.*.map.*.{offset,on_rise,scale,signal}` | 17 §5.1; trilha 7 §4 | §2.2.14 |
-| `implements.*.speed_set.{scale,signal}` | propostas/idl-classes | §2.2.14 |
-| `implements.*.tripped.fields.{at_speed,code}` | propostas/idl-classes | §2.2.14 |
-| `implements.*.tripped.on_rise` | propostas/idl-classes | §2.2.14 |
+| `implements.*.speed_set.{scale,signal}` | proposals/class-idl | §2.2.14 |
+| `implements.*.tripped.fields.{at_speed,code}` | proposals/class-idl | §2.2.14 |
+| `implements.*.tripped.on_rise` | proposals/class-idl | §2.2.14 |
 | `profile.{description,docs,driver,license,name,vendor,version}` | 05 §6; 23 §4; trilha 4 §4.2 | §2.2.2 |
 | `profile.identity.firmware` | trilha 4 §4.2 | §2.2.2 |
 | `profile.quirks.{max_gap,max_regs,min_interval}` | 05 §6 | §2.2.6 |
@@ -1994,7 +1994,7 @@ Os exemplos e a trilha são ilustrativos (precedência de `docs/README.md`; D1, 
 | A8 | 04 §6; trilha antiga 5 | `[faults] panel` partilha a tabela com nomes de sinais | documentar `panel` e `"*"` como reservados em `[faults]` |
 | A9 | exemplo 02 §4 | `[devices.cam0] driver = "sim-camera"` e `metric` num cenário | marcar como 1.1 (**D5**, ADR 0019) |
 | A10 | 03 §5; 08; exemplo 01 | `profile = "sunspec"` sem major | forma curta de `joker/sunspec@1`; **aplicado** na ref/01 §5.8 e na ref/02 §2.1.5 (o lock usa a forma completa) |
-| A11 | propostas/idl-classes §5 | `"std.pump@1"` e membros direto na tabela | nota de obsoleto a apontar para 17 §5.1 |
+| A11 | proposals/class-idl §5 | `"std.pump@1"` e membros direto na tabela | nota de obsoleto a apontar para 17 §5.1 |
 | A12 | 04 §6; 02 §10 | `integrate(…, min = 0 m, max = 3 m)` usa argumentos nomeados, que a gramática de 02 §10 não tem | 04 §6 remete para §2.4.6 (extensão só em `[dynamics]`) |
 | A13 | 07 §7 | faltam `jk profile check`, `jk profile diff`, `jk board show`, `jk fmt`, `jk class verify --allow-actuation --report` | acrescentar |
 | A14 | 20 §3.2 | tipos de media sem árvore (`joker.app.v1+wasm`) | **Resolvido: D13** (tabela única no ref/00 §7.1); as camadas de §2.8.2 |

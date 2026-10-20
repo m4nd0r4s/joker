@@ -1,6 +1,6 @@
 # ref/02 — `joker.lock`, configuração do nó, cliente `jk`, segredos e confiança
 
-Referência normativa. Aplica o `ref/00-convencoes.md` (representação) e remete para o documento 16 (semântica). Fecha cinco superfícies que até aqui só existiam em exemplos: o `joker.lock`, o ficheiro de arranque do nó (`/etc/joker/node.toml`) e o layout de `/var/lib/joker/`, a configuração do cliente `jk`, os segredos (`secrets.toml.enc`) e a política de confiança (`keys/*.pub`).
+Referência normativa. Aplica o `ref/00-conventions.md` (representação) e remete para o documento 16 (semântica). Fecha cinco superfícies que até aqui só existiam em exemplos: o `joker.lock`, o ficheiro de arranque do nó (`/etc/joker/node.toml`) e o layout de `/var/lib/joker/`, a configuração do cliente `jk`, os segredos (`secrets.toml.enc`) e a política de confiança (`keys/*.pub`).
 
 ---
 

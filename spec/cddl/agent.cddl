@@ -1,4 +1,4 @@
-; spec/cddl/agent.cddl — protocolo do agente, agent/1 (docs/ref/10-protocolo-do-agente.md)
+; spec/cddl/agent.cddl — protocolo do agente, agent/1 (docs/ref/10-agent-protocol.md)
 ;
 ; Forma dupla. Cada chave escreve-se ("nome" / n):
 ;   - CBOR (MQTT, CoAP, documentos assinados): só a chave inteira n e as formas binárias

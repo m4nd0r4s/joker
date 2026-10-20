@@ -8,7 +8,7 @@ Os documentos por área (03 manifesto, 04 SDK, 05 drivers, 19 Joker Micro, 20 De
 
 ## Decisão
 
-1. Cada interface tem uma **referência exaustiva** em `docs/ref/`, com a representação comum fixada em `ref/00-convencoes.md` (documento 22).
+1. Cada interface tem uma **referência exaustiva** em `docs/ref/`, com a representação comum fixada em `ref/00-conventions.md` (documento 22).
 2. **Precedência:** `ref/00` tem o nível do documento 16. `ref/01`–`ref/10` ficam **acima** dos documentos por área, que passam a ser a explicação e remetem para a referência no detalhe. A ordem completa está em `docs/README.md`.
 3. Os ficheiros máquina-legíveis (`wit/`, `spec/cddl/`, `spec/openapi/`, `spec/c/`) são parte da referência: se um ficheiro e o texto divergem, é um bug a corrigir nos dois, e a CI da Fase 0 (tarefa 0a, documento 22, §8) impede que isso aconteça em silêncio.
 4. Mudar uma interface é mudar a referência e o ficheiro máquina-legível no mesmo conjunto de commits, com ADR se tocar num contrato público (ADR 0022).

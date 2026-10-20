@@ -2,17 +2,17 @@
 
 A runtime coringa para dispositivos de edge. O mesmo núcleo em Linux (Raspberry Pi, RevPi, PC industrial) e em microcontroladores (Joker Micro), e uma só abstração: **sinais tipados com unidade, qualidade e tempo**. Controla I/O, fala protocolos industriais e recolhe telemetria, com um envelope de segurança nativo entre cada app e o hardware; o ML chega na 1.1. Faz parte de uma família com o registo (Hub) e o plano de controlo da frota (Deck).
 
-**Estado:** em implementação, a começar pela primeira fatia vertical M0 (`docs/26-revisao-final.md` §6). Licença: Apache-2.0 OR MIT. Os números marcados como *alvo* são estimativas a validar nas Fases 0 a 2 (`docs/11-roadmap.md`).
+**Estado:** em implementação, a começar pela primeira fatia vertical M0 (`docs/26-final-review.md` §6). Licença: Apache-2.0 OR MIT. Os números marcados como *alvo* são estimativas a validar nas Fases 0 a 2 (`docs/11-roadmap.md`).
 
 ## Estrutura proposta
 
 ```
 docs/            especificação de desenho — a fonte da verdade (começa em docs/README.md)
   adr/           decisões de arquitetura; mudar o desenho = escrever uma ADR
-  ref/           referências normativas de todas as interfaces (começa em ref/00-convencoes.md)
-  exemplos/      percurso guiado e projetos completos
-  trilha/        trilha de estudo, 11 partes na bancada do documento 23: A (sinais e o nó Linux: LED, temperatura, ESP32 por Modbus, falhas, Pi Zero W), B (classes: std/ e a tua), C (Joker Micro no ESP32), D (frota: prod, segredos, Deck)
-crates/          workspace Rust (a criar na Fase 0 — ver docs/13-plano-de-implementacao.md)
+  ref/           referências normativas de todas as interfaces (começa em ref/00-conventions.md)
+  examples/      percurso guiado e projetos completos
+  track/         trilha de estudo, 11 partes na bancada do documento 23: A (sinais e o nó Linux: LED, temperatura, ESP32 por Modbus, falhas, Pi Zero W), B (classes: std/ e a tua), C (Joker Micro no ESP32), D (frota: prod, segredos, Deck)
+crates/          workspace Rust (a criar na Fase 0 — ver docs/13-implementation-plan.md)
   joker-units      unidades, dimensões, grandezas
   joker-core       sinais, imagem de processo, envelope, árbitro, expressões — sem I/O
   joker-expr       linguagem de expressões do manifesto

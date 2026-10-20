@@ -482,4 +482,4 @@ $ git add -A && git commit -qm "trilha(04): ESP32 como equipamento Modbus RTU; p
 
 **Estado no fim desta parte:** app `luz` 0.3.0, no lab na geração 4; `profiles/local/bench-esp32@1.profile.toml` (e o `mapa-esp32.csv` de onde saiu); `sim/esp.sim.toml` e o `[devices.esp]` no `joker.sim.toml`; `joker.toml` com `[outputs."esp.led"]`, o debounce de `esp.button` e o `bind` novo; `joker.lab.toml` com `[buses.esp32]` (com `dtr`/`rts`) e `[devices.esp]`; `joker.lab.lock` com o perfil, o `[fallback.esp]` e o `[discovered.esp]`; cenário novo `sim/scenarios/botao.scenario.toml`.
 
-**Próximo:** [Parte 5 — o toque como ajuste, qualidade, falhas, fallback e replay](05-toque-e-falhas.md).
+**Próximo:** [Parte 5 — o toque como ajuste, qualidade, falhas, fallback e replay](05-touch-and-faults.md).

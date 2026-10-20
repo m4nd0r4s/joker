@@ -2221,377 +2221,377 @@ A coluna "Usos" conta os blocos onde a chave aparece; "Onde" mostra a primeira o
 
 | Chave | Usos | Onde | Secção | Estado |
 |---|---|---|---|---|
-| `alarms` | 10 | 02-modelo-de-sinais:274, 03-manifesto:372, 08-stress-tests:253 (+7) | §5.15 | coberta |
-| `alarms.*` | 10 | 02-modelo-de-sinais:274, 03-manifesto:372, 08-stress-tests:253 (+7) | §5.15 | coberta |
-| `alarms.*.actions` | 3 | 02-modelo-de-sinais:274, 03-manifesto:372, exemplos/01-bess-peak-shaving:24 | §5.15 | coberta |
-| `alarms.*.actions.trip` | 3 | 02-modelo-de-sinais:274, 03-manifesto:372, exemplos/01-bess-peak-shaving:24 | §5.15 | coberta |
-| `alarms.*.delay_off` | 3 | 02-modelo-de-sinais:274, 08-stress-tests:253, exemplos/03-manutencao-preditiva:11 | §5.15 | coberta |
-| `alarms.*.delay_on` | 9 | 02-modelo-de-sinais:274, 08-stress-tests:253, 23-bancada-de-desenvolvimento:195 (+6) | §5.15 | coberta |
-| `alarms.*.message` | 6 | 02-modelo-de-sinais:274, 23-bancada-de-desenvolvimento:195, exemplos/02-inspecao-visual:35 (+3) | §5.15 | coberta |
-| `alarms.*.severity` | 10 | 02-modelo-de-sinais:274, 03-manifesto:372, 08-stress-tests:253 (+7) | §5.15 | coberta |
-| `alarms.*.suppress_when` | 2 | 02-modelo-de-sinais:274, exemplos/03-manutencao-preditiva:11 | §5.15 | coberta |
-| `alarms.*.when` | 10 | 02-modelo-de-sinais:274, 03-manifesto:372, 08-stress-tests:253 (+7) | §5.15 | coberta |
-| `apps` | 28 | 03-manifesto:251, 06-ml:171, 08-stress-tests:23 (+25) | §5.12 | coberta |
-| `apps.*` | 28 | 03-manifesto:251, 06-ml:171, 08-stress-tests:23 (+25) | §5.12 | coberta |
-| `apps.*.bind` | 25 | 03-manifesto:251, 08-stress-tests:23, 08-stress-tests:158 (+22) | §5.12.1 | coberta |
-| `apps.*.bind.*` | 25 | 03-manifesto:251, 08-stress-tests:23, 08-stress-tests:158 (+22) | §5.12.1 | coberta |
-| `apps.*.bind.*.as` | 3 | 03-manifesto:251, 08-stress-tests:23, exemplos/01-bess-peak-shaving:103 | §5.12.1 | coberta |
-| `apps.*.bind.*.each` | 1 | 14-classes-e-instancias:300 | §5.12.1 | coberta |
-| `apps.*.bind.*.map` | 1 | 14-classes-e-instancias:300 | §5.12.1 | coberta |
-| `apps.*.bind.*.map.*` | 1 | 14-classes-e-instancias:300 | §5.12.1 | coberta |
+| `alarms` | 10 | 02-signal-model:274, 03-manifest:372, 08-stress-tests:253 (+7) | §5.15 | coberta |
+| `alarms.*` | 10 | 02-signal-model:274, 03-manifest:372, 08-stress-tests:253 (+7) | §5.15 | coberta |
+| `alarms.*.actions` | 3 | 02-signal-model:274, 03-manifest:372, examples/01-bess-peak-shaving:24 | §5.15 | coberta |
+| `alarms.*.actions.trip` | 3 | 02-signal-model:274, 03-manifest:372, examples/01-bess-peak-shaving:24 | §5.15 | coberta |
+| `alarms.*.delay_off` | 3 | 02-signal-model:274, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §5.15 | coberta |
+| `alarms.*.delay_on` | 9 | 02-signal-model:274, 08-stress-tests:253, 23-development-bench:195 (+6) | §5.15 | coberta |
+| `alarms.*.message` | 6 | 02-signal-model:274, 23-development-bench:195, examples/02-visual-inspection:35 (+3) | §5.15 | coberta |
+| `alarms.*.severity` | 10 | 02-signal-model:274, 03-manifest:372, 08-stress-tests:253 (+7) | §5.15 | coberta |
+| `alarms.*.suppress_when` | 2 | 02-signal-model:274, examples/03-predictive-maintenance:11 | §5.15 | coberta |
+| `alarms.*.when` | 10 | 02-signal-model:274, 03-manifest:372, 08-stress-tests:253 (+7) | §5.15 | coberta |
+| `apps` | 28 | 03-manifest:251, 06-ml:171, 08-stress-tests:23 (+25) | §5.12 | coberta |
+| `apps.*` | 28 | 03-manifest:251, 06-ml:171, 08-stress-tests:23 (+25) | §5.12 | coberta |
+| `apps.*.bind` | 25 | 03-manifest:251, 08-stress-tests:23, 08-stress-tests:158 (+22) | §5.12.1 | coberta |
+| `apps.*.bind.*` | 25 | 03-manifest:251, 08-stress-tests:23, 08-stress-tests:158 (+22) | §5.12.1 | coberta |
+| `apps.*.bind.*.as` | 3 | 03-manifest:251, 08-stress-tests:23, examples/01-bess-peak-shaving:103 | §5.12.1 | coberta |
+| `apps.*.bind.*.each` | 1 | 14-classes-and-instances:300 | §5.12.1 | coberta |
+| `apps.*.bind.*.map` | 1 | 14-classes-and-instances:300 | §5.12.1 | coberta |
+| `apps.*.bind.*.map.*` | 1 | 14-classes-and-instances:300 | §5.12.1 | coberta |
 | `apps.*.bind.*.optional` | 1 | 08-stress-tests:444 | §5.12.1 | coberta |
-| `apps.*.bind.*.signal` | 4 | 03-manifesto:251, 08-stress-tests:23, 08-stress-tests:444 (+1) | §5.12.1 | coberta |
-| `apps.*.cycles` | 15 | 03-manifesto:251, 08-stress-tests:23, 08-stress-tests:341 (+12) | §5.12 | coberta |
-| `apps.*.cycles.*` | 15 | 03-manifesto:251, 08-stress-tests:23, 08-stress-tests:341 (+12) | §5.12 | coberta |
-| `apps.*.digest` | 1 | 03-manifesto:251 | §5.12 | coberta |
+| `apps.*.bind.*.signal` | 4 | 03-manifest:251, 08-stress-tests:23, 08-stress-tests:444 (+1) | §5.12.1 | coberta |
+| `apps.*.cycles` | 15 | 03-manifest:251, 08-stress-tests:23, 08-stress-tests:341 (+12) | §5.12 | coberta |
+| `apps.*.cycles.*` | 15 | 03-manifest:251, 08-stress-tests:23, 08-stress-tests:341 (+12) | §5.12 | coberta |
+| `apps.*.digest` | 1 | 03-manifest:251 | §5.12 | coberta |
 | `apps.*.fallback` | 2 | 06-ml:171, 08-stress-tests:518 | §6.5 | coberta (1.1) |
 | `apps.*.fallback.controller` | 2 | 06-ml:171, 08-stress-tests:518 | §6.5 | coberta (1.1) |
 | `apps.*.fallback.when` | 2 | 06-ml:171, 08-stress-tests:518 | §6.5 | coberta (1.1) |
 | `apps.*.kind` | 1 | 08-stress-tests:341 | §5.12 | coberta |
-| `apps.*.net` | 1 | 03-manifesto:251 | §5.12 | coberta |
-| `apps.*.net.allow` | 1 | 03-manifesto:251 | §5.12 | coberta |
-| `apps.*.params` | 15 | 03-manifesto:251, 08-stress-tests:23, 08-stress-tests:158 (+12) | §5.12.2 | coberta |
-| `apps.*.params.*` | 15 | 03-manifesto:251, 08-stress-tests:23, 08-stress-tests:158 (+12) | §5.12.2 | coberta |
+| `apps.*.net` | 1 | 03-manifest:251 | §5.12 | coberta |
+| `apps.*.net.allow` | 1 | 03-manifest:251 | §5.12 | coberta |
+| `apps.*.params` | 15 | 03-manifest:251, 08-stress-tests:23, 08-stress-tests:158 (+12) | §5.12.2 | coberta |
+| `apps.*.params.*` | 15 | 03-manifest:251, 08-stress-tests:23, 08-stress-tests:158 (+12) | §5.12.2 | coberta |
 | `apps.*.path` | 17 | 08-stress-tests:158, 08-stress-tests:341, 08-stress-tests:518 (+14) | §5.12 | coberta |
-| `apps.*.requires_clock` | 2 | 03-manifesto:251, 08-stress-tests:444 | §5.12 | coberta |
-| `apps.*.resources` | 1 | 03-manifesto:251 | §5.12 | coberta |
-| `apps.*.resources.async` | 1 | 03-manifesto:251 | §5.12 | coberta |
-| `apps.*.resources.cycle` | 1 | 03-manifesto:251 | §5.12 | coberta |
-| `apps.*.resources.memory` | 1 | 03-manifesto:251 | §5.12 | coberta |
-| `apps.*.secrets` | 1 | 03-manifesto:251 | §5.12 | coberta |
-| `apps.*.secrets.*` | 1 | 03-manifesto:251 | §5.12 | coberta |
-| `apps.*.shadow` | 2 | 03-manifesto:251, 08-stress-tests:518 | §5.12.3 | coberta |
-| `apps.*.shadow.of` | 2 | 03-manifesto:251, 08-stress-tests:518 | §5.12.3 | coberta |
+| `apps.*.requires_clock` | 2 | 03-manifest:251, 08-stress-tests:444 | §5.12 | coberta |
+| `apps.*.resources` | 1 | 03-manifest:251 | §5.12 | coberta |
+| `apps.*.resources.async` | 1 | 03-manifest:251 | §5.12 | coberta |
+| `apps.*.resources.cycle` | 1 | 03-manifest:251 | §5.12 | coberta |
+| `apps.*.resources.memory` | 1 | 03-manifest:251 | §5.12 | coberta |
+| `apps.*.secrets` | 1 | 03-manifest:251 | §5.12 | coberta |
+| `apps.*.secrets.*` | 1 | 03-manifest:251 | §5.12 | coberta |
+| `apps.*.shadow` | 2 | 03-manifest:251, 08-stress-tests:518 | §5.12.3 | coberta |
+| `apps.*.shadow.of` | 2 | 03-manifest:251, 08-stress-tests:518 | §5.12.3 | coberta |
 | `apps.*.shadow.promote` | 1 | 08-stress-tests:518 | §5.12.3 | coberta |
 | `apps.*.shadow.promote.outputs` | 1 | 08-stress-tests:518 | §5.12.3 | coberta |
-| `apps.*.shadow.until` | 2 | 03-manifesto:251, 08-stress-tests:518 | §5.12.3 | coberta |
-| `apps.*.shadow.until.duration` | 2 | 03-manifesto:251, 08-stress-tests:518 | §5.12.3 | coberta |
-| `apps.*.shadow.until.max_divergence` | 1 | 03-manifesto:251 | §5.12.3 | coberta |
-| `apps.*.source` | 5 | 03-manifesto:251, 08-stress-tests:23, 08-stress-tests:444 (+2) | §5.12 | coberta (C21 aplicado: o 08 usa `path = "apps/…"`) |
-| `apps.*.writer` | 12 | 03-manifesto:251, 08-stress-tests:23, 08-stress-tests:158 (+9) | §5.12 | coberta |
+| `apps.*.shadow.until` | 2 | 03-manifest:251, 08-stress-tests:518 | §5.12.3 | coberta |
+| `apps.*.shadow.until.duration` | 2 | 03-manifest:251, 08-stress-tests:518 | §5.12.3 | coberta |
+| `apps.*.shadow.until.max_divergence` | 1 | 03-manifest:251 | §5.12.3 | coberta |
+| `apps.*.source` | 5 | 03-manifest:251, 08-stress-tests:23, 08-stress-tests:444 (+2) | §5.12 | coberta (C21 aplicado: o 08 usa `path = "apps/…"`) |
+| `apps.*.writer` | 12 | 03-manifest:251, 08-stress-tests:23, 08-stress-tests:158 (+9) | §5.12 | coberta |
 | `apps.*.writer.kind` | 1 | 08-stress-tests:518 | §5.12 | coberta (`proposal` é 1.1) |
-| `apps.*.writer.lease` | 11 | 03-manifesto:251, 08-stress-tests:23, 08-stress-tests:158 (+8) | §5.12 | coberta |
-| `apps.*.writer.level` | 10 | 03-manifesto:251, 08-stress-tests:23, 08-stress-tests:158 (+7) | §5.12 | coberta |
-| `apps.*.writer.priority` | 9 | 03-manifesto:251, 08-stress-tests:23, 08-stress-tests:158 (+6) | §5.12 | coberta |
-| `atomic` | 3 | 02-modelo-de-sinais:162, 03-manifesto:372, 08-stress-tests:341 | §5.16 | coberta |
-| `atomic.*` | 3 | 02-modelo-de-sinais:162, 03-manifesto:372, 08-stress-tests:341 | §5.16 | coberta |
-| `atomic.*.commit` | 1 | 02-modelo-de-sinais:162 | §5.16 | coberta |
-| `atomic.*.commit.signal` | 1 | 02-modelo-de-sinais:162 | §5.16 | coberta |
-| `atomic.*.commit.value` | 1 | 02-modelo-de-sinais:162 | §5.16 | coberta |
-| `atomic.*.on_rate` | 2 | 03-manifesto:372, 08-stress-tests:341 | §5.16 | coberta |
-| `atomic.*.order` | 2 | 02-modelo-de-sinais:162, 03-manifesto:372 | §5.16 | coberta |
-| `atomic.*.outputs` | 3 | 02-modelo-de-sinais:162, 03-manifesto:372, 08-stress-tests:341 | §5.16 | coberta |
-| `bridges` | 2 | 03-manifesto:423, 08-stress-tests:341 | §5.18 | coberta |
-| `bridges.*` | 2 | 03-manifesto:423, 08-stress-tests:341 | §5.18 | coberta |
-| `bridges.*.expose` | 2 | 03-manifesto:423, 08-stress-tests:341 | §5.18 | coberta |
-| `bridges.*.expose.*` | 2 | 03-manifesto:423, 08-stress-tests:341 | §5.18 | coberta |
-| `bridges.*.kind` | 2 | 03-manifesto:423, 08-stress-tests:341 | §5.18 | coberta |
-| `bridges.*.listen` | 1 | 03-manifesto:423 | §5.18 | coberta |
-| `bridges.*.security` | 1 | 03-manifesto:423 | §5.18 | coberta |
-| `bridges.*.security.mode` | 1 | 03-manifesto:423 | §5.18 | coberta |
-| `bridges.*.security.policy` | 1 | 03-manifesto:423 | §5.18 | coberta |
-| `bridges.*.security.trust` | 1 | 03-manifesto:423 | §5.18 | coberta |
-| `bridges.*.subscribe` | 2 | 03-manifesto:423, 08-stress-tests:341 | §5.18 | coberta |
-| `bridges.*.subscribe.*` | 2 | 03-manifesto:423, 08-stress-tests:341 | §5.18 | coberta |
-| `bridges.*.subscribe.*.fields` | 2 | 03-manifesto:423, 08-stress-tests:341 | §5.18 | coberta |
-| `bridges.*.subscribe.*.max_age` | 2 | 03-manifesto:423, 08-stress-tests:341 | §5.18 | coberta |
-| `bridges.*.subscribe.*.to` | 2 | 03-manifesto:423, 08-stress-tests:341 | §5.18 | coberta |
-| `bridges.*.subscribe.*.type` | 2 | 03-manifesto:423, 08-stress-tests:341 | §5.18 | coberta |
-| `bridges.*.writer` | 1 | 03-manifesto:423 | §5.18 | coberta |
-| `bridges.*.writer.lease` | 1 | 03-manifesto:423 | §5.18 | coberta |
-| `bridges.*.writer.level` | 1 | 03-manifesto:423 | §5.18 | coberta |
-| `bridges.*.writer.priority` | 1 | 03-manifesto:423 | §5.18 | coberta |
-| `bridges.*.writer.writable` | 1 | 03-manifesto:423 | §5.18 | coberta |
-| `buses` | 11 | 03-manifesto:83, 08-stress-tests:253, 08-stress-tests:341 (+8) | §5.6 | coberta |
-| `buses.*` | 11 | 03-manifesto:83, 08-stress-tests:253, 08-stress-tests:341 (+8) | §5.6 | coberta |
-| `buses.*.baud` | 8 | 03-manifesto:83, 23-bancada-de-desenvolvimento:255, 23-bancada-de-desenvolvimento:304 (+5) | §5.6 | coberta |
-| `buses.*.bitrate` | 1 | 03-manifesto:83 | §5.6 | coberta |
-| `buses.*.cycle` | 2 | 03-manifesto:83, 08-stress-tests:341 | §5.6 | coberta |
+| `apps.*.writer.lease` | 11 | 03-manifest:251, 08-stress-tests:23, 08-stress-tests:158 (+8) | §5.12 | coberta |
+| `apps.*.writer.level` | 10 | 03-manifest:251, 08-stress-tests:23, 08-stress-tests:158 (+7) | §5.12 | coberta |
+| `apps.*.writer.priority` | 9 | 03-manifest:251, 08-stress-tests:23, 08-stress-tests:158 (+6) | §5.12 | coberta |
+| `atomic` | 3 | 02-signal-model:162, 03-manifest:372, 08-stress-tests:341 | §5.16 | coberta |
+| `atomic.*` | 3 | 02-signal-model:162, 03-manifest:372, 08-stress-tests:341 | §5.16 | coberta |
+| `atomic.*.commit` | 1 | 02-signal-model:162 | §5.16 | coberta |
+| `atomic.*.commit.signal` | 1 | 02-signal-model:162 | §5.16 | coberta |
+| `atomic.*.commit.value` | 1 | 02-signal-model:162 | §5.16 | coberta |
+| `atomic.*.on_rate` | 2 | 03-manifest:372, 08-stress-tests:341 | §5.16 | coberta |
+| `atomic.*.order` | 2 | 02-signal-model:162, 03-manifest:372 | §5.16 | coberta |
+| `atomic.*.outputs` | 3 | 02-signal-model:162, 03-manifest:372, 08-stress-tests:341 | §5.16 | coberta |
+| `bridges` | 2 | 03-manifest:423, 08-stress-tests:341 | §5.18 | coberta |
+| `bridges.*` | 2 | 03-manifest:423, 08-stress-tests:341 | §5.18 | coberta |
+| `bridges.*.expose` | 2 | 03-manifest:423, 08-stress-tests:341 | §5.18 | coberta |
+| `bridges.*.expose.*` | 2 | 03-manifest:423, 08-stress-tests:341 | §5.18 | coberta |
+| `bridges.*.kind` | 2 | 03-manifest:423, 08-stress-tests:341 | §5.18 | coberta |
+| `bridges.*.listen` | 1 | 03-manifest:423 | §5.18 | coberta |
+| `bridges.*.security` | 1 | 03-manifest:423 | §5.18 | coberta |
+| `bridges.*.security.mode` | 1 | 03-manifest:423 | §5.18 | coberta |
+| `bridges.*.security.policy` | 1 | 03-manifest:423 | §5.18 | coberta |
+| `bridges.*.security.trust` | 1 | 03-manifest:423 | §5.18 | coberta |
+| `bridges.*.subscribe` | 2 | 03-manifest:423, 08-stress-tests:341 | §5.18 | coberta |
+| `bridges.*.subscribe.*` | 2 | 03-manifest:423, 08-stress-tests:341 | §5.18 | coberta |
+| `bridges.*.subscribe.*.fields` | 2 | 03-manifest:423, 08-stress-tests:341 | §5.18 | coberta |
+| `bridges.*.subscribe.*.max_age` | 2 | 03-manifest:423, 08-stress-tests:341 | §5.18 | coberta |
+| `bridges.*.subscribe.*.to` | 2 | 03-manifest:423, 08-stress-tests:341 | §5.18 | coberta |
+| `bridges.*.subscribe.*.type` | 2 | 03-manifest:423, 08-stress-tests:341 | §5.18 | coberta |
+| `bridges.*.writer` | 1 | 03-manifest:423 | §5.18 | coberta |
+| `bridges.*.writer.lease` | 1 | 03-manifest:423 | §5.18 | coberta |
+| `bridges.*.writer.level` | 1 | 03-manifest:423 | §5.18 | coberta |
+| `bridges.*.writer.priority` | 1 | 03-manifest:423 | §5.18 | coberta |
+| `bridges.*.writer.writable` | 1 | 03-manifest:423 | §5.18 | coberta |
+| `buses` | 11 | 03-manifest:83, 08-stress-tests:253, 08-stress-tests:341 (+8) | §5.6 | coberta |
+| `buses.*` | 11 | 03-manifest:83, 08-stress-tests:253, 08-stress-tests:341 (+8) | §5.6 | coberta |
+| `buses.*.baud` | 8 | 03-manifest:83, 23-development-bench:255, 23-development-bench:304 (+5) | §5.6 | coberta |
+| `buses.*.bitrate` | 1 | 03-manifest:83 | §5.6 | coberta |
+| `buses.*.cycle` | 2 | 03-manifest:83, 08-stress-tests:341 | §5.6 | coberta |
 | `buses.*.dc` | 1 | 08-stress-tests:341 | §5.6 | coberta |
-| `buses.*.dev` | 3 | 08-stress-tests:253, exemplos/00-primeiro-projeto:194, exemplos/03-manutencao-preditiva:11 | §5.6 | coberta |
-| `buses.*.dtr` | 2 | trilha/04-esp32-modbus:375, trilha/06-trocar-de-placa:31 | §5.6 | coberta |
-| `buses.*.iface` | 2 | 03-manifesto:83, 08-stress-tests:341 | §5.6 | coberta |
-| `buses.*.kind` | 9 | 03-manifesto:83, 08-stress-tests:253, 08-stress-tests:341 (+6) | §5.6 | coberta |
-| `buses.*.parity` | 2 | 03-manifesto:83, exemplos/00-primeiro-projeto:194 | §5.6 | coberta |
-| `buses.*.port` | 6 | 03-manifesto:83, 23-bancada-de-desenvolvimento:255, exemplos/00-primeiro-projeto:194 (+3) | §5.6 | coberta |
-| `buses.*.rts` | 2 | trilha/04-esp32-modbus:375, trilha/06-trocar-de-placa:31 | §5.6 | coberta |
-| `buses.*.stop` | 1 | 03-manifesto:83 | §5.6 | coberta |
-| `buses.*.turnaround` | 1 | 03-manifesto:83 | §5.6 | coberta |
-| `calc` | 6 | 03-manifesto:372, 08-stress-tests:23, 23-bancada-de-desenvolvimento:195 (+3) | §5.14 | coberta |
-| `calc.*` | 6 | 03-manifesto:372, 08-stress-tests:23, 23-bancada-de-desenvolvimento:195 (+3) | §5.14 | coberta |
-| `clock` | 2 | 03-manifesto:53, trilha/09-joker-micro:48 | §5.5 | coberta |
-| `clock.max_holdover` | 1 | 03-manifesto:53 | §5.5 | coberta |
-| `clock.servers` | 1 | 03-manifesto:53 | §5.5 | coberta |
-| `clock.sync` | 2 | 03-manifesto:53, trilha/09-joker-micro:48 | §5.5 | coberta |
-| `cycles` | 9 | 03-manifesto:229, 08-stress-tests:23, 08-stress-tests:341 (+6) | §5.11 | coberta |
-| `cycles.*` | 9 | 03-manifesto:229, 08-stress-tests:23, 08-stress-tests:341 (+6) | §5.11 | coberta |
-| `cycles.*.order` | 2 | 03-manifesto:229, trilha/08-a-tua-classe:222 | §5.11 | coberta |
-| `cycles.*.overrun` | 2 | 03-manifesto:229, 08-stress-tests:341 | §5.11 | coberta |
-| `cycles.*.period` | 9 | 03-manifesto:229, 08-stress-tests:23, 08-stress-tests:341 (+6) | §5.11 | coberta |
-| `cycles.*.resources` | 4 | 03-manifesto:229, 08-stress-tests:23, 08-stress-tests:341 (+1) | §5.11 | coberta |
-| `cycles.*.trace` | 2 | 03-manifesto:229, exemplos/01-bess-peak-shaving:24 | §5.11 | coberta |
-| `cycles.*.trace.continuous` | 2 | 03-manifesto:229, exemplos/01-bess-peak-shaving:24 | §5.11 | coberta |
-| `cycles.*.trip_after` | 2 | 03-manifesto:229, 08-stress-tests:341 | §5.11 | coberta |
-| `devices` | 32 | 02-modelo-de-sinais:179, 03-manifesto:113, 03-manifesto:159 (+29) | §5.8 | coberta |
-| `devices.*` | 32 | 02-modelo-de-sinais:179, 03-manifesto:113, 03-manifesto:159 (+29) | §5.8 | coberta |
-| `devices.*.actions` | 2 | 02-modelo-de-sinais:179, 03-manifesto:174 | §5.8.2 | coberta |
-| `devices.*.actions.*` | 2 | 02-modelo-de-sinais:179, 03-manifesto:174 | §5.8.2 | coberta |
-| `devices.*.actions.*.permit` | 2 | 02-modelo-de-sinais:179, 03-manifesto:174 | §5.8.2 | coberta |
-| `devices.*.actions.*.role` | 2 | 02-modelo-de-sinais:179, 03-manifesto:174 | §5.8.2 | coberta |
-| `devices.*.actions.*.timeout` | 2 | 02-modelo-de-sinais:179, 03-manifesto:174 | §5.8.2 | coberta |
-| `devices.*.address` | 8 | 03-manifesto:113, 08-stress-tests:23, 08-stress-tests:341 (+5) | anexo A | coberta |
-| `devices.*.align` | 1 | exemplos/01-bess-peak-shaving:103 | §5.8 | coberta |
-| `devices.*.auth` | 2 | 23-bancada-de-desenvolvimento:304, trilha/09-joker-micro:199 | anexo A | coberta |
-| `devices.*.bus` | 11 | 03-manifesto:113, 08-stress-tests:253, 08-stress-tests:341 (+8) | §5.8 | coberta |
-| `devices.*.bus.unset` | 1 | trilha/10-logica-no-mcu:236 | §7.2 | coberta: diretiva de overlay |
-| `devices.*.chip` | 3 | 08-stress-tests:158, 08-stress-tests:444, exemplos/02-inspecao-visual:35 | anexo A | coberta |
-| `devices.*.config` | 1 | 03-manifesto:113 | anexo A | coberta |
-| `devices.*.device` | 3 | 03-manifesto:113, 08-stress-tests:158, exemplos/02-inspecao-visual:35 | anexo A | coberta (1.1) |
-| `devices.*.discover` | 3 | 03-manifesto:113, 08-stress-tests:23, exemplos/01-bess-peak-shaving:103 | §5.8 | coberta |
-| `devices.*.drdy` | 2 | 08-stress-tests:253, exemplos/03-manutencao-preditiva:11 | anexo A | coberta (1.1) |
-| `devices.*.driver` | 27 | 03-manifesto:113, 08-stress-tests:23, 08-stress-tests:158 (+24) | §5.8 | coberta |
-| `devices.*.eds` | 1 | 03-manifesto:113 | anexo A | coberta |
-| `devices.*.fallback` | 3 | 03-manifesto:113, 08-stress-tests:23, exemplos/01-bess-peak-shaving:103 | §5.8 | coberta |
-| `devices.*.fallback.configure` | 3 | 03-manifesto:113, 08-stress-tests:23, exemplos/01-bess-peak-shaving:103 | §5.8 | coberta |
-| `devices.*.fallback.keepalive` | 1 | 03-manifesto:113 | §5.8 | coberta |
-| `devices.*.format` | 3 | 03-manifesto:113, 08-stress-tests:158, exemplos/02-inspecao-visual:35 | anexo A | coberta (1.1) |
-| `devices.*.format.fps` | 3 | 03-manifesto:113, 08-stress-tests:158, exemplos/02-inspecao-visual:35 | anexo A | coberta (1.1) |
-| `devices.*.format.height` | 3 | 03-manifesto:113, 08-stress-tests:158, exemplos/02-inspecao-visual:35 | anexo A | coberta (1.1) |
-| `devices.*.format.pixfmt` | 3 | 03-manifesto:113, 08-stress-tests:158, exemplos/02-inspecao-visual:35 | anexo A | coberta (1.1) |
-| `devices.*.format.width` | 3 | 03-manifesto:113, 08-stress-tests:158, exemplos/02-inspecao-visual:35 | anexo A | coberta (1.1) |
-| `devices.*.micro` | 1 | trilha/09-joker-micro:199 | anexo A | coberta |
-| `devices.*.model` | 4 | 03-manifesto:113, exemplos/00-primeiro-projeto:41, trilha/01-ola-bancada:97 (+1) | anexo A | coberta |
+| `buses.*.dev` | 3 | 08-stress-tests:253, examples/00-first-project:194, examples/03-predictive-maintenance:11 | §5.6 | coberta |
+| `buses.*.dtr` | 2 | track/04-esp32-modbus:375, track/06-switching-boards:31 | §5.6 | coberta |
+| `buses.*.iface` | 2 | 03-manifest:83, 08-stress-tests:341 | §5.6 | coberta |
+| `buses.*.kind` | 9 | 03-manifest:83, 08-stress-tests:253, 08-stress-tests:341 (+6) | §5.6 | coberta |
+| `buses.*.parity` | 2 | 03-manifest:83, examples/00-first-project:194 | §5.6 | coberta |
+| `buses.*.port` | 6 | 03-manifest:83, 23-development-bench:255, examples/00-first-project:194 (+3) | §5.6 | coberta |
+| `buses.*.rts` | 2 | track/04-esp32-modbus:375, track/06-switching-boards:31 | §5.6 | coberta |
+| `buses.*.stop` | 1 | 03-manifest:83 | §5.6 | coberta |
+| `buses.*.turnaround` | 1 | 03-manifest:83 | §5.6 | coberta |
+| `calc` | 6 | 03-manifest:372, 08-stress-tests:23, 23-development-bench:195 (+3) | §5.14 | coberta |
+| `calc.*` | 6 | 03-manifest:372, 08-stress-tests:23, 23-development-bench:195 (+3) | §5.14 | coberta |
+| `clock` | 2 | 03-manifest:53, track/09-joker-micro:48 | §5.5 | coberta |
+| `clock.max_holdover` | 1 | 03-manifest:53 | §5.5 | coberta |
+| `clock.servers` | 1 | 03-manifest:53 | §5.5 | coberta |
+| `clock.sync` | 2 | 03-manifest:53, track/09-joker-micro:48 | §5.5 | coberta |
+| `cycles` | 9 | 03-manifest:229, 08-stress-tests:23, 08-stress-tests:341 (+6) | §5.11 | coberta |
+| `cycles.*` | 9 | 03-manifest:229, 08-stress-tests:23, 08-stress-tests:341 (+6) | §5.11 | coberta |
+| `cycles.*.order` | 2 | 03-manifest:229, track/08-your-own-class:222 | §5.11 | coberta |
+| `cycles.*.overrun` | 2 | 03-manifest:229, 08-stress-tests:341 | §5.11 | coberta |
+| `cycles.*.period` | 9 | 03-manifest:229, 08-stress-tests:23, 08-stress-tests:341 (+6) | §5.11 | coberta |
+| `cycles.*.resources` | 4 | 03-manifest:229, 08-stress-tests:23, 08-stress-tests:341 (+1) | §5.11 | coberta |
+| `cycles.*.trace` | 2 | 03-manifest:229, examples/01-bess-peak-shaving:24 | §5.11 | coberta |
+| `cycles.*.trace.continuous` | 2 | 03-manifest:229, examples/01-bess-peak-shaving:24 | §5.11 | coberta |
+| `cycles.*.trip_after` | 2 | 03-manifest:229, 08-stress-tests:341 | §5.11 | coberta |
+| `devices` | 32 | 02-signal-model:179, 03-manifest:113, 03-manifest:159 (+29) | §5.8 | coberta |
+| `devices.*` | 32 | 02-signal-model:179, 03-manifest:113, 03-manifest:159 (+29) | §5.8 | coberta |
+| `devices.*.actions` | 2 | 02-signal-model:179, 03-manifest:174 | §5.8.2 | coberta |
+| `devices.*.actions.*` | 2 | 02-signal-model:179, 03-manifest:174 | §5.8.2 | coberta |
+| `devices.*.actions.*.permit` | 2 | 02-signal-model:179, 03-manifest:174 | §5.8.2 | coberta |
+| `devices.*.actions.*.role` | 2 | 02-signal-model:179, 03-manifest:174 | §5.8.2 | coberta |
+| `devices.*.actions.*.timeout` | 2 | 02-signal-model:179, 03-manifest:174 | §5.8.2 | coberta |
+| `devices.*.address` | 8 | 03-manifest:113, 08-stress-tests:23, 08-stress-tests:341 (+5) | anexo A | coberta |
+| `devices.*.align` | 1 | examples/01-bess-peak-shaving:103 | §5.8 | coberta |
+| `devices.*.auth` | 2 | 23-development-bench:304, track/09-joker-micro:199 | anexo A | coberta |
+| `devices.*.bus` | 11 | 03-manifest:113, 08-stress-tests:253, 08-stress-tests:341 (+8) | §5.8 | coberta |
+| `devices.*.bus.unset` | 1 | track/10-logic-on-the-mcu:236 | §7.2 | coberta: diretiva de overlay |
+| `devices.*.chip` | 3 | 08-stress-tests:158, 08-stress-tests:444, examples/02-visual-inspection:35 | anexo A | coberta |
+| `devices.*.config` | 1 | 03-manifest:113 | anexo A | coberta |
+| `devices.*.device` | 3 | 03-manifest:113, 08-stress-tests:158, examples/02-visual-inspection:35 | anexo A | coberta (1.1) |
+| `devices.*.discover` | 3 | 03-manifest:113, 08-stress-tests:23, examples/01-bess-peak-shaving:103 | §5.8 | coberta |
+| `devices.*.drdy` | 2 | 08-stress-tests:253, examples/03-predictive-maintenance:11 | anexo A | coberta (1.1) |
+| `devices.*.driver` | 27 | 03-manifest:113, 08-stress-tests:23, 08-stress-tests:158 (+24) | §5.8 | coberta |
+| `devices.*.eds` | 1 | 03-manifest:113 | anexo A | coberta |
+| `devices.*.fallback` | 3 | 03-manifest:113, 08-stress-tests:23, examples/01-bess-peak-shaving:103 | §5.8 | coberta |
+| `devices.*.fallback.configure` | 3 | 03-manifest:113, 08-stress-tests:23, examples/01-bess-peak-shaving:103 | §5.8 | coberta |
+| `devices.*.fallback.keepalive` | 1 | 03-manifest:113 | §5.8 | coberta |
+| `devices.*.format` | 3 | 03-manifest:113, 08-stress-tests:158, examples/02-visual-inspection:35 | anexo A | coberta (1.1) |
+| `devices.*.format.fps` | 3 | 03-manifest:113, 08-stress-tests:158, examples/02-visual-inspection:35 | anexo A | coberta (1.1) |
+| `devices.*.format.height` | 3 | 03-manifest:113, 08-stress-tests:158, examples/02-visual-inspection:35 | anexo A | coberta (1.1) |
+| `devices.*.format.pixfmt` | 3 | 03-manifest:113, 08-stress-tests:158, examples/02-visual-inspection:35 | anexo A | coberta (1.1) |
+| `devices.*.format.width` | 3 | 03-manifest:113, 08-stress-tests:158, examples/02-visual-inspection:35 | anexo A | coberta (1.1) |
+| `devices.*.micro` | 1 | track/09-joker-micro:199 | anexo A | coberta |
+| `devices.*.model` | 4 | 03-manifest:113, examples/00-first-project:41, track/01-hello-bench:97 (+1) | anexo A | coberta |
 | `devices.*.network` | 1 | 08-stress-tests:518 | anexo A | coberta |
-| `devices.*.node` | 1 | trilha/09-joker-micro:199 | anexo A | coberta |
-| `devices.*.node_id` | 1 | 03-manifesto:113 | anexo A | coberta |
-| `devices.*.poll` | 4 | 03-manifesto:113, 08-stress-tests:23, 23-bancada-de-desenvolvimento:238 (+1) | §5.8 | coberta |
+| `devices.*.node` | 1 | track/09-joker-micro:199 | anexo A | coberta |
+| `devices.*.node_id` | 1 | 03-manifest:113 | anexo A | coberta |
+| `devices.*.poll` | 4 | 03-manifest:113, 08-stress-tests:23, 23-development-bench:238 (+1) | §5.8 | coberta |
 | `devices.*.position` | 1 | 08-stress-tests:341 | anexo A | coberta |
 | `devices.*.priority` | 1 | 08-stress-tests:518 | anexo A | coberta |
-| `devices.*.profile` | 16 | 03-manifesto:113, 08-stress-tests:23, 08-stress-tests:253 (+13) | §5.8 | coberta |
-| `devices.*.profile.unset` | 2 | 23-bancada-de-desenvolvimento:304, trilha/09-joker-micro:199 | §7.2 | coberta: diretiva de overlay |
-| `devices.*.rate` | 2 | 08-stress-tests:253, exemplos/03-manutencao-preditiva:11 | anexo A | coberta (1.1) |
-| `devices.*.refresh` | 3 | 23-bancada-de-desenvolvimento:304, trilha/09-joker-micro:199, trilha/10-logica-no-mcu:236 | anexo A | coberta |
-| `devices.*.report` | 3 | 23-bancada-de-desenvolvimento:304, trilha/09-joker-micro:199, trilha/10-logica-no-mcu:236 | anexo A | coberta |
-| `devices.*.retries` | 1 | 03-manifesto:113 | §5.8 | coberta |
-| `devices.*.signals` | 16 | 03-manifesto:159, 08-stress-tests:23, 08-stress-tests:158 (+13) | §5.8.1 | coberta |
-| `devices.*.signals.*` | 16 | 03-manifesto:159, 08-stress-tests:23, 08-stress-tests:158 (+13) | §5.8.1 | coberta |
-| `devices.*.signals.*.active_low` | 1 | trilha/09-joker-micro:48 | §5.8.1, anexo A | coberta |
-| `devices.*.signals.*.alias` | 11 | 03-manifesto:159, 08-stress-tests:23, 08-stress-tests:158 (+8) | §5.8.1 | coberta |
-| `devices.*.signals.*.bias` | 1 | trilha/09-joker-micro:48 | §5.8.1, anexo A | coberta |
-| `devices.*.signals.*.block` | 2 | 08-stress-tests:253, exemplos/03-manutencao-preditiva:11 | §5.8.1 | coberta (1.1) |
-| `devices.*.signals.*.deadband` | 1 | trilha/09-joker-micro:48 | §5.8.1 | coberta |
-| `devices.*.signals.*.debounce` | 1 | trilha/09-joker-micro:48 | §5.8.1 | coberta |
-| `devices.*.signals.*.direction` | 9 | 08-stress-tests:158, 08-stress-tests:444, 09-arquitetura-sob-estresse:308 (+6) | §5.8.1 | coberta |
-| `devices.*.signals.*.edges` | 2 | 08-stress-tests:158, exemplos/02-inspecao-visual:35 | §5.8.1, anexo A | coberta |
-| `devices.*.signals.*.kind` | 2 | 08-stress-tests:253, exemplos/03-manutencao-preditiva:11 | §5.8.1 | coberta (1.1) |
-| `devices.*.signals.*.led` | 4 | 23-bancada-de-desenvolvimento:238, trilha/02-o-pi-como-no:165, trilha/03-sensor-temperatura:300 (+1) | §5.8.1, anexo A | coberta |
-| `devices.*.signals.*.limits` | 1 | 03-manifesto:159 | §5.8.1 | coberta |
-| `devices.*.signals.*.line` | 5 | 08-stress-tests:158, 08-stress-tests:444, 09-arquitetura-sob-estresse:308 (+2) | §5.8.1, anexo A | coberta |
-| `devices.*.signals.*.max_age` | 1 | 03-manifesto:159 | §5.8.1 | coberta |
-| `devices.*.signals.*.record` | 1 | 03-manifesto:159 | §5.8.1 | coberta |
-| `devices.*.signals.*.record.every` | 1 | 03-manifesto:159 | §5.8.1 | coberta |
-| `devices.*.signals.*.rssi` | 1 | trilha/09-joker-micro:48 | §5.8.1, anexo A | coberta |
-| `devices.*.signals.*.scale` | 2 | 03-manifesto:159, exemplos/00-primeiro-projeto:194 | §5.8.1 | coberta |
-| `devices.*.signals.*.scale.from` | 2 | 03-manifesto:159, exemplos/00-primeiro-projeto:194 | §5.8.1 | coberta |
-| `devices.*.signals.*.scale.to` | 2 | 03-manifesto:159, exemplos/00-primeiro-projeto:194 | §5.8.1 | coberta |
-| `devices.*.signals.*.stuck_detect` | 1 | 03-manifesto:159 | §5.8.1 | coberta |
-| `devices.*.signals.*.thermal` | 3 | 23-bancada-de-desenvolvimento:238, trilha/03-sensor-temperatura:300, trilha/06-trocar-de-placa:19 | §5.8.1, anexo A | coberta |
-| `devices.*.signals.*.timestamp` | 2 | 08-stress-tests:158, exemplos/02-inspecao-visual:35 | §5.8.1, anexo A | coberta |
-| `devices.*.signals.*.touch` | 1 | trilha/09-joker-micro:48 | §5.8.1, anexo A | coberta |
-| `devices.*.signals.*.unit` | 3 | 08-stress-tests:253, exemplos/03-manutencao-preditiva:11, trilha/09-joker-micro:48 | §5.8.1 | coberta |
-| `devices.*.signals.*.uptime` | 1 | trilha/09-joker-micro:48 | §5.8.1, anexo A | coberta |
-| `devices.*.timeout` | 1 | 03-manifesto:113 | §5.8 | coberta |
-| `devices.*.trigger` | 3 | 03-manifesto:113, 08-stress-tests:158, exemplos/02-inspecao-visual:35 | anexo A | coberta (1.1) |
-| `devices.*.trigger.input` | 3 | 03-manifesto:113, 08-stress-tests:158, exemplos/02-inspecao-visual:35 | anexo A | coberta (1.1) |
-| `devices.*.trigger.kind` | 3 | 03-manifesto:113, 08-stress-tests:158, exemplos/02-inspecao-visual:35 | anexo A | coberta (1.1) |
-| `devices.*.unit_id` | 12 | 03-manifesto:113, 08-stress-tests:444, 14-classes-e-instancias:168 (+9) | anexo A | coberta |
-| `devices.*.unit_id.unset` | 2 | 23-bancada-de-desenvolvimento:304, trilha/09-joker-micro:199 | §7.2 | coberta: diretiva de overlay |
+| `devices.*.profile` | 16 | 03-manifest:113, 08-stress-tests:23, 08-stress-tests:253 (+13) | §5.8 | coberta |
+| `devices.*.profile.unset` | 2 | 23-development-bench:304, track/09-joker-micro:199 | §7.2 | coberta: diretiva de overlay |
+| `devices.*.rate` | 2 | 08-stress-tests:253, examples/03-predictive-maintenance:11 | anexo A | coberta (1.1) |
+| `devices.*.refresh` | 3 | 23-development-bench:304, track/09-joker-micro:199, track/10-logic-on-the-mcu:236 | anexo A | coberta |
+| `devices.*.report` | 3 | 23-development-bench:304, track/09-joker-micro:199, track/10-logic-on-the-mcu:236 | anexo A | coberta |
+| `devices.*.retries` | 1 | 03-manifest:113 | §5.8 | coberta |
+| `devices.*.signals` | 16 | 03-manifest:159, 08-stress-tests:23, 08-stress-tests:158 (+13) | §5.8.1 | coberta |
+| `devices.*.signals.*` | 16 | 03-manifest:159, 08-stress-tests:23, 08-stress-tests:158 (+13) | §5.8.1 | coberta |
+| `devices.*.signals.*.active_low` | 1 | track/09-joker-micro:48 | §5.8.1, anexo A | coberta |
+| `devices.*.signals.*.alias` | 11 | 03-manifest:159, 08-stress-tests:23, 08-stress-tests:158 (+8) | §5.8.1 | coberta |
+| `devices.*.signals.*.bias` | 1 | track/09-joker-micro:48 | §5.8.1, anexo A | coberta |
+| `devices.*.signals.*.block` | 2 | 08-stress-tests:253, examples/03-predictive-maintenance:11 | §5.8.1 | coberta (1.1) |
+| `devices.*.signals.*.deadband` | 1 | track/09-joker-micro:48 | §5.8.1 | coberta |
+| `devices.*.signals.*.debounce` | 1 | track/09-joker-micro:48 | §5.8.1 | coberta |
+| `devices.*.signals.*.direction` | 9 | 08-stress-tests:158, 08-stress-tests:444, 09-architecture-under-stress:308 (+6) | §5.8.1 | coberta |
+| `devices.*.signals.*.edges` | 2 | 08-stress-tests:158, examples/02-visual-inspection:35 | §5.8.1, anexo A | coberta |
+| `devices.*.signals.*.kind` | 2 | 08-stress-tests:253, examples/03-predictive-maintenance:11 | §5.8.1 | coberta (1.1) |
+| `devices.*.signals.*.led` | 4 | 23-development-bench:238, track/02-the-pi-as-a-node:165, track/03-temperature-sensor:300 (+1) | §5.8.1, anexo A | coberta |
+| `devices.*.signals.*.limits` | 1 | 03-manifest:159 | §5.8.1 | coberta |
+| `devices.*.signals.*.line` | 5 | 08-stress-tests:158, 08-stress-tests:444, 09-architecture-under-stress:308 (+2) | §5.8.1, anexo A | coberta |
+| `devices.*.signals.*.max_age` | 1 | 03-manifest:159 | §5.8.1 | coberta |
+| `devices.*.signals.*.record` | 1 | 03-manifest:159 | §5.8.1 | coberta |
+| `devices.*.signals.*.record.every` | 1 | 03-manifest:159 | §5.8.1 | coberta |
+| `devices.*.signals.*.rssi` | 1 | track/09-joker-micro:48 | §5.8.1, anexo A | coberta |
+| `devices.*.signals.*.scale` | 2 | 03-manifest:159, examples/00-first-project:194 | §5.8.1 | coberta |
+| `devices.*.signals.*.scale.from` | 2 | 03-manifest:159, examples/00-first-project:194 | §5.8.1 | coberta |
+| `devices.*.signals.*.scale.to` | 2 | 03-manifest:159, examples/00-first-project:194 | §5.8.1 | coberta |
+| `devices.*.signals.*.stuck_detect` | 1 | 03-manifest:159 | §5.8.1 | coberta |
+| `devices.*.signals.*.thermal` | 3 | 23-development-bench:238, track/03-temperature-sensor:300, track/06-switching-boards:19 | §5.8.1, anexo A | coberta |
+| `devices.*.signals.*.timestamp` | 2 | 08-stress-tests:158, examples/02-visual-inspection:35 | §5.8.1, anexo A | coberta |
+| `devices.*.signals.*.touch` | 1 | track/09-joker-micro:48 | §5.8.1, anexo A | coberta |
+| `devices.*.signals.*.unit` | 3 | 08-stress-tests:253, examples/03-predictive-maintenance:11, track/09-joker-micro:48 | §5.8.1 | coberta |
+| `devices.*.signals.*.uptime` | 1 | track/09-joker-micro:48 | §5.8.1, anexo A | coberta |
+| `devices.*.timeout` | 1 | 03-manifest:113 | §5.8 | coberta |
+| `devices.*.trigger` | 3 | 03-manifest:113, 08-stress-tests:158, examples/02-visual-inspection:35 | anexo A | coberta (1.1) |
+| `devices.*.trigger.input` | 3 | 03-manifest:113, 08-stress-tests:158, examples/02-visual-inspection:35 | anexo A | coberta (1.1) |
+| `devices.*.trigger.kind` | 3 | 03-manifest:113, 08-stress-tests:158, examples/02-visual-inspection:35 | anexo A | coberta (1.1) |
+| `devices.*.unit_id` | 12 | 03-manifest:113, 08-stress-tests:444, 14-classes-and-instances:168 (+9) | anexo A | coberta |
+| `devices.*.unit_id.unset` | 2 | 23-development-bench:304, track/09-joker-micro:199 | §7.2 | coberta: diretiva de overlay |
 | `drivers` | 2 | 08-stress-tests:341, 08-stress-tests:518 | §5.7 | coberta |
 | `drivers.*` | 2 | 08-stress-tests:341, 08-stress-tests:518 | §5.7 | coberta |
 | `drivers.*.exec` | 2 | 08-stress-tests:341, 08-stress-tests:518 | §5.7 | coberta |
 | `drivers.*.tier` | 2 | 08-stress-tests:341, 08-stress-tests:518 | §5.7 | coberta |
-| `extends` | 12 | 03-manifesto:33, 23-bancada-de-desenvolvimento:238, 23-bancada-de-desenvolvimento:255 (+9) | §5.1 | coberta |
-| `instances` | 7 | 03-manifesto:352, 14-classes-e-instancias:181, 14-classes-e-instancias:425 (+4) | §5.13 | coberta |
-| `instances.*` | 7 | 03-manifesto:352, 14-classes-e-instancias:181, 14-classes-e-instancias:425 (+4) | §5.13 | coberta |
+| `extends` | 12 | 03-manifest:33, 23-development-bench:238, 23-development-bench:255 (+9) | §5.1 | coberta |
+| `instances` | 7 | 03-manifest:352, 14-classes-and-instances:181, 14-classes-and-instances:425 (+4) | §5.13 | coberta |
+| `instances.*` | 7 | 03-manifest:352, 14-classes-and-instances:181, 14-classes-and-instances:425 (+4) | §5.13 | coberta |
 | `instances.*.actions` | 1 | 17-jkc:228 | §5.13 | coberta |
 | `instances.*.actions.*` | 1 | 17-jkc:228 | §5.13 | coberta |
 | `instances.*.actions.*.role` | 1 | 17-jkc:228 | §5.13 | coberta |
-| `instances.*.capabilities` | 3 | 03-manifesto:352, 14-classes-e-instancias:181, 17-jkc:228 | §5.13 | coberta |
-| `instances.*.class` | 7 | 03-manifesto:352, 14-classes-e-instancias:181, 14-classes-e-instancias:425 (+4) | §5.13 | coberta |
-| `instances.*.implemented_by` | 5 | 03-manifesto:352, 14-classes-e-instancias:425, 14-classes-e-instancias:533 (+2) | §5.13 | coberta |
-| `instances.*.implemented_by.app` | 2 | 14-classes-e-instancias:533, 17-jkc:228 | §5.13 | coberta |
-| `instances.*.implemented_by.bind` | 2 | 14-classes-e-instancias:533, 17-jkc:228 | §5.13 | coberta |
-| `instances.*.implemented_by.bind.*` | 2 | 14-classes-e-instancias:533, 17-jkc:228 | §5.13 | coberta |
-| `instances.*.map` | 5 | 03-manifesto:352, 14-classes-e-instancias:181, 14-classes-e-instancias:533 (+2) | §5.13 | coberta |
-| `instances.*.map.*` | 5 | 03-manifesto:352, 14-classes-e-instancias:181, 14-classes-e-instancias:533 (+2) | §5.13 | coberta |
-| `link` | 2 | trilha/09-joker-micro:48, trilha/10-logica-no-mcu:222 | §5.22 | coberta (só Joker Micro) |
-| `link.address` | 1 | trilha/10-logica-no-mcu:222 | §5.22 | coberta (só Joker Micro) |
-| `link.auth` | 2 | trilha/09-joker-micro:48, trilha/10-logica-no-mcu:222 | §5.22 | coberta (só Joker Micro) |
-| `link.bus` | 1 | trilha/09-joker-micro:48 | §5.22 | coberta (só Joker Micro) |
-| `link.peer` | 2 | trilha/09-joker-micro:48, trilha/10-logica-no-mcu:222 | §5.22 | coberta (só Joker Micro) |
-| `models` | 7 | 03-manifesto:298, 06-ml:220, 08-stress-tests:23 (+4) | §6.1 | coberta (1.1) |
-| `models.*` | 7 | 03-manifesto:298, 06-ml:220, 08-stress-tests:23 (+4) | §6.1 | coberta (1.1) |
-| `models.*.backend` | 6 | 03-manifesto:298, 08-stress-tests:23, 08-stress-tests:158 (+3) | §6.1 | coberta (1.1) |
-| `models.*.deadline` | 6 | 03-manifesto:298, 08-stress-tests:23, 08-stress-tests:158 (+3) | §6.1 | coberta (1.1) |
-| `models.*.isolation` | 3 | 03-manifesto:298, 08-stress-tests:158, exemplos/02-inspecao-visual:35 | §6.1 | coberta (1.1) |
-| `models.*.resources` | 6 | 03-manifesto:298, 08-stress-tests:23, 08-stress-tests:158 (+3) | §6.1 | coberta (1.1) |
-| `models.*.shadow` | 2 | 06-ml:220, exemplos/03-manutencao-preditiva:11 | §6.1 | coberta (1.1) |
-| `models.*.shadow.auto` | 1 | exemplos/03-manutencao-preditiva:11 | §6.1 | coberta (1.1) |
+| `instances.*.capabilities` | 3 | 03-manifest:352, 14-classes-and-instances:181, 17-jkc:228 | §5.13 | coberta |
+| `instances.*.class` | 7 | 03-manifest:352, 14-classes-and-instances:181, 14-classes-and-instances:425 (+4) | §5.13 | coberta |
+| `instances.*.implemented_by` | 5 | 03-manifest:352, 14-classes-and-instances:425, 14-classes-and-instances:533 (+2) | §5.13 | coberta |
+| `instances.*.implemented_by.app` | 2 | 14-classes-and-instances:533, 17-jkc:228 | §5.13 | coberta |
+| `instances.*.implemented_by.bind` | 2 | 14-classes-and-instances:533, 17-jkc:228 | §5.13 | coberta |
+| `instances.*.implemented_by.bind.*` | 2 | 14-classes-and-instances:533, 17-jkc:228 | §5.13 | coberta |
+| `instances.*.map` | 5 | 03-manifest:352, 14-classes-and-instances:181, 14-classes-and-instances:533 (+2) | §5.13 | coberta |
+| `instances.*.map.*` | 5 | 03-manifest:352, 14-classes-and-instances:181, 14-classes-and-instances:533 (+2) | §5.13 | coberta |
+| `link` | 2 | track/09-joker-micro:48, track/10-logic-on-the-mcu:222 | §5.22 | coberta (só Joker Micro) |
+| `link.address` | 1 | track/10-logic-on-the-mcu:222 | §5.22 | coberta (só Joker Micro) |
+| `link.auth` | 2 | track/09-joker-micro:48, track/10-logic-on-the-mcu:222 | §5.22 | coberta (só Joker Micro) |
+| `link.bus` | 1 | track/09-joker-micro:48 | §5.22 | coberta (só Joker Micro) |
+| `link.peer` | 2 | track/09-joker-micro:48, track/10-logic-on-the-mcu:222 | §5.22 | coberta (só Joker Micro) |
+| `models` | 7 | 03-manifest:298, 06-ml:220, 08-stress-tests:23 (+4) | §6.1 | coberta (1.1) |
+| `models.*` | 7 | 03-manifest:298, 06-ml:220, 08-stress-tests:23 (+4) | §6.1 | coberta (1.1) |
+| `models.*.backend` | 6 | 03-manifest:298, 08-stress-tests:23, 08-stress-tests:158 (+3) | §6.1 | coberta (1.1) |
+| `models.*.deadline` | 6 | 03-manifest:298, 08-stress-tests:23, 08-stress-tests:158 (+3) | §6.1 | coberta (1.1) |
+| `models.*.isolation` | 3 | 03-manifest:298, 08-stress-tests:158, examples/02-visual-inspection:35 | §6.1 | coberta (1.1) |
+| `models.*.resources` | 6 | 03-manifest:298, 08-stress-tests:23, 08-stress-tests:158 (+3) | §6.1 | coberta (1.1) |
+| `models.*.shadow` | 2 | 06-ml:220, examples/03-predictive-maintenance:11 | §6.1 | coberta (1.1) |
+| `models.*.shadow.auto` | 1 | examples/03-predictive-maintenance:11 | §6.1 | coberta (1.1) |
 | `models.*.shadow.candidate` | 1 | 06-ml:220 | §6.1 | coberta (1.1) |
 | `models.*.shadow.kpi` | 1 | 06-ml:220 | §6.1 | coberta (1.1) |
 | `models.*.shadow.on_regress` | 1 | 06-ml:220 | §6.1 | coberta (1.1) |
-| `models.*.shadow.promote_if` | 2 | 06-ml:220, exemplos/03-manutencao-preditiva:11 | §6.1 | coberta (1.1) |
-| `models.*.shadow.until` | 2 | 06-ml:220, exemplos/03-manutencao-preditiva:11 | §6.1 | coberta (1.1) |
-| `models.*.shadow.until.duration` | 2 | 06-ml:220, exemplos/03-manutencao-preditiva:11 | §6.1 | coberta (1.1) |
+| `models.*.shadow.promote_if` | 2 | 06-ml:220, examples/03-predictive-maintenance:11 | §6.1 | coberta (1.1) |
+| `models.*.shadow.until` | 2 | 06-ml:220, examples/03-predictive-maintenance:11 | §6.1 | coberta (1.1) |
+| `models.*.shadow.until.duration` | 2 | 06-ml:220, examples/03-predictive-maintenance:11 | §6.1 | coberta (1.1) |
 | `models.*.shadow.until.frames` | 1 | 06-ml:220 | §6.1 | coberta (1.1) |
-| `models.*.source` | 6 | 03-manifesto:298, 08-stress-tests:23, 08-stress-tests:158 (+3) | §6.1 | coberta (1.1) |
-| `models.*.warmup` | 2 | 03-manifesto:298, exemplos/02-inspecao-visual:35 | §6.1 | coberta (1.1) |
-| `net` | 1 | trilha/10-logica-no-mcu:222 | §5.22 | coberta (só Joker Micro) |
-| `net.wifi` | 1 | trilha/10-logica-no-mcu:222 | §5.22 | coberta (só Joker Micro) |
-| `net.wifi.country` | 1 | trilha/10-logica-no-mcu:222 | §5.22 | coberta (só Joker Micro) |
-| `net.wifi.password` | 1 | trilha/10-logica-no-mcu:222 | §5.22 | coberta (só Joker Micro) |
-| `net.wifi.ssid` | 1 | trilha/10-logica-no-mcu:222 | §5.22 | coberta (só Joker Micro) |
-| `outputs` | 20 | 03-manifesto:189, 08-stress-tests:23, 08-stress-tests:158 (+17) | §5.10 | coberta |
-| `outputs.*` | 20 | 03-manifesto:189, 08-stress-tests:23, 08-stress-tests:158 (+17) | §5.10 | coberta |
-| `outputs.*.accept_missing_fallback` | 2 | exemplos/02-inspecao-visual:35, trilha/11-producao-e-frota:40 | §5.10 | coberta |
-| `outputs.*.deadband` | 1 | 03-manifesto:189 | §5.10 | coberta |
-| `outputs.*.grace` | 2 | 03-manifesto:189, exemplos/01-bess-peak-shaving:24 | §5.10 | coberta |
-| `outputs.*.group` | 2 | 03-manifesto:189, trilha/09-joker-micro:48 | §5.10 | coberta |
-| `outputs.*.interlock` | 7 | 03-manifesto:189, 08-stress-tests:23, 08-stress-tests:341 (+4) | §5.10 | coberta |
-| `outputs.*.max_actuations` | 3 | 03-manifesto:189, 14-classes-e-instancias:425, exemplos/02-inspecao-visual:35 | §5.10 | coberta |
-| `outputs.*.max_lease` | 5 | 03-manifesto:189, 08-stress-tests:23, 08-stress-tests:444 (+2) | §5.10 | coberta |
-| `outputs.*.max_manual` | 2 | 03-manifesto:189, trilha/11-producao-e-frota:40 | §5.10 | coberta |
-| `outputs.*.min_interval` | 1 | 03-manifesto:189 | §5.10 | coberta |
-| `outputs.*.on_interlock` | 1 | 03-manifesto:189 | §5.10 | coberta |
-| `outputs.*.on_late` | 3 | 03-manifesto:189, 08-stress-tests:158, exemplos/02-inspecao-visual:35 | §5.10 | coberta (1.1) |
-| `outputs.*.on_range` | 1 | 03-manifesto:189 | §5.10 | coberta |
-| `outputs.*.pulse` | 3 | 03-manifesto:189, 08-stress-tests:158, exemplos/02-inspecao-visual:35 | §5.10 | coberta |
-| `outputs.*.range` | 7 | 03-manifesto:189, 08-stress-tests:23, 08-stress-tests:341 (+4) | §5.10 | coberta |
-| `outputs.*.rate` | 6 | 03-manifesto:189, 08-stress-tests:23, 08-stress-tests:341 (+3) | §5.10 | coberta |
-| `outputs.*.remote_levels` | 1 | trilha/09-joker-micro:48 | §5.22 | coberta (só Joker Micro) |
-| `outputs.*.requires_good` | 4 | 03-manifesto:189, 08-stress-tests:23, exemplos/00-primeiro-projeto:41 (+1) | §5.10 | coberta |
-| `outputs.*.reset_when` | 1 | 03-manifesto:189 | §5.10 | coberta |
-| `outputs.*.safe` | 17 | 03-manifesto:189, 08-stress-tests:23, 08-stress-tests:158 (+14) | §5.10 | coberta |
-| `outputs.*.safe_ramp` | 2 | 03-manifesto:189, 08-stress-tests:341 | §5.10 | coberta |
-| `outputs.*.safer` | 3 | 03-manifesto:189, 08-stress-tests:23, exemplos/01-bess-peak-shaving:24 | §5.10 | coberta |
-| `outputs.*.schedule_depth` | 3 | 03-manifesto:189, 08-stress-tests:158, exemplos/02-inspecao-visual:35 | §5.10 | coberta (1.1) |
-| `outputs.*.timed` | 3 | 03-manifesto:189, 08-stress-tests:158, exemplos/02-inspecao-visual:35 | §5.10 | coberta (1.1) |
-| `outputs.*.unset` | 2 | 23-bancada-de-desenvolvimento:304, trilha/09-joker-micro:246 | §7.2 | coberta: diretiva de overlay |
-| `outputs.*.verify` | 3 | 03-manifesto:189, 08-stress-tests:23, exemplos/01-bess-peak-shaving:24 | §5.10 | coberta |
-| `outputs.*.verify.readback` | 3 | 03-manifesto:189, 08-stress-tests:23, exemplos/01-bess-peak-shaving:24 | §5.10 | coberta |
-| `outputs.*.verify.tolerance` | 3 | 03-manifesto:189, 08-stress-tests:23, exemplos/01-bess-peak-shaving:24 | §5.10 | coberta |
-| `outputs.*.verify.within` | 3 | 03-manifesto:189, 08-stress-tests:23, exemplos/01-bess-peak-shaving:24 | §5.10 | coberta |
-| `pipelines` | 5 | 03-manifesto:298, 08-stress-tests:158, 08-stress-tests:253 (+2) | §6.3 | coberta (1.1) |
-| `pipelines.*` | 5 | 03-manifesto:298, 08-stress-tests:158, 08-stress-tests:253 (+2) | §6.3 | coberta (1.1) |
-| `pipelines.*.deadline` | 2 | 08-stress-tests:158, exemplos/02-inspecao-visual:35 | §6.3 | coberta (1.1) |
-| `pipelines.*.from` | 5 | 03-manifesto:298, 08-stress-tests:158, 08-stress-tests:253 (+2) | §6.3 | coberta (1.1) |
-| `pipelines.*.steps` | 5 | 03-manifesto:298, 08-stress-tests:158, 08-stress-tests:253 (+2) | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[]` | 5 | 03-manifesto:298, 08-stress-tests:158, 08-stress-tests:253 (+2) | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[].edges_hz` | 2 | 08-stress-tests:253, exemplos/03-manutencao-preditiva:11 | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[].expr` | 1 | exemplos/03-manutencao-preditiva:11 | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[].field` | 2 | 08-stress-tests:253, exemplos/03-manutencao-preditiva:11 | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[].fields` | 2 | 08-stress-tests:253, exemplos/03-manutencao-preditiva:11 | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[].hop` | 2 | 08-stress-tests:253, exemplos/03-manutencao-preditiva:11 | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[].iou` | 3 | 03-manifesto:298, 08-stress-tests:158, exemplos/02-inspecao-visual:35 | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[].keep_aspect` | 1 | 03-manifesto:298 | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[].max` | 3 | 03-manifesto:298, 08-stress-tests:158, exemplos/02-inspecao-visual:35 | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[].mean` | 1 | 03-manifesto:298 | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[].n` | 2 | 08-stress-tests:253, exemplos/03-manutencao-preditiva:11 | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[].name` | 5 | 03-manifesto:298, 08-stress-tests:158, 08-stress-tests:253 (+2) | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[].op` | 5 | 03-manifesto:298, 08-stress-tests:158, 08-stress-tests:253 (+2) | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[].roi` | 3 | 03-manifesto:298, 08-stress-tests:158, exemplos/02-inspecao-visual:35 | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[].score` | 3 | 03-manifesto:298, 08-stress-tests:158, exemplos/02-inspecao-visual:35 | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[].signals` | 1 | exemplos/03-manutencao-preditiva:11 | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[].size` | 3 | 03-manifesto:298, 08-stress-tests:158, exemplos/02-inspecao-visual:35 | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[].std` | 1 | 03-manifesto:298 | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[].window` | 4 | 08-stress-tests:158, 08-stress-tests:253, exemplos/02-inspecao-visual:35 (+1) | §6.3 | coberta (1.1) |
-| `pipelines.*.steps.[].with` | 2 | 08-stress-tests:158, exemplos/02-inspecao-visual:35 | §6.3 | coberta (1.1) |
-| `pipelines.*.to` | 5 | 03-manifesto:298, 08-stress-tests:158, 08-stress-tests:253 (+2) | §6.3 | coberta (1.1) |
-| `project` | 13 | 03-manifesto:53, 08-stress-tests:444, 09-arquitetura-sob-estresse:308 (+10) | §5.2 | coberta |
-| `project.joker` | 9 | 03-manifesto:53, 23-bancada-de-desenvolvimento:195, exemplos/01-bess-peak-shaving:24 (+6) | §5.2 | coberta |
-| `project.mode` | 10 | 03-manifesto:53, 09-arquitetura-sob-estresse:308, 23-bancada-de-desenvolvimento:195 (+7) | §5.2 | coberta |
-| `project.name` | 12 | 03-manifesto:53, 08-stress-tests:444, 09-arquitetura-sob-estresse:308 (+9) | §5.2 | coberta |
-| `resources` | 7 | 03-manifesto:53, 23-bancada-de-desenvolvimento:255, exemplos/01-bess-peak-shaving:24 (+4) | §5.4 | coberta |
-| `resources.*` | 7 | 03-manifesto:53, 23-bancada-de-desenvolvimento:255, exemplos/01-bess-peak-shaving:24 (+4) | §5.4 | coberta |
-| `resources.*.accel` | 1 | exemplos/02-inspecao-visual:35 | §5.4 | coberta (1.1) |
-| `resources.*.cpus` | 7 | 03-manifesto:53, 23-bancada-de-desenvolvimento:255, exemplos/01-bess-peak-shaving:24 (+4) | §5.4 | coberta |
-| `resources.*.memory` | 3 | 03-manifesto:53, exemplos/01-bess-peak-shaving:24, exemplos/03-manutencao-preditiva:11 | §5.4 | coberta |
-| `security` | 5 | 03-manifesto:445, trilha/02-o-pi-como-no:165, trilha/06-trocar-de-placa:31 (+2) | §5.19 | coberta |
-| `security.api` | 4 | 03-manifesto:445, trilha/02-o-pi-como-no:165, trilha/06-trocar-de-placa:31 (+1) | §5.19 | coberta |
-| `security.api.listen` | 4 | 03-manifesto:445, trilha/02-o-pi-como-no:165, trilha/06-trocar-de-placa:31 (+1) | §5.19 | coberta |
-| `security.roles` | 2 | 03-manifesto:445, trilha/11-producao-e-frota:112 | §5.20 | coberta |
-| `security.roles.*` | 2 | 03-manifesto:445, trilha/11-producao-e-frota:112 | §5.20 | coberta |
-| `security.trust` | 2 | 03-manifesto:445, trilha/11-producao-e-frota:112 | §5.19 | coberta |
-| `security.trust.apps` | 2 | 03-manifesto:445, trilha/11-producao-e-frota:112 | §5.19 | coberta |
-| `security.trust.config` | 2 | 03-manifesto:445, trilha/11-producao-e-frota:112 | §5.19 | coberta; só restringe o bundle do nó (C9, resolvido: D7) |
-| `security.trust.secrets` | 1 | trilha/11-producao-e-frota:112 | §5.19 | coberta |
-| `signals` | 3 | trilha/04-esp32-modbus:226, trilha/05-toque-e-falhas:35, trilha/05-toque-e-falhas:63 | §5.9 | coberta |
-| `signals.*` | 3 | trilha/04-esp32-modbus:226, trilha/05-toque-e-falhas:35, trilha/05-toque-e-falhas:63 | §5.9 | coberta |
-| `signals.*.debounce` | 1 | trilha/04-esp32-modbus:226 | §5.9 | coberta |
-| `signals.*.stuck_detect` | 2 | trilha/05-toque-e-falhas:35, trilha/05-toque-e-falhas:63 | §5.9 | coberta |
-| `streams` | 3 | 03-manifesto:298, 08-stress-tests:158, exemplos/02-inspecao-visual:35 | §6.2 | coberta (1.1) |
-| `streams.*` | 3 | 03-manifesto:298, 08-stress-tests:158, exemplos/02-inspecao-visual:35 | §6.2 | coberta (1.1) |
-| `streams.*.mode` | 3 | 03-manifesto:298, 08-stress-tests:158, exemplos/02-inspecao-visual:35 | §6.2 | coberta (1.1) |
-| `streams.*.pool` | 3 | 03-manifesto:298, 08-stress-tests:158, exemplos/02-inspecao-visual:35 | §6.2 | coberta (1.1) |
-| `streams.*.record` | 1 | exemplos/02-inspecao-visual:35 | §6.2 | coberta (1.1) |
-| `target` | 13 | 03-manifesto:53, 08-stress-tests:23, 23-bancada-de-desenvolvimento:255 (+10) | §5.3 | coberta |
-| `target.arch` | 1 | 03-manifesto:53 | §5.3 | coberta |
-| `target.board` | 12 | 03-manifesto:53, 08-stress-tests:23, 23-bancada-de-desenvolvimento:255 (+9) | §5.3 | coberta |
-| `target.kernel` | 5 | 03-manifesto:53, 08-stress-tests:23, exemplos/01-bess-peak-shaving:24 (+2) | §5.3 | coberta |
-| `telemetry` | 7 | 03-manifesto:394, 08-stress-tests:253, exemplos/01-bess-peak-shaving:24 (+4) | §5.17 | coberta |
-| `telemetry.record` | 6 | 03-manifesto:394, 08-stress-tests:253, exemplos/01-bess-peak-shaving:24 (+3) | §5.17.1 | coberta |
-| `telemetry.record.*` | 6 | 03-manifesto:394, 08-stress-tests:253, exemplos/01-bess-peak-shaving:24 (+3) | §5.17.1 | coberta |
-| `telemetry.record.*.blocks` | 3 | 03-manifesto:394, 08-stress-tests:253, exemplos/03-manutencao-preditiva:11 | §5.17.1 | coberta (1.1) |
-| `telemetry.record.*.every` | 6 | 03-manifesto:394, 08-stress-tests:253, exemplos/01-bess-peak-shaving:24 (+3) | §5.17.1 | coberta |
-| `telemetry.record.*.keep` | 6 | 03-manifesto:394, 08-stress-tests:253, exemplos/01-bess-peak-shaving:24 (+3) | §5.17.1 | coberta |
-| `telemetry.record.*.keep.*` | 6 | 03-manifesto:394, 08-stress-tests:253, exemplos/01-bess-peak-shaving:24 (+3) | §5.17.1 | coberta |
-| `telemetry.record.*.on_change` | 2 | 03-manifesto:394, exemplos/01-bess-peak-shaving:24 | §5.17.1 | coberta |
-| `telemetry.record.*.post` | 2 | 08-stress-tests:253, exemplos/03-manutencao-preditiva:11 | §5.17.1 | coberta (1.1) |
-| `telemetry.record.*.pre` | 2 | 08-stress-tests:253, exemplos/03-manutencao-preditiva:11 | §5.17.1 | coberta (1.1) |
-| `telemetry.record.*.trigger` | 2 | 08-stress-tests:253, exemplos/03-manutencao-preditiva:11 | §5.17.1 | coberta (1.1) |
-| `telemetry.store` | 1 | 03-manifesto:394 | §5.17.2 | coberta |
-| `telemetry.store.fsync` | 1 | 03-manifesto:394 | §5.17.2 | coberta |
-| `telemetry.store.max_disk` | 1 | 03-manifesto:394 | §5.17.2 | coberta |
-| `telemetry.uplink` | 3 | 03-manifesto:394, exemplos/01-bess-peak-shaving:24, trilha/11-producao-e-frota:127 | §5.17.3 | coberta |
-| `telemetry.uplink.*` | 3 | 03-manifesto:394, exemplos/01-bess-peak-shaving:24, trilha/11-producao-e-frota:127 | §5.17.3 | coberta |
-| `telemetry.uplink.*.broker` | 3 | 03-manifesto:394, exemplos/01-bess-peak-shaving:24, trilha/11-producao-e-frota:127 | §5.17.3 | coberta |
-| `telemetry.uplink.*.budget` | 2 | 03-manifesto:394, exemplos/01-bess-peak-shaving:24 | §5.17.3 | coberta |
-| `telemetry.uplink.*.classes` | 3 | 03-manifesto:394, exemplos/01-bess-peak-shaving:24, trilha/11-producao-e-frota:127 | §5.17.3 | coberta |
-| `telemetry.uplink.*.classes.*` | 3 | 03-manifesto:394, exemplos/01-bess-peak-shaving:24, trilha/11-producao-e-frota:127 | §5.17.3 | coberta |
-| `telemetry.uplink.*.group_id` | 2 | 03-manifesto:394, exemplos/01-bess-peak-shaving:24 | §5.17.3 | coberta |
-| `telemetry.uplink.*.history` | 1 | 03-manifesto:394 | §5.17.3 | coberta |
-| `telemetry.uplink.*.history.delivery` | 1 | 03-manifesto:394 | §5.17.3 | coberta |
-| `telemetry.uplink.*.kind` | 3 | 03-manifesto:394, exemplos/01-bess-peak-shaving:24, trilha/11-producao-e-frota:127 | §5.17.3 | coberta |
-| `telemetry.uplink.*.live` | 2 | 03-manifesto:394, trilha/11-producao-e-frota:127 | §5.17.3 | coberta |
-| `telemetry.uplink.*.live.every` | 2 | 03-manifesto:394, trilha/11-producao-e-frota:127 | §5.17.3 | coberta |
-| `telemetry.uplink.*.node_id` | 1 | 03-manifesto:394 | §5.17.3 | coberta |
-| `telemetry.uplink.*.password` | 2 | 03-manifesto:394, trilha/11-producao-e-frota:127 | §5.17.3 | coberta |
-| `telemetry.uplink.*.username` | 1 | trilha/11-producao-e-frota:127 | §5.17.3 | coberta |
-| `training` | 3 | 06-ml:197, 08-stress-tests:253, exemplos/03-manutencao-preditiva:11 | §6.4 | coberta (1.1) |
-| `training.*` | 3 | 06-ml:197, 08-stress-tests:253, exemplos/03-manutencao-preditiva:11 | §6.4 | coberta (1.1) |
-| `training.*.arch` | 3 | 06-ml:197, 08-stress-tests:253, exemplos/03-manutencao-preditiva:11 | §6.4 | coberta (1.1) |
-| `training.*.budget` | 2 | 06-ml:197, exemplos/03-manutencao-preditiva:11 | §6.4 | coberta (1.1) |
-| `training.*.budget.max_memory` | 2 | 06-ml:197, exemplos/03-manutencao-preditiva:11 | §6.4 | coberta (1.1) |
-| `training.*.budget.max_time` | 2 | 06-ml:197, exemplos/03-manutencao-preditiva:11 | §6.4 | coberta (1.1) |
-| `training.*.checkpoint` | 2 | 06-ml:197, exemplos/03-manutencao-preditiva:11 | §6.4 | coberta (1.1) |
-| `training.*.data` | 3 | 06-ml:197, 08-stress-tests:253, exemplos/03-manutencao-preditiva:11 | §6.4 | coberta (1.1) |
-| `training.*.data.signals` | 3 | 06-ml:197, 08-stress-tests:253, exemplos/03-manutencao-preditiva:11 | §6.4 | coberta (1.1) |
-| `training.*.data.where` | 3 | 06-ml:197, 08-stress-tests:253, exemplos/03-manutencao-preditiva:11 | §6.4 | coberta (1.1) |
-| `training.*.data.window` | 3 | 06-ml:197, 08-stress-tests:253, exemplos/03-manutencao-preditiva:11 | §6.4 | coberta (1.1) |
+| `models.*.source` | 6 | 03-manifest:298, 08-stress-tests:23, 08-stress-tests:158 (+3) | §6.1 | coberta (1.1) |
+| `models.*.warmup` | 2 | 03-manifest:298, examples/02-visual-inspection:35 | §6.1 | coberta (1.1) |
+| `net` | 1 | track/10-logic-on-the-mcu:222 | §5.22 | coberta (só Joker Micro) |
+| `net.wifi` | 1 | track/10-logic-on-the-mcu:222 | §5.22 | coberta (só Joker Micro) |
+| `net.wifi.country` | 1 | track/10-logic-on-the-mcu:222 | §5.22 | coberta (só Joker Micro) |
+| `net.wifi.password` | 1 | track/10-logic-on-the-mcu:222 | §5.22 | coberta (só Joker Micro) |
+| `net.wifi.ssid` | 1 | track/10-logic-on-the-mcu:222 | §5.22 | coberta (só Joker Micro) |
+| `outputs` | 20 | 03-manifest:189, 08-stress-tests:23, 08-stress-tests:158 (+17) | §5.10 | coberta |
+| `outputs.*` | 20 | 03-manifest:189, 08-stress-tests:23, 08-stress-tests:158 (+17) | §5.10 | coberta |
+| `outputs.*.accept_missing_fallback` | 2 | examples/02-visual-inspection:35, track/11-production-and-fleet:40 | §5.10 | coberta |
+| `outputs.*.deadband` | 1 | 03-manifest:189 | §5.10 | coberta |
+| `outputs.*.grace` | 2 | 03-manifest:189, examples/01-bess-peak-shaving:24 | §5.10 | coberta |
+| `outputs.*.group` | 2 | 03-manifest:189, track/09-joker-micro:48 | §5.10 | coberta |
+| `outputs.*.interlock` | 7 | 03-manifest:189, 08-stress-tests:23, 08-stress-tests:341 (+4) | §5.10 | coberta |
+| `outputs.*.max_actuations` | 3 | 03-manifest:189, 14-classes-and-instances:425, examples/02-visual-inspection:35 | §5.10 | coberta |
+| `outputs.*.max_lease` | 5 | 03-manifest:189, 08-stress-tests:23, 08-stress-tests:444 (+2) | §5.10 | coberta |
+| `outputs.*.max_manual` | 2 | 03-manifest:189, track/11-production-and-fleet:40 | §5.10 | coberta |
+| `outputs.*.min_interval` | 1 | 03-manifest:189 | §5.10 | coberta |
+| `outputs.*.on_interlock` | 1 | 03-manifest:189 | §5.10 | coberta |
+| `outputs.*.on_late` | 3 | 03-manifest:189, 08-stress-tests:158, examples/02-visual-inspection:35 | §5.10 | coberta (1.1) |
+| `outputs.*.on_range` | 1 | 03-manifest:189 | §5.10 | coberta |
+| `outputs.*.pulse` | 3 | 03-manifest:189, 08-stress-tests:158, examples/02-visual-inspection:35 | §5.10 | coberta |
+| `outputs.*.range` | 7 | 03-manifest:189, 08-stress-tests:23, 08-stress-tests:341 (+4) | §5.10 | coberta |
+| `outputs.*.rate` | 6 | 03-manifest:189, 08-stress-tests:23, 08-stress-tests:341 (+3) | §5.10 | coberta |
+| `outputs.*.remote_levels` | 1 | track/09-joker-micro:48 | §5.22 | coberta (só Joker Micro) |
+| `outputs.*.requires_good` | 4 | 03-manifest:189, 08-stress-tests:23, examples/00-first-project:41 (+1) | §5.10 | coberta |
+| `outputs.*.reset_when` | 1 | 03-manifest:189 | §5.10 | coberta |
+| `outputs.*.safe` | 17 | 03-manifest:189, 08-stress-tests:23, 08-stress-tests:158 (+14) | §5.10 | coberta |
+| `outputs.*.safe_ramp` | 2 | 03-manifest:189, 08-stress-tests:341 | §5.10 | coberta |
+| `outputs.*.safer` | 3 | 03-manifest:189, 08-stress-tests:23, examples/01-bess-peak-shaving:24 | §5.10 | coberta |
+| `outputs.*.schedule_depth` | 3 | 03-manifest:189, 08-stress-tests:158, examples/02-visual-inspection:35 | §5.10 | coberta (1.1) |
+| `outputs.*.timed` | 3 | 03-manifest:189, 08-stress-tests:158, examples/02-visual-inspection:35 | §5.10 | coberta (1.1) |
+| `outputs.*.unset` | 2 | 23-development-bench:304, track/09-joker-micro:246 | §7.2 | coberta: diretiva de overlay |
+| `outputs.*.verify` | 3 | 03-manifest:189, 08-stress-tests:23, examples/01-bess-peak-shaving:24 | §5.10 | coberta |
+| `outputs.*.verify.readback` | 3 | 03-manifest:189, 08-stress-tests:23, examples/01-bess-peak-shaving:24 | §5.10 | coberta |
+| `outputs.*.verify.tolerance` | 3 | 03-manifest:189, 08-stress-tests:23, examples/01-bess-peak-shaving:24 | §5.10 | coberta |
+| `outputs.*.verify.within` | 3 | 03-manifest:189, 08-stress-tests:23, examples/01-bess-peak-shaving:24 | §5.10 | coberta |
+| `pipelines` | 5 | 03-manifest:298, 08-stress-tests:158, 08-stress-tests:253 (+2) | §6.3 | coberta (1.1) |
+| `pipelines.*` | 5 | 03-manifest:298, 08-stress-tests:158, 08-stress-tests:253 (+2) | §6.3 | coberta (1.1) |
+| `pipelines.*.deadline` | 2 | 08-stress-tests:158, examples/02-visual-inspection:35 | §6.3 | coberta (1.1) |
+| `pipelines.*.from` | 5 | 03-manifest:298, 08-stress-tests:158, 08-stress-tests:253 (+2) | §6.3 | coberta (1.1) |
+| `pipelines.*.steps` | 5 | 03-manifest:298, 08-stress-tests:158, 08-stress-tests:253 (+2) | §6.3 | coberta (1.1) |
+| `pipelines.*.steps.[]` | 5 | 03-manifest:298, 08-stress-tests:158, 08-stress-tests:253 (+2) | §6.3 | coberta (1.1) |
+| `pipelines.*.steps.[].edges_hz` | 2 | 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.3 | coberta (1.1) |
+| `pipelines.*.steps.[].expr` | 1 | examples/03-predictive-maintenance:11 | §6.3 | coberta (1.1) |
+| `pipelines.*.steps.[].field` | 2 | 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.3 | coberta (1.1) |
+| `pipelines.*.steps.[].fields` | 2 | 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.3 | coberta (1.1) |
+| `pipelines.*.steps.[].hop` | 2 | 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.3 | coberta (1.1) |
+| `pipelines.*.steps.[].iou` | 3 | 03-manifest:298, 08-stress-tests:158, examples/02-visual-inspection:35 | §6.3 | coberta (1.1) |
+| `pipelines.*.steps.[].keep_aspect` | 1 | 03-manifest:298 | §6.3 | coberta (1.1) |
+| `pipelines.*.steps.[].max` | 3 | 03-manifest:298, 08-stress-tests:158, examples/02-visual-inspection:35 | §6.3 | coberta (1.1) |
+| `pipelines.*.steps.[].mean` | 1 | 03-manifest:298 | §6.3 | coberta (1.1) |
+| `pipelines.*.steps.[].n` | 2 | 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.3 | coberta (1.1) |
+| `pipelines.*.steps.[].name` | 5 | 03-manifest:298, 08-stress-tests:158, 08-stress-tests:253 (+2) | §6.3 | coberta (1.1) |
+| `pipelines.*.steps.[].op` | 5 | 03-manifest:298, 08-stress-tests:158, 08-stress-tests:253 (+2) | §6.3 | coberta (1.1) |
+| `pipelines.*.steps.[].roi` | 3 | 03-manifest:298, 08-stress-tests:158, examples/02-visual-inspection:35 | §6.3 | coberta (1.1) |
+| `pipelines.*.steps.[].score` | 3 | 03-manifest:298, 08-stress-tests:158, examples/02-visual-inspection:35 | §6.3 | coberta (1.1) |
+| `pipelines.*.steps.[].signals` | 1 | examples/03-predictive-maintenance:11 | §6.3 | coberta (1.1) |
+| `pipelines.*.steps.[].size` | 3 | 03-manifest:298, 08-stress-tests:158, examples/02-visual-inspection:35 | §6.3 | coberta (1.1) |
+| `pipelines.*.steps.[].std` | 1 | 03-manifest:298 | §6.3 | coberta (1.1) |
+| `pipelines.*.steps.[].window` | 4 | 08-stress-tests:158, 08-stress-tests:253, examples/02-visual-inspection:35 (+1) | §6.3 | coberta (1.1) |
+| `pipelines.*.steps.[].with` | 2 | 08-stress-tests:158, examples/02-visual-inspection:35 | §6.3 | coberta (1.1) |
+| `pipelines.*.to` | 5 | 03-manifest:298, 08-stress-tests:158, 08-stress-tests:253 (+2) | §6.3 | coberta (1.1) |
+| `project` | 13 | 03-manifest:53, 08-stress-tests:444, 09-architecture-under-stress:308 (+10) | §5.2 | coberta |
+| `project.joker` | 9 | 03-manifest:53, 23-development-bench:195, examples/01-bess-peak-shaving:24 (+6) | §5.2 | coberta |
+| `project.mode` | 10 | 03-manifest:53, 09-architecture-under-stress:308, 23-development-bench:195 (+7) | §5.2 | coberta |
+| `project.name` | 12 | 03-manifest:53, 08-stress-tests:444, 09-architecture-under-stress:308 (+9) | §5.2 | coberta |
+| `resources` | 7 | 03-manifest:53, 23-development-bench:255, examples/01-bess-peak-shaving:24 (+4) | §5.4 | coberta |
+| `resources.*` | 7 | 03-manifest:53, 23-development-bench:255, examples/01-bess-peak-shaving:24 (+4) | §5.4 | coberta |
+| `resources.*.accel` | 1 | examples/02-visual-inspection:35 | §5.4 | coberta (1.1) |
+| `resources.*.cpus` | 7 | 03-manifest:53, 23-development-bench:255, examples/01-bess-peak-shaving:24 (+4) | §5.4 | coberta |
+| `resources.*.memory` | 3 | 03-manifest:53, examples/01-bess-peak-shaving:24, examples/03-predictive-maintenance:11 | §5.4 | coberta |
+| `security` | 5 | 03-manifest:445, track/02-the-pi-as-a-node:165, track/06-switching-boards:31 (+2) | §5.19 | coberta |
+| `security.api` | 4 | 03-manifest:445, track/02-the-pi-as-a-node:165, track/06-switching-boards:31 (+1) | §5.19 | coberta |
+| `security.api.listen` | 4 | 03-manifest:445, track/02-the-pi-as-a-node:165, track/06-switching-boards:31 (+1) | §5.19 | coberta |
+| `security.roles` | 2 | 03-manifest:445, track/11-production-and-fleet:112 | §5.20 | coberta |
+| `security.roles.*` | 2 | 03-manifest:445, track/11-production-and-fleet:112 | §5.20 | coberta |
+| `security.trust` | 2 | 03-manifest:445, track/11-production-and-fleet:112 | §5.19 | coberta |
+| `security.trust.apps` | 2 | 03-manifest:445, track/11-production-and-fleet:112 | §5.19 | coberta |
+| `security.trust.config` | 2 | 03-manifest:445, track/11-production-and-fleet:112 | §5.19 | coberta; só restringe o bundle do nó (C9, resolvido: D7) |
+| `security.trust.secrets` | 1 | track/11-production-and-fleet:112 | §5.19 | coberta |
+| `signals` | 3 | track/04-esp32-modbus:226, track/05-touch-and-faults:35, track/05-touch-and-faults:63 | §5.9 | coberta |
+| `signals.*` | 3 | track/04-esp32-modbus:226, track/05-touch-and-faults:35, track/05-touch-and-faults:63 | §5.9 | coberta |
+| `signals.*.debounce` | 1 | track/04-esp32-modbus:226 | §5.9 | coberta |
+| `signals.*.stuck_detect` | 2 | track/05-touch-and-faults:35, track/05-touch-and-faults:63 | §5.9 | coberta |
+| `streams` | 3 | 03-manifest:298, 08-stress-tests:158, examples/02-visual-inspection:35 | §6.2 | coberta (1.1) |
+| `streams.*` | 3 | 03-manifest:298, 08-stress-tests:158, examples/02-visual-inspection:35 | §6.2 | coberta (1.1) |
+| `streams.*.mode` | 3 | 03-manifest:298, 08-stress-tests:158, examples/02-visual-inspection:35 | §6.2 | coberta (1.1) |
+| `streams.*.pool` | 3 | 03-manifest:298, 08-stress-tests:158, examples/02-visual-inspection:35 | §6.2 | coberta (1.1) |
+| `streams.*.record` | 1 | examples/02-visual-inspection:35 | §6.2 | coberta (1.1) |
+| `target` | 13 | 03-manifest:53, 08-stress-tests:23, 23-development-bench:255 (+10) | §5.3 | coberta |
+| `target.arch` | 1 | 03-manifest:53 | §5.3 | coberta |
+| `target.board` | 12 | 03-manifest:53, 08-stress-tests:23, 23-development-bench:255 (+9) | §5.3 | coberta |
+| `target.kernel` | 5 | 03-manifest:53, 08-stress-tests:23, examples/01-bess-peak-shaving:24 (+2) | §5.3 | coberta |
+| `telemetry` | 7 | 03-manifest:394, 08-stress-tests:253, examples/01-bess-peak-shaving:24 (+4) | §5.17 | coberta |
+| `telemetry.record` | 6 | 03-manifest:394, 08-stress-tests:253, examples/01-bess-peak-shaving:24 (+3) | §5.17.1 | coberta |
+| `telemetry.record.*` | 6 | 03-manifest:394, 08-stress-tests:253, examples/01-bess-peak-shaving:24 (+3) | §5.17.1 | coberta |
+| `telemetry.record.*.blocks` | 3 | 03-manifest:394, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §5.17.1 | coberta (1.1) |
+| `telemetry.record.*.every` | 6 | 03-manifest:394, 08-stress-tests:253, examples/01-bess-peak-shaving:24 (+3) | §5.17.1 | coberta |
+| `telemetry.record.*.keep` | 6 | 03-manifest:394, 08-stress-tests:253, examples/01-bess-peak-shaving:24 (+3) | §5.17.1 | coberta |
+| `telemetry.record.*.keep.*` | 6 | 03-manifest:394, 08-stress-tests:253, examples/01-bess-peak-shaving:24 (+3) | §5.17.1 | coberta |
+| `telemetry.record.*.on_change` | 2 | 03-manifest:394, examples/01-bess-peak-shaving:24 | §5.17.1 | coberta |
+| `telemetry.record.*.post` | 2 | 08-stress-tests:253, examples/03-predictive-maintenance:11 | §5.17.1 | coberta (1.1) |
+| `telemetry.record.*.pre` | 2 | 08-stress-tests:253, examples/03-predictive-maintenance:11 | §5.17.1 | coberta (1.1) |
+| `telemetry.record.*.trigger` | 2 | 08-stress-tests:253, examples/03-predictive-maintenance:11 | §5.17.1 | coberta (1.1) |
+| `telemetry.store` | 1 | 03-manifest:394 | §5.17.2 | coberta |
+| `telemetry.store.fsync` | 1 | 03-manifest:394 | §5.17.2 | coberta |
+| `telemetry.store.max_disk` | 1 | 03-manifest:394 | §5.17.2 | coberta |
+| `telemetry.uplink` | 3 | 03-manifest:394, examples/01-bess-peak-shaving:24, track/11-production-and-fleet:127 | §5.17.3 | coberta |
+| `telemetry.uplink.*` | 3 | 03-manifest:394, examples/01-bess-peak-shaving:24, track/11-production-and-fleet:127 | §5.17.3 | coberta |
+| `telemetry.uplink.*.broker` | 3 | 03-manifest:394, examples/01-bess-peak-shaving:24, track/11-production-and-fleet:127 | §5.17.3 | coberta |
+| `telemetry.uplink.*.budget` | 2 | 03-manifest:394, examples/01-bess-peak-shaving:24 | §5.17.3 | coberta |
+| `telemetry.uplink.*.classes` | 3 | 03-manifest:394, examples/01-bess-peak-shaving:24, track/11-production-and-fleet:127 | §5.17.3 | coberta |
+| `telemetry.uplink.*.classes.*` | 3 | 03-manifest:394, examples/01-bess-peak-shaving:24, track/11-production-and-fleet:127 | §5.17.3 | coberta |
+| `telemetry.uplink.*.group_id` | 2 | 03-manifest:394, examples/01-bess-peak-shaving:24 | §5.17.3 | coberta |
+| `telemetry.uplink.*.history` | 1 | 03-manifest:394 | §5.17.3 | coberta |
+| `telemetry.uplink.*.history.delivery` | 1 | 03-manifest:394 | §5.17.3 | coberta |
+| `telemetry.uplink.*.kind` | 3 | 03-manifest:394, examples/01-bess-peak-shaving:24, track/11-production-and-fleet:127 | §5.17.3 | coberta |
+| `telemetry.uplink.*.live` | 2 | 03-manifest:394, track/11-production-and-fleet:127 | §5.17.3 | coberta |
+| `telemetry.uplink.*.live.every` | 2 | 03-manifest:394, track/11-production-and-fleet:127 | §5.17.3 | coberta |
+| `telemetry.uplink.*.node_id` | 1 | 03-manifest:394 | §5.17.3 | coberta |
+| `telemetry.uplink.*.password` | 2 | 03-manifest:394, track/11-production-and-fleet:127 | §5.17.3 | coberta |
+| `telemetry.uplink.*.username` | 1 | track/11-production-and-fleet:127 | §5.17.3 | coberta |
+| `training` | 3 | 06-ml:197, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
+| `training.*` | 3 | 06-ml:197, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
+| `training.*.arch` | 3 | 06-ml:197, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
+| `training.*.budget` | 2 | 06-ml:197, examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
+| `training.*.budget.max_memory` | 2 | 06-ml:197, examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
+| `training.*.budget.max_time` | 2 | 06-ml:197, examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
+| `training.*.checkpoint` | 2 | 06-ml:197, examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
+| `training.*.data` | 3 | 06-ml:197, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
+| `training.*.data.signals` | 3 | 06-ml:197, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
+| `training.*.data.where` | 3 | 06-ml:197, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
+| `training.*.data.window` | 3 | 06-ml:197, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
 | `training.*.from` | 1 | 06-ml:197 | §6.4 | coberta (1.1) |
-| `training.*.hyper` | 1 | exemplos/03-manutencao-preditiva:11 | §6.4 | coberta (1.1) |
-| `training.*.hyper.epochs` | 1 | exemplos/03-manutencao-preditiva:11 | §6.4 | coberta (1.1): chave livre de `hyper` |
-| `training.*.hyper.layers` | 1 | exemplos/03-manutencao-preditiva:11 | §6.4 | coberta (1.1): chave livre de `hyper` |
-| `training.*.hyper.lr` | 1 | exemplos/03-manutencao-preditiva:11 | §6.4 | coberta (1.1): chave livre de `hyper` |
-| `training.*.output` | 3 | 06-ml:197, 08-stress-tests:253, exemplos/03-manutencao-preditiva:11 | §6.4 | coberta (1.1) |
-| `training.*.priority` | 3 | 06-ml:197, 08-stress-tests:253, exemplos/03-manutencao-preditiva:11 | §6.4 | coberta (1.1) |
-| `training.*.resources` | 3 | 06-ml:197, 08-stress-tests:253, exemplos/03-manutencao-preditiva:11 | §6.4 | coberta (1.1) |
-| `training.*.schedule` | 3 | 06-ml:197, 08-stress-tests:253, exemplos/03-manutencao-preditiva:11 | §6.4 | coberta (1.1) |
-| `training.*.validate` | 2 | 06-ml:197, exemplos/03-manutencao-preditiva:11 | §6.4 | coberta (1.1) |
-| `training.*.validate.holdout` | 2 | 06-ml:197, exemplos/03-manutencao-preditiva:11 | §6.4 | coberta (1.1) |
-| `training.*.validate.max` | 2 | 06-ml:197, exemplos/03-manutencao-preditiva:11 | §6.4 | coberta (1.1) |
-| `training.*.validate.metric` | 2 | 06-ml:197, exemplos/03-manutencao-preditiva:11 | §6.4 | coberta (1.1) |
-| `training.*.validate.threshold` | 1 | exemplos/03-manutencao-preditiva:11 | §6.4 | coberta (1.1) |
+| `training.*.hyper` | 1 | examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
+| `training.*.hyper.epochs` | 1 | examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1): chave livre de `hyper` |
+| `training.*.hyper.layers` | 1 | examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1): chave livre de `hyper` |
+| `training.*.hyper.lr` | 1 | examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1): chave livre de `hyper` |
+| `training.*.output` | 3 | 06-ml:197, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
+| `training.*.priority` | 3 | 06-ml:197, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
+| `training.*.resources` | 3 | 06-ml:197, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
+| `training.*.schedule` | 3 | 06-ml:197, 08-stress-tests:253, examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
+| `training.*.validate` | 2 | 06-ml:197, examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
+| `training.*.validate.holdout` | 2 | 06-ml:197, examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
+| `training.*.validate.max` | 2 | 06-ml:197, examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
+| `training.*.validate.metric` | 2 | 06-ml:197, examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
+| `training.*.validate.threshold` | 1 | examples/03-predictive-maintenance:11 | §6.4 | coberta (1.1) |
 
 **Chaves referidas só em texto** (procuradas com um segundo script, fora dos blocos de código):
 

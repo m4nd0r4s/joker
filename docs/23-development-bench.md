@@ -42,7 +42,7 @@ O **Bluetooth** do ESP32 não é usado: nenhuma interface da v1 o prevê.
 
 ## 3. Sinais reais sem componentes
 
-A trilha de estudo (`docs/trilha/`) pede uma saída, uma entrada discreta, uma entrada analógica ruidosa e um equipamento remoto. Sem comprar nada, os equivalentes são:
+A trilha de estudo (`docs/track/`) pede uma saída, uma entrada discreta, uma entrada analógica ruidosa e um equipamento remoto. Sem comprar nada, os equivalentes são:
 
 | Placa | Sinal | Como | Tipo |
 |---|---|---|---|
@@ -327,7 +327,7 @@ O dispositivo mantém o nome `esp`, e o firmware do Joker Micro exporta os sinai
 
 ### 6.6 A trilha de estudo nesta bancada
 
-A trilha (`docs/trilha/`, partes 01–11) é o plano de testes desta bancada: cada parte corre num estado conhecido e valida uma parte do que as Fases 1–3 prometem. O detalhe, com comandos e saídas, está em cada parte; aqui fica o que cada uma prova do hardware.
+A trilha (`docs/track/`, partes 01–11) é o plano de testes desta bancada: cada parte corre num estado conhecido e valida uma parte do que as Fases 1–3 prometem. O detalhe, com comandos e saídas, está em cada parte; aqui fica o que cada uma prova do hardware.
 
 | Parte | Onde | O que valida da bancada |
 |---|---|---|

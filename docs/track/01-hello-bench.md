@@ -396,4 +396,4 @@ $ git add -A && git commit -qm "trilha(01): luz 0.1 pisca o LED ACT simulado; te
 
 **Estado no fim desta parte:** app `luz` **0.1**. Ficheiros: `joker.toml`, `joker.sim.toml`, `joker.sim.lock`, `sim/pi.sim.toml`, `sim/scenarios/pisca.scenario.toml`, `apps/luz/`.
 
-**Próximo:** [Parte 2 — O Pi 3 como nó: instalar, enrolar, a placa, o LED real](02-o-pi-como-no.md).
+**Próximo:** [Parte 2 — O Pi 3 como nó: instalar, enrolar, a placa, o LED real](02-the-pi-as-a-node.md).

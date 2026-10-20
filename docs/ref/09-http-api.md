@@ -1202,7 +1202,7 @@ Os J-codes da validação (J01xx–J07xx) aparecem dentro de `J-E1601` e, sozinh
 | `jk class verify <classe> --instance <i>` | local (sim) ou nó (equipamento) | `POST /v1/instances/{i}/verify` |
 | `jk class publish`, `jk board publish` | Hub | — |
 
-Referidos fora do documento 07: `jk ui` (1.3; servidor local da `jk`, cliente desta API), `jk class extract` (local, depois da v1). `jk device configure` só existe na proposta `propostas/idl-classes.md` (§11).
+Referidos fora do documento 07: `jk ui` (1.3; servidor local da `jk`, cliente desta API), `jk class extract` (local, depois da v1). `jk device configure` só existe na proposta `proposals/class-idl.md` (§11).
 
 ### 9.2 Códigos de saída (documento 07, §8)
 

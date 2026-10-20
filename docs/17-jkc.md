@@ -1,6 +1,6 @@
 # 17 — A IDL de classes (`.jkc`)
 
-Documento normativo (ADR 0018). Define a linguagem em que se escrevem as **classes de equipamento** (documento 14): o que cada declaração significa, como corre em runtime, como se liga a equipamento real, o que o compilador gera e como evolui. Resulta da proposta `propostas/idl-classes.md`, corrigida depois da rodada de prontidão (documento 18).
+Documento normativo (ADR 0018). Define a linguagem em que se escrevem as **classes de equipamento** (documento 14): o que cada declaração significa, como corre em runtime, como se liga a equipamento real, o que o compilador gera e como evolui. Resulta da proposta `proposals/class-idl.md`, corrigida depois da rodada de prontidão (documento 18).
 
 A regra que decide o formato de tudo no Joker (ADR 0018): **configuração é TOML; contratos são `.jkc`; comportamento é código.**
 
@@ -397,6 +397,6 @@ Nenhum junta unidades, estado desejado seguro, pedido/resposta e derivados. A po
 
 ## 11. Casos de estresse que definiram a linguagem
 
-Os 15 casos da proposta original (arranque por impulsos, reset, bateria com modo e limites dinâmicos, fabricantes de inversores, carregador EV, firmware, EEPROM, `toggle` duplo, SCADA a chamar métodos, `stop_all`, métodos condicionados, leitura de um `out`, versões misturadas, crescimento da linguagem) estão em `propostas/idl-classes.md`, §10. As correções que a rodada de prontidão fez sobre eles estão no documento 18, §2.
+Os 15 casos da proposta original (arranque por impulsos, reset, bateria com modo e limites dinâmicos, fabricantes de inversores, carregador EV, firmware, EEPROM, `toggle` duplo, SCADA a chamar métodos, `stop_all`, métodos condicionados, leitura de um `out`, versões misturadas, crescimento da linguagem) estão em `proposals/class-idl.md`, §10. As correções que a rodada de prontidão fez sobre eles estão no documento 18, §2.
 
 **Leitura de um `out`:** dá o valor **aplicado**. `x.mine()` dá a proposta do próprio escritor, `x.winner()` o nível que ganhou. Nas expressões da classe, `x` é o aplicado e `own(x)` é o do chamador.

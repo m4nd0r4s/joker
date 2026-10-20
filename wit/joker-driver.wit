@@ -1,6 +1,6 @@
 /// joker:driver — the world of tier W drivers (drivers compiled to WebAssembly components).
 ///
-/// Normative reference: docs/ref/06-drivers.md (§4). Representation rules: docs/ref/00-convencoes.md.
+/// Normative reference: docs/ref/06-drivers.md (§4). Representation rules: docs/ref/00-conventions.md.
 /// The same contract exists for tier N (Rust trait, ref/06 §3) and tier X (JDP, ref/06 §5): the
 /// records below have the same fields, in the same order, as the Rust types and the CDDL of
 /// spec/cddl/jdp.cddl.
