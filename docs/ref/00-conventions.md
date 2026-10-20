@@ -1,138 +1,138 @@
-# ref/00 — Convenções transversais das interfaces
+# ref/00 — Cross-cutting interface conventions
 
-Este documento fixa as regras que **todas** as interfaces do Joker partilham: ficheiros TOML, `.jkc`, WIT, SDKs (Rust, Python, TypeScript), drivers (tier N, W, X), Joker Link, ABI C, API HTTP e protocolo do agente. Cada referência em `docs/ref/` aplica estas regras e não as repete. Uma referência que as contradiga está errada.
+This document fixes the rules that **all** Joker interfaces share: TOML files, `.jkc`, WIT, SDKs (Rust, Python, TypeScript), drivers (tier N, W, X), Joker Link, C ABI, HTTP API and agent protocol. Each reference in `docs/ref/` applies these rules and does not repeat them. A reference that contradicts them is wrong.
 
-É **normativo**, com a mesma precedência do documento 16 (ADR 0023). Tudo o que é semântica (árbitro, envelope, qualidade, expressões) continua no 16. Aqui fica só a **representação**.
-
----
-
-## 1. As superfícies e as suas versões
-
-| Superfície | Identificador de versão | Onde está a referência |
-|---|---|---|
-| runtime (`jokerd`, `jk`) | SemVer do produto (`1.4.2`) | — |
-| manifesto, overlays | `[project] joker = "1.4"` (versão mínima da runtime) | ref/01 |
-| lock, `node.toml`, configuração do cliente, `secrets.toml.enc` | `version = 1` | ref/02 |
-| perfis, placas, simulação, cenários, conformidade | `schema = 1` como **primeiro par chave/valor** (só comentários e linhas vazias antes) | ref/03 |
-| classes `.jkc` | versão da classe (`pump@1`) + `jkc = 1` implícito | 17 |
-| mundo das apps | pacote WIT `joker:runtime@0.x.y` até à 1.0; **`joker:runtime@1.0.0` na 1.0** | ref/04 |
-| drivers tier W | pacote WIT `joker:driver@…`, com a **mesma versão** do `joker:runtime` que importa; `@unstable` na 1.0 e na 1.1 (só drivers da árvore), estável na 1.2 | ref/06 §4 |
-| drivers tier X (JDP) | `jdp` inteiro no `hello` e no `welcome` (1 na v1); o `jokerd` suporta o corrente e o anterior | ref/06 |
-| SDKs Rust, Python, TypeScript | SemVer do pacote; o SDK declara o mundo WIT que gera | ref/04, ref/05 |
-| Joker Link | `link_version` (u8 major, u8 minor) no `HELLO` | ref/07 |
-| ABI C do Joker Micro | `JK_ABI_VERSION_MAJOR` / `JK_ABI_VERSION_MINOR` | ref/08 |
-| blob de geração (`.jkgen`) e descritor de firmware (`.jkfw`) | `format` e `expr_isa` no cabeçalho | ref/08 |
-| API HTTP local | prefixo `/v1`; `info.version` no OpenAPI | ref/09 |
-| protocolo do agente (nó ↔ Deck) | `agent/1` | ref/10 |
-| artefactos OCI | tipo de media com `.v1` (tabela do §7.1) | §7.1 |
-
-**Regra de compatibilidade (ADR 0022) aplicada à representação:**
-
-1. Numa minor só se **acrescenta**: campos opcionais, mensagens novas, variantes novas no fim de um enum, endpoints novos.
-2. **Leitores toleram o desconhecido** nas interfaces máquina-a-máquina (JSON, CBOR, WIT via adaptador): campos desconhecidos ignorados; variante de enum desconhecida mapeada para a variante `unknown` ou para a categoria (uma razão de qualidade desconhecida conta pela sua `quality-code`). Isto vale para quem **lê respostas e mensagens**. Um servidor é estrito com os **pedidos** que recebe: um campo desconhecido num pedido HTTP é `J-E1011`. Cada caso novo de um enum WIT declara a sua projeção para os mundos anteriores (ref/04 §2.8).
-3. **Os ficheiros escritos por pessoas são estritos:** uma chave desconhecida num TOML é um erro (`J0140`), porque quase sempre é um erro de escrita. Chaves de extensão começam por `x_` e são ignoradas.
-4. Um número de campo, uma chave CBOR inteira ou um código **nunca se reutiliza** depois de removido.
+It is **normative**, with the same precedence as document 16 (ADR 0023). Everything that is semantics (arbiter, envelope, quality, expressions) stays in 16. Only the **representation** lives here.
 
 ---
 
-## 2. Nomes
+## 1. The surfaces and their versions
 
-| Onde | Estilo | Exemplo |
+| Surface | Version identifier | Where the reference is |
 |---|---|---|
-| chaves TOML, chaves JSON, valores de enum em JSON | `snake_case` | `max_lease`, `"comm_failure"` |
-| caminhos de sinais, nomes de dispositivos, apps, instâncias, grupos | `snake_case`, gramática do documento 02, §9 | `pump1.run_cmd` |
-| WIT | `kebab-case` (regra do WIT) | `quality-reason`, `write-at` |
-| Rust | convenções Rust (`snake_case`, `CamelCase`) | `last_outcome()`, `WriteOutcome` |
+| runtime (`jokerd`, `jk`) | product SemVer (`1.4.2`) | — |
+| manifest, overlays | `[project] joker = "1.4"` (minimum runtime version) | ref/01 |
+| lock, `node.toml`, client configuration, `secrets.toml.enc` | `version = 1` | ref/02 |
+| profiles, boards, simulation, scenarios, conformance | `schema = 1` as the **first key/value pair** (only comments and blank lines before it) | ref/03 |
+| `.jkc` classes | class version (`pump@1`) + implicit `jkc = 1` | 17 |
+| app world | WIT package `joker:runtime@0.x.y` until 1.0; **`joker:runtime@1.0.0` in 1.0** | ref/04 |
+| tier W drivers | WIT package `joker:driver@…`, with the **same version** as the `joker:runtime` it imports; `@unstable` in 1.0 and 1.1 (in-tree drivers only), stable in 1.2 | ref/06 §4 |
+| tier X drivers (JDP) | integer `jdp` in `hello` and in `welcome` (1 in v1); `jokerd` supports the current one and the previous one | ref/06 |
+| Rust, Python, TypeScript SDKs | package SemVer; the SDK declares the WIT world it generates | ref/04, ref/05 |
+| Joker Link | `link_version` (u8 major, u8 minor) in `HELLO` | ref/07 |
+| Joker Micro C ABI | `JK_ABI_VERSION_MAJOR` / `JK_ABI_VERSION_MINOR` | ref/08 |
+| generation blob (`.jkgen`) and firmware descriptor (`.jkfw`) | `format` and `expr_isa` in the header | ref/08 |
+| local HTTP API | prefix `/v1`; `info.version` in the OpenAPI | ref/09 |
+| agent protocol (node ↔ Deck) | `agent/1` | ref/10 |
+| OCI artifacts | media type with `.v1` (table in §7.1) | §7.1 |
+
+**Compatibility rule (ADR 0022) applied to the representation:**
+
+1. A minor only **adds**: optional fields, new messages, new variants at the end of an enum, new endpoints.
+2. **Readers tolerate the unknown** in machine-to-machine interfaces (JSON, CBOR, WIT via adapter): unknown fields are ignored; an unknown enum variant is mapped to the `unknown` variant or to the category (an unknown quality reason counts by its `quality-code`). This applies to whoever **reads responses and messages**. A server is strict with the **requests** it receives: an unknown field in an HTTP request is `J-E1011`. Each new case of a WIT enum declares its projection onto the previous worlds (ref/04 §2.8).
+3. **Files written by people are strict:** an unknown key in a TOML is an error (`J0140`), because it is almost always a typo. Extension keys start with `x_` and are ignored.
+4. A field number, an integer CBOR key or a code is **never reused** after being removed.
+
+---
+
+## 2. Names
+
+| Where | Style | Example |
+|---|---|---|
+| TOML keys, JSON keys, enum values in JSON | `snake_case` | `max_lease`, `"comm_failure"` |
+| signal paths, names of devices, apps, instances, groups | `snake_case`, grammar of document 02, §9 | `pump1.run_cmd` |
+| WIT | `kebab-case` (WIT rule) | `quality-reason`, `write-at` |
+| Rust | Rust conventions (`snake_case`, `CamelCase`) | `last_outcome()`, `WriteOutcome` |
 | Python | PEP 8 | `last_outcome()`, `WriteOutcome` |
-| TypeScript | `camelCase` para a API do SDK, `PascalCase` para tipos | `lastOutcome()`, `WriteOutcome` |
-| C | prefixo `jk_` para funções e tipos, `JK_` para macros e constantes | `jk_tick`, `JK_GOOD` |
-| erros e avisos | códigos do documento 16, §9 | `J0107`, `J-E0901` |
+| TypeScript | `camelCase` for the SDK API, `PascalCase` for types | `lastOutcome()`, `WriteOutcome` |
+| C | prefix `jk_` for functions and types, `JK_` for macros and constants | `jk_tick`, `JK_GOOD` |
+| errors and warnings | codes of document 16, §9 | `J0107`, `J-E0901` |
 
-**Nomes vindos do utilizador não se traduzem.** Portas, parâmetros, membros de classes, sinais e variantes de enums declarados pelo utilizador mantêm-se `snake_case` em todas as linguagens, incluindo TypeScript (`pump.run_cmd`, `inputs.grid_p`). Só a API do SDK segue o estilo da linguagem. Assim um nome encontra-se com um `grep` em todos os ficheiros de um projeto.
+**Names coming from the user are not translated.** Ports, parameters, class members, signals and enum variants declared by the user stay `snake_case` in every language, including TypeScript (`pump.run_cmd`, `inputs.grid_p`). Only the SDK API follows the language's style. This way a name is found with a `grep` across all files of a project.
 
-**Reservados:**
+**Reserved:**
 
-- caminhos: o primeiro segmento `joker` (a runtime) e `board` (IO fixo das placas, `board.<nome>`); o primeiro segmento `@` (caminhos qualificados por nó na v2, documento 21, §8);
-- nomes de apps `joker*`; o nome de nó `local`; chaves TOML começadas por `_`;
-- nomes de portas de apps, em todas as linguagens: `now`, `dt`, `kv`, `secrets`, `snapshot`, `subscribe`, `sleep`, `sleep_until`, `log`, `cmd`, `state`, `http`, `random`, `meta`;
-- nomes de membros de classes: `name`, `index`, `health`, `read`, `raw`, `has` (documento 17, §3.2).
+- paths: the first segment `joker` (the runtime) and `board` (fixed IO of the boards, `board.<name>`); the first segment `@` (node-qualified paths in v2, document 21, §8);
+- app names `joker*`; the node name `local`; TOML keys starting with `_`;
+- app port names, in every language: `now`, `dt`, `kv`, `secrets`, `snapshot`, `subscribe`, `sleep`, `sleep_until`, `log`, `cmd`, `state`, `http`, `random`, `meta`;
+- class member names: `name`, `index`, `health`, `read`, `raw`, `has` (document 17, §3.2).
 
-**Valores de enum em TOML** escrevem-se em `snake_case` (`"clamped_rate"`, `"bad(comm_failure)"`). As formas de apresentação da CLI (`Clamped(Rate)`, `Bad(CommFailure)`) são aceites como sinónimos exatos nos cenários e nos casos de conformidade, e o `jk fmt` normaliza-as.
+**Enum values in TOML** are written in `snake_case` (`"clamped_rate"`, `"bad(comm_failure)"`). The CLI display forms (`Clamped(Rate)`, `Bad(CommFailure)`) are accepted as exact synonyms in scenarios and in conformance cases, and `jk fmt` normalizes them.
 
-**Nomes de ficheiros** (ADR 0026). O tipo de cada ficheiro está no nome, na forma `<nome>.<tipo>.toml`; o conteúdo tem de bater com o sufixo (`J0803`, ref/03 §2.1.6):
+**File names** (ADR 0026). The type of each file is in its name, in the form `<name>.<type>.toml`; the content must match the suffix (`J0803`, ref/03 §2.1.6):
 
-| Tipo | Nome | Exemplo | Referência |
+| Type | Name | Example | Reference |
 |---|---|---|---|
-| manifesto | `joker.toml` | `joker.toml`, `micro/esp/joker.toml` | ref/01 |
-| overlay | `joker.<variante>.toml`, em qualquer pasta | `joker.lab.toml`, `templates/joker.bess-v2.toml` | ref/01 §7.7 |
-| lock | `joker.lock`; `joker.<variante>.lock` para cada overlay de entrada | `joker.lab.lock` | ref/02 §2.1.1 |
-| perfil de equipamento | `<modelo>@<major>.profile.toml` | `profiles/local/bench-esp32@1.profile.toml` | ref/03 §2.2 |
-| perfil de placa | `<placa>.board.toml` | `boards/rpi-zero-w.board.toml` | ref/03 §2.3 |
-| modelo de simulação | `<nome>.sim.toml` | `sim/esp.sim.toml`, `classes/std/valve.sim.toml` | ref/03 §2.4 |
-| cenário | `<nome>.scenario.toml` | `sim/scenarios/falha_esp.scenario.toml` | ref/03 §2.5 |
-| suite de conformidade | `<nome>.conformance.toml` | `conformance/envelope/rate.conformance.toml` | ref/03 §2.6 |
-| fixture de drivers | `<driver>.fixture.toml` | `drivers/modbus/conformance/modbus-tcp.fixture.toml` | ref/06 §6.2 |
-| descritor de driver (fonte TOML) | `<driver>.driver.toml` | `joker-drv-acme.driver.toml` | ref/06 §5.8 |
-| pacote de classes | `<pacote>.package.toml` | `classes/acme/water/water.package.toml` | ref/03 §2.7 |
-| classe | `<nome>.jkc` (`<nome>@<major>.jkc` com duas majors) | `classes/std/pump.jkc` | 17 |
-| nó, cliente, Deck, frota, segredos, registo de códigos | nomes fixos | `node.toml`, `config.toml`, `deck.toml`, `fleet.toml`, `secrets.toml.enc`, `codes.toml` | ref/02, ref/10 |
+| manifest | `joker.toml` | `joker.toml`, `micro/esp/joker.toml` | ref/01 |
+| overlay | `joker.<variant>.toml`, in any directory | `joker.lab.toml`, `templates/joker.bess-v2.toml` | ref/01 §7.7 |
+| lock | `joker.lock`; `joker.<variant>.lock` for each input overlay | `joker.lab.lock` | ref/02 §2.1.1 |
+| equipment profile | `<model>@<major>.profile.toml` | `profiles/local/bench-esp32@1.profile.toml` | ref/03 §2.2 |
+| board profile | `<board>.board.toml` | `boards/rpi-zero-w.board.toml` | ref/03 §2.3 |
+| simulation model | `<name>.sim.toml` | `sim/esp.sim.toml`, `classes/std/valve.sim.toml` | ref/03 §2.4 |
+| scenario | `<name>.scenario.toml` | `sim/scenarios/falha_esp.scenario.toml` | ref/03 §2.5 |
+| conformance suite | `<name>.conformance.toml` | `conformance/envelope/rate.conformance.toml` | ref/03 §2.6 |
+| driver fixture | `<driver>.fixture.toml` | `drivers/modbus/conformance/modbus-tcp.fixture.toml` | ref/06 §6.2 |
+| driver descriptor (TOML source) | `<driver>.driver.toml` | `joker-drv-acme.driver.toml` | ref/06 §5.8 |
+| class package | `<package>.package.toml` | `classes/acme/water/water.package.toml` | ref/03 §2.7 |
+| class | `<name>.jkc` (`<name>@<major>.jkc` with two majors) | `classes/std/pump.jkc` | 17 |
+| node, client, Deck, fleet, secrets, code registry | fixed names | `node.toml`, `config.toml`, `deck.toml`, `fleet.toml`, `secrets.toml.enc`, `codes.toml` | ref/02, ref/10 |
 
-`<variante>` segue a gramática dos nomes de placa (`[a-z0-9]+ ("-" [a-z0-9]+)*`, ≤ 32 caracteres). As referências escrevem-se sem sufixo quando são nomes (`profile = "local/bench-esp32@1"`, `board = "rpi-zero-w"`: a resolução acrescenta-o) e com ele quando são caminhos (`model = "sim/esp.sim.toml"`).
+`<variant>` follows the grammar of board names (`[a-z0-9]+ ("-" [a-z0-9]+)*`, ≤ 32 characters). References are written without the suffix when they are names (`profile = "local/bench-esp32@1"`, `board = "rpi-zero-w"`: resolution adds it) and with it when they are paths (`model = "sim/esp.sim.toml"`).
 
 ---
 
-## 3. Tempo
+## 3. Time
 
-| Grandeza | Binário (WIT, traço, JDP) | Microcontrolador (ABI C, Joker Link) | Texto (TOML, JSON, CLI) |
+| Quantity | Binary (WIT, trace, JDP) | Microcontroller (C ABI, Joker Link) | Text (TOML, JSON, CLI) |
 |---|---|---|---|
-| instante monotónico | `u64` ns | `u64` µs, época do arranque do MCU | string decimal (`"mono_ns": "81234567890"`) |
-| instante UTC | `s64` ns desde 1970-01-01T00:00:00Z | `s64` µs (só depois de `TIME`) | RFC 3339, `Z`, até 9 casas (`"2026-09-24T10:00:00.123456789Z"`) |
-| duração | `u64` ns | `u32` µs (até ~71 min) ou `u32` ms (campos `_ms`) | literal de duração (§3.1) |
-| qualidade do relógio | enum `clock-quality` | idem, numérico (§6) | `"synced"`, `"holdover"`, `"unsynced"` |
+| monotonic instant | `u64` ns | `u64` µs, epoch at MCU boot | decimal string (`"mono_ns": "81234567890"`) |
+| UTC instant | `s64` ns since 1970-01-01T00:00:00Z | `s64` µs (only after `TIME`) | RFC 3339, `Z`, up to 9 digits (`"2026-09-24T10:00:00.123456789Z"`) |
+| duration | `u64` ns | `u32` µs (up to ~71 min) or `u32` ms (`_ms` fields) | duration literal (§3.1) |
+| clock quality | enum `clock-quality` | same, numeric (§6) | `"synced"`, `"holdover"`, `"unsynced"` |
 
-- Os segundos intercalares não existem: UTC é contado como o POSIX conta.
-- Um instante monotónico **só tem sentido no nó que o produziu** e na geração do relógio (documento 01, §18). Nunca sai do nó sem o par UTC ao lado.
-- O `jokerd` converte µs ↔ ns na fronteira do Joker Link.
-- **Exceção do Joker Link:** as mensagens de um MCU levam só o monotónico em µs. O par UTC é estabelecido pelo `TIME` e guardado no nó Linux, que faz a tradução (ref/07 §6.23).
-- Em TypeScript, `i64`, `u64` e instantes em ns são sempre `bigint` (o monotónico em ns passa 2⁵³ ao fim de ~104 dias).
+- Leap seconds do not exist: UTC is counted the way POSIX counts it.
+- A monotonic instant **only has meaning on the node that produced it** and in the clock generation (document 01, §18). It never leaves the node without the UTC pair beside it.
+- `jokerd` converts µs ↔ ns at the Joker Link boundary.
+- **Joker Link exception:** an MCU's messages carry only the monotonic time in µs. The UTC pair is established by `TIME` and kept on the Linux node, which does the translation (ref/07 §6.23).
+- In TypeScript, `i64`, `u64` and instants in ns are always `bigint` (the monotonic time in ns exceeds 2⁵³ after ~104 days).
 
-### 3.1 Literais de duração
+### 3.1 Duration literals
 
 ```
-duração := número espaço? unidade
-unidade := "ns" | "us" | "µs" | "ms" | "s" | "m" | "min" | "h" | "d"
+duration := number space? unit
+unit     := "ns" | "us" | "µs" | "ms" | "s" | "m" | "min" | "h" | "d"
 ```
 
-- `m` e `min` são minutos **só onde se espera uma duração** (chaves de duração, argumentos de janela, `--ttl`). Numa quantidade física, `m` é o metro. Nunca há ambiguidade, porque o tipo da posição é conhecido.
-- Não há compostos (`1h30m`): escreve-se `"90m"`.
-- Decimais permitidos (`"1.5s"`); o valor é arredondado a ns.
-- Nos **instantes** de cenários e de casos de conformidade (`at`), e só aí, aceita-se uma soma `duração + duração` (`"2m+1.2s"`); nas suites de drivers, também o termo `timeout` (`"timeout+10ms"`, ref/03 §5).
-- **Forma canónica de saída** (ficheiros gerados, respostas da API, `jk fmt`): inteiro na maior unidade exata, com `m` para minutos (`"90m"`, `"1500ms"`, `"2h"`).
+- `m` and `min` are minutes **only where a duration is expected** (duration keys, window arguments, `--ttl`). In a physical quantity, `m` is the meter. There is never any ambiguity, because the type of the position is known.
+- There are no compounds (`1h30m`): write `"90m"`.
+- Decimals are allowed (`"1.5s"`); the value is rounded to ns.
+- In the **instants** of scenarios and conformance cases (`at`), and only there, a sum `duration + duration` is accepted (`"2m+1.2s"`); in driver suites, also the term `timeout` (`"timeout+10ms"`, ref/03 §5).
+- **Canonical output form** (generated files, API responses, `jk fmt`): integer in the largest exact unit, with `m` for minutes (`"90m"`, `"1500ms"`, `"2h"`).
 
-### 3.2 Literais de quantidade
+### 3.2 Quantity literals
 
-`"125 kW"`, `"-20 kW/s"`, `"49.8 Hz"`, `"5 %"`. O espaço entre número e unidade é opcional. **No manifesto e nos ficheiros de catálogo**, uma grandeza com unidade exige sempre o literal com unidade (`J0151`); só as interfaces máquina (JSON da API) aceitam um número simples, interpretado na unidade do sinal. As unidades são as do catálogo do documento 16, §5. Tamanhos de memória e de disco usam prefixos IEC: `"512 MiB"`, `"1 GiB"`.
+`"125 kW"`, `"-20 kW/s"`, `"49.8 Hz"`, `"5 %"`. The space between number and unit is optional. **In the manifest and in catalog files**, a quantity with a unit always requires the literal with its unit (`J0151`); only machine interfaces (API JSON) accept a plain number, interpreted in the signal's unit. The units are those of the catalog in document 16, §5. Memory and disk sizes use IEC prefixes: `"512 MiB"`, `"1 GiB"`.
 
 ---
 
-## 4. Valores, amostras e qualidade
+## 4. Values, samples and quality
 
-### 4.1 Valores
+### 4.1 Values
 
-| Tipo do sinal | Binário (`u64` do slot, do traço e do Link) | JSON |
+| Signal type | Binary (`u64` of the slot, the trace and the Link) | JSON |
 |---|---|---|
-| `bool` | 0 ou 1 | `true` / `false` |
-| `i64` | complemento para dois | número se \|v\| < 2⁵³, senão string decimal |
-| `u64` | tal qual | número se v < 2⁵³, senão string decimal |
-| `f64`, `f32` | bits IEEE 754 de `f64` (`f32` promovido) | número; `NaN` e infinitos não existem em JSON e só aparecem com qualidade `bad(nan)` e `"value": null` |
-| `enum<N>` | valor numérico da variante | nome da variante (`"run"`) |
-| `bits<N>` | a palavra | número, e `"bits": ["alarm_overtemp", …]` com os bits ativos nomeados |
-| `string`, `bytes` | arena à parte (não cabe em `u64`) | string UTF-8; `bytes` em base64 |
-| registo (eventos, argumentos e resultados de ações e métodos, `Internal<T>`, mensagens de caixas de correio) | **CBOR determinístico** (RFC 8949, §4.2.1), mapa com **chaves inteiras = posição do campo no esquema** (`joker:meta` ou contrato `.jkc`); dentro de uma major, os campos só se acrescentam no fim | objeto JSON com os **nomes** dos campos |
+| `bool` | 0 or 1 | `true` / `false` |
+| `i64` | two's complement | number if \|v\| < 2⁵³, otherwise decimal string |
+| `u64` | as is | number if v < 2⁵³, otherwise decimal string |
+| `f64`, `f32` | IEEE 754 bits of `f64` (`f32` promoted) | number; `NaN` and infinities do not exist in JSON and only appear with quality `bad(nan)` and `"value": null` |
+| `enum<N>` | numeric value of the variant | variant name (`"run"`) |
+| `bits<N>` | the word | number, and `"bits": ["alarm_overtemp", …]` with the active bits named |
+| `string`, `bytes` | separate arena (does not fit in `u64`) | UTF-8 string; `bytes` in base64 |
+| record (events, arguments and results of actions and methods, `Internal<T>`, mailbox messages) | **deterministic CBOR** (RFC 8949, §4.2.1), map with **integer keys = position of the field in the schema** (`joker:meta` or `.jkc` contract); within a major, fields are only added at the end | JSON object with the field **names** |
 
-**Unidade:** um valor numérico é sempre expresso na **unidade declarada do sinal**. As interfaces de texto mostram a unidade ao lado (`"unit": "kW"`) e aceitam, na entrada, um número (na unidade do sinal) ou um literal de quantidade (`"50 kW"`, convertido; dimensão errada é `J0107`).
+**Unit:** a numeric value is always expressed in the **declared unit of the signal**. Text interfaces show the unit alongside (`"unit": "kW"`) and accept, on input, a number (in the signal's unit) or a quantity literal (`"50 kW"`, converted; a wrong dimension is `J0107`).
 
-### 4.2 Amostra em JSON
+### 4.2 Sample in JSON
 
 ```json
 {
@@ -147,13 +147,13 @@ unidade := "ns" | "us" | "µs" | "ms" | "s" | "m" | "min" | "h" | "d"
 }
 ```
 
-`ts_src` e `ts_hw` só aparecem quando existem. O `ts_acq` em JSON é já traduzido para UTC; o monotónico está disponível pedindo `?mono=true` (ref/09). Campos opcionais, pedidos por parâmetro: `age`, `acq_id`, `bits`, `ts_acq_mono_ns`, `ts_hw_mono_ns` (ref/09 §3.3).
+`ts_src` and `ts_hw` only appear when they exist. The `ts_acq` in JSON is already translated to UTC; the monotonic time is available by requesting `?mono=true` (ref/09). Optional fields, requested by parameter: `age`, `acq_id`, `bits`, `ts_acq_mono_ns`, `ts_hw_mono_ns` (ref/09 §3.3).
 
-### 4.3 Códigos numéricos de qualidade
+### 4.3 Numeric quality codes
 
-Usados no slot (documento 01, §3.2: código nos bits 0–7, motivo nos bits 8–15, flags nos bits 16–31), no traço, no Joker Link e na ABI C.
+Used in the slot (document 01, §3.2: code in bits 0–7, reason in bits 8–15, flags in bits 16–31), in the trace, in Joker Link and in the C ABI.
 
-| Código | Valor | | Motivo | Valor | | Motivo | Valor |
+| Code | Value | | Reason | Value | | Reason | Value |
 |---|---|---|---|---|---|---|---|
 | `good` | 0 | | `none` | 0 | | `comm_failure` | 12 |
 | `uncertain` | 1 | | `overridden` | 1 | | `device_fault` | 13 |
@@ -168,13 +168,13 @@ Usados no slot (documento 01, §3.2: código nos bits 0–7, motivo nos bits 8�
 | | | | `frozen` | 10 | | | |
 | | | | `partial_write` | 11 | | | |
 
-A ordem é a do enum WIT `quality-reason`. Valores de 20 a 239 são reservados para motivos futuros; de 240 a 255, para uso privado de drivers (aparecem como o motivo 0 fora do nó).
+The order is that of the WIT enum `quality-reason`. Values 20 to 239 are reserved for future reasons; 240 to 255, for private use by drivers (they appear as reason 0 outside the node).
 
-### 4.4 Resultados de escrita
+### 4.4 Write results
 
-| Resultado | Valor | Motivo (para `rejected`) | Valor |
+| Result | Value | Reason (for `rejected`) | Value |
 |---|---|---|---|
-| `none` (sem proposta neste tick) | 0 | `wrong_type` | 1 |
+| `none` (no proposal in this tick) | 0 | `wrong_type` | 1 |
 | `accepted` | 1 | `interlock` | 2 |
 | `clamped_range` | 2 | `quality` | 3 |
 | `clamped_rate` | 3 | `range` | 4 |
@@ -185,152 +185,152 @@ A ordem é a do enum WIT `quality-reason`. Valores de 20 a 239 são reservados p
 | `rejected` | 8 | | |
 | `tripped` | 9 | | |
 
-O documento 02, §7.1, escreve `Clamped(Range|Rate)`: são os valores 2 e 3. O WIT distingue-os com `clamped(clamp)` (ref/04). Em JSON: `{"outcome": "clamped_rate", "applied": 1.0}`, `{"outcome": "rejected", "reason": "interlock"}`, `{"outcome": "overridden", "level": "manual:3"}`.
+Document 02, §7.1, writes `Clamped(Range|Rate)`: these are values 2 and 3. WIT distinguishes them with `clamped(clamp)` (ref/04). In JSON: `{"outcome": "clamped_rate", "applied": 1.0}`, `{"outcome": "rejected", "reason": "interlock"}`, `{"outcome": "overridden", "level": "manual:3"}`.
 
 ---
 
-## 5. Identificadores
+## 5. Identifiers
 
-| Coisa | Forma em texto | Forma em binário | Regra |
+| Thing | Text form | Binary form | Rule |
 |---|---|---|---|
-| sinal | caminho (`pump1.run_cmd`) | `SignalId` `u32` | o `SignalId` é **denso e válido só numa geração**; nunca sai do nó sem o hash do registo ao lado |
-| sinal, estável entre gerações | — | *path-hash*: primeiros 8 B do SHA-256 do caminho canónico | liga a interface externa de um MCU a cada geração (ref/08) |
-| chave pública | chave: `x25519:<base64>`, `ed25519:<base64>`; id de chave: `ed25519:<32 hex>` (os primeiros 16 B do SHA-256 da chave pública) | 32 B; id 16 B | ref/02 §2.5 |
-| nível do árbitro | `"<faixa>:<nível>"` (`"optimizer:13"`); o nível é absoluto (1–16) e tem de estar dentro da faixa | `u8` 1–16 | faixas do documento 01, §6 |
-| escritor | `app:<nome>`, `user:<principal>`, `bridge:<nome>`, `impl:<instância>`, `intent:<id>`, `link:<dispositivo>` (escritor remoto num MCU, 16 A12) | `u32` por geração; no traço, os escritores remotos de um MCU são ≥ `0x8000_0000` | A1 do documento 16 |
-| principal | `unix:<utilizador>`, `cert:<CN>`, `deck:<deck_id>/user:<id>`, `deck:<deck_id>/group:<g>` | — | ref/09 §2.2, ref/10 |
-| geração | `gen` inteiro atribuído na criação, e `sha256:<hex>` do conteúdo | 32 B | o hash identifica, o inteiro ordena a criação; um rollback **reativa** a geração anterior (mesmo hash, mesmo `gen`) e o histórico regista a ativação com `origin` |
-| digest de artefacto | `sha256:<hex>` (OCI) | 32 B | |
-| nó | `[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?` (rótulo DNS) | string | único numa organização |
-| site | mesma gramática | string | |
-| classe | `<pacote>/<nome>@<major>` (`std/pump@1`; `std/` pode omitir-se) | hash do contrato, 32 B | documento 17, §9 |
-| instância, membro | caminho (`pump1`, `pump1.start`) | `u32` instância, `u16` membro | |
-| chave de idempotência | string ASCII imprimível, 1–64 B | idem | janela `dedup_window` (E9) |
-| intenção, pedido, sessão | ULID (`01J8…`, 26 caracteres) | 16 B | ordenáveis por tempo |
+| signal | path (`pump1.run_cmd`) | `SignalId` `u32` | the `SignalId` is **dense and valid only within one generation**; it never leaves the node without the registry hash beside it |
+| signal, stable across generations | — | *path-hash*: first 8 B of the SHA-256 of the canonical path | binds the external interface of an MCU to each generation (ref/08) |
+| public key | key: `x25519:<base64>`, `ed25519:<base64>`; key id: `ed25519:<32 hex>` (the first 16 B of the SHA-256 of the public key) | 32 B; id 16 B | ref/02 §2.5 |
+| arbiter level | `"<band>:<level>"` (`"optimizer:13"`); the level is absolute (1–16) and must be inside the band | `u8` 1–16 | bands of document 01, §6 |
+| writer | `app:<name>`, `user:<principal>`, `bridge:<name>`, `impl:<instance>`, `intent:<id>`, `link:<device>` (remote writer on an MCU, 16 A12) | `u32` per generation; in the trace, the remote writers of an MCU are ≥ `0x8000_0000` | A1 of document 16 |
+| principal | `unix:<user>`, `cert:<CN>`, `deck:<deck_id>/user:<id>`, `deck:<deck_id>/group:<g>` | — | ref/09 §2.2, ref/10 |
+| generation | integer `gen` assigned at creation, and `sha256:<hex>` of the content | 32 B | the hash identifies, the integer orders creation; a rollback **reactivates** the previous generation (same hash, same `gen`) and the history records the activation with `origin` |
+| artifact digest | `sha256:<hex>` (OCI) | 32 B | |
+| node | `[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?` (DNS label) | string | unique within an organization |
+| site | same grammar | string | |
+| class | `<package>/<name>@<major>` (`std/pump@1`; `std/` may be omitted) | contract hash, 32 B | document 17, §9 |
+| instance, member | path (`pump1`, `pump1.start`) | `u32` instance, `u16` member | |
+| idempotency key | printable ASCII string, 1–64 B | same | `dedup_window` window (E9) |
+| intent, request, session | ULID (`01J8…`, 26 characters) | 16 B | sortable by time |
 
 ---
 
-## 6. Enumerações numéricas partilhadas
+## 6. Shared numeric enumerations
 
-| Enum | Valores |
+| Enum | Values |
 |---|---|
 | `clock_quality` | `synced` 0, `holdover` 1, `unsynced` 2 |
 | `alarm_state` | `normal` 0, `active_unacked` 1, `active_acked` 2, `rtn_unacked` 3, `unknown` 4 |
 | `severity` | `low` 0, `medium` 1, `high` 2, `critical` 3 |
 | `role` | `viewer` 0, `operator` 1, `admin` 2 |
 | `writer_kind` | `cycle` 0, `async` 1, `manual` 2, `bridge` 3, `impl` 4, `proposal` 5 |
-| `app_state` | `starting` 0 (a carregar, a compilar ou no `init`), `running` 1, `crashloop` 2, `stopped` 3 (parada por uma pessoa ou pela geração), `failed` 4 (o `init` falhou ou a app não carrega), `shadow` 5 (modo sombra, M16: propostas gravadas, não aplicadas), `updating` 6 (troca a quente em curso, 01 §9); é o único enum dos estados de uma app, na API (ref/09 §5.14), no OpenAPI (`AppState`) e no agente (`app-state`, ref/10 §2.2) |
+| `app_state` | `starting` 0 (loading, compiling or in `init`), `running` 1, `crashloop` 2, `stopped` 3 (stopped by a person or by the generation), `failed` 4 (`init` failed or the app does not load), `shadow` 5 (shadow mode, M16: proposals recorded, not applied), `updating` 6 (hot swap in progress, 01 §9); it is the only enum of an app's states, in the API (ref/09 §5.14), in the OpenAPI (`AppState`) and in the agent (`app-state`, ref/10 §2.2) |
 | `generation_state` | `pending` 0, `confirming` 1, `confirmed` 2, `rolled_back` 3, `failed` 4, `discarded` 5 |
 | `mode` | `dev` 0, `prod` 1 |
-| `link_state` (dispositivos) | `connecting` 0, `up` 1, `degraded` 2, `down` 3, `drift` 4, `stopped` 5 |
+| `link_state` (devices) | `connecting` 0, `up` 1, `degraded` 2, `down` 3, `drift` 4, `stopped` 5 |
 | `session_mode` (Joker Link) | `full` 0, `observe` 1, `maintenance` 2, `refused` 3 |
-| `ota_kind` | `generation` 1, `firmware` 2, `model` 3 (1.1 no Linux; OTA de modelos para MCUs na 1.4), `app` 4 (1.4); 0 nunca é usado |
-| tipo de sinal | `bool` 0, `i64` 1, `u64` 2, `f64` 3, `f32` 4, `enum` 5, `bits` 6, `string` 7, `bytes` 8, `record` 9 (`Internal<T>`) |
+| `ota_kind` | `generation` 1, `firmware` 2, `model` 3 (1.1 on Linux; model OTA for MCUs in 1.4), `app` 4 (1.4); 0 is never used |
+| signal type | `bool` 0, `i64` 1, `u64` 2, `f64` 3, `f32` 4, `enum` 5, `bits` 6, `string` 7, `bytes` 8, `record` 9 (`Internal<T>`) |
 
 ---
 
-## 7. Codificações
+## 7. Encodings
 
-| Onde | Codificação | Porquê |
+| Where | Encoding | Why |
 |---|---|---|
-| ficheiros escritos por pessoas | TOML 1.0, UTF-8 (ADR 0018) | legível, revisível em PR |
-| API HTTP, WebSocket, protocolo do agente sobre HTTPS | JSON (RFC 8259), UTF-8; o agente pode negociar CBOR | depurável, ferramentas universais |
-| Joker Link, protocolo do agente sobre MQTT/CoAP, JDP (controlo), `joker:meta`, argumentos e eventos no WIT | CBOR (RFC 8949) com **chaves inteiras** nas mensagens do protocolo | compacto, `no_std`, com norma |
-| tudo o que é assinado ou tem hash | CBOR **determinístico** (RFC 8949, §4.2.1) | o mesmo conteúdo dá sempre os mesmos bytes |
-| documentos assinados (estado desejado, bundle de confiança, blob de geração, manifesto de OTA, relatórios assinados) | COSE_Sign1 (RFC 9052), **sempre em CBOR**, também quando viajam sobre HTTPS; algoritmos `EdDSA` (Ed25519, chaves da organização) e `ES256` (P-256, chaves de identidade dos nós em TPM ou elemento seguro) | uma só família de assinaturas, também em MCUs (ADR 0025) |
-| identidade TLS dos nós | certificados X.509 **P-256** emitidos pela CA da organização | suportada por TPM 2.0 e elementos seguros |
-| artefactos OCI | assinaturas compatíveis com o cosign/notation, ao lado do artefacto | ferramentas de registo existentes |
-| traço | binário do documento 16, §7 | |
+| files written by people | TOML 1.0, UTF-8 (ADR 0018) | readable, reviewable in a PR |
+| HTTP API, WebSocket, agent protocol over HTTPS | JSON (RFC 8259), UTF-8; the agent may negotiate CBOR | debuggable, universal tooling |
+| Joker Link, agent protocol over MQTT/CoAP, JDP (control), `joker:meta`, arguments and events in WIT | CBOR (RFC 8949) with **integer keys** in the protocol messages | compact, `no_std`, standardized |
+| everything that is signed or hashed | **deterministic** CBOR (RFC 8949, §4.2.1) | the same content always gives the same bytes |
+| signed documents (desired state, trust bundle, generation blob, OTA manifest, signed reports) | COSE_Sign1 (RFC 9052), **always in CBOR**, also when they travel over HTTPS; algorithms `EdDSA` (Ed25519, organization keys) and `ES256` (P-256, node identity keys in a TPM or secure element) | a single signature family, also on MCUs (ADR 0025) |
+| node TLS identity | **P-256** X.509 certificates issued by the organization's CA | supported by TPM 2.0 and secure elements |
+| OCI artifacts | signatures compatible with cosign/notation, alongside the artifact | existing registry tooling |
+| trace | binary of document 16, §7 | |
 
-Os esquemas das mensagens CBOR escrevem-se em **CDDL** (RFC 8610), em `spec/cddl/`. Os esquemas JSON da API HTTP estão no OpenAPI 3.1 (`spec/openapi/joker-api.yaml`). O WIT está em `wit/`. **CRC:** onde há CRC (Joker Link, blob de geração, registos de persistência no MCU), é sempre o **CRC-32C** (Castagnoli), em little-endian (ref/07 §3.2).
+The schemas of CBOR messages are written in **CDDL** (RFC 8610), in `spec/cddl/`. The JSON schemas of the HTTP API are in OpenAPI 3.1 (`spec/openapi/joker-api.yaml`). WIT is in `wit/`. **CRC:** wherever there is a CRC (Joker Link, generation blob, persistence records on the MCU), it is always **CRC-32C** (Castagnoli), in little-endian (ref/07 §3.2).
 
-### 7.1 Tipos de media
+### 7.1 Media types
 
-A forma curta (`joker.app.v1+wasm`) é a usada nos documentos e na API; no registo OCI, o `mediaType`/`artifactType` completo é `application/vnd.joker.<forma curta sem "joker.">` (`application/vnd.joker.app.v1+wasm`).
+The short form (`joker.app.v1+wasm`) is the one used in the documents and in the API; in the OCI registry, the full `mediaType`/`artifactType` is `application/vnd.joker.<short form without "joker.">` (`application/vnd.joker.app.v1+wasm`).
 
-| Forma curta | Conteúdo | Papel que assina | Referência |
+| Short form | Content | Signing role | Reference |
 |---|---|---|---|
-| `joker.runtime.v1` | binário do `jokerd` (índice multi-plataforma) | `runtime` | ref/09, ref/10 |
-| `joker.config.v1+cbor` | descritor de uma geração de um nó Linux (manifesto efetivo, lock, contratos, artefactos por digest) | `config` | ref/10 §2.6 |
-| `joker.manifest.v1+toml`, `joker.lock.v1+toml`, `joker.provenance.v1+json` | as partes de uma geração enviadas à API | (dentro da geração) | ref/09 §5.13 |
-| `joker.app.v1+wasm`, `joker.app.v1+cwasm` | componente de uma app; AOT para uma arquitetura | `apps` | ref/04 |
-| `joker.driver.v1+wasm`, `joker.driver.v1+tar` | driver tier W; driver tier X (índice multi-plataforma) | `drivers` | ref/06 §4.7, §5.9 |
-| `joker.profile.v1+toml`, `joker.board.v1+toml`, `joker.sim.v1+toml` | perfil, placa, modelo de simulação | `profiles`, `boards` | ref/03 §2.8 |
-| `joker.class.v1+jkc`, `joker.class.contract.v1+json`, `joker.class.conformance.v1+toml` | classe e as suas camadas | `classes` | ref/03 §2.8 |
-| `joker.class.package.v1+toml` | ficheiro de pacote de classes | `classes` | ref/03 §2.7 |
-| `joker.conformance-report.v1+json` | relatório de conformidade (*referrer*) | quem o produziu | ref/03, ref/06 §6.5 |
-| `joker.micro-firmware.v1`, `joker.generation.v1` | firmware do Joker Micro; blob de geração `.jkgen` | `firmware`; `config` | ref/08 |
-| `joker.secrets.v1` | conjunto de segredos selado para um nó | `secrets` | ref/02 §2.4 |
-| `joker.key.v1+pem` | chave pública | — | ref/09 |
-| `joker.trace.v1` | traço `.jktrace` | — | 16 §7 |
-| `joker.model.v1+jkm` | modelo de ML | `models` | **reservado 1.1** |
+| `joker.runtime.v1` | `jokerd` binary (multi-platform index) | `runtime` | ref/09, ref/10 |
+| `joker.config.v1+cbor` | descriptor of a generation of a Linux node (effective manifest, lock, contracts, artifacts by digest) | `config` | ref/10 §2.6 |
+| `joker.manifest.v1+toml`, `joker.lock.v1+toml`, `joker.provenance.v1+json` | the parts of a generation sent to the API | (inside the generation) | ref/09 §5.13 |
+| `joker.app.v1+wasm`, `joker.app.v1+cwasm` | component of an app; AOT for one architecture | `apps` | ref/04 |
+| `joker.driver.v1+wasm`, `joker.driver.v1+tar` | tier W driver; tier X driver (multi-platform index) | `drivers` | ref/06 §4.7, §5.9 |
+| `joker.profile.v1+toml`, `joker.board.v1+toml`, `joker.sim.v1+toml` | profile, board, simulation model | `profiles`, `boards` | ref/03 §2.8 |
+| `joker.class.v1+jkc`, `joker.class.contract.v1+json`, `joker.class.conformance.v1+toml` | class and its layers | `classes` | ref/03 §2.8 |
+| `joker.class.package.v1+toml` | class package file | `classes` | ref/03 §2.7 |
+| `joker.conformance-report.v1+json` | conformance report (*referrer*) | whoever produced it | ref/03, ref/06 §6.5 |
+| `joker.micro-firmware.v1`, `joker.generation.v1` | Joker Micro firmware; `.jkgen` generation blob | `firmware`; `config` | ref/08 |
+| `joker.secrets.v1` | sealed set of secrets for a node | `secrets` | ref/02 §2.4 |
+| `joker.key.v1+pem` | public key | — | ref/09 |
+| `joker.trace.v1` | `.jktrace` trace | — | 16 §7 |
+| `joker.model.v1+jkm` | ML model | `models` | **reserved 1.1** |
 
 ---
 
-## 8. Erros
+## 8. Errors
 
-Há **um só vocabulário** de erros: os códigos do documento 16, §9, no registo `codes.toml`. Cada superfície embrulha-o à sua maneira:
+There is **a single vocabulary** of errors: the codes of document 16, §9, in the `codes.toml` registry. Each surface wraps it in its own way:
 
-| Superfície | Forma |
+| Surface | Form |
 |---|---|
-| `jk` | estilo rustc (código, localização, ajuda) e códigos de saída do documento 07, §8 |
-| API HTTP | `application/problem+json` (RFC 9457) com `code` (`"J0213"`), `title`, `detail`, `status` e, quando há ficheiro, `spans` |
-| WIT | `result<_, error>` com `record error { code: string, message: string }` onde houver erros que a app deva distinguir; `string` só onde a app não decide nada com ele |
-| Joker Link, JDP, protocolo do agente | um `status` numérico pequeno da própria mensagem, mais `code` (string do registo) opcional |
-| ABI C | `jk_status_t` (`JK_OK` = 0, erros negativos) |
-| SDKs | tipos de erro da linguagem, que levam o código (`err.code == "J-E0901"`) |
+| `jk` | rustc style (code, location, help) and exit codes of document 07, §8 |
+| HTTP API | `application/problem+json` (RFC 9457) with `code` (`"J0213"`), `title`, `detail`, `status` and, when there is a file, `spans` |
+| WIT | `result<_, error>` with `record error { code: string, message: string }` wherever there are errors the app should distinguish; `string` only where the app decides nothing with it |
+| Joker Link, JDP, agent protocol | a small numeric `status` of the message itself, plus an optional `code` (registry string) |
+| C ABI | `jk_status_t` (`JK_OK` = 0, negative errors) |
+| SDKs | the language's error types, which carry the code (`err.code == "J-E0901"`) |
 
-Um erro visto por uma pessoa traz **sempre** o código, para que `jk explain <código>` funcione.
+An error seen by a person **always** carries the code, so that `jk explain <code>` works.
 
-**Gamas novas** (acrescentam-se à tabela do documento 16, §9):
+**New ranges** (added to the table of document 16, §9):
 
-| Gama | Área |
+| Range | Area |
 |---|---|
-| `J014x`–`J019x`, `J023x`–`J029x` | manifesto e overlays (ref/01) |
+| `J014x`–`J019x`, `J023x`–`J029x` | manifest and overlays (ref/01) |
 | `J041x`–`J049x` | lock (ref/02) |
-| `J073x`–`J076x` | Joker Link, validação (ref/07) |
-| `J077x`–`J079x` | Joker Micro, validação (ref/08) |
-| `J0800`–`J0849` | perfis, placas, simulação, cenários, conformidade, pacotes (ref/03) |
-| `J0850`–`J0899` | drivers tier N, W, X (ref/06) |
-| `J0900`–`J0929` | nó, cliente, confiança, segredos (ref/02) |
-| `J0930`–`J0999` | enrolamento, protocolo do agente, sessões (ref/10) |
-| `J-E0001`–`J-E0799`, `J-E0900`–`J-E0999` | erros de runtime vistos pelas apps e do SDK Rust (ref/04) |
-| `J-E0800`–`J-E0899` | SDKs de tier 2 e bibliotecas cliente (ref/05) |
-| `J-E1000`–`J-E1999` | API HTTP, WebSocket, SSE e sessões (ref/09) |
-| `J-E2000`–`J-E2499` | Joker Link em runtime (ref/07) |
-| `J-E2500`–`J-E2999` | ABI C e crate do Joker Micro (ref/08) |
+| `J073x`–`J076x` | Joker Link, validation (ref/07) |
+| `J077x`–`J079x` | Joker Micro, validation (ref/08) |
+| `J0800`–`J0849` | profiles, boards, simulation, scenarios, conformance, packages (ref/03) |
+| `J0850`–`J0899` | tier N, W, X drivers (ref/06) |
+| `J0900`–`J0929` | node, client, trust, secrets (ref/02) |
+| `J0930`–`J0999` | enrollment, agent protocol, sessions (ref/10) |
+| `J-E0001`–`J-E0799`, `J-E0900`–`J-E0999` | runtime errors seen by apps and of the Rust SDK (ref/04) |
+| `J-E0800`–`J-E0899` | tier 2 SDKs and client libraries (ref/05) |
+| `J-E1000`–`J-E1999` | HTTP API, WebSocket, SSE and sessions (ref/09) |
+| `J-E2000`–`J-E2499` | Joker Link at runtime (ref/07) |
+| `J-E2500`–`J-E2999` | C ABI and Joker Micro crate (ref/08) |
 
-Na ABI C, `jk_status_t` é 0 em sucesso, negativo em erro e positivo em resultados informativos (`JK_EMPTY`, `JK_PENDING`, `JK_RELINQUISHED`).
-
----
-
-## 9. Segurança comum
-
-- **Papéis:** `viewer`, `operator`, `admin` (documento 01, §14). Cada endpoint, comando e mensagem declara o papel mínimo.
-- **Escritas vindas de fora do nó** pela API em TCP, pelo túnel de uma sessão remota e pelo protocolo do agente levam `nonce` (ULID) e `ts` (UTC), e são rejeitadas com nonce repetido ou, com o relógio `synced`, fora de ±30 s (documento 01, §17). Com o relógio `holdover` ou `unsynced`, verifica-se só o nonce e a ligação ao alvo, e isso fica marcado na auditoria. A memória de nonces nunca esquece: se encher, os pedidos são recusados (`J-E1029`).
-- **As pontes** (OPC UA servidor, Modbus servidor, ROS 2) autenticam-se pelo protocolo delas e escrevem como escritores declarados, com nível e lease (documento 01, §14); não levam nonce.
-- **Escritas manuais** levam sempre TTL (A10).
-- **Nenhuma interface expõe segredos:** um segredo é referido pelo nome (`secret:mqtt_password`), nunca pelo valor.
+In the C ABI, `jk_status_t` is 0 on success, negative on error and positive for informational results (`JK_EMPTY`, `JK_PENDING`, `JK_RELINQUISHED`).
 
 ---
 
-## 10. Limites comuns
+## 9. Common security
 
-| Coisa | Limite v1 |
+- **Roles:** `viewer`, `operator`, `admin` (document 01, §14). Each endpoint, command and message declares the minimum role.
+- **Writes coming from outside the node** through the API over TCP, through the tunnel of a remote session and through the agent protocol carry a `nonce` (ULID) and `ts` (UTC), and are rejected with a repeated nonce or, with the clock `synced`, outside ±30 s (document 01, §17). With the clock `holdover` or `unsynced`, only the nonce and the binding to the target are checked, and this is marked in the audit. The nonce memory never forgets: if it fills up, requests are rejected (`J-E1029`).
+- **Bridges** (OPC UA server, Modbus server, ROS 2) authenticate through their own protocol and write as declared writers, with level and lease (document 01, §14); they do not carry a nonce.
+- **Manual writes** always carry a TTL (A10).
+- **No interface exposes secrets:** a secret is referred to by name (`secret:mqtt_password`), never by value.
+
+---
+
+## 10. Common limits
+
+| Thing | v1 limit |
 |---|---|
-| segmento de caminho | 32 caracteres; 8 segmentos |
-| `string` num sinal | 64 B UTF-8 |
-| `bytes` num sinal | 64 B |
-| string num evento ou argumento | 1 KiB |
-| evento (registo completo, CBOR) | 8 KiB |
-| argumentos ou resultado de um método ou ação | 4 KiB |
-| mensagem de caixa de correio entre ciclo e async | 256 B |
-| `kv` de uma app | chave 128 B; valor 64 KiB |
-| buffer de propostas de um `on-cycle` | 16 KiB por omissão (ref/04 §3.3) |
-| lista num evento ou argumento | 64 elementos |
-| registo interno de app (`Internal<T>`) | 64 B |
-| níveis do árbitro | 16 |
-| chave de idempotência | 64 B |
-| trama do Joker Link | `max_frame` 512–4 096 B (omissão 1 024) |
-| mensagem do Joker Link | `max_msg` 2 048–65 535 B (omissão 4 096) |
-| corpo de um pedido HTTP | 16 MiB (artefactos vão por upload em blocos, ref/09) |
+| path segment | 32 characters; 8 segments |
+| `string` in a signal | 64 B UTF-8 |
+| `bytes` in a signal | 64 B |
+| string in an event or argument | 1 KiB |
+| event (complete record, CBOR) | 8 KiB |
+| arguments or result of a method or action | 4 KiB |
+| mailbox message between cycle and async | 256 B |
+| `kv` of an app | key 128 B; value 64 KiB |
+| proposal buffer of an `on-cycle` | 16 KiB by default (ref/04 §3.3) |
+| list in an event or argument | 64 elements |
+| internal app record (`Internal<T>`) | 64 B |
+| arbiter levels | 16 |
+| idempotency key | 64 B |
+| Joker Link frame | `max_frame` 512–4 096 B (default 1 024) |
+| Joker Link message | `max_msg` 2 048–65 535 B (default 4 096) |
+| HTTP request body | 16 MiB (artifacts go by chunked upload, ref/09) |
