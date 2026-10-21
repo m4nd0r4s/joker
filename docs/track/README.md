@@ -142,7 +142,7 @@ Up to part 5, `joker.lab.toml` extends `joker.toml` directly and holds `[devices
   - `pi`: the Raspberry Pi. `pi.act_led` (`bool`, output) and, from part 3 on, `pi.cpu_temp` (`f64`, `°C`). `sim` driver on the laptop, `sysfs` on the boards.
   - `esp`: the ESP32. `esp.led` (output), `esp.led_rb`, `esp.button`, `esp.touch`, `esp.rssi`, `esp.uptime`, `esp.fw`. `sim` driver on the laptop, `modbus-rtu` on the Pi 3 (parts 4–5), `modbus-tcp` on the Zero (part 6), `joker-link` from part 9 on.
 - **Cycle group:** `main`, 20 ms.
-- **Outputs:** blocks without a language, short, with the codes from `spec/codes.toml`. In `mode = "dev"`, codes of severity `error-in-prod` appear as `W` warnings with the same number (`W0205`); pure warnings keep the `J` (`J0352`).
+- **Outputs:** blocks without a language, short, with the codes from `crates/joker-manifest/codes.toml`. In `mode = "dev"`, codes of severity `error-in-prod` appear as `W` warnings with the same number (`W0205`); pure warnings keep the `J` (`J0352`).
 - **Versions.** Each part ends with a commit (`git commit`; with jj, `jj describe && jj new`) and states what it leaves behind: the app version, the new files and the generation of each node.
 - **Example names:** the user `dl`, the organization `bench` (`jk ca init ~/org-ca --org bench`), `example.com` domains.
 

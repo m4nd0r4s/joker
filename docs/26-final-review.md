@@ -13,7 +13,7 @@ It is analysis and planning (precedence of `docs/README.md`). The cut proposal o
 | Documents | 00–26, plus the track (11 parts), the examples and the proposals |
 | Normative references | 11 (`docs/ref/00`–`10`), with `wit/` (3 packages), `spec/cddl/` (6), `spec/openapi/` and `spec/c/` |
 | ADRs | 0001–0028 accepted (0028 on 2026-10-21) |
-| Code registry | `spec/codes.toml` (the count lives there; it is not repeated in the prose, B8) |
+| Code registry | `crates/joker-manifest/codes.toml` (the seed `spec/codes.toml` moved there in task 0b; the count lives there; it is not repeated in the prose, B8) |
 | Validation | all the TOML blocks and `codes.toml` with `tomli`; the OpenAPI with `openapi-spec-validator`; the C headers with `gcc -pedantic`; the WIT files with the official parser (`jco`); the CDDL files with a syntax parser |
 
 What has **not** been validated is still task 0a of Phase 0: the Rust signatures and the TypeScript of the references were never compiled, and the CDDL files (except that of `joker:meta`) were not validated against instances.

@@ -50,7 +50,7 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 - **Identifiers and literals**: crate names, types, traits, functions, WIT names, TOML keys and values, JSON fields, enum variants, quality reasons (`clock_unsynced`), CLI commands and flags, file names inside code, environment variables, media types, URNs. A translator does not rename them; an identifier changes only by a decision, as ADR 0036 did for the Portuguese illustrative identifiers (Appendix B).
 - **Codes**: `J0795`, `J-E0001`, M-numbers (`M15`), C/D/E/X item ids used in the stress documents, ADR numbers.
 - **Section and document numbers**: `docs/16 §3`, `ref/02 §2.1.13`, "document 23", "ADR 0015". Remissions point at numbers, so they survive the translation unchanged.
-- **Text inside code blocks** is code: keep it, except comments and human-readable strings in illustrative examples, which are translated (AGENTS.md rules 11 and 12). A string that is a normative message (a code's `message` in `spec/codes.toml`, an error text quoted from a reference) is taken from its source, never retranslated by hand.
+- **Text inside code blocks** is code: keep it, except comments and human-readable strings in illustrative examples, which are translated (AGENTS.md rules 11 and 12). A string that is a normative message (a code's `message` in `crates/joker-manifest/codes.toml`, an error text quoted from a reference) is taken from its source, never retranslated by hand.
 - **Placeholders** in angle brackets inside code spans, command synopses and code blocks are prose, not identifiers, and are translated: `<nome>` → `<name>`, `<caminho>` → `<path>`, `<tipo>` → `<type>`, `<variante>` → `<variant>`, `<nó>` → `<node>`, `<placa>` → `<board>`, `<placa|triplo>` → `<board|triple>`, `<janela>` → `<window>`, `<papel>=<chave>` → `<role>=<key>`, `perfil@major` → `profile@major`. Identifiers next to them are not.
 - **Illustrative identifiers** (example device, signal, app, site and file names such as `bancada`, `luz`, `canario`) are English too: ADR 0036 renamed them, and Appendix B maps every old name to the new one. A new example uses English names from the start.
 - The markers that `jk` writes in generated output are English: `# REVER` → `# REVIEW` (drafts of `jk profile import` and `jk board probe`, ref/03 §2.2.19, §2.3.7) and `# omissão` → `# default` (`jk diff` and the effective manifest, ref/01 §8).
@@ -322,7 +322,7 @@ Do not use RFC 2119 capitals (MUST, SHALL). Lowercase **must / must not / may** 
 | digest do descritor, do lock, da imagem | **descriptor digest**, **lock digest**, **image digest** | |
 | metadados | **metadata** | |
 | linhagem | **lineage** | M10 |
-| registo de códigos | **code registry** | `spec/codes.toml`; 16 §9 |
+| registo de códigos | **code registry** | `crates/joker-manifest/codes.toml`; 16 §9 |
 | código, código de saída | **code**, **exit code** | |
 | erro, aviso | **error**, **warning** | severity names stay `error`, `warning`, `error-in-prod` |
 | erro de utilização | **usage error** | |
@@ -742,9 +742,9 @@ Terms fixed while translating `ref/00`, `ref/01` and `ref/02`. Section 15 (diagn
 | placeholders `<nome>`, `<caminho>`, `<dispositivo>`, `<placa>`… | `<name>`, `<path>`, `<device>`, `<board>`… | metasyntax in headings, grammars and code spans is translated; keys, values and identifiers are not |
 | não-terminais de gramática (`duração`, `seletor`, `nível`…) | grammar nonterminals (`duration`, `selector`, `level`…) | ref/00 §3.1, ref/01 §3 |
 | colunas `Obr.`, `Omissão`, `Validação`, `Origem`, `Fase` | `Req.`, `Default`, `Validation`, `Origin`, `Phase` | key tables; cells `sim`/`não`/`nova` → `yes`/`no`/`new` |
-| colunas `Código`, `Gravidade`, `Mensagem` | `Code`, `Severity`, `Message` | code tables; a message quoted from `spec/codes.toml` is copied from it |
+| colunas `Código`, `Gravidade`, `Mensagem` | `Code`, `Severity`, `Message` | code tables; a message quoted from `crates/joker-manifest/codes.toml` is copied from it |
 | gama (de códigos) | **range** | "a gama `J0140`–`J0199`" |
-| incoerente, coerente | **inconsistent**, **consistent** | as in `spec/codes.toml` |
+| incoerente, coerente | **inconsistent**, **consistent** | as in `crates/joker-manifest/codes.toml` |
 | erro de escrita (gralha) | **typo** | not a **write** |
 | fixar (no lock) | **pin** | verb of "fixado → pinned" (§15) |
 | ficheiro de arranque do nó, configuração de arranque do nó | **node startup file**, **node startup configuration** | `/etc/joker/node.toml`; ref/02 §2.2 |

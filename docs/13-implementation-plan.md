@@ -142,4 +142,4 @@ There is a single schema for the core and for the classes (`[suite]`, `[[case]]`
 
 The `toolchain` test of `joker-supply-chain` checks the first two rows, and the per-phase update and the wasmtime line are in `policies/dependencies.md` §5–§7 (ADR 0055).
 
-The counts that the prose still repeats (codes, API operations, Joker Link messages) are checked by `joker-spec-tests` (task 0a) against the sources: `spec/codes.toml`, the OpenAPI and the CDDL. Where it is easy, the prose refers to the source instead of repeating the number.
+The counts that the prose still repeats (codes, API operations, Joker Link messages) are checked by `joker-spec-tests` (task 0a) against the sources: `crates/joker-manifest/codes.toml`, the OpenAPI and the CDDL. Where it is easy, the prose refers to the source instead of repeating the number.

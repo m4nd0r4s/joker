@@ -1631,7 +1631,7 @@ The local API exposes the effective manifest of the active generation and of eac
 All of them live in `crates/joker-manifest/codes.toml` (document 16, §9). Severities: `error`; `warning` (in all modes); `error-in-prod` (error in `prod`; `W` warning with the same number in `dev`).
 
 ```toml
-# excerpt of the registry format (spec/codes.toml; document 16, §9)
+# excerpt of the registry format (crates/joker-manifest/codes.toml; document 16, §9)
 [[code]]
 id       = "J0140"
 severity = "error"
