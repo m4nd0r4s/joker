@@ -101,13 +101,13 @@ expect = [
 
 [[case]]
 id   = "edges_false_on_bad"
-name = "With a Bad input, rose and fell are false"
-spec = ["16 §3.2"]
+name = "With a Bad input, rose and fell are Bad"
+spec = ["16 §3.2", "ADR 0034 §12"]
 do   = [
   { at = "0ms",   input = "x.c", value = true },
   { at = "100ms", input = "x.c", quality = "bad(comm_failure)" },
 ]
 expect = [
-  { at = "100ms", signal = "calc.rose_c", equals = false },
-  { at = "100ms", signal = "calc.fell_c", equals = false },
+  { at = "100ms", signal = "calc.rose_c", quality = "bad" },
+  { at = "100ms", signal = "calc.fell_c", quality = "bad" },
 ]
