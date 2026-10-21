@@ -82,8 +82,8 @@ A **driver** is code that speaks a protocol. A **driver instance** is that code 
 | Form in `[devices.<d>] driver` | Tier | Resolution |
 |---|---|---|
 | `"<name>"` | N | entry of the registry compiled into `jokerd` (§3.8); absent on the node: `J0850` |
-| `"w:<name>"` | W | `[drivers.<name>]` with `tier = "w"` (ref/01 §5.7); component in `source` |
-| `"x:<name>"` | X | `[drivers.<name>]` with `tier = "x"`; executable in `exec` or `source` |
+| `"w:<name>"` | W | `[drivers.<name>]` with `tier = "w"` (ref/01 §5.7); component in `source`. Reserved 1.2: in 1.0, `J0290` |
+| `"x:<name>"` | X | `[drivers.<name>]` with `tier = "x"`; executable in `exec` or `source`. Reserved 1.2: in 1.0, `J0290` |
 
 `<name>` follows `[a-z][a-z0-9-]{0,31}` (ref/01 §3.8). The same name may exist in two tiers (a tier X `bacnet-ip` and, later, a native one): the prefix decides, and changing tier is an explicit change in the manifest.
 
@@ -934,17 +934,18 @@ pub const MODBUS_TCP: joker_hal::DriverEntry = joker_hal::driver_entry! {
 |---|---|---|
 | `drv-sim` | `sim` | `sim` (always present in `dev`) |
 | `drv-modbus` | `modbus` | `modbus-tcp`, `modbus-rtu`, `sunspec` |
-| `drv-gpio`, `drv-i2c`, `drv-spi` | `gpio`, `i2c`, `spi` | |
+| `drv-gpio`, `drv-i2c`, `drv-spi` | `gpio`, `i2c`, `spi` | `spi`: 1.0.x |
 | `drv-sysfs` | `sysfs` | LEDs and temperatures from `/sys/class` (05 §10) |
-| `drv-revpi` | `revpi` | |
+| `drv-revpi` | `revpi` | 1.0.x |
 | `drv-mqtt` | `mqtt` | |
 | `drv-joker-link` | `joker-link` | Joker Link driver (ref/07) |
-| `drv-opcua`, `drv-can`, `drv-canopen`, `drv-mbus`, `drv-onewire`, `drv-serial-line` | same | Phase 2 |
+| `drv-opcua`, `drv-mbus`, `drv-onewire`, `drv-serial-line` | same | 1.0.x |
+| `drv-can`, `drv-canopen` | same | 1.1 |
 | `drv-ethercat` | `ethercat` | 1.2 |
-| `drivers-wasm` | `wasm` | tier W host (§4) |
-| `drivers-jdp` | `jdp` | tier X host (§5) |
+| `drivers-wasm` | `wasm` | tier W host (§4); 1.2 |
+| `drivers-jdp` | `jdp` | tier X host (§5); 1.2 |
 
-- The default build (`default`, the "full" one of 01 §21) includes `sim`, `sysfs`, `modbus`, `gpio`, `i2c`, `spi`, `revpi`, `mqtt`, `joker-link`, `wasm`, `jdp`. The `minimal` build (09 attack 12) only `sim`, `sysfs`, `modbus`, `mqtt`. Both have a binary size target, measured in CI (01 §21).
+- The versions in the last column are those of the 1.0 cut (document 26, §5; ADR 0035); a feature of a later version does not exist in a 1.0 build. The default build (`default`, the "full" one of 01 §21) includes `sim`, `sysfs`, `modbus`, `gpio`, `i2c`, `mqtt`, `joker-link` in 1.0, and adds `spi` and `revpi` when they ship (1.0.x) and `wasm` and `jdp` in 1.2. The `minimal` build (09 attack 12) only `sim`, `sysfs`, `modbus`, `mqtt`. Both have a binary size target, measured in CI (01 §21).
 - `jk runtime build --features ethercat,bacnet-ip` accepts driver names and maps them to the features; an unknown name is a usage error (exit code 1).
 - The binary embeds the **driver manifest** (name, version, protocols, capabilities, descriptor digest of each entry), exposed in `GET /v1/runtime/drivers` (ref/09) and reported to the Deck in the report (ref/10). The lock does not repeat it: N drivers are pinned by the runtime version (`runtime` of the lock), and on an MCU by the `features` of `[mcu.<d>]` (ref/02 §2.1.10). `jk check --node` and `jk apply` reject a device whose N driver is not in the node's runtime (`J0850`).
 - On Joker Micro, `jk build --target mcu` generates a static `enum` with the requested drivers (dispatch without `dyn`), from the same entries.
@@ -955,7 +956,9 @@ pub const MODBUS_TCP: joker_hal::DriverEntry = joker_hal::driver_entry! {
 
 The complete world is in `wit/joker-driver.wit`. This section gives the rules that the WIT does not express.
 
-**Stability (normative rule).** In 1.0, the `joker:driver` world and the tier W SDK (`joker-driver-sdk`) exist as **unstable**: the world carries `@unstable(feature = driver-world)`, and only the **in-tree** drivers (those of the project's catalog, built from `crates/joker-drivers/` and published with it) use it in `prod`. A W component from outside the tree is accepted in `dev` and rejected in `prod` (`J0860`, `error-in-prod`), like any unstable item. The world may change between minors until **1.2**, when it becomes stable (`@since(1.2.0)`) and open to third parties, with the Rust and C SDK, the mandatory conformance suite and publication on the Hub (21 §4). The version rule (§4.1) applies from now on; compatibility with the previous minor (§4.8) only applies from 1.2. The other documents refer here.
+**The host is 1.2.** The cut of document 26, §5 (ADR 0035) moves the tier W host to 1.2: a 1.0 `jokerd` does not load W components, and a `w:<name>` driver is `J0290` (ref/01 §5.7). The world and the rules of this section are already closed, so that the in-tree drivers can be written against them.
+
+**Stability (normative rule).** Until 1.2, the `joker:driver` world and the tier W SDK (`joker-driver-sdk`) exist as **unstable**: the world carries `@unstable(feature = driver-world)`, and only the **in-tree** drivers (those of the project's catalog, built from `crates/joker-drivers/` and published with it) use it in `prod`. A W component from outside the tree is accepted in `dev` and rejected in `prod` (`J0860`, `error-in-prod`), like any unstable item. The world may change between minors until **1.2**, when it becomes stable (`@since(1.2.0)`) and open to third parties, with the Rust and C SDK, the mandatory conformance suite and publication on the Hub (21 §4). The version rule (§4.1) applies from now on; compatibility with the previous minor (§4.8) only applies from 1.2. The other documents refer here.
 
 ### 4.1 Version and corrections with respect to document 05, §8
 
@@ -1034,6 +1037,8 @@ OCI media type `joker.driver.v1+wasm` (ref/00 §7.1; signed by the `drivers` rol
 ---
 
 ## 5. Tier X: Joker Driver Protocol (JDP)
+
+**The host is 1.2.** The cut of document 26, §5 (ADR 0035) moves the tier X host to 1.2: a 1.0 `jokerd` does not start JDP drivers, and an `x:<name>` driver is `J0290` (ref/01 §5.7). The protocol, `libjdp` and `joker-jdp` of this section are closed now, and they become stable with the host. The shared structures of `spec/cddl/jdp.cddl` (`descriptor`, `read-plan`, the schema language) are not reserved: tier N drivers and the Joker Micro blob use them in 1.0.
 
 A tier X driver is a `joker-drv-<name>` process that speaks JDP with `jokerd`. It serves vendor binary SDKs, C libraries (BACnet, IEC 104, GigE Vision) and code that is not trusted. The cost is IPC: +20–50 µs per batch compared with tier N (05 §1), with no copy for streams (1.1).
 
@@ -1568,30 +1573,30 @@ Deterministic CBOR (and `--json`): driver, version, tier, artifact digest, suite
 | `J0857` | error | non-deterministic plan: the node computed a different plan from `jk check` |
 | `J0858` | error | the `safe` of an output is not representable in the raw type |
 | `J0888` | warning | a bound of the `range` of an output is not representable in the raw type (the value is saturated) |
-| `J0859` | error | `joker:driver` world version not supported by this runtime |
-| `J0860` | error-in-prod | driver component uses unstable items of the world (in 1.0 and 1.1, any W driver from outside the tree, §4) |
-| `J0861` | error | no common JDP version |
-| `J0862` | error | JDP authentication refused (peer credentials or token) |
-| `J0863` | error | JDP protocol violation; driver terminated |
-| `J0864` | error | could not start the tier X driver (executable, user, unit) |
-| `J0865` | error-in-prod | tier X driver without its own user or with privileged groups |
+| `J0859` | error | `joker:driver` world version not supported by this runtime (reserved 1.2) |
+| `J0860` | error-in-prod | driver component uses unstable items of the world (in 1.0 and 1.1, any W driver from outside the tree, §4) (reserved 1.2) |
+| `J0861` | error | no common JDP version (reserved 1.2) |
+| `J0862` | error | JDP authentication refused (peer credentials or token) (reserved 1.2) |
+| `J0863` | error | JDP protocol violation; driver terminated (reserved 1.2) |
+| `J0864` | error | could not start the tier X driver (executable, user, unit) (reserved 1.2) |
+| `J0865` | error-in-prod | tier X driver without its own user or with privileged groups (reserved 1.2) |
 | `J0866` | error | driver in crashloop (thresholds per tier in §2.12) |
 | `J0867` | warning | call to the driver exceeded the deadline |
-| `J0868` | error | tier W driver: trap or resource limit exceeded |
+| `J0868` | error | tier W driver: trap or resource limit exceeded (reserved 1.2) |
 | `J0869` | warning | invalid sample from the driver (point, raw type, quality, size) |
 | `J0870` | warning | ingest ring full: samples dropped |
 | `J0871` | error | write to the equipment during discovery or scan |
-| `J0872` | error | tier X driver executable invalid for the node's architecture |
-| `J0873` | error | transport not supported by this host for this tier |
-| `J0874` | error | resources declared by the driver above what is allowed |
+| `J0872` | error | tier X driver executable invalid for the node's architecture (reserved 1.2) |
+| `J0873` | error | transport not supported by this host for this tier (reserved 1.2) |
+| `J0874` | error | resources declared by the driver above what is allowed (reserved 1.2) |
 | `J0875` | error | driver without `no_std` support on a Joker Micro target |
 | `J0876` | warning | connection to the equipment failed (`connect`) |
 | `J0877` | warning | write rejected or not supported by the equipment |
-| `J0878` | warning | timed write applied outside the tolerance |
+| `J0878` | warning | timed write applied outside the tolerance (reserved 1.1) |
 | `J0879` | error | driver conformance case failed |
-| `J0880` | error | driver publication without a valid conformance report |
-| `J0881` | error | tier X driver hung (health unanswered); terminated |
-| `J0882` | error | tier W driver used a forbidden import in plan mode |
+| `J0880` | error | driver publication without a valid conformance report (reserved 1.2) |
+| `J0881` | error | tier X driver hung (health unanswered); terminated (reserved 1.2) |
+| `J0882` | error | tier W driver used a forbidden import in plan mode (reserved 1.2) |
 | `J0883` | warning | tier N driver blocked the `io` thread for more than 1 ms |
 | `J0884` | warning | atomic group with outputs on different driver instances: the order between them is not guaranteed on the wire |
 | `J0885` | error | driver descriptor name, tier, version or digest differs from the lock, or plan made with another descriptor |
@@ -1677,10 +1682,13 @@ In `mode = "dev"`, the `error-in-prod` codes appear as `W0860` and `W0865` (16 �
 |---|---|
 | common contract (§2), capabilities except `block-read` and `streams` | **1.0** |
 | tier N: `joker-hal`, registry by features, `rt-cycle`, `no_std` on Joker Micro | **1.0** |
-| tier X: complete JDP 1 (control, rings, supervision, sandbox), `libjdp`, `joker-jdp` | **1.0** |
-| tier W: `joker:driver` world (version pinned with `joker:runtime`) and `joker-driver-sdk` **unstable** (`@unstable(feature = driver-world)`, only in-tree drivers in `prod`, §4); host with `serial`, `tcp`, `udp` | **1.0** |
+| tier X: complete JDP 1 (control, rings, supervision, sandbox), `libjdp`, `joker-jdp` | **1.2** (the host; document 26, §5; ADR 0035). The shared structures of §2 stay 1.0 |
+| tier W: `joker:driver` world (version pinned with `joker:runtime`) and `joker-driver-sdk` **unstable** (`@unstable(feature = driver-world)`, only in-tree drivers in `prod`, §4); host with `serial`, `tcp`, `udp` | **1.2** (the host; document 26, §5; ADR 0035). Until then the world is only a closed draft |
 | tier W **stable and open to third parties** (`@since(1.2.0)`): world, Rust and C SDK, `i2c`, `spi`, `can` transports in the host (`w-i2c-spi-can`), mandatory conformance, publication on the Hub | **1.2** (21 §4) |
 | conformance suite: interface, `basic` cases, report | **1.0** (used by the catalog); mandatory for publishing on the Hub in **1.2** |
+| catalog drivers of 1.0 | **1.0**: `sim`, `modbus-tcp`, `modbus-rtu` (with `sunspec`), `gpio`, `sysfs`, `i2c`, `mqtt` (input), `joker-link`; on the MCU, `gpio`, `adc`, `pwm`, `i2c`, `modbus-rtu`, `esp32`, `extern` |
+| catalog drivers of 1.0.x | `revpi`, `spi`, `opcua` (client), `m-bus`, `onewire`, `serial-line`; on the MCU, `modbus-slave`, `spi`, `uart` and `onewire` |
+| catalog drivers of 1.1 | `can`, `canopen` (on Linux and on the MCU) |
 | streams of X drivers through `SCM_RIGHTS` (messages 40–42), `streams` capability | **1.1** (M4; already reserved in the CDDL, document 11, §"Ready for ML") |
 | block signals, `block-read` capability | **1.1** (M7; reserved) |
 | Wasm on Joker Micro (W drivers with `wasmi`) | **1.4** (21 §6); the world is the same |

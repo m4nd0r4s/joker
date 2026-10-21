@@ -4027,42 +4027,56 @@ id = "J0859"
 severity = "error"
 message = "`joker:driver` world version not supported by this runtime"
 doc = "ref/06 §7"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J0860"
 severity = "error-in-prod"
 message = "driver component uses unstable items of the world"
 doc = "ref/06 §7"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J0861"
 severity = "error"
 message = "no common JDP version"
 doc = "ref/06 §7"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J0862"
 severity = "error"
 message = "JDP authentication refused (peer credentials or token)"
 doc = "ref/06 §7"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J0863"
 severity = "error"
 message = "JDP protocol violation; driver terminated"
 doc = "ref/06 §7"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J0864"
 severity = "error"
 message = "could not start the tier X driver (executable, user, unit)"
 doc = "ref/06 §7"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J0865"
 severity = "error-in-prod"
 message = "tier X driver without its own user or with privileged groups"
 doc = "ref/06 §7"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J0866"
@@ -4081,6 +4095,8 @@ id = "J0868"
 severity = "error"
 message = "tier W driver: trap or resource limit exceeded"
 doc = "ref/06 §7"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J0869"
@@ -4105,18 +4121,24 @@ id = "J0872"
 severity = "error"
 message = "tier X driver executable invalid for the node's architecture"
 doc = "ref/06 §7"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J0873"
 severity = "error"
 message = "transport not supported by this host for this tier"
 doc = "ref/06 §7"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J0874"
 severity = "error"
 message = "resources declared by the driver above what is allowed"
 doc = "ref/06 §7"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J0875"
@@ -4141,6 +4163,8 @@ id = "J0878"
 severity = "warning"
 message = "timed write applied outside the tolerance"
 doc = "ref/06 §7"
+since = "1.1"
+status = "reserved"
 
 [[code]]
 id = "J0879"
@@ -4153,18 +4177,24 @@ id = "J0880"
 severity = "error"
 message = "driver publication without a valid conformance report"
 doc = "ref/06 §7"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J0881"
 severity = "error"
 message = "tier X driver hung (health unanswered); terminated"
 doc = "ref/06 §7"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J0882"
 severity = "error"
 message = "tier W driver used a forbidden import in plan mode"
 doc = "ref/06 §7"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J0883"

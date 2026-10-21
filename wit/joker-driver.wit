@@ -11,10 +11,11 @@
 /// end, interfaces). Items reserved for a later minor carry `@unstable(feature = <name>)`: a
 /// component that uses them is refused in `prod` (J0860).
 ///
-/// Stability (ref/06 §4): in 1.0 and 1.1 the whole world is `@unstable(feature = driver-world)`
-/// and only in-tree drivers (the project catalog, built from crates/joker-drivers/) use it in
-/// `prod`; an out-of-tree tier W component is J0860 in `prod`. It becomes stable
-/// (`@since(version = 1.2.0)`) and open to third parties in 1.2.
+/// Stability (ref/06 §4; ADR 0035): the tier W host ships in 1.2, so in 1.0 and 1.1 the whole
+/// package (the world and its four interfaces) is `@unstable(feature = driver-world)` and a 1.0
+/// `jokerd` loads no tier W component. When the host ships, only in-tree drivers (the project
+/// catalog, built from crates/joker-drivers/) use it in `prod`; an out-of-tree tier W component is
+/// J0860 in `prod`. It becomes stable (`@since(version = 1.2.0)`) and open to third parties in 1.2.
 ///
 /// Instantiation (ref/06 §4.4): one component instance (one wasmtime Store) per driver instance,
 /// i.e. per device, or per bus for drivers with `instance = bus`. `plan` also runs in a separate,
@@ -26,6 +27,7 @@
 package joker:driver@0.1.0;
 
 /// Shared types.
+@unstable(feature = driver-world)
 interface types {
     use joker:runtime/types@0.1.0.{quality-code, error};
 
@@ -340,6 +342,7 @@ interface types {
 }
 
 /// Host services. Every call is attributed to the calling instance (one Store per instance).
+@unstable(feature = driver-world)
 interface host {
     use types.{raw-sample, link-state};
     use joker:runtime/types@0.1.0.{instant};
@@ -360,6 +363,7 @@ interface host {
 
 /// Transports. The driver never opens a transport: it receives, at `open`, exactly the one the
 /// manifest gives it (`bus`, `address`). Every error is an `io-error` with a closed kind.
+@unstable(feature = driver-world)
 interface transport {
     enum io-error-kind {
         timeout,
@@ -476,6 +480,7 @@ interface transport {
 /// Exported by the driver. Calls to one instance are never concurrent, except that a pending `read`
 /// of a `push` batch may be canceled by the host to run `write`, `read-addr`, `write-addr` or
 /// `invoke` (ref/06 §2.14): push reads must be cancel-safe.
+@unstable(feature = driver-world)
 interface guest {
     use joker:runtime/types@0.1.0.{error};
     use types.{

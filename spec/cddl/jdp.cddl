@@ -24,6 +24,10 @@
 ; 1. Control messages
 ; ---------------------------------------------------------------------------------------------
 
+; Reserved for 1.2 (ADR 0035): the tier X host ships in 1.2, so no 1.0 jokerd sends or accepts
+; these messages. Sections 2 to 5 are 1.0: tier N drivers, the descriptors and the Joker Micro
+; blob use them.
+
 jdp-message = hello / welcome
             / plan-req / plan-res
             / rings-req / rings-res
