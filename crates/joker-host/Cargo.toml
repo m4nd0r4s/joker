@@ -1,0 +1,27 @@
+[package]
+name = "joker-host"
+description = "Joker Wasm host: wasmtime embedding, the cycle subset of joker:runtime and the AOT cache"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+joker-core = { workspace = true }
+wasmtime = { workspace = true }
+wasmtime-wasi = { workspace = true }
+wasmparser = { workspace = true }
+sha2 = { workspace = true }
+rand_core = { workspace = true }
+
+[lints.rust]
+unsafe_code = "deny"
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(loom)"] }
+missing_debug_implementations = "warn"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
