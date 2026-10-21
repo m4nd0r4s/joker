@@ -6,6 +6,7 @@ extern crate alloc;
 
 pub mod alarm;
 pub mod arbiter;
+pub mod class;
 pub mod commit;
 pub mod envelope;
 pub mod hash;

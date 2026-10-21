@@ -172,6 +172,8 @@ pub trait CommitSink {
     fn manual(&mut self, _record: &ManualRecord) {}
     /// One call per alarm transition or operator action (ADR 0040).
     fn alarm(&mut self, _event: &crate::alarm::AlarmEvent) {}
+    /// One call per method record (ADR 0041).
+    fn method(&mut self, _result: &crate::class::MethodResult) {}
 }
 
 impl CommitSink for () {}
@@ -621,6 +623,27 @@ impl<'a> Outputs<'a> {
             }
             None => false,
         }
+    }
+
+    /// The value `own(x)` falls back to when the caller has no proposal for
+    /// `x` in the tick (ADR 0041 §2): what the caller's level holds, if it
+    /// is active, else the applied value.
+    pub fn own_value(&self, writer: WriterId, signal: SignalId) -> Option<u64> {
+        let o = self.find(signal)?;
+        let state = &self.states[o];
+        self.level_of(writer)
+            .and_then(|level| state.arbiter.level(level))
+            .filter(|entry| entry.writer == writer)
+            .map(|entry| entry.value)
+            .or(match state.last {
+                Applied::Value(bits) => Some(bits),
+                Applied::Relinquish => None,
+            })
+    }
+
+    /// The configuration of an output.
+    pub fn config(&self, signal: SignalId) -> Option<&OutputConfig<'a>> {
+        self.find(signal).map(|o| &self.configs[o])
     }
 
     /// The output configurations.

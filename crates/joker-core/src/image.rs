@@ -140,6 +140,47 @@ impl Proposal {
     }
 }
 
+/// Most arguments a method call carries.
+pub const MAX_METHOD_ARGS: usize = 8;
+
+/// A method record: a call of a class method by a writer (docs/17 §4.1),
+/// expanded in step 5a (ADR 0041).
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct MethodCall {
+    /// The caller, whose writes the expansion produces.
+    pub writer: WriterId,
+    /// Instance number.
+    pub instance: u32,
+    /// Method number within the instance.
+    pub method: u16,
+    /// Argument values, in each parameter's declared unit.
+    pub args: [u64; MAX_METHOD_ARGS],
+    /// Number of arguments.
+    pub n_args: u8,
+    /// Step it was staged in.
+    pub source: Source,
+    /// Opaque tag returned with the result.
+    pub ticket: u32,
+}
+
+impl MethodCall {
+    /// Placeholder used to initialise fixed-capacity storage.
+    pub const EMPTY: Self = Self {
+        writer: WriterId(0),
+        instance: 0,
+        method: 0,
+        args: [0; MAX_METHOD_ARGS],
+        n_args: 0,
+        source: Source::Cycle,
+        ticket: 0,
+    };
+
+    /// The arguments.
+    pub fn args(&self) -> &[u64] {
+        &self.args[..usize::from(self.n_args).min(MAX_METHOD_ARGS)]
+    }
+}
+
 /// The time facts of one executed tick (ADR 0032).
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct TickInfo {
@@ -207,6 +248,9 @@ pub struct ProcessImage<'a> {
     read_retries: u32,
     storage: ImageStorage<'a>,
     staged: usize,
+    expanded: usize,
+    methods: &'a mut [MethodCall],
+    n_methods: usize,
     phase: Phase,
     last_index: Option<u64>,
     tick: Option<TickInfo>,
@@ -244,6 +288,9 @@ impl<'a> ProcessImage<'a> {
             read_retries: Self::DEFAULT_READ_RETRIES,
             storage,
             staged: 0,
+            expanded: 0,
+            methods: &mut [],
+            n_methods: 0,
             phase: Phase::Idle,
             last_index: None,
             tick: None,
@@ -351,6 +398,8 @@ impl<'a> ProcessImage<'a> {
         self.last_index = Some(index);
         self.tick = Some(info);
         self.staged = 0;
+        self.expanded = 0;
+        self.n_methods = 0;
         self.phase = Phase::Latched;
         Ok(info)
     }
@@ -359,7 +408,7 @@ impl<'a> ProcessImage<'a> {
     /// before the first cycle proposal of the tick, so async proposals always
     /// come first (docs/16 A4).
     pub fn stage_async(&mut self, proposal: Proposal) -> Result<(), ImageError> {
-        if self.phase != Phase::Latched {
+        if self.expanded > 0 || self.phase != Phase::Latched {
             return Err(ImageError::WrongPhase);
         }
         self.push(Proposal {
@@ -370,7 +419,7 @@ impl<'a> ProcessImage<'a> {
 
     /// Step 4: stages a proposal from a cycle task.
     pub fn stage_cycle(&mut self, proposal: Proposal) -> Result<(), ImageError> {
-        if self.phase == Phase::Idle {
+        if self.expanded > 0 || self.phase == Phase::Idle {
             return Err(ImageError::WrongPhase);
         }
         self.phase = Phase::Cycle;
@@ -378,6 +427,58 @@ impl<'a> ProcessImage<'a> {
             source: Source::Cycle,
             ..proposal
         })
+    }
+
+    /// Hands in the buffer for method records; its length is the capacity.
+    pub fn set_method_buffer(&mut self, buffer: &'a mut [MethodCall]) {
+        self.methods = buffer;
+        self.n_methods = 0;
+    }
+
+    /// Stages a method record: an async one only before the first cycle
+    /// proposal or record (step 2), a cycle one in step 4.
+    pub fn stage_method(&mut self, call: MethodCall) -> Result<(), ImageError> {
+        if self.expanded > 0 {
+            return Err(ImageError::WrongPhase);
+        }
+        match (call.source, self.phase) {
+            (_, Phase::Idle) | (Source::Async, Phase::Cycle) => return Err(ImageError::WrongPhase),
+            (Source::Cycle, _) => self.phase = Phase::Cycle,
+            (Source::Async, Phase::Latched) => {}
+        }
+        match self.methods.get_mut(self.n_methods) {
+            Some(slot) => {
+                *slot = call;
+                self.n_methods += 1;
+                Ok(())
+            }
+            None => {
+                self.staging_drops = self.staging_drops.saturating_add(1);
+                Err(ImageError::StagingFull)
+            }
+        }
+    }
+
+    /// The method records of this tick, in staging order.
+    pub fn method_calls(&self) -> &[MethodCall] {
+        &self.methods[..self.n_methods]
+    }
+
+    /// Step 5a: appends a write expanded from a method record, after every
+    /// direct proposal (ADR 0041 §1).
+    pub fn push_expanded(&mut self, proposal: Proposal) -> Result<(), ImageError> {
+        if self.phase == Phase::Idle {
+            return Err(ImageError::WrongPhase);
+        }
+        self.push(proposal)?;
+        self.expanded += 1;
+        Ok(())
+    }
+
+    /// The proposals staged directly (steps 2 and 4), without the writes
+    /// expanded from method records: what the trace records.
+    pub fn direct_proposals(&self) -> &[Proposal] {
+        &self.storage.proposals[..self.staged - self.expanded]
     }
 
     fn push(&mut self, proposal: Proposal) -> Result<(), ImageError> {
@@ -394,8 +495,9 @@ impl<'a> ProcessImage<'a> {
         }
     }
 
-    /// The proposals staged in this tick, in staging order: async first, then
-    /// cycle tasks in their declared order (steps 5–7 consume them).
+    /// The proposals of this tick, in order: async first, then cycle tasks in
+    /// their declared order, then the writes expanded from method records
+    /// (steps 5–7 consume them).
     pub fn proposals(&self) -> &[Proposal] {
         &self.storage.proposals[..self.staged]
     }

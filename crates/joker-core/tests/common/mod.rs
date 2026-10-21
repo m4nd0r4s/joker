@@ -259,6 +259,8 @@ impl joker_expr::Env for TestEnv {
         let (id, unit) = match path {
             "x.f" => (0, "Hz"),
             "x.p_set" => (1, "kW"),
+            "a0" => (joker_core::class::ARG_SIGNAL_BASE, "kW"),
+            "a1" => (joker_core::class::ARG_SIGNAL_BASE + 1, "kW"),
             _ => return None,
         };
         Some(joker_expr::SignalInfo {
@@ -276,7 +278,20 @@ impl joker_expr::Env for TestEnv {
 }
 
 pub fn program(src: &str) -> &'static joker_expr::Program {
-    let checked = joker_expr::check(src, &TestEnv, joker_expr::CheckOptions::default()).unwrap();
+    compile_with(src, joker_expr::CheckOptions::default())
+}
+
+pub fn method_program(src: &str) -> &'static joker_expr::Program {
+    compile_with(
+        src,
+        joker_expr::CheckOptions {
+            in_class_method: true,
+        },
+    )
+}
+
+fn compile_with(src: &str, options: joker_expr::CheckOptions) -> &'static joker_expr::Program {
+    let checked = joker_expr::check(src, &TestEnv, options).unwrap();
     let program = joker_expr::compile(
         &checked,
         joker_expr::CompileOptions {

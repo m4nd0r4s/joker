@@ -181,8 +181,10 @@ pub enum RegistryError<'a> {
     DuplicatePath(&'a str),
     /// The same group name appears twice.
     DuplicateGroup(&'a str),
-    /// An alias points to a path that is not a canonical signal.
+    /// An alias points to a path that is neither a signal nor an alias.
     UnknownAliasTarget(&'a str),
+    /// A chain of aliases loops, or is longer than [`MAX_ALIAS_CHAIN`].
+    AliasCycle(&'a str),
     /// A signal names a group that does not exist.
     UnknownGroup(&'a str),
     /// More entries than a `u32` id can number.
@@ -204,6 +206,8 @@ pub enum Table {
 pub const MAX_SEGMENT_LEN: usize = 32;
 /// Maximum segments in a path (ref/00 §10).
 pub const MAX_SEGMENTS: usize = 8;
+/// Maximum links in a chain of aliases (ADR 0041 §6).
+pub const MAX_ALIAS_CHAIN: usize = 8;
 
 /// Checks a path against docs/02 §9: `segment ("." segment)*`, each segment
 /// `[a-z][a-z0-9_]*` of at most 32 bytes, at most 8 segments.
@@ -361,8 +365,21 @@ fn freeze<'a>(
         if (i > 0 && aliases[i - 1].path == alias.path) || find(signals, alias.path).is_some() {
             return Err(RegistryError::DuplicatePath(alias.path));
         }
-        aliases[i].id =
-            find(signals, alias.target).ok_or(RegistryError::UnknownAliasTarget(alias.target))?;
+    }
+    for i in 0..aliases.len() {
+        let mut target = aliases[i].target;
+        let mut resolved = None;
+        for _ in 0..MAX_ALIAS_CHAIN {
+            if let Some(id) = find(signals, target) {
+                resolved = Some(id);
+                break;
+            }
+            match aliases.binary_search_by(|a| a.path.as_bytes().cmp(target.as_bytes())) {
+                Ok(j) => target = aliases[j].target,
+                Err(_) => return Err(RegistryError::UnknownAliasTarget(target)),
+            }
+        }
+        aliases[i].id = resolved.ok_or(RegistryError::AliasCycle(aliases[i].path))?;
     }
     Ok(())
 }
@@ -611,6 +628,29 @@ mod tests {
             b.build().unwrap_err(),
             RegistryError::UnknownAliasTarget("x.a")
         );
+
+        let mut s = [SignalMeta::EMPTY; 4];
+        let mut a = [Alias::EMPTY; 3];
+        let mut g = [GroupMeta::EMPTY; 1];
+        let mut b = RegistryBuilder::new(&mut s, &mut a, &mut g);
+        b.signal(SignalMeta::input("esp_io.boot", ValueType::Bool, KW))
+            .unwrap();
+        b.alias(Alias::new("botao.clicked", "esp_io.boot")).unwrap();
+        b.alias(Alias::new("painel.botao.clicked", "botao.clicked"))
+            .unwrap();
+        let r = b.build().unwrap();
+        assert_eq!(r.resolve("painel.botao.clicked"), Some(SignalId(0)));
+
+        let mut s = [SignalMeta::EMPTY; 4];
+        let mut a = [Alias::EMPTY; 3];
+        let mut g = [GroupMeta::EMPTY; 1];
+        let mut b = RegistryBuilder::new(&mut s, &mut a, &mut g);
+        b.alias(Alias::new("p.a", "p.b")).unwrap();
+        b.alias(Alias::new("p.b", "p.a")).unwrap();
+        assert!(matches!(
+            b.build().unwrap_err(),
+            RegistryError::AliasCycle(_)
+        ));
 
         let mut s = [SignalMeta::EMPTY; 4];
         let mut a = [Alias::EMPTY; 2];
