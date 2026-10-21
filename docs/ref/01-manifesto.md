@@ -521,7 +521,7 @@ fallback = { configure = true, keepalive = "5s" }
 | `align` | `Nome` de outro dispositivo | não | — | o poll deste dispositivo é agendado logo a seguir ao do indicado (documento 08, R1e); dispositivo inexistente `J0157` | 03 §9.1 | 1.0 |
 | `discover` | `Bool` | não | `false` | só em drivers com a capacidade `discover` (`J0177`); resultado no lock, em `[discovered.<dispositivo>]` (M2, `ref/02` §2.1.11) | 03 §5 | 1.0 |
 | `fallback` | tabela (abaixo) | não | — | | 03 §5 | 1.0 |
-| `signals` | `Tabela<nome do sinal, ajuste>` | não | — | §5.8.1 | 03 §5.1 | 1.0 |
+| `signals` | `Tabela<nome do sinal, ajuste>`; o nome é um `Nome`, ou, num `joker-link`, o caminho do sinal no MCU (`io.led`, que fica `<dispositivo>.io.led`; ref/07 §6.3) | não | — | §5.8.1 | 03 §5.1 | 1.0 |
 | `actions` | `Tabela<nome da ação, configuração>` | não | — | §5.8.2 | 03 §5.2 | 1.0 |
 
 As chaves específicas de cada driver (`address`, `unit_id`, `chip`, `model`, `params`, `node_id`, `eds`, `config`, `position`…) estão no **anexo A**, que é o esquema `config` do descritor de cada driver do catálogo (`ref/06` §2.3). Para um driver W ou X, valem as do esquema que ele publica. Uma chave que existe noutro driver mas não neste é `J0173`; uma que não existe em nenhum é `J0140`; um valor fora do esquema do driver é `J0852` (`ref/06` §2.3.1). Dois dispositivos com o mesmo endereço no mesmo barramento são `J0178`; também o é um dispositivo que use o mesmo recurso do kernel (LED, linha GPIO, zona térmica) que um IO fixo `board.<nome>` referido pelo manifesto. O IO fixo da placa só existe quando o manifesto refere `board.<nome>`, e o seu `fallback` só conta por esse caminho (`ref/03` §2.3.2).

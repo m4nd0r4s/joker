@@ -27,6 +27,11 @@ bg = { cpus = [0] }
 kind = "spi"
 dev  = "/dev/spidev0.0"
 
+[buses.rs485]
+kind = "serial"
+port = "/dev/ttyAMA0"
+baud = 19200
+
 [devices.adc]
 driver  = "spi-adc"
 profile = "acme/adc24x24@1"
