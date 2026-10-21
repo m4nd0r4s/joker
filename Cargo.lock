@@ -893,6 +893,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "joker-supply-chain"
+version = "0.0.0"
+dependencies = [
+ "serde_json",
+ "toml",
+]
+
+[[package]]
 name = "joker-units"
 version = "0.0.0"
 

@@ -1,0 +1,16 @@
+[package]
+name = "joker-supply-chain"
+description = "Checks of the dependency graph and of the toolchain files against docs/policies/dependencies.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde_json = "1.0.154"
+toml = { version = "1.1.8", default-features = false, features = ["parse", "serde", "std"] }
+
+[lints]
+workspace = true

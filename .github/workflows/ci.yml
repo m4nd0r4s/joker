@@ -40,6 +40,13 @@ jobs:
       - run: cargo install --locked cargo-vet --version 0.10.2
       - run: cargo vet --locked
 
+  supply-chain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show
+      - run: cargo test --locked -p joker-supply-chain
+
   spec-lint:
     runs-on: ubuntu-latest
     steps:
