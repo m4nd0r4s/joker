@@ -327,6 +327,7 @@ pub struct RxState {
     seen: u64,
     forced: bool,
     resync: bool,
+    keepalive: bool,
 }
 
 /// The io side of the channel: turns new values into committed writes.
@@ -362,6 +363,24 @@ impl<'a> CommitRx<'a> {
     pub fn resync(&mut self) {
         for s in self.state.iter_mut() {
             s.resync = true;
+        }
+    }
+
+    /// Marks box `index` due for a device-fallback keepalive (docs/01 §8,
+    /// M1): the next `take()` resends its applied value as `Keepalive`,
+    /// even though it did not change. Deadband and `min_interval` never
+    /// suppress this (they live upstream of the box, at the envelope).
+    /// `false` when `index` is out of range. Scheduling *when* each output
+    /// is due (from the profile's `keepalive`, default timeout/5) is not
+    /// this type's job; a caller with the manifest's fallback declarations
+    /// calls this on the boxes that are due each tick.
+    pub fn keepalive(&mut self, index: usize) -> bool {
+        match self.state.get_mut(index) {
+            Some(s) => {
+                s.keepalive = true;
+                true
+            }
+            None => false,
         }
     }
 
@@ -419,16 +438,20 @@ impl<'a> CommitRx<'a> {
             };
             if snap.seq == 0 {
                 self.state[i].resync = false;
+                self.state[i].keepalive = false;
                 continue;
             }
             let fresh = snap.seq != state.seen;
-            if fresh || state.resync || state.forced {
+            if fresh || state.resync || state.keepalive || state.forced {
                 self.state[i].seen = snap.seq;
                 self.state[i].resync = false;
+                self.state[i].keepalive = false;
                 let kind = if fresh {
                     WriteKind::Set
-                } else {
+                } else if state.resync || state.forced {
                     WriteKind::Resync
+                } else {
+                    WriteKind::Keepalive
                 };
                 return Some(self.write(binding.point, binding.encoding, snap.applied, kind));
             }
@@ -493,6 +516,30 @@ mod tests {
         let w = rx.take().unwrap();
         assert_eq!((w.value, w.kind), (RawValue::Bool(true), WriteKind::Resync));
         assert!(!force.set(1, true));
+    }
+
+    #[test]
+    fn keepalive_resends_the_applied_value_without_a_new_commit() {
+        let h = OutputHarness::new(&[("pi.act_led", ValueType::Bool, 0, 7)]).unwrap();
+        let bindings = h.bindings(&[RawEncoding::Bool]);
+        let boxes = [CommitBox::new()];
+        let mut last = [None];
+        let mut state = [RxState::default()];
+        let mut tx = CommitTx::new(h.outputs(), &bindings, &boxes, &mut last).unwrap();
+        let mut rx = CommitRx::new(&bindings, &boxes, &mut state).unwrap();
+        tx.publish(h.outputs());
+        let w = rx.take().unwrap();
+        assert_eq!((w.value, w.kind), (RawValue::Bool(false), WriteKind::Set));
+        assert_eq!(rx.take(), None);
+
+        assert!(rx.keepalive(0));
+        let w = rx.take().unwrap();
+        assert_eq!(
+            (w.point, w.value, w.kind),
+            (7, RawValue::Bool(false), WriteKind::Keepalive)
+        );
+        assert_eq!(rx.take(), None, "one keepalive per call, not forever");
+        assert!(!rx.keepalive(1), "out of range");
     }
 
     #[test]
