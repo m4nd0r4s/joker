@@ -1,0 +1,69 @@
+//! Modbus TCP framing: the MBAP header (application protocol v1.1b3 §4.1),
+//! wrapping the same PDU shape as `modbus-rtu`'s frames, minus the CRC
+//! (TCP already guarantees byte integrity).
+
+/// MBAP header (7 bytes) + 253-byte PDU.
+pub const MAX_ADU: usize = 260;
+
+/// An MBAP-framed request: transaction id, unit, function, two 16-bit
+/// words. No CRC.
+pub fn request(transaction: u16, unit: u8, function: u8, a: u16, b: u16) -> [u8; 12] {
+    let [t0, t1] = transaction.to_be_bytes();
+    let [a0, a1] = a.to_be_bytes();
+    let [b0, b1] = b.to_be_bytes();
+    // Length field: unit (1) + PDU (function + 2 words = 5).
+    let [l0, l1] = 6u16.to_be_bytes();
+    [t0, t1, 0, 0, l0, l1, unit, function, a0, a1, b0, b1]
+}
+
+/// The MBAP header's `length` field: how many bytes follow it (unit +
+/// PDU).
+pub fn header_length(frame: &[u8]) -> Option<u16> {
+    (frame.len() >= 6).then(|| u16::from_be_bytes([frame[4], frame[5]]))
+}
+
+/// The transaction id a response's header carries.
+pub fn transaction_of(frame: &[u8]) -> Option<u16> {
+    (frame.len() >= 2).then(|| u16::from_be_bytes([frame[0], frame[1]]))
+}
+
+/// Data bytes of a read response for `count` items of `function` (same
+/// table as RTU: the PDU shape does not change).
+pub fn read_data_len(function: u8, count: u16) -> usize {
+    crate::rtu::read_data_len(function, count)
+}
+
+/// Wire bytes of the full MBAP frame (header + PDU) of a read response of
+/// `count` items.
+pub fn read_response_len(function: u8, count: u16) -> usize {
+    7 + 2 + read_data_len(function, count)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_read_holding_registers_request() {
+        assert_eq!(
+            request(1, 1, 3, 0, 1),
+            [
+                0x00, 0x01, 0x00, 0x00, 0x00, 0x06, 0x01, 0x03, 0x00, 0x00, 0x00, 0x01
+            ]
+        );
+    }
+
+    #[test]
+    fn header_length_and_transaction_are_read_from_the_frame() {
+        let frame = request(7, 1, 3, 0, 1);
+        assert_eq!(transaction_of(&frame), Some(7));
+        assert_eq!(header_length(&frame), Some(6));
+        assert_eq!(header_length(&[1]), None);
+    }
+
+    #[test]
+    fn read_response_len_covers_header_unit_and_pdu() {
+        // header(6) + unit(1) + fc(1) + byte-count(1) + 2 regs(4) = 13.
+        assert_eq!(read_response_len(3, 2), 13);
+    }
+}

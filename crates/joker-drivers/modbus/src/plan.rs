@@ -363,3 +363,123 @@ impl Planner for ModbusPlanner {
         Ok(plan)
     }
 }
+
+/// The descriptor of `modbus-tcp`.
+pub const DESCRIPTOR_TCP: Descriptor = Descriptor {
+    name: "modbus-tcp",
+    version: "0.1.0",
+    tier: Tier::N,
+    protocols: &["modbus"],
+    buses: &[BusKind::Ethernet],
+    instance: InstanceMode::Device,
+    capabilities: Capabilities::of(&[Capability::Write]),
+    interface: INTERFACE,
+    micro: false,
+    license: "Apache-2.0 OR MIT",
+    description: "Modbus TCP client (ref/03 §2.2)",
+};
+
+/// The plan half of `modbus-tcp`. Shares point checking, addressing and
+/// request encoding with `modbus-rtu`; only the cost model differs (ADR
+/// 0049 §2: a TCP device without a shared bus is not budgeted, and the
+/// cost of a batch on a shared `ethernet` bus is the slave latency alone,
+/// with no byte-serialization term).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ModbusTcpPlanner;
+
+impl Planner for ModbusTcpPlanner {
+    const DESCRIPTOR: &'static Descriptor = &DESCRIPTOR_TCP;
+
+    fn plan(req: &PlanRequest<'_>) -> Result<Plan, Vec<Diagnostic<'static>>> {
+        let mut errors = Vec::new();
+        let mut quirks = BTreeMap::new();
+        for d in req.devices {
+            if let Err(m) = unit_id(d.config) {
+                errors.push(Diagnostic::general(J0852, m));
+            }
+            match Quirks::parse(d.quirks) {
+                Ok(q) => {
+                    quirks.insert(d.index, q);
+                }
+                Err(m) => errors.push(Diagnostic::general(J0818, m)),
+            }
+        }
+        let mut groups: BTreeMap<GroupKey, Vec<(u16, u16, PointId)>> = BTreeMap::new();
+        for p in req.points {
+            let a = match check_point(p) {
+                Ok(a) => a,
+                Err(d) => {
+                    errors.push(d);
+                    continue;
+                }
+            };
+            let key = match (p.direction, p.poll) {
+                (Direction::Output, _) => continue,
+                (_, Poll::Period(ns)) => (p.device, a.fc, ns, false),
+                (_, Poll::OnDemand) => (p.device, a.fc, 0, true),
+                (_, Poll::Push) => {
+                    errors.push(Diagnostic::at(J0809, p.id, "modbus points are polled"));
+                    continue;
+                }
+            };
+            groups.entry(key).or_default().push((a.at, span(p), p.id));
+        }
+        if !errors.is_empty() {
+            return Err(errors);
+        }
+        let mut plan = Plan::new();
+        for ((device, fc, period, on_demand), mut points) in groups {
+            let q = quirks.get(&device).copied().unwrap_or_default();
+            let max = if matches!(fc, 1 | 2) {
+                q.max_bits
+            } else {
+                q.max_regs
+            };
+            points.sort();
+            let mut current: Option<(u16, u32, Vec<PointId>)> = None;
+            let flush = |c: (u16, u32, Vec<PointId>), plan: &mut Plan| {
+                let count = (c.1 - u32::from(c.0)) as u16;
+                let r = Request {
+                    fc,
+                    start: c.0,
+                    count,
+                };
+                let kind = if on_demand {
+                    BatchKind::OnDemand
+                } else {
+                    BatchKind::Poll
+                };
+                plan.push(
+                    device,
+                    kind,
+                    period,
+                    &c.2,
+                    q.latency_ns,
+                    q.latency_ns,
+                    &r.encode(),
+                );
+            };
+            for (at, n, id) in points {
+                let end = u32::from(at) + u32::from(n);
+                current = match current.take() {
+                    Some((start, cur_end, mut ids))
+                        if u32::from(at) <= cur_end + u32::from(q.max_gap)
+                            && end.max(cur_end) - u32::from(start) <= u32::from(max) =>
+                    {
+                        ids.push(id);
+                        Some((start, end.max(cur_end), ids))
+                    }
+                    Some(c) => {
+                        flush(c, &mut plan);
+                        Some((at, end, std::vec![id]))
+                    }
+                    None => Some((at, end, std::vec![id])),
+                };
+            }
+            if let Some(c) = current {
+                flush(c, &mut plan);
+            }
+        }
+        Ok(plan)
+    }
+}
