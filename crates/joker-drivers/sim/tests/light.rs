@@ -140,7 +140,7 @@ fn the_pi_model_has_the_sysfs_names_and_types() {
         )
     );
     assert_eq!(
-        (temp.ty, temp.unit.as_str()),
+        (temp.ty, temp.unit.symbol()),
         (joker_driver_sim::model::SimType::F64, "°C")
     );
 }

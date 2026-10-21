@@ -11,8 +11,9 @@ publish.workspace = true
 [dependencies]
 joker-hal = { workspace = true, features = ["std", "plan"] }
 joker-core.workspace = true
+joker-units.workspace = true
 libm = "0.2.16"
-toml = { version = "1.1.8", default-features = false, features = ["parse", "serde", "std"] }
+toml = { version = "1.1.8", default-features = false, features = ["parse", "preserve_order", "serde", "std"] }
 
 [dev-dependencies]
 joker-hal = { workspace = true, features = ["testing"] }
