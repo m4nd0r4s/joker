@@ -17,6 +17,7 @@ joker-client = { path = "../joker-client" }
 joker-manifest = { path = "../joker-manifest" }
 joker-api = { path = "../joker-api" }
 jokerd = { path = "../jokerd" }
+joker-host.workspace = true
 joker-core = { workspace = true, features = ["alloc"] }
 clap = { version = "4.5", features = ["derive", "env"] }
 serde_json = "1.0.145"

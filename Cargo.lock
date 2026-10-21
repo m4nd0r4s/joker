@@ -1279,6 +1279,7 @@ dependencies = [
  "joker-api",
  "joker-client",
  "joker-core",
+ "joker-host",
  "joker-manifest",
  "jokerd",
  "serde_json",

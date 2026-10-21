@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use joker_manifest::value::Value;
 use joker_manifest::{Diagnostics, OsFileSystem, Report, Sources};
-use jokerd::native::NativeTasks;
+use jokerd::task::{Providers, TaskProvider};
 
 /// The entry manifest and its lock.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,9 +37,16 @@ pub fn entry(env: Option<&str>, manifest: Option<&Path>) -> Result<Entry, String
     })
 }
 
-/// Runs the manifest checks with the drivers and apps this build knows.
-pub fn check(entry: &Entry) -> Report {
-    let context = jokerd::catalog::context(&NativeTasks);
+/// The apps of the project: its Wasm apps, built, then the native tasks
+/// of `jokerd` (normal run mode).
+pub fn tasks(entry: &Entry) -> Result<Providers, crate::Failure> {
+    crate::apps::providers(entry, joker_host::RunMode::Normal).map_err(crate::Failure::usage)
+}
+
+/// Runs the manifest checks with the drivers this build knows and the
+/// interfaces of `tasks`.
+pub fn check(entry: &Entry, tasks: &dyn TaskProvider) -> Report {
+    let context = jokerd::catalog::context(tasks);
     joker_manifest::check(&OsFileSystem, &entry.manifest, &context)
 }
 

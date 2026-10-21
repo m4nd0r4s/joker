@@ -9,8 +9,8 @@ use jokerd::control::{Config, Controller};
 use jokerd::daemon::lock_controller;
 use jokerd::decisions::DecisionLog;
 use jokerd::devices::SimDevices;
-use jokerd::native::NativeTasks;
 use jokerd::pacer::{Monotonic, SystemPacer};
+use jokerd::task::TaskProvider;
 
 use crate::Failure;
 use crate::project::{self, Entry};
@@ -22,8 +22,8 @@ fn stamp(files: &[std::path::PathBuf]) -> Vec<Option<SystemTime>> {
         .collect()
 }
 
-fn apply(c: &mut Controller, entry: &Entry) {
-    let report = project::check(entry);
+fn apply(c: &mut Controller, entry: &Entry, tasks: &dyn TaskProvider) {
+    let report = project::check(entry, tasks);
     if report.has_errors() {
         eprintln!("{}", report.render());
         eprintln!("✗ not applied: the running generation stays");
@@ -73,10 +73,11 @@ pub fn run(entry: &Entry, socket: &Path) -> Result<u8, Failure> {
         .build()
         .map_err(|e| Failure::usage(format!("tokio: {e}")))?;
     let log = DecisionLog::open(&dir.join("decisions.jsonl")).map_err(io)?;
+    let tasks: Arc<dyn TaskProvider> = Arc::new(project::tasks(entry)?);
     let controller = Controller::new(
         dir,
         Arc::new(Mutex::new(log)),
-        Arc::new(NativeTasks),
+        Arc::clone(&tasks),
         Arc::new(SimDevices::new(
             runtime.handle().clone(),
             clock,
@@ -90,7 +91,7 @@ pub fn run(entry: &Entry, socket: &Path) -> Result<u8, Failure> {
     )
     .map_err(|e| Failure::usage(e.to_string()))?;
     let controller = Arc::new(Mutex::new(controller));
-    apply(&mut lock_controller(&controller), entry);
+    apply(&mut lock_controller(&controller), entry, tasks.as_ref());
     let node =
         jokerd::api::Node::new(Arc::clone(&controller), clock, utc_origin_ns, dir).map_err(io)?;
     let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
@@ -124,7 +125,8 @@ pub fn run(entry: &Entry, socket: &Path) -> Result<u8, Failure> {
                         println!("↻ manifest changed");
                         let c = Arc::clone(&watcher);
                         let e = entry.clone();
-                        let _ = tokio::task::spawn_blocking(move || apply(&mut lock_controller(&c), &e)).await;
+                        let t = Arc::clone(&tasks);
+                        let _ = tokio::task::spawn_blocking(move || apply(&mut lock_controller(&c), &e, t.as_ref())).await;
                     }
                 }
             }

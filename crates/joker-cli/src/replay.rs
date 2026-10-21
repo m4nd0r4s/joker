@@ -4,7 +4,6 @@
 use std::path::Path;
 
 use joker_manifest::OsFileSystem;
-use jokerd::native::NativeTasks;
 use serde_json::json;
 
 use crate::Failure;
@@ -14,15 +13,19 @@ use crate::project::Entry;
 pub fn run(entry: &Entry, file: &Path, diff: bool, as_json: bool) -> Result<u8, Failure> {
     let bytes =
         std::fs::read(file).map_err(|e| Failure::usage(format!("{}: {e}", file.display())))?;
+    let tasks =
+        crate::apps::providers(entry, joker_host::RunMode::Replay).map_err(Failure::usage)?;
     let loaded =
-        jokerd::load::load(&OsFileSystem, &entry.manifest, &NativeTasks).map_err(|e| Failure {
+        jokerd::load::load(&OsFileSystem, &entry.manifest, &tasks).map_err(|e| Failure {
             message: e.to_string(),
             exit: 2,
         })?;
-    let report = jokerd::replay::replay(&loaded.plan, &loaded.manifest, &NativeTasks, &bytes)
-        .map_err(|e| Failure {
-            message: format!("error: {e}"),
-            exit: 1,
+    let report =
+        jokerd::replay::replay(&loaded.plan, &loaded.manifest, &tasks, &bytes).map_err(|e| {
+            Failure {
+                message: format!("error: {e}"),
+                exit: 1,
+            }
         })?;
     let path = |id: joker_core::SignalId| loaded.plan.path(id).unwrap_or("?").to_owned();
     if as_json {

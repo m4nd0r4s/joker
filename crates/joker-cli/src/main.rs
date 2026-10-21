@@ -1,5 +1,6 @@
 //! `jk`, the Joker command line (docs/07).
 
+mod apps;
 mod dev;
 mod node;
 mod project;

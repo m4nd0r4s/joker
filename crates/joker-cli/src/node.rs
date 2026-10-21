@@ -30,7 +30,8 @@ fn checked(r: Response) -> Result<Response, Failure> {
 
 /// `jk check`.
 pub fn check(entry: &Entry, json: bool) -> Result<u8, Failure> {
-    let report = project::check(entry);
+    let tasks = project::tasks(entry)?;
+    let report = project::check(entry, &tasks);
     if json {
         print_json(&json!({
             "ok": !report.has_errors(),
@@ -110,7 +111,8 @@ impl Node {
         dry_run: bool,
         message: Option<String>,
     ) -> Result<u8, Failure> {
-        let report = project::check(entry);
+        let tasks = project::tasks(entry)?;
+        let report = project::check(entry, &tasks);
         if report.has_errors() {
             eprintln!("{}", report.render());
             return Ok(2);
