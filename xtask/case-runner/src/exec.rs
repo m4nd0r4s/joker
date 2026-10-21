@@ -32,6 +32,11 @@ use crate::model::{ActionKind, Fixture, SafeDef, Script};
 /// The name of the only cycle group of a core suite.
 pub const GROUP: &str = "case";
 
+/// The capacity of the staging buffer of one tick, in proposals, on every
+/// target: a proposal past it is dropped by the core, so the host and the
+/// firmware use the same value.
+pub const STAGING: usize = 256;
+
 /// Why a case could not run: the fixture does not build in the core.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct SetupError {

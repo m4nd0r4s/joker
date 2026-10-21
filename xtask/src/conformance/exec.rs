@@ -8,7 +8,7 @@ use alloc::vec::Vec;
 use joker_case_runner::{Observer, Script, TickView};
 use joker_core::Sample;
 
-pub use joker_case_runner::{OutputTick, SetupError, TickGuard};
+pub use joker_case_runner::{OutputTick, STAGING, SetupError, TickGuard};
 
 use super::model::{Case, Suite};
 
@@ -18,8 +18,6 @@ pub const SIGNALS: usize = 256;
 pub const OUTPUTS: usize = 128;
 /// Writers of one suite on the host.
 pub const WRITERS: usize = 64;
-/// Capacity of the staging buffer of one tick, in proposals.
-pub const STAGING: usize = 256;
 
 /// What the case saw in one tick.
 #[derive(Clone, Debug, PartialEq, Eq)]

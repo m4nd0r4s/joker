@@ -16,7 +16,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use exec::TickGuard;
-use model::{Diagnostic, Suite};
+use model::{Case, Diagnostic, Suite};
 use report::{CaseReport, Report, Status, SuiteReport};
 
 /// Options of one run.
@@ -90,37 +90,56 @@ pub fn run_file(
     }
 }
 
+/// Whether the case id passes the `--filter` prefixes.
+pub fn selected(id: &str, filters: &[String]) -> bool {
+    filters.is_empty() || filters.iter().any(|f| id.starts_with(f.as_str()))
+}
+
+/// The report of a case before it runs: `skip` when it needs a feature the
+/// M0 core lacks, `error` when it does not resolve, and `pass` when it is
+/// ready to run.
+pub fn prepare(suite: &Suite, case: &Case) -> CaseReport {
+    let mut spec = case.spec.clone();
+    if spec.is_empty() {
+        spec.clone_from(&suite.spec);
+    }
+    let mut report = CaseReport {
+        id: format!("{}.{}", suite.id, case.id),
+        name: case.name.clone(),
+        spec,
+        status: Status::Pass,
+        known: None,
+        missing: case.missing.clone(),
+        diagnostics: Vec::new(),
+        failures: Vec::new(),
+        ticks: case.ticks,
+        digest: None,
+    };
+    if !case.missing.is_empty() {
+        report.status = Status::Skip;
+        report.diagnostics.clone_from(&case.errors);
+    } else if !case.errors.is_empty() {
+        report.status = Status::Error;
+        report.diagnostics.clone_from(&case.errors);
+    }
+    report
+}
+
+/// Whether a case is ready to run: it needs nothing the M0 core lacks and
+/// it resolves.
+pub fn runnable(case: &Case) -> bool {
+    case.missing.is_empty() && case.errors.is_empty()
+}
+
 /// Runs every case of a loaded suite.
 pub fn run_suite(suite: &Suite, filters: &[String], guard: &impl TickGuard) -> Vec<CaseReport> {
     let mut out = Vec::new();
     for case in &suite.cases {
-        let id = format!("{}.{}", suite.id, case.id);
-        if !filters.is_empty() && !filters.iter().any(|f| id.starts_with(f.as_str())) {
+        let mut report = prepare(suite, case);
+        if !selected(&report.id, filters) {
             continue;
         }
-        let mut spec = case.spec.clone();
-        if spec.is_empty() {
-            spec.clone_from(&suite.spec);
-        }
-        let mut report = CaseReport {
-            id,
-            name: case.name.clone(),
-            spec,
-            status: Status::Pass,
-            known: None,
-            missing: case.missing.clone(),
-            diagnostics: Vec::new(),
-            failures: Vec::new(),
-            ticks: case.ticks,
-            digest: None,
-        };
-        if !case.missing.is_empty() {
-            report.status = Status::Skip;
-            report.diagnostics.clone_from(&case.errors);
-        } else if !case.errors.is_empty() {
-            report.status = Status::Error;
-            report.diagnostics.clone_from(&case.errors);
-        } else {
+        if runnable(case) {
             let before = guard.violations();
             let result = exec::run(suite, case, guard);
             let allocations = guard.violations().saturating_sub(before);

@@ -1,0 +1,22 @@
+[package]
+name = "joker-qemu-sys"
+description = "The critical section of the QEMU conformance firmware: one core, interrupts masked (docs/13 §5, ref/08 §2.4 rule 8)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+critical-section = { workspace = true, features = ["restore-state-bool"] }
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+missing_debug_implementations = "warn"
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(loom)"] }
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"

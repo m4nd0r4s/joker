@@ -4,6 +4,8 @@
 //!   `joker-core` with a virtual clock (docs/13 §3, ref/03 §2.6);
 //! - `rt-bench`: tick jitter and envelope + arbiter cost per output, with
 //!   the no-alloc guard on the tick path (docs/13 §4 task 20, AGENTS.md §5);
+//! - `qemu`: the same suites on Cortex-M33 and RISC-V in QEMU, with no
+//!   allocator linked (docs/13 §5, task 22);
 //! - `msrv`: the MSRV of the core crates against the Xtensa toolchain
 //!   (docs/13 §5.1).
 
@@ -12,6 +14,7 @@ extern crate alloc;
 mod conformance;
 mod guard;
 mod msrv;
+mod qemu;
 mod rt_bench;
 
 use std::path::PathBuf;
@@ -28,6 +31,16 @@ tasks:
       Runs the core conformance suites (default: conformance/) against
       joker-core with a virtual clock. Exits 1 on a suite or case error, on a
       failure that is not in the known-failures file, or on a stale entry.
+
+  qemu --target TRIPLE [PATH...] [--json FILE] [--markdown FILE]
+       [--known-failures FILE] [--filter PREFIX]... [--verbose]
+       [--qemu BINARY] [--timeout SECONDS]
+      Runs the same suites in QEMU: thumbv8m.main-none-eabihf on mps2-an505
+      (qemu-system-arm) or riscv32imac-unknown-none-elf on virt
+      (qemu-system-riscv32). Embeds the cases in joker-qemu-conformance,
+      checks that no allocator is linked, and reports status and sequence
+      digest per case, with the exit codes of `conformance` (default
+      timeout: 600 s).
 
   rt-bench [--outputs N] [--period DURATION] [--ticks N] [--iterations N]
            [--json FILE] [--compare BASELINE.json] [--threshold PERCENT]
@@ -115,10 +128,44 @@ fn conformance(args: &[String]) -> Result<bool, String> {
     conformance::run(&options, &NoAlloc)
 }
 
+fn qemu(args: &[String]) -> Result<bool, String> {
+    let mut options = qemu::Options {
+        timeout_s: 600,
+        ..qemu::Options::default()
+    };
+    let mut it = args.iter();
+    while let Some(arg) = it.next() {
+        let mut value = |name: &str| {
+            it.next()
+                .cloned()
+                .ok_or_else(|| format!("{name} needs a value"))
+        };
+        match arg.as_str() {
+            "--target" => options.target = value("--target")?,
+            "--json" => options.json = Some(PathBuf::from(value("--json")?)),
+            "--markdown" => options.markdown = Some(PathBuf::from(value("--markdown")?)),
+            "--known-failures" => {
+                options.known_failures = Some(PathBuf::from(value("--known-failures")?));
+            }
+            "--filter" => options.filters.push(value("--filter")?),
+            "--qemu" => options.qemu = Some(value("--qemu")?),
+            "--timeout" => options.timeout_s = parse("--timeout", &value("--timeout")?)?,
+            "--verbose" | "-v" => options.verbose = true,
+            flag if flag.starts_with('-') => return Err(format!("unknown option {flag}\n{USAGE}")),
+            path => options.paths.push(PathBuf::from(path)),
+        }
+    }
+    if options.target.is_empty() {
+        return Err(format!("qemu needs --target TRIPLE\n{USAGE}"));
+    }
+    qemu::run(&options)
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.first().map(String::as_str) {
         Some("conformance") => conformance(&args[1..]),
+        Some("qemu") => qemu(&args[1..]),
         Some("rt-bench") => rt_bench(&args[1..]),
         Some("msrv") => match &args[1..] {
             [flag, max] if flag == "--max" => msrv::run(max),

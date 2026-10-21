@@ -21,7 +21,7 @@ pub mod model;
 
 pub use check::{Verdict, holds};
 pub use digest::SequenceDigest;
-pub use exec::{Observer, OutputTick, SetupError, TickGuard, TickView, Unguarded, run};
+pub use exec::{Observer, OutputTick, STAGING, SetupError, TickGuard, TickView, Unguarded, run};
 pub use model::{
     Action, ActionKind, Expected, Fixture, Node, OutcomeLit, OutputSpec, Predicates, QualityLit,
     SafeDef, Script, SignalSpec, Subject, When, WriterSpec,

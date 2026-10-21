@@ -127,6 +127,9 @@ pub struct Report {
     pub suites: Vec<SuiteReport>,
     /// Known-failure entries that did not fail in this run.
     pub stale: Vec<String>,
+    /// The MCU target the cases ran on in QEMU (`cargo xtask qemu`), or
+    /// `None` on the host.
+    pub target: Option<String>,
 }
 
 fn suite_counts(s: &SuiteReport) -> Counts {
@@ -175,7 +178,11 @@ impl Report {
             })
             .cloned()
             .collect();
-        Self { suites, stale }
+        Self {
+            suites,
+            stale,
+            target: None,
+        }
     }
 
     /// Counts over all suites.
@@ -325,8 +332,9 @@ impl Report {
         let report = json!({
             "schema": 1,
             "kind": "core",
-            "runner": "cargo xtask conformance",
+            "runner": if self.target.is_some() { "cargo xtask qemu" } else { "cargo xtask conformance" },
             "host": {"arch": std::env::consts::ARCH, "os": std::env::consts::OS},
+            "target": self.target,
             "passed": self.passed(),
             "totals": self.totals().json(),
             "stale_known_failures": self.stale,
