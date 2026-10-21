@@ -21,6 +21,33 @@ fn ok(text: &str) -> BoardInfo {
     report.board.unwrap()
 }
 
+/// The repo's real `boards/*.board.toml` files (AUR-412) parse cleanly.
+#[test]
+fn the_real_project_board_files_parse() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../boards");
+    let entries = std::fs::read_dir(&root).unwrap();
+    let mut checked = 0;
+    for entry in entries {
+        let path = entry.unwrap().path();
+        if path.extension().is_none_or(|e| e != "toml") {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path).unwrap();
+        let report = parse(&path, &text);
+        assert!(
+            report.board.is_some(),
+            "{}: {}",
+            path.display(),
+            report.render()
+        );
+        checked += 1;
+    }
+    assert!(
+        checked >= 2,
+        "expected at least the rpi5 and revpi-connect-5 boards, found {checked}"
+    );
+}
+
 #[test]
 fn a_linux_board() {
     let b = ok(concat!(
