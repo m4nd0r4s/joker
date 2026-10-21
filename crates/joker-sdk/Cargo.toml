@@ -24,6 +24,7 @@ critical-section = { workspace = true }
 [dev-dependencies]
 joker-core = { workspace = true }
 joker-host = { workspace = true }
+assert_no_alloc = { version = "1.1.2", default-features = false, features = ["warn_debug", "warn_release"] }
 
 [lints]
 workspace = true

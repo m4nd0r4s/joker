@@ -365,6 +365,7 @@ pub struct CycleInstance {
     on_cycle: TypedFunc<(u32, &'static [u8]), (wit::CycleResult,)>,
     latch: Arc<LatchTime>,
     image: Vec<u8>,
+    proposals: Vec<u8>,
     n_slots: usize,
     proposal_capacity: usize,
     deadline: u64,
@@ -623,6 +624,7 @@ impl CycleInstance {
             on_cycle,
             latch,
             image: vec![0u8; image_len],
+            proposals: Vec::with_capacity(proposal_capacity),
             n_slots: n_slots as usize,
             proposal_capacity,
             deadline: setup.limits.cycle_deadline_epochs,
@@ -683,20 +685,15 @@ impl CycleInstance {
                 return Ok(self.trapped(trap_code(&e)));
             }
         };
-        let mut status = CycleStatus::Ok;
-        if let Some(error) = &result.error {
-            if error.code == codes::UNCAUGHT {
-                return Ok(self.trapped(codes::UNCAUGHT));
-            }
-            self.error_code
-                .push_str(&error.code[..floor_char_boundary(&error.code, ERROR_CODE)]);
-            self.error_message
-                .push_str(&error.message[..floor_char_boundary(&error.message, ERROR_MESSAGE)]);
-            status = CycleStatus::AppError;
+        let Ok(status) = self.lift(&result) else {
+            return Ok(self.trapped(codes::MALFORMED));
+        };
+        if status == CycleStatus::Trap(codes::UNCAUGHT) {
+            return Ok(self.trapped(codes::UNCAUGHT));
         }
-        let bytes = result.proposals.as_slice();
+        let bytes = self.proposals.as_slice();
         let state = self.store.data();
-        if bytes.len() > self.proposal_capacity || validate(bytes, &state.ports).is_err() {
+        if validate(bytes, &state.ports).is_err() {
             return Ok(self.trapped(codes::MALFORMED));
         }
         let mut report = CycleReport {
@@ -750,6 +747,31 @@ impl CycleInstance {
         report.rejected = u32::try_from(self.rejections.len()).unwrap_or(u32::MAX);
         self.first = false;
         Ok(report)
+    }
+
+    /// Copies `cycle-result` out of guest memory into the buffers reserved
+    /// at creation, without allocating. `Err` when the buffer is larger than
+    /// the proposal capacity or the error is not UTF-8 (`J-E0907`).
+    fn lift(&mut self, result: &wit::CycleResult) -> Result<CycleStatus, ()> {
+        let bytes = result.proposals.as_le_slice(&self.store);
+        if bytes.len() > self.proposal_capacity {
+            return Err(());
+        }
+        self.proposals.clear();
+        self.proposals.extend_from_slice(bytes);
+        let Some(error) = &result.error else {
+            return Ok(CycleStatus::Ok);
+        };
+        let code = error.code.to_str(&self.store).map_err(|_| ())?;
+        if code == codes::UNCAUGHT {
+            return Ok(CycleStatus::Trap(codes::UNCAUGHT));
+        }
+        let message = error.message.to_str(&self.store).map_err(|_| ())?;
+        self.error_code
+            .push_str(&code[..floor_char_boundary(&code, ERROR_CODE)]);
+        self.error_message
+            .push_str(&message[..floor_char_boundary(&message, ERROR_MESSAGE)]);
+        Ok(CycleStatus::AppError)
     }
 
     fn trapped(&mut self, code: &'static str) -> CycleReport {

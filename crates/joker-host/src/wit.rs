@@ -2,13 +2,13 @@
 //! passes across the boundary (`wit/joker-runtime.wit`). Every case of the
 //! WIT types is mirrored, including the ones the cycle subset never sends.
 //!
-//! Wasmtime 49 runs the guest's post-return inside `call`, so a borrowed
-//! `WasmList` result already points at freed memory when the call returns:
-//! `cycle-result` is lifted into owned values, one allocation per call.
+//! `cycle-result` is lifted as borrowed `WasmList`/`WasmStr` views into the
+//! guest's reserved buffers, which stay intact until the next call (ref/04
+//! §4.13, ADR 0056): the host copies them out without allocating.
 
 #![allow(dead_code)]
 
-use wasmtime::component::{ComponentType, Lift, Lower};
+use wasmtime::component::{ComponentType, Lift, Lower, WasmList, WasmStr};
 
 #[derive(ComponentType, Lower, Lift, Copy, Clone, Debug, PartialEq, Eq)]
 #[component(enum)]
@@ -222,11 +222,20 @@ pub(crate) struct Error {
     pub(crate) message: String,
 }
 
+/// `error`, as views into guest memory.
+#[derive(ComponentType, Lift)]
+#[component(record)]
+pub(crate) struct ErrorView {
+    pub(crate) code: WasmStr,
+    pub(crate) message: WasmStr,
+}
+
+/// `cycle-result`, as views into guest memory.
 #[derive(ComponentType, Lift)]
 #[component(record)]
 pub(crate) struct CycleResult {
-    pub(crate) proposals: Vec<u8>,
-    pub(crate) error: Option<Error>,
+    pub(crate) proposals: WasmList<u8>,
+    pub(crate) error: Option<ErrorView>,
 }
 
 #[derive(ComponentType, Lower, Copy, Clone, Debug, PartialEq, Eq)]
