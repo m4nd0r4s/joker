@@ -1,8 +1,9 @@
 //! The drivers, profiles and boards the daemon knows, as the manifest
 //! checks see them (`Context`, ref/01 §8.1).
 //!
-//! This is the M0 catalogue: `sim`, `sysfs` and `modbus-rtu`, and the bench
-//! profile `local/bench-esp32@1` (docs/26 §6). The driver crates will
+//! This is the M0 catalogue: `sim`, `sysfs` and `modbus-rtu`, the bench
+//! profile `local/bench-esp32@1` and the bench boards (docs/26 §6, docs/23
+//! §1). The driver crates will
 //! describe themselves once `joker-hal` lands; this module then only merges
 //! their descriptions.
 
@@ -10,7 +11,7 @@ use std::collections::BTreeMap;
 
 use joker_manifest::Context;
 use joker_manifest::context::Direction;
-use joker_manifest::context::{DriverInfo, ProfileInfo, SignalInfo, SignalType};
+use joker_manifest::context::{BoardInfo, DriverInfo, ProfileInfo, SignalInfo, SignalType};
 use joker_manifest::model::BusKind;
 use joker_units::{Duration, Unit};
 
@@ -91,12 +92,40 @@ pub fn profiles() -> BTreeMap<String, ProfileInfo> {
     p
 }
 
+/// The boards of the development bench (docs/23 §1): the Raspberry Pi 3 B+
+/// of M0 and the Pi Zero W.
+pub fn boards() -> BTreeMap<String, BoardInfo> {
+    let mut b = BTreeMap::new();
+    b.insert(
+        "rpi3b-plus".to_owned(),
+        BoardInfo {
+            majors: vec![1],
+            arch: "aarch64".into(),
+            cpus: Some(4),
+            memory: Some(1 << 30),
+            ..BoardInfo::default()
+        },
+    );
+    b.insert(
+        "rpi-zero-w".to_owned(),
+        BoardInfo {
+            majors: vec![1],
+            arch: "armv6".into(),
+            cpus: Some(1),
+            memory: Some(512 << 20),
+            ..BoardInfo::default()
+        },
+    );
+    b
+}
+
 /// The context of the manifest checks: the M0 catalogue plus the apps the
 /// task providers can run.
 pub fn context(tasks: &dyn TaskProvider) -> Context {
     Context {
         drivers: drivers(),
         profiles: profiles(),
+        boards: boards(),
         apps: tasks.interfaces(),
         ..Context::default()
     }
