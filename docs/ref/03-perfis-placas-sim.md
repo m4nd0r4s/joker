@@ -1411,7 +1411,7 @@ schema = 1
 | `do` | lista de ações | não | `[]` | §2.6.2 e §2.6.3 |
 | `expect` | lista de expectativas | sim | — | §2.6.4 |
 
-Cada caso começa num estado limpo: geração nova, todas as saídas no `safe` (A8), nenhum escritor ativo, alarmes em `normal`.
+Cada caso começa num estado limpo: geração nova, todas as saídas no `safe` (A8), nenhum escritor ativo, alarmes em `normal`, relógio `synced` (ADR 0042).
 
 #### 2.6.2 Fixture e ações do núcleo
 
@@ -1438,6 +1438,8 @@ A fixture usa a **sintaxe do manifesto** (ref/01), em listas:
 | reset | `{ at, reset = "<saída>" }` | fim de trip (E7) |
 | relógio | `{ at, clock = "<clock_quality>" }` | |
 | geração | `{ at, generation = "same" }` | troca para uma geração idêntica nesse limite de tick (A8) |
+
+As propostas e as libertações de escritores `async`, `manual` e `bridge` entram no passo 2; as de `cycle` e `impl`, no passo 4; em cada passo, pela ordem do caso. Na fronteira de um tick: a troca de geração, as ações `clock`, as amostras `input`, os `reset`, e só depois o latch. A geração nova começa sem níveis ativos e herda o último valor aplicado (A8); as amostras das entradas mantêm-se (ADR 0042).
 
 Escritor, saída, instância ou método desconhecidos: `J0844`.
 

@@ -34,5 +34,6 @@
 | [0031](0031-registry-hash-encoding.md) | Signal ordering and the registry hash encoding |
 | [0032](0032-dt-after-overrun-skip.md) | `dt()` counts whole periods, also after `overrun = "skip"` |
 | [0033](0033-write-outcomes-and-decision-records.md) | Write outcomes per proposal and per tick, and decision records |
+| [0042](0042-core-case-initial-state-and-staging.md) | Initial state and staging of a core conformance case |
 
 Mudar uma decisão = escrever uma ADR nova que a substitui, e atualizar os documentos afetados no mesmo conjunto de commits.
