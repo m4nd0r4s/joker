@@ -34,16 +34,16 @@ Any other function code is answered with exception 1 (illegal function). An addr
 - `logic/`: the `bench-esp32-logic` crate. `no_std`, no dependencies, no I/O: register table, PDU server, RTU framing (CRC-16 and the 1750 µs inter-frame silence) and the fallback timer, all driven by a microsecond clock passed in by the caller. It is tested on the host.
 - `src/main.rs`: the firmware. It samples the pins, moves bytes between `UART0` and the logic crate, and drives the LED.
 
-This directory is its own Cargo workspace, excluded from the root workspace, with its own `Cargo.lock` and its own `rust-toolchain.toml` (`docs/13` §5.1).
+This directory is its own Cargo workspace, excluded from the root workspace, with its own `Cargo.lock`. It has no `rust-toolchain.toml`: the policy allows one toolchain file per target family (`docs/policies/dependencies.md` §5), so the `esp` toolchain is selected with `cargo +esp`.
 
 ## Pinned versions
 
 | Item | Version |
 |---|---|
 | `espup` | 0.18.0 |
-| Xtensa Rust toolchain (`esp` channel) | 1.97.0.0 (`rustc 1.97.0-nightly (8ea53bcd7 2026-07-08)`) |
+| Xtensa Rust toolchain (`esp` channel) | 1.99.0.0 (`rustc 1.99.0-nightly (ad02ddc22 2026-09-30)`) |
 | Xtensa GCC (linker) | `esp-16.2.0_20260914` |
-| Xtensa LLVM | `esp-21.1.3_20260408` |
+| Xtensa LLVM | `esp-22.1.4_20260825` |
 | `espflash` | 4.6.0 |
 | `esp-hal` | `=1.2.2`, with `unstable` (needed for the touch sensor) |
 | `esp-bootloader-esp-idf` | `=0.6.0` |
@@ -54,7 +54,7 @@ This directory is its own Cargo workspace, excluded from the root workspace, wit
 
 ```sh
 cargo install espup --version 0.18.0 --locked
-espup install --targets esp32 --toolchain-version 1.97.0.0
+espup install --targets esp32 --toolchain-version 1.99.0.0
 cargo install espflash --version 4.6.0 --locked
 . ~/export-esp.sh
 ```
@@ -65,10 +65,10 @@ cargo install espflash --version 4.6.0 --locked
 
 ```sh
 cd tools/bench/esp32-modbus
-cargo build --release
+cargo +esp build --release
 ```
 
-The ELF is `target/xtensa-esp32-none-elf/release/esp32-modbus`. `rust-toolchain.toml` selects the `esp` channel, and `.cargo/config.toml` selects the `xtensa-esp32-none-elf` target and builds `core` from source.
+The ELF is `target/xtensa-esp32-none-elf/release/esp32-modbus`. `+esp` selects the `esp` toolchain, and `.cargo/config.toml` selects the `xtensa-esp32-none-elf` target and builds `core` from source.
 
 ## Flash
 
@@ -79,7 +79,7 @@ cd tools/bench/esp32-modbus
 espflash flash --chip esp32 --monitor target/xtensa-esp32-none-elf/release/esp32-modbus
 ```
 
-`cargo run --release` does the same (the runner is set in `.cargo/config.toml`). The monitor shows the boot banner right after flashing. Leave the monitor before a Modbus master opens the port.
+`cargo +esp run --release` does the same (the runner is set in `.cargo/config.toml`). The monitor shows the boot banner right after flashing. Leave the monitor before a Modbus master opens the port.
 
 To read the banner later on the Pi 3, stop `jokerd` first (it is the same port):
 
