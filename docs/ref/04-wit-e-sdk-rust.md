@@ -443,6 +443,7 @@ fn main() {
 |---|---|---|
 | `joker-sdk` | a API das apps; `use joker::prelude::*` | sim; `alloc` só no backend Wasm e em Linux nativo |
 | `joker-sdk-macros` | as macros; versão igual à do `joker-sdk` (dependência `=`) | — (proc-macro) |
+| `joker-sdk-sys` | os bindings `wit-bindgen` do mundo, as macros de baixo nível que as do SDK expandem e o `critical-section` dos componentes (ADR 0053) | sim |
 | `joker-classes-std` | handles gerados pelo `jkc` para `classes/std/`, reexportados em `joker::classes::std` | sim |
 | `joker-build` | gera as classes locais em `build.rs` | — |
 | `joker-test` | o harness (§6) | não |
@@ -884,9 +885,9 @@ impl DurationExt for f64 { /* … */ }        // negativo ou NaN → Duration::Z
 pub type Result<T, E = Error> = core::result::Result<T, E>;
 
 #[derive(Clone, PartialEq, Eq)]
-pub struct Error { /* code: Code, message: BoundedString<256> */ }
+pub struct Error { /* code: Code, message: BoundedString<112> (ADR 0053) */ }
 impl Error {
-    pub fn new(code: Code, message: impl core::fmt::Display) -> Self;   // mensagem truncada a 256 B
+    pub fn new(code: Code, message: impl core::fmt::Display) -> Self;   // mensagem truncada a 112 B
     pub fn app(message: impl core::fmt::Display) -> Self;               // J-E0050
     pub fn quality(members: MemberSet) -> Self;                         // J-E0501
     pub fn code(&self) -> Code;
