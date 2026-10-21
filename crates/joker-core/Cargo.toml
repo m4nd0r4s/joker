@@ -15,6 +15,13 @@ alloc = []
 [dependencies]
 joker-units.workspace = true
 joker-expr.workspace = true
+portable-atomic.workspace = true
+
+[dev-dependencies]
+critical-section = { workspace = true, features = ["std"] }
+
+[target.'cfg(loom)'.dependencies]
+loom.workspace = true
 
 [lints]
 workspace = true

@@ -1,0 +1,18 @@
+[package]
+name = "joker-host-fixture-echo"
+description = "Test guest of joker-host: a hand-written cycle app over the raw joker:runtime bindings"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+joker-sdk-sys.workspace = true
+
+[lints]
+workspace = true

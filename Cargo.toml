@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
-members = ["crates/*"]
+members = ["crates/*", "crates/joker-drivers/sim", "crates/joker-drivers/sysfs", "crates/joker-drivers/modbus", "crates/joker-host/fixtures/*"]
+exclude = ["crates/joker-drivers"]
 
 [workspace.package]
 version = "0.0.0"
@@ -14,9 +15,26 @@ publish = false
 joker-units = { path = "crates/joker-units", default-features = false }
 joker-expr = { path = "crates/joker-expr", default-features = false }
 joker-core = { path = "crates/joker-core", default-features = false }
+joker-sdk-sys = { path = "crates/joker-sdk-sys" }
+portable-atomic = { version = "1.13", default-features = false, features = ["critical-section"] }
+critical-section = { version = "1.2", default-features = false }
+loom = "0.7"
+joker-hal = { path = "crates/joker-hal", default-features = false }
+joker-serial-sys = { path = "crates/joker-serial-sys" }
+embedded-io = { version = "0.7.1", default-features = false }
+embedded-io-async = { version = "0.7.0", default-features = false }
+tokio = { version = "1.54.0", default-features = false }
+rustix = { version = "1.1.5", default-features = false, features = ["std"] }
+wasmtime = { version = "=49.0.4", default-features = false, features = ["std", "runtime", "cranelift", "all-arch", "component-model", "component-model-async", "parallel-compilation"] }
+wasmtime-wasi = { version = "=49.0.4", default-features = false, features = ["p2"] }
+wasmparser = { version = "0.258.3", default-features = false, features = ["std", "validate", "component-model"] }
+sha2 = { version = "0.10", default-features = false }
+rand_core = { version = "0.10", default-features = false }
+wit-bindgen = { version = "=0.61.1", default-features = false, features = ["macros", "realloc", "async"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(loom)"] }
 missing_debug_implementations = "warn"
 
 [workspace.lints.clippy]

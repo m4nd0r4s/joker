@@ -1,0 +1,12 @@
+schema = 1
+
+[model]
+description = "Raspberry Pi 3: ACT LED and CPU temperature"
+
+[signals]
+act_led  = { type = "bool", direction = "output", panel = { label = "ACT", kind = "lamp" } }
+load     = { type = "f64", unit = "1", init = 0.0, panel = { label = "Load", kind = "slider", keys = ["left", "right"], step = 0.1, min = 0.0, max = 1.0 } }
+cpu_temp = { type = "f64", unit = "°C", init = "45 °C", panel = { label = "CPU", kind = "gauge" } }
+
+[dynamics]
+cpu_temp = "lag(45 °C + 30 K * load, 60s)"

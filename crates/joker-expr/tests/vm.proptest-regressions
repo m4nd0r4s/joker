@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 056e72f506115a37eac2fe2d5141b536eb26e312fb443a6e710c3da2da8c63f4 # shrinks to which = 3, period_ms = 1, ticks = [([(0, Quality { code: Good, reason: Reason(0) }), (0, Quality { code: Good, reason: Reason(0) }), (0, Quality { code: Good, reason: Reason(0) }), (0, Quality { code: Good, reason: Reason(0) }), (0, Quality { code: Good, reason: Reason(0) }), (0, Quality { code: Good, reason: Reason(0) }), (0, Quality { code: Good, reason: Reason(0) }), (0, Quality { code: Good, reason: Reason(0) }), (0, Quality { code: Good, reason: Reason(0) }), (0, Quality { code: Good, reason: Reason(0) }), (0, Quality { code: Good, reason: Reason(0) }), (0, Quality { code: Good, reason: Reason(0) }), (0, Quality { code: Good, reason: Reason(0) })], 0)]
+cc 19c47bc22702f9dfa26ad426d193d913833ca45bd1f5929abb194823d861f9b8 # shrinks to which = 3, garbage = []

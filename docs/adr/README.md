@@ -31,6 +31,14 @@
 | [0027](0027-composite-classes.md) | Composite classes end to end: binding, nested paths, methods, health, profiles and Joker Micro |
 | [0028](0028-stable-equals-implemented.md) | Stable = implemented; what does not ship in 1.0 stays reserved |
 | [0029](0029-english-project-language.md) | English is the project language; code has docstrings only, no comments |
+| [0030](0030-unit-syntax-and-kinds.md) | Unit syntax, quantity kinds in compounds, and literal error codes |
+| [0031](0031-registry-hash-encoding.md) | Signal ordering and the registry hash encoding |
+| [0032](0032-dt-after-overrun-skip.md) | `dt()` counts whole periods, also after `overrun = "skip"` |
+| [0033](0033-write-outcomes-and-decision-records.md) | Write outcomes per proposal and per tick, and decision records |
+| [0034](0034-expression-typing-and-evaluation.md) | Expression typing, `J0304` and `J0307`, and the semantics of windows and stateful functions |
 | [0036](0036-english-identifiers-in-the-specification.md) | English identifiers in the specification: illustrative names renamed, `"$value"` and `n_wide` |
+| [0047](0047-m0-driver-contract-subset.md) | The M0 subset of the driver contract (`joker-hal`) |
+| [0051](0051-m0-sim-driver.md) | The M0 `sim` driver: how the model reaches it, the format subset and its time |
+| [0052](0052-aot-cache-identity-and-cycle-subset-host.md) | AOT cache identity, load errors, WASI terminals and the seed expansion |
 
 Changing a decision = writing a new ADR that replaces it, and updating the affected documents in the same set of commits.
