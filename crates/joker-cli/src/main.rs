@@ -3,6 +3,7 @@
 mod apps;
 mod dev;
 mod node;
+mod profile;
 mod project;
 mod replay;
 
@@ -153,6 +154,41 @@ enum Command {
         #[arg(long, default_value_t = 20)]
         limit: u32,
     },
+    /// Profile draft tooling (ref/03 §2.2.19).
+    Profile {
+        #[command(subcommand)]
+        command: ProfileCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum ProfileCommand {
+    /// Turns a register map into a profile draft.
+    Import {
+        #[command(subcommand)]
+        format: ImportFormat,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum ImportFormat {
+    /// From a Modbus register-map CSV (ref/03 §2.2.19).
+    Csv {
+        /// The CSV file, or `-` for stdin.
+        file: String,
+        /// The profile name (`<vendor>/<model>`).
+        #[arg(long)]
+        name: String,
+        /// The driver family; only `modbus` in 1.0.
+        #[arg(long)]
+        driver: String,
+        /// Where to write the draft; defaults to `profiles/<name>@1.profile.toml`.
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Reads `at` in the base-1 ("Modicon") notation.
+        #[arg(long)]
+        modicon: bool,
+    },
 }
 
 fn main() -> ExitCode {
@@ -256,5 +292,18 @@ fn run(cli: Cli) -> Result<u8, Failure> {
         } => node()?.record(&duration, &groups, &out),
         Command::TraceDump { last, out } => node()?.trace_dump(last.as_deref(), &out),
         Command::Replay { file, diff } => replay::run(&entry()?, &file, diff, cli.json),
+        Command::Profile {
+            command:
+                ProfileCommand::Import {
+                    format:
+                        ImportFormat::Csv {
+                            file,
+                            name,
+                            driver,
+                            out,
+                            modicon,
+                        },
+                },
+        } => profile::import_csv_command(&file, &name, &driver, out.as_deref(), modicon),
     }
 }

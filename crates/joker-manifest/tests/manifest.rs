@@ -872,7 +872,14 @@ fn the_cases_cover_every_code_the_checker_emits() {
     let mut emitted = BTreeSet::new();
     for entry in std::fs::read_dir(src).unwrap() {
         let path = entry.unwrap().path();
-        if path.file_name().is_some_and(|n| n == "lock.rs") {
+        // `lock.rs` codes are covered by `tests/lock.rs`'s own cases, not
+        // this manifest-check harness; `csv_import.rs` is a standalone tool
+        // (not reachable through `run()`) with its own test suite in
+        // `tests/csv_import.rs`.
+        if path
+            .file_name()
+            .is_some_and(|n| n == "lock.rs" || n == "csv_import.rs")
+        {
             continue;
         }
         let text = std::fs::read_to_string(&path).unwrap();
