@@ -1356,18 +1356,24 @@ id = "J-E1510"
 severity = "error"
 message = "shadow does not exist"
 doc = "ref/09 §7"
+since = "1.1"
+status = "reserved"
 
 [[code]]
 id = "J-E1511"
 severity = "error"
 message = "there is already an active shadow for the app"
 doc = "ref/09 §7"
+since = "1.1"
+status = "reserved"
 
 [[code]]
 id = "J-E1512"
 severity = "error"
 message = "promotion criteria not met (use `force`)"
 doc = "ref/09 §7"
+since = "1.1"
+status = "reserved"
 
 [[code]]
 id = "J-E1600"

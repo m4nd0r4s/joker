@@ -347,7 +347,7 @@ Legend: minimum **Role**; **M** = mutating (anti-replay over TCP, §2.5). The co
 | GET | `/v1/status` | viewer | | summary of `jk status`: generation (and confirmation deadline), clock, groups, devices, apps, alarms (counts and the first 20), trips, manual levels, uplinks, MCUs; `instances=true` adds the instances (`Status`) |
 | GET | `/v1/openapi.json`, `/v1/openapi.yaml` | viewer | | this contract |
 
-`features` in 1.0: `sse`, `intents` (the API; empty until 1.1), `shadow.apps`, `micro` (if there are `joker-link` devices), `sim` (in `mode = "dev"` with `sim` devices), `agent` (an agent is configured), `enroll.code` (there is an active enrollment code, waiting to be used). 1.1 adds `models`, `blocks`, `streams`, `schedule`; 1.3, `tunnel`. It is the list that the client libraries read on `connect` (ref/05 §21).
+`features` in 1.0: `sse`, `intents` (the API; empty until 1.1), `micro` (if there are `joker-link` devices), `sim` (in `mode = "dev"` with `sim` devices), `agent` (an agent is configured), `enroll.code` (there is an active enrollment code, waiting to be used). 1.1 adds `shadow.apps` (ADR 0035), `models`, `blocks`, `streams`, `schedule`; 1.3, `tunnel`. It is the list that the client libraries read on `connect` (ref/05 §21).
 
 ### 5.2 Node, groups, metrics, logs
 
@@ -656,7 +656,7 @@ An upload session expires 1 h after the last chunk (`J-E1604`). The blobs that n
 
 **Validation on the node.** The node runs the same rules as `jk check` (the `joker-manifest` crate) with the facts that only it has (board, kernel, drift, WCET of the lock, firmware of the MCUs). Failures: `J-E1601` (422) with all the diagnostics in `errors`, each with its J-code and `spans` in the effective manifest; `jk` translates the spans to the source file with the provenance.
 
-**`Plan`:** `base`, `target`, `requires_confirm` and `confirm_reasons` (`network`, `security`, `uplinks`, `api`), `disruption` (`none`, `hot`, `partial`, `full`), `changes` (each with `kind`, `target`, `effect` `none` \| `hot` \| `reload` \| `restart`, `detail` and from/to fields), `signal_ids` (kept, new, removed, renumbered), `admission` (utilization per `rt` CPU against the limit, M23), `micros` (OTA of firmware or of a generation that the swap includes).
+**`Plan`:** `base`, `target`, `requires_confirm` and `confirm_reasons` (`network`, `security`, `uplinks`, `api`), `disruption` (`none`, `hot`, `partial`, `full`), `changes` (each with `kind`, `target`, `effect` `none` \| `hot` \| `reload` \| `restart`, `detail` and from/to fields), `signal_ids` (kept, new, removed, renumbered), `admission` (utilization per `rt` CPU against the limit, M23), `micros` (OTA of firmware or of a generation that the swap includes; firmware carried by an activation is orchestrated MCU OTA, reserved for 1.1, and a 1.0 plan only lists generations; ADR 0035).
 
 **States and transitions** (`generation_state`, ref/00, §6):
 
@@ -684,6 +684,8 @@ POST /generations ──▶ pending ──activate──▶ confirming ──con
 - **Origin of each activation** (`origin`, the `gen-origin` of ref/10 §2.2): `local`, `session`, `agent`, `import`, `shadow`, `rollback`, `boot`. The generations created by the node (shadow, automatic promotion) are `shadow`; the startup that goes back to the confirmed generation is `boot`.
 
 ### 5.14 Apps and shadow
+
+App shadow (M16) is **1.1** (document 26, §5; ADR 0035): the `/v1/shadows/**` operations below are in the OpenAPI with `x-joker-since: '1.1'` and respond 501 with `J-E1017` on a 1.0 node, and the `shadow` state of an app is never reported. The apps operations are 1.0.
 
 | Method | Path | Role | M | Does |
 |---|---|---|---|---|
@@ -759,12 +761,13 @@ The job installs in the inactive slot, swaps and restarts `jokerd`: the connecti
 | Method | Path | Role | M | Does |
 |---|---|---|---|---|
 | GET | `/v1/uplinks`, `/v1/uplinks/{uplink}` | viewer | | state, endpoint without credentials, cursor lag, backlog, budget (limit, used, projection, degraded classes; M12), drops (`Uplink`) |
-| GET | `/v1/bridges` | viewer | | bridges: state, clients, writer, `writable`, writes accepted, rejected and rejected by anti-replay (`Bridge`) |
+| GET | `/v1/bridges` | viewer | | bridges: state, clients, writer, `writable`, writes accepted, rejected and rejected by anti-replay (`Bridge`). **Reserved 1.2** (bridges; ADR 0035): 501 with `J-E1017` in 1.0 |
 | GET | `/v1/micros`, `/v1/micros/{device}` | viewer | | MCUs over Joker Link (`Micro`): transport, `link_state`, **session mode** (`session_mode`, ref/00 §6) and the reason when it is not `full`, **negotiated version** (`link_version`), authentication, board, firmware (version, slot, image digest, **firmware descriptor** and its digest, hash of the capabilities, `security_version`), ABI, generation (`gen_seq`, hash, `embedded` \| `flash`, **confirmation state** and time left in the window), registry, catalog, classes, drivers (the summary of key 15), clock, **parameters changed locally**, the **last `HELLO`** (decoded), **counters** (frames, CRC-32C, authentication, replay, retransmissions, resynchronizations; those of `jk_link_status`, ref/08 §2.6.p) and RTT, OTA in progress |
 | POST | `/v1/micros/{device}/ota` | admin | M | `MicroOtaRequest`: `kind` (`firmware`, `generation`), `artifact`, `signature` (the COSE_Sign1 of the OTA manifest, ref/07 §9.1; in a generation it already comes in the *trailer* of the blob and may be omitted), `confirm_window` (the `confirm_ms` of `activate`), `reason` → job `micro_ota`: `begin`, transfer, test, confirmation or reversion (ref/07 §9) |
 
 - OTA of a disconnected MCU: `J-E1802` (503). Incompatible artifact (board, ABI, security counter): `J-E1803`. OTA in progress: `J-E1804`. A device that is not `joker-link`: `J-E1801`.
-- The OTA of MCUs that is part of a generation (the plan lists it in `micros`) is orchestrated by the activation; this endpoint is for the manual case.
+- The OTA of MCUs that is part of a generation (the plan lists it in `micros`) is orchestrated by the activation; this endpoint is for the manual case. In 1.0 the activation only carries generation blobs, and a firmware update is always this manual operation; firmware carried by an activation is 1.1 (ADR 0035).
+- The `budget` of an `Uplink` is 1.1 (M12) and is always `null` on a 1.0 node; the uplink kinds of 1.0 are `mqtt` and `mqtt-sparkplug` (ref/01 §5.17.3).
 
 ### 5.19 Simulation (`mode = "dev"`)
 
@@ -779,6 +782,8 @@ In `mode = "prod"`, `J-E1018` (409). A signal that is not of a `sim` device: `J-
 ### 5.20 Reserved (1.1+)
 
 `/v1/models`, `/v1/models/{model}`, `/v1/models/{model}/bench`, `/v1/training`, `/v1/shadows/models/{model}` (and `promote`, `abort`), `/v1/signals/{path}/blocks`, `/v1/streams`. In 1.0 they respond 501 with `J-E1017`. They are in the OpenAPI with `x-joker-since: '1.1'`.
+
+The 1.0 cut (document 26, §5; ADR 0035) reserves the same way the app shadow operations of §5.14 (`x-joker-since: '1.1'`) and `/v1/bridges` of §5.18 (`x-joker-since: '1.2'`). Unlike the paths above, they keep their full schemas in the OpenAPI, because the shape is already closed.
 
 ### 5.21 Agent and node trust
 
@@ -1022,9 +1027,9 @@ All with severity `error`, except where stated. They go into `codes.toml` (docum
 | `J-E1500` | 404 | unknown app |
 | `J-E1501` | 409 | app or device lifecycle not allowed now (generation swap in progress) |
 | `J-E1502` | 404 | `kv` key does not exist |
-| `J-E1510` | 404 | shadow does not exist |
-| `J-E1511` | 409 | there is already an active shadow for the app |
-| `J-E1512` | 409 | promotion criteria not met (use `force`) |
+| `J-E1510` | 404 | shadow does not exist (reserved 1.1) |
+| `J-E1511` | 409 | there is already an active shadow for the app (reserved 1.1) |
+| `J-E1512` | 409 | promotion criteria not met (use `force`) (reserved 1.1) |
 | `J-E1600` | 404 | unknown generation |
 | `J-E1601` | 422 | the generation did not pass validation (diagnostics in `errors`) |
 | `J-E1602` | 422 | missing blobs (list in `detail`) |
@@ -1187,8 +1192,8 @@ The validation J-codes (J01xx–J07xx) appear inside `J-E1601` and, on their own
 | `jk model bench <m> --node` | node (1.1) | `POST /v1/models/{model}/bench` (reserved) |
 | `jk model lineage <m>` | local; with `--node`, 1.1 | `GET /v1/models/{model}` (reserved) |
 | `jk train <job> [--now]`, `jk train status` | node (1.1) | `POST /v1/training`, `GET /v1/training` (reserved) |
-| `jk shadow start <app> <candidate>` | node | uploads, `POST /v1/shadows` |
-| `jk shadow status\|diff\|promote\|abort` | node | `GET /v1/shadows/apps/{app}`, `…/diff`, `POST …/promote`, `POST …/abort` |
+| `jk shadow start <app> <candidate>` | node (1.1) | uploads, `POST /v1/shadows` |
+| `jk shadow status\|diff\|promote\|abort` | node (1.1) | `GET /v1/shadows/apps/{app}`, `…/diff`, `POST …/promote`, `POST …/abort` |
 | `jk shadow … <model>` | node (1.1) | `/v1/shadows/models/{model}` (reserved) |
 | `jk discover <uri>` | node | `POST /v1/discovery`, `GET /v1/jobs/{id}` |
 | `jk profile import <format> <file>` (including `csv`), `jk profile check`, `jk profile diff` | local | — |
@@ -1376,9 +1381,9 @@ $J -X POST http://joker/v1/instances/p1/methods/run_at $H \
 $J -X POST http://joker/v1/intents/01J8Z6C3P5R7T9V1X3Z5B7D9FG/approve $H -d '{"reason":"ok, floor 3"}'
 ```
 
-### 10.4 Shadow of an app (the "a new model" flow of §9, in the 1.0 version)
+### 10.4 Shadow of an app (the "a new model" flow of §9, with an app)
 
-The flow of document 07 uses a model, which belongs to 1.1. With an app, in 1.0:
+The flow of document 07 uses a model, which belongs to 1.1. App shadow is also 1.1 (§5.14; ADR 0035); with an app, from 1.1:
 
 ```sh
 # jk shadow start peak_shaver peak-shaver-1.5.0.wasm
@@ -1460,6 +1465,8 @@ $J -X POST http://joker/v1/shadows/apps/peak_shaver/promote $H -H 'If-Match: "sh
 | **1.0** | everything in §2–§11, except what follows |
 | 1.0, empty until 1.1 | `/v1/intents` (proposal-only writers, M18, arrive in 1.1) |
 | 1.0, `skip` until 1.3 | `doctor` with `network` |
+| **1.1** (document 26, §5; ADR 0035) | app shadow: `/v1/shadows`, `/v1/shadows/apps/**` and the `shadow` state of an app (§5.14); uplink budgets (`Uplink.budget`) and the `otlp` and `http` uplinks; firmware in `Plan.micros` (orchestrated MCU OTA). They respond `J-E1017` or are absent in 1.0 |
 | **1.1** (document 11, §"Ready for ML") | `/v1/models/**`, `/v1/training`, `/v1/shadows/models/**`, `/v1/signals/{path}/blocks`, `/v1/streams`; topics `frames` and `blocks`; `shape` `block` and `stream`; `kind` `joker.model.v1+jkm`; `ManualWriteRequest.at` (M6); `Metrics.ml`; `Decision.model_outputs` (M22); `PlanChange.kind = model`. Everything is already in the representation and responds `J-E1017` in 1.0 |
+| **1.2** (document 26, §5; ADR 0035) | `/v1/bridges` (bridges, M11); the `zenoh` uplink |
 | **1.3** | `tunnel` transport and remote sessions of the Deck (`/v1/agent/sessions`); list of origins (CORS) for the Studio; session tokens, if they are needed; `doctor` `network` (gateway mode) |
 | 2.0 | paths qualified by node (`@<node>.…`, document 21, §8): `/v2` prefix |

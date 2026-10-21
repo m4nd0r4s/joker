@@ -2175,9 +2175,10 @@ paths:
     get:
       tags: [shadows]
       operationId: listShadows
+      summary: Reserved for 1.1; in 1.0 responds 501 J-E1017 (app shadow, M16; ADR 0035)
       x-joker-role: viewer
       x-joker-cli: [jk shadow status]
-      x-joker-since: '1.0'
+      x-joker-since: '1.1'
       responses:
         '200':
           description: OK
@@ -2190,15 +2191,16 @@ paths:
                   items:
                     type: array
                     items: {$ref: '#/components/schemas/Shadow'}
+        '501': {$ref: '#/components/responses/NotImplemented'}
         default: {$ref: '#/components/responses/Problem'}
     post:
       tags: [shadows]
       operationId: startShadow
-      summary: Puts a candidate in shadow, through a generation derived from the current one (jk shadow start)
+      summary: Puts a candidate in shadow, through a generation derived from the current one (jk shadow start) - reserved for 1.1; in 1.0 responds 501 J-E1017 (app shadow, M16; ADR 0035)
       x-joker-role: admin
       x-joker-mutating: true
       x-joker-cli: [jk shadow start]
-      x-joker-since: '1.0'
+      x-joker-since: '1.1'
       parameters:
         - $ref: '#/components/parameters/IfMatchRequired'
         - $ref: '#/components/parameters/JokerNonce'
@@ -2217,14 +2219,16 @@ paths:
         '409': {$ref: '#/components/responses/Conflict'}
         '412': {$ref: '#/components/responses/PreconditionFailed'}
         '422': {$ref: '#/components/responses/Unprocessable'}
+        '501': {$ref: '#/components/responses/NotImplemented'}
         default: {$ref: '#/components/responses/Problem'}
   /v1/shadows/apps/{app}:
     get:
       tags: [shadows]
       operationId: getAppShadow
+      summary: Reserved for 1.1; in 1.0 responds 501 J-E1017 (app shadow, M16; ADR 0035)
       x-joker-role: viewer
       x-joker-cli: [jk shadow status]
-      x-joker-since: '1.0'
+      x-joker-since: '1.1'
       parameters:
         - $ref: '#/components/parameters/AppName'
       responses:
@@ -2234,15 +2238,16 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/Shadow'}
         '404': {$ref: '#/components/responses/NotFound'}
+        '501': {$ref: '#/components/responses/NotImplemented'}
         default: {$ref: '#/components/responses/Problem'}
   /v1/shadows/apps/{app}/diff:
     get:
       tags: [shadows]
       operationId: getAppShadowDiff
-      summary: Divergence between what the shadow proposed and what was applied (jk shadow diff)
+      summary: Divergence between what the shadow proposed and what was applied (jk shadow diff) - reserved for 1.1; in 1.0 responds 501 J-E1017 (app shadow, M16; ADR 0035)
       x-joker-role: viewer
       x-joker-cli: [jk shadow diff]
-      x-joker-since: '1.0'
+      x-joker-since: '1.1'
       parameters:
         - $ref: '#/components/parameters/AppName'
         - name: output
@@ -2263,16 +2268,17 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/ShadowDiff'}
         '404': {$ref: '#/components/responses/NotFound'}
+        '501': {$ref: '#/components/responses/NotImplemented'}
         default: {$ref: '#/components/responses/Problem'}
   /v1/shadows/apps/{app}/promote:
     post:
       tags: [shadows]
       operationId: promoteAppShadow
-      summary: Promotes the candidate, fully or partially by outputs (derived generation)
+      summary: Promotes the candidate, fully or partially by outputs (derived generation) - reserved for 1.1; in 1.0 responds 501 J-E1017 (app shadow, M16; ADR 0035)
       x-joker-role: admin
       x-joker-mutating: true
       x-joker-cli: [jk shadow promote]
-      x-joker-since: '1.0'
+      x-joker-since: '1.1'
       parameters:
         - $ref: '#/components/parameters/AppName'
         - $ref: '#/components/parameters/IfMatchRequired'
@@ -2292,15 +2298,17 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
         '412': {$ref: '#/components/responses/PreconditionFailed'}
+        '501': {$ref: '#/components/responses/NotImplemented'}
         default: {$ref: '#/components/responses/Problem'}
   /v1/shadows/apps/{app}/abort:
     post:
       tags: [shadows]
       operationId: abortAppShadow
+      summary: Reserved for 1.1; in 1.0 responds 501 J-E1017 (app shadow, M16; ADR 0035)
       x-joker-role: admin
       x-joker-mutating: true
       x-joker-cli: [jk shadow abort]
-      x-joker-since: '1.0'
+      x-joker-since: '1.1'
       parameters:
         - $ref: '#/components/parameters/AppName'
         - $ref: '#/components/parameters/IfMatchRequired'
@@ -2319,6 +2327,7 @@ paths:
               schema: {$ref: '#/components/schemas/Shadow'}
         '404': {$ref: '#/components/responses/NotFound'}
         '412': {$ref: '#/components/responses/PreconditionFailed'}
+        '501': {$ref: '#/components/responses/NotImplemented'}
         default: {$ref: '#/components/responses/Problem'}
   # ------------------------------------------------------------------ blobs
   /v1/blobs/missing:
@@ -3193,9 +3202,10 @@ paths:
     get:
       tags: [uplinks]
       operationId: listBridges
+      summary: Reserved for 1.2; in 1.0 responds 501 J-E1017 (bridges, M11; ADR 0035)
       x-joker-role: viewer
       x-joker-cli: [jk status]
-      x-joker-since: '1.0'
+      x-joker-since: '1.2'
       responses:
         '200':
           description: OK
@@ -3208,6 +3218,7 @@ paths:
                   items:
                     type: array
                     items: {$ref: '#/components/schemas/Bridge'}
+        '501': {$ref: '#/components/responses/NotImplemented'}
         default: {$ref: '#/components/responses/Problem'}
   # ------------------------------------------------------------------ micros (Joker Link)
   /v1/micros:
@@ -4190,7 +4201,7 @@ components:
         limits: {$ref: '#/components/schemas/Limits'}
         features:
           description: >-
-            API capabilities on this node (sse, intents, shadow.apps, micro, sim, agent, enroll.code; 1.1 models,
+            API capabilities on this node (sse, intents, micro, sim, agent, enroll.code; 1.1 shadow.apps, models,
             blocks, streams, schedule; 1.3 tunnel)
           type: array
           items: {type: string}
@@ -6516,6 +6527,7 @@ components:
             properties:
               device: {type: string}
               kind:
+                description: firmware carried by an activation (orchestrated MCU OTA) is reserved for 1.1 (ADR 0035); a 1.0 plan only lists generation
                 type: string
                 enum: [firmware, generation]
               digest: {$ref: '#/components/schemas/Digest'}
@@ -6891,6 +6903,7 @@ components:
       properties:
         name: {$ref: '#/components/schemas/Name'}
         kind:
+          description: otlp and http are reserved for 1.1 and zenoh for 1.2 (ADR 0035); a 1.0 node only reports mqtt and mqtt-sparkplug
           type: string
           enum: [mqtt, mqtt-sparkplug, zenoh, otlp, http]
         state:
@@ -6902,6 +6915,7 @@ components:
         cursor_lag: {$ref: '#/components/schemas/Duration'}
         backlog_bytes: {type: integer}
         budget:
+          description: uplink budgets (M12) are reserved for 1.1 (ADR 0035); always null on a 1.0 node
           type: ['null', object]
           properties:
             limit: {type: string}
