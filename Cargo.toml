@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "crates/joker-drivers/sim", "crates/joker-drivers/sysfs"]
+members = ["crates/*", "crates/joker-drivers/sim", "crates/joker-drivers/sysfs", "crates/joker-drivers/modbus"]
 exclude = ["crates/joker-drivers"]
 
 [workspace.package]

@@ -119,6 +119,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "joker-driver-modbus"
+version = "0.0.0"
+dependencies = [
+ "joker-core",
+ "joker-hal",
+ "toml",
+]
+
+[[package]]
 name = "joker-driver-sim"
 version = "0.0.0"
 dependencies = [
