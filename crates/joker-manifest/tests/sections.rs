@@ -338,6 +338,7 @@ fn cases() -> Vec<Case> {
         ("J0286", site("[cycles.main]\nperiod = \"20ms\"\noverrun = \"degrade\"\n"), "degrade without optional tasks"),
         ("J0287", site("[cycles.main]\nperiod = \"20ms\"\noverrun = \"catch_up\"\n").replacen("safe = \"0 kW\"\n", "safe = \"0 kW\"\nrate = \"5 kW/s\"\ngroup = \"main\"\n", 1), "catch_up with time-dependent outputs"),
         ("J0298", site("[devices.pcs.actions.reset]\nrole = \"viewer\"\n"), "action for viewers"),
+        ("J0304", site("[devices.pcs.actions.reset]\npermit = \"pcs.p_ac\"\n"), "action permit that is not a boolean"),
     ]
 }
 

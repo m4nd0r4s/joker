@@ -2341,10 +2341,16 @@ impl Checker<'_> {
             }
         }
         let mut actions: Vec<(Span, Option<String>)> = Vec::new();
+        let mut permits: Vec<(Span, String)> = Vec::new();
         for device in manifest.devices.values() {
             for action in device.actions.values() {
                 if let Some(role) = action.as_table().and_then(|t| t.get("role")) {
                     actions.push((role.node.span, role.node.as_str().map(str::to_owned)));
+                }
+                if let Some(permit) = action.as_table().and_then(|t| t.get("permit"))
+                    && let Some(source) = permit.node.as_str()
+                {
+                    permits.push((permit.node.span, source.to_owned()));
                 }
             }
         }
@@ -2365,7 +2371,15 @@ impl Checker<'_> {
                 if let Some(role) = action.node.as_table().and_then(|t| t.get("role")) {
                     actions.push((role.node.span, role.node.as_str().map(str::to_owned)));
                 }
+                if let Some(permit) = action.node.as_table().and_then(|t| t.get("permit"))
+                    && let Some(source) = permit.node.as_str()
+                {
+                    permits.push((permit.node.span, source.to_owned()));
+                }
             }
+        }
+        for (span, source) in permits {
+            self.expression(&source, span, Expect::Bool);
         }
         for (span, role) in actions {
             if role.as_deref() == Some("viewer") {
