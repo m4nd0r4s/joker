@@ -12,9 +12,9 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use joker_core::trace::{
-    FLAG_STATE, FLAG_UNCOMPRESSED, Header, SEGMENT_HEADER_LEN, compress_segment,
-};
+use joker_core::trace::{FLAG_STATE, FLAG_UNCOMPRESSED, Header, SEGMENT_HEADER_LEN};
+
+use crate::compress::compress_segment;
 
 use crate::plan::Plan;
 use crate::shared::{Shared, TraceChunk, trace_buffer_len};

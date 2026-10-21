@@ -8,8 +8,10 @@ use joker_core::commit::{CommitSink, OutputResult, OutputState};
 use joker_core::image::{ImageStorage, ProcessImage, Proposal, Source};
 use joker_core::slot::SeqExtender;
 use joker_core::trace::{
-    Header, Item, Items, PROPOSAL_FLAG_ASYNC, RESULT_LEN, States, Ticks, TraceResult, decompress,
+    Header, Item, Items, PROPOSAL_FLAG_ASYNC, RESULT_LEN, States, Ticks, TraceResult,
 };
+
+use crate::compress::decompress;
 use joker_core::{
     ClockQuality, GroupId, Instant, Outputs, OutputsStorage, Quality, Sample, SignalId, Slot,
 };

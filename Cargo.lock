@@ -1310,7 +1310,6 @@ dependencies = [
  "loom",
  "portable-atomic",
  "proptest",
- "zstd",
 ]
 
 [[package]]
@@ -1504,6 +1503,7 @@ dependencies = [
  "tokio",
  "toml",
  "yaml-rust2",
+ "zstd",
 ]
 
 [[package]]

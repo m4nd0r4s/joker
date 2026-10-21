@@ -7,9 +7,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
-use joker_core::trace::{
-    AppState, Header, SEGMENT_HEADER_LEN, STATE_MARKER, compress_segment, write_state_segment,
-};
+use joker_core::trace::{AppState, Header, SEGMENT_HEADER_LEN, STATE_MARKER, write_state_segment};
+
+use crate::compress::compress_segment;
 
 use crate::plan::Plan;
 use crate::shared::Shared;

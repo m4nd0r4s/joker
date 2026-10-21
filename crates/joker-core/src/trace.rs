@@ -2,9 +2,9 @@
 //! state segment and one segment of ticks per group and recording window.
 //!
 //! Writing never allocates: segments are built in caller-provided buffers and
-//! are uncompressed (header flag bit 0), as on an MCU. With the `zstd`
-//! feature, [`compress_segment`] and [`decompress`] handle the compressed
-//! segments that Linux writes. Reading is zero-copy over the file bytes.
+//! are uncompressed (header flag bit 0), as on an MCU. The zstd segments
+//! that Linux writes are compressed and decompressed by `jokerd` (docs/16
+//! §7), so the core has no zstd. Reading is zero-copy over the file bytes.
 
 use crate::commit::OutputResult;
 use crate::image::{MAX_METHOD_ARGS, MethodCall, Proposal, Source, WriterId};
@@ -55,7 +55,7 @@ pub enum TraceError {
     Malformed,
     /// A segment of a group whose port count is unknown.
     UnknownGroup(u32),
-    /// A compressed segment, but this build has no zstd.
+    /// A compressed segment, which the core does not decompress.
     Compressed,
     /// A count does not fit its field.
     TooMany,
@@ -741,29 +741,6 @@ impl<'p> Iterator for States<'p> {
     }
 }
 
-/// Compresses the ticks of a [`SegmentWriter`] into a complete segment.
-#[cfg(feature = "zstd")]
-pub fn compress_segment(
-    group: u32,
-    n_ticks: u32,
-    payload: &[u8],
-) -> Result<alloc::vec::Vec<u8>, TraceError> {
-    let frame = zstd::bulk::compress(payload, 3).map_err(|_| TraceError::Malformed)?;
-    let len = u32::try_from(frame.len()).map_err(|_| TraceError::TooMany)?;
-    let mut out = alloc::vec::Vec::with_capacity(SEGMENT_HEADER_LEN + frame.len());
-    out.extend_from_slice(&group.to_le_bytes());
-    out.extend_from_slice(&n_ticks.to_le_bytes());
-    out.extend_from_slice(&len.to_le_bytes());
-    out.extend_from_slice(&frame);
-    Ok(out)
-}
-
-/// Decompresses a stored segment payload.
-#[cfg(feature = "zstd")]
-pub fn decompress(payload: &[u8]) -> Result<alloc::vec::Vec<u8>, TraceError> {
-    zstd::stream::decode_all(payload).map_err(|_| TraceError::Malformed)
-}
-
 struct Cursor<'b> {
     buf: &'b mut [u8],
     pos: usize,
@@ -1134,25 +1111,5 @@ mod tests {
         record[10] = 3;
         record[12..].copy_from_slice(r.take(3)?);
         decode_method(&mut Reader::new(&record)).map(|_| ())
-    }
-
-    #[cfg(feature = "zstd")]
-    #[test]
-    fn zstd_round_trip() {
-        let mut buf = [0u8; 4096];
-        let mut w = SegmentWriter::new(2, &mut buf).unwrap();
-        for k in 0..50 {
-            w.push(&tick(k, &[], &[], &[])).unwrap();
-        }
-        let segment = compress_segment(2, w.ticks(), w.payload()).unwrap();
-        let Some(Ok(Item::Ticks {
-            n_ticks, payload, ..
-        })) = Items::new(&segment).next()
-        else {
-            panic!("no segment");
-        };
-        let raw = decompress(payload).unwrap();
-        assert_eq!(raw, w.payload());
-        assert_eq!(Ticks::new(&raw, n_ticks, 0).count(), 50);
     }
 }

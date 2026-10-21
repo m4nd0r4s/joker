@@ -6,7 +6,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use joker_core::time::{ClockQuality, Instant};
-use joker_core::trace::{Header, Item, Ticks, decompress};
+use joker_core::trace::{Header, Item, Ticks};
+
+use jokerd::compress::decompress;
 use jokerd::cycle::GroupTasks;
 use jokerd::decisions::{DecisionLog, SharedLog};
 use jokerd::io::{DeviceIo, SimDevice};

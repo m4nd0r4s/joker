@@ -2,6 +2,7 @@
 
 pub mod api;
 pub mod catalog;
+pub mod compress;
 pub mod control;
 pub mod cycle;
 pub mod daemon;
