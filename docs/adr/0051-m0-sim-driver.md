@@ -1,6 +1,6 @@
 # ADR 0051 — The M0 `sim` driver: how the model reaches it, the format subset and its time
 
-**Status:** accepted (M0) · **Date:** 2026-10
+**Status:** accepted (M0); the format subset (§4–§7) and the faults (§12) are completed by ADR 0054 · **Date:** 2026-10
 
 ## Context
 
