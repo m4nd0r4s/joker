@@ -34,5 +34,6 @@
 | [0031](0031-registry-hash-encoding.md) | Signal ordering and the registry hash encoding |
 | [0032](0032-dt-after-overrun-skip.md) | `dt()` counts whole periods, also after `overrun = "skip"` |
 | [0033](0033-write-outcomes-and-decision-records.md) | Write outcomes per proposal and per tick, and decision records |
+| [0052](0052-aot-cache-identity-and-cycle-subset-host.md) | AOT cache identity, load errors, WASI terminals and the seed expansion |
 
 Mudar uma decisão = escrever uma ADR nova que a substitui, e atualizar os documentos afetados no mesmo conjunto de commits.

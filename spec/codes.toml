@@ -49,6 +49,18 @@ message = "init-context rejected by the SDK (layout mismatch)"
 doc = "ref/04 §7"
 
 [[code]]
+id = "J-E0009"
+severity = "error"
+message = "component is not a valid Wasm component or failed to compile"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0010"
+severity = "error"
+message = "no usable AOT artifact for this engine and component"
+doc = "ref/04 §7"
+
+[[code]]
 id = "J-E0011"
 severity = "error"
 message = "app refused the new parameters"
