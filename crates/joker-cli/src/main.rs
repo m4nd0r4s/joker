@@ -3,6 +3,7 @@
 mod dev;
 mod node;
 mod project;
+mod replay;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -113,6 +114,35 @@ enum Command {
         #[arg(long)]
         force: bool,
     },
+    /// Record a reproducible trace, starting with the state of every app.
+    Record {
+        /// How long to record.
+        #[arg(long = "for")]
+        duration: String,
+        /// Only these groups.
+        #[arg(long)]
+        groups: Vec<String>,
+        /// The file to write.
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// Cut the continuous trace ring (no app state: the replay starts from `init`).
+    TraceDump {
+        /// The last part of the ring.
+        #[arg(long)]
+        last: Option<String>,
+        /// The file to write.
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// Replay a trace on this machine with the project's apps, from the recorded state.
+    Replay {
+        /// The trace.
+        file: PathBuf,
+        /// Show the ticks that differ.
+        #[arg(long)]
+        diff: bool,
+    },
     /// The decision log.
     Decisions {
         /// Only these outputs (selectors).
@@ -218,5 +248,12 @@ fn run(cli: Cli) -> Result<u8, Failure> {
             force,
         } => node()?.release(&output, level.as_deref(), force),
         Command::Decisions { output, limit } => node()?.decisions(&output, limit),
+        Command::Record {
+            duration,
+            groups,
+            out,
+        } => node()?.record(&duration, &groups, &out),
+        Command::TraceDump { last, out } => node()?.trace_dump(last.as_deref(), &out),
+        Command::Replay { file, diff } => replay::run(&entry()?, &file, diff, cli.json),
     }
 }

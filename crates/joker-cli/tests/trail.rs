@@ -127,6 +127,27 @@ fn part_one_and_two() {
     assert_eq!(code(&decisions), 0);
     assert!(text(&decisions).contains("pi.act_led"));
     assert_eq!(code(&n(&["status"])), 0);
+
+    let rec = n(&["record", "--for", "1s", "--out", "bench.jktrace"]);
+    assert_eq!(code(&rec), 0, "{}", text(&rec));
+    let replayed = jk(&dir, &["--env", "sim", "replay", "bench.jktrace", "--diff"]);
+    assert_eq!(code(&replayed), 0, "{}", text(&replayed));
+    assert!(
+        text(&replayed).contains("state of luz · 0 divergence(s)"),
+        "{}",
+        text(&replayed)
+    );
+    let dump = n(&["trace-dump", "--last", "500ms", "--out", "ring.jktrace"]);
+    assert_eq!(code(&dump), 0, "{}", text(&dump));
+    std::fs::write(
+        dir.join("joker.toml"),
+        std::fs::read_to_string(dir.join("joker.toml"))
+            .unwrap()
+            .replace("500 ms", "100 ms"),
+    )
+    .unwrap();
+    let changed = jk(&dir, &["--env", "sim", "replay", "bench.jktrace"]);
+    assert_eq!(code(&changed), 6, "{}", text(&changed));
     drop(dev);
 
     let gone = n(&["status"]);

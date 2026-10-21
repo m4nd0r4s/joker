@@ -800,6 +800,7 @@ dependencies = [
  "clap",
  "joker-api",
  "joker-client",
+ "joker-core",
  "joker-manifest",
  "jokerd",
  "serde_json",

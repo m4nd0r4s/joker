@@ -431,4 +431,84 @@ impl Node {
         }
         Ok(0)
     }
+
+    fn download(
+        &self,
+        created: Value,
+        wait: Duration,
+        out: &std::path::Path,
+    ) -> Result<u8, Failure> {
+        let id = created["id"].as_str().unwrap_or("").to_owned();
+        let start = std::time::Instant::now();
+        let mut trace = created;
+        while trace["state"] == "recording" || trace["state"] == "building" {
+            if start.elapsed() > wait {
+                return Err(Failure {
+                    message: format!("trace {id} is still {}", trace["state"]),
+                    exit: 4,
+                });
+            }
+            std::thread::sleep(Duration::from_millis(200));
+            trace = checked(self.client.get(&format!("/v1/traces/{id}"))?)?.json();
+        }
+        if trace["state"] == "failed" {
+            return Err(Failure {
+                message: format!("trace {id} failed"),
+                exit: 3,
+            });
+        }
+        let file = checked(self.client.get(&format!("/v1/traces/{id}/file"))?)?;
+        std::fs::write(out, &file.body)
+            .map_err(|e| Failure::usage(format!("{}: {e}", out.display())))?;
+        if self.json {
+            print_json(&trace);
+        } else {
+            println!(
+                "{} · {} bytes · {} .. {}",
+                out.display(),
+                file.body.len(),
+                trace["from"].as_str().unwrap_or("?"),
+                trace["to"]
+                    .as_str()
+                    .or_else(|| trace["ends_at"].as_str())
+                    .unwrap_or("?")
+            );
+        }
+        Ok(0)
+    }
+
+    /// `jk record`.
+    pub fn record(
+        &self,
+        duration: &str,
+        groups: &[String],
+        out: &std::path::Path,
+    ) -> Result<u8, Failure> {
+        let length = jokerd::wire::parse_duration(duration)
+            .map_err(|e| Failure::usage(format!("--for {e}")))?;
+        let mut body = json!({"source": "record", "duration": duration});
+        if !groups.is_empty() {
+            body["groups"] = json!(groups);
+        }
+        if !self.json {
+            println!("{}", self.header()?);
+            println!("recording {duration}…");
+        }
+        let created = checked(self.client.post("/v1/traces", &body, &[])?)?.json();
+        self.download(
+            created,
+            Duration::from_nanos(length) + Duration::from_secs(30),
+            out,
+        )
+    }
+
+    /// `jk trace-dump`.
+    pub fn trace_dump(&self, last: Option<&str>, out: &std::path::Path) -> Result<u8, Failure> {
+        let mut body = json!({"source": "ring"});
+        if let Some(l) = last {
+            body["last"] = json!(l);
+        }
+        let created = checked(self.client.post("/v1/traces", &body, &[])?)?.json();
+        self.download(created, Duration::from_secs(30), out)
+    }
 }
