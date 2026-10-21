@@ -87,6 +87,7 @@ pub fn profiles() -> BTreeMap<String, ProfileInfo> {
             latency: None,
             poll: Some(Duration::from_millis(100)),
             timeout: None,
+            actions: BTreeMap::new(),
         },
     );
     p

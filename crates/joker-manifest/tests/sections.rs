@@ -70,6 +70,15 @@ fn context() -> Context {
             .map(|(k, v)| (k.to_owned(), v))
             .collect(),
             fallback: true,
+            actions: [
+                (
+                    "reset".to_owned(),
+                    Some(joker_units::Duration::from_secs(5)),
+                ),
+                ("silent".to_owned(), None),
+            ]
+            .into_iter()
+            .collect(),
             ..ProfileInfo::default()
         },
     );
@@ -339,6 +348,8 @@ fn cases() -> Vec<Case> {
         ("J0287", site("[cycles.main]\nperiod = \"20ms\"\noverrun = \"catch_up\"\n").replacen("safe = \"0 kW\"\n", "safe = \"0 kW\"\nrate = \"5 kW/s\"\ngroup = \"main\"\n", 1), "catch_up with time-dependent outputs"),
         ("J0298", site("[devices.pcs.actions.reset]\nrole = \"viewer\"\n"), "action for viewers"),
         ("J0304", site("[devices.pcs.actions.reset]\npermit = \"pcs.p_ac\"\n"), "action permit that is not a boolean"),
+        ("J0101", site("[devices.pcs.actions.bogus]\n"), "action not declared in the profile"),
+        ("J0142", site("[devices.pcs.actions.silent]\n"), "action without a timeout and no profile default"),
     ]
 }
 
