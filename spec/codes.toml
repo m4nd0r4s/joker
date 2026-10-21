@@ -120,6 +120,7 @@ severity = "error"
 message = "scheduled-write queue full"
 doc = "ref/04 §7"
 since = "1.1"
+status = "reserved"
 
 [[code]]
 id = "J-E0209"
@@ -127,6 +128,7 @@ severity = "error"
 message = "this writer cannot create intents"
 doc = "ref/04 §7"
 since = "1.1"
+status = "reserved"
 
 [[code]]
 id = "J-E0210"
@@ -134,6 +136,7 @@ severity = "error"
 message = "intent TTL above max_manual"
 doc = "ref/04 §7"
 since = "1.1"
+status = "reserved"
 
 [[code]]
 id = "J-E0301"
@@ -352,6 +355,7 @@ severity = "error"
 message = "inference deadline exceeded"
 doc = "ref/04 §7"
 since = "1.1"
+status = "reserved"
 
 [[code]]
 id = "J-E0603"
@@ -359,6 +363,7 @@ severity = "error"
 message = "inference backend error"
 doc = "ref/04 §7"
 since = "1.1"
+status = "reserved"
 
 [[code]]
 id = "J-E0604"
@@ -366,6 +371,7 @@ severity = "error"
 message = "tensor shape or dtype mismatch"
 doc = "ref/04 §7"
 since = "1.1"
+status = "reserved"
 
 [[code]]
 id = "J-E0605"
@@ -373,6 +379,7 @@ severity = "error"
 message = "tensor too large for the Wasm boundary (1 MiB)"
 doc = "ref/04 §7"
 since = "1.1"
+status = "reserved"
 
 [[code]]
 id = "J-E0606"
@@ -380,6 +387,7 @@ severity = "error"
 message = "frame expired"
 doc = "ref/04 §7"
 since = "1.1"
+status = "reserved"
 
 [[code]]
 id = "J-E0607"
@@ -387,6 +395,7 @@ severity = "warning"
 message = "blocks lost (slow consumer)"
 doc = "ref/04 §7"
 since = "1.1"
+status = "reserved"
 
 [[code]]
 id = "J-E0701"
@@ -2621,6 +2630,7 @@ message = "scheduled writes without `on_late`"
 doc = "ref/01 §10.1"
 since = "1.1"
 also = ["03 §15"]
+status = "reserved"
 
 [[code]]
 id = "J0207"
@@ -2650,6 +2660,7 @@ message = "proposal-only writer with a direct write"
 doc = "ref/01 §10.1"
 since = "1.1"
 also = ["03 §15"]
+status = "reserved"
 
 [[code]]
 id = "J0213"
@@ -2730,6 +2741,7 @@ severity = "error"
 message = "scheduled writes above 256, or `timed` on a driver without timed outputs (1.1)"
 doc = "ref/01 §10.2"
 since = "1.1"
+status = "reserved"
 
 [[code]]
 id = "J0240"
@@ -3203,6 +3215,7 @@ severity = "error"
 message = "model with no backend available on the target board"
 doc = "03 §15"
 since = "1.1"
+status = "reserved"
 
 [[code]]
 id = "J0502"
@@ -3210,6 +3223,7 @@ severity = "error"
 message = "`.jkm` with a Burn version incompatible with the runtime"
 doc = "03 §15"
 since = "1.1"
+status = "reserved"
 
 [[code]]
 id = "J0510"
@@ -3217,6 +3231,7 @@ severity = "error"
 message = "pipeline with incompatible formats between steps"
 doc = "03 §15"
 since = "1.1"
+status = "reserved"
 
 [[code]]
 id = "J0601"
@@ -4606,6 +4621,7 @@ severity = "error"
 message = "remote sessions disabled on this node"
 doc = "ref/10 §2.20"
 since = "1.3"
+status = "reserved"
 
 [[code]]
 id = "J0981"
@@ -4613,6 +4629,7 @@ severity = "error"
 message = "requested role above what the node grants to this Deck user"
 doc = "ref/10 §2.20"
 since = "1.3"
+status = "reserved"
 
 [[code]]
 id = "J0982"
@@ -4620,6 +4637,7 @@ severity = "error"
 message = "limit of concurrent sessions reached"
 doc = "ref/10 §2.20"
 since = "1.3"
+status = "reserved"
 
 [[code]]
 id = "J0983"
@@ -4627,6 +4645,7 @@ severity = "error"
 message = "session expired, closed, or `ttl` above `max_ttl`"
 doc = "ref/10 §2.20"
 since = "1.3"
+status = "reserved"
 
 [[code]]
 id = "J0984"
@@ -4634,6 +4653,7 @@ severity = "error"
 message = "local consent refused or not given in time"
 doc = "ref/10 §2.20"
 since = "1.3"
+status = "reserved"
 
 [[code]]
 id = "J0985"
@@ -4641,6 +4661,7 @@ severity = "error"
 message = "transport without support for remote sessions"
 doc = "ref/10 §2.20"
 since = "1.3"
+status = "reserved"
 
 [[code]]
 id = "J0986"
@@ -4648,6 +4669,7 @@ severity = "error"
 message = "tunnel request to an endpoint forbidden in remote sessions"
 doc = "ref/10 §2.20"
 since = "1.3"
+status = "reserved"
 
 [[code]]
 id = "J0987"
