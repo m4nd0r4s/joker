@@ -60,7 +60,7 @@ trust-bundle = {
   ? ("deck_urls" / 7) => [+ tstr],
   ? ("deck_tls" / 8) => [+ digest],     ; SHA-256 of the SPKI accepted in the TLS of the Deck and of the broker
   ? ("mqtt" / 9) => [+ tstr],           ; mqtts:// URLs of the broker
-  ? ("coap" / 10) => [+ tstr],          ; coaps:// URLs (micro profile)
+  ? ("coap" / 10) => [+ tstr],          ; coaps:// URLs (micro profile; RESERVED 1.1, ADR 0035)
   ? ("scope" / 11) => [+ tstr],         ; nodes or sites the bundle applies to ("*" = all)
   ? ("min_mode" / 12) => enum,          ; mode: dev 0, prod 1
   extension
@@ -97,7 +97,7 @@ enroll-request = {
   ("csr" / 3) => bytes,                 ; PKCS#10 DER; SAN URI urn:joker:kem:x25519:<base64url> (ref/02 §3.2.3)
   ("hw" / 4) => digest,
   ("key_storage" / 5) => enum,          ; tpm 0, secure_element 1, file 2
-  ("kind" / 6) => enum,                 ; node-kind: linux 0, micro 1
+  ("kind" / 6) => enum,                 ; node-kind: linux 0, micro 1 (RESERVED 1.1)
   ? ("board" / 7) => tstr,
   ? ("runtime" / 8) => semver,
   ? ("attestation" / 9) => attestation,
@@ -211,7 +211,7 @@ desired-state = {
   ? ("confirm" / 12) => confirm-policy,
   ? ("rollout" / 13) => rollout-info,
   ? ("schedule" / 14) => schedule,
-  ? ("mcus" / 15) => [* mcu-target],
+  ? ("mcus" / 15) => [* mcu-target],    ; RESERVED 1.1 (orchestrated MCU OTA, ADR 0035)
   ? ("trust" / 16) => [+ cose],
   ? ("floors" / 17) => [+ cose],
   ? ("settings" / 18) => agent-settings,
@@ -244,7 +244,7 @@ generation-target = {
 ; Exists only in deterministic CBOR (it is what is signed and what is hashed).
 generation-descriptor = {
   1 => 1,                               ; v
-  2 => enum,                            ; node-kind: linux 0, micro 1
+  2 => enum,                            ; node-kind: linux 0, micro 1 (RESERVED 1.1)
   3 => { * tstr => any },               ; effective manifest (defaults materialized, no x_*; ref/01 §8.3)
   4 => bstr .size 32,                   ; canonical digest of joker.lock (ref/02 §2.1)
   5 => [* bstr .size 32],               ; contract hashes of the classes, in byte order
@@ -313,7 +313,7 @@ window = {
   extension
 }
 
-mcu-target = {
+mcu-target = {                          ; RESERVED 1.1 (orchestrated MCU OTA, ADR 0035)
   ("device" / 1) => path,               ; manifest device with the joker-link driver
   ? ("firmware" / 2) => mcu-firmware,
   ? ("generation" / 3) => mcu-generation,
@@ -354,7 +354,7 @@ confirm-args = {                        ; confirm (0) and reject (1)
   ("seq" / 1) => seq,
   ("phase" / 2) => enum,                ; phase
   ("hash" / 3) => digest,               ; digest of the runtime, generation hash or hash of the MCU blob
-  ? ("device" / 4) => path,             ; mcu phase
+  ? ("device" / 4) => path,             ; mcu phase (RESERVED 1.1)
   extension
 }
 
@@ -655,7 +655,7 @@ identity-info = {
 }
 
 agent-info = {
-  ? ("transport" / 1) => enum,          ; transport: https 0, mqtt 1, coap 2
+  ? ("transport" / 1) => enum,          ; transport: https 0, mqtt 1, coap 2 (RESERVED 1.1)
   ? ("queue" / 2) => uint,              ; events awaiting confirmation
   ? ("queue_bytes" / 3) => uint,
   ? ("dropped" / 4) => uint,            ; since enrollment
@@ -799,6 +799,7 @@ agent-event = {
 }
 
 ; ------------------------------------------------------------------ artifacts over MQTT (micro profile)
+; RESERVED 1.1: the micro profile ships in 1.1 (ADR 0035).
 
 blob-request = {
   ("digest" / 1) => digest,

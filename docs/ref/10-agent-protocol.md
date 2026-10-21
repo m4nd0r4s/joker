@@ -20,13 +20,13 @@ Five rules that run through the whole document (document 20, §2):
 |---|---|
 | node identity, certificates, trust bundle, security floors | 2.4, 3.1, 3.2 |
 | enrollment (`jk node enroll`), renewal, revocation, cloned nodes | 2.5, 3.1, 3.2 |
-| desired state (Deck → node), validation, apply by generations, MCUs behind the node | 2.6, 3.3–3.7 |
+| desired state (Deck → node), validation, apply by generations, MCUs behind the node (the `mcu` phase: reserved 1.1) | 2.6, 3.3–3.7 |
 | commands (Deck → node): confirm, reject, request a full report, renew, upload logs, sessions | 2.7 |
 | reported state (node → Deck) | 2.10, 3.8 |
 | events (node → Deck) | 2.11, 3.9 |
 | remote session (tunnel for `jk` and the Studio) | 2.12, 3.10 |
-| transports: HTTPS with long-poll, MQTT, CoAP (micro profile) | 2.13–2.15, 3.11 |
-| reduced profile for standalone MCUs | 2.15, 3.13 |
+| transports: HTTPS with long-poll, MQTT, CoAP (micro profile: reserved 1.1) | 2.13–2.15, 3.11 |
+| reduced profile for standalone MCUs (reserved 1.1) | 2.15, 3.13 |
 | `[agent]` keys of `node.toml` (hosted in ref/02) | 2.17 |
 | versions and compatibility | 3.14, 6 |
 
@@ -110,15 +110,15 @@ The shared ones come from ref/00, §6: `clock_quality`, `alarm_state`, `severity
 | `agent-status` | `ok` 0, `retry` 1, `need_full` 2, `bad_request` 3, `unauthorized` 4, `forbidden` 5, `conflict` 6, `unsupported` 7, `revoked` 8, `too_large` 9, `rate_limited` 10, `quarantined` 11, `not_found` 12 | `retry` |
 | `trust-role` | `root` 0 (anchor: signs bundles; the `trust.anchors` of `node.toml`, ref/02 §2.5.4), `deck` 1, `runtime` 2, `apps` 3, `config` 4, `profiles` 5, `boards` 6, `classes` 7, `firmware` 8, `models` 9 (reserved 1.1), `drivers` 10, `secrets` 11. The names are the roles of ref/02 §2.5.3 and of ref/00 §7.1 | ignored (the key is good for nothing) |
 | `key_storage` | `tpm` 0, `secure_element` 1, `file` 2 | `file` |
-| `node-kind` | `linux` 0, `micro` 1 | — (refuses) |
+| `node-kind` | `linux` 0, `micro` 1 (1.1, standalone MCU profile) | — (refuses) |
 | `mode` | `dev` 0, `prod` 1 | `prod` |
-| `capability` | `mqtt` 0, `long_poll` 1, `sessions` 2, `cbor_https` 3, `import` 4, `mcus` 5, `models` 6 (1.1), `attestation` 7 | ignored |
+| `capability` | `mqtt` 0, `long_poll` 1, `sessions` 2, `cbor_https` 3, `import` 4, `mcus` 5 (1.1), `models` 6 (1.1), `attestation` 7 | ignored |
 | `source-kind` | `oci` 0, `deck` 1, `mirror` 2 | source ignored |
 | `source-auth` | `mtls` 0, `token` 1, `none` 2 | source ignored |
 | `confirm-mode` | `auto` 0, `deck` 1, `manual` 2 | refuses (`J0979`) |
-| `phase` | `runtime` 0, `mcu` 1, `generation` 2 | refuses |
+| `phase` | `runtime` 0, `mcu` 1 (1.1), `generation` 2 | refuses |
 | `apply-state` | `accepted` 0, `validating` 1, `fetching` 2, `staging` 3, `waiting` 4, `applying` 5, `confirming` 6, `confirmed` 7, `rolled_back` 8, `failed` 9, `refused` 10, `superseded` 11, `noop` 12 | — |
-| `wait-reason` | `not_before` 0, `window` 1, `jitter` 2, `clock` 3, `paused` 4, `local_hold` 5, `confirmation` 6, `rate_limit` 7, `mcu_link` 8 | — |
+| `wait-reason` | `not_before` 0, `window` 1, `jitter` 2, `clock` 3, `paused` 4, `local_hold` 5, `confirmation` 6, `rate_limit` 7, `mcu_link` 8 (1.1) | — |
 | `command-kind` | `confirm` 0, `reject` 1, `report_full` 2, `renew` 3, `upload` 4, `session_open` 5 (1.3), `session_close` 6 (1.3) | `unsupported` |
 | `upload-kind` | `decisions` 0, `logs` 1, `trace` 2, `events` 3 | `unsupported` |
 | `health` | `ok` 0, `degraded` 1, `failed` 2, `unknown` 3 | `unknown` |
@@ -127,7 +127,7 @@ The shared ones come from ref/00, §6: `clock_quality`, `alarm_state`, `severity
 | `instance-health` | `ok` 0, `degraded` 1, `failed` 2 (document 14, A8) | `degraded` |
 | `app-state` | `starting` 0, `running` 1, `crashloop` 2, `stopped` 3, `failed` 4, `shadow` 5, `updating` 6 (the `app_state` of ref/00 §6) | `failed` |
 | `gen-origin` | `agent` 0, `local` 1, `import` 2, `session` 3, `shadow` 4, `rollback` 5, `boot` 6 (the origin of each **activation**, the same as the API's, ref/09 §5.13) | `local` |
-| `transport` | `https` 0, `mqtt` 1, `coap` 2 | — |
+| `transport` | `https` 0, `mqtt` 1, `coap` 2 (1.1, micro profile) | — |
 | `slot` | `a` 0, `b` 1 | — |
 | `event-type` | `alarm` 0, `decision` 1, `apply` 2, `trip` 3, `security` 4, `session` 5, `gap` 6, `clock` 7, `command_result` 8, `cert` 9, `agent` 10 | stored as is |
 | `trip-action` | `tripped` 0, `reset` 1 | — |
@@ -206,7 +206,7 @@ Signed by a `root` key. It is what the node uses to verify everything else.
 | 7 | `deck_urls` | `[+ tstr]` | no | — | `https://`, ≤ 4 | `J0939` |
 | 8 | `deck_tls` | `[+ digest]` | no | WebPKI | SHA-256 of the SPKI accepted for the Deck and the broker | — |
 | 9 | `mqtt` | `[+ tstr]` | no | — | `mqtts://`, ≤ 4 | `J0939` |
-| 10 | `coap` | `[+ tstr]` | no | — | `coaps://`, ≤ 4 | `J0939` |
+| 10 | `coap` | `[+ tstr]` | no | — | `coaps://`, ≤ 4; reserved 1.1 (micro profile): a 1.0 node ignores it | `J0939` |
 | 11 | `scope` | `[+ tstr]` | no | `["*"]` | node names or `site:<s>`; the node must be included | `J0939` |
 | 12 | `min_mode` | `mode` | no | `dev` | the node refuses generations with a `mode` below this; it combines with `[policy] allow_dev` of `node.toml` (ref/02 §3.5.1): a `dev` generation needs both | `J0956`, `J0906` |
 
@@ -302,7 +302,7 @@ The Deck accepts mTLS with the old certificate **even if expired**, up to `renew
 | 12 | `confirm` | `confirm-policy` | no | §2.6.4 | §2.6.4 | `J0979` |
 | 13 | `rollout` | `rollout-info` | no | — | informative; comes back in the events | — |
 | 14 | `schedule` | `schedule` | no | apply now | §2.6.5 | `J0979` |
-| 15 | `mcus` | `[* mcu-target]` | no | keep the current ones | ≤ 32; `device` exists in the target generation with the `joker-link` driver | `J0949` |
+| 15 | `mcus` | `[* mcu-target]` | no | keep the current ones | **reserved 1.1** (orchestrated MCU OTA; ADR 0035): a 1.0 node does not declare the `mcus` capability, so a Deck does not send it, and a DSD that carries it is refused with `J0957`. From 1.1: ≤ 32; `device` exists in the target generation with the `joker-link` driver | `J0949` |
 | 16 | `trust` | `[+ cose]` | no | — | new bundles, in version order | `J0939` |
 | 17 | `floors` | `[+ cose]` | no | — | new floors | `J0939` |
 | 18 | `settings` | `agent-settings` | no | — | bounded by the margins of the node (§2.9) | — |
@@ -404,7 +404,9 @@ An invalid policy is `J0979`. The `confirm` of the DSD applies to the `runtime` 
 
 `window`: `days` (1, `[+ 1..7]`, ISO 8601, 1 = Monday), `start` (2, `"HH:MM"`), `length` (3, duration ≤ 24 h), `tz` (4, IANA, default `"UTC"`). A window that crosses midnight belongs to the day on which it starts. On clock changes, the local wall-clock time counts; a time that does not exist starts at the next one.
 
-#### 2.6.6 `mcu-target` (MCUs behind the node)
+#### 2.6.6 `mcu-target` (MCUs behind the node; reserved 1.1)
+
+Node- and Deck-driven updates of the MCUs behind a node (orchestrated MCU OTA) are **1.1** (document 26, §5; ADR 0035). In 1.0 the generation of an MCU reaches it inside the node's generation, as with `jk apply`, and a firmware update is the manual `POST /v1/micros/{device}/ota` (ref/09 §5.18).
 
 | # | Name | Type | Req. | Validation | Error |
 |---|---|---|---|---|---|
@@ -458,7 +460,7 @@ A command is a one-off request, signed by the `deck` key, **idempotent and bound
 
 | `kind` | `args` | Does | Equivalent role | Version |
 |---|---|---|---|---|
-| `confirm` | `confirm-args`: `seq` (1), `phase` (2), `hash` (3), `device` (4, `mcu` phase) | confirms the pending phase, if it is exactly this one (seq, phase, hash) | `admin` | 1.0 |
+| `confirm` | `confirm-args`: `seq` (1), `phase` (2), `hash` (3), `device` (4, `mcu` phase, 1.1) | confirms the pending phase, if it is exactly this one (seq, phase, hash) | `admin` | 1.0 |
 | `reject` | `confirm-args` | immediate rollback of the phase being confirmed (`J0969`) | `admin` | 1.0 |
 | `report_full` | — | sends a full report at the next send | `viewer` | 1.0 |
 | `renew` | `renew-args`: `reason` (1) | renews the certificate now (§3.2) | — | 1.0 |
@@ -743,8 +745,8 @@ MQTT 5 (3.1.1 accepted in the micro profile), over TLS with mTLS. Client identif
 | `events` | node → Deck | 1 | no | COSE(`event-batch`) |
 | `ack/events` | Deck → node | 1 | no | COSE(`event-ack`) |
 | `status` | node → Deck | 1 | **yes** | COSE(`{1: online bool, 2: boot, 3: time}`); also as the *will* with `online = false`, signed at connection time |
-| `blob/req` | node → Deck | 1 | no | COSE(`blob-request`), micro profile only |
-| `blob/data` | Deck → node | 1 | no | `blob-chunk` in CBOR, unsigned (integrity comes from the digest) |
+| `blob/req` | node → Deck | 1 | no | COSE(`blob-request`), micro profile only (1.1) |
+| `blob/data` | Deck → node | 1 | no | `blob-chunk` in CBOR, unsigned (integrity comes from the digest); micro profile only (1.1) |
 
 | Parameter | Linux | Micro |
 |---|---|---|
@@ -758,7 +760,9 @@ MQTT 5 (3.1.1 accepted in the micro profile), over TLS with mTLS. Client identif
 
 Remote sessions do not go over MQTT (`J0985`).
 
-### 2.15 Micro profile
+### 2.15 Micro profile (reserved 1.1)
+
+The standalone MCU profile and CoAP are **1.1** (document 26, §5; ADR 0035). They are closed here so that the `agent/1.0` core does not change when they ship; a 1.0 Deck and a 1.0 node do not use them.
 
 For a standalone Joker Micro (M2, with network). The same CDDL, with these restrictions:
 
@@ -874,7 +878,7 @@ max_rate        = "1 MiB/s"
 | Key | Type | Default | Validation | Meaning |
 |---|---|---|---|---|
 | `enabled` | bool | see above | — | turns the agent off without unenrolling |
-| `transport` | enum | `https` | `coap` only on micro | — |
+| `transport` | enum | `https` | `coap` only on micro (1.1) | — |
 | `urls` | list of URLs | `[]` | same scheme as the bundle | — |
 | `poll` | `long` or duration | `long` | 1 min–24 h | local `poll_interval` (wins over that of the Deck) |
 | `backoff_max` | duration | `15m` | 1 min–6 h | ceiling of the backoff (§3.11.4) |
@@ -1002,9 +1006,9 @@ Range `J0930`–`J0999` (ref/00, §8: `J09xx`, fleet). Severities of document 16
 | `J0960` | error | confirmation window expired: rollback |
 | `J0961` | error | health failed during confirmation: rollback |
 | `J0962` | warning | local limit of applies per day reached |
-| `J0963` | error | incompatible MCU firmware (board, ABI, security counter) |
-| `J0964` | error | MCU generation blob rejected (cause in `causes`, e.g. `J0710`) |
-| `J0965` | error | MCU update over Joker Link failed or did not confirm |
+| `J0963` | error | incompatible MCU firmware (board, ABI, security counter) (reserved 1.1) |
+| `J0964` | error | MCU generation blob rejected (cause in `causes`, e.g. `J0710`) (reserved 1.1) |
+| `J0965` | error | MCU update over Joker Link failed or did not confirm (reserved 1.1) |
 | `J0966` | warning | running generation changed locally: desired state on hold |
 | `J0967` | error | command without a valid target (phase not pending or different hash) |
 | `J0968` | error | command outside the time window or expired |
@@ -1026,8 +1030,8 @@ Range `J0930`–`J0999` (ref/00, §8: `J09xx`, fleet). Severities of document 16
 | `J0984` | error | local consent refused or not given in time |
 | `J0985` | error | transport without support for remote sessions |
 | `J0986` | error | tunnel request to an endpoint forbidden in remote sessions |
-| `J0990` | error | micro profile: critical key outside the subset |
-| `J0991` | error | micro profile: window with a time zone other than UTC |
+| `J0990` | error | micro profile: critical key outside the subset (reserved 1.1) |
+| `J0991` | error | micro profile: window with a time zone other than UTC (reserved 1.1) |
 | `J0992` | error | desired state with a generation rejected: the node's `[policy] apply_from` does not include `deck` |
 
 `J0988`–`J0989` and `J0993`–`J0999` stay free (`J0987` was assigned by ref/02, §2.6). The codes of the secret entries (`J0922`–`J0926`) and of the mode policy (`J0906`) are those of ref/02.
@@ -1073,7 +1077,9 @@ node                                                   Deck
 - A node already enrolled refuses a new enrollment without `--force`; with `--force`, it generates a new key (the old identity is orphaned and the Deck revokes it).
 - Changing Deck is a new bundle with another `authority`, signed by the root (§3.2.4), or a new enrollment.
 
-#### 3.1.3 Standalone MCU
+#### 3.1.3 Standalone MCU (reserved 1.1)
+
+The enrollment of a standalone MCU belongs to the micro profile, which is 1.1 (§2.15). The enrollment of an MCU behind a node, in the second paragraph, is 1.0.
 
 The MCU generates the identity key (secure element, if there is one) and the X25519 secrets key at first boot. Enrollment is done by the tool connected over USB or by Joker Link (`jk node enroll mcu:<port> --deck <url> --token <t>`): `jk` requests the CSR from the MCU (with the KEM key in the SAN), makes the `POST /enroll` with `kind = micro`, and returns to the MCU the certificate, the anchors and the bundle, which the MCU verifies as in §3.1.2 and stores in the `IDENTITY` area (registers 18 and 19, ref/08 §2.10.2; bundle ≤ 2 KiB). An MCU with HTTPS can enroll on its own.
 
@@ -1176,7 +1182,7 @@ The configuration artifact comes first because it is the one that says the `mode
 | Phase | Swap | Health window | Rollback |
 |---|---|---|---|
 | `runtime` | binary in the inactive slot; `jokerd` restarts in the new slot **with the current confirmed generation**; the equipment covers the interval with the fallback (M1) and the MCUs with their lease | `health_window` + `confirm` | restart in the previous slot; also automatic if the new `jokerd` does not start (systemd, document 01, §16) |
-| `mcu` | §3.6 | `mcu-target.confirm` | the MCU reverts to the previous image |
+| `mcu` (1.1) | §3.6 | `mcu-target.confirm` | the MCU reverts to the previous image |
 | `generation` | the pipeline of document 01, §15: plan the diff, prepare, swap at a tick boundary of each affected group | `confirm` | swap back to the previous generation, kept warm (`keep_previous`) |
 
 Numbering of generations: the integer `gen` is assigned by the node when the generation enters staging. A rollback **reactivates** the previous generation with the same hash and **the same number** (D9); the one that failed stays in the history with its own, in `rolled_back`. The history is of **activations**, each with its `origin` (`gen-origin`, §2.2: `agent` with the `seq` of the DSD, `rollback`, …), which the API shows in `GET /v1/generations` (ref/09 §5.13).
@@ -1221,7 +1227,9 @@ The confirmation window starts at the swap. The health checks:
 
 H7 is what makes `auto` an honest confirmation in the sense of ADR 0015: a generation that cut the network off from the node cannot confirm itself.
 
-### 3.6 MCUs behind the node
+### 3.6 MCUs behind the node (reserved 1.1)
+
+The `mcu` phase is orchestrated MCU OTA, which is **1.1** (§2.6.6; ADR 0035). What follows is its closed behavior.
 
 For each `mcu-target`, by `order`, **one at a time**:
 
@@ -1399,7 +1407,7 @@ The Deck **does not keep a queue of DSDs**: it keeps the latest. The node that c
 4. **On the Deck side**, a report or event is never refused because of the offset. The Deck computes it, flags it above 5 min (`J0972`) and corrects the times of the events with the pair (`boot`, `mono`) and the `clock` events, which the node emits when the clock changes quality or jumps (it is the monotonic ↔ UTC correspondence of document 01, §18, sent outside).
 5. Maintenance windows require `synced` or `holdover`; with `unsynced`, the phase waits (`wait = clock`).
 
-### 3.13 Micro profile: behavior
+### 3.13 Micro profile: behavior (reserved 1.1)
 
 - Same validation rules (V1–V24, with the subset of §2.15) and the same state machine, with the phases `runtime` (the firmware) and `generation` (the blob).
 - **Firmware:** written to the inactive slot; restart in test mode; confirmed by the MCU itself after `stable_for` with H1–H5 and, if `require_uplink`, a `report-ack` from the Deck. Without confirmation, the bootloader reverts at the next restart (the watchdog guarantees that it happens).
@@ -1515,9 +1523,10 @@ A Deck of the 2 series speaks `agent/1` with 1.x nodes for the whole series (doc
 | enrollment, renewal, revocation, quarantine, bundle, floors | 1.0 |
 | desired state, commands `confirm`, `reject`, `report_full`, `renew`, `upload` | 1.0 |
 | reported state, events, queue with `gap` | 1.0 |
-| HTTPS with long-poll, MQTT, CoAP (micro profile) | 1.0 |
-| micro profile (standalone MCUs); management at scale by the Deck | 1.0; at scale, 1.5 |
-| MCUs behind the node (`mcu` phase) | 1.0 |
+| HTTPS with long-poll, MQTT | 1.0 |
+| CoAP and the micro profile (standalone MCUs: §2.15, §3.1.3, §3.13, `blob/req`, `blob/data`, `node-kind` `micro`) | **1.1** (document 26, §5; ADR 0035); at scale, 1.5 |
+| MCUs behind the node: their state in the report (`report-body` 15) | 1.0 |
+| MCUs behind the node: the `mcu` phase, DSD key 15, capability `mcus`, `confirm-args.device` (orchestrated MCU OTA) | **1.1** (ADR 0035); in 1.0 the MCU generation travels inside the node's generation |
 | offline import (`jk agent import`) | 1.0 |
 | **Ready for ML** (document 11): type `joker.model.v1+jkm`, role `models`, key 23 of the DSD, `report-body` 20, capability `models` | reserved in 1.0; semantics in **1.1** |
 | pending intents in the report (`report-body` 19) | reserved; 1.1 (M18) and approval in the Deck in 1.3 |

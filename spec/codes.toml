@@ -4628,18 +4628,24 @@ id = "J0963"
 severity = "error"
 message = "incompatible MCU firmware (board, ABI, security counter)"
 doc = "ref/10 §2.20"
+since = "1.1"
+status = "reserved"
 
 [[code]]
 id = "J0964"
 severity = "error"
 message = "MCU generation blob rejected (cause in `causes`, e.g. `J0710`)"
 doc = "ref/10 §2.20"
+since = "1.1"
+status = "reserved"
 
 [[code]]
 id = "J0965"
 severity = "error"
 message = "MCU update over Joker Link failed or did not confirm"
 doc = "ref/10 §2.20"
+since = "1.1"
+status = "reserved"
 
 [[code]]
 id = "J0966"
@@ -4792,12 +4798,16 @@ id = "J0990"
 severity = "error"
 message = "micro profile: critical key outside the subset"
 doc = "ref/10 §2.20"
+since = "1.1"
+status = "reserved"
 
 [[code]]
 id = "J0991"
 severity = "error"
 message = "micro profile: window with a time zone other than UTC"
 doc = "ref/10 §2.20"
+since = "1.1"
+status = "reserved"
 
 [[code]]
 id = "J0992"
