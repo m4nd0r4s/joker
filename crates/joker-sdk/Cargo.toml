@@ -1,0 +1,29 @@
+[package]
+name = "joker-sdk"
+description = "The Joker Rust SDK for apps: #[joker::app], #[joker::cycle], typed ports and quality-aware reads"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+name = "joker"
+
+[features]
+default = ["backend-wasm"]
+backend-wasm = []
+
+[dependencies]
+joker-sdk-macros = { workspace = true }
+joker-sdk-sys = { workspace = true }
+inventory = { workspace = true }
+critical-section = { workspace = true }
+
+[dev-dependencies]
+joker-core = { workspace = true }
+joker-host = { workspace = true }
+
+[lints]
+workspace = true

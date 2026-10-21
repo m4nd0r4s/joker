@@ -10,6 +10,10 @@ publish.workspace = true
 
 [dependencies]
 wit-bindgen.workspace = true
+critical-section.workspace = true
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+critical-section = { workspace = true, features = ["std"] }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(loom)"] }

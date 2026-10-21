@@ -6,6 +6,11 @@
 //! A component exports the world's `guest` interface with
 //! `joker_sdk_sys::export!(MyGuest with_types_in joker_sdk_sys)`. The
 //! `@unstable` items are not generated (ref/04 §2.9).
+//!
+//! The SDK macros expand to [`meta_fragment!`] and [`export_guest!`], so the
+//! `unsafe` attributes they need come from this crate and not from the app's.
+//! The crate also provides the `critical-section` implementation of Wasm
+//! components.
 
 #![no_std]
 
@@ -18,3 +23,44 @@ wit_bindgen::generate!({
     pub_export_macro: true,
     default_bindings_module: "joker_sdk_sys",
 });
+
+/// A `joker:meta` fragment (ref/04 §5.2): a static in the custom section of
+/// the core module, which the linker concatenates with the other fragments.
+/// Only emitted for Wasm targets, where the section name is valid.
+#[macro_export]
+macro_rules! meta_fragment {
+    ($name:ident, $len:expr, [$($byte:expr),* $(,)?]) => {
+        #[cfg(target_family = "wasm")]
+        #[unsafe(link_section = "joker:meta")]
+        #[used]
+        static $name: [u8; $len] = [$($byte),*];
+    };
+}
+
+/// Exports the world's `guest` interface, implemented by `$runtime`, from a
+/// Wasm component. Expands to nothing on other targets.
+#[macro_export]
+macro_rules! export_guest {
+    ($runtime:path) => {
+        #[cfg(target_family = "wasm")]
+        const _: () = {
+            use $runtime as __JokerRuntime;
+    $crate::export!(__JokerRuntime with_types_in $crate);
+        };
+    };
+}
+
+/// Wasm components are single-threaded: a critical section has nothing to
+/// exclude.
+#[cfg(target_family = "wasm")]
+struct SingleThread;
+
+#[cfg(target_family = "wasm")]
+critical_section::set_impl!(SingleThread);
+
+#[cfg(target_family = "wasm")]
+unsafe impl critical_section::Impl for SingleThread {
+    unsafe fn acquire() -> critical_section::RawRestoreState {}
+
+    unsafe fn release(_restore: critical_section::RawRestoreState) {}
+}

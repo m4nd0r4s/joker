@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "crates/joker-host/fixtures/*"]
+members = ["crates/*", "crates/joker-host/fixtures/*", "crates/joker-sdk/fixtures/*"]
 
 [workspace.package]
 version = "0.0.0"
@@ -23,6 +23,13 @@ wasmtime-wasi = { version = "=49.0.4", default-features = false, features = ["p2
 wasmparser = { version = "0.258.3", default-features = false, features = ["std", "validate", "component-model"] }
 sha2 = { version = "0.10", default-features = false }
 rand_core = { version = "0.10", default-features = false }
+syn = { version = "2.0.119", default-features = false, features = ["full", "parsing", "printing", "proc-macro", "clone-impls"] }
+quote = "1.0.47"
+proc-macro2 = "1.0.107"
+inventory = "0.3.24"
+joker-sdk-macros = { path = "crates/joker-sdk-macros" }
+joker = { package = "joker-sdk", path = "crates/joker-sdk" }
+joker-host = { path = "crates/joker-host" }
 wit-bindgen = { version = "=0.61.1", default-features = false, features = ["macros", "realloc", "async"] }
 
 [workspace.lints.rust]
