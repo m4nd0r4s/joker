@@ -126,7 +126,13 @@ fn part_one_and_two() {
     let decisions = n(&["decisions", "--limit", "3"]);
     assert_eq!(code(&decisions), 0);
     assert!(text(&decisions).contains("pi.act_led"));
-    assert_eq!(code(&n(&["status"])), 0);
+    let status = n(&["status"]);
+    assert_eq!(code(&status), 0, "{}", text(&status));
+    assert!(
+        text(&status).contains("clock "),
+        "status should show the clock quality: {}",
+        text(&status)
+    );
 
     let rec = n(&["record", "--for", "1s", "--out", "bench.jktrace"]);
     assert_eq!(code(&rec), 0, "{}", text(&rec));
