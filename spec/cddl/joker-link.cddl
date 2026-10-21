@@ -189,7 +189,7 @@ session-params = {
   11 => dur-ms,                    ; ack_delay
   12 => dur-ms,                    ; time_interval (0 = no TIME)
   13 => u16,                       ; bulk_max
-  ? 14 => u8,                      ; turn_frames (half-duplex only)
+  ? 14 => u8,                      ; turn_frames (half-duplex only; RESERVED 1.1)
   * uint => any
 }
 

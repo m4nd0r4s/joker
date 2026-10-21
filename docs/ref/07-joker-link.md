@@ -74,15 +74,17 @@ All binary integers (L1, L2, L3) are **little-endian**, as in the trace (16 §7)
 
 ### 3.1 Transports
 
-| Transport | Type | Framing | CRC-32C | Security (§4.6) | Address |
-|---|---|---|---|---|---|
-| UART | stream | COBS + `0x00` (§3.2) | yes | optional | `addr` byte (0) |
-| RS-485 full-duplex | stream | COBS + `0x00` | yes | optional | `addr` (0 or 1–247) |
-| RS-485 half-duplex | stream, with turn (§3.3) | COBS + `0x00` | yes | optional | `addr` 1–247 |
-| USB CDC-ACM | stream | COBS + `0x00` | yes | optional | `addr` (0) |
-| TCP | stream | COBS + `0x00` | yes | **required** | `addr` (0) |
-| CAN / CAN-FD | datagram (ISO-TP) | one ISO-TP message = one frame (§3.4) | yes | optional | CAN identifier |
-| UDP | datagram | one datagram = one frame (§3.5) | yes | **required** | L2 `sid` |
+| Transport | Type | Framing | CRC-32C | Security (§4.6) | Address | Version |
+|---|---|---|---|---|---|---|
+| UART | stream | COBS + `0x00` (§3.2) | yes | optional | `addr` byte (0) | 1.0 |
+| RS-485 full-duplex | stream | COBS + `0x00` | yes | optional | `addr` (0 or 1–247) | 1.0 |
+| RS-485 half-duplex | stream, with turn (§3.3) | COBS + `0x00` | yes | optional | `addr` 1–247 | **reserved 1.1** |
+| USB CDC-ACM | stream | COBS + `0x00` | yes | optional | `addr` (0) | **reserved 1.0.x** |
+| TCP | stream | COBS + `0x00` | yes | **required** | `addr` (0) | 1.0 |
+| CAN / CAN-FD | datagram (ISO-TP) | one ISO-TP message = one frame (§3.4) | yes | optional | CAN identifier | **reserved 1.1** |
+| UDP | datagram | one datagram = one frame (§3.5) | yes | **required** | L2 `sid` | 1.0 |
+
+The "Version" column is the 1.0 cut of document 26, §5 (ADR 0028, ADR 0035): Joker Link ships over UART, UDP and TCP, and RS-485 without turn-taking is a UART. The reserved transports are already specified here, and L1–L3 and the negotiation in `HELLO` are the same for them, so adding one is a minor that changes nothing on the wire of the others. A 1.0 build of `jokerd` or of `joker-micro` does not carry them, and the manifest keys that select them are `J0290` (ref/01 §6.6).
 
 CRC-32C is on **all** transports, even where there is another check underneath (TCP, UDP) or the Poly1305 tag on top. It costs 4 B and gives a single implementation rule, and it makes it possible to tell noise (wrong CRC) from an attack or a wrong key (right CRC, wrong tag), which `jk doctor` shows in separate counters.
 
@@ -134,7 +136,7 @@ on wire   01 01 0e 12 10 2c 03 92 01 ff ff ff ff a2 01 1a 07 12 eb c0 02 83 83 1
           95 5f 3c 00                                                                   (56 B)
 ```
 
-### 3.3 RS-485 half-duplex: the turn
+### 3.3 RS-485 half-duplex: the turn (reserved 1.1)
 
 On a two-wire RS-485 pair only one side talks at a time. H is the controller:
 
@@ -146,7 +148,7 @@ On a two-wire RS-485 pair only one side talks at a time. H is the controller:
 
 In full-duplex, `EOT` is ignored.
 
-### 3.4 CAN and CAN-FD: ISO-TP
+### 3.4 CAN and CAN-FD: ISO-TP (reserved 1.1)
 
 Each L2 frame, followed by its CRC-32C (4 B, LE), is **one ISO-TP message** (ISO 15765-2:2016), normal addressing, with 29-bit identifiers:
 
@@ -174,7 +176,7 @@ One datagram = one L2 frame followed by the CRC-32C (4 B, LE). H port by default
 
 ### 3.6 TCP and USB CDC
 
-TCP and USB CDC are streams: they use §3.2 as is, with `addr` 0. On TCP, D connects to H (port 7471 by default), with `TCP_NODELAY`; closing the connection is link loss (§7). One connection = one session.
+TCP and USB CDC are streams: they use §3.2 as is, with `addr` 0. USB CDC is reserved for 1.0.x (§3.1). On TCP, D connects to H (port 7471 by default), with `TCP_NODELAY`; closing the connection is link loss (§7). One connection = one session.
 
 ### 3.7 Frame sizes
 
@@ -1700,7 +1702,7 @@ A small number in `ERROR` (key 1), `RESULT` (key 4), answer `HELLO` (key 8) and 
 | `J0734` | error | `max_frame`, `max_msg`, `window` or `bulk_max` outside the transport limits | §3.7, §5.6 |
 | `J0735` | error | MCU atomic group that does not fit in one frame, or that mixes MCU outputs with outputs of another owner | §6.12 |
 | `J0736` | error | invalid or duplicate link address on the same bus (RS-485: 1–247; CAN: 1–253) | §3.2, §3.4 |
-| `J0737` | error | link CAN identifiers conflict with another device on the bus | §3.4 |
+| `J0737` | error | link CAN identifiers conflict with another device on the bus (reserved 1.1) | §3.4 |
 | `J0738` | warning (all modes) | Joker Link without authentication (`auth = "none"`) on a closed bus | §4.6 |
 | `J0739` | warning | `max_age` of an MCU signal less than 2 × `refresh` | §6.9 |
 | `J0740` | error | MCU path with more than 8 segments under the device prefix | §8.3 |
@@ -1717,7 +1719,7 @@ Seen from outside the MCU: on the Linux node (logs, `jk status`, API), in the `j
 | `J-E2001` | warning | frame with invalid CRC-32C (counter) |
 | `J-E2002` | warning | frame above the maximum size |
 | `J-E2003` | warning | invalid COBS or short frame |
-| `J-E2004` | warning | ISO-TP: wrong sequence, timeout or overflow |
+| `J-E2004` | warning | ISO-TP: wrong sequence, timeout or overflow (reserved 1.1) |
 | `J-E2005` | warning | unknown frame format (`fmt` or `kind`) |
 | `J-E2006` | error | malformed message: invalid CBOR, trailing bytes, required field missing or with the wrong type |
 | `J-E2007` | warning | unknown message type |
@@ -1903,7 +1905,9 @@ The part of postcard's gain that comes from "the type is already known" was take
 
 ---
 
-## 14. Micro profile over MQTT and CoAP: framing
+## 14. Micro profile over MQTT and CoAP: framing (reserved 1.1)
+
+The standalone MCU profile of the agent and CoAP are **1.1** (document 26, §5; ADR 0035; ref/10 §6). This section is closed now so that the two references agree when it ships.
 
 A standalone M2 MCU speaks to the Deck the agent protocol, in the reduced version of ref/10 (§2.14, §2.15), and not Joker Link. From Joker Link, that profile only uses the framing and the common code. The rule, so that it is the same in both references:
 
@@ -1930,12 +1934,12 @@ The keys belong to ref/01 (appendix A, `[buses]`, `[link]` in §5.22). This tabl
 
 | Key | Type | Default | Validation |
 |---|---|---|---|
-| `bus` | name from `[buses]` with `kind = "serial"` or `"can"` | — | exactly one of `bus`, `usb`, `address` |
-| `usb` | path (`/dev/ttyACM0`) | — | |
+| `bus` | name from `[buses]` with `kind = "serial"` or `"can"` | — | exactly one of `bus`, `usb`, `address`; `can` is reserved 1.1 |
+| `usb` | path (`/dev/ttyACM0`) | — | reserved 1.0.x |
 | `address` | `"udp:<ip>:<port>"` \| `"tcp:<ip>:<port>"` (M2 MCUs) | port 7471 | always an IP address, and always the **MCU's**. With `udp:`, H only accepts a session whose datagrams come from this IP, sends to it (and to this port) the `HELLO(request)` while there is no session, and then replies to the source of the last authenticated packet (§3.5); H listens on 7471. With `tcp:`, H does not connect to this address (D is the one that connects, §3.6): it accepts the connection only from this IP. In the MCU manifest, `[link] address` is the opposite, the IP and port **of the node** (ref/01 §5.22) |
 | `addr` | integer: the MCU's address on the bus | 0 (serial), 1 (CAN) | `J0736` |
 | `node` | name expected in `HELLO` (key 4.1) | — | otherwise `refused`, `J-E2207` |
-| `can_id_base` | integer 0–255 | `0x4A` | `J0737` |
+| `can_id_base` | integer 0–255 | `0x4A` | `J0737`; reserved 1.1 |
 | `auth` | `"required"` \| `"none"` | `"required"` | `J0179` on IP; `J0738` |
 | `key` | `"secret:<name>"` | `"secret:link.<d>"` | |
 | `report`, `refresh`, `keepalive`, `link_timeout`, `max_lease`, `rto_min`, `ack_delay`, `time_interval`, `time_tolerance`, `time_max_delay`, `turn_timeout` | `Duration` | §5.6, §8.4, §3.3 | `J0730`, `J0733`, `J0741` |
@@ -1943,7 +1947,7 @@ The keys belong to ref/01 (appendix A, `[buses]`, `[link]` in §5.22). This tabl
 | `instances` | table `<name on the MCU> = "<name on the node>"`, only for top-level instances (§8.3) | the MCU's names | `J0604`; instance that is only a member `J0650` |
 | `micro` | `File`: the path of the MCU manifest (`micro/esp/joker.toml`), relative to the file that declares it (ref/01 §7.5) | — | optional. With it, the node's `jk check` **without a connection to the node** generates the MCU catalog from that manifest (the same `jk build` the MCU uses) and validates the bindings, the delegated levels (`J0731`), `max_lease` (`J0733`) and liveness (`J0730`) as if it had the `HELLO`; `jk apply` uses it to build the MCU's generation blob and carry it over the link, when the hash of the MCU's generation differs (ref/08 §2.12.4). Without it, `jk check` only validates the MCU side with `--node` (through the `HELLO` pinned in `[discovered.<d>]`), and the blob is made by hand (`jk build --target mcu:<board> --generation`). Nonexistent file, or a manifest whose `[target] board` is not an MCU: `J0145` |
 
-In `[buses.<b>]` of `kind = "serial"`: `duplex = "full" | "half"` (default `"full"`) and `turnaround`.
+In `[buses.<b>]` of `kind = "serial"`: `duplex = "full" | "half"` (default `"full"`) and `turnaround`. `duplex = "half"` and the keys `turn_timeout` and `turn_frames` are reserved for 1.1, with the turn of §3.3.
 
 Example (U1, the Raspberry Pi's coprocessor):
 
@@ -2027,6 +2031,11 @@ instances = { p1 = "pump_a" }
 | Item | Version |
 |---|---|
 | everything not in this table | **1.0** |
+| USB CDC-ACM transport (§3.1, §3.6) | **reserved 1.0.x** (document 26, §5; ADR 0035) |
+| CAN and CAN-FD transport with ISO-TP (§3.4) | **reserved 1.1** (ADR 0035) |
+| RS-485 half-duplex with turn-taking (§3.3; `EOT` flag, `turn_timeout`, `turn_frames`) | **reserved 1.1** (ADR 0035); the `EOT` flag keeps its bit |
+| framing of the micro profile over MQTT and CoAP (§14) | **reserved 1.1**, with the standalone MCU profile of ref/10 (ADR 0035) |
+| node-driven firmware rollouts across MCUs (the activation of a generation that carries firmware) | **1.1** (ADR 0035). The `OTA` message itself, the OTA receiver and the generation blob carried by `jk apply` are 1.0 |
 | `BLOCKS` (`0x30`): block signals (M7), vibration and waveforms of Joker Micro (19 U3) | **reserved 1.1** |
 | `at` in proposals (position 2 of `prop`): scheduled writes (M6) | **reserved 1.1** |
 | types `0x31`–`0x3F` | reserved 1.x |

@@ -1704,6 +1704,8 @@ id = "J-E2004"
 severity = "warning"
 message = "ISO-TP: wrong sequence, timeout or overflow"
 doc = "ref/07 §10.3"
+since = "1.1"
+status = "reserved"
 
 [[code]]
 id = "J-E2005"
@@ -3472,6 +3474,8 @@ id = "J0737"
 severity = "error"
 message = "link CAN identifiers conflict with another device on the bus"
 doc = "ref/07 §10.2"
+since = "1.1"
+status = "reserved"
 
 [[code]]
 id = "J0738"
