@@ -23,7 +23,7 @@
 |---|---|
 | `jk init [--name <n>]` | turns the current (empty) directory into a project: minimal `joker.toml`, `sim/`, `.gitignore` and a `.taplo.toml` that associates each suffix (`*.profile.toml`, `*.board.toml`, `*.sim.toml`, `*.scenario.toml`, `joker*.toml`…) with the JSON schema of its type, for completion and errors in the editor (ADR 0026; ref/03 §2.1.6). `jk new` writes the same |
 | `jk new <name> [--template sim-tank\|bess\|vision\|vibration\|empty]` | creates a project in a new directory (manifest, example app, `sim/` scenarios) |
-| `jk app new <name> [--lang rust\|ts\|py]` | creates an app in `apps/` (TypeScript in 1.0, Python in 1.2; ref/05) |
+| `jk app new <name> [--lang rust\|ts\|py]` | creates an app in `apps/` (TypeScript and Python in 1.2; ref/05, document 26 §5) |
 | `jk check` | validates the manifest, the bindings, the units, the envelopes, RT admission (M23), the bus budget, the referenced secrets and the MCU capabilities (`J0710`); with `--node`, also on the node (`dry_run`) |
 | `jk fmt [<file>…] [--check]` | canonical form of the TOML files and the scenarios: canonical duration literals, display forms (`Bad(CommFailure)`) rewritten in `snake_case` (ref/00, §2 and §3.1) |
 | `jk build [--target <board\|triple>] [--world joker:runtime@<v>]` | compiles the apps to Wasm, precompiles the AOT for the target; `--world` generates for an older node (ref/05). The MCU targets are in §2.2 |
@@ -34,7 +34,7 @@
 | `jk explain <key\|code\|pipeline>` | origin of a key (overlay), explanation of an error, plan of a pipeline |
 | `jk explain <output path>` | the arbiter state of an output, on the node: owning group, occupied levels (writer, value, lease), active level, envelope and last result (`GET /v1/outputs/{path}`, `OutputState`; ref/09, §5.6). An argument that is at the same time a manifest key and an output is read as an output; `jk explain 'outputs."<output>"'` asks for the key |
 | `jk inspect <app.wasm\|driver.wasm\|firmware.jkfw\|model.jkm>` | metadata: ports, tasks, WIT world, signature, lineage; the descriptor of a driver; the descriptor of a firmware (ref/08, §2.14) |
-| `jk lsp` | language server for the TOML files and the `.jkc` files |
+| `jk lsp` | language server for the TOML files and the `.jkc` files (1.0.x; document 26, §5) |
 | `jk sim <scenario>` | runs only the simulated plant, without apps (to see the dynamics) |
 
 ### 2.1 The lock
@@ -60,7 +60,7 @@ In `dev`, `jk check`, `jk build`, `jk dev` and `jk test` update by themselves th
 | `jk build --target mcu:<board>` | firmware with the embedded generation (ELF, UF2 or bin) |
 | `jk build --target mcu:<board> --generic` | generic firmware, which reads the generation from flash, and its descriptor `firmware.jkfw`; it carries all the transports of the board's `[link] transports` (ref/08, §2.12.1) |
 | `jk build --target mcu:<board> --generation --firmware <firmware.jkfw> [--check-reproducible]` | the generation blob `<site>.jkgen`, signed (in `dev`, it may go unsigned, and the firmware accepts it; in `prod`, `J0779`), in the format and ISA that firmware understands (`J0789` if it needs more); `--check-reproducible` builds twice and compares |
-| `jk build --target mcu:<board> --lib` | C library mode: `libjoker_node.a`, `joker_node.h` (fixed) and `joker_project.h` (generated) |
+| `jk build --target mcu:<board> --lib` | C library mode: `libjoker_node.a`, `joker_node.h` (fixed) and `joker_project.h` (generated); **1.2** (ref/08 §1) |
 | `jk build --target mcu:<board> --crate` | crate mode: the generated crate `joker-project` in `target/joker/crate/` |
 | `jk flash [--identity]` | flashes the firmware, the blob and, with `--identity`, the identity area: by probe (`probe-rs`) or over serial (`espflash`, on the ESP32), according to the board's `[probe]` (ref/03 §2.3.3) |
 | `jk trace-dump --probe` | reads the trace rings from an MCU's RAM by probe, without symbols |
@@ -81,7 +81,7 @@ A **node** is a board with `jokerd` (document 15, §1). The `--node` option choo
 | `jk doctor [--ml] [--rt] [--allow-live]` | checks the kernel (PREEMPT_RT, `isolcpus`), permissions, groups, watchdog, clock, accelerators (and whether they are real), disk, device fallbacks, node files changed by hand (`J0907`); `--rt` with live outputs in `prod` requires `--allow-live` (ref/09, §5.17) |
 | `jk apply [--confirm 5m] [--dry-run]` | sends the configuration, the artifacts and the secrets that the generation refers to, shows the diff plan (what restarts, what reloads, why it asks for confirmation) and applies |
 | `jk publish --manifest <m>… [--registry <oci>] [--sign-key <role>=<key>…]` | for a fleet with a Deck: for each input manifest, computes the node's generation (effective manifest, lock, contracts and artifacts by digest; the same descriptor and the same hash that `jk apply` and the Deck compute, ref/10 §2.6.2), **signs it** with the key of the `config` role, signs the apps (`apps`), the W and X drivers (`drivers`) and the MCU generation blobs (`config`), and publishes everything to the registry (default: `defaults.registry`), which is the Deck's `artifacts.store` (document 20, §4.4.2). `--sign-key` is repeated per role; without it, `user.signing_key` for all. It does not talk to any node. The Deck only distributes artifacts signed this way: without them, it logs `J0915` and emits nothing for that node. A role without a key, or a key that the bundle does not give to that role, makes `jk publish` fail before publishing (`J0915`, `J0292`) |
-| `jk confirm` | confirms the pending generation and, with it, the OTA of each MCU that this activation put on trial (generation or firmware; ref/07 §9.4, ref/09 §5.13) |
+| `jk confirm` | confirms the pending generation and, with it, the OTA of each MCU that this activation put on trial (the generation; firmware carried by an activation is 1.1; ref/07 §9.4, ref/09 §5.13) |
 | `jk rollback [<generation>]` | reactivates a previous generation (the same one, with the same number and the same hash; ref/00, §5) |
 | `jk generations` | history of activations (who, when, origin, diff, status) |
 | `jk runtime upgrade <version>` | OTA of the runtime (A/B slots) |
@@ -178,13 +178,13 @@ They talk to the node's local API, which talks to the Deck (ref/10, §2.18).
 | `jk replay x.jktrace [--app a@versão] [--diff] [--rerun-models]` | replays (document 04, §7), from the state recorded by `jk record`; in a trace without state (`trace-dump`, `trace-from-history`), from `init`, and warns that the first ticks may diverge; `--rerun-models` is 1.1 |
 | `jk trace-dump --group fast --last 30m --out x.jktrace` | extracts from the group's continuous trace ring (exact in the inputs, but without the app state: replay starts from `init`) |
 | `jk trace-from-history <interval> --app <a> --out x.jktrace` | rebuilds an approximate trace from the historian |
-| `jk link status` | uplinks: connection, cursor lag, budget (M12), drops |
+| `jk link status` | uplinks: connection, cursor lag, budget (M12, 1.1), drops |
 
 ## 6. Shadow and ML
 
 | Command | Does | Version |
 |---|---|---|
-| `jk shadow start <app> <candidate>`, `jk shadow status`, `jk shadow diff`, `jk shadow promote`, `jk shadow abort` | shadow mode of apps (M16) | 1.0 |
+| `jk shadow start <app> <candidate>`, `jk shadow status`, `jk shadow diff`, `jk shadow promote`, `jk shadow abort` | shadow mode of apps (M16) | **1.1** (document 26, §5) |
 | `jk shadow … <model>` | shadow mode of models | **1.1** |
 | `jk model build <onnx\|dir> [--via burn\|ort] [--arch joker.tcn@2 --weights w.safetensors]` | creates the `.jkm`; with `--via burn` lists the missing operators | **1.1** |
 | `jk model inspect <m.jkm>` | signature, guard, available backends, lineage | **1.1** |
@@ -272,7 +272,7 @@ jk trace-from-history "03:00..03:30" --app peak_shaver --out incident.jktrace
 jk replay incident.jktrace --diff --app peak_shaver@1.4.3
 ```
 
-**A new version of an app, in shadow (1.0):**
+**A new version of an app, in shadow (1.1):**
 
 ```sh
 jk shadow start peak_shaver peak-shaver-1.5.0.wasm --node line2
