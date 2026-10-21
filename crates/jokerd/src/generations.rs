@@ -79,6 +79,9 @@ pub struct Generation {
     pub created_utc_ns: i64,
     /// Message given at creation.
     pub message: Option<String>,
+    /// Who created it.
+    #[serde(default)]
+    pub created_by: Option<String>,
     /// Why it failed or was rolled back.
     pub failure: Option<String>,
     /// The confirmation window of its last activation, in ns.
@@ -179,6 +182,7 @@ impl Store {
         manifest: &str,
         lock: &str,
         message: Option<String>,
+        created_by: Option<String>,
     ) -> io::Result<Generation> {
         let number = self.list()?.last().map_or(1, |g| g.number + 1);
         let dir = self.gen_dir(number);
@@ -191,6 +195,7 @@ impl Store {
             state: GenState::Pending,
             created_utc_ns: utc_now_ns(),
             message,
+            created_by,
             failure: None,
             confirm_window_ns: None,
         };

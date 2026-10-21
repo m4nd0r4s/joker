@@ -25,6 +25,8 @@ pub struct Start {
     pub retention: std::time::Duration,
     /// Stop after this many ticks (tests).
     pub max_ticks: Option<u64>,
+    /// UTC time at monotonic zero, to stamp decision records.
+    pub utc_origin_ns: i64,
 }
 
 /// A generation that is ticking.
@@ -59,6 +61,7 @@ impl Running {
             Arc::clone(&shared),
             log,
             start.generation,
+            start.utc_origin_ns,
         );
         let feeder = RingFeeder::spawn(&plan, Arc::clone(&shared), Arc::clone(&ring));
         let cycle = {

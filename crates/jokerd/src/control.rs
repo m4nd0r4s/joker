@@ -73,6 +73,8 @@ pub struct Config {
     pub max_window: Duration,
     /// Retention of the continuous trace.
     pub retention: Duration,
+    /// UTC time at the daemon's monotonic zero, to stamp log entries.
+    pub utc_origin_ns: i64,
 }
 
 impl Default for Config {
@@ -81,6 +83,7 @@ impl Default for Config {
             min_window: Duration::from_secs(30),
             max_window: Duration::from_secs(24 * 3600),
             retention: crate::trace_ring::DEFAULT_RETENTION,
+            utc_origin_ns: 0,
         }
     }
 }
@@ -252,6 +255,18 @@ impl Controller {
         message: Option<String>,
         dry_run: bool,
     ) -> Result<Generation, ControlError> {
+        self.propose_by(manifest, lock, message, dry_run, None)
+    }
+
+    /// [`Controller::propose`] on behalf of a principal.
+    pub fn propose_by(
+        &mut self,
+        manifest: &str,
+        lock: &str,
+        message: Option<String>,
+        dry_run: bool,
+        created_by: Option<String>,
+    ) -> Result<Generation, ControlError> {
         if self.confirming.is_some() {
             return Err(ControlError::new(
                 "J-E1608",
@@ -268,6 +283,7 @@ impl Controller {
                 state: GenState::Pending,
                 created_utc_ns: 0,
                 message,
+                created_by,
                 failure: None,
                 confirm_window_ns: None,
             });
@@ -280,7 +296,7 @@ impl Controller {
             }
         }
         self.store
-            .create(&hash, manifest, lock, message)
+            .create(&hash, manifest, lock, message, created_by)
             .map_err(ControlError::io)
     }
 
@@ -529,6 +545,7 @@ impl Controller {
                 inherit,
                 retention: self.config.retention,
                 max_ticks: None,
+                utc_origin_ns: self.config.utc_origin_ns,
             },
         )
         .map_err(|e| ControlError::new("J-E1000", 500, e.0))?;
@@ -560,6 +577,7 @@ impl Controller {
         m.insert("from".into(), from.map_or(Value::Null, |f| json!(f)));
         m.insert("reason".into(), reason.map_or(Value::Null, |r| json!(r)));
         m.insert("durability".into(), json!("immediate"));
+        m.insert("ts".into(), json!(crate::wire::timestamp(utc_now_ns())));
         let _ = lock(&self.log).append(m, true);
     }
 }

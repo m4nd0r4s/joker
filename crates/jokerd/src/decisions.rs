@@ -219,7 +219,13 @@ pub struct DecisionWriter {
 
 impl DecisionWriter {
     /// Starts draining `shared.decisions` into `log`.
-    pub fn spawn(plan: Arc<Plan>, shared: Arc<Shared>, log: SharedLog, generation: u64) -> Self {
+    pub fn spawn(
+        plan: Arc<Plan>,
+        shared: Arc<Shared>,
+        log: SharedLog,
+        generation: u64,
+        utc_origin_ns: i64,
+    ) -> Self {
         let stop = Arc::new(AtomicBool::new(false));
         let flag = Arc::clone(&stop);
         let handle = std::thread::Builder::new()
@@ -228,7 +234,14 @@ impl DecisionWriter {
                 let mut reported_drops = 0;
                 loop {
                     let stopping = flag.load(Ordering::Acquire);
-                    drain(&plan, &shared, &log, generation, &mut reported_drops)?;
+                    drain(
+                        &plan,
+                        &shared,
+                        &log,
+                        generation,
+                        utc_origin_ns,
+                        &mut reported_drops,
+                    )?;
                     if stopping {
                         return lock(&log).sync();
                     }
@@ -257,12 +270,20 @@ pub fn drain(
     shared: &Shared,
     log: &SharedLog,
     generation: u64,
+    utc_origin_ns: i64,
     reported_drops: &mut u64,
 ) -> io::Result<()> {
     let mut log = lock(log);
     while let Some(r) = shared.decisions.pop() {
         let immediate = r.durability == Durability::Immediate;
-        log.append(record_json(plan, generation, &r), immediate)?;
+        let mut entry = record_json(plan, generation, &r);
+        entry.insert(
+            "ts".into(),
+            json!(crate::wire::timestamp(
+                utc_origin_ns.saturating_add(r.at_mono_ns as i64)
+            )),
+        );
+        log.append(entry, immediate)?;
     }
     let dropped = shared.decisions_dropped.get();
     if dropped > *reported_drops {

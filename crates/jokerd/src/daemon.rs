@@ -18,6 +18,8 @@ pub struct Options {
     pub state_dir: PathBuf,
     /// Entry manifest to start with.
     pub entry: Option<PathBuf>,
+    /// The API socket.
+    pub socket: PathBuf,
 }
 
 impl Options {
@@ -25,24 +27,33 @@ impl Options {
     pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Self, String> {
         let mut state_dir = PathBuf::from("/var/lib/joker");
         let mut entry = None;
+        let mut socket = PathBuf::from(joker_api::server::DEFAULT_SOCKET);
         let mut args = args.into_iter();
         while let Some(arg) = args.next() {
             match arg.as_str() {
                 "--state-dir" => {
                     state_dir = args.next().ok_or("--state-dir needs a directory")?.into();
                 }
+                "--socket" => {
+                    socket = args.next().ok_or("--socket needs a path")?.into();
+                }
                 "--manifest" => {
                     entry = Some(args.next().ok_or("--manifest needs a file")?.into());
                 }
                 "--help" | "-h" => {
                     return Err(
-                        "usage: jokerd [--state-dir DIR] [--manifest joker.<env>.toml]".into(),
+                        "usage: jokerd [--state-dir DIR] [--socket PATH] [--manifest joker.toml]"
+                            .into(),
                     );
                 }
                 other => return Err(format!("unknown argument `{other}`")),
             }
         }
-        Ok(Self { state_dir, entry })
+        Ok(Self {
+            state_dir,
+            entry,
+            socket,
+        })
     }
 }
 
@@ -75,6 +86,7 @@ pub fn controller(
     tasks: Arc<dyn TaskProvider>,
     devices: Arc<dyn Devices>,
     clock: Monotonic,
+    utc_origin_ns: i64,
 ) -> Result<Controller, String> {
     let log = DecisionLog::open(&options.state_dir.join("decisions.jsonl"))
         .map_err(|e| format!("decision log: {e}"))?;
@@ -86,7 +98,10 @@ pub fn controller(
         tasks,
         devices,
         Box::new(move || Box::new(SystemPacer::new(clock, quality))),
-        Config::default(),
+        Config {
+            utc_origin_ns,
+            ..Config::default()
+        },
     )
     .map_err(|e| e.to_string())?;
     if c.boot().map_err(|e| e.to_string())?.is_none()
@@ -132,8 +147,29 @@ pub fn run(options: Options, tasks: Arc<dyn TaskProvider>) -> Result<(), String>
         clock,
         std::time::Duration::from_millis(10),
     ));
-    let controller: SharedController =
-        Arc::new(Mutex::new(controller(&options, tasks, devices, clock)?));
+    let utc_origin_ns = crate::wire::utc_now_ns().saturating_sub(clock.now_ns() as i64);
+    let controller: SharedController = Arc::new(Mutex::new(controller(
+        &options,
+        tasks,
+        devices,
+        clock,
+        utc_origin_ns,
+    )?));
+    let node = crate::api::Node::new(
+        Arc::clone(&controller),
+        clock,
+        utc_origin_ns,
+        &options.state_dir,
+    )
+    .map_err(|e| format!("traces: {e}"))?;
+    let (stop_api, api_stopped) = tokio::sync::oneshot::channel::<()>();
+    let socket = options.socket.clone();
+    let api = runtime.spawn(async move {
+        joker_api::server::serve_unix(&socket, Arc::new(node), async {
+            let _ = api_stopped.await;
+        })
+        .await
+    });
     let timer = Arc::clone(&controller);
     runtime.block_on(async move {
         let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
@@ -154,6 +190,10 @@ pub fn run(options: Options, tasks: Arc<dyn TaskProvider>) -> Result<(), String>
         }
         Ok::<(), String>(())
     })?;
+    let _ = stop_api.send(());
+    if let Ok(Err(e)) = runtime.block_on(api) {
+        eprintln!("jokerd: api: {e}");
+    }
     lock_controller(&controller).shutdown();
     Ok(())
 }
