@@ -11,6 +11,7 @@ pub mod board;
 pub mod check;
 pub mod codes;
 pub mod context;
+pub mod csv_import;
 pub mod decode;
 pub mod diag;
 pub mod effective;
