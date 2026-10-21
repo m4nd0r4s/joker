@@ -7,6 +7,7 @@
 //! [`Context`], and hash it.
 
 pub mod admission;
+pub mod board;
 pub mod check;
 pub mod codes;
 pub mod context;
