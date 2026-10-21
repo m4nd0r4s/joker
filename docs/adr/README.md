@@ -55,5 +55,6 @@
 | [0055](0055-supply-chain-and-dependency-policies.md) | Supply chain and dependency policies: CI checks, core allowlist, MCU licences, `cargo vet`, toolchains and the wasmtime LTS line |
 | [0056](0056-allocation-free-cycle-calls.md) | Allocation-free cycle calls: reserved buffers of `on-cycle`, the trapping allocator and `J-E0903` |
 | [0057](0057-the-cli-may-embed-the-daemon.md) | `jk` may embed the daemon; no library depends on it |
+| [0058](0058-action-step-interpreter-and-decision-log-entries.md) | The action step interpreter lives in `joker-hal`; a new decision-log record kind for actions |
 
 Changing a decision = writing a new ADR that replaces it, and updating the affected documents in the same set of commits.
