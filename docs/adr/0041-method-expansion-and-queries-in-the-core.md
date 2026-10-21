@@ -23,6 +23,6 @@ Document 17, §4.1, says that method records are expanded in step 5a of the tick
 
 ## Consequences
 
-- Recorded method calls replay exactly: the trace keeps the method records (document 16, §7, `n_métodos`) and the direct proposals apart, and the replay expands the calls again.
+- Recorded method calls replay exactly: the trace keeps the method records (document 16, §7, `n_methods`) and the direct proposals apart, and the replay expands the calls again.
 - A method never leaves an instance half-commanded because one input was `Bad`.
 - A query used by a 10 ms group and a 1 s group is evaluated at 10 ms, and the 1 s group reads it from its slot.
