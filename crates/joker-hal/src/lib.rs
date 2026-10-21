@@ -18,6 +18,7 @@ pub mod rt;
 pub mod spec;
 #[cfg(all(feature = "std", unix))]
 pub mod std_host;
+pub mod steps;
 #[cfg(feature = "testing")]
 pub mod testing;
 pub mod types;

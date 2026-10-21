@@ -1360,6 +1360,7 @@ dependencies = [
  "joker-core",
  "joker-hal",
  "joker-serial-sys",
+ "joker-units",
  "portable-atomic",
  "rustix",
  "tokio",
