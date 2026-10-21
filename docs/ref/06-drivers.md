@@ -442,7 +442,8 @@ Retries (`retries`) belong to the core, in the same poll period, if the remainin
 
 | Crate | `no_std` | Contents |
 |---|---|---|
-| `joker-hal` | yes (features `alloc`, `std`, `plan`) | types of §2, traits `Planner`, `Driver`, `RtPart`, transports, `Cx`, registry, `MaybeSend`, CBOR (`minicbor`) |
+| `joker-hal` | yes (features `alloc`, `std`, `plan`) | types of §2, traits `Planner`, `Driver`, `RtPart`, transports, `Cx`, registry, `MaybeSend`, deterministic CBOR (own subset codec, ADR 0047) |
+| `joker-serial-sys` | no | the modem lines of a serial port (`TIOCMBIS`/`TIOCMBIC`) for the Linux serial transport, the only `unsafe` it needs (ADR 0047) |
 | `joker-drivers/<name>` | depending on the driver (`micro = true` requires `no_std`) | one driver; exports a `DriverEntry` |
 | `jokerd` (module `drivers`) | no | the registry generated from the features (§3.8), the bus scheduler, the acquisition stage, the W and X hosts |
 | `joker-jdp` | no | JDP: protocol, rings, client (`jokerd` side) and server (Rust SDK of tier X, §5.10) |
@@ -645,7 +646,7 @@ pub struct DeviceInfo<'a> {
 pub struct Diagnostic<'a> { pub code: Code, pub point: Option<PointId>, pub message: &'a str }
 ```
 
-The names, the order of the fields and the numeric values are those of the WIT (§4) and of the CDDL. `Cbor<'a>` is a view over deterministic CBOR with `decode::<T>()` (via `minicbor`, without allocation when `T` only borrows). `Code` is a registry code validated at compile time (`code!("J0810")`).
+The names, the order of the fields and the numeric values are those of the WIT (§4) and of the CDDL. `Cbor<'a>` is a view over deterministic CBOR with `decode::<T>()` (through the own codec of the deterministic CBOR subset of §2.4.3, ADR 0047; reading never allocates when `T` only borrows). `Code` is a registry code validated at compile time (`code!("J0810")`).
 
 ### 3.3 Traits
 
@@ -778,7 +779,7 @@ pub trait RtPart: Send + 'static {
 ```
 
 - The implementation writes `async fn read(…)`; the compiler checks that the future is `Send` on Linux (the trait method declares `impl Future + MaybeSend`).
-- `OpenArgs` gives `request()`, `plan()` (`PlanView`: batches, `private` of each batch and of the plan) and `config::<T>(device)`, which decodes the CBOR of a device's configuration into a `serde`/`minicbor` type of the driver.
+- `OpenArgs` gives `request()`, `plan()` (`PlanView`: batches, `private` of each batch and of the plan) and `config::<T>(device)`, which decodes the CBOR of a device's configuration into a type of the driver.
 - `RawSink::push(sample)` copies the sample to the device's SPSC ring; it returns `Err(Full)` if the ring is full, and the drop is counted (ADR 0013). It never blocks.
 - `WriteAcks::set(index, status, ts_hw)`, `fill(status)`.
 - `ConnectOut::device(index, info, discovered)`.
@@ -815,7 +816,7 @@ impl Cx<'_> {
 /// The transport given by the host; the driver never opens one itself.
 pub enum Link {
     None,
-    Serial(SerialPort),   // embedded_io_async::{Read, Write} + read_frame(idle) + info()
+    Serial(SerialPort),   // boxed SerialIo; embedded_io_async::{Read, Write} + read_frame(idle) + info()
     Tcp(TcpEndpoint),     // connect(deadline) -> TcpStream (embedded_io_async)
     Udp(UdpSocket),       // send, send_to (allowed networks), recv
     I2c(I2cBus),          // embedded_hal_async::i2c::I2c, restricted to the instance's addresses
@@ -827,6 +828,10 @@ pub enum Link {
 ```
 
 The transports implement the traits of `embedded-io-async` and `embedded-hal-async` 1.0, and that is what makes the same driver portable: on Linux they are adapters over `tokio`, `tokio-serial`, `i2cdev`; on Joker Micro, over the Embassy HALs; in conformance, over doubles (§6). **Rule:** a tier N driver does not open sockets, device files or serial ports by itself; it uses the `Link`. A driver that needs something outside the `Link` (specific ioctls) uses `Link::Paths` and declares it in the `config` schema (`path`), so that `jk doctor` checks permissions and `jk check` knows there is no generic double for it.
+
+**`SerialIo`.** The `embedded-io-async` traits use `async fn` and are not object-safe, so a host cannot hide its port behind them. A serial line is therefore a `SerialPort` that boxes a `SerialIo`: a poll-based, object-safe trait that the host implements (tokio on Linux, a double in tests, Embassy later), and `SerialPort` implements `embedded_io_async::{Read, Write}` (0.7) on top of it, so drivers stay portable. The variant needs `alloc`. On Linux the port is opened in raw mode with `VMIN = 1, VTIME = 0`, and the modem lines (`dtr`, `rts`, ref/01 §5.6) go through `joker-serial-sys` (ADR 0047).
+
+**M0 subset (ADR 0047).** `joker-hal` implements in M0 the records of §3.2, the `Driver` trait of §3.3 with every method and its default, `Planner` (feature `plan`), `RtPart`, `RtCapable` and a minimal `RtIo`, the plan of §2.6 with its validation (`J0856`), and `Cx` with `now`, `deadline`, `sleep_until`, `report_link`, `progress`, `cancelled` and `log`. In M0, `Cx::log(level, message)` replaces the `Logger` accessor, and `Cx` also offers `until(at, future)` and `within(future)` (bounded by the call's deadline), so that a driver turns a silent equipment into `timeout` without a runtime of its own. Still M0 gaps, with their surface reserved as written here: `Cx::locked`, `Cx::spawn_blocking`, `Scanner`, `DriverEntry` and the registry by features (§3.8), the schema language of §2.3.1 (until then each driver's `plan` validates its keys, with the same codes), `AdcRead`, `CanFrames`, `RtChannel`, and the `Tcp`, `Udp`, `I2c`, `Spi`, `Can` and `Gpio` links.
 
 ### 3.5 Thread contract
 
