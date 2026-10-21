@@ -41,5 +41,6 @@
 | [0039](0039-atomic-groups-in-the-envelope.md) | Atomic groups in the envelope |
 | [0040](0040-alarm-lifecycle-and-unknown.md) | Alarm lifecycle: delays, `Unknown`, suppression and shelving |
 | [0041](0041-method-expansion-and-queries-in-the-core.md) | Method expansion, `own()` and queries in the core |
+| [0043](0043-causal-sets-and-method-records-in-the-trace.md) | Causal sets, and method records in the trace |
 
 Mudar uma decisão = escrever uma ADR nova que a substitui, e atualizar os documentos afetados no mesmo conjunto de commits.
