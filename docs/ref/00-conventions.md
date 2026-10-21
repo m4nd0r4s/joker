@@ -193,7 +193,7 @@ Document 02, §7.1, writes `Clamped(Range|Rate)`: these are values 2 and 3. WIT 
 
 | Thing | Text form | Binary form | Rule |
 |---|---|---|---|
-| signal | path (`pump1.run_cmd`) | `SignalId` `u32` | the `SignalId` is **dense and valid only within one generation**; it never leaves the node without the registry hash beside it |
+| signal | path (`pump1.run_cmd`) | `SignalId` `u32` | the `SignalId` is **dense and valid only within one generation**, in the byte order of the canonical paths; it never leaves the node without the registry hash beside it (ordering and hash encoding: ADR 0031) |
 | signal, stable across generations | — | *path-hash*: first 8 B of the SHA-256 of the canonical path | binds the external interface of an MCU to each generation (ref/08) |
 | public key | key: `x25519:<base64>`, `ed25519:<base64>`; key id: `ed25519:<32 hex>` (the first 16 B of the SHA-256 of the public key) | 32 B; id 16 B | ref/02 §2.5 |
 | arbiter level | `"<band>:<level>"` (`"optimizer:13"`); the level is absolute (1–16) and must be inside the band | `u8` 1–16 | bands of document 01, §6 |

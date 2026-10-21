@@ -133,7 +133,7 @@ A unit outside this catalog is `J0109`. Adding units is a patch change in `joker
 ```
 file := header [state_segment] segment*
 header := "JKTR" u16:version(=1) u32:flags
-          [32]u8:generation hash  [32]u8:registry hash (sorted list of SignalId, types, groups)
+          [32]u8:generation hash  [32]u8:registry hash (sorted list of SignalId, types, groups; ADR 0031)
           u64:monotonic epoch  i64:UTC epoch  u8:clock quality
 segment := u32:group  u32:n_ticks  u32:compressed_bytes  zstd(tick*)
 tick := u64:seq  u64:t_mono  i64:t_utc  u8:clock_q
