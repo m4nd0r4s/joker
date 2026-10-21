@@ -58,7 +58,11 @@ pub fn load(
     entry: &Path,
     tasks: &dyn TaskProvider,
 ) -> Result<Loaded, LoadError> {
-    let context = catalog::context(tasks);
+    let root = entry.parent().unwrap_or(Path::new("."));
+    let (context, catalog_errors) = catalog::context_for_project(tasks, root);
+    for e in &catalog_errors {
+        eprintln!("warning: {e}");
+    }
     let report = joker_manifest::check(fs, entry, &context);
     let (Some(manifest), Some(hash), false) = (
         report.manifest.clone(),

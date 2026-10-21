@@ -46,7 +46,11 @@ pub fn tasks(entry: &Entry) -> Result<Providers, crate::Failure> {
 /// Runs the manifest checks with the drivers this build knows and the
 /// interfaces of `tasks`.
 pub fn check(entry: &Entry, tasks: &dyn TaskProvider) -> Report {
-    let context = jokerd::catalog::context(tasks);
+    let root = entry.manifest.parent().unwrap_or(std::path::Path::new("."));
+    let (context, errors) = jokerd::catalog::context_for_project(tasks, root);
+    for e in &errors {
+        eprintln!("warning: {e}");
+    }
     joker_manifest::check(&OsFileSystem, &entry.manifest, &context)
 }
 

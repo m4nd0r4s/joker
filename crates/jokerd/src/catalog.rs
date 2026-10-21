@@ -133,6 +133,21 @@ pub fn context(tasks: &dyn TaskProvider) -> Context {
     }
 }
 
+/// [`context`], extended with every `.profile.toml`/`.board.toml` found
+/// under `root` (`profiles_from_dir`/`boards_from_dir`): a real project's
+/// own files win over the M0 bench catalogue on a name collision. Errors
+/// from broken files are returned alongside, for the caller to report;
+/// they do not stop the daemon from starting.
+pub fn context_for_project(tasks: &dyn TaskProvider, root: &Path) -> (Context, Vec<String>) {
+    let mut context = context(tasks);
+    let (profiles, mut errors) = profiles_from_dir(root);
+    context.profiles.extend(profiles);
+    let (boards, board_errors) = boards_from_dir(root);
+    context.boards.extend(boards);
+    errors.extend(board_errors);
+    (context, errors)
+}
+
 /// `profiles/<vendor>/<model>@<major>.profile.toml` under `root` (docs/15
 /// §2), parsed into the registry key the manifest's `profile = "…"` uses.
 /// A file that fails to parse is skipped and reported by name; it does not
@@ -264,6 +279,22 @@ mod tests {
         let (profiles, errors) = profiles_from_dir(dir.path());
         assert_eq!(errors.len(), 1);
         assert!(profiles.contains_key("acme/good@1"));
+    }
+
+    #[test]
+    fn context_for_project_merges_scanned_profiles_over_the_m0_catalogue() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("profiles/acme")).unwrap();
+        std::fs::write(
+            dir.path().join("profiles/acme/pcs@1.profile.toml"),
+            "[profile]\nname = \"acme/pcs\"\nversion = \"1.0.0\"\ndriver = \"modbus\"\n",
+        )
+        .unwrap();
+        let (context, errors) = context_for_project(&crate::native::NativeTasks, dir.path());
+        assert!(errors.is_empty(), "{errors:?}");
+        // The scanned profile is there, alongside the M0 bench one.
+        assert!(context.profiles.contains_key("acme/pcs@1"));
+        assert!(context.profiles.contains_key("local/bench-esp32@1"));
     }
 
     #[test]
