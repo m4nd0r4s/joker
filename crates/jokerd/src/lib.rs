@@ -14,6 +14,7 @@ pub mod manual;
 pub mod native;
 pub mod pacer;
 pub mod plan;
+pub mod replay;
 pub mod runner;
 pub mod shared;
 pub mod task;

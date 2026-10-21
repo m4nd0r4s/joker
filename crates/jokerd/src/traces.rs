@@ -7,7 +7,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
-use joker_core::trace::Header;
+use joker_core::trace::{
+    AppState, Header, SEGMENT_HEADER_LEN, STATE_MARKER, compress_segment, write_state_segment,
+};
 
 use crate::plan::Plan;
 use crate::shared::Shared;
@@ -69,6 +71,15 @@ pub struct TraceEntry {
     pub failure: Option<String>,
 }
 
+/// An encoded state segment and the first recorded tick of each group.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StateSegment {
+    /// The segment, as stored in the file.
+    pub bytes: Vec<u8>,
+    /// Group index to the index of its first recorded tick.
+    pub first: BTreeMap<u32, u64>,
+}
+
 /// What a cut needs from the running generation.
 #[derive(Clone)]
 pub struct Source {
@@ -107,17 +118,75 @@ impl Source {
         }
     }
 
-    /// Cuts `[from, to]` (monotonic) with an optional state segment.
-    pub fn cut(&self, from: u64, to: u64, state: Option<&[u8]>) -> Result<Vec<u8>, String> {
+    /// Cuts `[from, to]` (monotonic) with an optional state segment, each
+    /// group starting at its tick in `first`.
+    pub fn cut(&self, from: u64, to: u64, state: Option<&StateSegment>) -> Result<Vec<u8>, String> {
         lock(&self.ring).absorb(&self.shared, crate::shared::trace_buffer_len(&self.plan));
+        let empty = BTreeMap::new();
         lock(&self.ring).export(
             self.header(from),
             Cut {
                 from_mono_ns: from,
                 to_mono_ns: to,
             },
-            state,
+            state.map(|s| s.bytes.as_slice()),
+            state.map_or(&empty, |s| &s.first),
         )
+    }
+
+    /// Asks the cycle thread for the state of every app with cycle tasks,
+    /// waits up to `deadline` for the answers (100 ms per group, docs/16
+    /// §7), and encodes the state segment. Apps that did not answer in time
+    /// are `failed` (state 2) and replay from their `init`.
+    pub fn state_segment(&self, deadline: Duration) -> Result<StateSegment, String> {
+        let request = self.shared.request_export();
+        let mut wanted: Vec<(String, u32)> = Vec::new();
+        for (g, group) in self.plan.groups.iter().enumerate() {
+            for t in &group.tasks {
+                if !wanted.iter().any(|(a, gg)| *a == t.app && *gg == g as u32) {
+                    wanted.push((t.app.clone(), g as u32));
+                }
+            }
+        }
+        let start = std::time::Instant::now();
+        let mut got: Vec<crate::shared::StateExport> = Vec::new();
+        while got.len() < wanted.len() && start.elapsed() < deadline {
+            while let Some(e) = self.shared.exports.pop() {
+                if e.request == request {
+                    got.push(e);
+                }
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let mut first = BTreeMap::new();
+        let mut apps = Vec::new();
+        for (app, group) in &wanted {
+            match got.iter().find(|e| e.app == *app && e.group == *group) {
+                Some(e) => {
+                    first.insert(e.group, e.first_seq);
+                    apps.push((app.clone(), *group, e.first_seq, e.state, e.blob.clone()));
+                }
+                None => apps.push((app.clone(), *group, 0, 2, Vec::new())),
+            }
+        }
+        let views: Vec<AppState<'_>> = apps
+            .iter()
+            .map(|(name, group, first_seq, state, blob)| AppState {
+                name,
+                group: *group,
+                first_seq: *first_seq,
+                state: *state,
+                blob,
+            })
+            .collect();
+        let size: usize =
+            SEGMENT_HEADER_LEN + views.iter().map(AppState::encoded_len).sum::<usize>();
+        let mut buf = vec![0u8; size];
+        let raw = write_state_segment(&views, &mut buf).map_err(|e| format!("{e:?}"))?;
+        let payload = raw.get(SEGMENT_HEADER_LEN..).unwrap_or(&[]);
+        let bytes = compress_segment(STATE_MARKER, views.len() as u32, payload)
+            .map_err(|e| format!("{e:?}"))?;
+        Ok(StateSegment { bytes, first })
     }
 }
 
@@ -191,7 +260,7 @@ pub fn record(
     id: String,
     from_mono_ns: u64,
     duration: Duration,
-    state: Option<Vec<u8>>,
+    state: Option<StateSegment>,
 ) {
     let _ = std::thread::Builder::new()
         .name("svc/record".into())
@@ -199,7 +268,7 @@ pub fn record(
             std::thread::sleep(duration);
             let to =
                 from_mono_ns.saturating_add(u64::try_from(duration.as_nanos()).unwrap_or(u64::MAX));
-            match source.cut(from_mono_ns, to, state.as_deref()) {
+            match source.cut(from_mono_ns, to, state.as_ref()) {
                 Ok(bytes) => {
                     if let Err(e) = traces.finish(&id, &bytes, TraceState::Ready) {
                         traces.fail(&id, e.to_string());

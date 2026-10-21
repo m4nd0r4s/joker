@@ -20,6 +20,8 @@ pub const STAGING_CAPACITY: usize = 512;
 pub const DECISION_CAPACITY: usize = 16_384;
 /// Capacity of the write result queue (tickets of async writes).
 pub const RESULT_CAPACITY: usize = 4_096;
+/// State exports in flight (apps per request).
+pub const EXPORT_CAPACITY: usize = 256;
 /// Trace buffers in flight between the cycle thread and the trace ring.
 pub const TRACE_BUFFERS: usize = 512;
 
@@ -78,10 +80,30 @@ pub struct GroupStats {
 pub struct TraceChunk {
     /// Group index.
     pub group: u32,
+    /// Tick index.
+    pub index: u64,
     /// Latch instant of the tick, monotonic ns.
     pub at_mono_ns: u64,
     /// A segment holding exactly one tick (docs/16 §7).
     pub segment: Vec<u8>,
+}
+
+/// The state of one app's cycle instance, exported between two ticks for a
+/// recording (docs/16 §7, ref/04 §4.12).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StateExport {
+    /// Which request this answers.
+    pub request: u64,
+    /// The app.
+    pub app: String,
+    /// Group index of its cycle instance.
+    pub group: u32,
+    /// Index of the first tick after the export.
+    pub first_seq: u64,
+    /// 0 exported, 1 no `persist`, 2 failed.
+    pub state: u8,
+    /// The state blob.
+    pub blob: Vec<u8>,
 }
 
 /// The status of one output after its last commit, readable by the API.
@@ -181,6 +203,10 @@ pub struct Shared {
     pub output_ids: Box<[SignalId]>,
     /// Statistics per group.
     pub groups: Box<[GroupStats]>,
+    /// The latest state export request; 0 is none.
+    pub export_request: AtomicU64,
+    /// The answers to state export requests.
+    pub exports: ArrayQueue<StateExport>,
     /// Asks the cycle thread to stop after the current tick.
     pub stop: AtomicBool,
     /// The cycle thread has started ticking.
@@ -217,6 +243,8 @@ impl Shared {
             outputs: output_ids.iter().map(|_| OutputStatus::new()).collect(),
             output_ids: output_ids.into_boxed_slice(),
             groups: plan.groups.iter().map(|_| GroupStats::default()).collect(),
+            export_request: AtomicU64::new(0),
+            exports: ArrayQueue::new(EXPORT_CAPACITY),
             stop: AtomicBool::new(false),
             running: AtomicBool::new(false),
         }
@@ -231,6 +259,12 @@ impl Shared {
     /// Asks the cycle thread to stop.
     pub fn request_stop(&self) {
         self.stop.store(true, Ordering::Release);
+    }
+
+    /// Asks every group to export its apps' state after its next tick and
+    /// returns the request number.
+    pub fn request_export(&self) -> u64 {
+        self.export_request.fetch_add(1, Ordering::AcqRel) + 1
     }
 
     /// Whether a stop was requested.

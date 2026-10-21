@@ -101,6 +101,7 @@ fn the_ring_cuts_a_trace_file() {
                 to_mono_ns: last,
             },
             None,
+            &Default::default(),
         )
         .unwrap();
     let (decoded, rest) = Header::decode(&bytes).unwrap();

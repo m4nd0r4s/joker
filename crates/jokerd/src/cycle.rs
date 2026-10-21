@@ -102,6 +102,7 @@ impl CommitSink for Sink<'_> {
 
 struct GroupRun<'a> {
     index: usize,
+    exported: u64,
     period_ns: u64,
     next_index: u64,
     image: ProcessImage<'a>,
@@ -186,6 +187,7 @@ pub fn run(
         .map_err(|e| CycleError(format!("group `{}`: {e:?}", group.name)))?;
         groups.push(GroupRun {
             index,
+            exported: 0,
             period_ns: group.period_ns,
             next_index: 0,
             image,
@@ -218,6 +220,7 @@ pub fn run(
         }
         g.next_index = index + 1;
         tick(g, index, started, shared, &registry, &mut outputs);
+        export_state(g, plan, shared);
         let ended = pacer.now().mono_ns;
         stats
             .max_duration_ns
@@ -281,6 +284,46 @@ fn tick(
     let _ = g.image.end_tick();
 }
 
+/// Between two ticks of a group, answers a pending state export request
+/// with the state of each app's cycle instance (docs/16 §7). This is the
+/// one place the cycle thread allocates, as the export of a hot swap does
+/// (ref/04 §4.12), and only when a recording starts.
+fn export_state(g: &mut GroupRun<'_>, plan: &Plan, shared: &Shared) {
+    let request = shared.export_request.load(Ordering::Acquire);
+    if request == 0 || request == g.exported {
+        return;
+    }
+    g.exported = request;
+    let first_seq = g.next_index;
+    let mut done: Vec<&str> = Vec::new();
+    let names = plan.groups.get(g.index).map(|p| &p.tasks);
+    for (i, (_, task)) in g.tasks.iter_mut().enumerate() {
+        let Some(app) = names.and_then(|t| t.get(i)).map(|t| t.app.as_str()) else {
+            continue;
+        };
+        if done.contains(&app) {
+            continue;
+        }
+        done.push(app);
+        let (state, blob) = match task.export_state() {
+            Ok(Some(blob)) => (0, blob),
+            Ok(None) => (1, Vec::new()),
+            Err(_) => (2, Vec::new()),
+        };
+        let export = crate::shared::StateExport {
+            request,
+            app: app.to_owned(),
+            group: g.index as u32,
+            first_seq,
+            state,
+            blob,
+        };
+        if shared.exports.push(export).is_err() {
+            shared.trace_dropped.bump();
+        }
+    }
+}
+
 fn trace(g: &mut GroupRun<'_>, index: u64, at: joker_core::Instant, shared: &Shared) {
     let Some(mut buf) = shared.trace_free.pop() else {
         shared.trace_dropped.bump();
@@ -308,6 +351,7 @@ fn trace(g: &mut GroupRun<'_>, index: u64, at: joker_core::Instant, shared: &Sha
             buf.truncate(len);
             let chunk = TraceChunk {
                 group: g.index as u32,
+                index,
                 at_mono_ns: at.mono_ns,
                 segment: buf,
             };

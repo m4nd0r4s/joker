@@ -107,12 +107,14 @@ impl TraceRing {
     }
 
     /// Cuts a `.jktrace` file (docs/16 §7) with the ticks in `cut`, zstd
-    /// compressed, with an optional state segment already encoded.
+    /// compressed, with an optional state segment already encoded; a group
+    /// with an entry in `first` starts at that tick index.
     pub fn export(
         &self,
         header: Header,
         cut: Cut,
         state: Option<&[u8]>,
+        first: &std::collections::BTreeMap<u32, u64>,
     ) -> Result<Vec<u8>, String> {
         let mut header = header;
         header.flags &= !FLAG_UNCOMPRESSED;
@@ -129,6 +131,7 @@ impl TraceRing {
             let ticks: Vec<&TraceChunk> = ring
                 .iter()
                 .filter(|c| c.at_mono_ns >= cut.from_mono_ns && c.at_mono_ns <= cut.to_mono_ns)
+                .filter(|c| first.get(&(g as u32)).is_none_or(|f| c.index >= *f))
                 .collect();
             for batch in ticks.chunks(SEGMENT_TICKS) {
                 let mut payload = Vec::new();

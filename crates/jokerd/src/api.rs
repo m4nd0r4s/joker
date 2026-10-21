@@ -1184,7 +1184,18 @@ impl Backend for Node {
                 entry.ends_utc_ns =
                     Some(utc_now_ns().saturating_add(i64::try_from(d.as_nanos()).unwrap_or(0)));
                 self.traces.put(entry.clone());
-                record(Arc::clone(&self.traces), source, id.clone(), now, d, None);
+                let deadline = Duration::from_millis(100 * v.plan.groups.len().max(1) as u64);
+                let state = source
+                    .state_segment(deadline)
+                    .map_err(|e| Problem::new("J-E1000", 500, e))?;
+                record(
+                    Arc::clone(&self.traces),
+                    source,
+                    id.clone(),
+                    now,
+                    d,
+                    Some(state),
+                );
             }
             other => {
                 return Err(Problem::new(
