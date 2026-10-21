@@ -227,7 +227,7 @@ The subdivisions of these ranges, one per reference and without overlaps, are in
 |---|---|
 | exact formula of the RT admission (the 30% margin, what goes into the WCET) | **decided:** ADR 0048 |
 | `dt()` after an `overrun = skip` (nominal or actual period) | **decided:** ADR 0032 (whole periods since the previous executed tick) |
-| alarm transitions from `Unknown` | ADR in task 12 |
+| alarm transitions from `Unknown` | **decided:** ADR 0040 (`Unknown` is an overlay; the underlying state resumes) |
 | bus budget model beyond RTU | **decided:** ADR 0049 |
 | JSON schema of the manifest | **generated** from the types of `joker-manifest` (`ref/01` is the source; document 03 is the explanation) |
 
