@@ -38,6 +38,8 @@ pub use driver::{
 #[cfg(feature = "alloc")]
 pub use link::SerialPort;
 pub use link::{IoError, Link, SerialInfo, SerialIo};
+#[cfg(feature = "alloc")]
+pub use link::{TcpConnect, TcpEndpoint, TcpIo, TcpStream};
 pub use plan::{BatchHead, BatchSpec, PlanView};
 pub use rt::{RtCapable, RtIo, RtPart, RtStatus};
 pub use spec::{ActionSpec, BusKind, BusSpec, DeviceSpec, PlanRequest, PointSpec};

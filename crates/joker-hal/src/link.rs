@@ -206,6 +206,104 @@ impl embedded_io_async::Write for SerialPort {
     }
 }
 
+/// The host side of a TCP connection, once connected (ref/06 §3.4,
+/// `Link::Tcp`). Poll-based and object-safe for the same reason as
+/// [`SerialIo`]: `embedded-io-async`'s traits use `async fn` and cannot be
+/// boxed directly.
+#[cfg(feature = "alloc")]
+pub trait TcpIo: MaybeSend {
+    /// Reads available bytes; `Ok(0)` only for an empty `buf`.
+    fn poll_read(&mut self, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<Result<usize, IoError>>;
+    /// Writes some bytes.
+    fn poll_write(&mut self, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize, IoError>>;
+    /// Waits until every written byte left the socket.
+    fn poll_flush(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), IoError>>;
+}
+
+/// A connected TCP stream given by the host.
+#[cfg(feature = "alloc")]
+pub struct TcpStream(alloc::boxed::Box<dyn TcpIo>);
+
+#[cfg(feature = "alloc")]
+impl core::fmt::Debug for TcpStream {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_tuple("TcpStream").finish_non_exhaustive()
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl TcpStream {
+    /// Wraps the host's connected socket.
+    pub fn new(io: impl TcpIo + 'static) -> Self {
+        Self(alloc::boxed::Box::new(io))
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl embedded_io::ErrorType for TcpStream {
+    type Error = IoError;
+}
+
+#[cfg(feature = "alloc")]
+impl embedded_io_async::Read for TcpStream {
+    async fn read(&mut self, buf: &mut [u8]) -> Result<usize, IoError> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        let io = &mut self.0;
+        poll_fn(|cx| io.poll_read(cx, buf)).await
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl embedded_io_async::Write for TcpStream {
+    async fn write(&mut self, buf: &[u8]) -> Result<usize, IoError> {
+        let io = &mut self.0;
+        poll_fn(|cx| io.poll_write(cx, buf)).await
+    }
+
+    async fn flush(&mut self) -> Result<(), IoError> {
+        let io = &mut self.0;
+        poll_fn(|cx| io.poll_flush(cx)).await
+    }
+}
+
+/// Connects (or reconnects) a TCP endpoint (ref/06 §3.4, `Link::Tcp`): the
+/// driver never opens the socket itself, it asks the host for one. The
+/// host decides the address (from the manifest's `address`/`[buses]`) and
+/// any OS-level connect timeout; the driver bounds the wait with its own
+/// `Cx::within`, the same way `modbus-rtu` bounds an exchange.
+#[cfg(feature = "alloc")]
+pub trait TcpConnect: MaybeSend {
+    /// Connects (or reconnects after a disconnect).
+    fn poll_connect(&mut self, cx: &mut Context<'_>) -> Poll<Result<TcpStream, IoError>>;
+}
+
+/// A TCP endpoint given by the host.
+#[cfg(feature = "alloc")]
+pub struct TcpEndpoint(alloc::boxed::Box<dyn TcpConnect>);
+
+#[cfg(feature = "alloc")]
+impl core::fmt::Debug for TcpEndpoint {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_tuple("TcpEndpoint").finish_non_exhaustive()
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl TcpEndpoint {
+    /// Wraps the host's connector.
+    pub fn new(connector: impl TcpConnect + 'static) -> Self {
+        Self(alloc::boxed::Box::new(connector))
+    }
+
+    /// Connects, or reconnects after a disconnect.
+    pub async fn connect(&mut self) -> Result<TcpStream, IoError> {
+        let connector = &mut self.0;
+        poll_fn(|cx| connector.poll_connect(cx)).await
+    }
+}
+
 #[cfg(feature = "std")]
 pub use paths::DevicePaths;
 
@@ -286,6 +384,9 @@ pub enum Link {
     /// A serial line.
     #[cfg(feature = "alloc")]
     Serial(SerialPort),
+    /// A TCP endpoint.
+    #[cfg(feature = "alloc")]
+    Tcp(TcpEndpoint),
     /// Device paths granted by the manifest (tier N only).
     #[cfg(feature = "std")]
     Paths(DevicePaths),
@@ -324,5 +425,110 @@ mod tests {
         assert!(paths.write("class/leds/ACT/new", "1").is_err());
         assert!(paths.exists("class/leds/ACT/brightness"));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+}
+
+#[cfg(all(test, feature = "testing"))]
+#[allow(
+    clippy::unwrap_used,
+    reason = "test doubles fail the test on a broken fixture"
+)]
+mod tcp_tests {
+    use alloc::collections::VecDeque;
+    use alloc::sync::Arc;
+    use alloc::vec::Vec;
+
+    use embedded_io_async::{Read, Write};
+
+    use super::*;
+    use crate::testing::VirtualHost;
+
+    /// An always-ready in-memory socket: reads come from a canned buffer,
+    /// writes are captured.
+    #[derive(Clone, Default)]
+    struct Fake {
+        inbox: Arc<std::sync::Mutex<VecDeque<u8>>>,
+        outbox: Arc<std::sync::Mutex<Vec<u8>>>,
+    }
+
+    impl TcpIo for Fake {
+        fn poll_read(
+            &mut self,
+            _cx: &mut Context<'_>,
+            buf: &mut [u8],
+        ) -> Poll<Result<usize, IoError>> {
+            let mut inbox = self.inbox.lock().unwrap();
+            if inbox.is_empty() {
+                return Poll::Ready(Err(IoError::Disconnected));
+            }
+            let mut n = 0;
+            while n < buf.len() {
+                let Some(b) = inbox.pop_front() else { break };
+                buf[n] = b;
+                n += 1;
+            }
+            Poll::Ready(Ok(n))
+        }
+
+        fn poll_write(
+            &mut self,
+            _cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<Result<usize, IoError>> {
+            self.outbox.lock().unwrap().extend_from_slice(buf);
+            Poll::Ready(Ok(buf.len()))
+        }
+
+        fn poll_flush(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), IoError>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    struct FakeConnector {
+        stream: Option<Fake>,
+        fail_first: bool,
+    }
+
+    impl TcpConnect for FakeConnector {
+        fn poll_connect(&mut self, _cx: &mut Context<'_>) -> Poll<Result<TcpStream, IoError>> {
+            if self.fail_first {
+                self.fail_first = false;
+                return Poll::Ready(Err(IoError::Disconnected));
+            }
+            Poll::Ready(Ok(TcpStream::new(self.stream.clone().unwrap_or_default())))
+        }
+    }
+
+    #[test]
+    fn connect_then_write_and_read() {
+        let host = Arc::new(VirtualHost::new(0));
+        let inbox = Arc::new(std::sync::Mutex::new(VecDeque::from(alloc::vec![
+            b'o', b'k'
+        ])));
+        let fake = Fake {
+            inbox,
+            outbox: Arc::default(),
+        };
+        let mut endpoint = TcpEndpoint::new(FakeConnector {
+            stream: Some(fake.clone()),
+            fail_first: false,
+        });
+        let mut stream = host.run(endpoint.connect()).unwrap().unwrap();
+        host.run(stream.write_all(b"hi")).unwrap().unwrap();
+        assert_eq!(*fake.outbox.lock().unwrap(), b"hi");
+        let mut buf = [0u8; 2];
+        host.run(stream.read_exact(&mut buf)).unwrap().unwrap();
+        assert_eq!(&buf, b"ok");
+    }
+
+    #[test]
+    fn a_failed_connect_is_reported() {
+        let host = Arc::new(VirtualHost::new(0));
+        let mut endpoint = TcpEndpoint::new(FakeConnector {
+            stream: None,
+            fail_first: true,
+        });
+        let result = host.run(endpoint.connect()).unwrap();
+        assert_eq!(result.err(), Some(IoError::Disconnected));
     }
 }
