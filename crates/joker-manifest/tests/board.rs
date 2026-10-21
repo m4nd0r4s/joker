@@ -115,6 +115,30 @@ fn cases() -> Vec<Case> {
 }
 
 #[test]
+fn new_from_renames_and_marks_tier_review() {
+    let source = "schema = 1\n\n[board]\nname    = \"rpi5\"\nversion = \"1.0.0\"\narch    = \"aarch64\"\ntier    = \"1\"\ncpus    = 4\nmemory  = \"8 GiB\"\n\n[gpio]\nchip = \"pinctrl-rp1\"\n";
+    let out = joker_manifest::board::new_from(source, "rpi-zero-w");
+    assert!(out.contains("name    = \"rpi-zero-w\""));
+    assert!(out.contains("version = \"1.0.0\""));
+    assert!(out.contains("tier    = \"dev\""), "{out}");
+    assert!(out.contains("# REVIEW"), "{out}");
+    assert!(out.contains("arch    = \"aarch64\""), "untouched keys stay");
+    assert!(
+        out.contains("[gpio]\nchip = \"pinctrl-rp1\""),
+        "other sections stay"
+    );
+}
+
+#[test]
+fn new_from_adds_a_tier_key_when_the_source_has_none() {
+    let source = "[board]\nname = \"x\"\nversion = \"2.0.0\"\n";
+    let out = joker_manifest::board::new_from(source, "y");
+    assert!(out.contains("name    = \"y\""), "{out}");
+    assert!(out.contains("tier"));
+    assert!(out.contains("# REVIEW"));
+}
+
+#[test]
 fn every_case_reports_its_code() {
     for (code, text, what) in cases() {
         let report = parse(Path::new("x.board.toml"), text);
