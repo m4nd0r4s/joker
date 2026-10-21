@@ -34,6 +34,10 @@ pub const CORE_EDGES: &[(&str, &[&str])] = &[
 /// The daemon, on which no other crate depends (document 13 §1).
 pub const DAEMON: &str = "jokerd";
 
+/// The crates that may depend on the daemon: the `jk` binary, which embeds
+/// the runtime (ADR 0057). No crate may depend on them.
+pub const DAEMON_USERS: &[&str] = &["joker-cli"];
+
 /// The external crates the core may depend on (policy §3).
 pub const CORE_ALLOWLIST: &[&str] = &[
     "heapless",

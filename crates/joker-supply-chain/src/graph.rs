@@ -4,8 +4,8 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::metadata::{DepKind, Dependency, Package, Workspace};
 use crate::policy::{
-    CORE, CORE_ALLOWLIST, CORE_EDGES, DAEMON, MCU_LICENCES, NO_STD, NO_STD_EXTERNAL, STD_FEATURE,
-    TEST_CFGS,
+    CORE, CORE_ALLOWLIST, CORE_EDGES, DAEMON, DAEMON_USERS, MCU_LICENCES, NO_STD, NO_STD_EXTERNAL,
+    STD_FEATURE, TEST_CFGS,
 };
 use crate::{Rule, Violation, offers_one_of};
 
@@ -65,12 +65,20 @@ fn daemon(ws: &Workspace, out: &mut Vec<Violation>) {
         if package.name == DAEMON {
             continue;
         }
-        for dep in package.dependencies.iter().filter(|d| d.name == DAEMON) {
-            out.push(Violation::new(
-                Rule::Daemon,
-                &package.name,
-                format!("has a {:?} dependency on {DAEMON}", dep.kind),
-            ));
+        let may_use_daemon = DAEMON_USERS.contains(&package.name.as_str());
+        for dep in package.dependencies.iter() {
+            let forbidden = if dep.name == DAEMON {
+                !may_use_daemon
+            } else {
+                DAEMON_USERS.contains(&dep.name.as_str())
+            };
+            if forbidden {
+                out.push(Violation::new(
+                    Rule::Daemon,
+                    &package.name,
+                    format!("has a {:?} dependency on {}", dep.kind, dep.name),
+                ));
+            }
         }
     }
 }
@@ -422,6 +430,16 @@ mod tests {
                 vec![dep("jokerd", Some("dev"), true)],
                 json!({}),
             )
+            .build();
+        assert_eq!(rules(&ws), vec![(Rule::Daemon, "joker-api".into())]);
+    }
+
+    #[test]
+    fn only_the_cli_embeds_the_daemon_and_nothing_depends_on_the_cli() {
+        let ws = base()
+            .member("jokerd", vec![dep("joker-core", None, true)], json!({}))
+            .member("joker-cli", vec![dep("jokerd", None, true)], json!({}))
+            .member("joker-api", vec![dep("joker-cli", None, true)], json!({}))
             .build();
         assert_eq!(rules(&ws), vec![(Rule::Daemon, "joker-api".into())]);
     }

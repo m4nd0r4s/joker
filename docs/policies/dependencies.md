@@ -11,7 +11,7 @@ Every row is a blocking job on every commit (document 13 §5).
 | Rule | Source | Checked by |
 |---|---|---|
 | `joker-core` depends, among the workspace crates, only on `joker-units` and `joker-expr`; `joker-expr` only on `joker-units`; `joker-units` on none | 13 §1 | `joker-supply-chain`, `graph` test |
-| no workspace crate depends on `jokerd`, with any kind of dependency | 13 §1 | `graph` test |
+| no workspace crate depends on `jokerd`, with any kind of dependency, except `joker-cli`, the `jk` binary, which embeds the runtime (ADR 0057); no crate depends on `joker-cli` | 13 §1 | `graph` test |
 | the `no_std` crates of 13 §1 depend only on `no_std` crates of the workspace and on the `no_std` crates of §3, without their `std` feature; a dependency that only the crate's own `std` feature turns on is outside the rule | ADR 0020, 13 §1 | `graph` test, and the `no_std` cross-build |
 | the core crates (`joker-units`, `joker-expr`, `joker-core`, `joker-link-proto`, `joker-agent-proto`) depend only on the core allowlist of §3 | ref/08 §2.11, 25 §5 | `graph` test |
 | every external crate reachable from the `no_std` crates without `std` is available under MIT or Apache-2.0 (§8) | 26 E9 | `graph` test |

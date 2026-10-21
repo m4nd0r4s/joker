@@ -36,7 +36,8 @@ impl std::error::Error for Error {}
 pub enum Rule {
     /// A workspace crate depends on a workspace crate that document 13 §1 does not allow.
     WorkspaceEdge,
-    /// A crate depends on `jokerd`.
+    /// A crate other than the CLI depends on `jokerd`, or a crate depends
+    /// on the CLI (ADR 0057).
     Daemon,
     /// A `no_std` crate depends on a crate that is not `no_std`, or turns on its `std`.
     NoStd,
