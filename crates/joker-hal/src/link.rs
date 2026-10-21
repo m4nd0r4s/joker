@@ -304,6 +304,47 @@ impl TcpEndpoint {
     }
 }
 
+/// The host side of a set of digital lines (ref/06 §3.4, `Link::Gpio`,
+/// ADR 0047): a tier N driver never opens `/dev/gpiochipN` itself, it asks
+/// the host for the lines the manifest granted. Synchronous: unlike a
+/// socket or a serial port, a local chardev ioctl does not block.
+#[cfg(feature = "alloc")]
+pub trait GpioLines: MaybeSend {
+    /// The level of `line`.
+    fn get(&mut self, line: u32) -> Result<bool, IoError>;
+    /// Drives `line` to `value` (outputs only).
+    fn set(&mut self, line: u32, value: bool) -> Result<(), IoError>;
+}
+
+/// A set of digital lines given by the host.
+#[cfg(feature = "alloc")]
+pub struct GpioChip(alloc::boxed::Box<dyn GpioLines>);
+
+#[cfg(feature = "alloc")]
+impl core::fmt::Debug for GpioChip {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_tuple("GpioChip").finish_non_exhaustive()
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl GpioChip {
+    /// Wraps the host's lines.
+    pub fn new(lines: impl GpioLines + 'static) -> Self {
+        Self(alloc::boxed::Box::new(lines))
+    }
+
+    /// The level of `line`.
+    pub fn get(&mut self, line: u32) -> Result<bool, IoError> {
+        self.0.get(line)
+    }
+
+    /// Drives `line` to `value`.
+    pub fn set(&mut self, line: u32, value: bool) -> Result<(), IoError> {
+        self.0.set(line, value)
+    }
+}
+
 #[cfg(feature = "std")]
 pub use paths::DevicePaths;
 
@@ -387,6 +428,9 @@ pub enum Link {
     /// A TCP endpoint.
     #[cfg(feature = "alloc")]
     Tcp(TcpEndpoint),
+    /// A set of digital lines (ADR 0047).
+    #[cfg(feature = "alloc")]
+    Gpio(GpioChip),
     /// Device paths granted by the manifest (tier N only).
     #[cfg(feature = "std")]
     Paths(DevicePaths),
@@ -530,5 +574,61 @@ mod tcp_tests {
         });
         let result = host.run(endpoint.connect()).unwrap();
         assert_eq!(result.err(), Some(IoError::Disconnected));
+    }
+}
+
+#[cfg(all(test, feature = "testing"))]
+#[allow(
+    clippy::unwrap_used,
+    reason = "test doubles fail the test on a broken fixture"
+)]
+mod gpio_tests {
+    use alloc::collections::BTreeMap;
+    use alloc::sync::Arc;
+
+    use super::*;
+
+    /// Lines held in memory: `get` returns whatever was last `set`,
+    /// defaulting to `false`.
+    #[derive(Clone, Default)]
+    struct Fake {
+        levels: Arc<std::sync::Mutex<BTreeMap<u32, bool>>>,
+        deny: Option<u32>,
+    }
+
+    impl GpioLines for Fake {
+        fn get(&mut self, line: u32) -> Result<bool, IoError> {
+            if self.deny == Some(line) {
+                return Err(IoError::Denied);
+            }
+            Ok(*self.levels.lock().unwrap().get(&line).unwrap_or(&false))
+        }
+
+        fn set(&mut self, line: u32, value: bool) -> Result<(), IoError> {
+            if self.deny == Some(line) {
+                return Err(IoError::Denied);
+            }
+            self.levels.lock().unwrap().insert(line, value);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn set_then_get_reads_back_the_same_line() {
+        let mut chip = GpioChip::new(Fake::default());
+        assert!(!chip.get(17).unwrap());
+        chip.set(17, true).unwrap();
+        assert!(chip.get(17).unwrap());
+        assert!(!chip.get(22).unwrap(), "a different line is unaffected");
+    }
+
+    #[test]
+    fn a_denied_line_is_reported() {
+        let mut chip = GpioChip::new(Fake {
+            deny: Some(5),
+            ..Fake::default()
+        });
+        assert_eq!(chip.get(5).err(), Some(IoError::Denied));
+        assert_eq!(chip.set(5, true).err(), Some(IoError::Denied));
     }
 }

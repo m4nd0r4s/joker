@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "crates/joker-drivers/sim", "crates/joker-drivers/sysfs", "crates/joker-drivers/modbus", "crates/joker-host/fixtures/*", "crates/joker-sdk/fixtures/*", "examples/bench/apps/light", "xtask", "xtask/case-runner", "xtask/qemu-conformance", "xtask/qemu-sys"]
+members = ["crates/*", "crates/joker-drivers/sim", "crates/joker-drivers/sysfs", "crates/joker-drivers/modbus", "crates/joker-drivers/gpio", "crates/joker-host/fixtures/*", "crates/joker-sdk/fixtures/*", "examples/bench/apps/light", "xtask", "xtask/case-runner", "xtask/qemu-conformance", "xtask/qemu-sys"]
 exclude = ["crates/joker-drivers", "tools/bench/esp32-modbus"]
 
 [workspace.package]

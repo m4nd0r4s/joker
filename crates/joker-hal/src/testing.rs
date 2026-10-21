@@ -11,7 +11,7 @@ use core::pin::pin;
 use core::task::{Context, Poll, Waker};
 
 use std::boxed::Box;
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::string::String;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -34,7 +34,7 @@ use crate::cx::{Cx, Host, LogLevel};
 use crate::driver::{
     AckSlot, CommittedWrite, ConnectOut, Driver, OpenArgs, RawSink, ReadBatch, WriteAck, WriteAcks,
 };
-use crate::link::{IoError, Link, SerialInfo, SerialIo};
+use crate::link::{GpioLines, IoError, Link, SerialInfo, SerialIo};
 use crate::plan::PlanView;
 use crate::spec::PlanRequest;
 use crate::types::{BatchId, BatchKind, DriverError, MonoNs};
@@ -286,6 +286,81 @@ impl SerialIo for MemorySerial {
 
     fn info(&self) -> SerialInfo {
         self.info
+    }
+}
+
+/// An in-memory set of digital lines, with a shared [`GpioHandle`] a test
+/// uses to inspect or drive the far end (an external signal, a denied
+/// line).
+pub struct MemoryGpio {
+    state: Arc<Mutex<GpioState>>,
+}
+
+#[derive(Debug, Default)]
+struct GpioState {
+    levels: BTreeMap<u32, bool>,
+    denied: Vec<u32>,
+}
+
+impl core::fmt::Debug for MemoryGpio {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("MemoryGpio").finish_non_exhaustive()
+    }
+}
+
+impl MemoryGpio {
+    /// An empty set of lines (every line reads `false` until set).
+    pub fn new() -> (Self, GpioHandle) {
+        let state = Arc::new(Mutex::new(GpioState::default()));
+        (
+            Self {
+                state: state.clone(),
+            },
+            GpioHandle { state },
+        )
+    }
+}
+
+impl GpioLines for MemoryGpio {
+    fn get(&mut self, line: u32) -> Result<bool, IoError> {
+        let s = lock(&self.state);
+        if s.denied.contains(&line) {
+            return Err(IoError::Denied);
+        }
+        Ok(*s.levels.get(&line).unwrap_or(&false))
+    }
+
+    fn set(&mut self, line: u32, value: bool) -> Result<(), IoError> {
+        let mut s = lock(&self.state);
+        if s.denied.contains(&line) {
+            return Err(IoError::Denied);
+        }
+        s.levels.insert(line, value);
+        Ok(())
+    }
+}
+
+/// The far end of a [`MemoryGpio`]: what a test uses to drive an input
+/// line or deny access to one, and to observe what the driver wrote.
+#[derive(Clone, Debug)]
+pub struct GpioHandle {
+    state: Arc<Mutex<GpioState>>,
+}
+
+impl GpioHandle {
+    /// Sets `line`'s level, as an external signal would.
+    pub fn drive(&self, line: u32, value: bool) {
+        lock(&self.state).levels.insert(line, value);
+    }
+
+    /// The last level of `line` (`false` if never touched).
+    pub fn level(&self, line: u32) -> bool {
+        *lock(&self.state).levels.get(&line).unwrap_or(&false)
+    }
+
+    /// Makes `line` fail every `get`/`set` with [`IoError::Denied`].
+    pub fn deny(&self, line: u32) {
+        lock(&self.state).denied.push(line);
     }
 }
 

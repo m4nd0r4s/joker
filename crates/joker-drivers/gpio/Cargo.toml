@@ -1,0 +1,19 @@
+[package]
+name = "joker-driver-gpio"
+description = "Joker gpio driver: digital lines of a Linux gpiochip (chardev v2)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+joker-hal = { workspace = true, features = ["std", "plan"] }
+
+[dev-dependencies]
+joker-hal = { workspace = true, features = ["testing"] }
+joker-core.workspace = true
+
+[lints]
+workspace = true
