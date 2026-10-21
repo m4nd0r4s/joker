@@ -1,0 +1,9 @@
+extends = ["joker.rpi.toml"]
+
+[target]
+board = "rpi3b-plus@1"
+
+[resources]
+rt = { cpus = [3] }
+io = { cpus = [2] }
+bg = { cpus = [0, 1] }

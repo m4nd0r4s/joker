@@ -1,0 +1,7 @@
+extends = ["joker.toml"]
+
+[devices.pi]
+driver = "sim"
+
+[devices.pi.signals]
+act_led = { type = "bool", direction = "output" }
