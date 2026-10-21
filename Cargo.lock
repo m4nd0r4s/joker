@@ -1322,6 +1322,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "joker-driver-i2c"
+version = "0.0.0"
+dependencies = [
+ "joker-core",
+ "joker-hal",
+]
+
+[[package]]
 name = "joker-driver-modbus"
 version = "0.0.0"
 dependencies = [
