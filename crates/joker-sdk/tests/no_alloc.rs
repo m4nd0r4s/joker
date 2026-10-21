@@ -31,7 +31,8 @@ static ALLOCATOR: AllocDisabler = AllocDisabler;
 
 const TICKS: u32 = 1_000;
 
-/// Allocator calls that wasmtime 49.0.4 itself makes in one synchronous call
+/// Allocator calls that wasmtime 48.0.7 (the LTS line of ADR 0055, and also
+/// 49 and 50) itself makes in one synchronous call
 /// into a component when the component model async is enabled: it creates
 /// and frees a task, a thread, a waitable set and a hash set of its
 /// concurrency state (`enter_guest_sync_call`, `exit_guest_sync_call`). No
