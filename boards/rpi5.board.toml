@@ -1,0 +1,26 @@
+schema = 1
+
+[board]
+name    = "rpi5"
+version = "1.0.0"
+arch    = "aarch64"
+tier    = "1"
+cpus    = 4
+memory  = "8 GiB"
+storage = "ssd"
+kernel  = "preempt_rt"
+recommended  = { rt = [3], io = [2], ml = [1, 2], bg = [0] }
+boot_cmdline = ["isolcpus=3", "nohz_full=3", "rcu_nocbs=3"]
+
+[watchdog]
+device  = "/dev/watchdog0"
+timeout = "15s"
+
+[gpio]
+chip = "pinctrl-rp1"
+
+[i2c]
+"i2c1" = "/dev/i2c-1"
+
+[serial]
+"uart0" = "/dev/ttyAMA0"
