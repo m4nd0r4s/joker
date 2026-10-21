@@ -266,6 +266,11 @@ impl Node {
             s["generation"]["gen"],
             s["generation"]["state"].as_str().unwrap_or("?")
         );
+        println!(
+            "clock {} · {}",
+            s["clock"]["quality"].as_str().unwrap_or("?"),
+            s["clock"]["utc"].as_str().unwrap_or("?")
+        );
         for g in s["groups"].as_array().cloned().unwrap_or_default() {
             println!(
                 "group {} {} · ticks {} · overruns {}",
