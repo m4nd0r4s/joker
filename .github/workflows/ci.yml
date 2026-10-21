@@ -51,19 +51,63 @@ jobs:
           name: conformance-${{ matrix.arch }}
           path: target/conformance/
 
+  qemu:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: thumbv8m
+            target: thumbv8m.main-none-eabihf
+            qemu: qemu-system-arm
+          - arch: riscv32
+            target: riscv32imac-unknown-none-elf
+            qemu: qemu-system-misc
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ${{ matrix.qemu }}
+      - name: conformance in QEMU, no allocator linked (docs/13 §5, docs/11 Phase 0 gates 2-3)
+        run: >-
+          cargo run --package xtask -- qemu --target ${{ matrix.target }}
+          --known-failures xtask/conformance-known-failures.toml
+          --json target/conformance/report.json
+          --markdown target/conformance/report.md
+      - name: lint the firmware for its target
+        run: >-
+          JOKER_CONFORMANCE_CASES="$PWD/target/qemu-conformance/cases.rs"
+          cargo clippy --target ${{ matrix.target }}
+          -p joker-qemu-conformance -p joker-qemu-sys -p joker-case-runner -- -D warnings
+      - if: always()
+        run: cat target/conformance/report.md >> "$GITHUB_STEP_SUMMARY" || true
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conformance-${{ matrix.arch }}
+          path: target/conformance/
+
   determinism:
-    needs: conformance
+    needs: [conformance, qemu]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@v4
         with:
           pattern: conformance-*
-      - name: same result sequence on x86_64 and aarch64 (docs/16 §7, ADR 0020)
+      - name: same result sequence on x86_64, aarch64, Cortex-M33 and RISC-V (docs/16 §7, docs/11 Phase 0 gate 2)
         run: |
           digests() {
             jq -S '[.suites[].cases[] | {id, status, sequence_digest}]' "$1/report.json"
           }
-          diff <(digests conformance-x86_64) <(digests conformance-aarch64)
+          status=0
+          for arch in aarch64 thumbv8m riscv32; do
+            if diff <(digests conformance-x86_64) <(digests "conformance-$arch"); then
+              echo "x86_64 = $arch"
+            else
+              echo "::error title=Determinism::$arch differs from x86_64"
+              status=1
+            fi
+          done
+          exit "$status"
 
   xtensa:
     runs-on: ubuntu-24.04
