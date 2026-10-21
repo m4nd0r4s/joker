@@ -16,10 +16,47 @@ use crate::value::Sample;
 pub struct WriterId(pub u32);
 
 impl WriterId {
+    /// The bit that marks a remote writer of an MCU (docs/16 §7).
+    pub const REMOTE: u32 = 0x8000_0000;
+
     /// The id as an index into dense tables.
     pub const fn index(self) -> usize {
         self.0 as usize
     }
+
+    /// A remote writer: a (link, level) pair of an MCU (docs/16 A12).
+    pub const fn remote(slot: u32) -> Self {
+        Self(Self::REMOTE | slot)
+    }
+
+    /// True for a remote writer.
+    pub const fn is_remote(self) -> bool {
+        self.0 & Self::REMOTE != 0
+    }
+
+    /// The slot of a remote writer, as an index into the remote table.
+    pub const fn remote_slot(self) -> usize {
+        (self.0 & !Self::REMOTE) as usize
+    }
+}
+
+/// Why a proposal was staged, beyond the writer's own write (docs/16 A13,
+/// ref/09 §5.6). Only a relinquish carries something other than
+/// [`Intent::Write`].
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum Intent {
+    /// The writer's own write or relinquish.
+    Write,
+    /// The occupant's level freed so that `by` can take it over.
+    Takeover {
+        /// The principal taking the level.
+        by: WriterId,
+    },
+    /// The occupant's level freed by `by` with `force`.
+    ForcedRelease {
+        /// The principal releasing it.
+        by: WriterId,
+    },
 }
 
 /// Where a proposal was staged from (docs/01 §4).
@@ -30,6 +67,10 @@ pub enum Source {
     /// Written by a cycle task in step 4.
     Cycle,
 }
+
+/// Task number of a proposal or method record that no cycle task staged
+/// (async, API, bridges).
+pub const NO_TASK: u16 = u16::MAX;
 
 /// The proposal flag that relinquishes the writer's level (ref/04 §3.3,
 /// `WRITE` flag bit 0); the value is then 0 and ignored.
@@ -53,6 +94,11 @@ pub struct Proposal {
     /// TTL of a manual write in ns, which is its lease (ref/09 §5.6); 0 uses
     /// the writer's declared TTL. Ignored for other writers.
     pub ttl_ns: u64,
+    /// Takeover or forced release of another writer's level.
+    pub intent: Intent,
+    /// The cycle task that staged it, for its causal set (ADR 0043), or
+    /// [`NO_TASK`].
+    pub task: u16,
 }
 
 impl Proposal {
@@ -65,11 +111,84 @@ impl Proposal {
         source: Source::Cycle,
         ticket: 0,
         ttl_ns: 0,
+        intent: Intent::Write,
+        task: NO_TASK,
     };
 
     /// True when this proposal relinquishes the writer's level.
     pub const fn is_relinquish(&self) -> bool {
         self.flags & RELINQUISH != 0
+    }
+
+    /// The occupant's relinquish and the new proposal that a takeover stages,
+    /// in this order, into the same inbox (docs/16 A13, ref/09 §5.6).
+    pub const fn takeover(occupant: WriterId, new: Proposal) -> [Proposal; 2] {
+        [
+            Proposal {
+                writer: occupant,
+                flags: RELINQUISH,
+                value: 0,
+                intent: Intent::Takeover { by: new.writer },
+                ..new
+            },
+            new,
+        ]
+    }
+
+    /// The relinquish that a forced release by `by` stages for `occupant`.
+    pub const fn forced_release(occupant: WriterId, signal: SignalId, by: WriterId) -> Proposal {
+        Proposal {
+            writer: occupant,
+            signal,
+            flags: RELINQUISH,
+            source: Source::Async,
+            intent: Intent::ForcedRelease { by },
+            ..Proposal::EMPTY
+        }
+    }
+}
+
+/// Most arguments a method call carries.
+pub const MAX_METHOD_ARGS: usize = 8;
+
+/// A method record: a call of a class method by a writer (docs/17 §4.1),
+/// expanded in step 5a (ADR 0041).
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct MethodCall {
+    /// The caller, whose writes the expansion produces.
+    pub writer: WriterId,
+    /// Instance number.
+    pub instance: u32,
+    /// Method number within the instance.
+    pub method: u16,
+    /// Argument values, in each parameter's declared unit.
+    pub args: [u64; MAX_METHOD_ARGS],
+    /// Number of arguments.
+    pub n_args: u8,
+    /// Step it was staged in.
+    pub source: Source,
+    /// Opaque tag returned with the result.
+    pub ticket: u32,
+    /// The cycle task that staged it, or [`NO_TASK`].
+    pub task: u16,
+}
+
+impl MethodCall {
+    /// Placeholder used to initialise fixed-capacity storage.
+    pub const EMPTY: Self = Self {
+        writer: WriterId(0),
+        instance: 0,
+        method: 0,
+        args: [0; MAX_METHOD_ARGS],
+        n_args: 0,
+        source: Source::Cycle,
+        ticket: 0,
+        task: NO_TASK,
+    };
+
+    /// The arguments.
+    pub fn args(&self) -> &[u64] {
+        &self.args[..usize::from(self.n_args).min(MAX_METHOD_ARGS)]
     }
 }
 
@@ -86,6 +205,34 @@ pub struct TickInfo {
     pub first: bool,
     /// At least one tick was skipped right before this one.
     pub after_skip: bool,
+}
+
+/// The samples a cycle task read in one tick (M3, ADR 0043).
+#[derive(Copy, Clone, Debug)]
+pub struct CausalSet<'x> {
+    ports: &'x [SignalId],
+    snapshot: &'x [Sample],
+    bits: &'x [u64],
+}
+
+impl<'x> CausalSet<'x> {
+    /// The signals read, in `SignalId` order, with their latched samples.
+    pub fn iter(&self) -> impl Iterator<Item = (SignalId, &'x Sample)> + 'x {
+        let (ports, snapshot, bits) = (self.ports, self.snapshot, self.bits);
+        (0..ports.len())
+            .filter(move |&i| bits.get(i / 64).is_some_and(|w| w & (1 << (i % 64)) != 0))
+            .map(move |i| (ports[i], &snapshot[i]))
+    }
+
+    /// Number of signals read.
+    pub fn len(&self) -> usize {
+        self.bits.iter().map(|w| w.count_ones() as usize).sum()
+    }
+
+    /// True when the task read nothing.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 /// Why an image call was refused.
@@ -140,6 +287,11 @@ pub struct ProcessImage<'a> {
     read_retries: u32,
     storage: ImageStorage<'a>,
     staged: usize,
+    expanded: usize,
+    methods: &'a mut [MethodCall],
+    n_methods: usize,
+    reads: &'a mut [u64],
+    tasks: usize,
     phase: Phase,
     last_index: Option<u64>,
     tick: Option<TickInfo>,
@@ -177,6 +329,11 @@ impl<'a> ProcessImage<'a> {
             read_retries: Self::DEFAULT_READ_RETRIES,
             storage,
             staged: 0,
+            expanded: 0,
+            methods: &mut [],
+            n_methods: 0,
+            reads: &mut [],
+            tasks: 0,
             phase: Phase::Idle,
             last_index: None,
             tick: None,
@@ -284,6 +441,9 @@ impl<'a> ProcessImage<'a> {
         self.last_index = Some(index);
         self.tick = Some(info);
         self.staged = 0;
+        self.expanded = 0;
+        self.n_methods = 0;
+        self.reads.fill(0);
         self.phase = Phase::Latched;
         Ok(info)
     }
@@ -292,7 +452,7 @@ impl<'a> ProcessImage<'a> {
     /// before the first cycle proposal of the tick, so async proposals always
     /// come first (docs/16 A4).
     pub fn stage_async(&mut self, proposal: Proposal) -> Result<(), ImageError> {
-        if self.phase != Phase::Latched {
+        if self.expanded > 0 || self.phase != Phase::Latched {
             return Err(ImageError::WrongPhase);
         }
         self.push(Proposal {
@@ -303,7 +463,7 @@ impl<'a> ProcessImage<'a> {
 
     /// Step 4: stages a proposal from a cycle task.
     pub fn stage_cycle(&mut self, proposal: Proposal) -> Result<(), ImageError> {
-        if self.phase == Phase::Idle {
+        if self.expanded > 0 || self.phase == Phase::Idle {
             return Err(ImageError::WrongPhase);
         }
         self.phase = Phase::Cycle;
@@ -311,6 +471,108 @@ impl<'a> ProcessImage<'a> {
             source: Source::Cycle,
             ..proposal
         })
+    }
+
+    /// Hands in the read bitsets of `tasks` cycle tasks (ADR 0043): at least
+    /// `tasks × ceil(ports / 64)` words.
+    pub fn set_read_sets(&mut self, buffer: &'a mut [u64], tasks: usize) -> Result<(), ImageError> {
+        if buffer.len() < tasks * self.words_per_task() {
+            return Err(ImageError::StorageMismatch);
+        }
+        buffer.fill(0);
+        self.reads = buffer;
+        self.tasks = tasks;
+        Ok(())
+    }
+
+    fn words_per_task(&self) -> usize {
+        self.storage.ports.len().div_ceil(64)
+    }
+
+    /// Marks that cycle task `task` read port `port` (an index into
+    /// [`ProcessImage::ports`]) in this tick. Returns false if out of range.
+    pub fn mark_read(&mut self, task: u16, port: usize) -> bool {
+        let words = self.words_per_task();
+        if usize::from(task) >= self.tasks || port >= self.storage.ports.len() {
+            return false;
+        }
+        self.reads[usize::from(task) * words + port / 64] |= 1 << (port % 64);
+        true
+    }
+
+    /// Marks a read by signal. Returns false if the signal is not a port.
+    pub fn mark_read_signal(&mut self, task: u16, signal: SignalId) -> bool {
+        match self.storage.ports.binary_search(&signal) {
+            Ok(port) => self.mark_read(task, port),
+            Err(_) => false,
+        }
+    }
+
+    /// The causal set of a cycle task in this tick: the ports it read, with
+    /// their latched samples.
+    pub fn read_set(&self, task: u16) -> Option<CausalSet<'_>> {
+        let words = self.words_per_task();
+        if usize::from(task) >= self.tasks {
+            return None;
+        }
+        let start = usize::from(task) * words;
+        Some(CausalSet {
+            ports: self.storage.ports,
+            snapshot: self.storage.snapshot,
+            bits: &self.reads[start..start + words],
+        })
+    }
+
+    /// Hands in the buffer for method records; its length is the capacity.
+    pub fn set_method_buffer(&mut self, buffer: &'a mut [MethodCall]) {
+        self.methods = buffer;
+        self.n_methods = 0;
+    }
+
+    /// Stages a method record: an async one only before the first cycle
+    /// proposal or record (step 2), a cycle one in step 4.
+    pub fn stage_method(&mut self, call: MethodCall) -> Result<(), ImageError> {
+        if self.expanded > 0 {
+            return Err(ImageError::WrongPhase);
+        }
+        match (call.source, self.phase) {
+            (_, Phase::Idle) | (Source::Async, Phase::Cycle) => return Err(ImageError::WrongPhase),
+            (Source::Cycle, _) => self.phase = Phase::Cycle,
+            (Source::Async, Phase::Latched) => {}
+        }
+        match self.methods.get_mut(self.n_methods) {
+            Some(slot) => {
+                *slot = call;
+                self.n_methods += 1;
+                Ok(())
+            }
+            None => {
+                self.staging_drops = self.staging_drops.saturating_add(1);
+                Err(ImageError::StagingFull)
+            }
+        }
+    }
+
+    /// The method records of this tick, in staging order.
+    pub fn method_calls(&self) -> &[MethodCall] {
+        &self.methods[..self.n_methods]
+    }
+
+    /// Step 5a: appends a write expanded from a method record, after every
+    /// direct proposal (ADR 0041 §1).
+    pub fn push_expanded(&mut self, proposal: Proposal) -> Result<(), ImageError> {
+        if self.phase == Phase::Idle {
+            return Err(ImageError::WrongPhase);
+        }
+        self.push(proposal)?;
+        self.expanded += 1;
+        Ok(())
+    }
+
+    /// The proposals staged directly (steps 2 and 4), without the writes
+    /// expanded from method records: what the trace records.
+    pub fn direct_proposals(&self) -> &[Proposal] {
+        &self.storage.proposals[..self.staged - self.expanded]
     }
 
     fn push(&mut self, proposal: Proposal) -> Result<(), ImageError> {
@@ -327,8 +589,9 @@ impl<'a> ProcessImage<'a> {
         }
     }
 
-    /// The proposals staged in this tick, in staging order: async first, then
-    /// cycle tasks in their declared order (steps 5–7 consume them).
+    /// The proposals of this tick, in order: async first, then cycle tasks in
+    /// their declared order, then the writes expanded from method records
+    /// (steps 5–7 consume them).
     pub fn proposals(&self) -> &[Proposal] {
         &self.storage.proposals[..self.staged]
     }

@@ -4,7 +4,9 @@
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
+pub mod alarm;
 pub mod arbiter;
+pub mod class;
 pub mod commit;
 pub mod envelope;
 pub mod hash;
@@ -16,6 +18,7 @@ pub mod registry;
 pub mod slot;
 mod sync;
 pub mod time;
+pub mod trace;
 pub mod value;
 
 pub use arbiter::{Intake, OutputArbiter, Refusal};

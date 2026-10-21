@@ -18,6 +18,7 @@ joker-case-runner = { path = "xtask/case-runner" }
 portable-atomic = { version = "1.13", default-features = false, features = ["critical-section"] }
 critical-section = { version = "1.2", default-features = false }
 loom = "0.7"
+zstd = { version = "0.13", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

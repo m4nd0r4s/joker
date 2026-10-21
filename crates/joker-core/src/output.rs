@@ -3,6 +3,8 @@
 
 use core::fmt;
 
+use joker_expr::Program;
+
 use crate::image::WriterId;
 use crate::registry::{GroupId, SignalId};
 use crate::value::ValueType;
@@ -255,8 +257,49 @@ impl Writers<'_> {
     }
 }
 
+/// One limit of an expression range (docs/16 E6).
+#[derive(Copy, Clone, Debug)]
+pub enum Bound<'a> {
+    /// A constant, in the output's unit.
+    Const(f64),
+    /// An expression evaluated in every tick, in the output's unit.
+    Expr(&'a Program),
+}
+
+/// An actuation budget: at most `count` actuations in any `window_ns`
+/// (`max_actuations`, ref/01 §5.10, ADR 0038).
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct Budget {
+    /// Allowed actuations.
+    pub count: u32,
+    /// Sliding window in ns.
+    pub window_ns: u64,
+}
+
+/// How an atomic group applies the rate step (ref/01 §5.16).
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum OnRate {
+    /// Each member keeps its own rate step.
+    Independent,
+    /// Every member is scaled to the smallest fraction (ADR 0039 §4).
+    Proportional,
+}
+
+/// An atomic group of outputs (M20, docs/02 §7.3, ref/01 §5.16).
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct AtomicGroup<'a> {
+    /// The members, at least two.
+    pub outputs: &'a [SignalId],
+    /// Bus order for the driver; a permutation of `outputs`.
+    pub order: &'a [SignalId],
+    /// Rate behaviour.
+    pub on_rate: OnRate,
+    /// Commit register and its value, written after the group's writes.
+    pub commit: Option<(SignalId, u64)>,
+}
+
 /// The envelope and arbiter settings of one output (ref/01 §5.10).
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug)]
 pub struct OutputConfig<'a> {
     /// The output signal.
     pub signal: SignalId,
@@ -284,6 +327,27 @@ pub struct OutputConfig<'a> {
     pub max_manual_ns: u64,
     /// Who may write.
     pub writers: Writers<'a>,
+    /// Levels delegated to the Joker Link on an MCU, as a mask with bit
+    /// `n-1` for level `n` (`remote_levels`, docs/16 A12); 0 on Linux.
+    pub remote_levels: u16,
+    /// Permissive (step 2), a boolean expression.
+    pub interlock: Option<&'a Program>,
+    /// `Uncertain` passes the permissive and expression range limits.
+    pub permit_uncertain: bool,
+    /// Signals that must be `Good` (step 3, docs/16 E4).
+    pub requires_good: &'a [SignalId],
+    /// How long `requires_good` may fail before the step fails, in ns.
+    pub grace_ns: u64,
+    /// Expression range limits (docs/16 E6); replaces `range` when set.
+    pub range_exprs: Option<(Bound<'a>, Bound<'a>)>,
+    /// Condition that ends a trip (docs/16 E7).
+    pub reset_when: Option<&'a Program>,
+    /// Changes strictly smaller than this are suppressed (step 6).
+    pub deadband: Option<f64>,
+    /// Minimum time between actuations, in ns (step 6).
+    pub min_interval_ns: u64,
+    /// Actuation budget (step 6).
+    pub max_actuations: Option<Budget>,
 }
 
 impl<'a> OutputConfig<'a> {
@@ -303,7 +367,48 @@ impl<'a> OutputConfig<'a> {
             max_lease_ns: DEFAULT_MAX_LEASE_NS,
             max_manual_ns: DEFAULT_MAX_MANUAL_NS,
             writers: Writers::Any,
+            remote_levels: 0,
+            interlock: None,
+            permit_uncertain: false,
+            requires_good: &[],
+            grace_ns: 0,
+            range_exprs: None,
+            reset_when: None,
+            deadband: None,
+            min_interval_ns: 0,
+            max_actuations: None,
         }
+    }
+
+    /// The expression programs of this output, in evaluation order
+    /// (ADR 0038 §1): interlock, low limit, high limit, `reset_when`.
+    pub fn programs(&self) -> [Option<&'a Program>; 4] {
+        let bound = |b: Bound<'a>| match b {
+            Bound::Expr(p) => Some(p),
+            Bound::Const(_) => None,
+        };
+        let (low, high) = match self.range_exprs {
+            Some((low, high)) => (bound(low), bound(high)),
+            None => (None, None),
+        };
+        [self.interlock, low, high, self.reset_when]
+    }
+
+    /// Words of state arena this output needs: the state of its programs
+    /// and its actuation budget.
+    pub fn state_words(&self) -> usize {
+        let programs: usize = self
+            .programs()
+            .iter()
+            .flatten()
+            .map(|p| p.state_words())
+            .sum();
+        programs + self.max_actuations.map_or(0, |b| 1 + b.count as usize)
+    }
+
+    /// True when `level` is delegated to the link (docs/16 A12).
+    pub const fn delegates(&self, level: Level) -> bool {
+        self.remote_levels & (1 << level.index()) != 0
     }
 
     /// True when `bits` is a value this output can take (docs/16 E10): not

@@ -3,196 +3,14 @@
 
 #![allow(clippy::unwrap_used)]
 
-use joker_core::commit::{Cause, Durability, RecordKind};
-use joker_core::image::{ImageStorage, RELINQUISH};
+mod common;
+
+use common::*;
+use joker_core::arbiter::RemoteWriter;
+use joker_core::commit::{Cause, Durability, ManualChange, RecordKind};
+use joker_core::image::RELINQUISH;
 use joker_core::output::{ClockRequirement, OnRange};
-use joker_core::registry::{Alias, GroupMeta, SignalMeta, UnitRef};
-use joker_core::slot::SeqExtender;
-use joker_core::time::Instant;
-use joker_core::{
-    Applied, ClockQuality, CommitSink, DecisionRecord, Level, Outcome, OutputConfig, OutputResult,
-    Outputs, OutputsStorage, ProcessImage, Proposal, RegistryBuilder, RejectReason, SafeValue,
-    Sample, SignalId, Slot, ValueType, WriteResult, WriterConfig, WriterId, WriterKind,
-};
-
-const MS: u64 = 1_000_000;
-const PERIOD: u64 = 100 * MS;
-
-#[derive(Default)]
-struct Log {
-    writes: Vec<WriteResult>,
-    outputs: Vec<OutputResult>,
-    decisions: Vec<DecisionRecord>,
-}
-
-impl CommitSink for Log {
-    fn write(&mut self, r: &WriteResult) {
-        self.writes.push(*r);
-    }
-    fn output(&mut self, r: &OutputResult) {
-        self.outputs.push(*r);
-    }
-    fn decision(&mut self, r: &DecisionRecord) {
-        self.decisions.push(*r);
-    }
-}
-
-struct Harness {
-    slots: &'static [Slot],
-    image: ProcessImage<'static>,
-    outputs: Outputs<'static>,
-    registry: joker_core::Registry<'static>,
-    clock: ClockQuality,
-}
-
-fn leak<T>(v: Vec<T>) -> &'static mut [T] {
-    Box::leak(v.into_boxed_slice())
-}
-
-impl Harness {
-    fn new(writers: Vec<WriterConfig>, configure: impl FnOnce(&mut OutputConfig<'static>)) -> Self {
-        let signals = leak(vec![SignalMeta::EMPTY; 2]);
-        let aliases = leak(vec![Alias::EMPTY; 0]);
-        let groups = leak(vec![GroupMeta::EMPTY; 1]);
-        let mut b = RegistryBuilder::new(signals, aliases, groups);
-        b.group(GroupMeta {
-            name: "fast",
-            period_ns: PERIOD,
-        })
-        .unwrap();
-        b.signal(SignalMeta::output(
-            "x.p_set",
-            ValueType::F64,
-            UnitRef("kW"),
-            "fast",
-        ))
-        .unwrap();
-        b.signal(SignalMeta::input("x.f", ValueType::F64, UnitRef("Hz")))
-            .unwrap();
-        let registry = b.build().unwrap();
-        let out = registry.resolve("x.p_set").unwrap();
-        let slots: &'static [Slot] = leak((0..2).map(|_| Slot::new()).collect());
-        let mut config = OutputConfig::new(
-            out,
-            ValueType::F64,
-            registry.resolve_group("fast").unwrap(),
-            SafeValue::Value(0f64.to_bits()),
-        );
-        config.range = Some((-100.0, 100.0));
-        config.rate = Some(10.0);
-        configure(&mut config);
-        let configs: &'static [OutputConfig<'static>] = leak(vec![config]);
-        let writers: &'static [WriterConfig] = leak(writers);
-        let outputs = Outputs::new(
-            &registry,
-            writers,
-            OutputsStorage {
-                configs,
-                states: leak(vec![joker_core::commit::OutputState::EMPTY; 1]),
-                intakes: leak(vec![None; 8]),
-            },
-        )
-        .unwrap();
-        let image = ProcessImage::new(
-            registry.resolve_group("fast").unwrap(),
-            PERIOD,
-            ImageStorage {
-                ports: leak(vec![]),
-                snapshot: leak(Vec::<Sample>::new()),
-                extenders: leak(Vec::<SeqExtender>::new()),
-                proposals: leak(vec![Proposal::EMPTY; 8]),
-            },
-        )
-        .unwrap();
-        Self {
-            slots,
-            image,
-            outputs,
-            registry,
-            clock: ClockQuality::Synced,
-        }
-    }
-
-    fn out(&self) -> SignalId {
-        self.registry.resolve("x.p_set").unwrap()
-    }
-
-    fn tick(&mut self, k: u64, proposals: &[(u32, f64, bool)]) -> Log {
-        let mut log = Log::default();
-        let at = Instant {
-            mono_ns: k * PERIOD,
-            utc_ns: 0,
-            clock: self.clock,
-        };
-        self.image.latch(k, at, self.slots, &self.registry).unwrap();
-        for &(writer, value, _) in proposals.iter().filter(|p| !p.2) {
-            self.image
-                .stage_async(proposal(writer, self.out(), value))
-                .unwrap();
-        }
-        for &(writer, value, _) in proposals.iter().filter(|p| p.2) {
-            self.image
-                .stage_cycle(proposal(writer, self.out(), value))
-                .unwrap();
-        }
-        self.outputs
-            .commit(&self.image, self.slots, &mut log)
-            .unwrap();
-        self.image.end_tick().unwrap();
-        log
-    }
-
-    fn stage_raw(&mut self, k: u64, raw: &[Proposal]) -> Log {
-        let mut log = Log::default();
-        self.image
-            .latch(k, Instant::mono(k * PERIOD), self.slots, &self.registry)
-            .unwrap();
-        for p in raw {
-            self.image.stage_cycle(*p).unwrap();
-        }
-        self.outputs
-            .commit(&self.image, self.slots, &mut log)
-            .unwrap();
-        self.image.end_tick().unwrap();
-        log
-    }
-}
-
-fn proposal(writer: u32, signal: SignalId, value: f64) -> Proposal {
-    Proposal {
-        writer: WriterId(writer),
-        signal,
-        value: value.to_bits(),
-        ..Proposal::EMPTY
-    }
-}
-
-fn app(level: &str, lease_ms: u64) -> WriterConfig {
-    WriterConfig {
-        kind: WriterKind::Cycle,
-        level: Level::parse(level).unwrap(),
-        lease_ns: Some(lease_ms * MS),
-        requires_clock: ClockRequirement::Any,
-    }
-}
-
-fn manual(ttl_ms: u64) -> WriterConfig {
-    WriterConfig {
-        kind: WriterKind::Manual,
-        level: Level::MANUAL_DEFAULT,
-        lease_ns: Some(ttl_ms * MS),
-        requires_clock: ClockRequirement::Any,
-    }
-}
-
-fn kw(x: f64) -> Applied {
-    Applied::Value(x.to_bits())
-}
-
-fn summary(log: &Log) -> (Outcome, Applied, Option<u8>) {
-    let o = log.outputs[0];
-    (o.outcome, o.applied, o.level.map(|l| l.get()))
-}
+use joker_core::{ClockQuality, Level, Outcome, Proposal, RejectReason, WriterId};
 
 #[test]
 fn docs16_rate_example() {
@@ -431,4 +249,136 @@ fn earlier_proposals_of_a_writer_in_a_tick_are_overridden_by_its_last() {
         Outcome::Overridden(Level::new(13).unwrap())
     );
     assert_eq!(log.writes[1].outcome, Outcome::Accepted);
+}
+
+#[test]
+fn takeover_and_forced_release_are_recorded_with_their_kind() {
+    let mut h = Harness::new(
+        vec![app("optimizer:13", 2_000), manual(60_000), manual(60_000)],
+        |c| c.rate = None,
+    );
+    let log = h.tick(0, &[(1, 5.0, false)]);
+    assert!(matches!(
+        log.manual[0].change,
+        ManualChange::Set { lease_until, .. } if lease_until == 60_000 * MS
+    ));
+    assert_eq!(
+        h.outputs
+            .occupant(h.out(), Level::MANUAL_DEFAULT)
+            .map(|e| e.writer),
+        Some(WriterId(1))
+    );
+    let [release, take] = Proposal::takeover(WriterId(1), proposal(2, h.out(), 7.0));
+    let log = h.stage_raw(1, &[release, take]);
+    assert_eq!(summary(&log), (Outcome::Accepted, kw(7.0), Some(4)));
+    let kinds: Vec<_> = log
+        .decisions
+        .iter()
+        .filter(|d| d.kind == RecordKind::Write(WriterId(1)))
+        .map(|d| (d.cause, d.durability))
+        .collect();
+    assert_eq!(
+        kinds,
+        [(Cause::Takeover(WriterId(2)), Durability::Immediate)]
+    );
+    assert_eq!(log.manual.len(), 2);
+    assert_eq!(
+        log.manual[0].change,
+        ManualChange::Cleared(Cause::Takeover(WriterId(2)))
+    );
+    assert_eq!(log.manual[1].writer, WriterId(2));
+    let force = Proposal::forced_release(WriterId(2), h.out(), WriterId(1));
+    let log = h.stage_raw(2, &[force]);
+    assert_eq!(summary(&log), (Outcome::Accepted, kw(0.0), None));
+    assert_eq!(
+        log.manual[0].change,
+        ManualChange::Cleared(Cause::ForcedRelease(WriterId(1)))
+    );
+}
+
+#[test]
+fn manual_expiry_is_recorded_and_persisted() {
+    let mut h = Harness::new(vec![app("optimizer:13", 2_000), manual(300)], |c| {
+        c.rate = None
+    });
+    h.tick(0, &[(1, 5.0, false)]);
+    h.tick(1, &[]);
+    h.tick(2, &[]);
+    let log = h.tick(3, &[]);
+    assert_eq!(summary(&log), (Outcome::None, kw(0.0), None));
+    let expiry: Vec<_> = log
+        .decisions
+        .iter()
+        .filter(|d| d.kind == RecordKind::Write(WriterId(1)))
+        .collect();
+    assert_eq!(expiry.len(), 1);
+    assert_eq!(expiry[0].cause, Cause::Expiry);
+    assert_eq!(expiry[0].previous.unwrap().repeats, 1);
+    assert_eq!(log.manual[0].change, ManualChange::Cleared(Cause::Expiry));
+}
+
+#[test]
+fn manual_levels_are_restored_before_the_first_tick() {
+    let mut h = Harness::new(vec![app("optimizer:13", 2_000), manual(60_000)], |c| {
+        c.rate = None
+    });
+    assert_eq!(
+        h.outputs
+            .restore_manual(h.out(), WriterId(1), 12.0f64.to_bits(), 250 * MS, 0),
+        Ok(Level::MANUAL_DEFAULT)
+    );
+    assert!(
+        h.outputs
+            .restore_manual(h.out(), WriterId(0), 1, 1, 0)
+            .is_err()
+    );
+    assert_eq!(summary(&h.tick(0, &[(0, 3.0, true)])).2, Some(4));
+    assert_eq!(
+        summary(&h.tick(2, &[(0, 3.0, true)])),
+        (
+            Outcome::Overridden(Level::MANUAL_DEFAULT),
+            kw(12.0),
+            Some(4)
+        )
+    );
+    assert_eq!(
+        summary(&h.tick(3, &[(0, 3.0, true)])),
+        (Outcome::Accepted, kw(3.0), Some(13))
+    );
+    assert!(
+        h.outputs
+            .restore_manual(h.out(), WriterId(1), 1, 1, 0)
+            .is_err()
+    );
+}
+
+#[test]
+fn remote_writers_propose_in_delegated_levels() {
+    let mut h = Harness::new(vec![app("optimizer:13", 2_000)], |c| {
+        c.rate = None;
+        c.remote_levels = 1 << 8;
+    });
+    let remote: &'static [RemoteWriter] = leak(vec![RemoteWriter {
+        level: Level::new(9).unwrap(),
+        lease_ns: 10_000 * MS,
+        link_max_lease_ns: 500 * MS,
+    }]);
+    h.outputs.set_remote_writers(remote);
+    let out = h.out();
+    let p = |slot: u32, value: f64| joker_core::Proposal {
+        writer: WriterId::remote(slot),
+        signal: out,
+        value: value.to_bits(),
+        ..joker_core::Proposal::EMPTY
+    };
+    let first = p(0, 9.0);
+    let log = h.stage_raw(0, &[first, proposal(0, h.out(), 1.0)]);
+    assert_eq!(summary(&log), (Outcome::Accepted, kw(9.0), Some(9)));
+    let log = h.stage_raw(5, &[proposal(0, h.out(), 1.0)]);
+    assert_eq!(summary(&log), (Outcome::Accepted, kw(1.0), Some(13)));
+    let log = h.stage_raw(6, &[p(1, 4.0)]);
+    assert_eq!(
+        log.writes[0].outcome,
+        Outcome::Rejected(joker_core::RejectReason::NotOwner)
+    );
 }
