@@ -14,9 +14,11 @@ publish = false
 joker-units = { path = "crates/joker-units", default-features = false }
 joker-expr = { path = "crates/joker-expr", default-features = false }
 joker-core = { path = "crates/joker-core", default-features = false }
+joker-sdk-sys = { path = "crates/joker-sdk-sys" }
 portable-atomic = { version = "1.13", default-features = false, features = ["critical-section"] }
 critical-section = { version = "1.2", default-features = false }
 loom = "0.7"
+wit-bindgen = { version = "=0.61.1", default-features = false, features = ["macros", "realloc", "async"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
