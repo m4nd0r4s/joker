@@ -1,6 +1,7 @@
 //! `jk`, the Joker command line (docs/07).
 
 mod apps;
+mod board;
 mod dev;
 mod node;
 mod profile;
@@ -159,6 +160,28 @@ enum Command {
         #[command(subcommand)]
         command: ProfileCommand,
     },
+    /// Board profile tooling (ref/03 §2.3, docs/07).
+    Board {
+        #[command(subcommand)]
+        command: BoardCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum BoardCommand {
+    /// Validates a board profile (local checks only; no `--node` yet).
+    Check {
+        /// The board profile file.
+        file: PathBuf,
+    },
+    /// Copies an existing board profile to a new name.
+    New {
+        /// The new board's name.
+        name: String,
+        /// The board profile to copy, as a path or a `boards/<name>.board.toml` name.
+        #[arg(long)]
+        from: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -305,5 +328,11 @@ fn run(cli: Cli) -> Result<u8, Failure> {
                         },
                 },
         } => profile::import_csv_command(&file, &name, &driver, out.as_deref(), modicon),
+        Command::Board {
+            command: BoardCommand::Check { file },
+        } => board::check(&file),
+        Command::Board {
+            command: BoardCommand::New { name, from },
+        } => board::new(&name, &from),
     }
 }

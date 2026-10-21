@@ -149,3 +149,60 @@ fn load(table: &Table, diagnostics: &mut Diagnostics) -> Option<BoardInfo> {
         no_wasm: no_wasm_arch(arch),
     })
 }
+
+const TIER_REVIEW: &str =
+    "\"dev\"   # REVIEW: support level (01 §22); \"1\" or \"2\" requires CI with this board";
+
+fn rewrite_key(line: &str, key: &str, value: &str) -> Option<String> {
+    let trimmed = line.trim_start();
+    let rest = trimmed.strip_prefix(key)?;
+    let rest = rest.trim_start();
+    rest.starts_with('=').then(|| format!("{key:<7} = {value}"))
+}
+
+/// `jk board new <name> --from <board>` (docs/07): copies an existing
+/// board profile's text, renaming it to `name`, pinning `version =
+/// "1.0.0"`, and marking `tier = "dev"` for review (docs/07, ref/03
+/// §2.3.7). Every other line of `[board]`, and every other section, is
+/// kept verbatim.
+pub fn new_from(source: &str, name: &str) -> String {
+    let mut out = String::new();
+    let mut in_board = false;
+    let mut wrote_tier = false;
+    for line in source.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            if in_board && !wrote_tier {
+                out.push_str(&format!("tier    = {TIER_REVIEW}\n"));
+                wrote_tier = true;
+            }
+            in_board = trimmed == "[board]";
+            out.push_str(line);
+            out.push('\n');
+            continue;
+        }
+        if in_board {
+            if let Some(rewritten) = rewrite_key(line, "name", &format!("\"{name}\"")) {
+                out.push_str(&rewritten);
+                out.push('\n');
+                continue;
+            }
+            if let Some(rewritten) = rewrite_key(line, "version", "\"1.0.0\"") {
+                out.push_str(&rewritten);
+                out.push('\n');
+                continue;
+            }
+            if rewrite_key(line, "tier", "").is_some() {
+                out.push_str(&format!("tier    = {TIER_REVIEW}\n"));
+                wrote_tier = true;
+                continue;
+            }
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    if in_board && !wrote_tier {
+        out.push_str(&format!("tier    = {TIER_REVIEW}\n"));
+    }
+    out
+}
