@@ -27,6 +27,9 @@ pub struct Start {
     pub max_ticks: Option<u64>,
     /// UTC time at monotonic zero, to stamp decision records.
     pub utc_origin_ns: i64,
+    /// CPU ids to pin the cycle thread to (`[resources] rt.cpus`,
+    /// `resources::rt_cpus`); empty does nothing.
+    pub cpus: Vec<usize>,
 }
 
 /// A generation that is ticking.
@@ -72,9 +75,15 @@ impl Running {
                 max_ticks: start.max_ticks,
                 epoch_mono_ns: None,
             };
+            let cpus = start.cpus;
             std::thread::Builder::new()
                 .name("rt/cycle".into())
-                .spawn(move || run(&plan, &shared, tasks, pacer.as_mut(), options))
+                .spawn(move || {
+                    if let Err(e) = crate::resources::pin_current_thread(&cpus) {
+                        eprintln!("rt/cycle: {e}");
+                    }
+                    run(&plan, &shared, tasks, pacer.as_mut(), options)
+                })
                 .map_err(|e| CycleError(format!("cannot start the cycle thread: {e}")))?
         };
         Ok(Self {
