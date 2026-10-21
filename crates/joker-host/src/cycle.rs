@@ -314,6 +314,7 @@ pub(crate) struct CycleState {
     ports: Vec<PortEntry>,
     tick: Tick,
     log: LogRing,
+    guest_trap: Option<&'static str>,
 }
 
 impl WasiView for CycleState {
@@ -572,6 +573,7 @@ impl CycleInstance {
                 rejections: Vec::with_capacity(dynamic_capacity),
             },
             log: LogRing::new(setup.limits.log_level),
+            guest_trap: None,
         };
         let mut store = Store::new(engine.wasmtime(), state);
         store.limiter(|s| s as &mut dyn ResourceLimiter);
@@ -670,6 +672,7 @@ impl CycleInstance {
         self.error_code.clear();
         self.error_message.clear();
         self.store.set_epoch_deadline(self.deadline);
+        self.store.data_mut().guest_trap = None;
         let image_bytes = core::mem::take(&mut self.image);
         let on_cycle: TypedFunc<(u32, &[u8]), (wit::CycleResult,)> = self.on_cycle;
         let call = on_cycle.call(&mut self.store, (task, image_bytes.as_slice()));
@@ -682,7 +685,11 @@ impl CycleInstance {
             Ok((result,)) => result,
             Err(e) => {
                 self.poisoned = true;
-                return Ok(self.trapped(trap_code(&e)));
+                let code = match (trap_code(&e), self.store.data().guest_trap) {
+                    (codes::GUEST_ABORT, Some(announced)) => announced,
+                    (code, _) => code,
+                };
+                return Ok(self.trapped(code));
             }
         };
         let Ok(status) = self.lift(&result) else {
@@ -990,6 +997,17 @@ fn validate(bytes: &[u8], ports: &[PortEntry]) -> Result<(), abi::AbiError> {
         }
     }
     Ok(())
+}
+
+/// The trap a guest announces with an `error` log record that starts with
+/// its code and a colon, before it traps (ADR 0056): only the guest-raised
+/// codes of ref/04 §7.
+fn guest_trap_code(message: &str) -> Option<&'static str> {
+    [codes::ALLOC_IN_CYCLE].into_iter().find(|code| {
+        message
+            .strip_prefix(code)
+            .is_some_and(|rest| rest.starts_with(':'))
+    })
 }
 
 fn trap_code(e: &wasmtime::Error) -> &'static str {
@@ -1300,6 +1318,11 @@ fn linker(engine: &HostEngine, component: &AppComponent) -> Result<Linker<CycleS
             |mut cx: StoreContextMut<'_, CycleState>,
              (level, msg, fields): (wit::LogLevel, WasmStr, WasmList<(WasmStr, WasmStr)>)| {
                 let level = LogLevel::from(level);
+                if level == LogLevel::Error
+                    && let Some(code) = guest_trap_code(&msg.to_str(&cx)?)
+                {
+                    cx.data_mut().guest_trap = Some(code);
+                }
                 let now = cx.data().tick.header.t_mono_ns;
                 {
                     let log = &mut cx.data_mut().log;

@@ -20,7 +20,9 @@ use common::{Bench, PERIOD_MS, guest};
 use joker_core::registry::{SignalMeta, UnitRef};
 use joker_core::{Outcome, Quality, QualityCode, QualityReason, ValueType};
 use joker_host::meta::{PortKind, TaskKind};
-use joker_host::{AppComponent, CycleStatus, HostEngine, PortBinding, PortSource, RuntimeMode};
+use joker_host::{
+    AppComponent, CycleStatus, HostEngine, LogLevel, PortBinding, PortSource, RuntimeMode,
+};
 
 #[test]
 fn the_track_light_app_blinks_at_1_hz() {
@@ -169,5 +171,50 @@ fn reads_return_results_and_substitutions_are_noted() {
     assert_eq!(
         instance.last_error(),
         Some(("J-E0050", "the heater proposal was not applied"))
+    );
+}
+
+#[test]
+fn allocating_in_a_cycle_task_traps_with_j_e0903() {
+    let engine = HostEngine::native().unwrap();
+    let app = AppComponent::compile(
+        &engine,
+        &guest("joker-sdk-fixture-greedy"),
+        RuntimeMode::Prod,
+    )
+    .unwrap();
+    let mut bench = Bench::new(
+        PERIOD_MS,
+        &[SignalMeta::output(
+            "greedy.kept",
+            ValueType::U64,
+            UnitRef("1"),
+            "main",
+        )],
+        None,
+    );
+    let ports = [PortBinding {
+        source: PortSource::Signal(bench.id("greedy.kept")),
+        name: "greedy.kept",
+    }];
+    let mut instance = bench.instance(&app, &engine, &ports, &[0]);
+    for k in 0..4 {
+        let (r, _) = bench.tick(&mut instance, k, &[0]);
+        assert_eq!((r[0].status, r[0].staged), (CycleStatus::Ok, 1));
+        assert_eq!(bench.applied("greedy.kept"), k + 1);
+    }
+    let (r, log) = bench.tick(&mut instance, 4, &[0]);
+    assert_eq!(r[0].status, CycleStatus::Trap("J-E0903"));
+    assert_eq!(r[0].staged, 0);
+    assert!(log.writes.is_empty());
+    assert!(instance.is_poisoned());
+    let mut records = Vec::new();
+    instance.drain_log(|r| records.push((r.level, r.message.to_owned())));
+    assert_eq!(
+        records,
+        [(
+            LogLevel::Error,
+            "J-E0903: heap allocation during a cycle task".to_owned()
+        )]
     );
 }

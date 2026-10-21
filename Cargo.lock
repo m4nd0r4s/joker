@@ -842,6 +842,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "joker-sdk-fixture-greedy"
+version = "0.1.0"
+dependencies = [
+ "joker-sdk",
+]
+
+[[package]]
 name = "joker-sdk-fixture-light"
 version = "0.1.0"
 dependencies = [

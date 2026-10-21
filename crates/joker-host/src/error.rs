@@ -37,6 +37,8 @@ pub mod codes {
     pub const NOT_AVAILABLE: &str = "J-E0601";
     /// Async API called from the cycle instance.
     pub const ASYNC_FROM_CYCLE: &str = "J-E0901";
+    /// Heap allocation during a cycle task.
+    pub const ALLOC_IN_CYCLE: &str = "J-E0903";
     /// Cycle task deadline exceeded.
     pub const DEADLINE: &str = "J-E0904";
     /// Guest panicked or called exit.
