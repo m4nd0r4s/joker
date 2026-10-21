@@ -36,6 +36,7 @@ crates/
   joker-jkc/               .jkc class compiler (parser, checking, canonical form, codegen)  (← expr, units)
   joker-ml/ joker-ml-burn/ joker-ml-ort/ joker-ml-hailo/                            (1.1)
   joker-spec-tests/        task 0a: compiles and validates the references against the code (document 22, §8)
+  joker-supply-chain/      tests that read the dependency graph and the toolchain files (policies/dependencies.md §1)
   jokerd/                  daemon binary
   joker-cli/               CLI crate; the binary is called `jk` (the name `jk` is taken on crates.io)
 wit/                       joker-runtime.wit, joker-driver.wit, joker-sim.wit
@@ -48,7 +49,7 @@ xtask/                     rt-bench, conformance runner, release
 
 **References and code change together** (ADR 0023): each front owns the references of its surface (§2), and the CI of task 0a fails if a block of a reference or a file in `wit/` or `spec/` diverges from the code.
 
-**Dependency rule** checked in CI (`cargo deny` + a test that reads the graph): `joker-core` depends only on `joker-units` and `joker-expr`; no domain crate depends on `jokerd`.
+**Dependency rule** checked in CI (`cargo deny`, `cargo vet` and the tests of `joker-supply-chain`, which read the graph of `cargo metadata`): `joker-core` depends only on `joker-units` and `joker-expr`; no domain crate depends on `jokerd`; the `no_std` crates above depend only on `no_std` crates. The complete list of rules, the allowed crates and the critical-dependency table are in `policies/dependencies.md` (ADR 0055).
 
 ---
 
@@ -114,6 +115,7 @@ There is a single schema for the core and for the classes (`[suite]`, `[[case]]`
 | Job | Where | When | Blocks |
 |---|---|---|---|
 | fmt, clippy, tests | x86_64 | every commit | yes |
+| supply chain: `cargo deny`, `cargo vet --locked`, dependency graph and toolchain files (`joker-supply-chain`; `policies/dependencies.md` §1) | x86_64 | every commit | yes |
 | references (`joker-spec-tests`: doctests, `tsc`, CDDL, manifest schema, OpenAPI, counts from §5.1) | x86_64 | every commit | yes |
 | conformance | x86_64 | every commit | yes |
 | long proptest (10⁶) | x86_64 | nightly | — |
@@ -137,5 +139,7 @@ There is a single schema for the core and for the classes (`[suite]`, `[[case]]`
 | **The 0.x dependencies** (Embassy, `embedded-io`, `esp-hal` `unstable`, `esp-radio`, `probe-rs`) have an exact version in the workspace `Cargo.lock`, and appear only in the hosts and in the tools, never in the core | an upstream breakage reaches neither the core nor the C ABI |
 | **Updating toolchains and 0.x dependencies is an explicit task, once per phase**, with conformance (Linux, QEMU and boards) as the gate | drip-fed updates break a target without anyone noticing |
 | **Xtensa is never the only target** of a conformance check | it is the third-party toolchain; see the previous paragraph |
+
+The `toolchain` test of `joker-supply-chain` checks the first two rows, and the per-phase update and the wasmtime line are in `policies/dependencies.md` §5–§7 (ADR 0055).
 
 The counts that the prose still repeats (codes, API operations, Joker Link messages) are checked by `joker-spec-tests` (task 0a) against the sources: `spec/codes.toml`, the OpenAPI and the CDDL. Where it is easy, the prose refers to the source instead of repeating the number.

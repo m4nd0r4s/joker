@@ -623,7 +623,7 @@ Writing to flash takes milliseconds and **never** happens in a group context. A 
 | `joker-sdk` with the `backend-native` feature | the app SDK, compiled natively (§2.11.5) | yes |
 | `joker-project` | **generated** by `jk build --crate`: typed interface, generation, apps, storage and Embassy tasks of the project | yes |
 
-**Core dependencies** (`joker-core`, `joker-expr`, `joker-units`, `joker-link-proto`): only stable (1.x) or trivial crates, without `alloc` on the tick path: `heapless`, `critical-section`, `portable-atomic` (with `critical-section` underneath where there are no 64-bit atomics) and `minicbor`. Synchronization is only through these two (§2.4, rule 8). Everything that is 0.x (Embassy, `embedded-io`, `esp-hal` `unstable`, `esp-radio`) stays in `joker-micro` and in the `chip-*` modules, behind interfaces that are updated without touching the core or the C ABI (document 25, §5; document 13, §5.1).
+**Core dependencies** (`joker-core`, `joker-expr`, `joker-units`, `joker-link-proto`): only stable (1.x) or trivial crates, without `alloc` on the tick path: `heapless`, `critical-section`, `portable-atomic` (with `critical-section` underneath where there are no 64-bit atomics), `minicbor` and `libm` (ADR 0055; the list is `policies/dependencies.md` §3). Synchronization is only through these two (§2.4, rule 8). Everything that is 0.x (Embassy, `embedded-io`, `esp-hal` `unstable`, `esp-radio`) stays in `joker-micro` and in the `chip-*` modules, behind interfaces that are updated without touching the core or the C ABI (document 25, §5; document 13, §5.1).
 
 #### 2.11.2 Features of `joker-micro`
 

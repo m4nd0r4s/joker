@@ -258,7 +258,7 @@ Applied per output, at the commit of the owning group, in the following order. T
 
 ## 9. Wasm host (joker-host)
 
-- **Engine:** wasmtime (≥ 46, WASI 0.3 with native async). Cranelift on x86_64, aarch64 and riscv64; the Pulley interpreter on armv7 and on other architectures without Cranelift (document 08, round 5).
+- **Engine:** wasmtime, on its most recent long-term support line (48 in Phase 0; `policies/dependencies.md` §7), with WASI 0.3 and native async. Cranelift on x86_64, aarch64 and riscv64; the Pulley interpreter on armv7 and on other architectures without Cranelift (document 08, round 5).
 - **AOT is mandatory in production.** Components are precompiled (`.cwasm`) at `jk build --target` or at installation on the device, with the hash of the engine and of the CPU flags (the engine identity, with the triple's baseline flags, is the one of ADR 0052). There is never JIT on the cycle path.
 - **Packed image.** The fast path of the cycle is a single call per task: `on-cycle(task, image) -> cycle-result`. The app's input image goes packed (24 B per sample and 24 B per output result) and the proposals come back in a buffer of packed records (a write is 14 B: type, flags, `u32` port, `u64` value). The exact layout is in `ref/04` §3. The tier 2 SDKs (TypeScript, Python) use the **same** image and the same buffer; the `cycle-io.read/write` calls are kept only for dynamic accesses and for values that do not fit in `u64` (document 09, attack 2; `ref/05`).
 - **Tier 2 in the cycle** (D15): allowed, with a minimum period of 100 ms in TypeScript and 500 ms in Python; admission uses the **maximum** measured by `jk bench`, and not the p99.9, because GC pauses make the percentile misleading.

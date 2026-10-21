@@ -40,5 +40,6 @@
 | [0047](0047-m0-driver-contract-subset.md) | The M0 subset of the driver contract (`joker-hal`) |
 | [0051](0051-m0-sim-driver.md) | The M0 `sim` driver: how the model reaches it, the format subset and its time |
 | [0052](0052-aot-cache-identity-and-cycle-subset-host.md) | AOT cache identity, load errors, WASI terminals and the seed expansion |
+| [0055](0055-supply-chain-and-dependency-policies.md) | Supply chain and dependency policies: CI checks, core allowlist, MCU licences, `cargo vet`, toolchains and the wasmtime LTS line |
 
 Changing a decision = writing a new ADR that replaces it, and updating the affected documents in the same set of commits.

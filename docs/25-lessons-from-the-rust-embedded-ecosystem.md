@@ -294,7 +294,7 @@ The ecosystem provides, and provides well: peripheral drivers, executors, bootlo
 | **`probe-rs` 0.x** | 0.32; recent Xtensa support | `jk flash`, `jk bench` and trace through a probe | `probe` feature of `jk`, pinned version; `espflash` remains as the path without a probe (doc 23) |
 | **maintainers** | `esp-hal` has Espressif's backing; Embassy and `rp-hal` are community projects, with companies behind them; `device-driver` and `defmt` depend on few people | an abandoned crate blocks a target | only dependencies with more than one active maintainer on the tick path; the others in optional features; Joker contributes upstream when it fixes something |
 
-**The rule that comes out of this:** the core (`joker-core`, `joker-expr`, `joker-units`, `joker-link-proto`) only depends on stable (1.x) or trivial crates (`heapless`, `critical-section`, `portable-atomic`, `minicbor`). Everything that is 0.x (Embassy, `embedded-io`, `esp-radio`, `probe-rs`) stays in the hosts and the tools, behind modules that can be updated without touching the core or the C ABI.
+**The rule that comes out of this:** the core (`joker-core`, `joker-expr`, `joker-units`, `joker-link-proto`) only depends on stable (1.x) or trivial crates (`heapless`, `critical-section`, `portable-atomic`, `minicbor`, `libm`; the allowlist of `policies/dependencies.md` §3, ADR 0055). Everything that is 0.x (Embassy, `embedded-io`, `esp-radio`, `probe-rs`) stays in the hosts and the tools, behind modules that can be updated without touching the core or the C ABI.
 
 ---
 
