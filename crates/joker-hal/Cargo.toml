@@ -17,6 +17,7 @@ testing = ["std", "plan"]
 
 [dependencies]
 joker-core.workspace = true
+joker-units.workspace = true
 portable-atomic.workspace = true
 embedded-io.workspace = true
 embedded-io-async.workspace = true
