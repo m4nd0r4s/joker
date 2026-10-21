@@ -2,17 +2,22 @@
 //! validated and resolved: every instant is a tick index, every path an
 //! index into the fixture, every literal a value in the signal's unit.
 //!
-//! Only `core`, `alloc` and `joker-core` types are used, so the same model
-//! can drive the conformance firmware of an MCU (docs/13 §3, ref/08 §3.2).
+//! The plain data of a case (actions, predicates, windows) is the model of
+//! `joker-case-runner`, which drives the core on every target; this module
+//! adds the owned fixture, the expectation tree and the diagnostics that
+//! the host runner reports, and the borrowed views the executor takes.
 
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use joker_case_runner::Fixture;
 use joker_core::ValueType;
 use joker_core::output::{ClockRequirement, Level, OnRange, WriterKind};
-use joker_core::time::ClockQuality;
 
-use super::literal::{OutcomeLit, QualityLit};
+pub use joker_case_runner::model::{
+    Action, ActionKind, Expected, Node, OutputSpec, Predicates, SafeDef, SignalSpec, Subject, When,
+    WriterSpec,
+};
 
 /// A feature the M0 core does not implement yet; cases that need one are
 /// reported as `skipped (not in M0)`.
@@ -37,15 +42,6 @@ pub struct SignalDef {
     pub max_age_ns: Option<u64>,
     /// Features of the declaration that the M0 core lacks.
     pub missing: Vec<Feature>,
-}
-
-/// The `safe` of an output.
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub enum SafeDef {
-    /// A value, as the bits of the signal type.
-    Value(u64),
-    /// `"relinquish"`.
-    Relinquish,
 }
 
 /// An output of the fixture (`[[outputs]]`) with the envelope keys the M0
@@ -89,117 +85,6 @@ pub struct WriterDef {
     pub lease_ns: Option<u64>,
     /// `requires_clock`.
     pub requires_clock: ClockRequirement,
-}
-
-impl WriterDef {
-    /// Whether the proposals of this writer enter at step 2 (async inbox)
-    /// rather than at step 4 (cycle tasks) of the tick (16 §8).
-    pub fn is_async(&self) -> bool {
-        matches!(
-            self.kind,
-            WriterKind::Async | WriterKind::Manual | WriterKind::Bridge
-        )
-    }
-}
-
-/// A value written in a case, already encoded for its signal.
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub enum Expected {
-    /// A number in the unit of the signal.
-    Number(f64),
-    /// An exact integer (`i64` and `u64` signals).
-    Integer(i128),
-    /// A boolean.
-    Bool(bool),
-    /// `"relinquish"`.
-    Relinquish,
-}
-
-/// What an action does, at the latch of its tick (ref/03 §2.6.2).
-#[derive(Clone, Debug)]
-pub enum ActionKind {
-    /// A new sample of an input.
-    Input {
-        /// Index in [`Suite::signals`].
-        signal: usize,
-        /// Bits of the value (0 when absent).
-        bits: u64,
-        /// Code and reason of the sample quality.
-        quality: QualityLit,
-    },
-    /// A proposal of a writer.
-    Propose {
-        /// Index in [`Suite::outputs`].
-        output: usize,
-        /// Index in [`Suite::writers`].
-        writer: usize,
-        /// Bits of the proposed value.
-        bits: u64,
-    },
-    /// The end of a manual write.
-    Release {
-        /// Index in [`Suite::outputs`].
-        output: usize,
-        /// Index in [`Suite::writers`].
-        writer: usize,
-    },
-    /// The end of a trip.
-    Reset {
-        /// Index in [`Suite::outputs`].
-        output: usize,
-    },
-    /// A new clock quality from this tick on.
-    Clock(ClockQuality),
-    /// A swap to an identical generation at this tick boundary.
-    Generation,
-}
-
-/// One action of a case.
-#[derive(Clone, Debug)]
-pub struct Action {
-    /// Tick index (`at / period`).
-    pub tick: u64,
-    /// What it does.
-    pub kind: ActionKind,
-}
-
-/// The ticks an expectation covers.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum When {
-    /// One tick.
-    At(u64),
-    /// Every tick of the closed interval.
-    During(u64, u64),
-}
-
-/// What an expectation looks at.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Subject {
-    /// An output, by index in [`Suite::outputs`].
-    Output(usize),
-    /// An input, by index in [`Suite::signals`].
-    Input(usize),
-    /// An output read as a signal (its slot).
-    OutputSignal(usize),
-}
-
-/// The predicates of an expectation (ref/03 §2.5.4, §2.6.4).
-#[derive(Clone, Debug, Default)]
-pub struct Predicates {
-    /// `equals`.
-    pub equals: Option<Expected>,
-    /// `min`, in the unit of the subject.
-    pub min: Option<f64>,
-    /// `max`, in the unit of the subject.
-    pub max: Option<f64>,
-    /// `tolerance`, in the unit of the subject.
-    pub tolerance: Option<f64>,
-    /// `quality`.
-    pub quality: Option<QualityLit>,
-    /// `outcome`.
-    pub outcome: Option<OutcomeLit>,
-    /// `level`: `Some(None)` is `"none"`.
-    pub level: Option<Option<u8>>,
 }
 
 /// An expectation, or a combinator over complete expectations.
@@ -278,4 +163,109 @@ pub struct Suite {
     pub writers: Vec<WriterDef>,
     /// The cases.
     pub cases: Vec<Case>,
+}
+
+/// The borrowed fixture of a suite, as the executor of `joker-case-runner`
+/// takes it.
+#[derive(Debug)]
+pub struct FixtureView<'s> {
+    period_ns: u64,
+    signals: Vec<SignalSpec<'s>>,
+    outputs: Vec<OutputSpec<'s>>,
+    writers: Vec<WriterSpec>,
+}
+
+impl FixtureView<'_> {
+    /// The fixture.
+    pub fn fixture(&self) -> Fixture<'_> {
+        Fixture {
+            period_ns: self.period_ns,
+            signals: &self.signals,
+            outputs: &self.outputs,
+            writers: &self.writers,
+        }
+    }
+}
+
+impl Suite {
+    /// The borrowed fixture of the suite.
+    pub fn view(&self) -> FixtureView<'_> {
+        FixtureView {
+            period_ns: self.period_ns,
+            signals: self
+                .signals
+                .iter()
+                .map(|s| SignalSpec {
+                    path: &s.path,
+                    ty: s.ty,
+                    unit: &s.unit,
+                    max_age_ns: s.max_age_ns,
+                })
+                .collect(),
+            outputs: self
+                .outputs
+                .iter()
+                .map(|o| OutputSpec {
+                    path: &o.path,
+                    ty: o.ty,
+                    unit: &o.unit,
+                    safe: o.safe,
+                    safe_ramp: o.safe_ramp,
+                    range: o.range,
+                    on_range: o.on_range,
+                    rate: o.rate,
+                    max_lease_ns: o.max_lease_ns,
+                    max_manual_ns: o.max_manual_ns,
+                })
+                .collect(),
+            writers: self
+                .writers
+                .iter()
+                .map(|w| WriterSpec {
+                    level: w.level.get(),
+                    kind: w.kind,
+                    lease_ns: w.lease_ns,
+                    requires_clock: w.requires_clock,
+                })
+                .collect(),
+        }
+    }
+}
+
+impl Expect {
+    /// Appends the expectation in prefix order ([`Node`]).
+    pub fn flatten_into(&self, out: &mut Vec<Node>) {
+        match self {
+            Self::Check {
+                when,
+                subject,
+                predicates,
+            } => out.push(Node::Check {
+                when: *when,
+                subject: *subject,
+                predicates: *predicates,
+            }),
+            Self::AnyOf(list) | Self::AllOf(list) => {
+                let n = u32::try_from(list.len()).unwrap_or(u32::MAX);
+                out.push(match self {
+                    Self::AnyOf(_) => Node::AnyOf(n),
+                    _ => Node::AllOf(n),
+                });
+                for e in list {
+                    e.flatten_into(out);
+                }
+            }
+        }
+    }
+}
+
+impl Case {
+    /// The expectations of the case in prefix order.
+    pub fn nodes(&self) -> Vec<Node> {
+        let mut out = Vec::new();
+        for e in &self.expects {
+            e.expect.flatten_into(&mut out);
+        }
+        out
+    }
 }

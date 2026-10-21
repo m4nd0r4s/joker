@@ -336,3 +336,54 @@ fn the_json_report_carries_counts_and_digests() {
             .starts_with("fnv1a64:")
     );
 }
+
+fn streaming_failures(suite: &super::model::Suite, case: &super::model::Case) -> Option<usize> {
+    let view = suite.view();
+    let fixture = view.fixture();
+    let nodes = case.nodes();
+    let timeline = super::exec::run(suite, case, &NoAlloc).ok()?;
+    let mut failed = vec![false; nodes.len()];
+    let mut verdict = joker_case_runner::Verdict::new(&nodes, &mut failed)?;
+    for (t, record) in timeline.ticks.iter().enumerate() {
+        verdict.tick(&fixture, t as u64, &record.view());
+    }
+    Some(verdict.failures())
+}
+
+fn verdicts_agree(path: &Path, text: &str) -> usize {
+    let suite = super::load::load(path, text).unwrap();
+    let mut ran = 0;
+    for case in suite
+        .cases
+        .iter()
+        .filter(|c| c.missing.is_empty() && c.errors.is_empty())
+    {
+        let Ok(timeline) = super::exec::run(&suite, case, &NoAlloc) else {
+            continue;
+        };
+        let failures = super::eval::evaluate(&suite, case, &timeline).len();
+        assert_eq!(
+            streaming_failures(&suite, case),
+            Some(failures),
+            "{}",
+            case.id
+        );
+        ran += 1;
+    }
+    ran
+}
+
+#[test]
+fn the_streaming_verdict_of_the_firmware_agrees_with_the_report() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../conformance");
+    let mut ran = 0;
+    for file in super::discover(&root).unwrap() {
+        let text = std::fs::read_to_string(&file).unwrap();
+        ran += verdicts_agree(&file, &text);
+    }
+    assert!(ran > 0);
+    let wrong = DOCS16_EXAMPLE
+        .replace("equals = \"1 kW\"", "equals = \"2 kW\"")
+        .replace("at = \"2200ms\"", "at = \"9s\"");
+    assert_eq!(verdicts_agree(Path::new(PATH), &wrong), 1);
+}

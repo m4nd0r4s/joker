@@ -139,7 +139,7 @@ pub fn run_suite(suite: &Suite, filters: &[String], guard: &impl TickGuard) -> V
                     report.diagnostics.push(Diagnostic {
                         code: e.code,
                         location: "fixture".to_string(),
-                        message: e.message,
+                        message: e.message.to_string(),
                     });
                 }
                 Ok(timeline) => {

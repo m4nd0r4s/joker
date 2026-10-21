@@ -10,6 +10,7 @@ publish.workspace = true
 
 [dependencies]
 joker-core = { workspace = true, features = ["alloc"] }
+joker-case-runner.workspace = true
 toml = "1.1"
 serde_json = "1.0"
 critical-section = { workspace = true, features = ["std"] }

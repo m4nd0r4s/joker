@@ -2,11 +2,14 @@
 //! intervals, quantities, qualities, write results, alarm states and
 //! arbiter levels, with the display forms accepted as exact synonyms.
 //!
-//! Only `core` and `alloc` are used, so the module can move into a `no_std`
-//! runner for the conformance firmware (docs/13 §3).
+//! The parsed predicates ([`QualityLit`], [`OutcomeLit`]) are the plain data
+//! of `joker-case-runner`, which the conformance firmware embeds as is
+//! (docs/13 §3).
 
 use alloc::format;
 use alloc::string::{String, ToString};
+
+pub use joker_case_runner::model::{OutcomeLit, QualityLit};
 
 /// A literal that does not follow its grammar (`J0806`).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -367,15 +370,6 @@ pub fn canonical(text: &str) -> Option<String> {
     })
 }
 
-/// A quality predicate: the code, and the reason when one is given.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct QualityLit {
-    /// Index in good, uncertain, bad.
-    pub code: u8,
-    /// Index in [`QUALITY_REASONS`].
-    pub reason: Option<u8>,
-}
-
 /// Parses a quality literal.
 pub fn quality(text: &str) -> Result<QualityLit, LiteralError> {
     let err = || LiteralError::malformed("quality", text);
@@ -400,23 +394,19 @@ pub fn quality(text: &str) -> Result<QualityLit, LiteralError> {
     })
 }
 
-/// An outcome predicate: the result and, for `rejected` and `overridden`,
-/// the detail when one is given.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct OutcomeLit {
-    /// The canonical name of the result.
-    pub name: &'static str,
-    /// The canonical detail: the reject reason or the level.
-    pub detail: Option<String>,
-}
-
-impl OutcomeLit {
-    /// The canonical text of the predicate.
-    pub fn text(&self) -> String {
-        match &self.detail {
-            Some(d) => format!("{}({d})", self.name),
-            None => self.name.to_string(),
-        }
+/// The canonical text of an outcome predicate (`"rejected(range)"`).
+pub fn outcome_text(o: &OutcomeLit) -> String {
+    let name = OUTCOMES
+        .get(usize::from(o.code))
+        .copied()
+        .unwrap_or("unknown");
+    match (name, o.detail) {
+        (_, None) => name.to_string(),
+        ("overridden", Some(level)) => format!("{name}({})", level_name(level)),
+        (_, Some(d)) => match REJECT_REASONS.get(usize::from(d).wrapping_sub(1)) {
+            Some(reason) => format!("{name}({reason})"),
+            None => format!("{name}({d})"),
+        },
     }
 }
 
@@ -425,17 +415,23 @@ pub fn outcome(text: &str) -> Result<OutcomeLit, LiteralError> {
     let err = || LiteralError::malformed("write result", text);
     let canonical = canonical(text).ok_or_else(err)?;
     let (head, arg) = split_call(&canonical).ok_or_else(err)?;
-    let name = OUTCOMES.iter().find(|o| **o == head).ok_or_else(err)?;
-    let detail = match (*name, arg) {
+    let code = OUTCOMES.iter().position(|o| *o == head).ok_or_else(err)?;
+    let detail = match (head, arg) {
         (_, None) => None,
-        ("rejected", Some(r)) if REJECT_REASONS.contains(&r) => Some(r.to_string()),
-        ("overridden", Some(l)) => {
-            let level = level(l).map_err(|_| err())?.ok_or_else(err)?;
-            Some(level_name(level))
+        ("rejected", Some(r)) => {
+            let index = REJECT_REASONS
+                .iter()
+                .position(|x| *x == r)
+                .ok_or_else(err)?;
+            Some(index as u8 + 1)
         }
+        ("overridden", Some(l)) => Some(level(l).map_err(|_| err())?.ok_or_else(err)?),
         _ => return Err(err()),
     };
-    Ok(OutcomeLit { name, detail })
+    Ok(OutcomeLit {
+        code: code as u8,
+        detail,
+    })
 }
 
 /// Parses an alarm state literal.
