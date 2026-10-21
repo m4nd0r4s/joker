@@ -1,0 +1,53 @@
+schema = 1
+
+[model]
+description = "Every generator, dynamics function and fault, for the determinism check"
+step = "10ms"
+latency = "2ms"
+
+[params]
+gain = { default = 2 }
+tau  = { default = "30s" }
+
+[enums]
+Mode = { off = 0, heat = 1, boost = 2 }
+
+[signals]
+heater  = { type = "f64", unit = "%", direction = "output" }
+mode    = { enum = "Mode", direction = "output" }
+c       = { type = "f64", unit = "kW", gen = { kind = "constant", value = "1500 W" } }
+st      = { type = "f64", gen = { kind = "step", from = 0, to = 1, at = "2s" } }
+r       = { type = "f64", unit = "°C", gen = { kind = "ramp", from = "10 °C", to = "30 °C", over = "1m", at = "5s" } }
+si      = { type = "f64", unit = "°C", gen = { kind = "sine", mean = "20 °C", amp = "3 K", period = "17s", phase = 30 }, noise = "0.1 K" }
+sq      = { type = "bool", gen = { kind = "square", low = false, high = true, period = "3s", duty = 0.3 }, bounce = "4ms" }
+n       = { type = "f64", unit = "V", gen = { kind = "noise", mean = "230 V", std = "2 V" }, resolution = "0.1 V" }
+w       = { type = "f64", gen = { kind = "walk", start = 0, std = 0.1, min = -1, max = 1 } }
+room    = { type = "f64", unit = "°C", init = "18 °C", limits = ["-20 °C", "60 °C"] }
+power   = { type = "f64", unit = "kW", init = 0 }
+energy  = { type = "f64", unit = "kWh", init = 0 }
+late    = { type = "f64", init = 0, latency = "5ms" }
+alarm   = { type = "bool" }
+pulses  = { type = "u64", init = 0 }
+avg_si  = { type = "f64", unit = "°C", init = "20 °C" }
+slope   = { type = "f64", unit = "K/s" }
+status  = { enum = "Mode" }
+serial  = { type = "string", init = "SN-0042" }
+mix     = { type = "f64" }
+
+[dynamics]
+room   = "lag(r + param.gain * 1 K * heater / 100 % + if mode == Mode.boost then 5 K else 0 K, param.tau)"
+power  = "3 kW * heater / 100 % + c"
+energy = "integrate(power)"
+late   = "delay(st, 250ms)"
+alarm  = "hyst(room, 25 °C, 27 °C) || held(sq, 500ms)"
+pulses = "integrate(if rose(sq) then 100 / 1 s else 0 / 1 s)"
+avg_si = "avg(si, 2s)"
+slope  = "rate(room, 5s)"
+status = "if room > 22 °C then Mode.heat else Mode.off"
+mix    = "sqrt(pow(w, 2)) + min(st, 0.5, 1) + clamp(maxw(w, 1s) - minw(w, 1s), 0, 2) + count(alarm, sq) + sum(st, w) + abs(-w)"
+
+[faults]
+n    = [{ at = "20s", for = "2s", quality = "bad(comm_failure)" }, { at = "30s", for = "2s", freeze = true }]
+room = [{ at = "40s", for = "1s", value = "99 °C" }, { at = "45s", for = "1s", offset = "2 K" }, { at = "50s", for = "1s", delay = "20ms" }]
+"*"  = [{ at = "55s", for = "1s", disconnect = true }]
+panel = [{ key = "f", toggle = "uncertain(stale)", signals = ["si"] }, { key = "z", freeze = true }]
