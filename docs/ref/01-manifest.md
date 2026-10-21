@@ -521,7 +521,7 @@ fallback = { configure = true, keepalive = "5s" }
 | `align` | `Name` of another device | no | — | the poll of this device is scheduled right after that of the one indicated (document 08, R1e); nonexistent device `J0157` | 03 §9.1 | 1.0 |
 | `discover` | `Bool` | no | `false` | only in drivers with the `discover` capability (`J0177`); result in the lock, in `[discovered.<device>]` (M2, `ref/02` §2.1.11) | 03 §5 | 1.0 |
 | `fallback` | table (below) | no | — | | 03 §5 | 1.0 |
-| `signals` | `Table<signal name, adjustment>` | no | — | §5.8.1 | 03 §5.1 | 1.0 |
+| `signals` | `Table<signal name, adjustment>`; the name is a `Name`, or, in a `joker-link` device, the path of the signal on the MCU (`io.led`, which becomes `<device>.io.led`; ref/07 §6.3) | no | — | §5.8.1 | 03 §5.1 | 1.0 |
 | `actions` | `Table<action name, configuration>` | no | — | §5.8.2 | 03 §5.2 | 1.0 |
 
 The keys specific to each driver (`address`, `unit_id`, `chip`, `model`, `params`, `node_id`, `eds`, `config`, `position`…) are in **appendix A**, which is the `config` schema of the descriptor of each catalog driver (`ref/06` §2.3). For a W or X driver, those of the schema it publishes apply. A key that exists in another driver but not in this one is `J0173`; one that exists in none is `J0140`; a value outside the driver's schema is `J0852` (`ref/06` §2.3.1). Two devices with the same address on the same bus are `J0178`; so is a device that uses the same kernel resource (LED, GPIO line, thermal zone) as a fixed IO `board.<name>` referred to by the manifest. The fixed IO of the board only exists when the manifest refers to `board.<name>`, and its `fallback` only counts through that path (`ref/03` §2.3.2).
