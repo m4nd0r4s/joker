@@ -138,7 +138,7 @@ pub struct OutputPlan {
 /// One writer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WriterPlan {
-    /// Text form (`app:luz`, `user:manual:4`, ref/00 §5).
+    /// Text form (`app:light`, `user:manual:4`, ref/00 §5).
     pub name: String,
     /// The core configuration.
     pub config: WriterConfig,

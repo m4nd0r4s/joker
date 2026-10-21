@@ -72,7 +72,7 @@ fn a_recording_replays_with_zero_divergences() {
     assert!(matches!(items[0], Item::State { n_apps: 1, .. }));
     let report = replay(&loaded.plan, &loaded.manifest, &NativeTasks, &file).unwrap();
     assert!(report.ticks >= 50, "{report:?}");
-    assert_eq!(report.restored, vec!["luz".to_owned()]);
+    assert_eq!(report.restored, vec!["light".to_owned()]);
     assert_eq!(report.before_state, 0);
     assert!(report.identical(), "{:?}", report.divergences.first());
 }
@@ -97,8 +97,8 @@ fn another_registry_is_refused() {
         (
             "joker.toml",
             &common::JOKER_TOML.replace(
-                "[apps.luz]",
-                "[outputs.\"pi.other\"]\nsafe = false\n\n[apps.luz]",
+                "[apps.light]",
+                "[outputs.\"pi.other\"]\nsafe = false\n\n[apps.light]",
             ),
         ),
         (

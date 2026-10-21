@@ -42,10 +42,10 @@ impl Drop for Dev {
 #[test]
 fn part_one_and_two() {
     let tmp = tempfile::tempdir().unwrap();
-    let created = jk(tmp.path(), &["new", "bancada"]);
+    let created = jk(tmp.path(), &["new", "bench"]);
     assert_eq!(code(&created), 0, "{}", text(&created));
-    let dir = tmp.path().join("bancada");
-    assert_eq!(code(&jk(tmp.path(), &["new", "bancada"])), 1);
+    let dir = tmp.path().join("bench");
+    assert_eq!(code(&jk(tmp.path(), &["new", "bench"])), 1);
 
     let check = jk(&dir, &["check", "--env", "sim"]);
     assert_eq!(code(&check), 0, "{}", text(&check));
@@ -133,7 +133,7 @@ fn part_one_and_two() {
     let replayed = jk(&dir, &["--env", "sim", "replay", "bench.jktrace", "--diff"]);
     assert_eq!(code(&replayed), 0, "{}", text(&replayed));
     assert!(
-        text(&replayed).contains("state of luz · 0 divergence(s)"),
+        text(&replayed).contains("state of light · 0 divergence(s)"),
         "{}",
         text(&replayed)
     );

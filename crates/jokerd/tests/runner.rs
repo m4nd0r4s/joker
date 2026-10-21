@@ -69,7 +69,7 @@ fn every_change_reaches_the_decision_log_file() {
     assert_eq!(outputs[0]["gen"], 7);
     assert_eq!(outputs[1]["applied"], false);
     assert_eq!(outputs[1]["previous"]["repeats"], 25);
-    assert_eq!(outputs[1]["cause"]["writer"], "app:luz");
+    assert_eq!(outputs[1]["cause"]["writer"], "app:light");
     let seqs: Vec<u64> = entries.iter().map(|e| e["seq"].as_u64().unwrap()).collect();
     assert_eq!(seqs, (0..entries.len() as u64).collect::<Vec<_>>());
     assert!(entries.iter().all(|e| e["record"] != "gap"));

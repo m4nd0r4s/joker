@@ -32,7 +32,7 @@ fn plan_of_the_bench() {
     assert_eq!(plan.groups[0].ports, vec!["pi.act_led".to_owned()]);
     assert_eq!(plan.outputs.len(), 1);
     assert_eq!(plan.outputs[0].group, "main");
-    assert_eq!(plan.writers[0].name, "app:luz");
+    assert_eq!(plan.writers[0].name, "app:light");
     assert!(plan.writer("user:manual:4").is_some());
     assert!(plan.id("pi.act_led").is_some());
 }

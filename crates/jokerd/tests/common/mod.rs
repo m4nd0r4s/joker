@@ -8,7 +8,7 @@ use jokerd::native::NativeTasks;
 
 pub const JOKER_TOML: &str = r#"
 [project]
-name  = "bancada"
+name  = "bench"
 joker = "1.0"
 mode  = "dev"
 
@@ -18,11 +18,11 @@ safe = false
 [cycles.main]
 period = "20ms"
 
-[apps.luz]
-path   = "apps/luz"
+[apps.light]
+path   = "apps/light"
 bind   = { led = "pi.act_led" }
 params = { half_period = "500 ms" }
-cycles = { pisca = "main" }
+cycles = { blink = "main" }
 "#;
 
 pub const SIM_TOML: &str = r#"
@@ -37,7 +37,7 @@ act_led = { type = "bool", direction = "output" }
 
 pub fn fs(files: &[(&str, &str)]) -> MemoryFileSystem {
     let mut fs = MemoryFileSystem::default();
-    fs.dir("apps/luz");
+    fs.dir("apps/light");
     for (p, t) in files {
         fs.file(*p, *t);
     }

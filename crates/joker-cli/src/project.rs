@@ -102,13 +102,13 @@ pub fn layers(dir: &Path) -> Vec<PathBuf> {
 }
 
 /// `jk new`: the bench of the learning track, part 1 (a simulated Pi and the
-/// blinking app `luz`).
+/// blinking app `light`).
 pub fn new_project(dir: &Path, name: &str) -> Result<(), String> {
     if dir.exists() {
         return Err(format!("`{}` already exists", dir.display()));
     }
     let io = |e: std::io::Error| format!("{}: {e}", dir.display());
-    std::fs::create_dir_all(dir.join("apps/luz")).map_err(io)?;
+    std::fs::create_dir_all(dir.join("apps/light")).map_err(io)?;
     std::fs::create_dir_all(dir.join("sim")).map_err(io)?;
     std::fs::write(
         dir.join("joker.toml"),
@@ -124,11 +124,11 @@ safe = false
 [cycles.main]
 period = "20ms"
 
-[apps.luz]
-path   = "apps/luz"
+[apps.light]
+path   = "apps/light"
 bind   = {{ led = "pi.act_led" }}
 params = {{ half_period = "500 ms" }}
-cycles = {{ pisca = "main" }}
+cycles = {{ blink = "main" }}
 "#
         ),
     )
@@ -146,8 +146,8 @@ act_led = { type = "bool", direction = "output" }
     )
     .map_err(io)?;
     std::fs::write(
-        dir.join("apps/luz/README.md"),
-        "# luz\n\nBlinks `led` every `half_period`. Until the Wasm SDK lands, the runtime runs its native `luz`.\n",
+        dir.join("apps/light/README.md"),
+        "# light\n\nBlinks `led` every `half_period`. Until the Wasm SDK lands, the runtime runs its native `light`.\n",
     )
     .map_err(io)?;
     std::fs::write(dir.join(".gitignore"), "/.joker/dev/\n/.joker/*.sock\n").map_err(io)?;
