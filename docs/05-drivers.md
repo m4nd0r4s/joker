@@ -83,7 +83,7 @@ Modbus RTU, 19200 baud, 8E1 (11 bits/char):
     perfil o permitir: 3 × (53+40)·11/19200 + … ≈ 3 × 68 ms = 204 ms → ainda 102%)
 ```
 
-Isto apanha o erro mais comum em projetos Modbus RTU: pedir a 10 medidores num RS-485 o que só cabe em 3.
+Isto apanha o erro mais comum em projetos Modbus RTU: pedir a 10 medidores num RS-485 o que só cabe em 3. O `J0370` sai acima de 100%; o alvo de 80% dá o poll mínimo da ajuda. O modelo para os outros barramentos (I²C, SPI, CAN, Ethernet partilhada) está na ADR 0049.
 
 ---
 

@@ -225,10 +225,10 @@ As subdivisões destas gamas, uma por referência e sem sobreposições, estão 
 
 | Tema | Onde fica decidido |
 |---|---|
-| fórmula exata da admissão RT (a margem de 30%, o que entra no WCET) | ADR na tarefa 17 do documento 13 |
+| fórmula exata da admissão RT (a margem de 30%, o que entra no WCET) | **decidido:** ADR 0048 |
 | `dt()` depois de um `overrun = skip` (período nominal ou real) | ADR na tarefa 8 |
 | transições de alarmes a partir de `Unknown` | ADR na tarefa 12 |
-| modelo de orçamento de barramentos além do RTU | ADR na tarefa 17 |
+| modelo de orçamento de barramentos além do RTU | **decidido:** ADR 0049 |
 | esquema JSON do manifesto | **gerado** a partir dos tipos do `joker-manifest` (a `ref/01` é a fonte; o documento 03 é a explicação) |
 
 **Já decidido nesta rodada:** a base dos caminhos de `extends` (relativos ao ficheiro que os declara, `ref/01` §7.1 e §7.5) e a definição exata de "só apertar" (`ref/01` §7.4). Na admissão de tier 2 entra o **máximo** medido, e não o p99,9 (D15, `ref/05`); a fórmula para as apps de tier 1 continua na ADR da tarefa 17.
