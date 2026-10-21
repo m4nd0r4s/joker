@@ -1,5 +1,6 @@
 //! The Joker daemon (docs/01 §2, ADR 0016).
 
+pub mod actions;
 pub mod api;
 pub mod catalog;
 pub mod compress;
