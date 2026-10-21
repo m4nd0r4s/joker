@@ -40,5 +40,6 @@
 | [0038](0038-envelope-steps-2-to-6.md) | Details of envelope steps 2–6 |
 | [0039](0039-atomic-groups-in-the-envelope.md) | Atomic groups in the envelope |
 | [0040](0040-alarm-lifecycle-and-unknown.md) | Alarm lifecycle: delays, `Unknown`, suppression and shelving |
+| [0041](0041-method-expansion-and-queries-in-the-core.md) | Method expansion, `own()` and queries in the core |
 
 Mudar uma decisão = escrever uma ADR nova que a substitui, e atualizar os documentos afetados no mesmo conjunto de commits.
