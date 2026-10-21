@@ -59,7 +59,7 @@ The Rust types of the `joker-manifest` crate are written from this reference (§
 | **Default** | the value used when the key is missing. `—` means "no value": the feature stays off |
 | **Validation** | rules beyond the type; the code in parentheses is the error |
 | **Origin** | document the key comes from; `new` when this reference introduces it |
-| **Phase** | `1.0`, or `1.1` (reserved: the key exists in the 1.0 schema, but using it on a 1.0 runtime is `J0290`) |
+| **Phase** | `1.0`, or a later version (`1.0.x`, `1.1`, `1.2`): **reserved**. A reserved key exists in the 1.0 schema, `jk` validates its form, and using it on a runtime that does not implement it is `J0290`. The 1.0 cut that decides what is reserved is that of document 26, §5 (ADR 0028, ADR 0035); `1.0.x` is a patch release that adds drivers and extensions (ADR 0022, rule 3) |
 
 ### 2.2 Types
 
@@ -419,7 +419,7 @@ A `serial`, `i2c`, `spi` or `ethernet` bus **serializes** access: all the device
 
 | `kind` | Key | Type | Req. | Default | Validation | Origin | Phase |
 |---|---|---|---|---|---|---|---|
-| all | `kind` | `"ethernet"` \| `"serial"` \| `"can"` \| `"ethercat"` \| `"i2c"` \| `"spi"` | yes | — | `J0144` | 03 §4 | 1.0 |
+| all | `kind` | `"ethernet"` \| `"serial"` \| `"can"` \| `"ethercat"` \| `"i2c"` \| `"spi"` | yes | — | `J0144`; `spi` is reserved for 1.0.x, `can` for 1.1 and `ethercat` for 1.2 (`J0290`) | 03 §4 | 1.0 |
 | `ethernet` | `iface` | string | yes | — | | 03 §4 | 1.0 |
 | `serial` | `port` | `File` (device) on Linux; `Name` on an MCU | yes | — | on Linux, an absolute path; **on an MCU** (§5.22), the name of a `[uart.<name>]` of the board (`ref/03` §2.3.3), such as `port = "uart0"`, and never a path (nonexistent `J0828`; a path `J0145`) | 03 §4 | 1.0 |
 | `serial` | `baud` | `Integer` | yes | — | 300–4 000 000 | 03 §4 | 1.0 |
@@ -428,24 +428,24 @@ A `serial`, `i2c`, `spi` or `ethernet` bus **serializes** access: all the device
 | `serial` | `data_bits` | `7` \| `8` | no | `8` | | new | 1.0 |
 | `serial` | `turnaround` | `Duration` | no | 3.5 characters at the declared `baud` (Modbus RTU frame silence) | | 03 §4 | 1.0 |
 | `serial` | `dtr`, `rts` | `"keep"` \| `"low"` \| `"high"` | no | `"low"` | state of the control lines **when the port is opened** and while it is open. `"low"` (deasserted) on both is what lets the port be opened without triggering the *auto-reset* of ESP32 boards (the DTR/RTS circuit of the USB bridge pulls `EN` and `GPIO0` to zero, and the ESP32 restarts or enters flashing mode); `"keep"` does not touch the lines (whatever state the bridge controller has); `"high"` asserts it (some RS-485 adapters use RTS for the direction). Only on Linux; on an MCU `J0145`. With `duplex = "half"` and an adapter that does the direction through RTS, the driver controls RTS and `rts` is `J0145` | new (track, part 4) | 1.0 |
-| `serial` | `duplex` | `"full"` \| `"half"` | no | `"full"` | `half` on two-wire RS-485: Joker Link uses turn-taking (`ref/07` §15); Modbus RTU ignores it | `ref/07` §15 | 1.0 |
-| `can` | `iface` | string | yes | — | | 03 §4 | 1.0 |
-| `can` | `bitrate` | `Integer` (bit/s) | yes | — | | 03 §4 | 1.0 |
-| `can` | `fd` | `Bool` | no | `false` | | new | 1.0 |
-| `can` | `data_bitrate` | `Integer` | cond. | — | only with `fd = true` (`J0145`) | new | 1.0 |
-| `ethercat` | `iface` | string | yes | — | | 03 §4 | 1.0 |
-| `ethercat` | `cycle` | `Duration` | yes | — | ≥ 100 µs | 03 §4 | 1.0 |
-| `ethercat` | `dc` | `Bool` (distributed clocks) | no | `false` | | 08 R4 | 1.0 |
+| `serial` | `duplex` | `"full"` \| `"half"` | no | `"full"` | `half` on two-wire RS-485: Joker Link uses turn-taking (`ref/07` §15); Modbus RTU ignores it. `half` on a bus with a `joker-link` device is reserved for 1.1 (`J0290`) | `ref/07` §15 | 1.0 (`half` with Joker Link: 1.1) |
+| `can` | `iface` | string | yes | — | | 03 §4 | 1.1 |
+| `can` | `bitrate` | `Integer` (bit/s) | yes | — | | 03 §4 | 1.1 |
+| `can` | `fd` | `Bool` | no | `false` | | new | 1.1 |
+| `can` | `data_bitrate` | `Integer` | cond. | — | only with `fd = true` (`J0145`) | new | 1.1 |
+| `ethercat` | `iface` | string | yes | — | | 03 §4 | 1.2 |
+| `ethercat` | `cycle` | `Duration` | yes | — | ≥ 100 µs | 03 §4 | 1.2 |
+| `ethercat` | `dc` | `Bool` (distributed clocks) | no | `false` | | 08 R4 | 1.2 |
 | `i2c` | `dev` | `File` | yes | — | | example 00, old track (part 4) | 1.0 |
-| `spi` | `dev` | `File` (`/dev/spidevB.C`) | yes | — | | new (fixes 08 R3) | 1.0 |
-| `spi` | `mode` | `0`–`3` | no | `0` | | new | 1.0 |
-| `spi` | `speed` | `Quantity<Hz>` | no | `"1 MHz"` | | new | 1.0 |
+| `spi` | `dev` | `File` (`/dev/spidevB.C`) | yes | — | | new (fixes 08 R3) | 1.0.x |
+| `spi` | `mode` | `0`–`3` | no | `0` | | new | 1.0.x |
+| `spi` | `speed` | `Quantity<Hz>` | no | `"1 MHz"` | | new | 1.0.x |
 
 A TCP device without `bus` uses the system routing and does **not** serialize with the others (each one has its own connection). With a `bus` of `kind = "ethernet"`, it connects through that interface and shares the scheduler (useful when a PLC only accepts one TCP connection, or behind a Modbus TCP/RTU gateway).
 
-### 5.7 `[drivers.<driver>]`
+### 5.7 `[drivers.<driver>]` (reserved 1.2)
 
-Tier N drivers are compiled into `jokerd`. Tier W and X drivers are referred to with a prefix in `driver` (`"w:dlms-cosem"`, `"x:bacnet-ip"`) and are declared here. In 1.0, tier W is **unstable**: only in-tree drivers pass in `prod`, and a W driver from outside the tree is `J0860` (`ref/06` §4); stable and open to third parties in 1.2.
+Tier N drivers are compiled into `jokerd`. Tier W and X drivers are referred to with a prefix in `driver` (`"w:dlms-cosem"`, `"x:bacnet-ip"`) and are declared here. **The tier W and tier X hosts are 1.2** (document 26, §5; ADR 0035): in 1.0 the whole section is reserved, and a `[drivers]` entry or a `w:`/`x:` driver is `J0290`. When the hosts ship, tier W is still **unstable** until it is opened to third parties: only in-tree drivers pass in `prod`, and a W driver from outside the tree is `J0860` (`ref/06` §4).
 
 ```toml
 [drivers.bacnet-ip]
@@ -465,24 +465,24 @@ memory = "8 MiB"
 
 | Key | Tier | Type | Req. | Default | Validation | Origin | Phase |
 |---|---|---|---|---|---|---|---|
-| `tier` | w, x | `"w"` \| `"x"` | yes | — | must match the prefix used in `driver` (`J0170`) | new | 1.0 |
-| `source` | w, x | `Ref` `oci://…` or `File` | cond. | — | required in `w`; in `x`, an alternative to `exec` (`J0145`) | new | 1.0 |
-| `digest` | w, x | `"sha256:…"` | no | pinned in the lock (`ref/02` §2.1.8) | different from the lock `J0420` | new | 1.0 |
-| `exec` | x | `File` (absolute) | cond. | — | | new | 1.0 |
-| `args` | x | `List<string>` (ordered) | no | `[]` | | new | 1.0 |
-| `launch` | x | `"systemd"` \| `"spawn"` \| `"external"` | no | `"systemd"` where there is systemd, otherwise `"spawn"` | `ref/06` §5.2.1; `spawn` with the `jokerd` user in `prod` `J0865` | `ref/06` | 1.0 |
-| `user` | x | `"dynamic"` or a user name | no | `"dynamic"` with `launch = "systemd"` (`DynamicUser`); `"joker-drv-<driver>"` with `launch = "spawn"` | nonexistent user `J0864` | 01 §17, `ref/06` §5.2.4 | 1.0 |
-| `groups` | x | `List<string>` (set) | no | `[]` | only device-access groups (`dialout`, `video`, `gpio`, `i2c`, `spi`); `joker`, `root`, `wheel`, `sudo` `J0865` | `ref/06` | 1.0 |
-| `memory` | w, x | `Size` | no | W: that of the descriptor (16 MiB); X: `"256 MiB"` | W ≤ `"64 MiB"` (`J0874`) | `ref/06` | 1.0 |
-| `cpu` | x | `Percentage` of one CPU | no | `"100 %"` | `"1 %"`–`"400 %"` (`J0144`) | `ref/06` | 1.0 |
-| `cpu_per_call` | w | `Duration` | no | `"50ms"` | ≤ `"1s"` (`J0152`) | `ref/06` | 1.0 |
-| `plan_fuel` | w | `Integer` | no | 10⁹ | ≤ 10¹⁰ (`J0144`) | `ref/06` | 1.0 |
-| `isolation` | x | `"process"` \| `"per_device"` | no | `"process"` | `per_device`: one process per device | `ref/06` | 1.0 |
-| `net` | x | `List<string>` (IP or CIDR; set) | no | `[]` | destinations beyond the addresses of the devices (`J0184` if malformed) | `ref/06` | 1.0 |
-| `devices` | x | `List<File>` (`/dev` nodes; set) | no | `[]` | extra nodes for `DeviceAllow` | `ref/06` | 1.0 |
-| `raw_net` | x | `Bool` | no | `false` | `AF_PACKET` (GigE Vision, external EtherCAT) | `ref/06` | 1.0 |
-| `env` | x | `Table<string, string>` | no | `{}` | `JDP_*` keys reserved (`J0141`) | `ref/06` | 1.0 |
-| `restart` | w, x | `{ min = Duration, max = Duration }` | no | `{ min = "1s", max = "5m" }` | `min ≤ max` (`J0145`) | `ref/06` §4.5, §5.7 | 1.0 |
+| `tier` | w, x | `"w"` \| `"x"` | yes | — | must match the prefix used in `driver` (`J0170`) | new | 1.2 |
+| `source` | w, x | `Ref` `oci://…` or `File` | cond. | — | required in `w`; in `x`, an alternative to `exec` (`J0145`) | new | 1.2 |
+| `digest` | w, x | `"sha256:…"` | no | pinned in the lock (`ref/02` §2.1.8) | different from the lock `J0420` | new | 1.2 |
+| `exec` | x | `File` (absolute) | cond. | — | | new | 1.2 |
+| `args` | x | `List<string>` (ordered) | no | `[]` | | new | 1.2 |
+| `launch` | x | `"systemd"` \| `"spawn"` \| `"external"` | no | `"systemd"` where there is systemd, otherwise `"spawn"` | `ref/06` §5.2.1; `spawn` with the `jokerd` user in `prod` `J0865` | `ref/06` | 1.2 |
+| `user` | x | `"dynamic"` or a user name | no | `"dynamic"` with `launch = "systemd"` (`DynamicUser`); `"joker-drv-<driver>"` with `launch = "spawn"` | nonexistent user `J0864` | 01 §17, `ref/06` §5.2.4 | 1.2 |
+| `groups` | x | `List<string>` (set) | no | `[]` | only device-access groups (`dialout`, `video`, `gpio`, `i2c`, `spi`); `joker`, `root`, `wheel`, `sudo` `J0865` | `ref/06` | 1.2 |
+| `memory` | w, x | `Size` | no | W: that of the descriptor (16 MiB); X: `"256 MiB"` | W ≤ `"64 MiB"` (`J0874`) | `ref/06` | 1.2 |
+| `cpu` | x | `Percentage` of one CPU | no | `"100 %"` | `"1 %"`–`"400 %"` (`J0144`) | `ref/06` | 1.2 |
+| `cpu_per_call` | w | `Duration` | no | `"50ms"` | ≤ `"1s"` (`J0152`) | `ref/06` | 1.2 |
+| `plan_fuel` | w | `Integer` | no | 10⁹ | ≤ 10¹⁰ (`J0144`) | `ref/06` | 1.2 |
+| `isolation` | x | `"process"` \| `"per_device"` | no | `"process"` | `per_device`: one process per device | `ref/06` | 1.2 |
+| `net` | x | `List<string>` (IP or CIDR; set) | no | `[]` | destinations beyond the addresses of the devices (`J0184` if malformed) | `ref/06` | 1.2 |
+| `devices` | x | `List<File>` (`/dev` nodes; set) | no | `[]` | extra nodes for `DeviceAllow` | `ref/06` | 1.2 |
+| `raw_net` | x | `Bool` | no | `false` | `AF_PACKET` (GigE Vision, external EtherCAT) | `ref/06` | 1.2 |
+| `env` | x | `Table<string, string>` | no | `{}` | `JDP_*` keys reserved (`J0141`) | `ref/06` | 1.2 |
+| `restart` | w, x | `{ min = Duration, max = Duration }` | no | `{ min = "1s", max = "5m" }` | `min ≤ max` (`J0145`) | `ref/06` §4.5, §5.7 | 1.2 |
 
 A key marked for only one tier in an entry of the other tier is `J0145`. A `driver = "x:<name>"` without `[drivers.<name>]` is `J0170`. The driver name follows the grammar of §3.8 (hyphen allowed). How `jokerd` starts, isolates and supervises the driver, and how each key translates into properties of the systemd unit, are in `ref/06` §4.5 and §5.2; this table is the normative list of the keys.
 
@@ -821,7 +821,9 @@ A form that does not fit the type of the port (a list on a scalar port, `each` o
 
 The values of `params` are `Value` (§3.6) validated against the app's declaration in `joker:meta`: a quantity with a unit of the same dimension, a number in `1`, `bool`, string or enum variant. A parameter changed in a new generation reaches the app through `on-params`, without restarting (track, part 1).
 
-#### 5.12.3 `shadow` (M16, apps)
+#### 5.12.3 `shadow` (M16, apps; reserved 1.1)
+
+Shadow mode for apps is **1.1** (document 26, §5; ADR 0035). The keys below exist in the 1.0 schema, and using them on a 1.0 runtime is `J0290`.
 
 ```toml
 [apps.hvac_policy.shadow]
@@ -868,7 +870,7 @@ sim   = { mean = "22 °C", amp = "3 K", period = "10m" }
 | `capabilities` | `List<Name>` (set) | no | `[]` | a capability the class does not have `J0193`; capability members without a mapping `J0602` | 03 §9.2 | 1.0 |
 | `map` | `Table<member, Mapping>` | cond. | — | missing required member `J0601`; `const:` on an `out` `J0603`; wrong adapter `J0194`; class members `J0650`–`J0654` (below), `J0656` on a virtual one; on a virtual instance, only class members (`J0192`) | 03 §9.2, 17 §8 | 1.0 |
 | `implemented_by` | `"app:<app>"` or `{ app, bind, params }` | cond. | — | `J0191`; chain > 3 layers `J0620` (the depth of the class is `JC0501`, separately) | 03 §9.2, 17 §5.3 | 1.0 |
-| `sim` | `Bool` or `Table` (parameters of the class simulator, `ref/03`) | no | `false` | only with the `sim` driver available; in `prod` `J0145` | 03 §9.2 | 1.0 |
+| `sim` | `Bool` or `Table` (parameters of the class simulator, `ref/03`) | no | `false` | only with the `sim` driver available; in `prod` `J0145`; class simulators are reserved for 1.0.x (`J0290`) | 03 §9.2 | 1.0.x |
 | `actions` | `Table<action, configuration>` | no | the suggestions of the class (`@timeout`, `@permit_hint`, `@role_hint`) | the keys of §5.8.2; the manifest wins (17, §4.2) | 17 §4.2 | 1.0 |
 
 **`implemented_by`:**
@@ -1050,16 +1052,16 @@ password = "secret:mqtt_password"
 
 | Key | Type | Req. | Default | Validation | Origin | Phase |
 |---|---|---|---|---|---|---|
-| `kind` | `"mqtt"` \| `"mqtt-sparkplug"` \| `"zenoh"` \| `"otlp"` \| `"http"` | yes | — | `J0144` | 03 §11, 01 §13 | 1.0 |
+| `kind` | `"mqtt"` \| `"mqtt-sparkplug"` \| `"zenoh"` \| `"otlp"` \| `"http"` | yes | — | `J0144`; `otlp` and `http` are reserved for 1.1 and `zenoh` for 1.2 (`J0290`) | 03 §11, 01 §13 | 1.0 (`mqtt`, `mqtt-sparkplug`); 1.1 (`otlp`, `http`); 1.2 (`zenoh`) |
 | `classes` | `Table<class, Selector \| List<Selector>>` | no | `{ alarms = "alarm.**" }` | classes `alarms`, `events`, `high`, `low`, `bulk`, in this order of priority (document 01, §13); another one `J0198`; a signal goes in the highest-priority class that catches it | 03 §11 | 1.0 |
-| `budget` | `DataVolume` | no | — (no budget) | M12; alarms are never degraded | 03 §11 | 1.0 |
+| `budget` | `DataVolume` | no | — (no budget) | M12; alarms are never degraded | 03 §11 | 1.1 |
 | `live.every` | `Duration` | no | `"5s"` | live values, `latest` delivery | 03 §11 | 1.0 |
 | `history.delivery` | `"at_least_once"` | no | `"at_least_once"` | store-and-forward from the historian; a sent signal that is not recorded only goes live (`jk check` note) | 03 §11 | 1.0 |
 | `history.enabled` | `Bool` | no | `true` | | new | 1.0 |
 | `username` | string | no | — | | new | 1.0 |
 | `password`, `token` **(secret)** | `Ref` `secret:` | no | — | plaintext `J0294` | new | 1.0 |
 
-The default of `classes` only sends alarms: nothing leaves the node without being asked for (document 12, §10).
+The default of `classes` only sends alarms: nothing leaves the node without being asked for (document 12, §10). Uplink budgets (M12) are **1.1** (document 26, §5; ADR 0035): in 1.0, `budget` is `J0290`, and an uplink has no budget (the classes keep their meaning).
 
 **Keys by `kind`:**
 
@@ -1082,7 +1084,9 @@ The default of `classes` only sends alarms: nothing leaves the node without bein
 
 `classes`, `live` and `history` do not apply to `otlp` (`J0198`). The TLS client credentials are the node's identity (`ref/02`), not manifest keys.
 
-### 5.18 `[bridges.<bridge>]` (M11)
+### 5.18 `[bridges.<bridge>]` (M11; reserved 1.2)
+
+The OPC UA and Modbus server bridges and the Zenoh/ROS 2 bridge are **1.2** (document 26, §5; ADR 0035). The whole section exists in the 1.0 schema, and a `[bridges]` entry on a 1.0 runtime is `J0290`.
 
 ```toml
 [bridges.scada]
@@ -1102,10 +1106,10 @@ subscribe = { "/cmd_vel" = { type = "geometry_msgs/msg/Twist", fields = ["linear
 
 | Key | Type | Req. | Default | Validation | Origin | Phase |
 |---|---|---|---|---|---|---|
-| `kind` | `"opcua-server"` \| `"modbus-server"` \| `"zenoh-ros2"` | yes | — | | 03 §12 | 1.0 |
-| `expose` | `List<Selector>` or, in `zenoh-ros2`, `Table<Path, topic \| { topic, type, fields }>` | no | `[]` | without matches `J0156` (warning); instance paths expose the whole instance (methods included, in OPC UA) | 03 §12 | 1.0 |
-| `writer.level`, `writer.priority`, `writer.lease` | as in `[apps.*.writer]` | cond. | — | required if `writable` or some `to` is an output; `safety` band `J0253`; `manual` `J0252` | 03 §12 | 1.0 |
-| `writer.writable` | `List<Path \| Selector>` (set) of outputs | no | `[]` (read-only) | only outputs with an envelope (`J0199`); without matches `J0155` | 03 §12 | 1.0 |
+| `kind` | `"opcua-server"` \| `"modbus-server"` \| `"zenoh-ros2"` | yes | — | | 03 §12 | 1.2 |
+| `expose` | `List<Selector>` or, in `zenoh-ros2`, `Table<Path, topic \| { topic, type, fields }>` | no | `[]` | without matches `J0156` (warning); instance paths expose the whole instance (methods included, in OPC UA) | 03 §12 | 1.2 |
+| `writer.level`, `writer.priority`, `writer.lease` | as in `[apps.*.writer]` | cond. | — | required if `writable` or some `to` is an output; `safety` band `J0253`; `manual` `J0252` | 03 §12 | 1.2 |
+| `writer.writable` | `List<Path \| Selector>` (set) of outputs | no | `[]` (read-only) | only outputs with an envelope (`J0199`); without matches `J0155` | 03 §12 | 1.2 |
 
 **Keys by `kind`:**
 
@@ -1219,10 +1223,10 @@ accept_unsafe_reset = "bench: no load on the ESP32 GPIOs; the floating LED at re
 
 | Key | Type | Req. | Default | Validation | Origin |
 |---|---|---|---|---|---|
-| `bus` | `Name` of a `serial` or `can` bus | cond. | — | exactly one of `bus` and `address` | 19 §6 |
+| `bus` | `Name` of a `serial` or `can` bus | cond. | — | exactly one of `bus` and `address`; a `can` bus is reserved for 1.1 (`J0290`) | 19 §6 |
 | `addr` | `Integer` | no | `0` on a point-to-point serial connection, `1` on CAN | address **of the MCU** on the bus: 1–247 on a shared RS-485, 1–253 on CAN (`J0736`, `ref/07`); only with `bus` | `ref/07` §15 |
 | `address` | `"udp:<host>:<port>"` \| `"tcp:<host>:<port>"` | cond. | — | only on M2 MCUs; `address` is always an IP address, and never the address on the bus. It is the address **of the Linux node** (the peer): with `tcp:`, the MCU connects to it; with `udp:`, it sends it the datagrams and only accepts those that come from it. On the Linux side, the `address` of the `joker-link` device is the opposite, the IP and port **of the MCU** (appendix A; `ref/07` §15) | 19 §6 |
-| `peer` | `DnsName` of the Linux node, or `"deck"` | no | accepts the first authenticated peer | | new |
+| `peer` | `DnsName` of the Linux node, or `"deck"` | no | accepts the first authenticated peer | `"deck"` belongs to the standalone MCU profile and is reserved for 1.1 (`J0290`; ADR 0035) | new |
 | `auth` | `"required"` \| `"none"` | no | `"required"` | `none` on an IP transport `J0179` | 19 U10 |
 
 The form of the messages, the negotiation, the link key and the defaults of the timings are in `ref/07`.
@@ -1387,6 +1391,27 @@ deadline = "120ms"
 | `bind = "model:<m>"`, `"pipe:<p>"` | §5.12.1 | model and pipeline ports |
 | `security.trust.models` | §5.19 | `joker.model.v1+jkm` artifacts |
 | drivers `v4l2`, `libcamera`, `spi-adc` | appendix A | 1.1 (document 21, §3) |
+
+### 6.6 Reserved by the 1.0 cut
+
+ADR 0028 keeps stable in 1.0 only what is implemented and passed its gate; the cut is the table of document 26, §5, and ADR 0035 applies it to this reference. The keys below are described in §5 and appendix A with their final form, and they exist in the 1.0 schema with the `since` of the version that brings them; using one on a runtime that does not implement it is `J0290`, as for the keys of §6.1–§6.5. A key reserved for `1.0.x` gets the number of the patch release that implements it.
+
+| Key | Where it is described | Version |
+|---|---|---|
+| `buses.*.kind = "spi"` and its keys | §5.6 | 1.0.x |
+| drivers `revpi`, `spi`, `opcua`, `m-bus`, `onewire`, `serial-line`; `modbus-slave` on an MCU | appendix A | 1.0.x |
+| `instances.*.sim` (class simulators) | §5.13 | 1.0.x |
+| `apps.*.shadow` | §5.12.3 | 1.1 |
+| `telemetry.uplink.*.budget` (M12) | §5.17.3 | 1.1 |
+| `telemetry.uplink.*.kind = "otlp"` and `"http"`, with their keys | §5.17.3 | 1.1 |
+| `buses.*.kind = "can"` and its keys; drivers `can` and `canopen`; `joker-link` over CAN (`bus` of kind `can`, `can_id_base`) | §5.6, §5.22, appendix A | 1.1 |
+| `buses.*.duplex = "half"` with a `joker-link` device; `joker-link` keys `turn_timeout` and `turn_frames` | §5.6, appendix A | 1.1 |
+| `[link] peer = "deck"` (standalone MCU profile) | §5.22 | 1.1 |
+| `joker-link` key `usb` (USB CDC transport) | appendix A | 1.0.x |
+| `[drivers.<driver>]` and the `w:<name>`, `x:<name>` drivers (tier W and X hosts) | §5.7, appendix A | 1.2 |
+| `[bridges.<bridge>]` (OPC UA server, Modbus server, Zenoh/ROS 2) | §5.18 | 1.2 |
+| `telemetry.uplink.*.kind = "zenoh"`, with its keys | §5.17.3 | 1.2 |
+| `buses.*.kind = "ethercat"` and its keys | §5.6 | 1.2 |
 
 ---
 
@@ -1596,7 +1621,7 @@ The local API exposes the effective manifest of the active generation and of eac
 | before 1.0 | the runtime accepts the current minor and the previous one of the schema (document 09, attack 8); `jk migrate` rewrites between minors |
 | in the 1 series | a 1.x runtime accepts any 1.y manifest with y ≤ x; `jk migrate` is optional |
 | in 2.0 | `jk migrate` is required; 2.0 reads the last 1.x (document 21, §1.1) |
-| reserved | the 1.1 keys (§6) exist in the 1.0 schema with `since = "1.1"`: `J0290` on a 1.0 runtime, and `J0148` with `joker = "1.0"` on a 1.1 runtime |
+| reserved | the reserved keys (§6, including those of the 1.0 cut in §6.6) exist in the 1.0 schema with the `since` of the version that brings them (`"1.1"`, `"1.2"`, or the patch release of a `1.0.x` key): `J0290` on a runtime older than that, and `J0148` with an older `joker` on a runtime that has them |
 | codes | a code is never reused after being removed (`ref/00` §1) |
 
 ---
@@ -1736,7 +1761,7 @@ Referred to, from other ranges: `J0401` (drift against the lock), `J0501`, `J050
 | `J0185` | error-in-prod | referenced secret does not exist in the node's vault |
 | `J0186` | error | app resource class inconsistent with that of the groups, or `rt` in async |
 | `J0187` | error | `native` app that is not in this runtime build |
-| `J0188` | error | `shadow.of` not resolvable |
+| `J0188` | error | `shadow.of` not resolvable (reserved 1.1) |
 | `J0189` | error | port bound in two places |
 
 **Instances, `calc`, alarms, telemetry, bridges (`J019x`)**
@@ -1752,7 +1777,7 @@ Referred to, from other ranges: `J0401` (drift against the lock), `J0501`, `J050
 | `J0196` | error | colliding alarm name or created path (including an alarm named `app`: app alarms live in `alarm.app.<app>.<name>`, §5.15) |
 | `J0197` | error | `keep` with an unknown layer |
 | `J0198` | error | uplink with `classes`, `live` or `history` invalid for its `kind` |
-| `J0199` | error | invalid bridge (`to`, `writable`, `listen`/`bus`, `fields`) |
+| `J0199` | error | invalid bridge (`to`, `writable`, `listen`/`bus`, `fields`) (reserved 1.2) |
 
 **Envelope (`J023x`)**
 
@@ -1792,7 +1817,7 @@ Referred to, from other ranges: `J0401` (drift against the lock), `J0501`, `J050
 | `J0250` | error | invalid `level`, or compact form inconsistent with `priority` |
 | `J0251` | error | `priority` outside the band |
 | `J0252` | error | app or bridge in the `manual` band |
-| `J0253` | error | bridge in the `safety` band |
+| `J0253` | error | bridge in the `safety` band (reserved 1.2) |
 | `J0254` | error | `proposal` writer with `level`, `priority` or `lease` |
 | `J0255` | error | `max_lease` > 24 h or `max_manual` > 7 d |
 | `J0256` | error | lease shorter than the owning group's period |
@@ -1836,7 +1861,7 @@ Referred to, from other ranges: `J0401` (drift against the lock), `J0501`, `J050
 | `J0294` | error-in-prod | plaintext secret in a secret-type key |
 | `J0295` | error | invalid principal in `[security.roles]` |
 | `J0296` | error-in-prod | connection without TLS or without security (`mqtt://`, `http://`, OPC UA `None`) |
-| `J0297` | warning | bridge with writes listening on all interfaces |
+| `J0297` | warning | bridge with writes listening on all interfaces (reserved 1.2) |
 | `J0298` | warning | action with `role = "viewer"`: counts as `operator`, which is the API minimum |
 
 `J0244`–`J0249`, `J0258`–`J0269`, `J0278`, `J0279`, `J0289` and `J0299` stay free, so that this reference can grow without leaving the range.
@@ -2153,9 +2178,10 @@ pub struct Selector(String);
 
 | Phase | What |
 |---|---|
-| **1.0** | everything in §5, except what is listed below; `[drivers]`; `[link]` on Joker Micro; bridges (Phase 2); app shadow and uplink budgets (Phase 3) |
-| **1.1** (reserved in the 1.0 schema, `J0290`) | `[models]`, `[streams]`, `[pipelines]`, `[training]`; `writer.kind = "proposal"`; `apps.*.fallback`; `outputs.*.schedule_depth`, `timed`, `on_late`, `late_margin`; signals `kind = "block"`; `telemetry.record` with `blocks`/`trigger`/`pre`/`post`; `resources.ml.accel`; `bind` with `model:`/`pipe:`; `source = "training:…"`; `security.trust.models`; drivers `v4l2`, `libcamera`, `spi-adc` |
-| **1.2** | drivers `ethercat` and native `bacnet-ip` (document 21, §4); tier W becomes stable and open to third parties (`ref/06` §4; in 1.0 it is unstable, only for in-tree drivers) |
+| **1.0** | everything in §5, except what is listed below (the cut of document 26, §5; ADR 0035); `[link]` on Joker Micro |
+| **1.0.x** (reserved in the 1.0 schema, `J0290`) | buses `spi`; drivers `revpi`, `spi`, `opcua`, `m-bus`, `onewire`, `serial-line`, and `modbus-slave` on an MCU; the `usb` transport of `joker-link`; class simulators (`instances.*.sim`) (§6.6) |
+| **1.1** (reserved in the 1.0 schema, `J0290`) | app shadow (`apps.*.shadow`); uplink budgets; uplinks `otlp` and `http`; buses `can`, drivers `can` and `canopen`, `joker-link` over CAN and with RS-485 turn-taking; `[link] peer = "deck"` (§6.6); `[models]`, `[streams]`, `[pipelines]`, `[training]`; `writer.kind = "proposal"`; `apps.*.fallback`; `outputs.*.schedule_depth`, `timed`, `on_late`, `late_margin`; signals `kind = "block"`; `telemetry.record` with `blocks`/`trigger`/`pre`/`post`; `resources.ml.accel`; `bind` with `model:`/`pipe:`; `source = "training:…"`; `security.trust.models`; drivers `v4l2`, `libcamera`, `spi-adc` |
+| **1.2** (reserved in the 1.0 schema, `J0290`) | `[drivers]` and the tier W and X drivers (the hosts arrive in 1.2; tier W is open to third parties when it becomes stable, `ref/06` §4); `[bridges]`; uplink `zenoh`; buses `ethercat`; drivers `ethercat` and native `bacnet-ip` (document 21, §4) |
 | **1.4** | Wasm apps on M2 MCUs: `[apps.*] source` on an MCU target (today `J0720`) |
 | **2.0** | node-qualified paths (`@boiler/pump.run_cmd`, `@` prefix already reserved); site manifest for several nodes (document 21, §8) |
 
@@ -2163,7 +2189,7 @@ pub struct Selector(String);
 
 ## Appendix A — Driver-specific keys (v1 catalog)
 
-The common keys are in §5.8. For each catalog driver, the "Device keys" column **is** the `config` schema of its descriptor, the "Per-signal keys" column is the `address` schema (in the drivers without a profile) and the "`[discovered]`" column is the `discovered` schema (`ref/06` §2.3; `ref/02` §2.1.11). In the drivers with a profile, the address keys of the points are in the profile (`ref/03` §2.2.5), with the same names. A tier W or X driver publishes its schemas in the descriptor, and `jk check` validates against them. The keys marked **(secret)** only accept `secret:<name>` (§3.10).
+The common keys are in §5.8. For each catalog driver, the "Device keys" column **is** the `config` schema of its descriptor, the "Per-signal keys" column is the `address` schema (in the drivers without a profile) and the "`[discovered]`" column is the `discovered` schema (`ref/06` §2.3; `ref/02` §2.1.11). In the drivers with a profile, the address keys of the points are in the profile (`ref/03` §2.2.5), with the same names. A tier W or X driver publishes its schemas in the descriptor, and `jk check` validates against them. The keys marked **(secret)** only accept `secret:<name>` (§3.10). The "Phase" column follows the 1.0 cut (§6.6, ADR 0035): a driver of a later phase is reserved, and using it on a runtime that does not implement it is `J0290`.
 
 | Driver | Tier | Phase | `bus` | `profile` | Device keys | Per-signal keys | `[discovered]` |
 |---|---|---|---|---|---|---|---|
@@ -2173,16 +2199,16 @@ The common keys are in §5.8. For each catalog driver, the "Device keys" column 
 | `gpio` | N | 1.0 | — | — (expanders: profile of the `gpio` family) | `chip` (`"gpiochip<N>"`, label, or `"auto"`, default `"auto"`: the board chooses, `ref/03` §2.3.2; on an MCU it does not apply, `J0145`) | `line` (BCM name `"GPIO17"`, line name, or integer offset; on an MCU, the name of a pin from the board's `[pins]` with the `gpio` function, such as `"gpio2"` on the `esp32-devkit`, and a pin that does not exist or lacks that function is `J0828`; required), `direction`, `bias` (`"as-is"` \| `"pull-up"` \| `"pull-down"` \| `"disabled"`, default `"as-is"`), `active_low` (`false`), `drive` (`"push-pull"` \| `"open-drain"` \| `"open-source"`, outputs only), `edges` (`"none"` \| `"rising"` \| `"falling"` \| `"both"`, default `"none"`), `timestamp` (`"kernel"` \| `"none"`, default `"kernel"` when there are `edges`), `debounce` | — |
 | `sysfs` | N | 1.0 | — | — | none | exactly one of `led` (name in `/sys/class/leds`, e.g. `"ACT"`; `bool` signal, `direction = "output"` or `"input"`; writes `max_brightness` or 0; on an output, on open it sets the LED's `trigger` to `none` and restores the previous one on close, see the note after the table) and `thermal` (zone in `/sys/class/thermal`, e.g. `"thermal_zone0"`; `f64` input in `°C`, read in m°C); `direction` (default `"input"`) | — |
 | `i2c` | N | 1.0 | `i2c`, required | required | `address` (integer 0x03–0x77, required), `config` (table validated by the profile's `[config]`, e.g. `pga`, `rate`) | — | — |
-| `spi` | N | 1.0 | `spi`, required | required | `config` (as in `i2c`) | — | — |
-| `revpi` | N | 1.0 | — | — (PiCtory modules) | `config` (`.rsc` `File`, default `"/var/www/revpi/pictory/projects/_config.rsc"`) | — (the signals are the PiCtory variables, with the same name) | — |
+| `spi` | N | 1.0.x | `spi`, required | required | `config` (as in `i2c`) | — | — |
+| `revpi` | N | 1.0.x | — | — (PiCtory modules) | `config` (`.rsc` `File`, default `"/var/www/revpi/pictory/projects/_config.rsc"`) | — (the signals are the PiCtory variables, with the same name) | — |
 | `mqtt` (input) | N | 1.0 | — | optional | `broker` (`mqtt://`/`mqtts://` URL, required), `username`, `password` **(secret)** | `topic` (required), `json` (RFC 6901 JSON pointer; by default: the whole payload), `qos` (0–1, default 1), `type`, `unit` | — |
-| `opcua` (client) | N | 1.0 (Phase 2) | — | optional (imported from NodeSet) | `endpoint` (`"opc.tcp://…"`, required), `security` (`{ policy, mode }`, as in the bridges), `username`, `password` **(secret)**, `sampling` (`Duration`, default = `poll`) | without a profile: `node` (`"ns=2;s=…"`), `attribute` (default `"Value"`), `sampling`, `type`, `unit` | `server_uri`, `namespaces` |
-| `can` | N | 1.0 (Phase 2) | `can`, required | required (imported from DBC) | — | — | — |
-| `canopen` | N | 1.0 (Phase 2) | `can`, required | `profile` or `eds` | `node_id` (1–127, required), `eds` (`File`) | — | `vendor_id`, `product_code`, `revision` |
-| `m-bus` | N | 1.0 (Phase 2) | `serial`, required | required | `address` (primary 0–250, or secondary `"<16 hex>"`) | — | — |
-| `onewire` | N | 1.0 (Phase 2) | — | required | `rom` (`"<16 hex>"`, required) | — | — |
-| `serial-line` | N | 1.0 (Phase 2) | `serial`, required | required | — | — | — |
-| `joker-link` | N | 1.0 (Phase 2) | `serial` or `can`; or none, with `usb` or `address` | — (generated from the MCU's catalog, `ref/03` §2.2.16) | exactly one of `bus`, `usb` (`File`, `/dev/ttyACM0`) and `address` (`"udp:<ip>:<port>"` \| `"tcp:<ip>:<port>"`, port 7471 by default; M2 MCUs); `addr` (address of the MCU on the bus, integer; default 0 over serial, 1 on CAN; `J0736`); `can_id_base` (0–255, default `0x4A`; `J0737`); `auth` (`"required"` \| `"none"`, default `"required"`; `J0179`, `J0738`); `key` **(secret)** (default `"secret:link.<device>"`); `node` (`DnsName` expected in the `HELLO`, optional); timings `report`, `refresh`, `keepalive`, `link_timeout`, `max_lease`, `rto_min`, `ack_delay`, `time_interval`, `time_tolerance`, `time_max_delay`, `turn_timeout` (`Duration`); sizes and counts `max_frame`, `max_msg`, `window`, `bulk_max`, `retransmit`, `turn_frames` (`Integer`); `instances` (`Table<name on the MCU, name on the node>`); `micro` (`File` of the MCU's manifest: `jk check` without a connection to the node validates the MCU side from it, and `jk apply` builds and carries the MCU's generation blob). With `address`, it is the IP and port **of the MCU** (in the MCU's manifest, `[link] address` is that of the node, §5.22). Defaults and validation in `ref/07` §15 | — | none beyond the common ones; the `digest` is the hash of the catalog (`ref/02` §2.1.11) |
+| `opcua` (client) | N | 1.0.x | — | optional (imported from NodeSet) | `endpoint` (`"opc.tcp://…"`, required), `security` (`{ policy, mode }`, as in the bridges), `username`, `password` **(secret)**, `sampling` (`Duration`, default = `poll`) | without a profile: `node` (`"ns=2;s=…"`), `attribute` (default `"Value"`), `sampling`, `type`, `unit` | `server_uri`, `namespaces` |
+| `can` | N | 1.1 | `can`, required | required (imported from DBC) | — | — | — |
+| `canopen` | N | 1.1 | `can`, required | `profile` or `eds` | `node_id` (1–127, required), `eds` (`File`) | — | `vendor_id`, `product_code`, `revision` |
+| `m-bus` | N | 1.0.x | `serial`, required | required | `address` (primary 0–250, or secondary `"<16 hex>"`) | — | — |
+| `onewire` | N | 1.0.x | — | required | `rom` (`"<16 hex>"`, required) | — | — |
+| `serial-line` | N | 1.0.x | `serial`, required | required | — | — | — |
+| `joker-link` | N | 1.0 (over CAN and with RS-485 turn-taking, 1.1; `usb`, 1.0.x) | `serial` or `can`; or none, with `usb` or `address` | — (generated from the MCU's catalog, `ref/03` §2.2.16) | exactly one of `bus`, `usb` (`File`, `/dev/ttyACM0`) and `address` (`"udp:<ip>:<port>"` \| `"tcp:<ip>:<port>"`, port 7471 by default; M2 MCUs); `addr` (address of the MCU on the bus, integer; default 0 over serial, 1 on CAN; `J0736`); `can_id_base` (0–255, default `0x4A`; `J0737`); `auth` (`"required"` \| `"none"`, default `"required"`; `J0179`, `J0738`); `key` **(secret)** (default `"secret:link.<device>"`); `node` (`DnsName` expected in the `HELLO`, optional); timings `report`, `refresh`, `keepalive`, `link_timeout`, `max_lease`, `rto_min`, `ack_delay`, `time_interval`, `time_tolerance`, `time_max_delay`, `turn_timeout` (`Duration`); sizes and counts `max_frame`, `max_msg`, `window`, `bulk_max`, `retransmit`, `turn_frames` (`Integer`); `instances` (`Table<name on the MCU, name on the node>`); `micro` (`File` of the MCU's manifest: `jk check` without a connection to the node validates the MCU side from it, and `jk apply` builds and carries the MCU's generation blob). With `address`, it is the IP and port **of the MCU** (in the MCU's manifest, `[link] address` is that of the node, §5.22). Defaults and validation in `ref/07` §15 | — | none beyond the common ones; the `digest` is the hash of the catalog (`ref/02` §2.1.11) |
 | `ethercat` | N | 1.2 | `ethercat`, required | required | `position` (integer, required) | — | — |
 | `bacnet-ip` | X → N | 1.2 (both tiers; document 21, §4) | `ethernet`, optional | required or by discovery | `network` (CIDR), `device_instance` (integer), `priority` (1–16: the BACnet priority that Joker uses; required with outputs) | — | according to the driver's schema |
 | `v4l2` | N | **1.1** | — | — | `device` (`File`), `format` (`{ width, height, pixfmt, fps }`), `trigger` (`{ kind = "hardware" \| "software", input = Path }`) | — | — |
@@ -2190,9 +2216,9 @@ The common keys are in §5.8. For each catalog driver, the "Device keys" column 
 | `spi-adc` | N | **1.1** | `spi`, required | required | `drdy` (`Path` of a GPIO input), `rate` (`Quantity<Hz>`) | `kind`, `block`, `unit` | — |
 | `adc`, `pwm` | N (MCU only) | 1.0 | — | — | — | `adc`: `pin` (pin with the board's `adc` function, `ref/03` §2.3.3), `unit`, `scale`; `pwm`: `pin`, `frequency` (`Quantity<Hz>`) | — |
 | `esp32` | N (MCU only) | 1.0 | — | — | none; only on ESP32 boards (`arch` = `xtensa-esp32-none-elf` or `xtensa-esp32s3-none-elf`), on another `J0145` | exactly one of: `touch` (`Integer` 0–9: the capacitive touch pad, resolved by the `touch_channel` of the board's `[pins]`, `ref/03` §2.3.3; `touch = 0` is T0, on GPIO4 of the `esp32-devkit`; a pad without a pin on the board is `J0828`; `u64` input, without a unit: the raw value of the peripheral, which **drops** when touched), `rssi = true` (Wi-Fi RSSI in dBm; `i64` input with `unit = "1"`, because the scale is logarithmic; without `[net.wifi]` or without a connection, `bad(not_connected)`), `uptime = true` (time since boot; `f64` input in `s`, `monotonic`); `direction` only `"input"` (another is `J0145`); `poll` (by default: that of the device); the common signal adjustments (`deadband`, `stuck_detect`, `limits`, §5.8.1). The types are the same that a Modbus profile gives to `u16`, `i16` and `u32` registers with `unit = "s"` (`ref/03` §2.2.7): replacing the bench firmware with Joker Micro does not change the types of the signals (document 23, §3 and §6.5) | — |
-| `modbus-slave` | N (MCU only) | 1.0 | `serial`, required | required (the served map, in the profile format) | `unit_id` (1–247, required) | — | — |
+| `modbus-slave` | N (MCU only) | 1.0.x | `serial`, required | required (the served map, in the profile format) | `unit_id` (1–247, required) | — | — |
 | `extern` | — (MCU only) | 1.0 | — | — | none | `type`, `unit`, `direction` (§5.22; `J0785`) | — |
-| `w:<name>`, `x:<name>` | W, X | 1.0 | according to the descriptor | according to the descriptor | those of the `config` schema | those of the `address` schema | those of the `discovered` schema |
+| `w:<name>`, `x:<name>` | W, X | 1.2 | according to the descriptor | according to the descriptor | those of the `config` schema | those of the `address` schema | those of the `discovered` schema |
 
 **`sysfs` and the LEDs' `trigger`.** A kernel LED may be driven by a `trigger` (`mmc0`, `heartbeat`, `default-on`…), which overrides the written `brightness`. When opening a `led` signal with `direction = "output"`, the driver reads the current `trigger`, saves it, and writes `none`; on close (orderly stop of `jokerd`, a generation swap that removes the signal, `jk device stop`), it restores the saved `trigger`. An abrupt stop leaves the `trigger` at `none` and the last `brightness`: this is why the behavior of the LED with `jokerd` stopped is the `fallback` of the board's `[io]` (ref/03 §2.3.2), and not the original `trigger`. An input-only LED (`direction = "input"`) does not touch the `trigger`. **Permissions:** the `jokerd` package installs the udev rule `/usr/lib/udev/rules.d/60-joker-leds.rules`, which gives the `joker` group write access to `brightness` and `trigger` of `/sys/class/leds/*`; without it, opening the LED fails with `bad(config_error)` and `jk doctor` says so (document 05, §10).
 

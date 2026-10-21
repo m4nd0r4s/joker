@@ -2529,6 +2529,8 @@ id = "J0188"
 severity = "error"
 message = "`shadow.of` not resolvable"
 doc = "ref/01 §10.2"
+since = "1.1"
+status = "reserved"
 
 [[code]]
 id = "J0189"
@@ -2595,6 +2597,8 @@ id = "J0199"
 severity = "error"
 message = "invalid bridge (`to`, `writable`, `listen`/`bus`, `fields`)"
 doc = "ref/01 §10.2"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J0201"
@@ -2794,6 +2798,8 @@ id = "J0253"
 severity = "error"
 message = "bridge in the `safety` band"
 doc = "ref/01 §10.2"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J0254"
@@ -2970,6 +2976,8 @@ id = "J0297"
 severity = "warning"
 message = "bridge with writes listening on all interfaces"
 doc = "ref/01 §10.2"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J0298"
