@@ -546,6 +546,7 @@ impl Controller {
                 retention: self.config.retention,
                 max_ticks: None,
                 utc_origin_ns: self.config.utc_origin_ns,
+                cpus: crate::resources::rt_cpus(&loaded.manifest),
             },
         )
         .map_err(|e| ControlError::new("J-E1000", 500, e.0))?;

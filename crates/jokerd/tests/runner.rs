@@ -34,6 +34,7 @@ fn start(max_ticks: Option<u64>) -> Start {
         retention: Duration::from_secs(600),
         max_ticks,
         utc_origin_ns: 0,
+        cpus: Vec::new(),
     }
 }
 

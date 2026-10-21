@@ -93,6 +93,7 @@ fn the_light_app_blinks_on_the_simulated_bench_and_replays_identically() {
             retention: Duration::from_secs(600),
             max_ticks: Some(TICKS),
             utc_origin_ns: 0,
+            cpus: Vec::new(),
         },
     )
     .unwrap();

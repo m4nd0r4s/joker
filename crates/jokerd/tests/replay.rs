@@ -40,6 +40,7 @@ fn record(half_period: &str) -> (Vec<u8>, jokerd::load::Loaded) {
             retention: Duration::from_secs(60),
             max_ticks: None,
             utc_origin_ns: 0,
+            cpus: Vec::new(),
         },
     )
     .unwrap();
