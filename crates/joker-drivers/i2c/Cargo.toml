@@ -1,0 +1,19 @@
+[package]
+name = "joker-driver-i2c"
+description = "Joker i2c driver: register-style chips on an I2C bus (chardev)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+joker-hal = { workspace = true, features = ["std", "plan"] }
+
+[dev-dependencies]
+joker-hal = { workspace = true, features = ["testing"] }
+joker-core.workspace = true
+
+[lints]
+workspace = true

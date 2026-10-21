@@ -364,6 +364,93 @@ impl GpioHandle {
     }
 }
 
+/// An in-memory I²C bus, one register file per 7-bit address, with a
+/// shared [`I2cHandle`] a test uses to preload registers, inspect what was
+/// written, or deny an address.
+pub struct MemoryI2c {
+    state: Arc<Mutex<I2cState>>,
+}
+
+#[derive(Debug, Default)]
+struct I2cState {
+    chips: BTreeMap<u8, Vec<u8>>,
+    denied: Vec<u8>,
+}
+
+impl core::fmt::Debug for MemoryI2c {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("MemoryI2c").finish_non_exhaustive()
+    }
+}
+
+impl MemoryI2c {
+    /// An empty bus (every register reads `0` until set).
+    pub fn new() -> (Self, I2cHandle) {
+        let state = Arc::new(Mutex::new(I2cState::default()));
+        (
+            Self {
+                state: state.clone(),
+            },
+            I2cHandle { state },
+        )
+    }
+}
+
+impl crate::link::I2cTransfers for MemoryI2c {
+    fn transfer(&mut self, addr: u8, write: &[u8], read: &mut [u8]) -> Result<(), IoError> {
+        let mut s = lock(&self.state);
+        if s.denied.contains(&addr) {
+            return Err(IoError::Denied);
+        }
+        let regs = s.chips.entry(addr).or_default();
+        let Some((&at, bytes)) = write.split_first() else {
+            return Ok(());
+        };
+        let at = at as usize;
+        if read.is_empty() {
+            if regs.len() < at + bytes.len() {
+                regs.resize(at + bytes.len(), 0);
+            }
+            regs[at..at + bytes.len()].copy_from_slice(bytes);
+            return Ok(());
+        }
+        for (i, out) in read.iter_mut().enumerate() {
+            *out = regs.get(at + i).copied().unwrap_or(0);
+        }
+        Ok(())
+    }
+}
+
+/// The far end of a [`MemoryI2c`]: what a test uses to preload a chip's
+/// registers, read back what the driver wrote, or deny an address.
+#[derive(Clone, Debug)]
+pub struct I2cHandle {
+    state: Arc<Mutex<I2cState>>,
+}
+
+impl I2cHandle {
+    /// Sets `addr`'s registers starting at 0, as a datasheet-default chip
+    /// would already hold.
+    pub fn preload(&self, addr: u8, registers: &[u8]) {
+        lock(&self.state).chips.insert(addr, registers.to_vec());
+    }
+
+    /// The byte at `addr`'s register `reg` (`0` if never touched).
+    pub fn register(&self, addr: u8, reg: u8) -> u8 {
+        lock(&self.state)
+            .chips
+            .get(&addr)
+            .and_then(|r| r.get(reg as usize))
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// Makes `addr` fail every `transfer` with [`IoError::Denied`].
+    pub fn deny(&self, addr: u8) {
+        lock(&self.state).denied.push(addr);
+    }
+}
+
 /// A real registry, process image and envelope with one manual writer, from
 /// which committed writes are obtained in driver tests.
 pub struct OutputHarness {

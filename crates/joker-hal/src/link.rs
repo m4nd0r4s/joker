@@ -345,6 +345,42 @@ impl GpioChip {
     }
 }
 
+/// The host side of an I²C bus (ref/06 §3.4, `Link::I2c`, ADR 0047): a
+/// tier N driver never opens `/dev/i2c-N` itself. One combined transfer
+/// (write, then read with a repeated start) covers the common
+/// register-style chip protocol; synchronous, like [`GpioLines`].
+#[cfg(feature = "alloc")]
+pub trait I2cTransfers: MaybeSend {
+    /// Writes `write` to the 7-bit address `addr`, then reads `read.len()`
+    /// bytes back with a repeated start. `write` alone (empty `read`) is a
+    /// plain write; `read` alone (empty `write`) a plain read.
+    fn transfer(&mut self, addr: u8, write: &[u8], read: &mut [u8]) -> Result<(), IoError>;
+}
+
+/// An I²C bus given by the host.
+#[cfg(feature = "alloc")]
+pub struct I2cBus(alloc::boxed::Box<dyn I2cTransfers>);
+
+#[cfg(feature = "alloc")]
+impl core::fmt::Debug for I2cBus {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_tuple("I2cBus").finish_non_exhaustive()
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl I2cBus {
+    /// Wraps the host's bus.
+    pub fn new(bus: impl I2cTransfers + 'static) -> Self {
+        Self(alloc::boxed::Box::new(bus))
+    }
+
+    /// Writes `write` to `addr`, then reads `read.len()` bytes back.
+    pub fn transfer(&mut self, addr: u8, write: &[u8], read: &mut [u8]) -> Result<(), IoError> {
+        self.0.transfer(addr, write, read)
+    }
+}
+
 #[cfg(feature = "std")]
 pub use paths::DevicePaths;
 
@@ -431,6 +467,9 @@ pub enum Link {
     /// A set of digital lines (ADR 0047).
     #[cfg(feature = "alloc")]
     Gpio(GpioChip),
+    /// An I²C bus (ADR 0047).
+    #[cfg(feature = "alloc")]
+    I2c(I2cBus),
     /// Device paths granted by the manifest (tier N only).
     #[cfg(feature = "std")]
     Paths(DevicePaths),
@@ -630,5 +669,85 @@ mod gpio_tests {
         });
         assert_eq!(chip.get(5).err(), Some(IoError::Denied));
         assert_eq!(chip.set(5, true).err(), Some(IoError::Denied));
+    }
+}
+
+#[cfg(all(test, feature = "testing"))]
+#[allow(
+    clippy::unwrap_used,
+    reason = "test doubles fail the test on a broken fixture"
+)]
+mod i2c_tests {
+    use alloc::collections::BTreeMap;
+    use alloc::sync::Arc;
+    use alloc::vec::Vec;
+
+    use super::*;
+
+    /// One register file per 7-bit address; `transfer` with a one-byte
+    /// `write` and a non-empty `read` is "set the register pointer, read
+    /// back `read.len()` bytes from there".
+    #[derive(Clone, Default)]
+    struct Fake {
+        chips: Arc<std::sync::Mutex<BTreeMap<u8, Vec<u8>>>>,
+        deny: Option<u8>,
+    }
+
+    impl I2cTransfers for Fake {
+        fn transfer(&mut self, addr: u8, write: &[u8], read: &mut [u8]) -> Result<(), IoError> {
+            if self.deny == Some(addr) {
+                return Err(IoError::Denied);
+            }
+            let mut chips = self.chips.lock().unwrap();
+            let regs = chips.entry(addr).or_default();
+            if read.is_empty() {
+                let at = write.first().copied().unwrap_or(0) as usize;
+                for (i, &b) in write.iter().skip(1).enumerate() {
+                    if regs.len() <= at + i {
+                        regs.resize(at + i + 1, 0);
+                    }
+                    regs[at + i] = b;
+                }
+                return Ok(());
+            }
+            let at = write.first().copied().unwrap_or(0) as usize;
+            for (i, out) in read.iter_mut().enumerate() {
+                *out = regs.get(at + i).copied().unwrap_or(0);
+            }
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_write_then_read_sees_the_written_bytes() {
+        let mut bus = I2cBus::new(Fake::default());
+        bus.transfer(0x40, &[0x00, 0xAB, 0xCD], &mut []).unwrap();
+        let mut out = [0u8; 2];
+        bus.transfer(0x40, &[0x00], &mut out).unwrap();
+        assert_eq!(out, [0xAB, 0xCD]);
+    }
+
+    #[test]
+    fn different_addresses_do_not_share_registers() {
+        let mut bus = I2cBus::new(Fake::default());
+        bus.transfer(0x40, &[0x00, 1], &mut []).unwrap();
+        bus.transfer(0x41, &[0x00, 2], &mut []).unwrap();
+        let mut out = [0u8; 1];
+        bus.transfer(0x40, &[0x00], &mut out).unwrap();
+        assert_eq!(out, [1]);
+        bus.transfer(0x41, &[0x00], &mut out).unwrap();
+        assert_eq!(out, [2]);
+    }
+
+    #[test]
+    fn a_denied_address_is_reported() {
+        let mut bus = I2cBus::new(Fake {
+            deny: Some(0x50),
+            ..Fake::default()
+        });
+        assert_eq!(
+            bus.transfer(0x50, &[0x00], &mut [0u8; 1]).err(),
+            Some(IoError::Denied)
+        );
     }
 }

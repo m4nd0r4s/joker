@@ -38,7 +38,9 @@ pub use driver::{
 #[cfg(feature = "alloc")]
 pub use link::SerialPort;
 #[cfg(feature = "alloc")]
-pub use link::{GpioChip, GpioLines, TcpConnect, TcpEndpoint, TcpIo, TcpStream};
+pub use link::{
+    GpioChip, GpioLines, I2cBus, I2cTransfers, TcpConnect, TcpEndpoint, TcpIo, TcpStream,
+};
 pub use link::{IoError, Link, SerialInfo, SerialIo};
 pub use plan::{BatchHead, BatchSpec, PlanView};
 pub use rt::{RtCapable, RtIo, RtPart, RtStatus};
