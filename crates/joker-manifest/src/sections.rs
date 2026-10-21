@@ -104,6 +104,7 @@ impl Checker<'_> {
     fn matches_any(&self, selector: &str) -> bool {
         if grammar::is_wildcard(selector) {
             self.paths.keys().any(|p| grammar::matches(selector, p))
+                || self.selector_may_be_opaque(selector)
         } else {
             self.paths.contains_key(selector) || self.opaque_path(selector)
         }
@@ -1387,7 +1388,19 @@ impl Checker<'_> {
                 let Some(rule) = entry.node.as_table() else {
                     continue;
                 };
-                if rule.contains_key("every") == rule.contains_key("on_change") {
+                let known = self.paths.iter().any(|(p, r)| {
+                    **p == r.canonical
+                        && r.info.ty != SignalType::Unknown
+                        && (if grammar::is_wildcard(selector) {
+                            grammar::matches(selector, p)
+                        } else {
+                            *p == *selector
+                        })
+                });
+                if known
+                    && !rule.contains_key("blocks")
+                    && rule.contains_key("every") == rule.contains_key("on_change")
+                {
                     self.push(
                         Diagnostic::new(
                             "J0195",
@@ -1945,6 +1958,419 @@ impl Checker<'_> {
                         "open Wi-Fi network: `[net.wifi]` without `password`",
                     )
                     .at(target.span),
+                );
+            }
+        }
+    }
+}
+
+/// One writer of one output.
+struct WriterUse {
+    who: String,
+    level: crate::model::Level,
+    explicit: bool,
+    span: Span,
+}
+
+impl Checker<'_> {
+    fn group_period(&self, group: &str) -> Duration {
+        self.manifest
+            .cycles
+            .get(group)
+            .and_then(|c| c.period.as_ref())
+            .map_or(Duration::from_millis(100), |p| p.value)
+    }
+
+    fn app_outputs(&self, name: &str, app: &crate::model::App) -> Vec<(String, Span)> {
+        let interface = self.context.apps.get(name);
+        let mut out = Vec::new();
+        for (port, binding) in &app.bind {
+            let writes = match interface.and_then(|i| i.ports.get(port)) {
+                Some(p) => matches!(
+                    p.kind,
+                    crate::context::PortKind::Output | crate::context::PortKind::OutputMany
+                ),
+                None => true,
+            };
+            if !writes {
+                continue;
+            }
+            let targets: Vec<(String, Span)> = match &binding.value {
+                crate::model::Binding::Target(t) => vec![(t.value.clone(), t.span)],
+                crate::model::Binding::Signal { signal, .. } => {
+                    vec![(signal.value.clone(), signal.span)]
+                }
+                crate::model::Binding::List(items) => {
+                    items.iter().map(|i| (i.value.clone(), i.span)).collect()
+                }
+                crate::model::Binding::Each(_) => Vec::new(),
+            };
+            for (target, span) in targets {
+                for output in self.outputs_of(&target) {
+                    out.push((output, span));
+                }
+            }
+        }
+        out
+    }
+
+    /// The writer rules of ref/01 §5.12 and §3.11, the task periods, and
+    /// the cycle group rules that need the apps (`J0130`, `J0210`–`J0213`,
+    /// `J0256`, `J0257`, `J0284`, `J0286`, `J0287`).
+    pub(crate) fn writers_and_groups(&mut self) {
+        let manifest = self.manifest;
+        let mut writers: BTreeMap<String, Vec<WriterUse>> = BTreeMap::new();
+        for (name, app) in &manifest.apps {
+            let outputs = self.app_outputs(name, app);
+            let level = app.writer.as_ref().map_or(
+                crate::model::Level {
+                    band: Band::Control,
+                    priority: 12,
+                },
+                |w| w.level,
+            );
+            let lease = app
+                .writer
+                .as_ref()
+                .and_then(|w| w.lease.as_ref())
+                .map(|l| (l.value, l.span));
+            let explicit = app.writer.is_some();
+            if let Some(writer) = &app.writer {
+                if writer.proposal
+                    && let Some((_, span)) = outputs.first()
+                {
+                    self.push(
+                        Diagnostic::new(
+                            "J0212",
+                            format!("proposal-only writer `{name}` writes directly"),
+                        )
+                        .at(*span),
+                    );
+                }
+                let has_output_ports = self.context.apps.get(name).map(|i| {
+                    i.ports.values().any(|p| {
+                        matches!(
+                            p.kind,
+                            crate::context::PortKind::Output | crate::context::PortKind::OutputMany
+                        )
+                    })
+                });
+                if has_output_ports == Some(false) {
+                    self.push(
+                        Diagnostic::new(
+                            "J0257",
+                            format!("`writer` on app `{name}`, which has no outputs"),
+                        )
+                        .at(writer.span),
+                    );
+                }
+            }
+            let group = app.cycles.values().next().map(|g| g.value.clone());
+            for (output, span) in outputs {
+                writers.entry(output.clone()).or_default().push(WriterUse {
+                    who: format!("app:{name}"),
+                    level,
+                    explicit,
+                    span,
+                });
+                if let Some((lease, lease_span)) = lease {
+                    let envelope = self
+                        .owner
+                        .get(&output)
+                        .and_then(|k| manifest.outputs.get(k));
+                    if let Some(envelope) = envelope
+                        && lease.as_nanos() > envelope.max_lease.as_nanos()
+                    {
+                        self.push(
+                            Diagnostic::new(
+                                "J0213",
+                                format!("lease of `{name}` above the `max_lease` of `{output}`"),
+                            )
+                            .at(lease_span),
+                        );
+                    }
+                    let owner = envelope
+                        .and_then(|e| e.group.as_ref().map(|g| g.value.clone()))
+                        .or_else(|| group.clone())
+                        .unwrap_or_else(|| "default".to_owned());
+                    if lease.as_nanos() < self.group_period(&owner).as_nanos() {
+                        self.push(
+                            Diagnostic::new(
+                                "J0256",
+                                format!(
+                                    "lease of `{name}` shorter than the period of group `{owner}`"
+                                ),
+                            )
+                            .at(lease_span),
+                        );
+                    }
+                }
+            }
+            if let Some(interface) = self.context.apps.get(name) {
+                for (task, group) in &app.cycles {
+                    let Some(Some(requested)) = interface.tasks.get(task) else {
+                        continue;
+                    };
+                    let tolerance = app
+                        .period_tolerance
+                        .as_ref()
+                        .and_then(|p| joker_units::Literal::parse(&p.value).ok())
+                        .map_or(50.0, |l| match l {
+                            joker_units::Literal::Quantity(q) => q.value,
+                            joker_units::Literal::Number(n) => n,
+                        });
+                    let actual = self.group_period(&group.value).as_nanos() as f64;
+                    let wanted = requested.as_nanos() as f64;
+                    if wanted > 0.0 && (actual - wanted).abs() > wanted * tolerance / 100.0 {
+                        self.push(
+                            Diagnostic::new(
+                                "J0130",
+                                format!(
+                                    "group `{}` is outside the period tolerance of `{name}.{task}`",
+                                    group.value
+                                ),
+                            )
+                            .at(group.span),
+                        );
+                    }
+                }
+            }
+        }
+        for (output, list) in &writers {
+            for (i, w) in list.iter().enumerate() {
+                if list[..i]
+                    .iter()
+                    .any(|o| o.who != w.who && o.level == w.level)
+                {
+                    self.push(
+                        Diagnostic::new(
+                            "J0210",
+                            format!(
+                                "two writers of `{output}` at {}:{}",
+                                w.level.band.as_str(),
+                                w.level.priority
+                            ),
+                        )
+                        .at(w.span),
+                    );
+                }
+            }
+            if list.len() > 1 {
+                for w in list.iter().filter(|w| !w.explicit) {
+                    self.push(
+                        Diagnostic::new(
+                            "J0211",
+                            format!(
+                                "`{output}` has several writers and `{}` declares no `writer`",
+                                w.who
+                            ),
+                        )
+                        .at(w.span),
+                    );
+                }
+            }
+        }
+        let rt: BTreeSet<i64> = self
+            .section("resources")
+            .and_then(|r| r.get("rt"))
+            .and_then(|e| e.node.as_table())
+            .and_then(|t| t.get("cpus"))
+            .map(|e| match &e.node.value {
+                Value::Array(items) => items
+                    .iter()
+                    .filter_map(|i| match i.value {
+                        Value::Integer(n) => Some(n),
+                        _ => None,
+                    })
+                    .collect(),
+                _ => BTreeSet::new(),
+            })
+            .unwrap_or_default();
+        for (group, cycle) in &manifest.cycles {
+            if let Some(cpu) = &cycle.cpu
+                && !rt.contains(&cpu.value)
+            {
+                self.push(
+                    Diagnostic::new(
+                        "J0284",
+                        format!("`cpu` of group `{group}` is outside `[resources.rt]`"),
+                    )
+                    .at(cpu.span),
+                );
+            }
+            let tasks: Vec<(String, String)> = manifest
+                .apps
+                .iter()
+                .flat_map(|(a, app)| {
+                    app.cycles
+                        .iter()
+                        .filter(|(_, g)| g.value == *group)
+                        .map(move |(t, _)| (a.clone(), t.clone()))
+                })
+                .collect();
+            if cycle.overrun == "degrade"
+                && !tasks.iter().any(|(a, t)| {
+                    self.context
+                        .apps
+                        .get(a)
+                        .is_some_and(|i| i.optional_tasks.contains(t))
+                })
+            {
+                self.push(
+                    Diagnostic::new(
+                        "J0286",
+                        format!("`overrun = \"degrade\"` in `{group}` without optional tasks"),
+                    )
+                    .at(cycle.key),
+                );
+            }
+            if cycle.overrun == "catch_up" {
+                let timed = manifest.outputs.values().any(|e| {
+                    e.group.as_ref().is_some_and(|g| g.value == *group)
+                        && (e.rate.is_some()
+                            || e.max_actuations.is_some()
+                            || e.min_interval.as_nanos() > 0)
+                });
+                if timed {
+                    self.push(Diagnostic::new("J0287", format!("`overrun = \"catch_up\"` in `{group}`, whose outputs depend on time")).at(cycle.key));
+                }
+            }
+        }
+    }
+
+    /// `J0188`, `J0189`, `J0243`, `J0276` and `J0298`.
+    pub(crate) fn app_and_device_rules(&mut self) {
+        let manifest = self.manifest;
+        for (name, app) in &manifest.apps {
+            if let Some(of) = app
+                .shadow
+                .as_ref()
+                .and_then(Node::as_table)
+                .and_then(|s| s.get("of"))
+                && let Some(text) = of.node.as_str()
+            {
+                let ok = text == "none"
+                    || text.split_once('@').is_some_and(|(a, v)| {
+                        grammar::is_name(a)
+                            && v.split('.').count() == 3
+                            && v.split('.').all(|p| p.parse::<u32>().is_ok())
+                    });
+                if !ok {
+                    self.push(
+                        Diagnostic::new(
+                            "J0188",
+                            format!(
+                                "`shadow.of` of `{name}` is not \"<app>@<version>\" or \"none\""
+                            ),
+                        )
+                        .at(of.node.span),
+                    );
+                }
+            }
+        }
+        if let Some(instances) = self.section("instances").cloned() {
+            for entry in instances.values() {
+                let Some(implemented) = entry
+                    .node
+                    .as_table()
+                    .and_then(|d| d.get("implemented_by"))
+                    .and_then(|e| e.node.as_table())
+                else {
+                    continue;
+                };
+                let (Some(app), Some(bind)) = (
+                    text(implemented, "app"),
+                    implemented.get("bind").and_then(|e| e.node.as_table()),
+                ) else {
+                    continue;
+                };
+                for (port, item) in bind {
+                    if manifest
+                        .apps
+                        .get(app)
+                        .is_some_and(|a| a.bind.contains_key(port))
+                    {
+                        self.push(
+                            Diagnostic::new(
+                                "J0189",
+                                format!("port `{port}` of `{app}` bound in two places"),
+                            )
+                            .at(item.key),
+                        );
+                    }
+                }
+            }
+        }
+        if let Some(board) = manifest.target.as_ref().and_then(|t| t.board.as_ref())
+            && self
+                .context
+                .boards
+                .get(&board.value.name)
+                .is_some_and(|b| b.no_wasm)
+            && manifest.apps.values().any(|a| a.kind == "wasm")
+        {
+            self.push(
+                Diagnostic::new(
+                    "J0243",
+                    "the board has no Wasm engine for its architecture: only native apps",
+                )
+                .at(board.span),
+            );
+        }
+        for device in manifest.devices.values() {
+            let Some(timeout) = device
+                .profile
+                .as_ref()
+                .and_then(|p| self.context.profiles.get(&p.value))
+                .and_then(|p| p.fallback_timeout)
+            else {
+                continue;
+            };
+            let keepalive = device.fallback_keepalive.as_ref();
+            let value = keepalive.map_or(timeout.as_nanos() / 5, |k| k.value.as_nanos());
+            if value >= timeout.as_nanos() {
+                let span = keepalive.map_or(device.key, |k| k.span);
+                self.push(
+                    Diagnostic::new(
+                        "J0276",
+                        "`keepalive` not below the timeout of the device fallback",
+                    )
+                    .at(span)
+                    .label(format!("the equipment falls back after {timeout}")),
+                );
+            }
+        }
+        let mut actions: Vec<(Span, Option<String>)> = Vec::new();
+        for device in manifest.devices.values() {
+            for action in device.actions.values() {
+                if let Some(role) = action.as_table().and_then(|t| t.get("role")) {
+                    actions.push((role.node.span, role.node.as_str().map(str::to_owned)));
+                }
+            }
+        }
+        for entry in self
+            .section("instances")
+            .cloned()
+            .unwrap_or_default()
+            .values()
+        {
+            for action in entry
+                .node
+                .as_table()
+                .and_then(|d| d.get("actions"))
+                .and_then(|e| e.node.as_table())
+                .into_iter()
+                .flat_map(|t| t.values())
+            {
+                if let Some(role) = action.node.as_table().and_then(|t| t.get("role")) {
+                    actions.push((role.node.span, role.node.as_str().map(str::to_owned)));
+                }
+            }
+        }
+        for (span, role) in actions {
+            if role.as_deref() == Some("viewer") {
+                self.push(
+                    Diagnostic::new("J0298", "action with `role = \"viewer\"`: it counts as `operator`, the minimum of the API").at(span),
                 );
             }
         }

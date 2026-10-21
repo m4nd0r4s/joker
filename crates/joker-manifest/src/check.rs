@@ -111,6 +111,8 @@ pub fn check(
     checker.after_outputs();
     checker.cycles();
     checker.apps();
+    checker.writers_and_groups();
+    checker.app_and_device_rules();
     checker.paths
 }
 
@@ -193,6 +195,9 @@ impl Checker<'_> {
             return;
         };
         let Some(info) = self.context.boards.get(&board.value.name) else {
+            if self.context.open_world {
+                return;
+            }
             let mut d = Diagnostic::new("J0172", format!("board `{}` not found", board.value.name))
                 .at(board.span);
             if let Some(s) = grammar::suggest(
@@ -682,9 +687,26 @@ impl Checker<'_> {
     }
 
     pub(crate) fn opaque_path(&self, path: &str) -> bool {
-        path.split('.')
-            .next()
-            .is_some_and(|first| self.opaque.contains(first))
+        let first = path.split('.').next().unwrap_or("");
+        self.opaque.contains(first)
+            || (self.context.open_world
+                && !self
+                    .paths
+                    .keys()
+                    .any(|p| p.split('.').next() == Some(first)))
+    }
+
+    /// Whether a selector could match signals of a device whose signals are
+    /// not known (a profile outside the context, in open-world mode).
+    pub(crate) fn selector_may_be_opaque(&self, selector: &str) -> bool {
+        let first = selector.split('.').next().unwrap_or("");
+        self.opaque.iter().any(|d| grammar::matches(first, d))
+            || (self.context.open_world
+                && !self.paths.keys().any(|p| {
+                    p.split('.')
+                        .next()
+                        .is_some_and(|s| grammar::matches(first, s))
+                }))
     }
 
     pub(crate) fn report_unknown(&mut self, path: &str, span: Span) {
@@ -720,7 +742,7 @@ impl Checker<'_> {
                     })
                     .map(|(p, _)| p.clone())
                     .collect();
-                if matched.is_empty() {
+                if matched.is_empty() && !self.selector_may_be_opaque(key) {
                     self.push(
                         Diagnostic::new("J0155", format!("selector `{key}` matches no output"))
                             .at(envelope.key),
@@ -872,7 +894,7 @@ impl Checker<'_> {
             }
         }
         if let Some(pulse) = &envelope.pulse
-            && info.ty != SignalType::Bool
+            && !matches!(info.ty, SignalType::Bool | SignalType::Unknown)
         {
             self.push(
                 Diagnostic::new("J0233", "`pulse` only applies to boolean outputs").at(pulse.span),

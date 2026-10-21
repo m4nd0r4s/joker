@@ -394,7 +394,7 @@ pub const DEVICE: &[Key] = &[
         "fallback",
         Ty::Table(&[k("configure", Ty::Bool), k("keepalive", Ty::Duration)]),
     ),
-    k("signals", Ty::Map(KeyKind::Name, &Ty::Open(SIGNAL_TUNING))),
+    k("signals", Ty::Map(KeyKind::Path, &Ty::Open(SIGNAL_TUNING))),
     k("actions", Ty::Map(KeyKind::Name, &Ty::Table(ACTION))),
 ];
 
@@ -900,6 +900,11 @@ pub struct Options {
     pub micro: bool,
     /// Check required keys (the effective manifest; not a single layer).
     pub required: bool,
+    /// The runtime is 1.1 or later, so the 1.1 keys are accepted.
+    pub v1_1: bool,
+    /// The manifest declares `[project] joker` 1.1 or later; without it, a
+    /// 1.1 key on a 1.1 runtime is `J0148`.
+    pub declared_v1_1: bool,
 }
 
 /// Validates a table entry against its key: the phase and target rules,
@@ -1021,6 +1026,26 @@ impl Validator<'_> {
     }
 
     fn value(&mut self, ty: &Ty, node: &Node, key_span: crate::source::Span, at: &str) {
+        if let Some(table) = node.as_table()
+            && table.len() == 1
+            && (matches!(
+                table.get("unset").map(|e| &e.node.value),
+                Some(Value::Bool(true))
+            ) || matches!(
+                table.get("append").map(|e| &e.node.value),
+                Some(Value::Array(_))
+            ))
+            && !matches!(ty, Ty::Table(keys) | Ty::Open(keys) if keys.iter().any(|k| k.name == "unset" || k.name == "append"))
+        {
+            if let (Some(append), Ty::List(item) | Ty::Set(item)) = (table.get("append"), ty)
+                && let Value::Array(items) = &append.node.value
+            {
+                for element in items {
+                    self.value(item, element, element.span, at);
+                }
+            }
+            return;
+        }
         let text = node.as_str();
         match ty {
             Ty::Any | Ty::Value => {}
@@ -1270,7 +1295,7 @@ impl Validator<'_> {
     }
 
     fn rules(&mut self, key: &Key, entry: &Entry, at: &str) {
-        if key.phase == Phase::V1_1 {
+        if key.phase == Phase::V1_1 && !self.options.v1_1 {
             self.push(
                 Diagnostic::new(
                     "J0290",
@@ -1278,6 +1303,12 @@ impl Validator<'_> {
                 )
                 .at(entry.key)
                 .label(format!("in `{}`", at.trim_start_matches('.'))),
+            );
+        } else if key.phase == Phase::V1_1 && !self.options.declared_v1_1 {
+            self.push(
+                Diagnostic::new("J0148", format!("`{}` was introduced in 1.1", key.name))
+                    .at(entry.key)
+                    .help("declare `[project] joker = \"1.1\"`"),
             );
         }
         match (key.target, self.options.micro) {

@@ -414,6 +414,8 @@ pub struct Writer {
     pub level: Level,
     /// `lease`; the default is three periods of the owner group.
     pub lease: Option<Spanned<Duration>>,
+    /// `kind = "proposal"` (M18, 1.1).
+    pub proposal: bool,
     /// Where the table is.
     pub span: Span,
 }

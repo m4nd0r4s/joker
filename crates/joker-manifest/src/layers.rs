@@ -63,6 +63,7 @@ impl FileSystem for OsFileSystem {
 pub struct MemoryFileSystem {
     files: BTreeMap<PathBuf, String>,
     dirs: BTreeSet<PathBuf>,
+    permissive: bool,
 }
 
 impl MemoryFileSystem {
@@ -77,6 +78,13 @@ impl MemoryFileSystem {
         self.dirs.insert(normalize(&path.into()));
         self
     }
+
+    /// Makes every path that is not a file count as an existing folder, for
+    /// checking examples whose app folders and models are not at hand.
+    pub fn permissive(&mut self) -> &mut Self {
+        self.permissive = true;
+        self
+    }
 }
 
 impl FileSystem for MemoryFileSystem {
@@ -89,7 +97,8 @@ impl FileSystem for MemoryFileSystem {
 
     fn exists(&self, path: &Path) -> bool {
         let path = normalize(path);
-        self.files.contains_key(&path)
+        self.permissive
+            || self.files.contains_key(&path)
             || self.dirs.contains(&path)
             || self.files.keys().any(|file| file.starts_with(&path))
     }

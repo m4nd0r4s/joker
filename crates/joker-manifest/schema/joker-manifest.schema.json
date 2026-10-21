@@ -236,7 +236,7 @@
             "patternProperties": { "^x_": {} },
             "additionalProperties": false
           },
-          "signals": { "type": "object", "propertyNames": { "pattern": "^([a-z][a-z0-9_]{0,31}|x_.*)$" }, "additionalProperties": {
+          "signals": { "type": "object", "additionalProperties": {
             "type": "object",
             "properties": {
               "alias": { "oneOf": [{ "type": "string", "x-joker-format": "path", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$" }, { "type": "array", "uniqueItems": true, "items": { "type": "string", "x-joker-format": "path", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$" } }] },

@@ -168,6 +168,41 @@ fn context() -> Context {
         },
     );
     c.apps.insert("other".into(), AppInterface::default());
+    c.apps.insert(
+        "ctl".into(),
+        AppInterface {
+            ports: [(
+                "p".to_owned(),
+                joker_manifest::context::Port {
+                    kind: joker_manifest::context::PortKind::Output,
+                    ty: Float,
+                    unit: Some(unit("kW")),
+                    optional: true,
+                },
+            )]
+            .into_iter()
+            .collect(),
+            tasks: [(
+                "run".to_owned(),
+                Some(joker_units::Duration::from_millis(100)),
+            )]
+            .into_iter()
+            .collect(),
+            ..AppInterface::default()
+        },
+    );
+    c.boards.insert(
+        "zero".into(),
+        BoardInfo {
+            majors: vec![1],
+            arch: "armv6".into(),
+            no_wasm: true,
+            ..BoardInfo::default()
+        },
+    );
+    if let Some(p) = c.profiles.get_mut("acme/pcs@1") {
+        p.fallback_timeout = Some(joker_units::Duration::from_secs(2));
+    }
     c
 }
 
@@ -289,6 +324,20 @@ fn cases() -> Vec<Case> {
         ("J0785", format!("{MICRO}[devices.x]\ndriver = \"extern\"\n[devices.x.signals]\nlevel = {{ type = \"f64\", direction = \"input\" }}\n"), "extern signal without unit"),
         ("J0145", format!("{BASE}[target]\naccept_unsafe_reset = \"no load at all here\"\n"), "MCU-only key on Linux"),
         ("J0442", format!("{MICRO}accept_unsafe_reset = \"ok\"\n"), "short reset justification"),
+        ("J0210", site("[apps.ctl]\npath = \"apps/x\"\nbind.p = \"pcs.p_set\"\nwriter = { level = \"optimizer\" }\n[apps.pump_ctl]\npath = \"apps/x\"\nbind.q = \"pcs.p_set\"\nwriter = { level = \"optimizer\" }\n"), "two writers at the same level"),
+        ("J0211", site("[apps.ctl]\npath = \"apps/x\"\nbind.p = \"pcs.p_set\"\n[apps.pump_ctl]\npath = \"apps/x\"\nbind.q = \"pcs.p_set\"\nwriter = { level = \"optimizer\" }\n"), "several writers, one without writer"),
+        ("J0213", site("[apps.ctl]\npath = \"apps/x\"\nbind.p = \"pcs.p_set\"\nwriter = { lease = \"20m\" }\n"), "lease above max_lease"),
+        ("J0256", site("[apps.ctl]\npath = \"apps/x\"\nbind.p = \"pcs.p_set\"\nwriter = { lease = \"10ms\" }\n"), "lease shorter than the period"),
+        ("J0257", site("[apps.other]\npath = \"apps/x\"\nwriter = { level = \"optimizer\" }\n"), "writer on an app without outputs"),
+        ("J0130", site("[cycles.slow]\nperiod = \"1s\"\n[apps.ctl]\npath = \"apps/x\"\ncycles = { run = \"slow\" }\n"), "period outside the tolerance"),
+        ("J0188", site("[apps.ctl]\npath = \"apps/x\"\nshadow = { of = \"ctl\" }\n"), "shadow.of without a version"),
+        ("J0189", site("[apps.pump_ctl]\npath = \"apps/x\"\nbind.x = \"pcs.p_ac\"\n[instances.p2]\nclass = \"pump@1\"\nimplemented_by = { app = \"pump_ctl\", bind = { x = \"pcs.f\" } }\n"), "port bound in two places"),
+        ("J0243", format!("{BASE}[target]\nboard = \"zero\"\n[apps.ctl]\npath = \"apps/x\"\n"), "board without a Wasm engine"),
+        ("J0276", site("[devices.pcs.fallback]\nkeepalive = \"5s\"\n").replacen("[devices.pcs]\n", "[devices.pcs]\nfallback = { keepalive = \"5s\" }\n", 1).replace("[devices.pcs.fallback]\nkeepalive = \"5s\"\n", ""), "keepalive above the device timeout"),
+        ("J0284", site("[resources]\nrt = { cpus = [3] }\n[cycles.main]\nperiod = \"20ms\"\ncpu = 1\n"), "cpu outside rt"),
+        ("J0286", site("[cycles.main]\nperiod = \"20ms\"\noverrun = \"degrade\"\n"), "degrade without optional tasks"),
+        ("J0287", site("[cycles.main]\nperiod = \"20ms\"\noverrun = \"catch_up\"\n").replacen("safe = \"0 kW\"\n", "safe = \"0 kW\"\nrate = \"5 kW/s\"\ngroup = \"main\"\n", 1), "catch_up with time-dependent outputs"),
+        ("J0298", site("[devices.pcs.actions.reset]\nrole = \"viewer\"\n"), "action for viewers"),
     ]
 }
 
@@ -303,6 +352,105 @@ fn every_case_reports_its_code() {
             report.render()
         );
     }
+}
+
+fn run_1_1(text: &str) -> Report {
+    let mut fs = MemoryFileSystem::default();
+    fs.file("joker.toml", text).dir("apps/x");
+    let mut context = context();
+    context.runtime = joker_manifest::model::SchemaVersion { major: 1, minor: 1 };
+    check(&fs, Path::new("joker.toml"), &context)
+}
+
+const V11: &str = "[project]\nname = \"t\"\njoker = \"1.1\"\nmode = \"dev\"\n";
+
+fn cases_1_1() -> Vec<Case> {
+    let on = |extra: &str| format!("{V11}{PCS}{IO}{extra}");
+    vec![
+        ("J0148", site("[resources]\nml = { accel = [\"gpu:0\"] }\n"), "1.1 key with joker = 1.0"),
+        ("J0239", on("[outputs.\"pcs.p_set\"]\nsafe = \"0 kW\"\nschedule_depth = 300\non_late = \"drop\"\n").replacen("[outputs.\"pcs.p_set\"]\nsafe = \"0 kW\"\n", "", 1), "too many scheduled writes"),
+        ("J0206", on("[outputs.\"pcs.p_set\"]\nsafe = \"0 kW\"\nschedule_depth = 8\n").replacen("[outputs.\"pcs.p_set\"]\nsafe = \"0 kW\"\n", "", 1), "scheduled writes without on_late"),
+        ("J0254", on("[apps.ctl]\npath = \"apps/x\"\nwriter = { kind = \"proposal\", level = \"optimizer\" }\n"), "proposal writer with a level"),
+        ("J0212", on("[apps.ctl]\npath = \"apps/x\"\nbind.p = \"pcs.p_set\"\nwriter = { kind = \"proposal\" }\n"), "proposal writer writing directly"),
+    ]
+}
+
+#[test]
+fn every_1_1_case_reports_its_code() {
+    for (code, text, what) in cases_1_1() {
+        let report = run_1_1(&text);
+        assert!(
+            report.codes().contains(&code),
+            "{code} ({what}) not reported; got {:?}\n{}",
+            report.codes(),
+            report.render()
+        );
+    }
+}
+
+#[test]
+fn every_ref01_code_is_emitted_or_deferred() {
+    let deferred: [(&str, &str); 12] = [
+        ("J0167", "AUR-227: envelopes only tighten"),
+        ("J0168", "AUR-227: widen against the lock"),
+        ("J0220", "AUR-227: envelopes only tighten"),
+        ("J0283", "AUR-225: rate-monotonic priorities"),
+        ("J0350", "AUR-225: RT admission"),
+        ("J0370", "AUR-225: bus budget"),
+        ("J0380", "AUR-225: memory estimate"),
+        ("J0381", "AUR-225: storage write load"),
+        ("J0185", "needs the node vault (`jk check --node`)"),
+        ("J0292", "needs the node trust bundle (`jk check --node`)"),
+        ("J0291", "retired: the key gives J0140"),
+        ("J0401", "lock drift, in `lock::drift`"),
+    ];
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let doc = std::fs::read_dir(root.join("../../docs/ref"))
+        .unwrap()
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .find(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.starts_with("01-"))
+        })
+        .unwrap();
+    let text = std::fs::read_to_string(doc).unwrap();
+    let start = text.find("\n## 10.").unwrap();
+    let end = text[start..]
+        .find("\n## 11.")
+        .map_or(text.len(), |e| start + e);
+    let row = regex::Regex::new(r"(?m)^\| `(J\d{4})` \|").unwrap();
+    let listed: Vec<String> = row
+        .captures_iter(&text[start..end])
+        .map(|c| c[1].to_owned())
+        .collect();
+    let literal = regex::Regex::new(r#""(J\d{4})""#).unwrap();
+    let mut emitted = std::collections::BTreeSet::new();
+    for dir in ["src", "../joker-units/src", "../joker-expr/src"] {
+        for entry in std::fs::read_dir(root.join(dir)).unwrap() {
+            let source = std::fs::read_to_string(entry.unwrap().path()).unwrap();
+            let code = source.split("#[cfg(test)]").next().unwrap_or("");
+            emitted.extend(literal.captures_iter(code).map(|c| c[1].to_owned()));
+        }
+    }
+    let missing: Vec<&String> = listed
+        .iter()
+        .filter(|c| !emitted.contains(*c) && !deferred.iter().any(|(d, _)| d == c))
+        .collect();
+    assert!(listed.len() > 100, "ref/01 §10 not found");
+    assert!(
+        missing.is_empty(),
+        "ref/01 §10 codes neither emitted nor deferred: {missing:?}"
+    );
+    let stale: Vec<&str> = deferred
+        .iter()
+        .map(|(c, _)| *c)
+        .filter(|c| emitted.contains(*c) && *c != "J0401")
+        .collect();
+    assert!(
+        stale.is_empty(),
+        "deferred codes now emitted, drop them from the list: {stale:?}"
+    );
 }
 
 #[test]

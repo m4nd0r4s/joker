@@ -81,6 +81,26 @@ impl Report {
     }
 }
 
+/// Whether a manifest whose board is unknown reads as a Joker Micro one:
+/// it has `[link]`, `[net]` or a key of `[target]` that only an MCU has.
+fn looks_micro(merged: &value::Table) -> bool {
+    let target = merged.get("target").and_then(|e| e.node.as_table());
+    let board = target
+        .and_then(|t| t.get("board"))
+        .and_then(|e| e.node.as_str())
+        .unwrap_or("");
+    merged.contains_key("link")
+        || merged.contains_key("net")
+        || ["esp32", "rp2040", "rp2350", "stm32", "nrf52"]
+            .iter()
+            .any(|chip| board.contains(chip))
+        || target.is_some_and(|t| {
+            ["capacity", "extern", "micro", "accept_unsafe_reset"]
+                .iter()
+                .any(|k| t.contains_key(*k))
+        })
+}
+
 /// Checks the manifest whose entry layer is `entry`.
 pub fn check(fs: &dyn FileSystem, entry: &Path, context: &Context) -> Report {
     let mut sources = Sources::default();
@@ -109,8 +129,19 @@ pub fn check(fs: &dyn FileSystem, entry: &Path, context: &Context) -> Report {
         .and_then(|e| e.node.as_str())
         .map(|board| board.split('@').next().unwrap_or(board))
         .and_then(|name| context.boards.get(name))
-        .is_some_and(|b| b.micro);
-    let manifest = decode::Decoder::new(&mut report.diagnostics, micro).manifest(&merged, top_span);
+        .is_some_and(|b| b.micro)
+        || (context.open_world && looks_micro(&merged));
+    let v1_1 = context.runtime >= model::SchemaVersion { major: 1, minor: 1 };
+    let declared_v1_1 = merged
+        .get("project")
+        .and_then(|e| e.node.as_table())
+        .and_then(|p| p.get("joker"))
+        .and_then(|e| e.node.as_str())
+        .and_then(grammar::schema_version)
+        .is_some_and(|v| v >= model::SchemaVersion { major: 1, minor: 1 });
+    let manifest = decode::Decoder::new(&mut report.diagnostics, micro)
+        .with_v1_1(v1_1, declared_v1_1)
+        .manifest(&merged, top_span);
     let mode = manifest.project.mode;
     if report.diagnostics.has_errors(mode) {
         report.manifest = Some(manifest);

@@ -161,6 +161,8 @@ pub struct ProfileInfo {
     pub fallback: bool,
     /// Whether `fallback.configure = true` is allowed (`configurable`).
     pub configurable: bool,
+    /// The `timeout` of the profile's `[fallback]`.
+    pub fallback_timeout: Option<Duration>,
     /// `[defaults] poll`.
     pub poll: Option<Duration>,
     /// `[defaults] timeout`.
@@ -179,6 +181,9 @@ pub struct BoardInfo {
     pub micro: bool,
     /// The CPU cores, when known.
     pub cpus: Option<u32>,
+    /// The runtime has no Wasm engine for the board's architecture
+    /// (neither Cranelift nor Pulley, docs/01 §22).
+    pub no_wasm: bool,
 }
 
 /// The type of a signal (ref/00 §6), as far as the manifest checks go.

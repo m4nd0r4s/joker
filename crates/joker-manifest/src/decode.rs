@@ -82,19 +82,36 @@ impl<'t> Reader<'t> {
 pub struct Decoder<'a> {
     diags: &'a mut Diagnostics,
     micro: bool,
+    v1_1: bool,
+    declared_v1_1: bool,
 }
 
 impl<'a> Decoder<'a> {
     /// A decoder that records into `diags`; `micro` when the target is a
     /// Joker Micro (ref/01 §5.22).
     pub fn new(diags: &'a mut Diagnostics, micro: bool) -> Self {
-        Self { diags, micro }
+        Self {
+            diags,
+            micro,
+            v1_1: false,
+            declared_v1_1: false,
+        }
+    }
+
+    /// Accepts the keys reserved for 1.1, for a 1.1 runtime.
+    #[must_use]
+    pub fn with_v1_1(mut self, v1_1: bool, declared: bool) -> Self {
+        self.v1_1 = v1_1;
+        self.declared_v1_1 = declared;
+        self
     }
 
     fn options(&self) -> schema::Options {
         schema::Options {
             micro: self.micro,
             required: true,
+            v1_1: self.v1_1,
+            declared_v1_1: self.declared_v1_1,
         }
     }
 
@@ -292,6 +309,16 @@ impl<'a> Decoder<'a> {
     }
 
     fn reserved(&mut self, entry: &Entry, what: &str) {
+        if self.v1_1 {
+            if !self.declared_v1_1 {
+                self.push(
+                    Diagnostic::new("J0148", format!("{what} was introduced in 1.1"))
+                        .at(entry.key)
+                        .help("declare `[project] joker = \"1.1\"`"),
+                );
+            }
+            return;
+        }
         self.push(
             Diagnostic::new("J0290", format!("{what} is reserved for a later version"))
                 .at(entry.key)
@@ -674,6 +701,20 @@ impl<'a> Decoder<'a> {
                 "port" => {
                     bus.port = self.string(e);
                     if let Some(port) = &bus.port
+                        && self.micro
+                        && !grammar::is_name(&port.value)
+                    {
+                        self.push(
+                            Diagnostic::new(
+                                "J0145",
+                                "a serial port on a Joker Micro is a `[uart.<name>]` of the board",
+                            )
+                            .at(port.span)
+                            .label("expected a name such as `uart0`, not a path"),
+                        );
+                    }
+                    if let Some(port) = &bus.port
+                        && !self.micro
                         && !port.value.starts_with('/')
                     {
                         self.push(
@@ -802,7 +843,12 @@ impl<'a> Decoder<'a> {
             && let Some(t) = self.table(e)
         {
             for (name, entry) in t {
-                if !self.name_key(name, entry, "signal") {
+                if !grammar::is_path(name) {
+                    self.push(
+                        Diagnostic::new("J0153", format!("invalid signal name `{name}`"))
+                            .at(entry.key)
+                            .label("a name, or a path on the MCU of a `joker-link` device"),
+                    );
                     continue;
                 }
                 if let Some(table) = self.table(entry) {
@@ -1002,6 +1048,19 @@ impl<'a> Decoder<'a> {
         for key in ["schedule_depth", "timed", "on_late", "late_margin"] {
             if let Some(e) = r.get(key) {
                 self.reserved(e, &format!("`{key}`"));
+            }
+        }
+        if self.v1_1
+            && let Some(depth) = table.get("schedule_depth")
+        {
+            match depth.node.value {
+                Value::Integer(d) if !(0..=256).contains(&d) => self.push(
+                    Diagnostic::new("J0239", "`schedule_depth` above 256").at(depth.node.span),
+                ),
+                Value::Integer(d) if d > 0 && !table.contains_key("on_late") => self.push(
+                    Diagnostic::new("J0206", "scheduled writes without `on_late`").at(depth.key),
+                ),
+                _ => {}
             }
         }
         r.finish(self, &format!("`[outputs.\"{key}\"]`"));
@@ -1355,11 +1414,26 @@ impl<'a> Decoder<'a> {
         let lease = r
             .get("lease")
             .and_then(|e| self.duration(e, false, MAX_DURATION));
+        let mut proposal = false;
         if let Some(e) = r.get("kind")
             && let Some(kind) = self.choice(e, &["direct", "proposal"])
             && kind.value == "proposal"
         {
             self.reserved(e, "a `proposal` writer");
+            proposal = true;
+            if self.v1_1
+                && ["level", "priority", "lease"]
+                    .iter()
+                    .any(|k| table.contains_key(*k))
+            {
+                self.push(
+                    Diagnostic::new(
+                        "J0254",
+                        "a `proposal` writer has no `level`, `priority` or `lease`",
+                    )
+                    .at(entry.node.span),
+                );
+            }
         }
         r.finish(self, "`writer`");
         let text = level_text.as_ref().map_or("control", |l| l.value.as_str());
@@ -1404,6 +1478,7 @@ impl<'a> Decoder<'a> {
         Some(Writer {
             level,
             lease,
+            proposal,
             span: entry.node.span,
         })
     }
