@@ -68,6 +68,10 @@ pub enum Source {
     Cycle,
 }
 
+/// Task number of a proposal or method record that no cycle task staged
+/// (async, API, bridges).
+pub const NO_TASK: u16 = u16::MAX;
+
 /// The proposal flag that relinquishes the writer's level (ref/04 §3.3,
 /// `WRITE` flag bit 0); the value is then 0 and ignored.
 pub const RELINQUISH: u16 = 1;
@@ -92,6 +96,9 @@ pub struct Proposal {
     pub ttl_ns: u64,
     /// Takeover or forced release of another writer's level.
     pub intent: Intent,
+    /// The cycle task that staged it, for its causal set (ADR 0043), or
+    /// [`NO_TASK`].
+    pub task: u16,
 }
 
 impl Proposal {
@@ -105,6 +112,7 @@ impl Proposal {
         ticket: 0,
         ttl_ns: 0,
         intent: Intent::Write,
+        task: NO_TASK,
     };
 
     /// True when this proposal relinquishes the writer's level.
@@ -161,6 +169,8 @@ pub struct MethodCall {
     pub source: Source,
     /// Opaque tag returned with the result.
     pub ticket: u32,
+    /// The cycle task that staged it, or [`NO_TASK`].
+    pub task: u16,
 }
 
 impl MethodCall {
@@ -173,6 +183,7 @@ impl MethodCall {
         n_args: 0,
         source: Source::Cycle,
         ticket: 0,
+        task: NO_TASK,
     };
 
     /// The arguments.
@@ -194,6 +205,34 @@ pub struct TickInfo {
     pub first: bool,
     /// At least one tick was skipped right before this one.
     pub after_skip: bool,
+}
+
+/// The samples a cycle task read in one tick (M3, ADR 0043).
+#[derive(Copy, Clone, Debug)]
+pub struct CausalSet<'x> {
+    ports: &'x [SignalId],
+    snapshot: &'x [Sample],
+    bits: &'x [u64],
+}
+
+impl<'x> CausalSet<'x> {
+    /// The signals read, in `SignalId` order, with their latched samples.
+    pub fn iter(&self) -> impl Iterator<Item = (SignalId, &'x Sample)> + 'x {
+        let (ports, snapshot, bits) = (self.ports, self.snapshot, self.bits);
+        (0..ports.len())
+            .filter(move |&i| bits.get(i / 64).is_some_and(|w| w & (1 << (i % 64)) != 0))
+            .map(move |i| (ports[i], &snapshot[i]))
+    }
+
+    /// Number of signals read.
+    pub fn len(&self) -> usize {
+        self.bits.iter().map(|w| w.count_ones() as usize).sum()
+    }
+
+    /// True when the task read nothing.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 /// Why an image call was refused.
@@ -251,6 +290,8 @@ pub struct ProcessImage<'a> {
     expanded: usize,
     methods: &'a mut [MethodCall],
     n_methods: usize,
+    reads: &'a mut [u64],
+    tasks: usize,
     phase: Phase,
     last_index: Option<u64>,
     tick: Option<TickInfo>,
@@ -291,6 +332,8 @@ impl<'a> ProcessImage<'a> {
             expanded: 0,
             methods: &mut [],
             n_methods: 0,
+            reads: &mut [],
+            tasks: 0,
             phase: Phase::Idle,
             last_index: None,
             tick: None,
@@ -400,6 +443,7 @@ impl<'a> ProcessImage<'a> {
         self.staged = 0;
         self.expanded = 0;
         self.n_methods = 0;
+        self.reads.fill(0);
         self.phase = Phase::Latched;
         Ok(info)
     }
@@ -426,6 +470,56 @@ impl<'a> ProcessImage<'a> {
         self.push(Proposal {
             source: Source::Cycle,
             ..proposal
+        })
+    }
+
+    /// Hands in the read bitsets of `tasks` cycle tasks (ADR 0043): at least
+    /// `tasks × ceil(ports / 64)` words.
+    pub fn set_read_sets(&mut self, buffer: &'a mut [u64], tasks: usize) -> Result<(), ImageError> {
+        if buffer.len() < tasks * self.words_per_task() {
+            return Err(ImageError::StorageMismatch);
+        }
+        buffer.fill(0);
+        self.reads = buffer;
+        self.tasks = tasks;
+        Ok(())
+    }
+
+    fn words_per_task(&self) -> usize {
+        self.storage.ports.len().div_ceil(64)
+    }
+
+    /// Marks that cycle task `task` read port `port` (an index into
+    /// [`ProcessImage::ports`]) in this tick. Returns false if out of range.
+    pub fn mark_read(&mut self, task: u16, port: usize) -> bool {
+        let words = self.words_per_task();
+        if usize::from(task) >= self.tasks || port >= self.storage.ports.len() {
+            return false;
+        }
+        self.reads[usize::from(task) * words + port / 64] |= 1 << (port % 64);
+        true
+    }
+
+    /// Marks a read by signal. Returns false if the signal is not a port.
+    pub fn mark_read_signal(&mut self, task: u16, signal: SignalId) -> bool {
+        match self.storage.ports.binary_search(&signal) {
+            Ok(port) => self.mark_read(task, port),
+            Err(_) => false,
+        }
+    }
+
+    /// The causal set of a cycle task in this tick: the ports it read, with
+    /// their latched samples.
+    pub fn read_set(&self, task: u16) -> Option<CausalSet<'_>> {
+        let words = self.words_per_task();
+        if usize::from(task) >= self.tasks {
+            return None;
+        }
+        let start = usize::from(task) * words;
+        Some(CausalSet {
+            ports: self.storage.ports,
+            snapshot: self.storage.snapshot,
+            bits: &self.reads[start..start + words],
         })
     }
 

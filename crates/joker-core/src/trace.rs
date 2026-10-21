@@ -7,7 +7,7 @@
 //! segments that Linux writes. Reading is zero-copy over the file bytes.
 
 use crate::commit::OutputResult;
-use crate::image::{Proposal, Source, WriterId};
+use crate::image::{MAX_METHOD_ARGS, MethodCall, Proposal, Source, WriterId};
 use crate::quality::Quality;
 use crate::registry::SignalId;
 use crate::time::Instant;
@@ -168,10 +168,12 @@ pub struct TickRecord<'a> {
     pub proposals: &'a [Proposal],
     /// The output results, in `SignalId` order.
     pub results: &'a [TraceResult],
+    /// The method records, in staging order (ADR 0043).
+    pub methods: &'a [MethodCall],
 }
 
 impl TickRecord<'_> {
-    /// Encoded length of this tick, with empty ML and method sections.
+    /// Encoded length of this tick, with an empty ML section.
     pub fn encoded_len(&self) -> usize {
         TICK_FIXED_LEN
             + self.inputs.len() * INPUT_LEN
@@ -181,6 +183,79 @@ impl TickRecord<'_> {
             + self.results.len() * RESULT_LEN
             + 2
             + 2
+            + self
+                .methods
+                .iter()
+                .map(|m| METHOD_FIXED_LEN + args_len(m.args()))
+                .sum::<usize>()
+    }
+}
+
+/// Bytes of a method record before its arguments.
+pub const METHOD_FIXED_LEN: usize = 4 + 4 + 2 + 2;
+
+fn uint_len(v: u64) -> usize {
+    match v {
+        0..=23 => 1,
+        24..=0xFF => 2,
+        0x100..=0xFFFF => 3,
+        0x1_0000..=0xFFFF_FFFF => 5,
+        _ => 9,
+    }
+}
+
+fn args_len(args: &[u64]) -> usize {
+    1 + args.iter().map(|&v| 1 + uint_len(v)).sum::<usize>()
+}
+
+fn write_uint(w: &mut Cursor<'_>, major: u8, v: u64) {
+    let m = major << 5;
+    match v {
+        0..=23 => w.u8(m | v as u8),
+        24..=0xFF => {
+            w.u8(m | 24);
+            w.u8(v as u8);
+        }
+        0x100..=0xFFFF => {
+            w.u8(m | 25);
+            w.bytes(&(v as u16).to_be_bytes());
+        }
+        0x1_0000..=0xFFFF_FFFF => {
+            w.u8(m | 26);
+            w.bytes(&(v as u32).to_be_bytes());
+        }
+        _ => {
+            w.u8(m | 27);
+            w.bytes(&v.to_be_bytes());
+        }
+    }
+}
+
+fn read_uint(r: &mut Reader<'_>, major: u8) -> Result<u64, TraceError> {
+    let head = r.u8()?;
+    if head >> 5 != major {
+        return Err(TraceError::Malformed);
+    }
+    let info = head & 0x1F;
+    let v = match info {
+        0..=23 => u64::from(info),
+        24 => u64::from(r.u8()?),
+        25 => u64::from(u16::from_be_bytes(r.array()?)),
+        26 => u64::from(u32::from_be_bytes(r.array()?)),
+        27 => u64::from_be_bytes(r.array()?),
+        _ => return Err(TraceError::Malformed),
+    };
+    let minimal = match info {
+        24 => v >= 24,
+        25 => v > 0xFF,
+        26 => v > 0xFFFF,
+        27 => v > 0xFFFF_FFFF,
+        _ => true,
+    };
+    if minimal {
+        Ok(v)
+    } else {
+        Err(TraceError::Malformed)
     }
 }
 
@@ -211,6 +286,7 @@ impl<'b> SegmentWriter<'b> {
     pub fn push(&mut self, tick: &TickRecord<'_>) -> Result<(), TraceError> {
         if tick.proposals.len() > usize::from(u16::MAX)
             || tick.results.len() > usize::from(u16::MAX)
+            || tick.methods.len() > usize::from(u16::MAX)
         {
             return Err(TraceError::TooMany);
         }
@@ -243,7 +319,19 @@ impl<'b> SegmentWriter<'b> {
             w.u64(r.applied);
         }
         w.u16(0);
-        w.u16(0);
+        w.u16(tick.methods.len() as u16);
+        for m in tick.methods {
+            let args = m.args();
+            w.u32(m.writer.0);
+            w.u32(m.instance);
+            w.u16(m.method);
+            w.u16(args_len(args) as u16);
+            write_uint(&mut w, 5, args.len() as u64);
+            for (k, &v) in args.iter().enumerate() {
+                write_uint(&mut w, 0, k as u64);
+                write_uint(&mut w, 0, v);
+            }
+        }
         self.len = end;
         self.n_ticks += 1;
         Ok(())
@@ -500,6 +588,23 @@ impl<'p> TickView<'p> {
             })
     }
 
+    /// The method records, in staging order (ADR 0043). A record whose
+    /// arguments are not the CBOR map of ADR 0043 yields an error and ends
+    /// the iteration.
+    pub fn method_calls(&self) -> impl Iterator<Item = Result<MethodCall, TraceError>> + 'p {
+        let mut r = Reader::new(self.methods);
+        core::iter::from_fn(move || {
+            if r.rest().is_empty() {
+                return None;
+            }
+            let item = decode_method(&mut r);
+            if item.is_err() {
+                r = Reader::new(&[]);
+            }
+            Some(item)
+        })
+    }
+
     /// The raw result bytes, for byte-wise replay comparison (docs/16 §7).
     pub fn result_bytes(&self) -> &'p [u8] {
         self.results
@@ -744,6 +849,36 @@ impl<'a> Reader<'a> {
     }
 }
 
+fn decode_method(r: &mut Reader<'_>) -> Result<MethodCall, TraceError> {
+    let writer = WriterId(r.u32()?);
+    let instance = r.u32()?;
+    let method = r.u16()?;
+    let len = usize::from(r.u16()?);
+    let mut a = Reader::new(r.take(len)?);
+    let n = read_uint(&mut a, 5)?;
+    if n > MAX_METHOD_ARGS as u64 {
+        return Err(TraceError::TooMany);
+    }
+    let mut args = [0u64; MAX_METHOD_ARGS];
+    for (k, slot) in args.iter_mut().enumerate().take(n as usize) {
+        if read_uint(&mut a, 0)? != k as u64 {
+            return Err(TraceError::Malformed);
+        }
+        *slot = read_uint(&mut a, 0)?;
+    }
+    if !a.rest().is_empty() {
+        return Err(TraceError::Malformed);
+    }
+    Ok(MethodCall {
+        writer,
+        instance,
+        method,
+        args,
+        n_args: n as u8,
+        ..MethodCall::EMPTY
+    })
+}
+
 fn le_u32(b: &[u8]) -> u32 {
     let mut a = [0u8; 4];
     a.copy_from_slice(b);
@@ -824,6 +959,7 @@ mod tests {
             inputs,
             proposals,
             results,
+            methods: &[],
         }
     }
 
@@ -946,6 +1082,58 @@ mod tests {
         assert_eq!(ticks.next(), Some(Err(TraceError::Truncated)));
         let mut ticks = Ticks::new(payload, 0, 0);
         assert_eq!(ticks.next(), Some(Err(TraceError::Malformed)));
+    }
+
+    #[test]
+    fn method_records_are_a_cbor_map_of_slot_words() {
+        let mut call = MethodCall {
+            writer: WriterId(3),
+            instance: 2,
+            method: 1,
+            n_args: 3,
+            ..MethodCall::EMPTY
+        };
+        call.args[..3].copy_from_slice(&[5, 300, 1 << 40]);
+        let methods = [call];
+        let record = TickRecord {
+            methods: &methods,
+            ..tick(0, &[], &[], &[])
+        };
+        let mut buf = [0u8; 256];
+        let mut w = SegmentWriter::new(0, &mut buf).unwrap();
+        w.push(&record).unwrap();
+        let segment = w.finish();
+        let body = &segment[SEGMENT_HEADER_LEN..];
+        let section = &body[TICK_FIXED_LEN + 2 + 2 + 2..];
+        assert_eq!(&section[..2], &[1, 0]);
+        assert_eq!(&section[2..14], &[3, 0, 0, 0, 2, 0, 0, 0, 1, 0, 17, 0]);
+        assert_eq!(
+            &section[14..],
+            &[
+                0xA3, 0x00, 0x05, 0x01, 0x19, 0x01, 0x2C, 0x02, 0x1B, 0, 0, 1, 0, 0, 0, 0, 0
+            ]
+        );
+        let view = Ticks::new(body, 1, 0).next().unwrap().unwrap();
+        let calls: Result<[MethodCall; 1], _> = {
+            let mut it = view.method_calls();
+            it.next().unwrap().map(|c| [c])
+        };
+        assert_eq!(calls.unwrap(), methods);
+    }
+
+    #[test]
+    fn non_deterministic_cbor_is_refused() {
+        let mut r = Reader::new(&[0x18, 0x05]);
+        assert_eq!(read_uint(&mut r, 0), Err(TraceError::Malformed));
+        let mut r = Reader::new(&[0xA1, 0x01, 0x00]);
+        assert_eq!(decode_method_args_only(&mut r), Err(TraceError::Malformed));
+    }
+
+    fn decode_method_args_only(r: &mut Reader<'_>) -> Result<(), TraceError> {
+        let mut record = [0u8; 15];
+        record[10] = 3;
+        record[12..].copy_from_slice(r.take(3)?);
+        decode_method(&mut Reader::new(&record)).map(|_| ())
     }
 
     #[cfg(feature = "zstd")]

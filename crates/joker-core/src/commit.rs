@@ -174,6 +174,9 @@ pub trait CommitSink {
     fn alarm(&mut self, _event: &crate::alarm::AlarmEvent) {}
     /// One call per method record (ADR 0041).
     fn method(&mut self, _result: &crate::class::MethodResult) {}
+    /// The causal set of a write, right after its decision record, when a
+    /// cycle task staged it and the image keeps read sets (ADR 0043).
+    fn causal(&mut self, _record: &DecisionRecord, _inputs: &crate::image::CausalSet<'_>) {}
 }
 
 impl CommitSink for () {}
@@ -980,7 +983,7 @@ impl<'a> Outputs<'a> {
                     None => Some(None),
                 };
                 if let Some(previous) = due {
-                    sink.decision(&DecisionRecord {
+                    let record = DecisionRecord {
                         kind: RecordKind::Write(proposal.writer),
                         output: config.signal,
                         tick: tick.index,
@@ -991,7 +994,11 @@ impl<'a> Outputs<'a> {
                         cause: write_cause,
                         previous,
                         durability,
-                    });
+                    };
+                    sink.decision(&record);
+                    if let Some(set) = image.read_set(proposal.task) {
+                        sink.causal(&record, &set);
+                    }
                 }
                 if manual {
                     let change = match intake {

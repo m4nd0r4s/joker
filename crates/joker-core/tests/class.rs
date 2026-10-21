@@ -8,15 +8,19 @@ mod common;
 
 use common::*;
 use joker_core::class::{Classes, DerivedDef, InstanceDef, MethodDef, MethodResult, Stmt};
-use joker_core::image::{MethodCall, Source};
+use joker_core::image::{CausalSet, MethodCall, Source};
 use joker_core::quality::{QualityCode, QualityReason};
 use joker_core::time::Instant;
-use joker_core::{CommitSink, Outcome, OutputResult, Proposal, Quality, SignalId, Slot, WriterId};
+use joker_core::trace::{Item, Items, SegmentWriter, TickRecord, Ticks, TraceResult};
+use joker_core::{
+    CommitSink, DecisionRecord, Outcome, OutputResult, Proposal, Quality, SignalId, Slot, WriterId,
+};
 
 #[derive(Default)]
 struct Sink {
     outputs: Vec<OutputResult>,
     methods: Vec<MethodResult>,
+    causal: Vec<(WriterId, Vec<(SignalId, u64)>)>,
 }
 
 impl CommitSink for Sink {
@@ -25,6 +29,13 @@ impl CommitSink for Sink {
     }
     fn method(&mut self, r: &MethodResult) {
         self.methods.push(*r);
+    }
+    fn causal(&mut self, r: &DecisionRecord, inputs: &CausalSet<'_>) {
+        let joker_core::commit::RecordKind::Write(writer) = r.kind else {
+            return;
+        };
+        let read = inputs.iter().map(|(s, sample)| (s, sample.seq())).collect();
+        self.causal.push((writer, read));
     }
 }
 
@@ -43,6 +54,7 @@ fn rig() -> Rig {
         c.range = None;
     });
     h.image.set_method_buffer(leak(vec![MethodCall::EMPTY; 8]));
+    h.image.set_read_sets(leak(vec![0; 2]), 2).unwrap();
     let set: &'static [Stmt<'static>] = leak(vec![Stmt::Assign {
         target: OUT,
         expr: method_program("a0"),
@@ -109,6 +121,7 @@ fn call(instance: u32, method: u16, args: &[f64]) -> MethodCall {
         method,
         n_args: args.len() as u8,
         source: Source::Cycle,
+        task: 0,
         ..MethodCall::EMPTY
     };
     for (slot, a) in c.args.iter_mut().zip(args) {
@@ -119,6 +132,18 @@ fn call(instance: u32, method: u16, args: &[f64]) -> MethodCall {
 
 impl Rig {
     fn tick(&mut self, k: u64, f: f64, quality: Quality, calls: &[MethodCall]) -> Sink {
+        self.record(k, f, quality, calls, &[], None)
+    }
+
+    fn record(
+        &mut self,
+        k: u64,
+        f: f64,
+        quality: Quality,
+        calls: &[MethodCall],
+        direct: &[Proposal],
+        segment: Option<&mut SegmentWriter<'_>>,
+    ) -> Sink {
         let mut sink = Sink::default();
         self.h.set_input(f, quality, k);
         self.h
@@ -128,6 +153,10 @@ impl Rig {
         self.classes
             .evaluate_derived(&self.h.image, self.extra)
             .unwrap();
+        self.h.image.mark_read(0, 0);
+        for p in direct {
+            self.h.image.stage_cycle(*p).unwrap();
+        }
         for c in calls {
             self.h.image.stage_method(*c).unwrap();
         }
@@ -138,6 +167,19 @@ impl Rig {
             .outputs
             .commit(&self.h.image, self.h.slots, &mut sink)
             .unwrap();
+        if let Some(segment) = segment {
+            let results: Vec<TraceResult> = sink.outputs.iter().map(TraceResult::from).collect();
+            segment
+                .push(&TickRecord {
+                    index: k,
+                    at: Instant::mono(k * PERIOD),
+                    inputs: self.h.image.snapshot(),
+                    proposals: self.h.image.direct_proposals(),
+                    results: &results,
+                    methods: self.h.image.method_calls(),
+                })
+                .unwrap();
+        }
         self.h.image.end_tick().unwrap();
         sink
     }
@@ -215,4 +257,82 @@ fn queries_are_derived_signals_with_state() {
     let bad = Quality::new(QualityCode::Bad, QualityReason::CommFailure);
     r.tick(3, 51.0, bad, &[]);
     assert_eq!(r.query().1, QualityCode::Bad);
+}
+
+#[test]
+fn writes_carry_the_causal_set_of_their_task() {
+    let mut r = rig();
+    let s = r.tick(0, 50.0, Quality::GOOD, &[call(0, 0, &[7.0])]);
+    assert_eq!(s.causal, [(WriterId(0), vec![(SignalId(0), 1)])]);
+    let direct = Proposal {
+        writer: WriterId(0),
+        signal: OUT,
+        value: 3.0f64.to_bits(),
+        task: 1,
+        ..Proposal::EMPTY
+    };
+    let s = r.record(1, 50.0, Quality::GOOD, &[], &[direct], None);
+    assert_eq!(s.causal, [(WriterId(0), vec![])]);
+}
+
+const GOLDEN: &str = "tests/golden/methods.jktrace";
+
+fn script(k: u64) -> Vec<MethodCall> {
+    match k {
+        0 => vec![call(0, 0, &[7.0])],
+        1 => vec![call(0, 1, &[]), call(0, 1, &[])],
+        2 => vec![call(1, 0, &[1.5])],
+        4 => vec![call(0, 2, &[]), call(0, 9, &[])],
+        _ => vec![],
+    }
+}
+
+fn record_methods() -> Vec<u8> {
+    let mut r = rig();
+    let mut buf = vec![0u8; 16 * 1024];
+    let mut segment = SegmentWriter::new(0, &mut buf).unwrap();
+    for k in 0..6 {
+        let f = if k == 4 { 51.0 } else { 50.0 };
+        r.record(k, f, Quality::GOOD, &script(k), &[], Some(&mut segment));
+    }
+    segment.finish().to_vec()
+}
+
+#[test]
+fn method_records_replay_to_the_same_bytes() {
+    let recorded = record_methods();
+    if std::env::var_os("UPDATE_GOLDEN").is_some() {
+        std::fs::write(GOLDEN, &recorded).unwrap();
+    }
+    assert_eq!(recorded, std::fs::read(GOLDEN).unwrap());
+    let Some(Ok(Item::Ticks {
+        n_ticks, payload, ..
+    })) = Items::new(&recorded).next()
+    else {
+        panic!("no segment");
+    };
+    let mut r = rig();
+    let mut buf = vec![0u8; 16 * 1024];
+    let mut segment = SegmentWriter::new(0, &mut buf).unwrap();
+    for tick in Ticks::new(payload, n_ticks, 1) {
+        let tick = tick.unwrap();
+        let input = tick.inputs().next().unwrap();
+        let calls: Vec<MethodCall> = tick
+            .method_calls()
+            .map(|c| {
+                let c = c.unwrap();
+                MethodCall { task: 0, ..c }
+            })
+            .collect();
+        let direct: Vec<Proposal> = tick.proposals().map(|p| p.to_proposal()).collect();
+        r.record(
+            tick.index,
+            f64::from_bits(input.value),
+            input.quality,
+            &calls,
+            &direct,
+            Some(&mut segment),
+        );
+    }
+    assert_eq!(segment.finish(), recorded.as_slice());
 }

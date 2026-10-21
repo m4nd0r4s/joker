@@ -243,8 +243,9 @@ impl Harness {
                 index: k,
                 at,
                 inputs: self.image.snapshot(),
-                proposals: self.image.proposals(),
+                proposals: self.image.direct_proposals(),
                 results: &results,
+                methods: self.image.method_calls(),
             })
             .unwrap();
         self.image.end_tick().unwrap();

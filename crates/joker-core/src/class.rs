@@ -280,6 +280,7 @@ impl Expansion<'_, '_> {
                         value,
                         source: record.source,
                         ticket: record.ticket,
+                        task: record.task,
                         ..Proposal::EMPTY
                     };
                     self.len += 1;
