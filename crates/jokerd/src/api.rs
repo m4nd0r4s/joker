@@ -1085,7 +1085,12 @@ impl Backend for Node {
         selector: &str,
         _req: ReasonBody,
     ) -> Result<Reply, Problem> {
-        let g = self.resolve_generation(selector)?;
+        let g = match self.resolve_generation(selector) {
+            Err(_) if selector == "confirming" => {
+                return Err(Problem::new("J-E1611", 409, "nothing to confirm"));
+            }
+            other => other?,
+        };
         let confirmed = lock_controller(&self.controller)
             .confirm(Some(g.number))
             .map_err(|e| {
