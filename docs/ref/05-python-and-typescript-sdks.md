@@ -15,11 +15,11 @@ It applies `ref/00` without repeating it. The semantics (arbiter, envelope, qual
 
 | Part | Surface | Packages | Status |
 |---|---|---|---|
-| A | TypeScript app SDK | `@joker/sdk`, `@joker/test`, `@joker/classes-<package>` | **v1.0** (Phase 3) |
-| A | Python app SDK | `joker-sdk`, `joker-testing`, `joker-classes-<package>` | **v1.2** (documents 11 and 21); the API is closed here |
+| A | TypeScript app SDK | `@joker/sdk`, `@joker/test`, `@joker/classes-<package>` | **v1.2**, with the Python SDK (document 26, §5; ADR 0035); the API is closed here |
+| A | Python app SDK | `joker-sdk`, `joker-testing`, `joker-classes-<package>` | **v1.2** (documents 21 and 26, §5); the API is closed here |
 | B | Rust client | crate `joker-client` | **v1.0** (`jk` is a client of this crate) |
 | B | Python client | `joker-client` (PyPI), import `joker_client` | **v1.0** |
-| B | TypeScript client | `@joker/client` (npm) | **v1.0** (Node ≥ 20); browser in 1.3, with the Studio |
+| B | TypeScript client | `@joker/client` (npm) | **v1.1** (Node ≥ 20; document 26, §5; ADR 0035); browser in 1.3, with the Studio |
 
 It does not cover: the WIT world and the Rust SDK (ref/04), the API endpoints and schemas (ref/09), the client configuration file and the contexts (ref/02), the `.jkc` format and what `jkc` generates (document 17).
 
@@ -1636,7 +1636,7 @@ The build is reproducible: the same sources, the same dependencies (pinned by th
 | architectures | all (01 §22) | x86_64, aarch64, riscv64 (Cranelift) | same | armv7 (Pulley) is `J-E0855`: a JS or Python interpreter on top of a Wasm interpreter is 50–100× slower |
 | Joker Micro | yes (native) | **no** | **no** | `jk build --target mcu:…` fails with `J0720` |
 
-- The "target" figures are estimates to validate when each SDK exists (TS in Phase 3, Python in 1.2), like those of document 01, §21. The period minimums, the WCET and size maximums, and the architectures are **rules**, applied by `jk check`.
+- The "target" figures are estimates to validate when each SDK exists (both in 1.2; document 26, §5), like those of document 01, §21. The period minimums, the WCET and size maximums, and the architectures are **rules**, applied by `jk check`.
 - A tier 2 task may share a group with Rust tasks, if the group's period respects the minimum. The GC pause delays the following tasks of the same tick, and the admission counts it. For fast loops, the rule of document 04 still holds: Rust.
 - If the Component Model *async* (WASI 0.3) is not stable in ComponentizeJS or in componentize-py when the SDK ships, **plan B** of §29, D9 applies: the `app-blocking` world of ref/04 §2.11.
 
@@ -2089,7 +2089,7 @@ class PumpDuty(App):
 |---|---|---|---|---|
 | `joker-client` (Rust) | crates.io | `joker_client` | `tokio`, `hyper` 1 + `hyper-util`, `rustls`, `tokio-tungstenite`, `serde` | `jk`, the Deck (via tunnel, 1.3), tools in Rust |
 | `joker-client` (Python) | PyPI | `joker_client` | `httpx` ≥ 0.27, `websockets` ≥ 13, `pydantic` ≥ 2; extra `[pandas]`: `pandas` ≥ 2.2, `pyarrow` ≥ 15 | notebooks, data scripts, integration |
-| `@joker/client` | npm | `@joker/client` | `undici` ≥ 6, `ws` ≥ 8; Node ≥ 20 | commissioning scripts, integrations, the Studio (1.3) |
+| `@joker/client` (1.1) | npm | `@joker/client` | `undici` ≥ 6, `ws` ≥ 8; Node ≥ 20 | commissioning scripts, integrations, the Studio (1.3) |
 
 **Generated types, hand-written API.** The three libraries have two layers:
 
@@ -2458,16 +2458,19 @@ if confirm()? {
 
 ## 30. Version markers
 
+The 1.0 column is the cut of document 26, §5 (ADR 0028, ADR 0035): in 1.0 only the Rust and Python clients ship, and Part A is a closed API for 1.2. The codes of §31 that only the tier 2 SDKs produce are reserved for 1.2 in the registry (`status = "reserved"`).
+
 | Thing | v1.0 | 1.1 | 1.2 | 1.3 |
 |---|---|---|---|---|
-| TS SDK (`@joker/sdk`, `@joker/test`, `@joker/classes-*`) | **yes** | | | |
+| TS SDK (`@joker/sdk`, `@joker/test`, `@joker/classes-*`) | API closed here | | **yes** | |
 | Python SDK (`joker-sdk`, `joker-testing`, `joker-classes-*`) | API closed here | | **yes** | |
 | `set_at`, `write_at` (M6) | in the types; `J-E0003` in `prod`, `J-E0601` in `dev` | **yes** | | |
 | `propose`, intents (M18) | in the types; `J-E0003` in `prod`, `J-E0601` in `dev` | **yes** | | |
 | `Model`, `infer`, frames, streams, blocks | in the types; `unavailable` (document 11, §"Ready for ML") | **yes** | | |
 | long actions with progress (`invoke_long`) | **yes** (ref/04 §2.4) | | | |
 | secrets (`Secret`) | **yes** (ref/04 §2.5.2) | | | |
-| Rust, Python, TS clients | **yes** | | | |
+| Rust and Python clients | **yes** | | | |
+| TS client (Node) | | **yes** | | |
 | intents in the clients | in the operation table; `J-E0883` on a node without them | **yes** | | |
 | Arrow and Parquet produced by the node | **no** (NDJSON; conversion in the client, ref/09 §12) | | | |
 | TS client in the browser | | | | **yes** (Studio) |
@@ -2481,36 +2484,36 @@ if confirm()? {
 | Code | Severity | Message | Where |
 |---|---|---|---|
 | `J-E0800` | error | read with a quality the accessor does not accept (`QualityError`) | SDKs, clients |
-| `J-E0802` | error | cycle API called in async (`dt`, `pending`, `last_outcome`, `set`, mailbox receive on the wrong side) | SDKs |
-| `J-E0803` | error | assignment to the app view: state is per domain; use `st`, `Internal` or `Mailbox` | SDKs |
-| `J-E0804` | error | `Internal` with a non-scalar field or above 64 B encoded | build, runtime |
-| `J-E0805` | error | encoding limit: signal `string`/`bytes` > 64 B, record string > 1 KiB, list > 64, invalid idempotency key | SDKs |
-| `J-E0806` | error | value outside the port type (integer range, unsafe integer, invalid duration literal, negative counter) | SDKs |
-| `J-E0807` | error | unknown instance in a `Many` (name or position) | SDKs |
-| `J-E0808` | error | member of a capability the instance does not have | SDKs |
-| `J-E0809` | error | stable API of a world later than the generated one, unavailable in this runtime (the `@unstable` items give `J-E0003`/`J-E0601`, ref/04 §2.9) | SDKs |
-| `J-E0810` | error | host call during the app declaration | build |
-| `J-E0811` | error | `kv`: key or value out of bounds | SDKs |
-| `J-E0813` | error | task or handler declared incorrectly (domain, signature, trigger, action without handler) | build |
-| `J-E0815` | error | persistent state not encodable, above 64 KiB, or incompatible without `migrate` | runtime |
-| `J-E0816` | error | uncaught exception in a task (treated as `panic`) | runtime |
-| `J-E0817` | error | secret not declared | SDKs |
-| `J-E0818` | error | host call in native mode (outside Wasm) | SDKs |
-| `J-E0850` | error | invalid entry point: no app, more than one, not inheriting from `App`, several languages in the same directory | build |
-| `J-E0851` | error | invalid parameter declaration (`range`, `default`) | build |
-| `J-E0852` | error | version in the code differs from the package version | build |
-| `J-E0853` | error | packaging impossible: native dependency without a `wasm32-wasi` wheel, `node:*` import | build |
-| `J-E0854` | error-in-prod | tier 2 cycle task below the minimum period or with `wcet` above 50% of the period | build, `jk check` |
-| `J-E0855` | error-in-prod | tier 2 on an architecture without Cranelift (armv7/Pulley) | `jk check`, `jk build --target` |
-| `J-E0856` | error | requested world that the SDK cannot generate | build |
+| `J-E0802` | error | cycle API called in async (`dt`, `pending`, `last_outcome`, `set`, mailbox receive on the wrong side) (reserved 1.2) | SDKs |
+| `J-E0803` | error | assignment to the app view: state is per domain; use `st`, `Internal` or `Mailbox` (reserved 1.2) | SDKs |
+| `J-E0804` | error | `Internal` with a non-scalar field or above 64 B encoded (reserved 1.2) | build, runtime |
+| `J-E0805` | error | encoding limit: signal `string`/`bytes` > 64 B, record string > 1 KiB, list > 64, invalid idempotency key (reserved 1.2) | SDKs |
+| `J-E0806` | error | value outside the port type (integer range, unsafe integer, invalid duration literal, negative counter) (reserved 1.2) | SDKs |
+| `J-E0807` | error | unknown instance in a `Many` (name or position) (reserved 1.2) | SDKs |
+| `J-E0808` | error | member of a capability the instance does not have (reserved 1.2) | SDKs |
+| `J-E0809` | error | stable API of a world later than the generated one, unavailable in this runtime (the `@unstable` items give `J-E0003`/`J-E0601`, ref/04 §2.9) (reserved 1.2) | SDKs |
+| `J-E0810` | error | host call during the app declaration (reserved 1.2) | build |
+| `J-E0811` | error | `kv`: key or value out of bounds (reserved 1.2) | SDKs |
+| `J-E0813` | error | task or handler declared incorrectly (domain, signature, trigger, action without handler) (reserved 1.2) | build |
+| `J-E0815` | error | persistent state not encodable, above 64 KiB, or incompatible without `migrate` (reserved 1.2) | runtime |
+| `J-E0816` | error | uncaught exception in a task (treated as `panic`) (reserved 1.2) | runtime |
+| `J-E0817` | error | secret not declared (reserved 1.2) | SDKs |
+| `J-E0818` | error | host call in native mode (outside Wasm) (reserved 1.2) | SDKs |
+| `J-E0850` | error | invalid entry point: no app, more than one, not inheriting from `App`, several languages in the same directory (reserved 1.2) | build |
+| `J-E0851` | error | invalid parameter declaration (`range`, `default`) (reserved 1.2) | build |
+| `J-E0852` | error | version in the code differs from the package version (reserved 1.2) | build |
+| `J-E0853` | error | packaging impossible: native dependency without a `wasm32-wasi` wheel, `node:*` import (reserved 1.2) | build |
+| `J-E0854` | error-in-prod | tier 2 cycle task below the minimum period or with `wcet` above 50% of the period (reserved 1.2) | build, `jk check` |
+| `J-E0855` | error-in-prod | tier 2 on an architecture without Cranelift (armv7/Pulley) (reserved 1.2) | `jk check`, `jk build --target` |
+| `J-E0856` | error | requested world that the SDK cannot generate (reserved 1.2) | build |
 | `J-E0857` | error | invalid, reserved or repeated name in the declaration | build |
-| `J-E0858` | warning | task writes to a module global variable (not shared between cycle and async) | build |
-| `J-E0859` | error | async API called in a cycle task (static analysis) | build |
-| `J-E0860` | error | component or `include` above the maximum size | build |
-| `J-E0861` | error | toolchain missing or wrong version (Node, Python, `componentize-py`) | build |
-| `J-E0862` | error | the declaration differs between native execution and pre-initialization | build |
-| `J-E0863` | warning | generic exception catch around reads in a cycle task | build |
-| `J-E0864` | warning | no ecosystem lock: build not reproducible | build |
+| `J-E0858` | warning | task writes to a module global variable (not shared between cycle and async) (reserved 1.2) | build |
+| `J-E0859` | error | async API called in a cycle task (static analysis) (reserved 1.2) | build |
+| `J-E0860` | error | component or `include` above the maximum size (reserved 1.2) | build |
+| `J-E0861` | error | toolchain missing or wrong version (Node, Python, `componentize-py`) (reserved 1.2) | build |
+| `J-E0862` | error | the declaration differs between native execution and pre-initialization (reserved 1.2) | build |
+| `J-E0863` | warning | generic exception catch around reads in a cycle task (reserved 1.2) | build |
+| `J-E0864` | warning | no ecosystem lock: build not reproducible (reserved 1.2) | build |
 | `J-E0881` | error | node unreachable or timeout (socket, TCP, SSH, socket permissions) | clients |
 | `J-E0882` | error | the node refused the client identity (user certificate missing, expired or without a role) | clients |
 | `J-E0883` | error | operation or API version not supported by the node | clients |

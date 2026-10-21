@@ -528,180 +528,240 @@ id = "J-E0802"
 severity = "error"
 message = "cycle API called in async (`dt`, `pending`, `last_outcome`, `set`, mailbox receive on the wrong side)"
 doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J-E0803"
 severity = "error"
 message = "assignment to the app view: state is per domain; use `st`, `Internal` or `Mailbox`"
 doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J-E0804"
 severity = "error"
 message = "`Internal` with a non-scalar field or above 64 B encoded"
 doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J-E0805"
 severity = "error"
 message = "encoding limit: signal `string`/`bytes` > 64 B, record string > 1 KiB, list > 64, invalid idempotency key"
 doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J-E0806"
 severity = "error"
 message = "value outside the port type (integer range, unsafe integer, invalid duration literal, negative counter)"
 doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J-E0807"
 severity = "error"
 message = "unknown instance in a `Many` (name or position)"
 doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J-E0808"
 severity = "error"
 message = "member of a capability the instance does not have"
 doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J-E0809"
 severity = "error"
 message = "API from a later version unavailable in this runtime"
 doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J-E0810"
 severity = "error"
 message = "host call during the app declaration"
 doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J-E0811"
 severity = "error"
 message = "`kv`: key or value out of bounds"
 doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J-E0813"
 severity = "error"
 message = "task or handler declared incorrectly (domain, signature, trigger, action without handler)"
 doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J-E0815"
 severity = "error"
 message = "persistent state not encodable, above 64 KiB, or incompatible without `migrate`"
 doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J-E0816"
 severity = "error"
 message = "uncaught exception in a task (treated as `panic`)"
 doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J-E0817"
 severity = "error"
 message = "secret not declared"
 doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J-E0818"
 severity = "error"
 message = "host call in native mode (outside Wasm)"
 doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J-E0850"
 severity = "error"
 message = "invalid entry point: no app, more than one, not inheriting from `App`, several languages in the same directory"
 doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J-E0851"
 severity = "error"
 message = "invalid parameter declaration (`range`, `default`)"
 doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J-E0852"
 severity = "error"
 message = "version in the code differs from the package version"
 doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J-E0853"
 severity = "error"
 message = "packaging impossible: native dependency without a `wasm32-wasi` wheel, `node:*` import"
 doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J-E0854"
 severity = "error-in-prod"
 message = "tier 2 cycle task below the minimum period or with `wcet` above 50% of the period"
 doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J-E0855"
 severity = "error-in-prod"
 message = "tier 2 on an architecture without Cranelift (armv7/Pulley)"
 doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J-E0856"
 severity = "error"
 message = "requested world that the SDK cannot generate"
 doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J-E0857"
 severity = "error"
 message = "invalid, reserved or repeated name in the declaration"
 doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J-E0858"
 severity = "warning"
 message = "task writes to a module global variable (not shared between cycle and async)"
 doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J-E0859"
 severity = "error"
 message = "async API called in a cycle task (static analysis)"
 doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J-E0860"
 severity = "error"
 message = "component or `include` above the maximum size"
 doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J-E0861"
 severity = "error"
 message = "toolchain missing or wrong version (Node, Python, `componentize-py`)"
 doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J-E0862"
 severity = "error"
 message = "the declaration differs between native execution and pre-initialization"
 doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J-E0863"
 severity = "warning"
 message = "generic exception catch around reads in a cycle task"
 doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J-E0864"
 severity = "warning"
 message = "no ecosystem lock: build not reproducible"
 doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J-E0881"
