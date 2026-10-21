@@ -1492,6 +1492,7 @@ dependencies = [
  "humantime",
  "joker-api",
  "joker-core",
+ "joker-host",
  "joker-manifest",
  "joker-units",
  "jsonschema",

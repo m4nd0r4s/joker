@@ -21,4 +21,5 @@ pub mod shared;
 pub mod task;
 pub mod trace_ring;
 pub mod traces;
+pub mod wasm;
 pub mod wire;

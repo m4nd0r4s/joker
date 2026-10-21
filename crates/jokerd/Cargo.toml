@@ -13,6 +13,7 @@ joker-core = { workspace = true, features = ["alloc"] }
 joker-units = { workspace = true, features = ["alloc"] }
 joker-manifest = { path = "../joker-manifest" }
 joker-api = { path = "../joker-api" }
+joker-host.workspace = true
 humantime = "2.3"
 crossbeam-queue = "0.3.12"
 serde = { version = "1.0.228", features = ["derive"] }

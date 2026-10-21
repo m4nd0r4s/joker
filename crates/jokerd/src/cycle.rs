@@ -20,7 +20,7 @@ use joker_core::{GroupId, Outputs, OutputsStorage, Sample, SignalId, WriterId};
 use crate::pacer::Pacer;
 use crate::plan::Plan;
 use crate::shared::{OutputMeta, STAGING_CAPACITY, Shared, TraceChunk};
-use crate::task::{CycleTask, TaskContext};
+use crate::task::{CycleTask, Prepare, TaskContext};
 
 /// Why the cycle thread could not start.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -171,7 +171,8 @@ pub fn run(
         .zip(snapshots.iter_mut())
         .zip(extenders.iter_mut())
         .zip(proposals.iter_mut());
-    for (index, ((group, tasks), (((ports, snapshot), extenders), proposals))) in
+    let generation_hash = crate::trace_ring::digest_bytes(&plan.manifest_hash);
+    for (index, ((group, mut tasks), (((ports, snapshot), extenders), proposals))) in
         plan.groups.iter().zip(tasks).zip(storage).enumerate()
     {
         let image = ProcessImage::new(
@@ -185,6 +186,16 @@ pub fn run(
             },
         )
         .map_err(|e| CycleError(format!("group `{}`: {e:?}", group.name)))?;
+        for (writer, task) in &mut tasks {
+            task.prepare(&Prepare {
+                registry: &registry,
+                image: &image,
+                group: &group.name,
+                writer: *writer,
+                generation_hash,
+            })
+            .map_err(|e| CycleError(format!("group `{}`: {e}", group.name)))?;
+        }
         groups.push(GroupRun {
             index,
             exported: 0,
@@ -264,7 +275,7 @@ fn tick(
         }
     }
     for (writer, task) in &mut g.tasks {
-        let mut cx = TaskContext::new(&mut g.image, *writer);
+        let mut cx = TaskContext::new(&mut g.image, outputs, *writer);
         if task.run(&mut cx).is_err() {
             stats.task_errors.bump();
         }

@@ -148,7 +148,7 @@ fn drivers_receive_only_committed_values() {
 struct Slow;
 
 impl CycleTask for Slow {
-    fn run(&mut self, _cx: &mut TaskContext<'_, '_>) -> Result<(), TaskError> {
+    fn run(&mut self, _cx: &mut TaskContext<'_, '_, '_>) -> Result<(), TaskError> {
         std::thread::sleep(Duration::from_millis(45));
         Ok(())
     }

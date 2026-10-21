@@ -39,7 +39,7 @@ impl Light {
 }
 
 impl CycleTask for Light {
-    fn run(&mut self, cx: &mut TaskContext<'_, '_>) -> Result<(), TaskError> {
+    fn run(&mut self, cx: &mut TaskContext<'_, '_, '_>) -> Result<(), TaskError> {
         let tick = cx.tick().ok_or_else(|| TaskError("no tick".into()))?;
         let start = *self.started_ns.get_or_insert(tick.at.mono_ns);
         let phase = (tick.at.mono_ns - start) / self.half_period_ns;

@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use joker_core::image::{ImageError, Intent, NO_TASK, ProcessImage, Proposal, RELINQUISH, Source};
-use joker_core::{Sample, SignalId, TickInfo, WriterId};
+use joker_core::{Outputs, Registry, Sample, SignalId, TickInfo, WriterId};
 use joker_manifest::context::AppInterface;
 use joker_manifest::model::App;
 
@@ -26,22 +26,35 @@ impl fmt::Display for TaskError {
 impl std::error::Error for TaskError {}
 
 /// What a task sees during its call: the latched snapshot and the staging
-/// buffer of its group, under its own writer.
+/// buffer of its group, under its own writer, and the outputs as the
+/// previous commit left them.
 #[derive(Debug)]
-pub struct TaskContext<'a, 'img> {
+pub struct TaskContext<'a, 'img, 'out> {
     image: &'a mut ProcessImage<'img>,
+    outputs: &'a Outputs<'out>,
     writer: WriterId,
     dropped: u64,
 }
 
-impl<'a, 'img> TaskContext<'a, 'img> {
+impl<'a, 'img, 'out> TaskContext<'a, 'img, 'out> {
     /// A context for `writer` on a latched image.
-    pub fn new(image: &'a mut ProcessImage<'img>, writer: WriterId) -> Self {
+    pub fn new(
+        image: &'a mut ProcessImage<'img>,
+        outputs: &'a Outputs<'out>,
+        writer: WriterId,
+    ) -> Self {
         Self {
             image,
+            outputs,
             writer,
             dropped: 0,
         }
+    }
+
+    /// The group's image and the outputs, for a task that stages its
+    /// proposals itself (the Wasm host, which packs the image for the app).
+    pub fn parts(&mut self) -> (&mut ProcessImage<'img>, &Outputs<'out>) {
+        (self.image, self.outputs)
     }
 
     /// The tick: index, latch instant (`now()`) and `dt()`.
@@ -88,10 +101,34 @@ impl<'a, 'img> TaskContext<'a, 'img> {
     }
 }
 
+/// What a task gets once before the first tick of its group: the registry
+/// and the group's image, whose ports and period are fixed from then on.
+#[derive(Debug, Clone, Copy)]
+pub struct Prepare<'a, 'r, 'img> {
+    /// The registry of the generation.
+    pub registry: &'a Registry<'r>,
+    /// The process image of the task's group, before its first latch.
+    pub image: &'a ProcessImage<'img>,
+    /// The group name.
+    pub group: &'a str,
+    /// The task's writer.
+    pub writer: WriterId,
+    /// SHA-256 of the effective manifest of the generation, the
+    /// `generation-hash` of the app's random seed (ref/04 §2.6.3).
+    pub generation_hash: [u8; 32],
+}
+
 /// One cycle task instance.
 pub trait CycleTask: Send {
+    /// Prepares the task for its group, before the first tick and outside
+    /// the tick path, so it may allocate (a Wasm task creates its cycle
+    /// instance here).
+    fn prepare(&mut self, _cx: &Prepare<'_, '_, '_>) -> Result<(), TaskError> {
+        Ok(())
+    }
+
     /// Runs the task for one tick. Must not allocate, block or wait.
-    fn run(&mut self, cx: &mut TaskContext<'_, '_>) -> Result<(), TaskError>;
+    fn run(&mut self, cx: &mut TaskContext<'_, '_, '_>) -> Result<(), TaskError>;
 
     /// The task's state for a recording or a hot swap (`export-state`,
     /// ref/04 §4.12), taken between two ticks; `None` without `persist`.

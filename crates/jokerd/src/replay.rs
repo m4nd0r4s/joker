@@ -20,7 +20,7 @@ use joker_manifest::Manifest;
 use crate::load::instantiate;
 use crate::plan::Plan;
 use crate::shared::STAGING_CAPACITY;
-use crate::task::{TaskContext, TaskProvider};
+use crate::task::{Prepare, TaskContext, TaskProvider};
 
 /// One tick whose results differ from the recording.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -253,6 +253,20 @@ pub fn replay(
         );
     }
 
+    let generation_hash = crate::trace_ring::digest_bytes(&plan.manifest_hash);
+    for ((group, image), tasks) in plan.groups.iter().zip(&images).zip(groups.iter_mut()) {
+        for (writer, task) in tasks.iter_mut() {
+            task.prepare(&Prepare {
+                registry: &registry,
+                image,
+                group: &group.name,
+                writer: *writer,
+                generation_hash,
+            })
+            .map_err(|e| format!("group `{}`: {e}", group.name))?;
+        }
+    }
+
     let mut last_input: Vec<Vec<Option<(u32, Quality, u64)>>> =
         ports.iter().map(|p| vec![None; p.len()]).collect();
     let mut converged = report.from_init.is_empty();
@@ -275,7 +289,7 @@ pub fn replay(
             let _ = image.stage_async(*p);
         }
         for (writer, task) in &mut groups[g] {
-            let mut cx = TaskContext::new(image, *writer);
+            let mut cx = TaskContext::new(image, &outputs, *writer);
             let _ = task.run(&mut cx);
         }
         results.clear();
