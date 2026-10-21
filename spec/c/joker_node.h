@@ -5,6 +5,10 @@
  * machine-readable form of section 2 of that document; if they diverge, the
  * document wins and this header is a bug).
  *
+ * Availability (ADR 0035): library mode is the Joker Micro C library, reserved
+ * for 1.2. The ABI is closed here and does not change before it ships; 1.0
+ * delivers Joker Micro in firmware mode and in crate mode only.
+ *
  * This header is FIXED: it is the same for every project and changes only
  * with JK_ABI_VERSION_MINOR (additions) or JK_ABI_VERSION_MAJOR (breaks).
  * Everything that depends on a project (JK_SIG_..., JK_GROUP_..., the size

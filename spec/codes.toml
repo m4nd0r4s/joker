@@ -2018,6 +2018,8 @@ id = "J-E2503"
 severity = "error"
 message = "ABI, node size or interface incompatible with the library"
 doc = "ref/08 §2.7"
+since = "1.2"
+status = "reserved"
 
 [[code]]
 id = "J-E2504"

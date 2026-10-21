@@ -8,7 +8,7 @@ Normative reference of Joker Micro as seen by whoever integrates it. It applies 
 
 **Covers:**
 
-1. the **C ABI** of library mode (`libjoker_node.a` + `joker_node.h` + `joker_project.h`): all functions, types, macros, call contexts, errors, memory, stack and what is generated per project;
+1. the **C ABI** of library mode (`libjoker_node.a` + `joker_node.h` + `joker_project.h`): all functions, types, macros, call contexts, errors, memory, stack and what is generated per project. **Library mode is reserved for 1.2** (the Joker Micro C library of document 26, §5; ADR 0035): the ABI is closed here and does not change until it ships, but 1.0 delivers Joker Micro in firmware mode and in crate mode only;
 2. the **Rust crate** `joker-micro` (crate mode, Embassy), the generated crate `joker-project` and the contract with the native backend of `joker-sdk`;
 3. **firmware mode**: the generic firmware, the flash areas, boot, OTA and confirmation;
 4. the **generation blob** (`*.jkgen`): header, sections, records, expression ISA, COSE signature, capabilities, `J0710` and determinism of `jk build`;
@@ -33,7 +33,7 @@ Normative reference of Joker Micro as seen by whoever integrates it. It applies 
 | **external writer** | an app `kind = "extern"` of the manifest (§2.17): C code of the integrator that proposes writes with a level and a lease, like any app. |
 | **external device** | a device `driver = "extern"`: its signals are fed (`jk_set_input`) and applied (`jk_get_output`) by the integrator. |
 | **context** | where a function may be called (§2.4). |
-| **delivery mode** | firmware, C library or Rust crate (19 §4). All three use the same core, the same blob and the same interface. |
+| **delivery mode** | firmware, C library or Rust crate (19 §4). All three use the same core, the same blob and the same interface. In 1.0, firmware and crate; the C library is 1.2 (ADR 0035). |
 
 ### 2.2 Files: what is fixed and what is generated
 
@@ -407,7 +407,7 @@ For integrators that receive blobs or firmware over a transport of their own (BL
 | 3 | `JK_RELINQUISHED` | — | — | output in relinquish: no value to apply |
 | −1 | `JK_E_ARG` | `J-E2501` | error | invalid argument |
 | −2 | `JK_E_STATE` | `J-E2502` | error | call outside the allowed state |
-| −3 | `JK_E_ABI` | `J-E2503` | error | ABI, node size or interface incompatible with the library |
+| −3 | `JK_E_ABI` | `J-E2503` | error | ABI, node size or interface incompatible with the library (library mode only; reserved 1.2) |
 | −4 | `JK_E_ALIGN` | `J-E2504` | error | node or blob not 8-byte aligned |
 | −5 | `JK_E_UNSUPPORTED` | `J-E2505` | error | function not included in this build |
 | −6 | `JK_E_REENTRANT` | `J-E2506` | error | concurrent call in an exclusive context |
@@ -637,10 +637,10 @@ Writing to flash takes milliseconds and **never** happens in a group context. A 
 | `trace` | yes | trace rings |
 | `ota` | yes, **required** | OTA of generations and firmware. In firmware mode and in crate mode, the OTA receiver is always part of the image (§2.12.6): without it, `joker-micro` does not compile (`compile_error!` with `J0795`), except with `c-abi`, in which it is the integrator's firmware that carries the image |
 | `defmt` | no | logs with `defmt` |
-| `c-abi` | no | exports the `jk_*` (library mode) |
+| `c-abi` | no | exports the `jk_*` (library mode); **reserved 1.2** (ADR 0035): not available in a 1.0 build |
 | `cs-single-core` | no | `critical-section` implementation by disabling interrupts, for a single-core MCU in which no interrupt calls the node (§2.4, rule 8); without it, in library mode, the integrator provides the implementation |
-| `drv-gpio`, `drv-adc`, `drv-pwm`, `drv-i2c`, `drv-spi`, `drv-uart`, `drv-modbus-rtu`, `drv-modbus-rtu-slave`, `drv-can`, `drv-onewire` | no | MCU drivers, each over the trait of the table of ref/06 §3.7 (`embedded-hal` 1.0 where it exists; `AdcRead` and `CanFrames` from `joker-hal` where it does not); `extern` is always present |
-| `chip-rp`, `chip-stm32`, `chip-esp` | no | binding to the HAL of **one family** (firmware mode only): `embassy-rp`, `embassy-stm32` or `esp-hal`. **Exactly one** per build: zero or more than one is `compile_error!`. The exact chip reference is not a feature of `joker-micro`: `jk build` passes it to the HAL (the HAL's feature, such as `esp-hal/esp32` or `embassy-stm32/stm32g474re`) from `[board] chip` (ref/03 §2.3.1). The bench's original ESP32 is `chip-esp` with `chip = "esp32"`. With Wi-Fi, `chip-esp` brings the radio's fixed heap (§2.15.2). The `chip-*` modules have no `unsafe` (§2.11.3, pin ownership) |
+| `drv-gpio`, `drv-adc`, `drv-pwm`, `drv-i2c`, `drv-spi`, `drv-uart`, `drv-modbus-rtu`, `drv-modbus-rtu-slave`, `drv-can`, `drv-onewire` | no | MCU drivers, each over the trait of the table of ref/06 §3.7 (`embedded-hal` 1.0 where it exists; `AdcRead` and `CanFrames` from `joker-hal` where it does not); `extern` is always present (versions of the 1.0 cut, ADR 0035: `drv-spi`, `drv-uart`, `drv-modbus-rtu-slave` and `drv-onewire` are 1.0.x, `drv-can` is 1.1, the others 1.0) |
+| `chip-rp`, `chip-stm32`, `chip-esp` | no | (`chip-stm32` is 1.0.x, with the STM32 targets of §2.15.1) binding to the HAL of **one family** (firmware mode only): `embassy-rp`, `embassy-stm32` or `esp-hal`. **Exactly one** per build: zero or more than one is `compile_error!`. The exact chip reference is not a feature of `joker-micro`: `jk build` passes it to the HAL (the HAL's feature, such as `esp-hal/esp32` or `embassy-stm32/stm32g474re`) from `[board] chip` (ref/03 §2.3.1). The bench's original ESP32 is `chip-esp` with `chip = "esp32"`. With Wi-Fi, `chip-esp` brings the radio's fixed heap (§2.15.2). The `chip-*` modules have no `unsafe` (§2.11.3, pin ownership) |
 
 `jk build` chooses the features from the manifest and the board. Without a feature, the corresponding functions exist and return `Error::Unsupported` (`JK_E_UNSUPPORTED`), so that the same code compiles with any set.
 
@@ -1212,17 +1212,17 @@ Each MCU build (firmware, library or crate) produces a descriptor in determinist
 
 #### 2.15.1 Target classes (19 §3.1)
 
-| Target | Class | Core | FPU | RAM | Flash | Default capabilities (signals / outputs / groups / instances / apps) | HAL (example `[board] chip`), feature |
-|---|---|---|---|---|---|---|---|
-| RP2350 | **M1** (reference) | 2× Cortex-M33, 150 MHz | `sp+dcp` | 520 KiB | 4 MiB (external, XIP) | 256 / 64 / 8 / 32 / 4 | `embassy-rp` (`rp235xa`), `chip-rp` |
-| STM32G4 (G474) | M1 | Cortex-M4F, 170 MHz | `sp` | 128 KiB | 512 KiB | 128 / 32 / 4 / 16 / 2 | `embassy-stm32` (`stm32g474re`), `chip-stm32` |
-| ESP32-C6 | **M2** | RISC-V, 160 MHz | **`none`** | 512 KiB | 4 MiB (external) | 256 / 64 / 8 / 32 / 4 | `esp-hal` (`esp32c6`), `chip-esp` |
-| ESP32-S3 | M2 | 2× Xtensa LX7, 240 MHz | `sp` | 512 KiB (+ PSRAM) | 8 MiB (external) | 512 / 128 / 8 / 64 / 8 | `esp-hal` (`esp32s3`), `chip-esp` |
-| ESP32 (original) | M2, **development only** (document 23) | 2× Xtensa LX6, 240 MHz | `sp` | 520 KiB | 4 MiB (external) | 256 / 64 / 4 / 32 / 4 | `esp-hal` (`esp32`), `chip-esp` |
-| STM32H5 (H563) | M2 | Cortex-M33, 250 MHz | `sp` | 640 KiB | 2 MiB | 512 / 128 / 8 / 64 / 8 | `embassy-stm32` (`stm32h563zi`), `chip-stm32` |
-| STM32H7 (H743) | M2 | Cortex-M7, 480 MHz | `dp` | 1 MiB | 2 MiB | 1024 / 256 / 8 / 128 / 8 | `embassy-stm32` (`stm32h743zi`), `chip-stm32` |
+| Target | Class | Core | FPU | RAM | Flash | Default capabilities (signals / outputs / groups / instances / apps) | HAL (example `[board] chip`), feature | Version |
+|---|---|---|---|---|---|---|---|---|
+| RP2350 | **M1** (reference) | 2× Cortex-M33, 150 MHz | `sp+dcp` | 520 KiB | 4 MiB (external, XIP) | 256 / 64 / 8 / 32 / 4 | `embassy-rp` (`rp235xa`), `chip-rp` | 1.0 |
+| STM32G4 (G474) | M1 | Cortex-M4F, 170 MHz | `sp` | 128 KiB | 512 KiB | 128 / 32 / 4 / 16 / 2 | `embassy-stm32` (`stm32g474re`), `chip-stm32` | 1.0.x |
+| ESP32-C6 | **M2** | RISC-V, 160 MHz | **`none`** | 512 KiB | 4 MiB (external) | 256 / 64 / 8 / 32 / 4 | `esp-hal` (`esp32c6`), `chip-esp` | 1.0.x |
+| ESP32-S3 | M2 | 2× Xtensa LX7, 240 MHz | `sp` | 512 KiB (+ PSRAM) | 8 MiB (external) | 512 / 128 / 8 / 64 / 8 | `esp-hal` (`esp32s3`), `chip-esp` | 1.0 |
+| ESP32 (original) | M2, **development only** (document 23) | 2× Xtensa LX6, 240 MHz | `sp` | 520 KiB | 4 MiB (external) | 256 / 64 / 4 / 32 / 4 | `esp-hal` (`esp32`), `chip-esp` | 1.0 |
+| STM32H5 (H563) | M2 | Cortex-M33, 250 MHz | `sp` | 640 KiB | 2 MiB | 512 / 128 / 8 / 64 / 8 | `embassy-stm32` (`stm32h563zi`), `chip-stm32` | 1.0.x |
+| STM32H7 (H743) | M2 | Cortex-M7, 480 MHz | `dp` | 1 MiB | 2 MiB | 1024 / 256 / 8 / 128 / 8 | `embassy-stm32` (`stm32h743zi`), `chip-stm32` | 1.0.x |
 
-The default capabilities come from the board profile (`ref/03`) and are overridden with `[target.capacity]`. The version of each HAL is **exact** and pinned in the workspace's `Cargo.lock`, and changes once per phase (document 13, §5.1); `esp-hal` uses `unstable` for the ADC, touch and the watchdog, isolated in `chip-esp`. The ESP32-C6 has no FPU: all floating point is in software, and apps with `f32` get the warning `J0780`.
+The "Version" column is the 1.0 cut of document 26, §5 (ADR 0035): the 1.0 MCU targets are the RP2350 and the ESP32 family on Xtensa (the original ESP32 and the ESP32-S3); the ESP32-C6 and the STM32 targets are 1.0.x. The default capabilities come from the board profile (`ref/03`) and are overridden with `[target.capacity]`. The version of each HAL is **exact** and pinned in the workspace's `Cargo.lock`, and changes once per phase (document 13, §5.1); `esp-hal` uses `unstable` for the ADC, touch and the watchdog, isolated in `chip-esp`. The ESP32-C6 has no FPU: all floating point is in software, and apps with `f32` get the warning `J0780`.
 
 #### 2.15.2 Reference budget (to be measured in Phase 2)
 
@@ -1500,14 +1500,17 @@ The returned value is **always admissible**: the integrator applies it without t
 
 | Element | v1.0 | Reserved |
 |---|---|---|
-| C ABI | 1.0, all the functions of this document | a 1.x only adds (§2.3) |
+| C ABI (library mode) | **reserved**: closed in this document, not shipped (ADR 0035) | 1.2, the Joker Micro C library (document 26, §5); then a 1.x only adds (§2.3) |
+| delivery modes | firmware and Rust crate, with the generation in flash and the OTA receiver | C library (1.2) |
+| targets | RP2350, ESP32 and ESP32-S3 (§2.15.1) | ESP32-C6 and STM32 (1.0.x) |
+| MCU drivers | `gpio`, `adc`, `pwm`, `i2c`, `modbus-rtu` (client), `esp32`, `extern` | `spi`, `uart`, `modbus-rtu-slave`, `onewire` (1.0.x); `can` (1.1) |
 | signal types | 0–8 | 16 block, 17 stream (v1.1, document 11, §"Ready for ML") |
 | blob sections | 0x0001–0x0024 | 0x0040 `MODELS`, 0x0041 `BLOCKS`, 0x0042 `STREAMS` (v1.1); 0x0043 `SCHEDULES` (scheduled writes, M6, v1.1); 0x0044 `WASM_APPS` (`wasmi`, v1.4) |
 | trace | `n_ml_outputs = 0` always | model outputs on the MCU (v1.4, Burn Flex `no_std`) |
 | scheduled writes (`write_at`, `timed`) | not on the MCU (`J0783`) | v1.1 |
 | ML | no | v1.1 trial on M2, v1.4 production (document 21, §6) |
 | apps | native in Rust | `wasmi` on M2 (v1.4); native Structured Text (v1.2), through the same `NativeApp` |
-| link transports | `uart`, `rs485`, `can`, `usb_cdc`, `udp`, `tcp` | 7 `lorawan`, 8 `nbiot` (v1.4, only on demand) |
+| link transports | `uart`, `rs485` (full-duplex), `udp`, `tcp` | `usb_cdc` (1.0.x); `can` and `rs485` half-duplex (1.1; ref/07 §3.1); 7 `lorawan`, 8 `nbiot` (v1.4, only on demand) |
 | low power | `jk_service_next_us` already exists | event-woken groups and energy budget (v1.4) |
 | capabilities | `cap_id` 1–41 | 42+ are added at the end |
 | codes | `J0770`–`J0794`, `J-E2501`–`J-E2599` | `J0795`–`J0799`, `J-E2600`–`J-E2999` |

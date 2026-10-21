@@ -98,7 +98,7 @@ driver-entry = [
   ? descriptor: bstr .size 32            ; SHA-256 of the driver descriptor (ref/06 2.3); absent for extern
 ]
 
-link-transport = "uart" / "rs485" / "can" / "usb_cdc" / "udp" / "tcp"
+link-transport = "uart" / "rs485" / "can" / "usb_cdc" / "udp" / "tcp"   ; "usb_cdc" RESERVED 1.0.x; "can" RESERVED 1.1 (ADR 0035)
 
 area-entry = [
   area:   area-id,
