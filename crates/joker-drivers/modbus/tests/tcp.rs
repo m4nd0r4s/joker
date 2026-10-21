@@ -25,6 +25,7 @@ struct Device {
     coil0: bool,
     refuse_connect: bool,
     garble_transaction: bool,
+    silent: bool,
 }
 
 fn serve(d: &mut Device, frame: &[u8]) -> Vec<u8> {
@@ -69,6 +70,9 @@ struct Double {
 
 impl TcpIo for Double {
     fn poll_read(&mut self, _cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<Result<usize, IoError>> {
+        if self.device.lock().unwrap().silent {
+            return Poll::Pending;
+        }
         let mut reply = self.reply.lock().unwrap();
         if reply.is_empty() {
             return Poll::Ready(Err(IoError::Disconnected));
@@ -169,6 +173,7 @@ fn read_a_holding_register_and_write_a_coil() {
         coil0: false,
         refuse_connect: false,
         garble_transaction: false,
+        silent: false,
     }));
     let req = request();
     let views = req.views();
@@ -198,6 +203,7 @@ fn a_refused_connection_surfaces_as_not_connected() {
         coil0: false,
         refuse_connect: true,
         garble_transaction: false,
+        silent: false,
     }));
     let req = request();
     let views = req.views();
@@ -216,6 +222,7 @@ fn a_mismatched_transaction_id_is_rejected() {
         coil0: false,
         refuse_connect: false,
         garble_transaction: true,
+        silent: false,
     }));
     let req = request();
     let views = req.views();
@@ -227,4 +234,33 @@ fn a_mismatched_transaction_id_is_rejected() {
     bench.connect().unwrap();
     let settled = bench.read(0).unwrap();
     assert_ne!(settled[0].status, RawStatus::OK);
+}
+
+#[test]
+fn a_silent_connection_times_out_as_comm_failure() {
+    let device = Arc::new(Mutex::new(Device {
+        holding0: 42,
+        coil0: false,
+        refuse_connect: false,
+        garble_transaction: false,
+        silent: false,
+    }));
+    let req = request();
+    let views = req.views();
+    let plan = ModbusTcpPlanner::plan(&views.request()).unwrap();
+    let link = Link::Tcp(TcpEndpoint::new(Connector {
+        device: device.clone(),
+    }));
+    let host = Arc::new(VirtualHost::new(0));
+    let mut bench: Bench<'_, ModbusTcp> =
+        Bench::open(host, views.request(), plan.view(), link).unwrap();
+    bench.connect().unwrap();
+    assert_eq!(bench.read(0).unwrap()[0].status, RawStatus::OK);
+
+    device.lock().unwrap().silent = true;
+    let settled = bench.read(0).unwrap();
+    assert_eq!(
+        settled[0].status,
+        RawStatus::bad(joker_hal::Reason::COMM_FAILURE)
+    );
 }
