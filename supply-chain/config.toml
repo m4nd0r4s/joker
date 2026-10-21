@@ -207,7 +207,7 @@ version = "0.6.6"
 criteria = "safe-to-deploy"
 
 [[exemptions.object]]
-version = "0.40.0"
+version = "0.39.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.once_cell]]

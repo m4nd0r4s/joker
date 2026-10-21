@@ -5,7 +5,7 @@
 //! Everything the tick path touches is allocated in [`CycleInstance::new`]:
 //! the image buffer, the per-slot samples, the dynamic proposal buffer, the
 //! notes and the log arena. The one exception is the `cycle-result` of each
-//! call, which wasmtime 49 only hands over as owned values (see `wit`).
+//! call, which wasmtime 48 only hands over as owned values (see `wit`).
 
 use core::fmt;
 use std::sync::Arc;
