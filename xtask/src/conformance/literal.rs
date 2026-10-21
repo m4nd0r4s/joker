@@ -2,6 +2,9 @@
 //! intervals, quantities, qualities, write results, alarm states and
 //! arbiter levels, with the display forms accepted as exact synonyms.
 //!
+//! Units, quantities and their conversions come from `joker-units`, the
+//! catalogue of docs/16 §5.
+//!
 //! The parsed predicates ([`QualityLit`], [`OutcomeLit`]) are the plain data
 //! of `joker-case-runner`, which the conformance firmware embeds as is
 //! (docs/13 §3).
@@ -10,6 +13,7 @@ use alloc::format;
 use alloc::string::{String, ToString};
 
 pub use joker_case_runner::model::{OutcomeLit, QualityLit};
+use joker_units::{ErrorKind, Literal, Unit};
 
 /// A literal that does not follow its grammar (`J0806`).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -116,150 +120,72 @@ pub fn interval_ns(text: &str) -> Result<(u64, u64), LiteralError> {
     Ok((start, end))
 }
 
-/// The kind of physical quantity of a unit, for the dimension checks
-/// (`J0107`, `J0108`).
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-enum Kind {
-    ActivePower,
-    ReactivePower,
-    ApparentPower,
-    Energy,
-    Frequency,
-    Voltage,
-    Current,
-    Temperature,
-    Percent,
-    One,
-    Time,
-}
-
-#[derive(Copy, Clone, Debug, PartialEq)]
-struct UnitDef {
-    kind: Kind,
-    scale: f64,
-    offset: f64,
-}
-
-const PREFIXES: [(&str, f64); 6] = [
-    ("G", 1e9),
-    ("M", 1e6),
-    ("k", 1e3),
-    ("m", 1e-3),
-    ("µ", 1e-6),
-    ("u", 1e-6),
-];
-
-const BASES: [(&str, Kind); 9] = [
-    ("W", Kind::ActivePower),
-    ("var", Kind::ReactivePower),
-    ("VA", Kind::ApparentPower),
-    ("Wh", Kind::Energy),
-    ("Hz", Kind::Frequency),
-    ("V", Kind::Voltage),
-    ("A", Kind::Current),
-    ("K", Kind::Temperature),
-    ("s", Kind::Time),
-];
-
-fn unit_def(unit: &str) -> Option<UnitDef> {
-    let plain = |kind, scale| {
-        Some(UnitDef {
-            kind,
-            scale,
-            offset: 0.0,
-        })
-    };
-    match unit {
-        "" | "1" => return plain(Kind::One, 1.0),
-        "%" => return plain(Kind::Percent, 1.0),
-        "°C" => {
-            return Some(UnitDef {
-                kind: Kind::Temperature,
-                scale: 1.0,
-                offset: 273.15,
-            });
+fn unit_error(text: &str, e: joker_units::Error) -> LiteralError {
+    match e.kind {
+        ErrorKind::Empty | ErrorKind::InvalidNumber | ErrorKind::MissingUnit => {
+            LiteralError::malformed("quantity", text)
         }
-        "min" => return plain(Kind::Time, 60.0),
-        "h" => return plain(Kind::Time, 3600.0),
-        _ => {}
+        kind => LiteralError {
+            code: kind.code(),
+            message: format!("{text:?}: {}", kind.message()),
+        },
     }
-    if let Some(&(_, kind)) = BASES.iter().find(|(b, _)| *b == unit) {
-        return plain(kind, 1.0);
-    }
-    for (prefix, factor) in PREFIXES {
-        if let Some(base) = unit.strip_prefix(prefix)
-            && let Some(&(_, kind)) = BASES.iter().find(|(b, _)| *b == base)
-            && kind != Kind::Temperature
-        {
-            return plain(kind, factor);
-        }
-    }
-    None
 }
 
-fn split_rate(unit: &str) -> Option<(&str, f64)> {
-    let (num, den) = unit.rsplit_once('/')?;
-    let seconds = match den {
-        "s" => 1.0,
-        "min" => 60.0,
-        "h" => 3600.0,
-        _ => return None,
-    };
-    Some((num, seconds))
+/// The declared unit of a signal (`"1"` or empty for dimensionless).
+pub fn unit(text: &str) -> Result<Unit, LiteralError> {
+    match text {
+        "" | "1" => Ok(Unit::ONE),
+        _ => Unit::parse(text).map_err(|e| unit_error(text, e)),
+    }
 }
 
-fn convert(value: f64, from: &str, to: &str, difference: bool) -> Result<f64, LiteralError> {
-    let unknown = |u: &str| LiteralError {
-        code: "J0109",
-        message: format!("unit {u:?} is not in the catalog subset of this runner"),
+fn convert(text: &str, to: &str, difference: bool) -> Result<f64, LiteralError> {
+    let target = unit(to)?;
+    let quantity = match Literal::parse(text.trim()).map_err(|e| unit_error(text, e))? {
+        Literal::Quantity(q) => q,
+        Literal::Number(_) => return Err(LiteralError::malformed("quantity", text)),
     };
-    let from_def = unit_def(from).ok_or_else(|| unknown(from))?;
-    let to_def = unit_def(to).ok_or_else(|| unknown(to))?;
-    if from_def.kind != to_def.kind {
-        let power = [Kind::ActivePower, Kind::ReactivePower, Kind::ApparentPower];
-        let code = if power.contains(&from_def.kind) && power.contains(&to_def.kind) {
-            "J0108"
-        } else {
-            "J0107"
-        };
-        return Err(LiteralError {
-            code,
-            message: format!("unit {from:?} does not convert to {to:?}"),
-        });
-    }
-    let base = if difference {
-        value * from_def.scale
+    let (from, target) = if difference {
+        (quantity.unit.difference(), target.difference())
     } else {
-        value * from_def.scale + from_def.offset
+        (quantity.unit, target)
     };
-    Ok(if difference {
-        base / to_def.scale
-    } else {
-        (base - to_def.offset) / to_def.scale
-    })
+    from.convert(quantity.value, &target)
+        .map_err(|e| unit_error(text, e))
 }
 
 /// Parses a quantity literal (ref/00 §3.2) and converts it to `unit`, the
 /// declared unit of the signal (ref/03 §2.1.3).
 pub fn quantity_in(text: &str, unit: &str) -> Result<f64, LiteralError> {
-    let (value, from) =
-        split_number(text).ok_or_else(|| LiteralError::malformed("quantity", text))?;
-    convert(value, from, unit, false)
+    convert(text, unit, false)
 }
 
 /// Parses a difference quantity (a tolerance or a deadband): affine units
 /// convert without their offset.
 pub fn difference_in(text: &str, unit: &str) -> Result<f64, LiteralError> {
-    let (value, from) =
-        split_number(text).ok_or_else(|| LiteralError::malformed("quantity", text))?;
-    convert(value, from, unit, true)
+    convert(text, unit, true)
 }
 
 /// Parses a rate (`"10 kW/s"`) and returns it in `unit` per second.
 pub fn rate_in(text: &str, unit: &str) -> Result<f64, LiteralError> {
-    let (value, from) = split_number(text).ok_or_else(|| LiteralError::malformed("rate", text))?;
-    let (num, seconds) = split_rate(from).ok_or_else(|| LiteralError::malformed("rate", text))?;
-    Ok(convert(value, num, unit, true)? / seconds)
+    let err = || LiteralError::malformed("rate", text);
+    let quantity = match Literal::parse(text.trim()).map_err(|_| err())? {
+        Literal::Quantity(q) => q,
+        Literal::Number(_) => return Err(err()),
+    };
+    if !quantity.unit.symbol().contains('/') {
+        return Err(err());
+    }
+    let per_second = self::unit(unit)?
+        .difference()
+        .checked_div(&Unit::parse("s").map_err(|e| unit_error(text, e))?)
+        .map_err(|e| unit_error(text, e))?;
+    quantity
+        .unit
+        .difference()
+        .convert(quantity.value, &per_second)
+        .map_err(|e| unit_error(text, e))
 }
 
 const QUALITY_CODES: [&str; 3] = ["good", "uncertain", "bad"];

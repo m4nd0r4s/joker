@@ -734,6 +734,7 @@ dependencies = [
  "critical-section",
  "joker-case-runner",
  "joker-core",
+ "joker-units",
  "serde_json",
  "toml",
 ]
