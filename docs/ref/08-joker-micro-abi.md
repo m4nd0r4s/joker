@@ -1,663 +1,663 @@
-# ref/08 — Joker Micro: ABI C, crate Rust e blob de geração
+# ref/08 — Joker Micro: C ABI, Rust crate and generation blob
 
-Referência normativa do Joker Micro visto por quem o integra. Aplica o `ref/00` sem o repetir e remete para o documento 16 em tudo o que é semântica. Os ficheiros máquina-legíveis são `spec/c/joker_node.h` (a ABI fixa), `spec/c/example/` (um header gerado e um programa de exemplo, compilados em CI) e `spec/cddl/joker-micro.cddl` (as estruturas CBOR). Se este documento e o header divergirem, é um bug a corrigir nos dois (ADR 0023, ponto 3).
-
----
-
-## 1. Âmbito e fontes
-
-**Cobre:**
-
-1. a **ABI C** do modo biblioteca (`libjoker_node.a` + `joker_node.h` + `joker_project.h`): todas as funções, tipos, macros, contextos de chamada, erros, memória, pilha e o que é gerado por projeto;
-2. o **crate Rust** `joker-micro` (modo crate, Embassy), o crate gerado `joker-project` e o contrato com o backend nativo do `joker-sdk`;
-3. o **modo firmware**: o firmware genérico, as áreas de flash, o arranque, o OTA e a confirmação;
-4. o **blob de geração** (`*.jkgen`): cabeçalho, secções, registos, ISA das expressões, assinatura COSE, capacidades, `J0710` e determinismo do `jk build`;
-5. os **alvos M1/M2** e os orçamentos de RAM, flash e pilha;
-6. os códigos novos `J0770`–`J0793` e `J-E2501`–`J-E2599`.
-
-**Não cobre:** as mensagens do Joker Link (`ref/07`: a ABI só expõe bytes de entrada e de saída, §2.6.p), as chaves do manifesto (`ref/01`, a quem este documento pede chaves no §2.17), os perfis de placa (`ref/03`), a API do SDK para quem escreve apps (`ref/04`) e as configurações de cada driver (`ref/06`).
-
-**Deriva de:** 19 (todo), 16 (todo), 01 §3–4, §7–8, §15, §18, §20, 02 (todo), 03 §6–§9, 04 §2–3, 17 §2, §4, §6, 20 §3, ADR 0007, 0015, 0020, 0022, e `ref/00`.
+Normative reference of Joker Micro as seen by whoever integrates it. It applies `ref/00` without repeating it and defers to document 16 in everything that is semantics. The machine-readable files are `spec/c/joker_node.h` (the fixed ABI), `spec/c/example/` (a generated header and an example program, compiled in CI) and `spec/cddl/joker-micro.cddl` (the CBOR structures). If this document and the header diverge, it is a bug to fix in both (ADR 0023, point 3).
 
 ---
 
-## 2. A referência
+## 1. Scope and sources
 
-### 2.1 Conceitos
+**Covers:**
 
-| Conceito | Definição |
+1. the **C ABI** of library mode (`libjoker_node.a` + `joker_node.h` + `joker_project.h`): all functions, types, macros, call contexts, errors, memory, stack and what is generated per project. **Library mode is reserved for 1.2** (the Joker Micro C library of document 26, §5; ADR 0035): the ABI is closed here and does not change until it ships, but 1.0 delivers Joker Micro in firmware mode and in crate mode only;
+2. the **Rust crate** `joker-micro` (crate mode, Embassy), the generated crate `joker-project` and the contract with the native backend of `joker-sdk`;
+3. **firmware mode**: the generic firmware, the flash areas, boot, OTA and confirmation;
+4. the **generation blob** (`*.jkgen`): header, sections, records, expression ISA, COSE signature, capabilities, `J0710` and determinism of `jk build`;
+5. the **M1/M2 targets** and the RAM, flash and stack budgets;
+6. the new codes `J0770`–`J0793` and `J-E2501`–`J-E2599`.
+
+**Does not cover:** the Joker Link messages (`ref/07`: the ABI only exposes input and output bytes, §2.6.p), the manifest keys (`ref/01`, from which this document requests keys in §2.17), the board profiles (`ref/03`), the SDK API for app authors (`ref/04`) and the configuration of each driver (`ref/06`).
+
+**Derives from:** 19 (all), 16 (all), 01 §3–4, §7–8, §15, §18, §20, 02 (all), 03 §6–§9, 04 §2–3, 17 §2, §4, §6, 20 §3, ADR 0007, 0015, 0020, 0022, and `ref/00`.
+
+---
+
+## 2. The reference
+
+### 2.1 Concepts
+
+| Concept | Definition |
 |---|---|
-| **nó** (`jk_node_t`) | toda a memória de uma instância do Joker Micro: registo, slots, imagens, árbitros, envelopes, estado das expressões, estado das apps, filas, traço. Estática, de tamanho fixo no build. Um MCU tem normalmente um nó; a ABI permite vários. |
-| **geração** (`jk_generation_t`) | o blob compilado do projeto (§2.13), embutido na biblioteca (`JK_GENERATION`) ou lido de flash. É imutável e tem de ficar mapeado enquanto o nó o usar. |
-| **interface externa** | o conjunto de identificadores que o código do integrador usa: sinais, grupos, escritores, instâncias, membros, alarmes, parâmetros e links. É **fixada no build da biblioteca** e ligada **por nome** ao registo de cada geração no `jk_init`. Um `JK_SIG_…` é um índice da interface, e não um `SignalId`: por isso continua válido quando uma geração nova chega por flash (§4, D2). |
-| **escritor externo** | uma app `kind = "extern"` do manifesto (§2.17): código C do integrador que propõe escritas com nível e lease, como qualquer app. |
-| **dispositivo externo** | um dispositivo `driver = "extern"`: os seus sinais são alimentados (`jk_set_input`) e aplicados (`jk_get_output`) pelo integrador. |
-| **contexto** | onde uma função pode ser chamada (§2.4). |
-| **modo de entrega** | firmware, biblioteca C ou crate Rust (19 §4). Os três usam o mesmo núcleo, o mesmo blob e a mesma interface. |
+| **node** (`jk_node_t`) | all the memory of one Joker Micro instance: registry, slots, images, arbiters, envelopes, expression state, app state, queues, trace. Static, of fixed size at build time. An MCU normally has one node; the ABI allows several. |
+| **generation** (`jk_generation_t`) | the compiled blob of the project (§2.13), embedded in the library (`JK_GENERATION`) or read from flash. It is immutable and must stay mapped while the node uses it. |
+| **external interface** | the set of identifiers that the integrator's code uses: signals, groups, writers, instances, members, alarms, parameters and links. It is **fixed at library build time** and bound **by name** to the registry of each generation in `jk_init`. A `JK_SIG_…` is an index of the interface, not a `SignalId`: that is why it stays valid when a new generation arrives through flash (§4, D2). |
+| **external writer** | an app `kind = "extern"` of the manifest (§2.17): C code of the integrator that proposes writes with a level and a lease, like any app. |
+| **external device** | a device `driver = "extern"`: its signals are fed (`jk_set_input`) and applied (`jk_get_output`) by the integrator. |
+| **context** | where a function may be called (§2.4). |
+| **delivery mode** | firmware, C library or Rust crate (19 §4). All three use the same core, the same blob and the same interface. In 1.0, firmware and crate; the C library is 1.2 (ADR 0035). |
 
-### 2.2 Ficheiros: o que é fixo e o que é gerado
+### 2.2 Files: what is fixed and what is generated
 
-| Ficheiro | Fixo ou gerado | Conteúdo | Produzido por |
+| File | Fixed or generated | Content | Produced by |
 |---|---|---|---|
-| `joker_node.h` | **fixo** (muda só com a versão da ABI) | tipos, constantes, funções, macros genéricas | `spec/c/joker_node.h`, copiado pelo `jk build --lib` |
-| `joker_project.h` | **gerado** por projeto e por build | `JK_SIG_…`, `JK_GROUP_…`, `JK_WRITER_…`, `JK_INST_…`, `JK_C_…`, `JK_ALARM_…`, `JK_PARAM_…`, `JK_LINK_…`, o tamanho do nó, o hash da interface, as pilhas medidas, `JK_GENERATION` | `jk build --target mcu:<placa> --lib` |
-| `libjoker_node.a` | gerado | núcleo, apps Rust ligadas estaticamente, drivers pedidos, tabela da interface, geração embutida (se houver) | idem |
-| `firmware.jkfw` | gerado | descritor do build (§2.14), CBOR | idem, e em todos os modos |
-| `<site>.jkgen` | gerado | blob de geração assinado | `jk build --target mcu:<placa> --generation --firmware <firmware.jkfw>` |
+| `joker_node.h` | **fixed** (changes only with the ABI version) | types, constants, functions, generic macros | `spec/c/joker_node.h`, copied by `jk build --lib` |
+| `joker_project.h` | **generated** per project and per build | `JK_SIG_…`, `JK_GROUP_…`, `JK_WRITER_…`, `JK_INST_…`, `JK_C_…`, `JK_ALARM_…`, `JK_PARAM_…`, `JK_LINK_…`, the node size, the interface hash, the measured stacks, `JK_GENERATION` | `jk build --target mcu:<board> --lib` |
+| `libjoker_node.a` | generated | core, statically linked Rust apps, requested drivers, interface table, embedded generation (if any) | likewise |
+| `firmware.jkfw` | generated | build descriptor (§2.14), CBOR | likewise, and in all modes |
+| `<site>.jkgen` | generated | signed generation blob | `jk build --target mcu:<board> --generation --firmware <firmware.jkfw>` |
 
-O código do integrador inclui **só** `joker_project.h`, que inclui `joker_node.h`. O header fixo compila sozinho (C11 e C++17), mas `jk_node_t` só fica completo com o gerado, e a macro `jk_init` exige-o.
+The integrator's code includes **only** `joker_project.h`, which includes `joker_node.h`. The fixed header compiles on its own (C11 and C++17), but `jk_node_t` is only complete with the generated one, and the `jk_init` macro requires it.
 
-### 2.3 Versão da ABI
+### 2.3 ABI version
 
-- `JK_ABI_VERSION_MAJOR` e `JK_ABI_VERSION_MINOR` (`ref/00` §1); `JK_ABI_VERSION` = `(major << 16) | minor` (a forma usada no documento 19); `jk_abi_version()` devolve a da biblioteca ligada.
-- **v1.0 = ABI 1.0.** As builds anteriores à 1.0 usam a major 0 e não têm garantias.
-- **Regra de compatibilidade** (ADR 0022, `ref/00` §1): numa minor só se acrescentam funções, constantes, bits de flags e campos **no fim** das estruturas; nenhuma estrutura existente muda de tamanho para o código compilado com uma minor anterior, porque a biblioteca sabe a minor do header pelo argumento `abi_version` do `jk_init_checked` e só escreve os campos que essa minor conhece. Uma função nunca muda de assinatura numa minor.
-- `jk_init_checked` recusa (`JK_E_ABI`) uma major diferente, uma minor do header acima da da biblioteca, um `node_size` menor do que o necessário e um `iface_hash` diferente do da biblioteca (0 salta esta verificação).
-- O header gerado tem um `_Static_assert` com a versão para a qual foi gerado.
+- `JK_ABI_VERSION_MAJOR` and `JK_ABI_VERSION_MINOR` (`ref/00` §1); `JK_ABI_VERSION` = `(major << 16) | minor` (the form used in document 19); `jk_abi_version()` returns that of the linked library.
+- **v1.0 = ABI 1.0.** Builds before 1.0 use major 0 and have no guarantees.
+- **Compatibility rule** (ADR 0022, `ref/00` §1): a minor only adds functions, constants, flag bits and fields **at the end** of structures; no existing structure changes size for code compiled with an earlier minor, because the library knows the header's minor from the `abi_version` argument of `jk_init_checked` and only writes the fields that minor knows. A function never changes signature in a minor.
+- `jk_init_checked` refuses (`JK_E_ABI`) a different major, a header minor above the library's, a `node_size` smaller than needed and an `iface_hash` different from the library's (0 skips this check).
+- The generated header has a `_Static_assert` with the version it was generated for.
 
-### 2.4 Regras gerais
+### 2.4 General rules
 
-1. **Sem alocação.** Nenhuma função aloca. Toda a memória está no `jk_node_t` do integrador e nos buffers que ele passa.
-2. **Sem threads, sem estado global escondido.** A biblioteca não cria tarefas nem temporizadores e não tem variáveis globais mutáveis (a `JK_GENERATION` embutida é `const`). O integrador define dois símbolos: `jk_now_us` e `jk_fatal` (§2.6.b).
-3. **Reentrante por nó.** Dois nós nunca partilham estado. No mesmo nó, as chamadas seguem a tabela de contextos.
-4. **O tempo vem de fora** (ADR 0007). Todas as funções do caminho determinista recebem `now_us`. A biblioteca só lê `jk_now_us()` em `jk_link_poll` (carimbos de receção e temporizadores do link) e no fim do `jk_tick` (duração, para estatísticas e para a política de overrun dos ticks **seguintes**, registada no traço).
-5. **Unidades:** um valor é sempre expresso na unidade declarada do sinal (`ref/00` §4.1). A ABI não converte. O header gerado mostra a unidade em comentário.
-6. **Qualidade explícita:** as entradas levam sempre qualidade; as leituras devolvem-na sempre (invariante 4 do `AGENTS.md`).
-7. **Erros:** nunca abortam; devolvem `jk_status_t`. Só uma invariante interna partida chama `jk_fatal` (§2.6.b).
-8. **Sincronização só por `critical-section` e `portable-atomic`** (invariante do núcleo, `AGENTS.md` §2.2). Os `seq` de 64 bits e os seqlocks dos slots (documento 01, §3.2) usam `portable_atomic::AtomicU64`, que nos alvos de 32 bits sem atómicos de 64 bits (Cortex-M33, Xtensa LX6/LX7, RISC-V `imac`) assenta numa secção crítica de poucas instruções; o núcleo nunca usa primitivas do executor nem locks. É isto que mantém o `[any]` limitado (§2.4.1). **No modo biblioteca, o integrador liga uma implementação de `critical-section`**: a do seu RTOS (FreeRTOS, Zephyr, ESP-IDF) ou a do seu HAL, ou ativa a feature `cs-single-core` quando o MCU tem um só núcleo e nenhuma interrupção chama o nó (a secção crítica é desligar as interrupções). Sem nenhuma das duas, a biblioteca não liga (falta o símbolo da implementação de `critical-section`). No modo firmware e no crate, a implementação é a do HAL da família (`chip-*`, §2.11.2).
+1. **No allocation.** No function allocates. All memory is in the integrator's `jk_node_t` and in the buffers it passes.
+2. **No threads, no hidden global state.** The library creates no tasks or timers and has no mutable global variables (the embedded `JK_GENERATION` is `const`). The integrator defines two symbols: `jk_now_us` and `jk_fatal` (§2.6.b).
+3. **Reentrant per node.** Two nodes never share state. On the same node, calls follow the context table.
+4. **Time comes from outside** (ADR 0007). All functions on the deterministic path receive `now_us`. The library only reads `jk_now_us()` in `jk_link_poll` (reception timestamps and link timers) and at the end of `jk_tick` (duration, for statistics and for the overrun policy of the **following** ticks, recorded in the trace).
+5. **Units:** a value is always expressed in the declared unit of the signal (`ref/00` §4.1). The ABI does not convert. The generated header shows the unit in a comment.
+6. **Explicit quality:** inputs always carry quality; reads always return it (invariant 4 of `AGENTS.md`).
+7. **Errors:** they never abort; they return `jk_status_t`. Only a broken internal invariant calls `jk_fatal` (§2.6.b).
+8. **Synchronization only through `critical-section` and `portable-atomic`** (core invariant, `AGENTS.md` §2.2). The 64-bit `seq`s and the slot seqlocks (document 01, §3.2) use `portable_atomic::AtomicU64`, which on 32-bit targets without 64-bit atomics (Cortex-M33, Xtensa LX6/LX7, RISC-V `imac`) rests on a critical section of a few instructions; the core never uses executor primitives or locks. This is what keeps `[any]` bounded (§2.4.1). **In library mode, the integrator links a `critical-section` implementation**: that of its RTOS (FreeRTOS, Zephyr, ESP-IDF) or that of its HAL, or enables the `cs-single-core` feature when the MCU has a single core and no interrupt calls the node (the critical section is disabling interrupts). With neither, the library does not link (the `critical-section` implementation symbol is missing). In firmware mode and in the crate, the implementation is that of the family's HAL (`chip-*`, §2.11.2).
 
-#### 2.4.1 Contextos de chamada
+#### 2.4.1 Call contexts
 
-| Contexto | Quem | Regra |
+| Context | Who | Rule |
 |---|---|---|
-| `[any]` | qualquer contexto, **incluindo ISR**, em concorrência com tudo | sem espera (*wait-free*), limitado, pilha ≤ `JK_PROJECT_STACK_ISR` |
-| `[group g]` | o contexto que faz o tick do grupo `g` | um só por grupo; grupos diferentes podem preemptar-se e correr em paralelo noutro núcleo (19 §3: um executor de interrupção por grupo) |
-| `[service]` | o contexto de serviço do nó | **um só** por nó; pode ser preemptado pelos grupos e correr em paralelo com eles |
-| `[excl]` | exclusivo | nenhuma chamada `[group]` ou `[service]` no mesmo nó ao mesmo tempo; as chamadas `[any]` concorrentes (ISR) são permitidas e devolvem `JK_E_STATE` enquanto a função exclusiva dura (exceto `jk_get_output*` durante um `jk_generation_swap`, que devolvem o estado anterior) |
-| `[pure]` | sem estado do nó | qualquer contexto de tarefa; não em ISR (pilha) |
+| `[any]` | any context, **including ISRs**, concurrently with everything | wait-free, bounded, stack ≤ `JK_PROJECT_STACK_ISR` |
+| `[group g]` | the context that ticks group `g` | only one per group; different groups may preempt each other and run in parallel on another core (19 §3: one interrupt executor per group) |
+| `[service]` | the node's service context | **only one** per node; it may be preempted by the groups and run in parallel with them |
+| `[excl]` | exclusive | no `[group]` or `[service]` call on the same node at the same time; concurrent `[any]` calls (ISR) are allowed and return `JK_E_STATE` while the exclusive function lasts (except `jk_get_output*` during a `jk_generation_swap`, which return the previous state) |
+| `[pure]` | no node state | any task context; not in an ISR (stack) |
 
-No padrão de um só laço (19 §4.2), todas as chamadas estão no mesmo contexto e não há nada a coordenar.
+In the single-loop pattern (19 §4.2), all calls are in the same context and there is nothing to coordinate.
 
-**Deteção de mau uso.** Cada contexto exclusivo (`[group g]`, `[service]`, `[excl]`) tem uma bandeira atómica de ocupado. Uma chamada que encontre a sua bandeira ocupada devolve `JK_E_REENTRANT` e não faz nada. Chamar `jk_tick` do mesmo grupo a partir de duas tarefas é portanto detetado, e não corrompe nada.
+**Misuse detection.** Each exclusive context (`[group g]`, `[service]`, `[excl]`) has an atomic busy flag. A call that finds its flag busy returns `JK_E_REENTRANT` and does nothing. Calling `jk_tick` of the same group from two tasks is therefore detected, and corrupts nothing.
 
-**Regra do escritor único por sinal.** `jk_set_input*` é `[any]` **desde que** cada sinal seja escrito sempre pelo mesmo contexto (documento 01, §3.2). Dois contextos a escrever o mesmo sinal é um erro do integrador que a biblioteca não consegue detetar sem custo; o resultado é uma das duas amostras, nunca uma amostra rasgada.
+**Single-writer rule per signal.** `jk_set_input*` is `[any]` **as long as** each signal is always written by the same context (document 01, §3.2). Two contexts writing the same signal is an integrator error that the library cannot detect without cost; the result is one of the two samples, never a torn sample.
 
-**Leitores sem espera.** Um leitor (latch, `jk_read`, `jk_get_output*`) nunca espera por um escritor. Se uma leitura colide com uma escrita em curso (uma ISR que preempta o próprio escritor), devolve a **amostra completa anterior** e conta a colisão (`latch_collisions`). É o que evita o bloqueio clássico de um seqlock num MCU de um núcleo, em que o leitor numa ISR de prioridade alta esperaria para sempre por um escritor que não pode correr (§4, D3).
+**Wait-free readers.** A reader (latch, `jk_read`, `jk_get_output*`) never waits for a writer. If a read collides with a write in progress (an ISR that preempts the writer itself), it returns the **previous complete sample** and counts the collision (`latch_collisions`). This is what avoids the classic seqlock deadlock on a single-core MCU, in which the reader in a high-priority ISR would wait forever for a writer that cannot run (§4, D3).
 
-#### 2.4.2 Tabela de funções por contexto
+#### 2.4.2 Table of functions by context
 
-| Contexto | Funções |
+| Context | Functions |
 |---|---|
-| `[any]` | `jk_abi_version`, `jk_status_str`, `jk_set_input*`, `jk_read`, `jk_read_buf`, `jk_get_output*`, `jk_take_changed` (um consumidor por grupo), `jk_group_output_count`, `jk_group_output_at`, `jk_group_period_us`, `jk_group_stats`, `jk_last_outcome`, `jk_alarm_info`, `jk_param_get`, `jk_time_utc`, `jk_link_status`, `jk_service_next_us`, `jk_supervise`, `jk_force_safe`, `jk_safe_get`, `jk_trace_freeze`, `jk_node_info` |
+| `[any]` | `jk_abi_version`, `jk_status_str`, `jk_set_input*`, `jk_read`, `jk_read_buf`, `jk_get_output*`, `jk_take_changed` (one consumer per group), `jk_group_output_count`, `jk_group_output_at`, `jk_group_period_us`, `jk_group_stats`, `jk_last_outcome`, `jk_alarm_info`, `jk_param_get`, `jk_time_utc`, `jk_link_status`, `jk_service_next_us`, `jk_supervise`, `jk_force_safe`, `jk_safe_get`, `jk_trace_freeze`, `jk_node_info` |
 | `[group g]` | `jk_tick(node, g, …)` |
 | `[service]` | `jk_service`, `jk_link_poll`, `jk_link_poll_at`, `jk_link_reset`, `jk_propose*`, `jk_relinquish`, `jk_manual_write`, `jk_manual_release`, `jk_call_method*`, `jk_action_*`, `jk_event_emit`, `jk_event_next`, `jk_alarm_ack`, `jk_alarm_shelve`, `jk_alarm_unshelve`, `jk_trip_reset`, `jk_param_set`, `jk_param_clear`, `jk_time_set_utc`, `jk_generation_confirm`, `jk_persist_flush`, `jk_trace_size`, `jk_trace_read`, `jk_ota_*` |
 | `[excl]` | `jk_init` / `jk_init_checked`, `jk_restart`, `jk_shutdown`, `jk_generation_swap` |
 | `[pure]` | `jk_generation_open`, `jk_generation_boot`, `jk_generation_info` |
 
-Os callbacks de `jk_platform_t` só são chamados a partir de `[excl]`, `[service]`, `jk_generation_open` (que lê a área `IDENTITY`) e `jk_generation_boot`, e podem bloquear (ms). Por isso estas duas correm no contexto de serviço ou antes do `jk_init`. `jk_now_us` é chamado a partir de `[group]` e `[service]`, e tem de ser chamável de qualquer contexto.
+The `jk_platform_t` callbacks are only called from `[excl]`, `[service]`, `jk_generation_open` (which reads the `IDENTITY` area) and `jk_generation_boot`, and they may block (ms). That is why these last two run in the service context or before `jk_init`. `jk_now_us` is called from `[group]` and `[service]`, and must be callable from any context.
 
-### 2.5 Tipos e constantes
+### 2.5 Types and constants
 
-#### 2.5.1 Identificadores
+#### 2.5.1 Identifiers
 
-| Tipo | C | Largura | Origem | Nota |
+| Type | C | Width | Origin | Note |
 |---|---|---|---|---|
-| sinal | `jk_sig_t` | `u32` | `JK_SIG_<CAMINHO>` | índice da interface, não `SignalId` |
-| grupo | `jk_group_t` | `u32` | `JK_GROUP_<NOME>` | ≤ 32 por nó na ABI; ≤ 8 na v1 (`J0776`) |
-| escritor externo | `jk_writer_t` | `u32` | `JK_WRITER_<APP>` | |
-| instância | `jk_inst_t` | `u32` | `JK_INST_<NOME>` | `ref/00` §5 |
-| membro de classe | `jk_member_t` | `u16` | `JK_C_<PACOTE>_<CLASSE>_<MAJOR>_<MEMBRO>` | ligado por (classe, major, nome) |
-| alarme | `jk_alarm_t` | `u32` | `JK_ALARM_<NOME>` | |
-| parâmetro | `jk_param_t` | `u32` | `JK_PARAM_<APP>_<NOME>` | parâmetros de apps; os `param` de classes são sinais |
-| link | `jk_link_id_t` | `u8` | `JK_LINK_<NOME>` | |
-| bilhete de ação | `jk_ticket_t` | `u32` | `jk_action_invoke` | |
-| nenhum | `JK_NONE` | `0xFFFFFFFF` | | |
+| signal | `jk_sig_t` | `u32` | `JK_SIG_<PATH>` | interface index, not `SignalId` |
+| group | `jk_group_t` | `u32` | `JK_GROUP_<NAME>` | ≤ 32 per node in the ABI; ≤ 8 in v1 (`J0776`) |
+| external writer | `jk_writer_t` | `u32` | `JK_WRITER_<APP>` | |
+| instance | `jk_inst_t` | `u32` | `JK_INST_<NAME>` | `ref/00` §5 |
+| class member | `jk_member_t` | `u16` | `JK_C_<PACKAGE>_<CLASS>_<MAJOR>_<MEMBER>` | bound by (class, major, name) |
+| alarm | `jk_alarm_t` | `u32` | `JK_ALARM_<NAME>` | |
+| parameter | `jk_param_t` | `u32` | `JK_PARAM_<APP>_<NAME>` | app parameters; class `param`s are signals |
+| link | `jk_link_id_t` | `u8` | `JK_LINK_<NAME>` | |
+| action ticket | `jk_ticket_t` | `u32` | `jk_action_invoke` | |
+| none | `JK_NONE` | `0xFFFFFFFF` | | |
 
-#### 2.5.2 Enumerações
+#### 2.5.2 Enumerations
 
-Todas com os valores do `ref/00`: `jk_type_t` (`JK_TYPE_BOOL` 0 … `JK_TYPE_BYTES` 8; 16 e 17 reservados para bloco e stream, v1.1), qualidade (`JK_QC_*` 0–2, `JK_QR_*` 0–19, 240–255 privados; `ref/00` §4.3), `jk_outcome_t` (`JK_OUTCOME_NONE` 0 … `JK_OUTCOME_TRIPPED` 9) e `jk_reject_t` (`JK_REJECT_WRONG_TYPE` 1 … `JK_REJECT_BUDGET` 8; `ref/00` §4.4), `jk_clock_q_t`, `jk_alarm_state_t`, `jk_severity_t`, `jk_role_t` (§6). Níveis: `jk_level_t` `u8`, 1–16 absolutos, `JK_LEVEL_NONE` = 0.
+All with the values of `ref/00`: `jk_type_t` (`JK_TYPE_BOOL` 0 … `JK_TYPE_BYTES` 8; 16 and 17 reserved for block and stream, v1.1), quality (`JK_QC_*` 0–2, `JK_QR_*` 0–19, 240–255 private; `ref/00` §4.3), `jk_outcome_t` (`JK_OUTCOME_NONE` 0 … `JK_OUTCOME_TRIPPED` 9) and `jk_reject_t` (`JK_REJECT_WRONG_TYPE` 1 … `JK_REJECT_BUDGET` 8; `ref/00` §4.4), `jk_clock_q_t`, `jk_alarm_state_t`, `jk_severity_t`, `jk_role_t` (§6). Levels: `jk_level_t` `u8`, 1–16 absolute, `JK_LEVEL_NONE` = 0.
 
-#### 2.5.3 Qualidade
+#### 2.5.3 Quality
 
-`jk_quality_t` é o `u32` do slot: código nos bits 0–7, motivo nos bits 8–15, flags nos bits 16–31 (documento 01, §3.2).
+`jk_quality_t` is the slot's `u32`: code in bits 0–7, reason in bits 8–15, flags in bits 16–31 (document 01, §3.2).
 
-| Macro | Valor |
+| Macro | Value |
 |---|---|
-| `JK_Q(code, reason)` | compõe |
+| `JK_Q(code, reason)` | composes |
 | `JK_GOOD` | `JK_Q(JK_QC_GOOD, JK_QR_NONE)` = 0 |
-| `JK_UNCERTAIN(r)`, `JK_BAD(r)` | atalhos |
-| `JK_Q_CODE(q)`, `JK_Q_REASON(q)`, `JK_Q_FLAGS(q)`, `JK_Q_IS_GOOD(q)` | decompõem |
-| `JK_QF_TS_SRC_MONO` (bit 16) | o `ts_src` é monotónico local, e não UTC |
+| `JK_UNCERTAIN(r)`, `JK_BAD(r)` | shortcuts |
+| `JK_Q_CODE(q)`, `JK_Q_REASON(q)`, `JK_Q_FLAGS(q)`, `JK_Q_IS_GOOD(q)` | decompose |
+| `JK_QF_TS_SRC_MONO` (bit 16) | the `ts_src` is local monotonic, not UTC |
 
-Na **entrada**, a combinação código/motivo tem de ser uma das do documento 02, §4 (por exemplo, `Good` só com `none`, `overridden` ou `local_override`; `stale` com `Uncertain` ou `Bad`); os motivos 240–255 são aceites com qualquer código. Outra combinação é `JK_E_QUALITY`. As flags não definidas têm de ser 0 na entrada e são ignoradas (limpas); na saída podem vir a 1 em minors futuras, e o integrador deve usar as macros.
+On **input**, the code/reason combination must be one of those of document 02, §4 (for example, `Good` only with `none`, `overridden` or `local_override`; `stale` with `Uncertain` or `Bad`); reasons 240–255 are accepted with any code. Any other combination is `JK_E_QUALITY`. Undefined flags must be 0 on input and are ignored (cleared); on output they may come at 1 in future minors, and the integrator should use the macros.
 
-#### 2.5.4 Valor e amostras
+#### 2.5.4 Value and samples
 
-| Estrutura | Campos | Regras |
+| Structure | Fields | Rules |
 |---|---|---|
-| `jk_value_t` | `type`, `as.b`, `as.i` (i64 e enum com sinal), `as.u` (u64, bits, enum sem sinal), `as.f` (f64 e f32, promovido sem perda), `as.buf.{ptr,len}` (string UTF-8 sem NUL, bytes; `len` ≤ 64) | os campos `jk_reserved*` são 0; `buf` é emprestado só durante a chamada |
-| `jk_sample_in_t` | `value`, `quality`, `ts_acq_us` (obrigatório), `ts_hw_us` (ou `JK_TS_HW_NONE`), `ts_src_us` (ou `JK_TS_SRC_NONE`) | documento 02, §5 |
-| `jk_sample_t` | `value`, `quality` (já com o envelhecimento de `max_age`), `seq` (64 bits), `ts_acq_us`, `ts_hw_us`, `ts_src_us` | |
+| `jk_value_t` | `type`, `as.b`, `as.i` (i64 and signed enum), `as.u` (u64, bits, unsigned enum), `as.f` (f64 and f32, promoted without loss), `as.buf.{ptr,len}` (UTF-8 string without NUL, bytes; `len` ≤ 64) | the `jk_reserved*` fields are 0; `buf` is borrowed only during the call |
+| `jk_sample_in_t` | `value`, `quality`, `ts_acq_us` (required), `ts_hw_us` (or `JK_TS_HW_NONE`), `ts_src_us` (or `JK_TS_SRC_NONE`) | document 02, §5 |
+| `jk_sample_t` | `value`, `quality` (already with `max_age` aging), `seq` (64 bits), `ts_acq_us`, `ts_hw_us`, `ts_src_us` | |
 | `jk_output_t` | `value`, `quality`, `outcome`, `reject`, `level`, `flags` (`JK_OUTF_*`), `seq` | §2.6.h |
 | `jk_outcome_info_t` | `outcome`, `reject`, `level`, `applied`, `tick_seq` | §2.6.i |
 
-**Conversões aceites pelos setters** (sinal de destino → setters aceites). Tudo o resto é `JK_E_TYPE`, sem efeito.
+**Conversions accepted by the setters** (target signal → accepted setters). Everything else is `JK_E_TYPE`, without effect.
 
-| Tipo do sinal | `_bool` | `_i64` | `_u64` | `_f64` | `_f32` | `_buf` |
+| Signal type | `_bool` | `_i64` | `_u64` | `_f64` | `_f32` | `_buf` |
 |---|---|---|---|---|---|---|
-| `bool` | sim | 0 ou 1 (senão `JK_E_VALUE`) | 0 ou 1 | — | — | — |
-| `i64` | — | sim | se ≤ `INT64_MAX` | — | — | — |
-| `u64` | — | se ≥ 0 | sim | — | — | — |
-| `f64` | — | sim (arredondado) | sim (arredondado) | sim | sim | — |
-| `f32` | — | sim (arredondado) | sim (arredondado) | sim (arredondado a f32) | sim | — |
-| `enum` | — | se for uma variante declarada | idem | — | — | — |
-| `bits<N>` | — | se ≥ 0 e < 2ᴺ | se < 2ᴺ | — | — | — |
-| `string` | — | — | — | — | — | UTF-8 válido, ≤ 64 B |
+| `bool` | yes | 0 or 1 (otherwise `JK_E_VALUE`) | 0 or 1 | — | — | — |
+| `i64` | — | yes | if ≤ `INT64_MAX` | — | — | — |
+| `u64` | — | if ≥ 0 | yes | — | — | — |
+| `f64` | — | yes (rounded) | yes (rounded) | yes | yes | — |
+| `f32` | — | yes (rounded) | yes (rounded) | yes (rounded to f32) | yes | — |
+| `enum` | — | if it is a declared variant | likewise | — | — | — |
+| `bits<N>` | — | if ≥ 0 and < 2ᴺ | if < 2ᴺ | — | — | — |
+| `string` | — | — | — | — | — | valid UTF-8, ≤ 64 B |
 | `bytes` | — | — | — | — | — | ≤ 64 B |
 
-Um valor fora do domínio (variante inexistente, string com mais de 64 B ou UTF-8 inválido) é `JK_E_VALUE`. Um `NaN` ou um infinito **não é erro**: o estágio de aquisição grava-o como `Bad(nan)` (documento 16, §4). Os **getters** de saídas exigem o tipo exato, com duas exceções: `_f64` lê um `f32`, e `_i64`/`_u64` leem um `enum` (valor numérico) ou um `bits` (`_u64`).
+A value outside the domain (nonexistent variant, string with more than 64 B or invalid UTF-8) is `JK_E_VALUE`. A `NaN` or an infinity **is not an error**: the acquisition stage records it as `Bad(nan)` (document 16, §4). The output **getters** require the exact type, with two exceptions: `_f64` reads an `f32`, and `_i64`/`_u64` read an `enum` (numeric value) or a `bits` (`_u64`).
 
-#### 2.5.5 Restantes tipos
+#### 2.5.5 Remaining types
 
-Todos definidos no header; os campos `jk_reserved*` são 0 na entrada e ignorados na saída.
+All defined in the header; the `jk_reserved*` fields are 0 on input and ignored on output.
 
-| Tipo | Onde se usa | Secção |
+| Type | Where it is used | Section |
 |---|---|---|
-| `jk_generation_t`, `jk_generation_info_t`, `JK_GENF_*` | geração | §2.6.d |
-| `jk_platform_t`, `jk_area_t` (`JK_AREA_*`), `jk_area_info_t`, `jk_notify_t` (`JK_NOTIFY_*`) | plataforma e flash | §2.6.c, §2.10 |
-| `jk_group_stats_t` | estatísticas de grupo | §2.6.f |
-| `jk_action_err_t` (`JK_ACTION_*`), `jk_action_req_t` (`JK_ACTREQF_*`), `jk_ticket_t` | ações | §2.6.j |
-| `jk_event_kind_t` (`JK_EV_*`), `jk_event_t` (`JK_EVF_*`) | eventos | §2.6.j |
-| `jk_alarm_info_t` | alarmes | §2.6.k |
-| `jk_link_rx_fn`, `jk_link_tx_fn`, `jk_link_state_t` (`JK_LINK_*`), `jk_session_mode_t` (`JK_SESSION_*`, o `session_mode` da ref/00 §6), `jk_link_status_t` | link | §2.6.p |
-| `jk_supervision_t` | supervisão | §2.6.n |
-| `jk_ota_kind_t` (`JK_OTA_*`) | OTA local | §2.6.r |
-| `jk_node_state_t` (`JK_NODE_*`), `jk_node_info_t` | diagnóstico | §2.6.s |
+| `jk_generation_t`, `jk_generation_info_t`, `JK_GENF_*` | generation | §2.6.d |
+| `jk_platform_t`, `jk_area_t` (`JK_AREA_*`), `jk_area_info_t`, `jk_notify_t` (`JK_NOTIFY_*`) | platform and flash | §2.6.c, §2.10 |
+| `jk_group_stats_t` | group statistics | §2.6.f |
+| `jk_action_err_t` (`JK_ACTION_*`), `jk_action_req_t` (`JK_ACTREQF_*`), `jk_ticket_t` | actions | §2.6.j |
+| `jk_event_kind_t` (`JK_EV_*`), `jk_event_t` (`JK_EVF_*`) | events | §2.6.j |
+| `jk_alarm_info_t` | alarms | §2.6.k |
+| `jk_link_rx_fn`, `jk_link_tx_fn`, `jk_link_state_t` (`JK_LINK_*`), `jk_session_mode_t` (`JK_SESSION_*`, the `session_mode` of ref/00 §6), `jk_link_status_t` | link | §2.6.p |
+| `jk_supervision_t` | supervision | §2.6.n |
+| `jk_ota_kind_t` (`JK_OTA_*`) | local OTA | §2.6.r |
+| `jk_node_state_t` (`JK_NODE_*`), `jk_node_info_t` | diagnostics | §2.6.s |
 
-### 2.6 Funções
+### 2.6 Functions
 
-Cada função: assinatura (a do header), contexto, comportamento, erros. Os erros comuns a quase todas não se repetem: `JK_E_ARG` (ponteiro nulo, argumento fora de gama), `JK_E_STATE` (nó não iniciado ou já parado), `JK_E_HALTED` (nó parado por falha interna), `JK_E_REENTRANT` (§2.4.1), `JK_E_UNSUPPORTED` (feature fora do build).
+Each function: signature (that of the header), context, behavior, errors. The errors common to almost all of them are not repeated: `JK_E_ARG` (null pointer, argument out of range), `JK_E_STATE` (node not initialized or already stopped), `JK_E_HALTED` (node stopped by an internal failure), `JK_E_REENTRANT` (§2.4.1), `JK_E_UNSUPPORTED` (feature not in the build).
 
-#### a. Utilitários
+#### a. Utilities
 
-| Função | Contexto | Comportamento |
+| Function | Context | Behavior |
 |---|---|---|
-| `uint32_t jk_abi_version(void)` | `[any]` | versão da biblioteca, empacotada como `JK_ABI_VERSION` |
-| `const char *jk_status_str(jk_status_t st)` | `[any]` | o código do registo (`"J-E2512"`); `"ok"` para valores ≥ 0; `"J-E2599"` para um valor desconhecido. A string é estática. O texto explicativo está no `codes.toml` e aparece com `jk explain` |
+| `uint32_t jk_abi_version(void)` | `[any]` | version of the library, packed as `JK_ABI_VERSION` |
+| `const char *jk_status_str(jk_status_t st)` | `[any]` | the registry code (`"J-E2512"`); `"ok"` for values ≥ 0; `"J-E2599"` for an unknown value. The string is static. The explanatory text is in `codes.toml` and appears with `jk explain` |
 
-#### b. Símbolos que o integrador define
+#### b. Symbols the integrator defines
 
-| Símbolo | Obrigatório | Regras |
+| Symbol | Required | Rules |
 |---|---|---|
-| `uint64_t jk_now_us(void)` | sim (erro de ligação se faltar) | µs monotónicos desde o arranque do MCU (`ref/00` §3); nunca decresce; chamável de qualquer contexto, incluindo ISR; sem espera. Um temporizador de 32 bits tem de ser estendido pelo integrador |
-| `JK_NORETURN void jk_fatal(jk_status_t code, uint32_t detail)` | sim | chamada numa invariante interna partida ou num *panic* de código de apps ligadas estaticamente; **não pode voltar** (reset do MCU). Não há *sandbox* no MCU: um *panic* de app é fatal. As saídas ficam no estado de reset do hardware, que a placa declara seguro (`J0786`) |
+| `uint64_t jk_now_us(void)` | yes (link error if missing) | monotonic µs since MCU boot (`ref/00` §3); never decreases; callable from any context, including ISRs; wait-free. A 32-bit timer must be extended by the integrator |
+| `JK_NORETURN void jk_fatal(jk_status_t code, uint32_t detail)` | yes | called on a broken internal invariant or on a *panic* in the code of statically linked apps; **must not return** (MCU reset). There is no *sandbox* on the MCU: an app *panic* is fatal. The outputs stay in the hardware reset state, which the board declares safe (`J0786`) |
 
-`JK_NORETURN` é `_Noreturn` em C e `[[noreturn]]` em C++.
+`JK_NORETURN` is `_Noreturn` in C and `[[noreturn]]` in C++.
 
-#### c. Plataforma (`jk_platform_t`)
+#### c. Platform (`jk_platform_t`)
 
-Todos os campos são opcionais (`NULL`/0). A estrutura é lida no `jk_init` e **tem de continuar válida** enquanto o nó existir (a biblioteca guarda o ponteiro).
+All fields are optional (`NULL`/0). The structure is read in `jk_init` and **must remain valid** while the node exists (the library keeps the pointer).
 
-| Campo | Assinatura | Para quê | Sem ele |
+| Field | Signature | What for | Without it |
 |---|---|---|---|
-| `user` | `void *` | contexto passado a todos os callbacks e ao link 0 | `NULL` |
-| `area_info` | `(user, area, *info) → status` | tamanho, granularidade de apagamento e de escrita, valor apagado de cada área (§2.10) | nenhuma área: sem persistência, sem OTA, geração só embutida |
-| `area_read` / `area_write` / `area_erase` | `(user, area, offset, buf/data, len) → status` | acesso bloqueante à flash; `offset` e `len` respeitam `write_size`/`erase_size` | idem |
-| `area_map` | `(user, area) → const void *` | endereço XIP de uma área: os blobs de flash usam-se no sítio | sem gerações de flash geridas pela biblioteca (`jk_generation_boot`, `jk_generation_swap(…, NULL, …)` dão `JK_E_UNSUPPORTED`); o integrador ainda pode ler um blob para RAM alinhada e usar `jk_generation_open`. Todos os alvos da v1 têm flash mapeável |
-| `link_key` | `(user, link, key_out[32]) → status` | chave do link a partir de um elemento seguro | a chave vem da área `JK_AREA_IDENTITY` (registo 17) |
-| `kem_key` | `(user, key_out[32]) → status` | chave privada X25519 de segredos a partir de um elemento seguro (MCU autónomo, ref/02 §2.4) | a chave vem da área `JK_AREA_IDENTITY` (registo 19) |
-| `notify` | `(user, what, arg)` | avisos do contexto de serviço (`JK_NOTIFY_*`, tabela abaixo) | nada |
-| `trust_keys`, `trust_count` | `const uint8_t (*)[32]`, `u32` | as **âncoras** (chaves Ed25519 da raiz, ref/02 §2.5.4): assinam bundles de confiança. Sem bundle na área `IDENTITY` (registo 18), valem para todos os papéis | só gerações embutidas ou `dev` |
+| `user` | `void *` | context passed to all callbacks and to link 0 | `NULL` |
+| `area_info` | `(user, area, *info) → status` | size, erase and write granularity, erased value of each area (§2.10) | no area: no persistence, no OTA, embedded generation only |
+| `area_read` / `area_write` / `area_erase` | `(user, area, offset, buf/data, len) → status` | blocking access to flash; `offset` and `len` respect `write_size`/`erase_size` | likewise |
+| `area_map` | `(user, area) → const void *` | XIP address of an area: flash blobs are used in place | no flash generations managed by the library (`jk_generation_boot`, `jk_generation_swap(…, NULL, …)` give `JK_E_UNSUPPORTED`); the integrator can still read a blob into aligned RAM and use `jk_generation_open`. All v1 targets have mappable flash |
+| `link_key` | `(user, link, key_out[32]) → status` | link key from a secure element | the key comes from the `JK_AREA_IDENTITY` area (record 17) |
+| `kem_key` | `(user, key_out[32]) → status` | X25519 private secrets key from a secure element (standalone MCU, ref/02 §2.4) | the key comes from the `JK_AREA_IDENTITY` area (record 19) |
+| `notify` | `(user, what, arg)` | notices from the service context (`JK_NOTIFY_*`, table below) | nothing |
+| `trust_keys`, `trust_count` | `const uint8_t (*)[32]`, `u32` | the **anchors** (root Ed25519 keys, ref/02 §2.5.4): they sign trust bundles. Without a bundle in the `IDENTITY` area (record 18), they are valid for all roles | only embedded or `dev` generations |
 
-| `JK_NOTIFY_*` | `arg` | Quando |
+| `JK_NOTIFY_*` | `arg` | When |
 |---|---|---|
-| `GEN_READY` (1) | `gen_seq` baixo | uma geração recebida por OTA foi verificada e espera por `jk_generation_swap(node, NULL, …)` |
-| `GEN_ROLLBACK` (2) | `gen_seq` baixo | a janela de confirmação expirou; o nó voltou à geração anterior |
-| `GEN_CONFIRMED` (3) | `gen_seq` baixo | confirmada |
-| `FW_READY` (4) | comprimento | firmware verificado em `JK_AREA_FW_STAGING`; o integrador marca o bootloader e reinicia quando quiser |
-| `TIME` (5) | `jk_clock_q_t` | a qualidade do relógio mudou |
-| `LINK` (6) | link | o estado de um link mudou |
-| `TRACE_FROZEN` (7) | 0 | o anel de traço congelou (trip ou pedido) |
-| `RESTART` (8) | 0 | o par pediu um reinício do nó (ref/07) |
+| `GEN_READY` (1) | low `gen_seq` | a generation received by OTA was verified and waits for `jk_generation_swap(node, NULL, …)` |
+| `GEN_ROLLBACK` (2) | low `gen_seq` | the confirmation window expired; the node went back to the previous generation |
+| `GEN_CONFIRMED` (3) | low `gen_seq` | confirmed |
+| `FW_READY` (4) | length | firmware verified in `JK_AREA_FW_STAGING`; the integrator marks the bootloader and restarts when it wants |
+| `TIME` (5) | `jk_clock_q_t` | the clock quality changed |
+| `LINK` (6) | link | the state of a link changed |
+| `TRACE_FROZEN` (7) | 0 | the trace ring froze (trip or request) |
+| `RESTART` (8) | 0 | the peer requested a restart of the node (ref/07) |
 
-#### d. Geração
+#### d. Generation
 
-| Função | Contexto | Comportamento |
+| Function | Context | Behavior |
 |---|---|---|
-| `jk_generation_open(gen, blob, len, platform, min_seq)` | `[pure]` | valida pela ordem: alinhamento de 8 (`JK_E_ALIGN`); cabeçalho e tabela de secções (`JK_E_GEN_FORMAT`); formato, ISA e secções obrigatórias conhecidas (`JK_E_GEN_VERSION`); CRC-32C e SHA-256 da imagem (`JK_E_GEN_INTEGRITY`); a cadeia de bundles da secção `TRUST`, se houver (assinada pelas âncoras ou pelo bundle instalado, com `version` crescente; `JK_E_GEN_TRUST`); se `SIGNED`, a assinatura COSE do *trailer* (§2.13.5, `JK_E_GEN_SIGNATURE`) por uma chave com o papel `config` no bundle efetivo (`JK_E_GEN_TRUST`); `gen_seq ≥ min_seq` (`JK_E_GEN_ROLLBACK`); a ligação ao nó, se o claim a tiver (`JK_E_GEN_NODE`, comparando com o nome na área `IDENTITY`); `board_id`, apps, drivers e `min_runtime` face ao build (`JK_E_GEN_FIRMWARE`); capacidades (`JK_E_GEN_CAPACITY`); o verificador de bytecode (§2.13.4, `JK_E_GEN_FORMAT`). Um blob sem assinatura só é aceite se tiver a flag `DEV` e o build não for `prod`. Não altera nenhum nó. |
-| `jk_generation_boot(gen, platform)` | `[pure]` | escolhe e abre a geração de arranque a partir das áreas `GEN_A`/`GEN_B` e do estado da geração em `PERSIST` (§2.12.3, passos 4–5): a área ativa; a outra se a ativa estava `confirming` (um reinício durante a janela conta como falha) ou não valida; `min_seq` = `confirmed_seq`. `JK_E_NOT_FOUND` se nenhuma validar (o integrador usa então a embutida, se tiver, ou fica em modo de manutenção); `JK_E_UNSUPPORTED` sem `area_map` |
-| `jk_generation_info(gen, info)` | `[pure]` | `gen_seq`, `source_hash` (o hash da geração), `registry_hash`, `image_hash`, tamanho, formato, `min_runtime`, flags `JK_GENF_*` |
+| `jk_generation_open(gen, blob, len, platform, min_seq)` | `[pure]` | validates in order: alignment of 8 (`JK_E_ALIGN`); header and section table (`JK_E_GEN_FORMAT`); format, ISA and known required sections (`JK_E_GEN_VERSION`); CRC-32C and SHA-256 of the image (`JK_E_GEN_INTEGRITY`); the bundle chain of the `TRUST` section, if any (signed by the anchors or by the installed bundle, with increasing `version`; `JK_E_GEN_TRUST`); if `SIGNED`, the COSE signature of the *trailer* (§2.13.5, `JK_E_GEN_SIGNATURE`) by a key with the `config` role in the effective bundle (`JK_E_GEN_TRUST`); `gen_seq ≥ min_seq` (`JK_E_GEN_ROLLBACK`); the binding to the node, if the claim has it (`JK_E_GEN_NODE`, comparing with the name in the `IDENTITY` area); `board_id`, apps, drivers and `min_runtime` against the build (`JK_E_GEN_FIRMWARE`); capabilities (`JK_E_GEN_CAPACITY`); the bytecode verifier (§2.13.4, `JK_E_GEN_FORMAT`). A blob without a signature is only accepted if it has the `DEV` flag and the build is not `prod`. It does not change any node. |
+| `jk_generation_boot(gen, platform)` | `[pure]` | chooses and opens the boot generation from the `GEN_A`/`GEN_B` areas and from the generation state in `PERSIST` (§2.12.3, steps 4–5): the active area; the other one if the active one was `confirming` (a restart during the window counts as a failure) or does not validate; `min_seq` = `confirmed_seq`. `JK_E_NOT_FOUND` if none validates (the integrator then uses the embedded one, if it has one, or stays in maintenance mode); `JK_E_UNSUPPORTED` without `area_map` |
+| `jk_generation_info(gen, info)` | `[pure]` | `gen_seq`, `source_hash` (the generation hash), `registry_hash`, `image_hash`, size, format, `min_runtime`, `JK_GENF_*` flags |
 
-`JK_GENERATION` (embutida) é construída pelo build com `EMBEDDED`: não passa pela verificação de assinatura (a integridade é a do firmware), mas passa por todas as outras no `jk_init`.
+`JK_GENERATION` (embedded) is built by the build with `EMBEDDED`: it does not go through signature verification (its integrity is that of the firmware), but it goes through all the others in `jk_init`.
 
-#### e. Ciclo de vida
+#### e. Lifecycle
 
-| Função | Contexto | Comportamento |
+| Function | Context | Behavior |
 |---|---|---|
-| `jk_init(node, gen, platform, now_us)` (macro) → `jk_init_checked(node, sizeof *node, JK_ABI_VERSION, JK_PROJECT_IFACE_HASH, gen, platform, now_us)` | `[excl]` | verifica a ABI (§2.3) e o alinhamento do nó (`JK_E_ALIGN`); valida a geração (as verificações do `jk_generation_open` que ainda não foram feitas); **liga a interface** por nome ao registo (uma porta sem sinal compatível em tipo, unidade e direção é `JK_E_GEN_FIRMWARE`); constrói o nó; lê a persistência (trips, alarmes, parâmetros, `kv`, estado da geração); põe **todas as saídas em `safe`** (A8) e marca-as `CHANGED`; inicia o relógio em `Unsynced` (a época monotónica muda a cada arranque, e uma correspondência UTC anterior não vale); corre o `init` das apps. Pode chamar os callbacks de flash. Se falhar, o nó fica `JK_NODE_UNINIT` e pode tentar-se de novo. |
-| `jk_restart(node, now_us)` | `[excl]` | reinício a quente com a mesma geração: igual ao `jk_init`, sem voltar a validar o blob |
-| `jk_shutdown(node)` | `[excl]` | força todas as saídas a `safe`, grava a persistência (bloqueante), passa a `JK_NODE_SHUTDOWN`. Depois só `jk_get_output*`, `jk_safe_get`, `jk_node_info` e `jk_init` funcionam |
-| `jk_generation_swap(node, next, confirm_ms, now_us)` | `[excl]` | troca de geração num limite de tick de **todos** os grupos (o integrador garante-o por ser exclusivo). `next = NULL` usa a geração recebida por OTA (`JK_NOTIFY_GEN_READY`), senão `JK_E_NOT_FOUND`. Mantém, para cada saída com o mesmo caminho, tipo e unidade: o último valor aplicado (A8), o estado de trip, e os leases dos escritores com a mesma identidade e o mesmo nível; as rampas de taxa continuam (E2). Mantém o estado de alarmes com o mesmo nome e a mesma condição compilada. Estado das apps: `migrate` se a versão mudou (documento 01, §9), senão mantido. Com `confirm_ms > 0`, a geração fica `confirming` (ADR 0015) e, se `jk_generation_confirm` não chegar a tempo, o contexto de serviço volta à anterior pelo mesmo mecanismo e avisa `GEN_ROLLBACK`. A geração anterior tem de continuar mapeada até à confirmação. |
-| `jk_generation_confirm(node)` | `[service]` | confirma; grava `confirmed_seq` (anti-rollback); `JK_E_STATE` se nada estiver a confirmar |
+| `jk_init(node, gen, platform, now_us)` (macro) → `jk_init_checked(node, sizeof *node, JK_ABI_VERSION, JK_PROJECT_IFACE_HASH, gen, platform, now_us)` | `[excl]` | checks the ABI (§2.3) and the node alignment (`JK_E_ALIGN`); validates the generation (the `jk_generation_open` checks not yet done); **binds the interface** by name to the registry (a port without a signal compatible in type, unit and direction is `JK_E_GEN_FIRMWARE`); builds the node; reads the persistence (trips, alarms, parameters, `kv`, generation state); puts **all outputs in `safe`** (A8) and marks them `CHANGED`; starts the clock in `Unsynced` (the monotonic epoch changes at every boot, and a previous UTC mapping is not valid); runs the apps' `init`. It may call the flash callbacks. If it fails, the node stays `JK_NODE_UNINIT` and it may be tried again. |
+| `jk_restart(node, now_us)` | `[excl]` | warm restart with the same generation: same as `jk_init`, without validating the blob again |
+| `jk_shutdown(node)` | `[excl]` | forces all outputs to `safe`, writes the persistence (blocking), moves to `JK_NODE_SHUTDOWN`. Afterwards only `jk_get_output*`, `jk_safe_get`, `jk_node_info` and `jk_init` work |
+| `jk_generation_swap(node, next, confirm_ms, now_us)` | `[excl]` | generation swap at a tick boundary of **all** groups (the integrator guarantees it by its being exclusive). `next = NULL` uses the generation received by OTA (`JK_NOTIFY_GEN_READY`), otherwise `JK_E_NOT_FOUND`. It keeps, for each output with the same path, type and unit: the last applied value (A8), the trip state, and the leases of writers with the same identity and the same level; rate ramps continue (E2). It keeps the state of alarms with the same name and the same compiled condition. App state: `migrate` if the version changed (document 01, §9), otherwise kept. With `confirm_ms > 0`, the generation becomes `confirming` (ADR 0015) and, if `jk_generation_confirm` does not arrive in time, the service context goes back to the previous one through the same mechanism and notifies `GEN_ROLLBACK`. The previous generation must remain mapped until confirmation. |
+| `jk_generation_confirm(node)` | `[service]` | confirms; writes `confirmed_seq` (anti-rollback); `JK_E_STATE` if nothing is being confirmed |
 
-#### f. Tick e grupos
+#### f. Tick and groups
 
-| Função | Contexto | Comportamento |
+| Function | Context | Behavior |
 |---|---|---|
-| `jk_tick(node, group, now_us)` | `[group g]` | um tick completo, pelos passos do documento 01, §4, com as regras do documento 16: 1 latch (entradas externas, slots de outros grupos, envelhecimento por `now_us`); 2 drena a caixa de propostas do grupo (escritores externos, link, tarefas async das apps); 3 expressões do grupo (derivados, alarmes, permissivos, consultas); 4 tarefas de ciclo das apps nativas, pela ordem do grupo, com 4b para instâncias virtuais; 5a expansão de métodos; 5 árbitro; 6 envelope; 7 commit (slots, `CHANGED`, persistência de trips marcada para o serviço); 8 traço; 9 estatísticas. `now_us` é o instante do latch: é o `cx.now()` das apps e o valor gravado no traço. `now_us` menor do que o do tick anterior do mesmo grupo é `JK_E_TIME`, sem tick. Um tick atrasado não é erro: conta em `max_lateness_us`, e a política `overrun` do grupo (documento 01, §4) aplica-se com a duração medida por `jk_now_us()` no fim. Um `Err` de uma tarefa de app não se devolve aqui (fica no traço e nas estatísticas). |
-| `jk_group_period_us(node, group)` | `[any]` | período da geração atual; 0 se o grupo não existir. O integrador agenda o tick com este valor, e não com uma constante, para acompanhar gerações novas |
-| `jk_group_stats(node, group, out)` | `[any]` | `ticks`, `overruns`, `skipped`, `last_duration_us`, `max_duration_us`, `max_lateness_us`, `latch_collisions`, `inbox_dropped`; leitura coerente (versionada) |
+| `jk_tick(node, group, now_us)` | `[group g]` | one complete tick, by the steps of document 01, §4, with the rules of document 16: 1 latch (external inputs, slots of other groups, aging by `now_us`); 2 drains the group's proposal box (external writers, link, async tasks of the apps); 3 the group's expressions (derived, alarms, permissives, queries); 4 cycle tasks of the native apps, in the group's order, with 4b for virtual instances; 5a method expansion; 5 arbiter; 6 envelope; 7 commit (slots, `CHANGED`, trip persistence marked for the service); 8 trace; 9 statistics. `now_us` is the latch instant: it is the apps' `cx.now()` and the value recorded in the trace. A `now_us` smaller than that of the previous tick of the same group is `JK_E_TIME`, without a tick. A late tick is not an error: it counts in `max_lateness_us`, and the group's `overrun` policy (document 01, §4) applies with the duration measured by `jk_now_us()` at the end. An `Err` from an app task is not returned here (it stays in the trace and in the statistics). |
+| `jk_group_period_us(node, group)` | `[any]` | period of the current generation; 0 if the group does not exist. The integrator schedules the tick with this value, and not with a constant, to follow new generations |
+| `jk_group_stats(node, group, out)` | `[any]` | `ticks`, `overruns`, `skipped`, `last_duration_us`, `max_duration_us`, `max_lateness_us`, `latch_collisions`, `inbox_dropped`; coherent (versioned) read |
 
-#### g. Entradas
+#### g. Inputs
 
-| Função | Contexto | Comportamento |
+| Function | Context | Behavior |
 |---|---|---|
-| `jk_set_input_bool/_i64/_u64/_f64/_f32(node, sig, v, q, ts_acq_us)` | `[any]`, escritor único por sinal | ingere uma amostra num sinal de entrada de um dispositivo `extern`, pelo estágio de aquisição do núcleo (documento 01, §3.3): conversões do §2.5.4, `NaN` → `Bad(nan)`, limites físicos → `Bad(out_of_range)`, `debounce`, deadband de aquisição (se a amostra cair no deadband, não conta como nova e o `seq` não sobe), `stuck_detect`. Marca o bit "alterado" dos grupos que a leem. Fica visível no **próximo latch** de cada grupo. |
-| `jk_set_input_buf(node, sig, data, len, q, ts)` | idem | string ou bytes |
-| `jk_set_input_ex(node, sig, s)` | idem | com `ts_hw_us` e `ts_src_us` |
-| `jk_set_input(node, sig, v, q, ts)` | idem | macro `_Generic` (C11): `_Bool` → `_bool`; `float` → `_f32`; `double` → `_f64`; inteiros com sinal → `_i64`; sem sinal → `_u64`. `char` e `long double` não estão na lista (erro de compilação: usa-se um cast). Não existe em C++. |
+| `jk_set_input_bool/_i64/_u64/_f64/_f32(node, sig, v, q, ts_acq_us)` | `[any]`, single writer per signal | ingests a sample into an input signal of an `extern` device, through the core's acquisition stage (document 01, §3.3): conversions of §2.5.4, `NaN` → `Bad(nan)`, physical limits → `Bad(out_of_range)`, `debounce`, acquisition deadband (if the sample falls in the deadband, it does not count as new and the `seq` does not go up), `stuck_detect`. Sets the "changed" bit of the groups that read it. It becomes visible at the **next latch** of each group. |
+| `jk_set_input_buf(node, sig, data, len, q, ts)` | likewise | string or bytes |
+| `jk_set_input_ex(node, sig, s)` | likewise | with `ts_hw_us` and `ts_src_us` |
+| `jk_set_input(node, sig, v, q, ts)` | likewise | `_Generic` macro (C11): `_Bool` → `_bool`; `float` → `_f32`; `double` → `_f64`; signed integers → `_i64`; unsigned → `_u64`. `char` and `long double` are not in the list (compile error: use a cast). It does not exist in C++. |
 
-Erros: `JK_E_SIGNAL` (índice fora da interface), `JK_E_DIRECTION` (o sinal não é uma entrada de um dispositivo `extern`), `JK_E_TYPE`, `JK_E_VALUE`, `JK_E_QUALITY`.
+Errors: `JK_E_SIGNAL` (index outside the interface), `JK_E_DIRECTION` (the signal is not an input of an `extern` device), `JK_E_TYPE`, `JK_E_VALUE`, `JK_E_QUALITY`.
 
-#### h. Leitura de sinais e saídas
+#### h. Reading signals and outputs
 
-| Função | Contexto | Comportamento |
+| Function | Context | Behavior |
 |---|---|---|
-| `jk_read(node, sig, now_us, out)` | `[any]` | último valor de qualquer sinal da interface (entradas, saídas aplicadas, derivados, alarmes, sinais expostos), com o envelhecimento calculado a `now_us` (documento 01, §3.3). Strings e bytes vêm com `len = 0`: usa-se `jk_read_buf` |
-| `jk_read_buf(node, sig, now_us, out, buf, cap)` | `[any]` | idem, com cópia de string ou bytes para `buf` (`cap ≥ 64` chega sempre); `JK_E_FULL` se `cap` for curto |
-| `jk_get_output_bool/_i64/_u64/_f64/_f32(node, sig, v, q)` | `[any]` | o **último valor aplicado** (commit) de uma saída de um dispositivo `extern`: é o que o integrador aplica ao hardware. `JK_OK` e `*v` escrito, ou `JK_RELINQUISHED` (a saída está em `safe = "relinquish"`: `*v` fica intacto e o integrador devolve o controlo à lógica anterior, documento 03, §6.1). `*q` é `Good`, `Uncertain(not_confirmed)` depois de uma verificação falhada, ou `Bad(tripped)` em trip. **O valor aplica-se sempre**, seja qual for `q`: é sempre admissível (o seguro, se for preciso). Antes do primeiro tick, é o `safe`. |
-| `jk_get_output(node, sig, &v, &q)` | `[any]` | macro `_Generic` sobre o tipo de `&v`: `_Bool *`, `int64_t *`, `uint64_t *`, `double *`, `float *` |
-| `jk_get_output_ex(node, sig, out)` | `[any]` | estado completo: valor, qualidade, resultado do tick, motivo, nível ativo, flags `JK_OUTF_*` e `seq` do commit |
-| `jk_take_changed(node, group, &sig)` | `[any]`, um consumidor por grupo | a próxima saída `extern` do grupo cujo estado aplicado mudou desde a última chamada (valor, `safe`, trip, relinquish, forçado), ou `JK_EMPTY`. É para drivers em que escrever custa (Modbus, SPI): uma saída `Suppressed` nunca aparece aqui (E8). O integrador que escreve um GPIO em todos os ticks não precisa dela |
-| `jk_group_output_count(node, group)`, `jk_group_output_at(node, group, i)` | `[any]` | as saídas `extern` de um grupo, para as levar ao seguro depois de um `jk_supervise` |
+| `jk_read(node, sig, now_us, out)` | `[any]` | last value of any signal of the interface (inputs, applied outputs, derived, alarms, exposed signals), with the aging computed at `now_us` (document 01, §3.3). Strings and bytes come with `len = 0`: use `jk_read_buf` |
+| `jk_read_buf(node, sig, now_us, out, buf, cap)` | `[any]` | likewise, with a copy of the string or bytes into `buf` (`cap ≥ 64` is always enough); `JK_E_FULL` if `cap` is short |
+| `jk_get_output_bool/_i64/_u64/_f64/_f32(node, sig, v, q)` | `[any]` | the **last applied value** (commit) of an output of an `extern` device: it is what the integrator applies to the hardware. `JK_OK` and `*v` written, or `JK_RELINQUISHED` (the output is in `safe = "relinquish"`: `*v` is left untouched and the integrator hands control back to the previous logic, document 03, §6.1). `*q` is `Good`, `Uncertain(not_confirmed)` after a failed verification, or `Bad(tripped)` when tripped. **The value is always applied**, whatever `q` is: it is always admissible (the safe one, if needed). Before the first tick, it is the `safe`. |
+| `jk_get_output(node, sig, &v, &q)` | `[any]` | `_Generic` macro over the type of `&v`: `_Bool *`, `int64_t *`, `uint64_t *`, `double *`, `float *` |
+| `jk_get_output_ex(node, sig, out)` | `[any]` | complete state: value, quality, tick result, reason, active level, `JK_OUTF_*` flags and `seq` of the commit |
+| `jk_take_changed(node, group, &sig)` | `[any]`, one consumer per group | the next `extern` output of the group whose applied state changed since the last call (value, `safe`, trip, relinquish, forced), or `JK_EMPTY`. It is for drivers where writing is costly (Modbus, SPI): a `Suppressed` output never appears here (E8). An integrator who writes a GPIO on every tick does not need it |
+| `jk_group_output_count(node, group)`, `jk_group_output_at(node, group, i)` | `[any]` | the `extern` outputs of a group, to bring them to safe after a `jk_supervise` |
 
-| `JK_OUTF_*` | Bit | Significado |
+| `JK_OUTF_*` | Bit | Meaning |
 |---|---|---|
-| `CHANGED` | 0 | mudou desde o último `jk_take_changed` deste grupo |
-| `SAFE` | 1 | sem nível ativo: o valor é o `safe` (A6) |
-| `RELINQUISH` | 2 | `safe = "relinquish"` em vigor |
-| `TRIPPED` | 3 | em trip (E7) |
-| `FORCED` | 4 | `force_safe` ativo (supervisor ou `jk_force_safe`) |
-| `UNCONFIRMED` | 5 | `verify` falhou |
-| `PULSE` | 6 | impulso em curso (`pulse`) |
-| `MANUAL` | 7 | o nível ativo é um escritor manual |
+| `CHANGED` | 0 | changed since the last `jk_take_changed` of this group |
+| `SAFE` | 1 | no active level: the value is the `safe` (A6) |
+| `RELINQUISH` | 2 | `safe = "relinquish"` in effect |
+| `TRIPPED` | 3 | tripped (E7) |
+| `FORCED` | 4 | `force_safe` active (supervisor or `jk_force_safe`) |
+| `UNCONFIRMED` | 5 | `verify` failed |
+| `PULSE` | 6 | pulse in progress (`pulse`) |
+| `MANUAL` | 7 | the active level is a manual writer |
 
-Erros: `JK_E_SIGNAL`, `JK_E_DIRECTION` (não é uma saída `extern`, para os getters), `JK_E_TYPE`, `JK_E_GROUP`.
+Errors: `JK_E_SIGNAL`, `JK_E_DIRECTION` (not an `extern` output, for the getters), `JK_E_TYPE`, `JK_E_GROUP`.
 
-#### i. Escritas do firmware: escritores externos e manuais
+#### i. Firmware writes: external and manual writers
 
-| Função | Contexto | Comportamento |
+| Function | Context | Behavior |
 |---|---|---|
-| `jk_propose(node, writer, sig, v, now_us)` e `jk_propose_bool/_i64/_u64/_f64` | `[service]` | proposta de um escritor externo (app `kind = "extern"`) numa saída que ele declara em `writes`. Entra na caixa do **grupo dono** (A11) e é tratada no passo 2 do próximo tick desse grupo, antes das tarefas de ciclo (A4). O lease renova-se nesse tick (A2, A3). Numa saída que o escritor não declarou, a proposta chega ao árbitro e dá `rejected(not_owner)`, sem renovar lease (A3): é o resultado que a semântica define, e não um erro da chamada. Um sinal que não é saída é `JK_E_DIRECTION`. Caixa cheia: `JK_E_FULL`, contada em `inbox_dropped`. |
-| `jk_relinquish(node, writer, sig, now_us)` | `[service]` | liberta o nível do escritor nessa saída no próximo tick (documento 01, §6) |
-| `jk_last_outcome(node, writer, sig, out)` | `[any]` | o resultado da última proposta desse escritor nessa saída: `JK_PENDING` até o grupo dono ter feito o tick; depois `JK_OK` com `outcome`, `reject`, `level` (o nível que ganhou, para `overridden`), `applied`, `tick_seq` |
-| `jk_manual_write(node, sig, v, level, ttl_ms, user_id, now_us)` | `[service]` | escrita manual de uma HMI local (documento 16, A10): `level` na faixa `manual` (3–5) e permitido na saída (senão `JK_E_LEVEL`); `ttl_ms` > 0 e ≤ `max_manual` (senão `JK_E_TTL`). Identidade `user:<user_id>`, papel `operator`. Gravada no registo de decisões e anunciada pelo link |
-| `jk_manual_release(node, sig, level, now_us)` | `[service]` | liberta um nível manual |
+| `jk_propose(node, writer, sig, v, now_us)` and `jk_propose_bool/_i64/_u64/_f64` | `[service]` | proposal from an external writer (app `kind = "extern"`) on an output it declares in `writes`. It enters the box of the **owning group** (A11) and is handled at step 2 of that group's next tick, before the cycle tasks (A4). The lease is renewed in that tick (A2, A3). On an output the writer did not declare, the proposal reaches the arbiter and gives `rejected(not_owner)`, without renewing the lease (A3): it is the result the semantics define, not an error of the call. A signal that is not an output is `JK_E_DIRECTION`. Full box: `JK_E_FULL`, counted in `inbox_dropped`. |
+| `jk_relinquish(node, writer, sig, now_us)` | `[service]` | releases the writer's level on that output at the next tick (document 01, §6) |
+| `jk_last_outcome(node, writer, sig, out)` | `[any]` | the result of that writer's last proposal on that output: `JK_PENDING` until the owning group has ticked; then `JK_OK` with `outcome`, `reject`, `level` (the level that won, for `overridden`), `applied`, `tick_seq` |
+| `jk_manual_write(node, sig, v, level, ttl_ms, user_id, now_us)` | `[service]` | manual write from a local HMI (document 16, A10): `level` in the `manual` band (3–5) and allowed on the output (otherwise `JK_E_LEVEL`); `ttl_ms` > 0 and ≤ `max_manual` (otherwise `JK_E_TTL`). Identity `user:<user_id>`, role `operator`. Recorded in the decision log and announced over the link |
+| `jk_manual_release(node, sig, level, now_us)` | `[service]` | releases a manual level |
 
-#### j. Classes: métodos, ações e eventos
+#### j. Classes: methods, actions and events
 
-| Função | Contexto | Comportamento |
+| Function | Context | Behavior |
 |---|---|---|
-| `jk_call_method(node, writer, inst, method, args, nargs, now_us)` | `[service]` | acrescenta um registo de método à caixa do grupo dono de cada `out` atribuído; é expandido no passo 5a no nível do escritor (17 §4.1). `args` são `jk_value_t` pela ordem da declaração, até `JK_METHOD_MAX_ARGS` (8), convertidos como no §2.5.4. `JK_E_NOT_FOUND` (instância ou membro), `JK_E_ARGS` (número, tipo ou unidade), `JK_E_FULL` |
-| `jk_call_method_cbor(…, cbor, len, now_us)` | `[service]` | idem, com os argumentos em CBOR determinístico (`method-args` no CDDL), para registos e listas |
-| `jk_action_invoke(node, caller, inst, action, args, len, key, key_len, now_us, &ticket)` | `[service]` | invoca uma ação (17 §4.2): papel do escritor `caller` e permissivo avaliados na receção; deduplicação por `key` dentro de `dedup_window` (E9; 1–64 ASCII imprimível, senão `JK_E_ARGS`); fila serializada por dispositivo; timeout do manifesto. Devolve um bilhete. `JK_E_FULL` se houver `action_pending` bilhetes abertos |
-| `jk_action_result(node, ticket, &err, buf, cap, &len)` | `[service]` | `JK_PENDING`, ou `JK_OK` com `err` (`JK_ACTION_OK`, `DENIED`, `TIMEOUT`, `DEVICE`, `INVALID`, `CANCELLED`) e em `buf` o resultado CBOR (sucesso) ou uma mensagem UTF-8 (erro). O bilhete liberta-se no `JK_OK`; `JK_E_FULL` se `cap` não chegar (o bilhete fica) |
-| `jk_action_cancel(node, ticket)` | `[service]` | pede o cancelamento (só ações `@long`; as outras dão `JK_E_STATE`) |
-| `jk_action_next(node, &req, args, cap)` | `[service]` | lado de quem **implementa**: o próximo pedido para uma ação implementada pelo firmware (`implementer = extern`), já autorizado e deduplicado; `JK_EMPTY` se não houver |
-| `jk_action_progress(node, id, percent)` | `[service]` | progresso de uma ação `@long` |
-| `jk_action_is_cancelled(node, id)` | `[service]` | `JK_OK` se o chamador cancelou, `JK_EMPTY` se não |
-| `jk_action_complete(node, id, err, result, len)` | `[service]` | responde; depois de `deadline_us` a biblioteca já respondeu `TIMEOUT` e a resposta tardia dá `JK_E_NOT_FOUND` |
-| `jk_event_emit(node, inst, event, cbor, len, now_us)` | `[service]` | emite um `event` de uma instância implementada pelo firmware (registo CBOR do `.jkc`); entregue a cada consumidor (apps `on_event`, link, fila do firmware); `JK_E_ARGS` se o CBOR não for um registo válido; fila cheia: perde-se e conta-se (`dropped`) |
-| `jk_event_next(node, &ev, buf, cap)` | `[service]` | o próximo evento da fila do firmware: eventos de classe, transições de alarme (`alarm_from`, `alarm_to`, `severity`, flag `UNCERTAIN`) e eventos publicados por apps; `JK_EMPTY` se não houver; `JK_EVF_TRUNCATED` e `len` real se `cap` não chegar |
+| `jk_call_method(node, writer, inst, method, args, nargs, now_us)` | `[service]` | adds a method record to the box of the owning group of each assigned `out`; it is expanded at step 5a at the writer's level (17 §4.1). `args` are `jk_value_t` in declaration order, up to `JK_METHOD_MAX_ARGS` (8), converted as in §2.5.4. `JK_E_NOT_FOUND` (instance or member), `JK_E_ARGS` (number, type or unit), `JK_E_FULL` |
+| `jk_call_method_cbor(…, cbor, len, now_us)` | `[service]` | likewise, with the arguments in deterministic CBOR (`method-args` in the CDDL), for records and lists |
+| `jk_action_invoke(node, caller, inst, action, args, len, key, key_len, now_us, &ticket)` | `[service]` | invokes an action (17 §4.2): role of the `caller` writer and permissive evaluated on reception; deduplication by `key` within `dedup_window` (E9; 1–64 printable ASCII, otherwise `JK_E_ARGS`); serialized queue per device; timeout from the manifest. Returns a ticket. `JK_E_FULL` if there are `action_pending` open tickets |
+| `jk_action_result(node, ticket, &err, buf, cap, &len)` | `[service]` | `JK_PENDING`, or `JK_OK` with `err` (`JK_ACTION_OK`, `DENIED`, `TIMEOUT`, `DEVICE`, `INVALID`, `CANCELLED`) and in `buf` the CBOR result (success) or a UTF-8 message (error). The ticket is released on `JK_OK`; `JK_E_FULL` if `cap` is not enough (the ticket stays) |
+| `jk_action_cancel(node, ticket)` | `[service]` | requests cancellation (only `@long` actions; the others give `JK_E_STATE`) |
+| `jk_action_next(node, &req, args, cap)` | `[service]` | the **implementer's** side: the next request for an action implemented by the firmware (`implementer = extern`), already authorized and deduplicated; `JK_EMPTY` if there is none |
+| `jk_action_progress(node, id, percent)` | `[service]` | progress of an `@long` action |
+| `jk_action_is_cancelled(node, id)` | `[service]` | `JK_OK` if the caller canceled, `JK_EMPTY` if not |
+| `jk_action_complete(node, id, err, result, len)` | `[service]` | responds; after `deadline_us` the library has already responded `TIMEOUT` and the late response gives `JK_E_NOT_FOUND` |
+| `jk_event_emit(node, inst, event, cbor, len, now_us)` | `[service]` | emits an `event` of an instance implemented by the firmware (CBOR record of the `.jkc`); delivered to each consumer (apps' `on_event`, link, firmware queue); `JK_E_ARGS` if the CBOR is not a valid record; full queue: it is dropped and counted (`dropped`) |
+| `jk_event_next(node, &ev, buf, cap)` | `[service]` | the next event of the firmware queue: class events, alarm transitions (`alarm_from`, `alarm_to`, `severity`, `UNCERTAIN` flag) and events published by apps; `JK_EMPTY` if there is none; `JK_EVF_TRUNCATED` and the real `len` if `cap` is not enough |
 
-#### k. Alarmes e trips
+#### k. Alarms and trips
 
-| Função | Contexto | Comportamento |
+| Function | Context | Behavior |
 |---|---|---|
-| `jk_alarm_info(node, alarm, out)` | `[any]` | estado (`ref/00` §6), severidade, `shelved`, `suppressed`, `since_us`, `shelved_until_us` |
-| `jk_alarm_ack(node, alarm, user_id, now_us)` | `[service]` | reconhecimento (documento 02, §11); `JK_E_STATE` se não houver nada a reconhecer |
-| `jk_alarm_shelve(node, alarm, ttl_ms, user_id, reason, len, now_us)` | `[service]` | arquivo com TTL obrigatório (`JK_E_TTL` se 0); motivo UTF-8 ≤ 1 KiB |
+| `jk_alarm_info(node, alarm, out)` | `[any]` | state (`ref/00` §6), severity, `shelved`, `suppressed`, `since_us`, `shelved_until_us` |
+| `jk_alarm_ack(node, alarm, user_id, now_us)` | `[service]` | acknowledgment (document 02, §11); `JK_E_STATE` if there is nothing to acknowledge |
+| `jk_alarm_shelve(node, alarm, ttl_ms, user_id, reason, len, now_us)` | `[service]` | shelving with a required TTL (`JK_E_TTL` if 0); UTF-8 reason ≤ 1 KiB |
 | `jk_alarm_unshelve(node, alarm, user_id, now_us)` | `[service]` | |
-| `jk_trip_reset(node, sig, user_id, now_us)` | `[service]` | o `jk reset` local (E7); efeito no próximo tick do grupo dono; `JK_E_STATE` se a saída não estiver em trip |
+| `jk_trip_reset(node, sig, user_id, now_us)` | `[service]` | the local `jk reset` (E7); takes effect at the next tick of the owning group; `JK_E_STATE` if the output is not tripped |
 
-#### l. Parâmetros
+#### l. Parameters
 
-| Função | Contexto | Comportamento |
+| Function | Context | Behavior |
 |---|---|---|
-| `jk_param_get(node, param, out)` | `[any]` | valor em vigor de um parâmetro de app (geração ou substituição) |
-| `jk_param_set(node, param, v, flags, now_us)` | `[service]` | substituição em runtime, só para parâmetros declarados alteráveis (`runtime = true`, §2.17); valida tipo, unidade e gama da app (`JK_E_PARAM`); a app recebe-a no próximo tick (`on-params`). Com `JK_PARAMF_PERSIST`, sobrevive a reinícios enquanto a declaração do parâmetro não mudar. Toda a substituição é **deriva** face ao Git (documento 20, §2): anuncia-se no `HELLO` e aparece no `jk status` |
-| `jk_param_clear(node, param, now_us)` | `[service]` | volta ao valor da geração e apaga a persistida |
+| `jk_param_get(node, param, out)` | `[any]` | value in effect of an app parameter (generation or override) |
+| `jk_param_set(node, param, v, flags, now_us)` | `[service]` | runtime override, only for parameters declared changeable (`runtime = true`, §2.17); validates the app's type, unit and range (`JK_E_PARAM`); the app receives it at the next tick (`on-params`). With `JK_PARAMF_PERSIST`, it survives restarts as long as the parameter's declaration does not change. Every override is **drift** relative to Git (document 20, §2): it is announced in `HELLO` and appears in `jk status` |
+| `jk_param_clear(node, param, now_us)` | `[service]` | goes back to the generation's value and erases the persisted one |
 
-#### m. Tempo
+#### m. Time
 
-| Função | Contexto | Comportamento |
+| Function | Context | Behavior |
 |---|---|---|
-| `jk_time_set_utc(node, mono_us, utc_us, q)` | `[service]` | fixa a correspondência monotónico → UTC, quando a fonte do relógio da geração é `extern` (RTC, SNTP próprio de um M2). Com a fonte `link`, é o `TIME` do link que o faz, e esta função dá `JK_E_STATE` |
-| `jk_time_utc(node, mono_us, &utc_us, &q)` | `[any]` | converte; `q` passa a `Holdover` sem atualizações e a `Unsynced` depois de `max_holdover` (documento 03, §3) |
+| `jk_time_set_utc(node, mono_us, utc_us, q)` | `[service]` | sets the monotonic → UTC mapping, when the generation's clock source is `extern` (RTC, an M2's own SNTP). With the `link` source, it is the link's `TIME` that does it, and this function gives `JK_E_STATE` |
+| `jk_time_utc(node, mono_us, &utc_us, &q)` | `[any]` | converts; `q` becomes `Holdover` without updates and `Unsynced` after `max_holdover` (document 03, §3) |
 
-#### n. Estado seguro e watchdog
+#### n. Safe state and watchdog
 
-| Função | Contexto | Comportamento |
+| Function | Context | Behavior |
 |---|---|---|
-| `jk_supervise(node, now_us, out)` | `[any]` (feita para uma ISR de temporizador) | para cada grupo, compara `now_us` com o último tick: > 1 período marca `late_groups`; > 3 períodos (documento 01, §20) ativa `force_safe` nas saídas do grupo e marca `forced_groups`. Com `force_safe`, `jk_get_output*` devolve o `safe` com `JK_OUTF_FORCED`, e o integrador que tem o hardware parado nesse grupo deve escrever o seguro diretamente (`jk_group_output_at` + `jk_safe_get`). O `force_safe` limpa-se no próximo tick completo do grupo. `feed_watchdog = 1` só se nenhum grupo estiver forçado, o nó não estiver parado e o serviço tiver corrido dentro de `service_deadline` (`service_late`). O integrador **só** alimenta o watchdog de hardware com `feed_watchdog = 1` |
-| `jk_force_safe(node, on)` | `[any]` | força todas as saídas a `safe` (paragem de emergência, *brown-out*); volátil; o resultado dos commits é `tripped` com `Bad(tripped)` enquanto durar; `on = false` volta ao normal sem `reset` |
-| `jk_safe_get(node, sig, out)` | `[any]` | o `safe` da saída (dado imutável da geração): `JK_OK` ou `JK_RELINQUISHED` |
+| `jk_supervise(node, now_us, out)` | `[any]` (made for a timer ISR) | for each group, compares `now_us` with the last tick: > 1 period sets `late_groups`; > 3 periods (document 01, §20) activates `force_safe` on the group's outputs and sets `forced_groups`. With `force_safe`, `jk_get_output*` returns the `safe` with `JK_OUTF_FORCED`, and an integrator whose hardware is stopped in that group should write the safe value directly (`jk_group_output_at` + `jk_safe_get`). `force_safe` clears at the group's next complete tick. `feed_watchdog = 1` only if no group is forced, the node is not stopped and the service has run within `service_deadline` (`service_late`). The integrator feeds the hardware watchdog **only** with `feed_watchdog = 1` |
+| `jk_force_safe(node, on)` | `[any]` | forces all outputs to `safe` (emergency stop, *brown-out*); volatile; the result of the commits is `tripped` with `Bad(tripped)` while it lasts; `on = false` goes back to normal without a `reset` |
+| `jk_safe_get(node, sig, out)` | `[any]` | the output's `safe` (immutable data of the generation): `JK_OK` or `JK_RELINQUISHED` |
 
-#### o. Traço
+#### o. Trace
 
-| Função | Contexto | Comportamento |
+| Function | Context | Behavior |
 |---|---|---|
-| `jk_trace_freeze(node, freeze)` | `[any]` | congela (ou descongela) os anéis no próximo limite de tick; com `freeze_on_trip`, um trip congela-os sozinho e avisa `TRACE_FROZEN` |
-| `jk_trace_size(node, &bytes)` | `[service]` | tamanho do `.jktrace` que `jk_trace_read` produz |
-| `jk_trace_read(node, offset, buf, cap, &len)` | `[service]` | lê o anel congelado como um fluxo `.jktrace` (documento 16, §7), sem compressão (bit 0 das `flags`), com os tempos em **ns** (µs × 1000), um segmento por grupo, e `n_saídas_ML = 0`. `JK_E_STATE` se não estiver congelado. O mesmo fluxo vai pelo `TRACE` do link |
+| `jk_trace_freeze(node, freeze)` | `[any]` | freezes (or unfreezes) the rings at the next tick boundary; with `freeze_on_trip`, a trip freezes them by itself and notifies `TRACE_FROZEN` |
+| `jk_trace_size(node, &bytes)` | `[service]` | size of the `.jktrace` that `jk_trace_read` produces |
+| `jk_trace_read(node, offset, buf, cap, &len)` | `[service]` | reads the frozen ring as a `.jktrace` stream (document 16, §7), without compression (bit 0 of the `flags`), with times in **ns** (µs × 1000), one segment per group, and `n_ml_outputs = 0`. `JK_E_STATE` if it is not frozen. The same stream goes through the link's `TRACE` |
 
 #### p. Joker Link
 
-A ABI só expõe o ponto de integração: bytes de entrada e de saída. As mensagens, o enquadramento, a autenticação e a negociação são do `ref/07`.
+The ABI only exposes the integration point: input and output bytes. The messages, framing, authentication and negotiation belong to `ref/07`.
 
-| Elemento | Definição |
+| Element | Definition |
 |---|---|
-| `int32_t (*jk_link_rx_fn)(void *ctx, uint8_t *buf, uint32_t cap)` | não bloqueante. Link de **fluxo** (UART, RS-485, USB CDC, TCP): devolve quantos bytes quiser; o enquadramento (COBS + CRC-32C, D12, ref/07 §3.2) é da biblioteca. Link de **datagrama** (UDP; CAN com ISO-TP feito pelo integrador): exatamente uma mensagem por chamada. 0 = nada agora; < 0 = transporte em baixo |
-| `int32_t (*jk_link_tx_fn)(void *ctx, const uint8_t *buf, uint32_t len)` | não bloqueante. Fluxo: bytes aceites (parcial permitido; a biblioteca guarda o resto). Datagrama: `len` ou 0 (tenta mais tarde). < 0 = em baixo |
-| `jk_link_poll(node, rx, tx)` | `[service]`: link 0, com `ctx = platform->user`, `now = jk_now_us()`; corre **um passo de `jk_service`** no fim |
-| `jk_link_poll_at(node, link, rx, tx, ctx)` | `[service]`: qualquer link, `ctx` explícito; idem |
-| `jk_link_status(node, link, out)` | `[any]`: estado (`DOWN`, `HANDSHAKE`, `UP`, `AUTH_FAILED`, `VERSION_MISMATCH`), modo da sessão (`JK_SESSION_FULL`, `_OBSERVE`, `_MAINTENANCE`, `_REFUSED`: o `session_mode` da ref/00 §6, decidido pelo par, ref/07 §7.3), versão negociada, autenticado, último erro, e contadores **separados**: tramas recebidas e enviadas, CRC-32C inválido (`crc_errors`, `J-E2001`), etiqueta inválida (`auth_errors`, `J-E2101`), replay (`replay_drops`, `J-E2102`), outros erros de enquadramento e de mensagem (`rx_errors`), retransmissões e tramas descartadas no envio; `last_rx_us`. São os mesmos contadores que o `jk doctor` mostra do lado do nó Linux (ref/07 §3.1) |
-| `jk_link_reset(node, link)` | `[service]`: fecha a sessão e recomeça o `HELLO` |
+| `int32_t (*jk_link_rx_fn)(void *ctx, uint8_t *buf, uint32_t cap)` | non-blocking. **Stream** link (UART, RS-485, USB CDC, TCP): returns as many bytes as it wants; the framing (COBS + CRC-32C, D12, ref/07 §3.2) belongs to the library. **Datagram** link (UDP; CAN with ISO-TP done by the integrator): exactly one message per call. 0 = nothing now; < 0 = transport down |
+| `int32_t (*jk_link_tx_fn)(void *ctx, const uint8_t *buf, uint32_t len)` | non-blocking. Stream: bytes accepted (partial allowed; the library keeps the rest). Datagram: `len` or 0 (try later). < 0 = down |
+| `jk_link_poll(node, rx, tx)` | `[service]`: link 0, with `ctx = platform->user`, `now = jk_now_us()`; runs **one step of `jk_service`** at the end |
+| `jk_link_poll_at(node, link, rx, tx, ctx)` | `[service]`: any link, explicit `ctx`; likewise |
+| `jk_link_status(node, link, out)` | `[any]`: state (`DOWN`, `HANDSHAKE`, `UP`, `AUTH_FAILED`, `VERSION_MISMATCH`), session mode (`JK_SESSION_FULL`, `_OBSERVE`, `_MAINTENANCE`, `_REFUSED`: the `session_mode` of ref/00 §6, decided by the peer, ref/07 §7.3), negotiated version, authenticated, last error, and **separate** counters: frames received and sent, invalid CRC-32C (`crc_errors`, `J-E2001`), invalid tag (`auth_errors`, `J-E2101`), replay (`replay_drops`, `J-E2102`), other framing and message errors (`rx_errors`), retransmissions and frames discarded on send; `last_rx_us`. They are the same counters that `jk doctor` shows on the Linux node side (ref/07 §3.1) |
+| `jk_link_reset(node, link)` | `[service]`: closes the session and restarts the `HELLO` |
 
-Os estados de `jk_link_state_t` são os da máquina do dispositivo da ref/07 §7.1: `IDLE` → `DOWN`; `OFFERED` e `CONFIRMING` → `HANDSHAKE`; `UP` → `UP` (com o modo da sessão em `session_mode`); `AUTH_FAILED` e `VERSION_MISMATCH` dizem porque é que o último handshake não chegou a `UP` (resposta `refused` com estado 27, ou três ofertas sem resposta válida; `refused` com estado 3, ref/07 §7.3), e voltam a `HANDSHAKE` na tentativa seguinte.
+The states of `jk_link_state_t` are those of the device machine of ref/07 §7.1: `IDLE` → `DOWN`; `OFFERED` and `CONFIRMING` → `HANDSHAKE`; `UP` → `UP` (with the session mode in `session_mode`); `AUTH_FAILED` and `VERSION_MISMATCH` say why the last handshake did not reach `UP` (answer `refused` with status 27, or three offers without a valid answer; `refused` with status 3, ref/07 §7.3), and go back to `HANDSHAKE` on the next attempt.
 
-O tipo de cada link (fluxo ou datagrama), o transporte, a MTU, a autenticação e os níveis permitidos vêm da geração (secção `LINKS`, §2.13.3). O tamanho dos buffers vem das capacidades. `jk_link_poll` devolve `JK_OK`, `JK_E_LINK_DOWN` (callback < 0), `JK_E_LINK_AUTH`, `JK_E_LINK_VERSION` ou `JK_E_LINK` (enquadramento); nenhum destes é fatal, e o link recomeça sozinho.
+The type of each link (stream or datagram), the transport, the MTU, the authentication and the allowed levels come from the generation (`LINKS` section, §2.13.3). The size of the buffers comes from the capabilities. `jk_link_poll` returns `JK_OK`, `JK_E_LINK_DOWN` (callback < 0), `JK_E_LINK_AUTH`, `JK_E_LINK_VERSION` or `JK_E_LINK` (framing); none of these is fatal, and the link restarts by itself.
 
-**Quem manda nas saídas:** as propostas que chegam pelo link são escritores do MCU (tabela `WRITERS`, um por nível permitido do link: cada par (link, nível) é um escritor, ref/07 §8.1, 16 A12), com lease. Se o link cair, o lease expira no latch do grupo dono e o envelope aplica o `safe` (19 §6). Nada na ABI pode contornar isto.
+**Who is in charge of the outputs:** the proposals that arrive over the link are writers of the MCU (`WRITERS` table, one per allowed level of the link: each pair (link, level) is a writer, ref/07 §8.1, 16 A12), with a lease. If the link drops, the lease expires at the latch of the owning group and the envelope applies the `safe` (19 §6). Nothing in the ABI can bypass this.
 
-#### q. Serviço
+#### q. Service
 
-| Função | Contexto | Comportamento |
+| Function | Context | Behavior |
 |---|---|---|
-| `jk_service(node, now_us)` | `[service]` | um passo do domínio assíncrono do MCU: tarefas async das apps (`every`, `on`, `on_event`, `startup`; 19 §3), expiração dos TTL manuais e das janelas de confirmação, timeouts das ações, gravação dos registos persistentes sujos (trips, alarmes, parâmetros, `kv`), passos de OTA (verificação por pedaços), avisos `notify`. Nunca faz I/O de rede: isso é o `jk_link_poll` |
-| `jk_service_next_us(node)` | `[any]` | o instante monotónico até ao qual o serviço deve correr outra vez (`UINT64_MAX`: nada pendente), para quem quer dormir entre ticks |
-| `jk_persist_flush(node)` | `[service]` | grava já tudo o que está sujo (bloqueante) |
+| `jk_service(node, now_us)` | `[service]` | one step of the MCU's async domain: async tasks of the apps (`every`, `on`, `on_event`, `startup`; 19 §3), expiry of manual TTLs and confirmation windows, action timeouts, writing of dirty persistent records (trips, alarms, parameters, `kv`), OTA steps (verification in pieces), `notify` notices. It never does network I/O: that is `jk_link_poll` |
+| `jk_service_next_us(node)` | `[any]` | the monotonic instant by which the service should run again (`UINT64_MAX`: nothing pending), for whoever wants to sleep between ticks |
+| `jk_persist_flush(node)` | `[service]` | writes everything that is dirty right away (blocking) |
 
-**Regra:** com persistência, tarefas async, ações, TTL manuais ou uma janela de confirmação, o integrador chama `jk_service` (ou `jk_link_poll`) pelo menos a cada `service_deadline` (omissão 100 ms). O `jk_supervise` conta os atrasos.
+**Rule:** with persistence, async tasks, actions, manual TTLs or a confirmation window, the integrator calls `jk_service` (or `jk_link_poll`) at least every `service_deadline` (default 100 ms). `jk_supervise` counts the delays.
 
-#### r. OTA local
+#### r. Local OTA
 
-Para integradores que recebem blobs ou firmware por um transporte próprio (BLE, MQTT do próprio firmware). O Joker Link tem o seu (`ref/07`), que usa o mesmo mecanismo.
+For integrators that receive blobs or firmware over a transport of their own (BLE, the firmware's own MQTT). Joker Link has its own (`ref/07`), which uses the same mechanism.
 
-| Função | Contexto | Comportamento |
+| Function | Context | Behavior |
 |---|---|---|
-| `jk_ota_begin(node, kind, total_len)` | `[service]` | `JK_OTA_GENERATION` escreve na área de geração inativa; `JK_OTA_FIRMWARE` em `JK_AREA_FW_STAGING`. Apaga a área (bloqueante). `JK_E_BUSY` se já houver um OTA em curso; `JK_E_GEN_CAPACITY` se `total_len` não couber |
-| `jk_ota_write(node, offset, data, len)` | `[service]` | escreve; os pedaços chegam por ordem (`offset` igual ao total já escrito, senão `JK_E_OTA`) |
-| `jk_ota_finish(node)` | `[service]` | verifica: para uma geração (o ficheiro `.jkgen` inteiro, imagem e *trailer*), como o `jk_generation_open` (com `min_seq = confirmed_seq + 1`); para firmware (imagem seguida do manifesto COSE), a assinatura com o papel `firmware`, o `board_id` e o `security_version`. Devolve `JK_PENDING` enquanto a verificação corre (por pedaços, para não bloquear o serviço), `JK_OK` e o aviso `GEN_READY` ou `FW_READY` no fim, ou `JK_E_OTA_VERIFY` e o erro original em `jk_link_status`/`jk_node_info` |
+| `jk_ota_begin(node, kind, total_len)` | `[service]` | `JK_OTA_GENERATION` writes to the inactive generation area; `JK_OTA_FIRMWARE` to `JK_AREA_FW_STAGING`. Erases the area (blocking). `JK_E_BUSY` if an OTA is already in progress; `JK_E_GEN_CAPACITY` if `total_len` does not fit |
+| `jk_ota_write(node, offset, data, len)` | `[service]` | writes; the pieces arrive in order (`offset` equal to the total already written, otherwise `JK_E_OTA`) |
+| `jk_ota_finish(node)` | `[service]` | verifies: for a generation (the whole `.jkgen` file, image and *trailer*), like `jk_generation_open` (with `min_seq = confirmed_seq + 1`); for firmware (image followed by the COSE manifest), the signature with the `firmware` role, the `board_id` and the `security_version`. Returns `JK_PENDING` while the verification runs (in pieces, so as not to block the service), `JK_OK` and the `GEN_READY` or `FW_READY` notice at the end, or `JK_E_OTA_VERIFY` and the original error in `jk_link_status`/`jk_node_info` |
 | `jk_ota_abort(node)` | `[service]` | |
 
-#### s. Diagnóstico
+#### s. Diagnostics
 
-`jk_node_info(node, out)` `[any]`: estado (`UNINIT`, `RUNNING`, `HALTED`, `SHUTDOWN`), qualidade do relógio, `confirming`, `gen_pending`, bytes do nó em uso, `gen_seq`, `iface_hash`, prazo de confirmação, `source_hash`, `registry_hash`, versão do bundle de confiança instalado (`trust_version`, 0 sem bundle) e `security_version` do firmware.
+`jk_node_info(node, out)` `[any]`: state (`UNINIT`, `RUNNING`, `HALTED`, `SHUTDOWN`), clock quality, `confirming`, `gen_pending`, node bytes in use, `gen_seq`, `iface_hash`, confirmation deadline, `source_hash`, `registry_hash`, version of the installed trust bundle (`trust_version`, 0 without a bundle) and the firmware's `security_version`.
 
-### 2.7 Códigos de estado
+### 2.7 Status codes
 
-`jk_status_t` é `int32_t`. `JK_OK` = 0; os valores positivos são **informativos**; os negativos são erros, cada um com um código `J-E25xx` do registo (`jk_status_str`). Os mesmos códigos aparecem no `jk` e na API quando o `jokerd` os recebe de um MCU pelo link.
+`jk_status_t` is `int32_t`. `JK_OK` = 0; positive values are **informative**; negative ones are errors, each with a `J-E25xx` code of the registry (`jk_status_str`). The same codes appear in `jk` and in the API when `jokerd` receives them from an MCU over the link.
 
-| Valor | Macro | Código | Gravidade | Mensagem curta |
+| Value | Macro | Code | Severity | Short message |
 |---|---|---|---|---|
-| 0 | `JK_OK` | — | — | sucesso |
-| 1 | `JK_EMPTY` | — | — | nada (mais) para devolver |
-| 2 | `JK_PENDING` | — | — | ainda por decidir |
-| 3 | `JK_RELINQUISHED` | — | — | saída em relinquish: sem valor a aplicar |
-| −1 | `JK_E_ARG` | `J-E2501` | error | argumento inválido |
-| −2 | `JK_E_STATE` | `J-E2502` | error | chamada fora do estado permitido |
-| −3 | `JK_E_ABI` | `J-E2503` | error | ABI, tamanho do nó ou interface incompatíveis com a biblioteca |
-| −4 | `JK_E_ALIGN` | `J-E2504` | error | nó ou blob sem alinhamento de 8 |
-| −5 | `JK_E_UNSUPPORTED` | `J-E2505` | error | função não incluída neste build |
-| −6 | `JK_E_REENTRANT` | `J-E2506` | error | chamada concorrente num contexto exclusivo |
-| −7 | `JK_E_HALTED` | `J-E2507` | error | nó parado por falha interna |
-| −10 | `JK_E_GEN_FORMAT` | `J-E2510` | error | blob mal formado |
-| −11 | `JK_E_GEN_VERSION` | `J-E2511` | error | formato, ISA ou secção obrigatória desconhecidos |
-| −12 | `JK_E_GEN_CAPACITY` | `J-E2512` | error | a geração não cabe nas capacidades do build (par de `J0710`) |
-| −13 | `JK_E_GEN_SIGNATURE` | `J-E2513` | error | assinatura inválida ou em falta |
-| −14 | `JK_E_GEN_TRUST` | `J-E2514` | error | chave não confiada |
-| −15 | `JK_E_GEN_ROLLBACK` | `J-E2515` | error | `gen_seq` abaixo do mínimo (anti-rollback) |
-| −16 | `JK_E_GEN_FIRMWARE` | `J-E2516` | error | placa, apps, drivers, runtime ou interface incompatíveis |
-| −17 | `JK_E_GEN_NODE` | `J-E2517` | error | blob ligado a outro nó |
-| −18 | `JK_E_GEN_INTEGRITY` | `J-E2518` | error | CRC ou SHA-256 da imagem não conferem |
-| −20 | `JK_E_SIGNAL` | `J-E2520` | error | sinal fora da interface |
-| −21 | `JK_E_DIRECTION` | `J-E2521` | error | direção errada para esta função |
-| −22 | `JK_E_TYPE` | `J-E2522` | error | tipo incompatível |
-| −23 | `JK_E_GROUP` | `J-E2523` | error | grupo desconhecido |
-| −24 | `JK_E_TIME` | `J-E2524` | error | tempo a andar para trás |
-| −25 | `JK_E_FULL` | `J-E2525` | error | fila ou buffer cheio |
-| −26 | `JK_E_NOT_FOUND` | `J-E2526` | error | instância, membro, alarme, parâmetro, escritor ou bilhete desconhecido |
-| −27 | `JK_E_ARGS` | `J-E2527` | error | argumentos de método ou ação inválidos |
-| −28 | `JK_E_VALUE` | `J-E2528` | error | valor fora do domínio do tipo |
-| −29 | `JK_E_QUALITY` | `J-E2529` | error | combinação de código e motivo de qualidade inválida |
-| −30 | `JK_E_PARAM` | `J-E2530` | error | parâmetro fora da gama ou não alterável |
-| −31 | `JK_E_TTL` | `J-E2531` | error | TTL em falta ou acima do máximo |
-| −32 | `JK_E_LEVEL` | `J-E2532` | error | nível não permitido |
-| −33 | `JK_E_BUSY` | `J-E2533` | error | operação já em curso |
-| −40 | `JK_E_PERSIST` | `J-E2540` | error | callback de flash falhou |
-| −41 | `JK_E_PERSIST_CORRUPT` | `J-E2541` | warning | registo persistente corrompido (ignorado) |
-| −42 | `JK_E_PERSIST_FULL` | `J-E2542` | error | área de persistência cheia |
-| −50 | `JK_E_LINK` | `J-E2550` | warning | erro de enquadramento ou de protocolo no link |
-| −51 | `JK_E_LINK_AUTH` | `J-E2551` | error | autenticação do link falhou |
-| −52 | `JK_E_LINK_VERSION` | `J-E2552` | error | versão do link incompatível |
-| −53 | `JK_E_LINK_DOWN` | `J-E2553` | warning | transporte em baixo |
-| −60 | `JK_E_OTA` | `J-E2560` | error | sequência de OTA inválida |
-| −61 | `JK_E_OTA_VERIFY` | `J-E2561` | error | imagem recebida não verificou |
-| −99 | `JK_E_INTERNAL` | `J-E2599` | error | invariante interna (código passado a `jk_fatal`) |
+| 0 | `JK_OK` | — | — | success |
+| 1 | `JK_EMPTY` | — | — | nothing (more) to return |
+| 2 | `JK_PENDING` | — | — | still to be decided |
+| 3 | `JK_RELINQUISHED` | — | — | output in relinquish: no value to apply |
+| −1 | `JK_E_ARG` | `J-E2501` | error | invalid argument |
+| −2 | `JK_E_STATE` | `J-E2502` | error | call outside the allowed state |
+| −3 | `JK_E_ABI` | `J-E2503` | error | ABI, node size or interface incompatible with the library (library mode only; reserved 1.2) |
+| −4 | `JK_E_ALIGN` | `J-E2504` | error | node or blob not 8-byte aligned |
+| −5 | `JK_E_UNSUPPORTED` | `J-E2505` | error | function not included in this build |
+| −6 | `JK_E_REENTRANT` | `J-E2506` | error | concurrent call in an exclusive context |
+| −7 | `JK_E_HALTED` | `J-E2507` | error | node stopped by an internal failure |
+| −10 | `JK_E_GEN_FORMAT` | `J-E2510` | error | malformed blob |
+| −11 | `JK_E_GEN_VERSION` | `J-E2511` | error | unknown format, ISA or required section |
+| −12 | `JK_E_GEN_CAPACITY` | `J-E2512` | error | the generation does not fit the build's capabilities (counterpart of `J0710`) |
+| −13 | `JK_E_GEN_SIGNATURE` | `J-E2513` | error | invalid or missing signature |
+| −14 | `JK_E_GEN_TRUST` | `J-E2514` | error | untrusted key |
+| −15 | `JK_E_GEN_ROLLBACK` | `J-E2515` | error | `gen_seq` below the minimum (anti-rollback) |
+| −16 | `JK_E_GEN_FIRMWARE` | `J-E2516` | error | incompatible board, apps, drivers, runtime or interface |
+| −17 | `JK_E_GEN_NODE` | `J-E2517` | error | blob bound to another node |
+| −18 | `JK_E_GEN_INTEGRITY` | `J-E2518` | error | image CRC or SHA-256 does not match |
+| −20 | `JK_E_SIGNAL` | `J-E2520` | error | signal outside the interface |
+| −21 | `JK_E_DIRECTION` | `J-E2521` | error | wrong direction for this function |
+| −22 | `JK_E_TYPE` | `J-E2522` | error | incompatible type |
+| −23 | `JK_E_GROUP` | `J-E2523` | error | unknown group |
+| −24 | `JK_E_TIME` | `J-E2524` | error | time going backward |
+| −25 | `JK_E_FULL` | `J-E2525` | error | queue or buffer full |
+| −26 | `JK_E_NOT_FOUND` | `J-E2526` | error | unknown instance, member, alarm, parameter, writer or ticket |
+| −27 | `JK_E_ARGS` | `J-E2527` | error | invalid method or action arguments |
+| −28 | `JK_E_VALUE` | `J-E2528` | error | value outside the type's domain |
+| −29 | `JK_E_QUALITY` | `J-E2529` | error | invalid combination of code and quality reason |
+| −30 | `JK_E_PARAM` | `J-E2530` | error | parameter out of range or not changeable |
+| −31 | `JK_E_TTL` | `J-E2531` | error | TTL missing or above the maximum |
+| −32 | `JK_E_LEVEL` | `J-E2532` | error | level not allowed |
+| −33 | `JK_E_BUSY` | `J-E2533` | error | operation already in progress |
+| −40 | `JK_E_PERSIST` | `J-E2540` | error | flash callback failed |
+| −41 | `JK_E_PERSIST_CORRUPT` | `J-E2541` | warning | corrupted persistent record (ignored) |
+| −42 | `JK_E_PERSIST_FULL` | `J-E2542` | error | persistence area full |
+| −50 | `JK_E_LINK` | `J-E2550` | warning | framing or protocol error on the link |
+| −51 | `JK_E_LINK_AUTH` | `J-E2551` | error | link authentication failed |
+| −52 | `JK_E_LINK_VERSION` | `J-E2552` | error | incompatible link version |
+| −53 | `JK_E_LINK_DOWN` | `J-E2553` | warning | transport down |
+| −60 | `JK_E_OTA` | `J-E2560` | error | invalid OTA sequence |
+| −61 | `JK_E_OTA_VERIFY` | `J-E2561` | error | received image did not verify |
+| −99 | `JK_E_INTERNAL` | `J-E2599` | error | internal invariant (code passed to `jk_fatal`) |
 
-Os valores de −100 a −127 ficam para uso futuro da ABI; `J-E2600`–`J-E2999` ficam livres para o Joker Micro (drivers do MCU, OTA de firmware, v1.x).
+Values from −100 to −127 are kept for future use by the ABI; `J-E2600`–`J-E2999` remain free for Joker Micro (MCU drivers, firmware OTA, v1.x).
 
-### 2.8 O header gerado (`joker_project.h`)
+### 2.8 The generated header (`joker_project.h`)
 
-Gerado pelo `jk build --target mcu:<placa> --lib` (e, com os mesmos nomes em Rust, pelo `--crate`, §2.11.4). Um exemplo completo está em `spec/c/example/joker_project.h`.
+Generated by `jk build --target mcu:<board> --lib` (and, with the same names in Rust, by `--crate`, §2.11.4). A complete example is in `spec/c/example/joker_project.h`.
 
-#### 2.8.1 Conteúdo
+#### 2.8.1 Content
 
-| Elemento | Forma | Nota |
+| Element | Form | Note |
 |---|---|---|
-| verificação da ABI | `_Static_assert(JK_ABI_VERSION_MAJOR == M && JK_ABI_VERSION_MINOR >= m, …)` | a versão para a qual foi gerado |
-| identidade | `JK_PROJECT_NAME`, `JK_PROJECT_BOARD`, `JK_PROJECT_RUNTIME` (strings) | |
-| hash da interface | `JK_PROJECT_IFACE_HASH` = `UINT64_C(0x…)` | os primeiros 8 B (little-endian) do SHA-256 da tabela canónica da interface; o mesmo valor está na biblioteca e no descritor (§2.14) |
-| tamanho do nó | `JK_PROJECT_NODE_WORDS` e `struct jk_node { _Alignas(8) uint64_t jk_opaque[JK_PROJECT_NODE_WORDS]; };` | completa o tipo incompleto do header fixo |
-| pilhas medidas | `JK_PROJECT_STACK_TICK`, `_SERVICE`, `_LINK_POLL`, `_ISR`, `_GEN_OPEN` (bytes) | §2.9.3 |
-| geração embutida | `JK_PROJECT_HAS_EMBEDDED_GENERATION` (0 ou 1) e, com 1, `extern const jk_generation_t JK_GENERATION;` | com `--generic`, 0 |
-| contagens | `JK_GROUP_COUNT`, `JK_SIG_COUNT`, `JK_LINK_COUNT` | |
-| identificadores | uma macro por entrada da interface, com cast (`((jk_sig_t)4u)`), utilizável em `switch` e em `#if` não | tabela seguinte |
+| ABI check | `_Static_assert(JK_ABI_VERSION_MAJOR == M && JK_ABI_VERSION_MINOR >= m, …)` | the version it was generated for |
+| identity | `JK_PROJECT_NAME`, `JK_PROJECT_BOARD`, `JK_PROJECT_RUNTIME` (strings) | |
+| interface hash | `JK_PROJECT_IFACE_HASH` = `UINT64_C(0x…)` | the first 8 B (little-endian) of the SHA-256 of the canonical interface table; the same value is in the library and in the descriptor (§2.14) |
+| node size | `JK_PROJECT_NODE_WORDS` and `struct jk_node { _Alignas(8) uint64_t jk_opaque[JK_PROJECT_NODE_WORDS]; };` | completes the incomplete type of the fixed header |
+| measured stacks | `JK_PROJECT_STACK_TICK`, `_SERVICE`, `_LINK_POLL`, `_ISR`, `_GEN_OPEN` (bytes) | §2.9.3 |
+| embedded generation | `JK_PROJECT_HAS_EMBEDDED_GENERATION` (0 or 1) and, with 1, `extern const jk_generation_t JK_GENERATION;` | with `--generic`, 0 |
+| counts | `JK_GROUP_COUNT`, `JK_SIG_COUNT`, `JK_LINK_COUNT` | |
+| identifiers | one macro per interface entry, with a cast (`((jk_sig_t)4u)`), usable in `switch` and not in `#if` | next table |
 
-| Entrada | Nome | Exemplo |
+| Entry | Name | Example |
 |---|---|---|
-| grupo | `JK_GROUP_<GRUPO>` | `JK_GROUP_MAIN` |
-| sinal | `JK_SIG_<CAMINHO>` com `.` → `_` | `pump.run` → `JK_SIG_PUMP_RUN` |
-| escritor externo | `JK_WRITER_<APP>` | `JK_WRITER_PANEL` |
-| instância | `JK_INST_<INSTÂNCIA>` | `JK_INST_P1` |
-| membro de classe | `JK_C_<PACOTE>_<CLASSE>_<MAJOR>_<MEMBRO>`, com `/` e `.` → `_` | `std/hvac.vav@1`, `damper` → `JK_C_STD_HVAC_VAV_1_DAMPER` |
-| alarme | `JK_ALARM_<NOME>` | `JK_ALARM_TANK_HIGH` |
-| parâmetro de app | `JK_PARAM_<APP>_<PARÂMETRO>` | `JK_PARAM_LEVEL_TARGET` |
-| link | `JK_LINK_<NOME>` | `JK_LINK_UPLINK` |
-| variante de enum | `JK_ENUM_<ENUM>_<VARIANTE>` (o nome do enum passa de `CamelCase` a `SNAKE`) | `PcsMode.charge` → `JK_ENUM_PCS_MODE_CHARGE` (valor numérico) |
-| bit nomeado | `JK_BIT_<CAMINHO>_<BIT>` (índice do bit) | `JK_BIT_PCS_STATUS_ALARM_OVERTEMP` |
+| group | `JK_GROUP_<GROUP>` | `JK_GROUP_MAIN` |
+| signal | `JK_SIG_<PATH>` with `.` → `_` | `pump.run` → `JK_SIG_PUMP_RUN` |
+| external writer | `JK_WRITER_<APP>` | `JK_WRITER_PANEL` |
+| instance | `JK_INST_<INSTANCE>` | `JK_INST_P1` |
+| class member | `JK_C_<PACKAGE>_<CLASS>_<MAJOR>_<MEMBER>`, with `/` and `.` → `_` | `std/hvac.vav@1`, `damper` → `JK_C_STD_HVAC_VAV_1_DAMPER` |
+| alarm | `JK_ALARM_<NAME>` | `JK_ALARM_TANK_HIGH` |
+| app parameter | `JK_PARAM_<APP>_<PARAMETER>` | `JK_PARAM_LEVEL_TARGET` |
+| link | `JK_LINK_<NAME>` | `JK_LINK_UPLINK` |
+| enum variant | `JK_ENUM_<ENUM>_<VARIANT>` (the enum name goes from `CamelCase` to `SNAKE`) | `PcsMode.charge` → `JK_ENUM_PCS_MODE_CHARGE` (numeric value) |
+| named bit | `JK_BIT_<PATH>_<BIT>` (bit index) | `JK_BIT_PCS_STATUS_ALARM_OVERTEMP` |
 
-- Em cada tipo de entrada, os índices são **densos a partir de 0, pela ordem do nome** (o caminho canónico, para sinais). É isso que torna o header determinista.
-- Cada macro tem um comentário com o caminho, o tipo, a unidade, a direção e, nas saídas, o grupo dono e o `safe` da geração com que foi gerado.
-- Colisão de dois nomes na mesma macro (`a.b_c` e `a_b.c`) é `J0775`; o `jk build` sugere um alias. Um identificador com mais de 63 caracteres é o aviso `J0787` (é o limite garantido pelo C11 para nomes internos e macros).
+- In each entry type, the indices are **dense from 0, in name order** (the canonical path, for signals). That is what makes the header deterministic.
+- Each macro has a comment with the path, the type, the unit, the direction and, for outputs, the owning group and the `safe` of the generation it was generated with.
+- A collision of two names in the same macro (`a.b_c` and `a_b.c`) is `J0775`; `jk build` suggests an alias. An identifier with more than 63 characters is the warning `J0787` (it is the limit guaranteed by C11 for internal names and macros).
 
-#### 2.8.2 O que entra na interface
+#### 2.8.2 What goes into the interface
 
-| Entrada | Quando | Obrigatória numa geração nova |
+| Entry | When | Required in a new generation |
 |---|---|---|
-| sinais de dispositivos `extern` | sempre | **sim** |
-| saídas declaradas em `writes` de apps `extern` | sempre | **sim** |
-| sinais em `reads` de apps `extern` e em `[target.extern] expose` | se declarados | não |
-| grupos | todos os da geração do build | **sim** |
-| escritores externos | apps `kind = "extern"` | **sim** |
-| links | todos | **sim** |
-| instâncias e membros das suas classes | todas as instâncias da geração do build | não |
-| alarmes | todos | não |
-| parâmetros de apps | todos (os alteráveis marcados no comentário) | não |
+| signals of `extern` devices | always | **yes** |
+| outputs declared in `writes` of `extern` apps | always | **yes** |
+| signals in `reads` of `extern` apps and in `[target.extern] expose` | if declared | no |
+| groups | all those of the build's generation | **yes** |
+| external writers | apps `kind = "extern"` | **yes** |
+| links | all | **yes** |
+| instances and the members of their classes | all instances of the build's generation | no |
+| alarms | all | no |
+| app parameters | all (the changeable ones marked in the comment) | no |
 
-Quando uma geração nova (por flash) não tem uma entrada **obrigatória** com o mesmo nome, tipo, unidade e direção, é recusada (`JK_E_GEN_FIRMWARE` no MCU, `J0790` no `jk build --generation`). Uma entrada **opcional** que falte fica "ausente": as funções que a recebem devolvem `JK_E_NOT_FOUND`, e o `jk build --generation` mostra-o como aviso na mesma mensagem do `J0790`.
+When a new generation (through flash) lacks a **required** entry with the same name, type, unit and direction, it is rejected (`JK_E_GEN_FIRMWARE` on the MCU, `J0790` in `jk build --generation`). A missing **optional** entry becomes "absent": the functions that receive it return `JK_E_NOT_FOUND`, and `jk build --generation` shows it as a warning in the same `J0790` message.
 
-### 2.9 Memória, alinhamento e pilha
+### 2.9 Memory, alignment and stack
 
-#### 2.9.1 Memória do nó
+#### 2.9.1 Node memory
 
-- `jk_node_t` tem `JK_PROJECT_NODE_WORDS × 8` bytes, alinhamento de 8, e aloca-se estaticamente (`static jk_node_t node;`). Pode estar em qualquer RAM que todos os contextos que o usam vejam de forma coerente. Não precisa de estar a zeros: `jk_init` escreve-o todo.
-- O tamanho é a soma das capacidades do build (§2.13.3) pelos custos da tabela seguinte, mais o estado das apps (`size_of` de cada app e dos estados das suas tarefas), arredondado a 8. O `jk check` usa as mesmas fórmulas para o `J0710` e mostra o detalhe por componente.
+- `jk_node_t` has `JK_PROJECT_NODE_WORDS × 8` bytes, alignment of 8, and is allocated statically (`static jk_node_t node;`). It may be in any RAM that all the contexts that use it see coherently. It need not be zeroed: `jk_init` writes all of it.
+- The size is the sum of the build's capabilities (§2.13.3) times the costs of the following table, plus the app state (`size_of` of each app and of the states of its tasks), rounded up to 8. `jk check` uses the same formulas for `J0710` and shows the detail per component.
 
-| Componente | RAM |
+| Component | RAM |
 |---|---|
-| slot por sinal | 32 B (+ 2 × 64 B de arena por sinal `string`/`bytes`) |
-| imagem de processo | 16 B por porta latchada por grupo |
-| saída (envelope, árbitro, caixa com buffer duplo) | 96 B + 24 B por escritor declarado |
-| estado das expressões | o `state_len` de cada programa; janelas: 16 B por amostra |
-| caixa de propostas | 24 B por entrada, por grupo |
-| fila de métodos | 16 B + argumentos por registo, por grupo |
-| ações pendentes | 48 B + argumentos (≤ 1 KiB) |
-| eventos | 32 B + carga (≤ 1 KiB) por entrada |
-| link | 2 × MTU + 256 B de estado (+ 64 B com cifra) por link |
-| traço | `trace_bytes` (omissão 16 KiB, U9 do documento 19) |
+| slot per signal | 32 B (+ 2 × 64 B of arena per `string`/`bytes` signal) |
+| process image | 16 B per latched port per group |
+| output (envelope, arbiter, double-buffered box) | 96 B + 24 B per declared writer |
+| expression state | the `state_len` of each program; windows: 16 B per sample |
+| proposal box | 24 B per entry, per group |
+| method queue | 16 B + arguments per record, per group |
+| pending actions | 48 B + arguments (≤ 1 KiB) |
+| events | 32 B + payload (≤ 1 KiB) per entry |
+| link | 2 × MTU + 256 B of state (+ 64 B with encryption) per link |
+| trace | `trace_bytes` (default 16 KiB, U9 of document 19) |
 
-#### 2.9.2 Cabeçalho do nó (para sondas)
+#### 2.9.2 Node header (for probes)
 
-Os primeiros 64 bytes do `jk_node_t` têm um formato fixo, para que o `jk trace-dump --probe` encontre o nó e os anéis de traço na RAM sem símbolos. O resto do nó é opaco.
+The first 64 bytes of `jk_node_t` have a fixed format, so that `jk trace-dump --probe` finds the node and the trace rings in RAM without symbols. The rest of the node is opaque.
 
-| Offset | Tipo | Campo |
+| Offset | Type | Field |
 |---|---|---|
-| 0 | `u32` | magia `"JKND"` (0x444E4B4A) |
-| 4 | `u16`, `u16` | major e minor da ABI da biblioteca |
-| 8 | `u32` | estado (`jk_node_state_t`) |
+| 0 | `u32` | magic `"JKND"` (0x444E4B4A) |
+| 4 | `u16`, `u16` | major and minor of the library's ABI |
+| 8 | `u32` | state (`jk_node_state_t`) |
 | 12 | `u32` | `JK_PROJECT_NODE_WORDS` |
-| 16 | `u64` | hash da interface |
+| 16 | `u64` | interface hash |
 | 24 | `u64` | `gen_seq` |
-| 32 | `u32` | offset (desde o início do nó) da tabela de traço: por grupo, `u32` offset do anel, `u32` tamanho, `u32` cabeça, `u32` flags (bit 0 congelado) |
-| 36 | `u32` | número de grupos |
-| 40 | `[8]u8` | primeiros 8 B do `registry_hash` |
-| 48 | `[16]u8` | reservado, 0 |
+| 32 | `u32` | offset (from the start of the node) of the trace table: per group, `u32` ring offset, `u32` size, `u32` head, `u32` flags (bit 0 frozen) |
+| 36 | `u32` | number of groups |
+| 40 | `[8]u8` | first 8 B of the `registry_hash` |
+| 48 | `[16]u8` | reserved, 0 |
 
-#### 2.9.3 Alinhamento e pilha
+#### 2.9.3 Alignment and stack
 
-| Regra | Valor |
+| Rule | Value |
 |---|---|
-| alinhamento do nó | 8 (`JK_E_ALIGN`) |
-| alinhamento do blob | 8, em flash mapeada ou em RAM (`JK_E_ALIGN`) |
-| buffers passados à ABI | qualquer alinhamento |
-| escritas em flash | múltiplos de `write_size`, apagamentos de `erase_size`, dados da biblioteca com qualquer alinhamento |
-| FPU em ISR | as funções `[any]` com `float`/`double` usam a FPU; a ISR tem de guardar o contexto da FPU (o *lazy stacking* do Cortex-M chega) |
-| multi-núcleo | suportado (RP2350) se a memória do nó for coerente; num MCU com cache de dados e dois núcleos (STM32H745), o nó fica em memória não cacheável ou num só núcleo |
+| node alignment | 8 (`JK_E_ALIGN`) |
+| blob alignment | 8, in mapped flash or in RAM (`JK_E_ALIGN`) |
+| buffers passed to the ABI | any alignment |
+| flash writes | multiples of `write_size`, erases of `erase_size`, library data with any alignment |
+| FPU in an ISR | the `[any]` functions with `float`/`double` use the FPU; the ISR must save the FPU context (Cortex-M *lazy stacking* is enough) |
+| multicore | supported (RP2350) if the node memory is coherent; on an MCU with a data cache and two cores (STM32H745), the node goes in non-cacheable memory or on a single core |
 
-| Ponto de entrada | Pilha alvo (a medir) | Macro medida pelo build |
+| Entry point | Target stack (to be measured) | Macro measured by the build |
 |---|---|---|
-| `jk_set_input*`, `jk_get_output*`, `jk_read*`, `jk_supervise` e restantes `[any]` | ≤ 256 B | `JK_PROJECT_STACK_ISR` |
-| `jk_tick` | ≤ 1,5 KiB + a maior pilha das tarefas de ciclo das apps do grupo | `JK_PROJECT_STACK_TICK` (a maior de todos os grupos) |
-| `jk_service` | ≤ 2 KiB + a maior pilha das tarefas async | `JK_PROJECT_STACK_SERVICE` |
-| `jk_link_poll` (inclui um passo de serviço) | ≤ 3,5 KiB + tarefas async | `JK_PROJECT_STACK_LINK_POLL` |
+| `jk_set_input*`, `jk_get_output*`, `jk_read*`, `jk_supervise` and the remaining `[any]` | ≤ 256 B | `JK_PROJECT_STACK_ISR` |
+| `jk_tick` | ≤ 1.5 KiB + the largest stack of the group's app cycle tasks | `JK_PROJECT_STACK_TICK` (the largest of all groups) |
+| `jk_service` | ≤ 2 KiB + the largest stack of the async tasks | `JK_PROJECT_STACK_SERVICE` |
+| `jk_link_poll` (includes a service step) | ≤ 3.5 KiB + async tasks | `JK_PROJECT_STACK_LINK_POLL` |
 | `jk_generation_open`, `jk_ota_finish` (Ed25519) | ≤ 3 KiB | `JK_PROJECT_STACK_GEN_OPEN` |
-| `jk_init`, `jk_generation_swap` | ≤ 2 KiB + o `init`/`migrate` das apps | incluído em `_SERVICE` |
+| `jk_init`, `jk_generation_swap` | ≤ 2 KiB + the apps' `init`/`migrate` | included in `_SERVICE` |
 
-As pilhas são medidas no build por análise estática do grafo de chamadas (sem recursão no núcleo; as apps com recursão ou chamadas indiretas não analisáveis dão o aviso `J0791` ("não medido"). Com grupos em executores de interrupção aninhados, o `jk check` soma as pilhas de todos os níveis de prioridade que podem estar ativos ao mesmo tempo e compara com a pilha da placa (`J0774`).
+The stacks are measured at build time by static analysis of the call graph (no recursion in the core; apps with recursion or with indirect calls that cannot be analyzed give the warning `J0791` ("not measured"). With groups in nested interrupt executors, `jk check` adds up the stacks of all priority levels that may be active at the same time and compares with the board's stack (`J0774`).
 
-### 2.10 Persistência
+### 2.10 Persistence
 
-#### 2.10.1 Áreas
+#### 2.10.1 Areas
 
-| Área | Conteúdo | Tamanho mínimo | Quem escreve |
+| Area | Content | Minimum size | Who writes |
 |---|---|---|---|
-| `JK_AREA_PERSIST` | estado da geração, trips, alarmes (reconhecimento, arquivo), parâmetros persistentes, `kv` das apps, orçamentos de atuação | 2 setores de apagamento e ≥ 4 × o conteúdo vivo | a biblioteca, no serviço |
-| `JK_AREA_GEN_A`, `JK_AREA_GEN_B` | um blob de geração cada (A/B) | o maior blob (`J0781`) | a biblioteca (OTA) ou o `jk flash` |
-| `JK_AREA_FW_STAGING` | imagem de firmware recebida por OTA, para o bootloader | a imagem do firmware | a biblioteca (OTA) |
-| `JK_AREA_IDENTITY` | nome do nó, chaves do link, bundle de confiança (≤ 2 KiB), chave X25519 de segredos (MCU autónomo) | 2 setores | o enrolamento (`jk node enroll <mcu> --link <d>`, ref/07 §4.7; ref/10 §3.1.3), o `jk flash --identity` e a instalação de bundles (secção `TRUST` do blob, ou o agente num MCU autónomo) |
+| `JK_AREA_PERSIST` | generation state, trips, alarms (acknowledgment, shelving), persistent parameters, app `kv`, actuation budgets | 2 erase sectors and ≥ 4 × the live content | the library, in the service |
+| `JK_AREA_GEN_A`, `JK_AREA_GEN_B` | one generation blob each (A/B) | the largest blob (`J0781`) | the library (OTA) or `jk flash` |
+| `JK_AREA_FW_STAGING` | firmware image received by OTA, for the bootloader | the firmware image | the library (OTA) |
+| `JK_AREA_IDENTITY` | node name, link keys, trust bundle (≤ 2 KiB), X25519 secrets key (standalone MCU) | 2 sectors | enrollment (`jk node enroll <mcu> --link <d>`, ref/07 §4.7; ref/10 §3.1.3), `jk flash --identity` and the installation of bundles (`TRUST` section of the blob, or the agent on a standalone MCU) |
 
-No modo biblioteca, o integrador escolhe onde ficam as áreas (`area_info`); uma área com `size = 0` não existe.
+In library mode, the integrator chooses where the areas go (`area_info`); an area with `size = 0` does not exist.
 
-**Níveis remotos não se persistem.** Os níveis dos escritores remotos (link), incluindo as escritas manuais que chegam pelo link, vivem só em RAM: depois de um reset do MCU desaparecem até o nó Linux os renovar. A persistência dos níveis manuais remotos (16 A14) é do nó Linux, que guarda o TTL e os envia com `lease = min(TTL restante, max_lease do link)` (16 A12, ref/07 §8.1). No modo firmware, a placa declara-as (§2.12.2).
+**Remote levels are not persisted.** The levels of remote writers (link), including the manual writes that arrive over the link, live only in RAM: after an MCU reset they disappear until the Linux node renews them. The persistence of remote manual levels (16 A14) belongs to the Linux node, which keeps the TTL and sends them with `lease = min(remaining TTL, max_lease of the link)` (16 A12, ref/07 §8.1). In firmware mode, the board declares them (§2.12.2).
 
-#### 2.10.2 Formato
+#### 2.10.2 Format
 
-A área é um diário circular de setores. É a biblioteca que o define, para que um firmware novo leia os registos de um antigo.
+The area is a circular journal of sectors. It is the library that defines it, so that a new firmware reads the records of an old one.
 
 ```
-setor    := cabeçalho(16 B) registo* espaço-apagado
-cabeçalho:= "JKPS" u16:formato(=1) u16:flags u32:contador-de-apagamentos u32:crc32c(dos 12 B anteriores)
-registo  := u8:tipo u8:flags(bit 0 = lápide) u16:tamanho-da-chave u16:tamanho-do-valor u16:0
-            u32:seq(global, crescente) u32:crc32c(cabeçalho sem o crc + chave + valor)
-            chave valor enchimento(até múltiplo de max(8, write_size), com o valor apagado)
+sector   := header(16 B) record* erased-space
+header   := "JKPS" u16:format(=1) u16:flags u32:erase-counter u32:crc32c(of the previous 12 B)
+record   := u8:type u8:flags(bit 0 = tombstone) u16:key-length u16:value-length u16:0
+            u32:seq(global, increasing) u32:crc32c(header without the crc + key + value)
+            key value padding(up to a multiple of max(8, write_size), with the erased value)
 ```
 
-- Inteiros em little-endian; **CRC-32C** (Castagnoli, D12), o mesmo do Joker Link (ref/07 §3.2) e do blob.
-- **Chaves:** nunca `SignalId` (só vale numa geração; `ref/00` §5). Um sinal, alarme ou parâmetro é identificado pelo **path-hash**: os primeiros 8 bytes do SHA-256 do caminho canónico em UTF-8 (`alarm.<nome>`, `<app>.<parâmetro>`).
-- **Valores:** CBOR determinístico, com os esquemas do `joker-micro.cddl` (§4), exceto o `kv`, que guarda os bytes da app.
+- Integers in little-endian; **CRC-32C** (Castagnoli, D12), the same as Joker Link's (ref/07 §3.2) and the blob's.
+- **Keys:** never `SignalId` (it is only valid within a generation; `ref/00` §5). A signal, alarm or parameter is identified by the **path-hash**: the first 8 bytes of the SHA-256 of the canonical path in UTF-8 (`alarm.<name>`, `<app>.<parameter>`).
+- **Values:** deterministic CBOR, with the schemas of `joker-micro.cddl` (§4), except `kv`, which stores the app's bytes.
 
-| Tipo | Chave | Valor (CDDL) |
+| Type | Key | Value (CDDL) |
 |---|---|---|
-| 1 estado da geração | — (único) | `gen-state` |
-| 2 trip | path-hash da saída | `trip-state` |
-| 3 alarme | path-hash de `alarm.<nome>` | `alarm-persist` |
-| 4 parâmetro | path-hash de `<app>.<parâmetro>` | `param-persist` |
-| 5 `kv` | path-hash da app ‖ chave (≤ 64 B) | bytes (≤ 1 KiB por valor, ≤ 16 KiB por app; `J0784`) |
-| 6 orçamento de atuações | path-hash da saída | `budget-persist` |
-| 16 nome do nó | — | `identity-node` (área `IDENTITY`) |
-| 17 chave de link | path-hash do nome do link | `identity-link-key` (área `IDENTITY`) |
-| 18 bundle de confiança | — (único) | `identity-trust`: o `trust-bundle` COSE da ref/10 §2.4.3, perfil micro (≤ 2 KiB, ≤ 8 chaves; área `IDENTITY`) |
-| 19 chave de segredos | — (único) | `identity-kem`: X25519 do MCU autónomo, atestada no seu certificado (ref/02 §2.4; área `IDENTITY`) |
-| 7–15, 20–127 | reservados | |
-| 128–255 | privados do integrador (a biblioteca ignora-os e preserva-os na compactação) | |
+| 1 generation state | — (single) | `gen-state` |
+| 2 trip | path-hash of the output | `trip-state` |
+| 3 alarm | path-hash of `alarm.<name>` | `alarm-persist` |
+| 4 parameter | path-hash of `<app>.<parameter>` | `param-persist` |
+| 5 `kv` | path-hash of the app ‖ key (≤ 64 B) | bytes (≤ 1 KiB per value, ≤ 16 KiB per app; `J0784`) |
+| 6 actuation budget | path-hash of the output | `budget-persist` |
+| 16 node name | — | `identity-node` (`IDENTITY` area) |
+| 17 link key | path-hash of the link name | `identity-link-key` (`IDENTITY` area) |
+| 18 trust bundle | — (single) | `identity-trust`: the COSE `trust-bundle` of ref/10 §2.4.3, micro profile (≤ 2 KiB, ≤ 8 keys; `IDENTITY` area) |
+| 19 secrets key | — (single) | `identity-kem`: X25519 of the standalone MCU, attested in its certificate (ref/02 §2.4; `IDENTITY` area) |
+| 7–15, 20–127 | reserved | |
+| 128–255 | private to the integrator (the library ignores them and preserves them in compaction) | |
 
-- **Leitura no arranque:** percorre-se a área; para cada (tipo, chave) vale o registo com o maior `seq` e CRC válido. Um registo com CRC errado é ignorado e contado (`JK_E_PERSIST_CORRUPT` nas estatísticas, alarme `joker.persist.corrupt`), e não impede o arranque.
-- **Compactação:** quando o setor ativo enche, os registos vivos copiam-se para o próximo setor apagado, e o antigo apaga-se só depois de o novo estar completo. Uma falta de energia a meio deixa sempre um conjunto válido. Sem espaço depois de compactar: `JK_E_PERSIST_FULL` e alarme.
-- **Desgaste:** o contador de apagamentos por setor distribui a escrita. O `jk check` estima os apagamentos por dia a partir das taxas declaradas (trips, `kv`) e avisa se a vida da flash ficar abaixo de 10 anos (`J0792`).
+- **Reading at boot:** the area is scanned; for each (type, key) the record with the largest `seq` and a valid CRC prevails. A record with a wrong CRC is ignored and counted (`JK_E_PERSIST_CORRUPT` in the statistics, alarm `joker.persist.corrupt`), and does not prevent boot.
+- **Compaction:** when the active sector fills up, the live records are copied to the next erased sector, and the old one is erased only after the new one is complete. A power outage midway always leaves a valid set. Without space after compacting: `JK_E_PERSIST_FULL` and an alarm.
+- **Wear:** the per-sector erase counter spreads the writing. `jk check` estimates the erases per day from the declared rates (trips, `kv`) and warns if the flash life falls below 10 years (`J0792`).
 
-#### 2.10.3 Quando se grava
+#### 2.10.3 When writing happens
 
-A escrita em flash demora milissegundos e **nunca** acontece num contexto de grupo. Um trip, um reconhecimento ou um parâmetro alterado marcam o registo como sujo, e o próximo `jk_service` grava-o. A janela entre o acontecimento e a gravação é, no máximo, o intervalo entre chamadas ao serviço (limitado por `service_deadline`). `jk_shutdown` e `jk_persist_flush` gravam tudo já. Esta diferença face ao Linux (documento 01, §7: trip com fsync) está declarada no §4, D5.
+Writing to flash takes milliseconds and **never** happens in a group context. A trip, an acknowledgment or a changed parameter marks the record as dirty, and the next `jk_service` writes it. The window between the occurrence and the write is, at most, the interval between calls to the service (bounded by `service_deadline`). `jk_shutdown` and `jk_persist_flush` write everything right away. This difference from Linux (document 01, §7: trip with fsync) is declared in §4, D5.
 
-### 2.11 O crate Rust (`joker-micro`)
+### 2.11 The Rust crate (`joker-micro`)
 
 #### 2.11.1 Crates
 
-| Crate | Papel | `no_std` |
+| Crate | Role | `no_std` |
 |---|---|---|
-| `joker-core`, `joker-expr`, `joker-units`, `joker-link-proto` | o núcleo partilhado com o Linux (ADR 0020) | sim |
-| `joker-micro` | hospedeiro do núcleo em MCUs: nó, contextos, persistência, link, OTA, blob, traço; módulo `embassy`; drivers do MCU | sim |
-| `joker-micro/ffi` (módulo) | a ABI C (`jk_*`), só com a feature `c-abi` | sim |
-| `joker-sdk` com a feature `backend-native` | o SDK das apps, compilado nativamente (§2.11.5) | sim |
-| `joker-project` | **gerado** pelo `jk build --crate`: interface tipada, geração, apps, armazenamento e tarefas Embassy do projeto | sim |
+| `joker-core`, `joker-expr`, `joker-units`, `joker-link-proto` | the core shared with Linux (ADR 0020) | yes |
+| `joker-micro` | host of the core on MCUs: node, contexts, persistence, link, OTA, blob, trace; `embassy` module; MCU drivers | yes |
+| `joker-micro/ffi` (module) | the C ABI (`jk_*`), only with the `c-abi` feature | yes |
+| `joker-sdk` with the `backend-native` feature | the app SDK, compiled natively (§2.11.5) | yes |
+| `joker-project` | **generated** by `jk build --crate`: typed interface, generation, apps, storage and Embassy tasks of the project | yes |
 
-**Dependências do núcleo** (`joker-core`, `joker-expr`, `joker-units`, `joker-link-proto`): só crates estáveis (1.x) ou triviais, sem `alloc` no caminho do tick: `heapless`, `critical-section`, `portable-atomic` (com `critical-section` por baixo onde não há atómicos de 64 bits) e `minicbor`. A sincronização é só por estes dois (§2.4, regra 8). Tudo o que é 0.x (Embassy, `embedded-io`, `esp-hal` `unstable`, `esp-radio`) fica no `joker-micro` e nos módulos `chip-*`, atrás de interfaces que se atualizam sem tocar no núcleo nem na ABI C (documento 25, §5; documento 13, §5.1).
+**Core dependencies** (`joker-core`, `joker-expr`, `joker-units`, `joker-link-proto`): only stable (1.x) or trivial crates, without `alloc` on the tick path: `heapless`, `critical-section`, `portable-atomic` (with `critical-section` underneath where there are no 64-bit atomics), `minicbor` and `libm` (ADR 0055; the list is `policies/dependencies.md` §3). Synchronization is only through these two (§2.4, rule 8). Everything that is 0.x (Embassy, `embedded-io`, `esp-hal` `unstable`, `esp-radio`) stays in `joker-micro` and in the `chip-*` modules, behind interfaces that are updated without touching the core or the C ABI (document 25, §5; document 13, §5.1).
 
-#### 2.11.2 Features de `joker-micro`
+#### 2.11.2 Features of `joker-micro`
 
-| Feature | Omissão | O que liga |
+| Feature | Default | What it enables |
 |---|---|---|
-| `embassy` | sim | módulo `embassy` (tarefas, temporizadores, `embassy-time`) |
-| `link` | sim | Joker Link (`joker-link-proto`), fluxo e datagrama |
-| `link-crypto` | sim | ChaCha20-Poly1305 (obrigatório em IP; `ref/07`) |
-| `gen-flash` | sim | abrir blobs de flash: Ed25519, SHA-256, COSE |
-| `persist` | sim | persistência (§2.10) sobre `embedded-storage` |
-| `trace` | sim | anéis de traço |
-| `ota` | sim, **obrigatória** | OTA de gerações e de firmware. No modo firmware e no modo crate, o recetor de OTA faz sempre parte da imagem (§2.12.6): sem ela, o `joker-micro` não compila (`compile_error!` com `J0795`), a não ser com `c-abi`, em que o firmware do integrador é que leva a imagem |
-| `defmt` | não | registos com `defmt` |
-| `c-abi` | não | exporta os `jk_*` (modo biblioteca) |
-| `cs-single-core` | não | implementação de `critical-section` por desligar as interrupções, para um MCU de um só núcleo em que nenhuma interrupção chama o nó (§2.4, regra 8); sem ela, no modo biblioteca, o integrador fornece a implementação |
-| `drv-gpio`, `drv-adc`, `drv-pwm`, `drv-i2c`, `drv-spi`, `drv-uart`, `drv-modbus-rtu`, `drv-modbus-rtu-slave`, `drv-can`, `drv-onewire` | não | drivers do MCU, cada um sobre o trait da tabela da ref/06 §3.7 (`embedded-hal` 1.0 onde existe; `AdcRead` e `CanFrames` do `joker-hal` onde não); o `extern` está sempre presente |
-| `chip-rp`, `chip-stm32`, `chip-esp` | não | ligação ao HAL de **uma família** (só no modo firmware): `embassy-rp`, `embassy-stm32` ou `esp-hal`. **Exatamente uma** por build: zero ou mais do que uma é `compile_error!`. A referência exata do chip não é uma feature do `joker-micro`: o `jk build` passa-a ao HAL (a feature do HAL, como `esp-hal/esp32` ou `embassy-stm32/stm32g474re`) a partir de `[board] chip` (ref/03 §2.3.1). O ESP32 original da bancada é `chip-esp` com `chip = "esp32"`. Com Wi-Fi, o `chip-esp` traz o heap fixo do rádio (§2.15.2). Os módulos `chip-*` não têm `unsafe` (§2.11.3, posse dos pinos) |
+| `embassy` | yes | `embassy` module (tasks, timers, `embassy-time`) |
+| `link` | yes | Joker Link (`joker-link-proto`), stream and datagram |
+| `link-crypto` | yes | ChaCha20-Poly1305 (required on IP; `ref/07`) |
+| `gen-flash` | yes | opening flash blobs: Ed25519, SHA-256, COSE |
+| `persist` | yes | persistence (§2.10) over `embedded-storage` |
+| `trace` | yes | trace rings |
+| `ota` | yes, **required** | OTA of generations and firmware. In firmware mode and in crate mode, the OTA receiver is always part of the image (§2.12.6): without it, `joker-micro` does not compile (`compile_error!` with `J0795`), except with `c-abi`, in which it is the integrator's firmware that carries the image |
+| `defmt` | no | logs with `defmt` |
+| `c-abi` | no | exports the `jk_*` (library mode); **reserved 1.2** (ADR 0035): not available in a 1.0 build |
+| `cs-single-core` | no | `critical-section` implementation by disabling interrupts, for a single-core MCU in which no interrupt calls the node (§2.4, rule 8); without it, in library mode, the integrator provides the implementation |
+| `drv-gpio`, `drv-adc`, `drv-pwm`, `drv-i2c`, `drv-spi`, `drv-uart`, `drv-modbus-rtu`, `drv-modbus-rtu-slave`, `drv-can`, `drv-onewire` | no | MCU drivers, each over the trait of the table of ref/06 §3.7 (`embedded-hal` 1.0 where it exists; `AdcRead` and `CanFrames` from `joker-hal` where it does not); `extern` is always present (versions of the 1.0 cut, ADR 0035: `drv-spi`, `drv-uart`, `drv-modbus-rtu-slave` and `drv-onewire` are 1.0.x, `drv-can` is 1.1, the others 1.0) |
+| `chip-rp`, `chip-stm32`, `chip-esp` | no | (`chip-stm32` is 1.0.x, with the STM32 targets of §2.15.1) binding to the HAL of **one family** (firmware mode only): `embassy-rp`, `embassy-stm32` or `esp-hal`. **Exactly one** per build: zero or more than one is `compile_error!`. The exact chip reference is not a feature of `joker-micro`: `jk build` passes it to the HAL (the HAL's feature, such as `esp-hal/esp32` or `embassy-stm32/stm32g474re`) from `[board] chip` (ref/03 §2.3.1). The bench's original ESP32 is `chip-esp` with `chip = "esp32"`. With Wi-Fi, `chip-esp` brings the radio's fixed heap (§2.15.2). The `chip-*` modules have no `unsafe` (§2.11.3, pin ownership) |
 
-O `jk build` escolhe as features a partir do manifesto e da placa. Sem uma feature, as funções correspondentes existem e devolvem `Error::Unsupported` (`JK_E_UNSUPPORTED`), para que o mesmo código compile com qualquer conjunto.
+`jk build` chooses the features from the manifest and the board. Without a feature, the corresponding functions exist and return `Error::Unsupported` (`JK_E_UNSUPPORTED`), so that the same code compiles with any set.
 
-#### 2.11.3 API pública
+#### 2.11.3 Public API
 
 ```rust
 #![no_std]
-// Tipos partilhados, reexportados do núcleo (os mesmos do SDK e do Linux):
+// Shared types, re-exported from the core (the same as in the SDK and on Linux):
 pub use joker_core::{Quality, QualityCode, QualityReason, WriteOutcome, RejectReason,
                      ClockQuality, AlarmState, Severity, Role, Level, ValueType, Value};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Micros(pub u64);          // monotónico, µs desde o arranque do MCU
+pub struct Micros(pub u64);          // monotonic, µs since MCU boot
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct UtcMicros(pub i64);
 
-/// Um erro por `JK_E_*`; `code()` devolve "J-E25xx".
+/// One error per `JK_E_*`; `code()` returns "J-E25xx".
 #[non_exhaustive]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Error { Arg, State, Abi, Align, Unsupported, Reentrant, Halted,
@@ -668,10 +668,10 @@ pub enum Error { Arg, State, Abi, Align, Unsupported, Reentrant, Halted,
                  Ota, OtaVerify, Internal }
 impl Error { pub const fn code(self) -> &'static str; pub const fn status(self) -> i32; }
 
-// Handles tipados (gerados em joker_project; o tipo apanha em compilação o que o C vê como JK_E_TYPE)
-pub struct In<T: SignalType>(/* índice da interface */);   // entrada de um dispositivo extern
-pub struct Out<T: SignalType>(/* … */);                    // saída
-pub struct Sig<T: SignalType>(/* … */);                    // sinal só de leitura
+// Typed handles (generated in joker_project; the type catches at compile time what C sees as JK_E_TYPE)
+pub struct In<T: SignalType>(/* interface index */);       // input of an extern device
+pub struct Out<T: SignalType>(/* … */);                    // output
+pub struct Sig<T: SignalType>(/* … */);                    // read-only signal
 pub struct GroupId(/* … */); pub struct WriterId(/* … */); pub struct LinkId(/* … */);
 pub struct InstId(/* … */); pub struct Member(/* … */); pub struct AlarmId(/* … */);
 pub struct ParamId<T: SignalType>(/* … */);
@@ -683,7 +683,7 @@ pub struct Sample<T> { pub value: T, pub quality: Quality, pub seq: u64,
 pub struct OutputState<T> { pub value: Option<T> /* None = relinquish */, pub quality: Quality,
                             pub outcome: WriteOutcome, pub level: Option<Level>, pub flags: OutFlags, pub seq: u64 }
 
-// Geração
+// Generation
 pub struct Generation<'a> { /* … */ }
 impl<'a> Generation<'a> {
     pub fn open(blob: &'a [u8], trust: &[[u8; 32]], identity: Option<&str>, min_seq: u64)
@@ -695,32 +695,32 @@ impl<'a> Generation<'a> {
 #[repr(C, align(8))] pub struct AlignedBlob(pub [u8]);
 #[macro_export] macro_rules! include_generation { ($path:literal) => { /* &'static AlignedBlob */ } }
 
-// Plataforma (o jk_platform_t em Rust)
+// Platform (the jk_platform_t in Rust)
 pub trait Platform: Sync {
     fn now(&self) -> Micros;                                  // = jk_now_us
     fn storage(&self) -> Option<&dyn Storage> { None }
-    fn trust_keys(&self) -> &[[u8; 32]] { &[] }                     // âncoras (§2.13.5)
+    fn trust_keys(&self) -> &[[u8; 32]] { &[] }                     // anchors (§2.13.5)
     fn link_key(&self, _link: LinkId) -> Option<[u8; 32]> { None }
-    fn kem_key(&self) -> Option<[u8; 32]> { None }                  // X25519 de segredos (MCU autónomo)
+    fn kem_key(&self) -> Option<[u8; 32]> { None }                  // X25519 secrets key (standalone MCU)
     fn notify(&self, _n: Notify) {}
 }
-pub trait Storage: Sync {                                     // bloqueante; só [excl] e [service]
+pub trait Storage: Sync {                                     // blocking; only [excl] and [service]
     fn info(&self, area: Area) -> Option<AreaInfo>;
     fn read(&self, area: Area, offset: u32, buf: &mut [u8]) -> Result<(), Error>;
     fn write(&self, area: Area, offset: u32, data: &[u8]) -> Result<(), Error>;
     fn erase(&self, area: Area, offset: u32, len: u32) -> Result<(), Error>;
     fn map(&self, _area: Area) -> Option<&'static [u8]> { None }
 }
-/// Adaptador sobre embedded-storage, com a tabela de áreas da placa.
+/// Adapter over embedded-storage, with the board's area table.
 pub struct NorStorage<F: embedded_storage::nor_flash::NorFlash> { /* … */ }
 impl<F: embedded_storage::nor_flash::NorFlash> NorStorage<F> {
     pub fn new(flash: F, areas: &'static [(Area, u32 /*offset*/, u32 /*size*/)]) -> Self;
 }
 
-// O projeto (implementado pelo crate gerado)
+// The project (implemented by the generated crate)
 pub trait Project: 'static {
-    type Storage: NodeStorage;       // memória do nó: tipos concretos de capacidade fixa, sem arena nem unsafe
-    type Apps: AppSet;               // as apps nativas do projeto (§2.11.5)
+    type Storage: NodeStorage;       // node memory: concrete fixed-capacity types, no arena and no unsafe
+    type Apps: AppSet;               // the project's native apps (§2.11.5)
     const IFACE: &'static Iface;
     const IFACE_HASH: u64;
 }
@@ -729,17 +729,17 @@ pub fn init<'n, P: Project>(storage: &'n mut P::Storage, apps: &'n mut P::Apps,
                             gen: &'n Generation<'n>, platform: &'n dyn Platform, now: Micros)
     -> Result<Parts<'n, P>, Error>;                         // [excl]
 
-/// Capacidades separadas por contexto: o sistema de tipos faz o que o C faz com JK_E_REENTRANT.
+/// Capabilities split by context: the type system does what C does with JK_E_REENTRANT.
 pub struct Parts<'n, P: Project> {
-    pub io: Io<'n, P>,              // Copy + Send + Sync: funções [any]
-    pub service: Service<'n, P>,    // Send, !Sync: o contexto de serviço (um)
-    pub groups: Groups<'n, P>,      // de onde se tiram os GroupRunner (um por grupo)
-    pub changes: Changes<'n, P>,    // de onde se tiram os ChangeFeed (um por grupo)
+    pub io: Io<'n, P>,              // Copy + Send + Sync: [any] functions
+    pub service: Service<'n, P>,    // Send, !Sync: the service context (one)
+    pub groups: Groups<'n, P>,      // where the GroupRunners are taken from (one per group)
+    pub changes: Changes<'n, P>,    // where the ChangeFeeds are taken from (one per group)
 }
 impl<'n, P: Project> Groups<'n, P> {
     pub fn take(&mut self, g: GroupId) -> Option<GroupRunner<'n, P>>;
     pub fn give_back(&mut self, r: GroupRunner<'n, P>);
-    pub fn is_complete(&self) -> bool;                      // todos devolvidos
+    pub fn is_complete(&self) -> bool;                      // all given back
 }
 impl<'n, P: Project> GroupRunner<'n, P> {                   // Send, !Sync: [group g]
     pub fn tick(&mut self, now: Micros) -> Result<(), Error>;
@@ -801,7 +801,7 @@ impl<'n, P: Project> Service<'n, P> {                       // [service]
     pub fn param_clear<T: SignalType>(&mut self, p: ParamId<T>, now: Micros) -> Result<(), Error>;
     pub fn time_set_utc(&mut self, mono: Micros, utc: UtcMicros, q: ClockQuality) -> Result<(), Error>;
     pub fn confirm_generation(&mut self) -> Result<(), Error>;
-    /// [excl] no Rust: exige todos os GroupRunner devolvidos (Groups::is_complete).
+    /// [excl] in Rust: requires all GroupRunners given back (Groups::is_complete).
     pub fn swap_generation(&mut self, groups: &mut Groups<'n, P>, next: Option<&'n Generation<'n>>,
                            confirm_ms: u32, now: Micros) -> Result<(), Error>;
     pub fn persist_flush(&mut self) -> Result<(), Error>;
@@ -817,35 +817,35 @@ pub trait Datagram { fn recv(&mut self, buf: &mut [u8]) -> Result<Option<usize>,
                      fn send(&mut self, buf: &[u8]) -> Result<bool, Error>; }
 ```
 
-- As regras são as da ABI C, função a função (a ABI C é uma camada fina por cima deste crate).
-- **Sem `unsafe` fora do módulo `ffi`**, e isto vale também para os módulos `chip-*`. A memória do nó é um tipo concreto gerado (`P::Storage`), com arrays de capacidade fixa, e não uma arena; as apps vivem em `P::Apps`, também concreto.
-- **Posse dos pinos no firmware genérico.** O firmware genérico só sabe que pino é o LED quando lê o blob, em runtime, e os HALs dão os periféricos uma vez, como *singletons*, com os pinos escolhidos em compilação. O `joker-micro` **nunca** usa `steal` (`AnyPin::steal(n)` e semelhantes são `unsafe` e contornam a posse). Em vez disso, no passo 6 do arranque (§2.12.3), o módulo `chip-*` recebe os periféricos do `init` do HAL, converte **todos** os pinos declarados em `[pins]` da placa num tipo apagado (`degrade()` para `AnyPin` no `esp-hal`, `Peri<AnyPin>` no `embassy-rp`, `AnyPin` no `embassy-stm32`) e guarda-os numa **tabela de pinos** indexada pelo nome da placa. Cada driver tira o seu pino da tabela **uma vez**; um segundo pedido do mesmo pino é `JK_E_GEN_FIRMWARE` (o `jk check` já o recusa antes, com `J0829`, ref/03 §2.3.3). Um pino que não está em `[pins]` não existe para o firmware.
-- Um *panic* numa app ou no núcleo é tratado pelo *panic handler* do firmware (recomendado: `panic-reset`); a biblioteca não o apanha. No modo biblioteca, o *panic handler* do `libjoker_node.a` chama `jk_fatal(JK_E_INTERNAL, …)`.
+- The rules are those of the C ABI, function by function (the C ABI is a thin layer on top of this crate).
+- **No `unsafe` outside the `ffi` module**, and this also holds for the `chip-*` modules. The node memory is a generated concrete type (`P::Storage`), with fixed-capacity arrays, and not an arena; the apps live in `P::Apps`, also concrete.
+- **Pin ownership in the generic firmware.** The generic firmware only knows which pin is the LED when it reads the blob, at runtime, and the HALs hand out the peripherals once, as *singletons*, with the pins chosen at compile time. `joker-micro` **never** uses `steal` (`AnyPin::steal(n)` and similar are `unsafe` and bypass ownership). Instead, at step 6 of boot (§2.12.3), the `chip-*` module receives the peripherals from the HAL's `init`, converts **all** the pins declared in the board's `[pins]` into an erased type (`degrade()` to `AnyPin` in `esp-hal`, `Peri<AnyPin>` in `embassy-rp`, `AnyPin` in `embassy-stm32`) and keeps them in a **pin table** indexed by the board's name. Each driver takes its pin from the table **once**; a second request for the same pin is `JK_E_GEN_FIRMWARE` (`jk check` already rejects it before, with `J0829`, ref/03 §2.3.3). A pin that is not in `[pins]` does not exist for the firmware.
+- A *panic* in an app or in the core is handled by the firmware's *panic handler* (recommended: `panic-reset`); the library does not catch it. In library mode, the *panic handler* of `libjoker_node.a` calls `jk_fatal(JK_E_INTERNAL, …)`.
 
-#### 2.11.4 O crate gerado (`joker-project`)
+#### 2.11.4 The generated crate (`joker-project`)
 
-`jk build --target mcu:<placa> --crate` gera, em `target/joker/crate/`, um crate chamado `joker-project` que o firmware do integrador usa por caminho (`joker-project = { path = "…" }`):
+`jk build --target mcu:<board> --crate` generates, in `target/joker/crate/`, a crate called `joker-project` that the integrator's firmware uses by path (`joker-project = { path = "…" }`):
 
-| Item | Conteúdo |
+| Item | Content |
 |---|---|
-| `pub struct Project;` e `impl joker_micro::Project for Project` | tipos de armazenamento e de apps, interface, hash |
-| `pub type Storage`, `pub type Apps` | os tipos concretos |
-| `pub mod sig { pub const TANK_LEVEL: In<f32> = …; pub const PUMP_RUN: Out<bool> = …; … }` | os mesmos nomes do C, sem o prefixo `JK_SIG_` |
-| `pub mod group`, `writer`, `inst`, `member`, `alarm`, `param`, `link`, `enums` | idem |
-| `pub static GENERATION: Generation<'static>` | só com geração embutida |
-| `pub const NODE_BYTES: usize`, `pub const STACK_*: usize` | como no C |
-| `pub mod tasks` (feature `embassy`) | `#[embassy_executor::task] group_task(GroupRunner<'static, Project>)`, `service_task(…)`, `supervisor_task(…)`: o Embassy não aceita tarefas genéricas, por isso são geradas aqui |
-| `pub fn init(storage, apps, platform, now) -> Result<Parts<'static, Project>, Error>` | atalho para `joker_micro::init::<Project>` com a geração embutida |
+| `pub struct Project;` and `impl joker_micro::Project for Project` | storage and app types, interface, hash |
+| `pub type Storage`, `pub type Apps` | the concrete types |
+| `pub mod sig { pub const TANK_LEVEL: In<f32> = …; pub const PUMP_RUN: Out<bool> = …; … }` | the same names as in C, without the `JK_SIG_` prefix |
+| `pub mod group`, `writer`, `inst`, `member`, `alarm`, `param`, `link`, `enums` | likewise |
+| `pub static GENERATION: Generation<'static>` | only with an embedded generation |
+| `pub const NODE_BYTES: usize`, `pub const STACK_*: usize` | as in C |
+| `pub mod tasks` (`embassy` feature) | `#[embassy_executor::task] group_task(GroupRunner<'static, Project>)`, `service_task(…)`, `supervisor_task(…)`: Embassy does not accept generic tasks, so they are generated here |
+| `pub fn init(storage, apps, platform, now) -> Result<Parts<'static, Project>, Error>` | shortcut for `joker_micro::init::<Project>` with the embedded generation |
 
-#### 2.11.5 Contrato com o `joker-sdk` (backend nativo)
+#### 2.11.5 Contract with `joker-sdk` (native backend)
 
-A mesma app (19 §5) compila com `joker-sdk` e a feature `backend-native` (em vez da `backend-wasm`, a de omissão). A macro `#[joker::app]` gera então, em vez dos exports WIT:
+The same app (19 §5) compiles with `joker-sdk` and the `backend-native` feature (instead of `backend-wasm`, the default one). The `#[joker::app]` macro then generates, instead of the WIT exports:
 
 ```rust
-pub trait NativeApp: Sized + 'static {                // implementado só pela macro
-    const META: &'static [u8];                        // o mesmo CBOR da secção joker:meta (ref/04 §5)
-    type Cycle: Default;                              // estado de cada tarefa de ciclo (tuplo gerado)
-    type Tasks;                                       // futuros das tarefas async, de tamanho fixo
+pub trait NativeApp: Sized + 'static {                // implemented only by the macro
+    const META: &'static [u8];                        // the same CBOR as the joker:meta section (ref/04 §5)
+    type Cycle: Default;                              // state of each cycle task (generated tuple)
+    type Tasks;                                       // futures of the async tasks, of fixed size
     fn init(binder: &mut Binder<'_>, params: &ParamSet<'_>) -> Result<Self, InitError>;
     fn on_params(&mut self, params: &ParamSet<'_>) -> Result<(), InitError>;
     fn on_cycle(&mut self, st: &mut Self::Cycle, task: u16, cx: &mut CycleCx<'_>) -> TaskResult;
@@ -856,19 +856,19 @@ pub trait NativeApp: Sized + 'static {                // implementado só pela m
     fn export_state(&self, out: &mut [u8]) -> usize;
     fn migrate(&mut self, previous: &[u8], from_version: &str) -> Result<(), InitError>;
 }
-pub trait AppSet { /* gerado: despacho por índice de app, sem dyn */ }
+pub trait AppSet { /* generated: dispatch by app index, without dyn */ }
 ```
 
-- `CycleCx` dá à app a imagem do latch do grupo e o buffer de propostas, com os mesmos registos da imagem empacotada da ref/04 §3 (escrita: 14 B; método: 10 B + argumentos). O `io.pump.set(v)` do SDK escreve lá diretamente: é o mesmo caminho do Linux sem a fronteira Wasm.
-- As tarefas async (`every`, `on`, `on_event`, `startup`) são futuros guardados em `Tasks` (tamanho conhecido no build) e avançados por `jk_service`.
-- **API indisponível no MCU** (`history`, `infer`, `frames`, `subscribe` de listas arbitrárias, rede, `kv` acima de 16 KiB): com `backend-native`, estas funções exigem um *trait* que o alvo não implementa, anotado com `#[diagnostic::on_unimplemented(message = "J0720: … não existe no Joker Micro", note = "<sugestão>")]`. O erro sai no `rustc`, e o `jk build` traduz a mensagem para o `J0720` com a sugestão (19 §5, U6).
-- **`J0721`** (f64 sem FPU de dupla precisão) e **`J0780`** (vírgula flutuante sem FPU): além das portas e dos campos `f64` de `joker:meta` (ref/04 §4.14), o `jk build` procura, no objeto de cada app, chamadas às rotinas de vírgula flutuante por software (`__aeabi_d*`, `__adddf3`… para f64; `__aeabi_f*`, `__addsf3`… para f32) e dá o aviso com os nomes das funções da app que as chamam.
-- Uma app nativa não tem *sandbox*, *fuel* nem *epoch*: um ciclo infinito é um overrun do grupo, que o `jk_supervise` apanha, e um *panic* é `jk_fatal`. É o custo declarado da v1 (o `wasmi` chega na 1.4).
+- `CycleCx` gives the app the group's latch image and the proposal buffer, with the same records as the packed image of ref/04 §3 (write: 14 B; method: 10 B + arguments). The SDK's `io.pump.set(v)` writes there directly: it is the same path as on Linux without the Wasm boundary.
+- The async tasks (`every`, `on`, `on_event`, `startup`) are futures kept in `Tasks` (size known at build time) and advanced by `jk_service`.
+- **API unavailable on the MCU** (`history`, `infer`, `frames`, `subscribe` of arbitrary lists, network, `kv` above 16 KiB): with `backend-native`, these functions require a *trait* that the target does not implement, annotated with `#[diagnostic::on_unimplemented(message = "J0720: … does not exist on Joker Micro", note = "<suggestion>")]`. The error comes out of `rustc`, and `jk build` translates the message into `J0720` with the suggestion (19 §5, U6).
+- **`J0721`** (f64 without a double-precision FPU) and **`J0780`** (floating point without an FPU): besides the ports and the `f64` fields of `joker:meta` (ref/04 §4.14), `jk build` looks, in the object of each app, for calls to the software floating-point routines (`__aeabi_d*`, `__adddf3`… for f64; `__aeabi_f*`, `__addsf3`… for f32) and gives the warning with the names of the app functions that call them.
+- A native app has no *sandbox*, *fuel* or *epoch*: an infinite loop is an overrun of the group, which `jk_supervise` catches, and a *panic* is `jk_fatal`. It is the declared cost of v1 (`wasmi` arrives in 1.4).
 
 #### 2.11.6 Embassy
 
 ```rust
-// Exemplo mínimo: um grupo num executor de interrupção, o serviço e o supervisor no executor da thread.
+// Minimal example: one group in an interrupt executor, the service and the supervisor in the thread executor.
 static STORAGE: StaticCell<joker_project::Storage> = StaticCell::new();
 static APPS: StaticCell<joker_project::Apps> = StaticCell::new();
 static EXEC_FAST: InterruptExecutor = InterruptExecutor::new();
@@ -887,217 +887,217 @@ async fn main(spawner: Spawner) {
 }
 ```
 
-| Função de `joker_micro::embassy` | Faz |
+| Function of `joker_micro::embassy` | Does |
 |---|---|
-| `async fn run_group<P>(r: GroupRunner<'static, P>) -> !` | `Ticker` com o período do grupo, prazos absolutos; cada volta chama `tick(now)`; relê o período depois de uma troca de geração |
-| `async fn run_service<P, L: LinkIo>(s: Service<'static, P>, links: L) -> !` | espera por `service_next`, pelo próximo prazo de `service_deadline` ou por dados num link, e chama `link_*` + `poll` |
-| `async fn run_supervisor<P, W: Watchdog>(io: Io<'static, P>, wd: W, every: Duration) -> !` | `supervise` periódico; alimenta o watchdog só com `feed_watchdog` |
-| `trait Watchdog { fn feed(&mut self); }` | implementado para os watchdogs dos HAL suportados |
-| `trait LinkIo` | junta os transportes dos links (`embedded-io-async` para fluxo, `Datagram` para UDP/CAN) |
+| `async fn run_group<P>(r: GroupRunner<'static, P>) -> !` | `Ticker` with the group's period, absolute deadlines; each round calls `tick(now)`; rereads the period after a generation swap |
+| `async fn run_service<P, L: LinkIo>(s: Service<'static, P>, links: L) -> !` | waits for `service_next`, for the next `service_deadline` deadline or for data on a link, and calls `link_*` + `poll` |
+| `async fn run_supervisor<P, W: Watchdog>(io: Io<'static, P>, wd: W, every: Duration) -> !` | periodic `supervise`; feeds the watchdog only with `feed_watchdog` |
+| `trait Watchdog { fn feed(&mut self); }` | implemented for the watchdogs of the supported HALs |
+| `trait LinkIo` | gathers the transports of the links (`embedded-io-async` for streams, `Datagram` for UDP/CAN) |
 
-### 2.12 Modo firmware
+### 2.12 Firmware mode
 
-#### 2.12.1 O que é
+#### 2.12.1 What it is
 
-O `joker-micro` compilado como firmware completo para uma placa: HAL, drivers, apps, link, persistência, OTA e o laço do §2.11.6, sem código do integrador. Duas variantes:
+`joker-micro` compiled as a complete firmware for a board: HAL, drivers, apps, link, persistence, OTA and the loop of §2.11.6, without integrator code. Two variants:
 
-| Variante | Comando | Geração |
+| Variant | Command | Generation |
 |---|---|---|
-| **firmware com geração embutida** | `jk build --target mcu:<placa>` | `const`, dentro da imagem |
-| **firmware genérico** | `jk build --target mcu:<placa> --generic` | lida da área `GEN_A`/`GEN_B`; o blob vem de `jk build --generation --firmware <firmware.jkfw>` |
+| **firmware with an embedded generation** | `jk build --target mcu:<board>` | `const`, inside the image |
+| **generic firmware** | `jk build --target mcu:<board> --generic` | read from the `GEN_A`/`GEN_B` area; the blob comes from `jk build --generation --firmware <firmware.jkfw>` |
 
-O firmware genérico é por (placa, conjunto de apps, conjunto de drivers, capacidades): um só para os 3 000 sites da rodada 5 do documento 08. **Traz todos os transportes do Joker Link** que a placa declara em `[link] transports` (ref/03 §2.3.3), para que a mesma imagem sirva uma geração por série, por USB CDC ou por UDP/TCP: é a geração que escolhe o transporte (`[link]`, ref/01 §5.22). Um firmware com geração embutida só traz os transportes que essa geração usa, mais o `default` da placa (modo de manutenção). Em `dev`, o firmware aceita um blob de geração **sem assinatura** (`J0779` é `error-in-prod`); em `prod`, recusa-o no passo 5 do §2.12.3. `jk flash` (probe-rs) grava o firmware, o blob e, com `--identity`, a área de identidade; o OTA faz o mesmo pelo link.
+The generic firmware is per (board, set of apps, set of drivers, capabilities): a single one for the 3,000 sites of round 5 of document 08. **It carries all the Joker Link transports** that the board declares in `[link] transports` (ref/03 §2.3.3), so that the same image serves a generation over serial, over USB CDC or over UDP/TCP: it is the generation that chooses the transport (`[link]`, ref/01 §5.22). A firmware with an embedded generation only carries the transports that generation uses, plus the board's `default` (maintenance mode). In `dev`, the firmware accepts an **unsigned** generation blob (`J0779` is `error-in-prod`); in `prod`, it refuses it at step 5 of §2.12.3. `jk flash` (probe-rs) writes the firmware, the blob and, with `--identity`, the identity area; OTA does the same over the link.
 
-#### 2.12.2 Partições da flash
+#### 2.12.2 Flash partitions
 
-A placa (perfil de placa MCU, `ref/03`) declara as áreas; os tamanhos típicos são:
+The board (MCU board profile, `ref/03`) declares the areas; the typical sizes are:
 
-| Partição | Tamanho típico (RP2350, 4 MiB) | Conteúdo |
+| Partition | Typical size (RP2350, 4 MiB) | Content |
 |---|---|---|
-| bootloader | 32 KiB | `embassy-boot` (ou MCUboot noutras placas), com a chave pública de firmware |
-| estado do bootloader | 8 KiB | marcas de troca A/B do bootloader |
-| firmware ativo | 1 MiB | a imagem em execução |
-| `FW_STAGING` | 1 MiB | a imagem recebida por OTA |
-| `GEN_A`, `GEN_B` | 64 KiB cada | blobs de geração |
-| `PERSIST` | 64 KiB | diário persistente (§2.10) |
-| `IDENTITY` | 8 KiB | nome do nó, chaves |
+| bootloader | 32 KiB | `embassy-boot` (or MCUboot on other boards), with the firmware public key |
+| bootloader state | 8 KiB | the bootloader's A/B swap marks |
+| active firmware | 1 MiB | the running image |
+| `FW_STAGING` | 1 MiB | the image received by OTA |
+| `GEN_A`, `GEN_B` | 64 KiB each | generation blobs |
+| `PERSIST` | 64 KiB | persistent journal (§2.10) |
+| `IDENTITY` | 8 KiB | node name, keys |
 
-Num STM32G4 (512 KiB de flash interna) as mesmas partições encolhem (firmware 192 KiB × 2, gerações 16 KiB × 2, persistência 16 KiB) e o `jk check` verifica que cabem (`J0781`).
+On an STM32G4 (512 KiB of internal flash) the same partitions shrink (firmware 192 KiB × 2, generations 16 KiB × 2, persistence 16 KiB) and `jk check` verifies that they fit (`J0781`).
 
-#### 2.12.3 Arranque
+#### 2.12.3 Boot
 
-| # | Passo | Falha → |
+| # | Step | Failure → |
 |---|---|---|
-| 0 | o bootloader verifica a assinatura do firmware ativo (e troca A/B se houver um pendente) | firmware anterior |
-| 1 | relógios, temporizador monotónico, watchdog de hardware (timeout da placa) | reset |
-| 2 | as saídas ficam no **estado de reset do hardware**, que a placa declara seguro (`reset_safe = true`; senão `J0786`, aceitável com `accept_unsafe_reset`, §2.16); nenhum pino de saída é configurado antes do passo 6 | — |
-| 3 | lê `IDENTITY` (nome, chaves do link, bundle de confiança) e `PERSIST` (estado da geração, trips, alarmes, parâmetros) | persistência vazia: arranque de fábrica |
-| 4 | escolhe a geração: a da área ativa; se estava `confirming` e o arranque anterior não confirmou, volta à outra área (`rolled_back`) | a outra área; sem nenhuma válida: **modo de manutenção** |
-| 5 | `jk_generation_open` (formato, integridade, assinatura, anti-rollback, nó, firmware, capacidades) | a outra área; senão modo de manutenção |
-| 6 | constrói a **tabela de pinos** a partir de `[pins]` da placa (§2.11.3, posse dos pinos, sem `steal`); `init` do nó: saídas em `safe` (A8), trips restaurados, apps inicializadas; só então os drivers tiram os seus pinos da tabela e configuram-nos, já com o valor seguro | modo de manutenção (pino pedido duas vezes: `JK_E_GEN_FIRMWARE`) |
-| 7 | arranca os grupos (executores de interrupção, prioridade rate-monotonic), o serviço, os links e o supervisor | — |
-| 8 | primeiro tick | alvo ≤ 100 ms desde o reset em M1 (a medir; `firmware.jkfw` chave 16) |
+| 0 | the bootloader verifies the signature of the active firmware (and swaps A/B if one is pending) | previous firmware |
+| 1 | clocks, monotonic timer, hardware watchdog (the board's timeout) | reset |
+| 2 | the outputs stay in the **hardware reset state**, which the board declares safe (`reset_safe = true`; otherwise `J0786`, acceptable with `accept_unsafe_reset`, §2.16); no output pin is configured before step 6 | — |
+| 3 | reads `IDENTITY` (name, link keys, trust bundle) and `PERSIST` (generation state, trips, alarms, parameters) | empty persistence: factory boot |
+| 4 | chooses the generation: that of the active area; if it was `confirming` and the previous boot did not confirm, goes back to the other area (`rolled_back`) | the other area; with no valid one: **maintenance mode** |
+| 5 | `jk_generation_open` (format, integrity, signature, anti-rollback, node, firmware, capabilities) | the other area; otherwise maintenance mode |
+| 6 | builds the **pin table** from the board's `[pins]` (§2.11.3, pin ownership, without `steal`); node `init`: outputs in `safe` (A8), trips restored, apps initialized; only then do the drivers take their pins from the table and configure them, already with the safe value | maintenance mode (pin requested twice: `JK_E_GEN_FIRMWARE`) |
+| 7 | starts the groups (interrupt executors, rate-monotonic priority), the service, the links and the supervisor | — |
+| 8 | first tick | target ≤ 100 ms from reset on M1 (to be measured; `firmware.jkfw` key 16) |
 
-**Modo de manutenção:** sem geração válida, não há sinais nem saídas. O firmware mantém os pinos no estado de reset, sobe o link com a configuração por omissão da placa (`ref/03`) e só aceita `HELLO`, `OTA` de geração ou firmware e pedidos de estado; alimenta o watchdog; o `jokerd` vê-o como um dispositivo `Bad(config_error)`.
+**Maintenance mode:** without a valid generation, there are no signals or outputs. The firmware keeps the pins in the reset state, brings up the link with the board's default configuration (`ref/03`) and only accepts `HELLO`, generation or firmware `OTA` and state requests; it feeds the watchdog; `jokerd` sees it as a `Bad(config_error)` device.
 
-#### 2.12.4 OTA e confirmação
+#### 2.12.4 OTA and confirmation
 
-- **Geração:** o blob chega (link ou `jk_ota_*`) à área inativa, é verificado com `min_seq = confirmed_seq + 1` e, no firmware, trocado no próximo limite de tick com a janela de confirmação da mensagem (`confirm_ms` = chave 11 do `OTA` `activate`, ref/07 §9.4), pelo `jk_generation_swap`. Sem confirmação dentro da janela, volta à anterior a quente. Um reinício durante a janela conta como falha (passo 4).
-- **Firmware:** a imagem chega a `FW_STAGING`, é verificada (o manifesto COSE da ref/07 §9.1 com uma chave do papel `firmware`; `board_id`; `security_version` ≥ o confirmado, senão `JK_E_GEN_ROLLBACK`; e o descritor de firmware compatível com a geração ativa, senão `JK_E_GEN_FIRMWARE`), e o firmware marca a troca no bootloader e reinicia num momento sem escritas pendentes. O bootloader volta a verificar a assinatura com as suas próprias chaves (ref/10 §3.6). O novo firmware só se marca como bom depois de N ticks limpos e do `HELLO` (o teste de saúde do documento 01, §16); senão o bootloader reverte no reinício seguinte.
-- **Confirmação por `jk confirm`:** quando o OTA faz parte de uma ativação do nó Linux com janela de confirmação, o `confirm` chega ao MCU só depois do `jk confirm` do nó (ref/07 §9.4; ref/09 §5.13); até lá, a geração ou o firmware estão em experiência, e a janela conta no MCU.
-- **Anti-rollback:** `confirmed_seq` só sobe; um blob com `gen_seq` menor ou igual ao confirmado é recusado (`JK_E_GEN_ROLLBACK`), exceto o próprio blob ativo depois de um reinício.
+- **Generation:** the blob arrives (link or `jk_ota_*`) at the inactive area, is verified with `min_seq = confirmed_seq + 1` and, in the firmware, swapped at the next tick boundary with the confirmation window of the message (`confirm_ms` = key 11 of the `OTA` `activate`, ref/07 §9.4), by `jk_generation_swap`. Without confirmation within the window, it goes back to the previous one hot. A restart during the window counts as a failure (step 4).
+- **Firmware:** the image arrives at `FW_STAGING`, is verified (the COSE manifest of ref/07 §9.1 with a key of the `firmware` role; `board_id`; `security_version` ≥ the confirmed one, otherwise `JK_E_GEN_ROLLBACK`; and the firmware descriptor compatible with the active generation, otherwise `JK_E_GEN_FIRMWARE`), and the firmware marks the swap in the bootloader and restarts at a moment with no pending writes. The bootloader verifies the signature again with its own keys (ref/10 §3.6). The new firmware only marks itself as good after N clean ticks and the `HELLO` (the health test of document 01, §16); otherwise the bootloader reverts at the next restart.
+- **Confirmation by `jk confirm`:** when the OTA is part of an activation of the Linux node with a confirmation window, the `confirm` reaches the MCU only after the node's `jk confirm` (ref/07 §9.4; ref/09 §5.13); until then, the generation or the firmware is on trial, and the window counts on the MCU.
+- **Anti-rollback:** `confirmed_seq` only goes up; a blob with a `gen_seq` less than or equal to the confirmed one is refused (`JK_E_GEN_ROLLBACK`), except the active blob itself after a restart.
 
-#### 2.12.5 Medição do WCET: `jk bench --target mcu:<placa>`
+#### 2.12.5 WCET measurement: `jk bench --target mcu:<board>`
 
-O `jk bench --target mcu:<placa>` grava no MCU um firmware de medição (o genérico da placa, com as apps do manifesto e um executor de bancada), corre cada tarefa de ciclo pelo menos 10 000 vezes com as entradas do gerador de bancada, e escreve o máximo medido em `[wcet]` do lock (ref/02 §2.1.13). O tempo mede-se sempre com o **contador de ciclos** do núcleo (`DWT_CYCCNT` nos Cortex-M, `mcycle` nos RISC-V, `CCOUNT` nos Xtensa), convertido pelo `clock` da placa; nunca pelo relógio do anfitrião. O resultado sai do MCU conforme o `[probe]` da placa (ref/03 §2.3.3):
+`jk bench --target mcu:<board>` flashes a measurement firmware onto the MCU (the board's generic one, with the manifest's apps and a bench executor), runs each cycle task at least 10,000 times with the inputs of the bench generator, and writes the measured maximum in `[wcet]` of the lock (ref/02 §2.1.13). Time is always measured with the core's **cycle counter** (`DWT_CYCCNT` on Cortex-M, `mcycle` on RISC-V, `CCOUNT` on Xtensa), converted by the board's `clock`; never by the host's clock. The result leaves the MCU according to the board's `[probe]` (ref/03 §2.3.3):
 
-| `[probe] tool` | Como grava e lê |
+| `[probe] tool` | How it flashes and reads |
 |---|---|
-| `probe-rs` (omissão) | grava e lê os contadores pela sonda (SWD/JTAG), sem tocar no link |
-| `espflash` (placa **sem sonda**, como o ESP32 da bancada) | grava por série (`espflash`) e lê os resultados **pela mesma porta série**, num registo CBOR por tarefa (`{tarefa, n, min, max, p99}` em ciclos) que o executor escreve no fim; para a leitura, a porta abre-se com o DTR e o RTS desativados, como a omissão de `[buses.*]` (ref/01 §5.6), para não reiniciar a placa |
+| `probe-rs` (default) | flashes and reads the counters through the probe (SWD/JTAG), without touching the link |
+| `espflash` (board **without a probe**, like the bench's ESP32) | flashes over serial (`espflash`) and reads the results **through the same serial port**, in one CBOR record per task (`{task, n, min, max, p99}` in cycles) that the executor writes at the end; for the reading, the port is opened with DTR and RTS disabled, like the default of `[buses.*]` (ref/01 §5.6), so as not to restart the board |
 
-Os dois caminhos dão o mesmo `[wcet]`: o lock não distingue a origem. No fim, o `jk bench` volta a gravar o firmware que lá estava, se o conseguir ler (senão, avisa: o MCU fica com o firmware de medição até ao próximo `jk flash`).
+Both paths give the same `[wcet]`: the lock does not distinguish the origin. At the end, `jk bench` flashes back the firmware that was there, if it managed to read it (otherwise, it warns: the MCU keeps the measurement firmware until the next `jk flash`).
 
-#### 2.12.6 Recetor de OTA obrigatório
+#### 2.12.6 Required OTA receiver
 
-**Regra (1.0):** todo o firmware Joker Micro, no modo firmware (com geração embutida ou genérico) e no modo crate, leva o **recetor de OTA** de gerações e de firmware: um MCU no campo tem de poder receber firmware novo sem visita. Concretamente:
+**Rule (1.0):** every Joker Micro firmware, in firmware mode (with an embedded generation or generic) and in crate mode, carries the **OTA receiver** for generations and firmware: an MCU in the field must be able to receive new firmware without a visit. Concretely:
 
-| Exigência | Verificação |
+| Requirement | Check |
 |---|---|
-| a feature `ota` ligada (§2.11.2) | `compile_error!` no `joker-micro` e `J0795` no `jk build` |
-| a placa declara `FW_STAGING`, `GEN_A` e `GEN_B` com tamanho para a imagem e para o maior blob, e um bootloader com troca A/B (§2.12.2) | `J0795` (partição em falta), `J0781` (não cabe) |
-| o modo de manutenção (§2.12.3) aceita `OTA` pelo `[link] default` da placa | faz parte do firmware; não é configurável |
-| no modo crate, o `joker-project` gerado liga o serviço de OTA ao laço do §2.11.6; o integrador não o pode retirar sem desligar a feature | `J0795` |
+| the `ota` feature enabled (§2.11.2) | `compile_error!` in `joker-micro` and `J0795` in `jk build` |
+| the board declares `FW_STAGING`, `GEN_A` and `GEN_B` with size for the image and for the largest blob, and a bootloader with A/B swap (§2.12.2) | `J0795` (missing partition), `J0781` (does not fit) |
+| maintenance mode (§2.12.3) accepts `OTA` through the board's `[link] default` | it is part of the firmware; it is not configurable |
+| in crate mode, the generated `joker-project` binds the OTA service to the loop of §2.11.6; the integrator cannot remove it without disabling the feature | `J0795` |
 
-No **modo biblioteca** (ABI C), o firmware é do integrador: os `jk_ota_*` estão sempre na ABI, mas levá-los até ao bootloader é trabalho dele (documento 19, §4.2). Uma placa sem flash para duas imagens (A/B) não é alvo do modo firmware na 1.0.
+In **library mode** (C ABI), the firmware belongs to the integrator: the `jk_ota_*` are always in the ABI, but carrying them through to the bootloader is the integrator's work (document 19, §4.2). A board without flash for two images (A/B) is not a target of firmware mode in 1.0.
 
-### 2.13 O blob de geração (`*.jkgen`)
+### 2.13 The generation blob (`*.jkgen`)
 
-Tipo de media OCI `joker.generation.v1` (documento 20, §3.2). É a mesma estrutura em memória que o núcleo usa, serializada: o MCU usa-a **no sítio** (XIP), sem a copiar nem a interpretar para outra forma. A geração embutida é exatamente o mesmo formato, com a flag `EMBEDDED`.
+OCI media type `joker.generation.v1` (document 20, §3.2). It is the same in-memory structure that the core uses, serialized: the MCU uses it **in place** (XIP), without copying it or interpreting it into another form. The embedded generation is exactly the same format, with the `EMBEDDED` flag.
 
-#### 2.13.1 Regras gerais
+#### 2.13.1 General rules
 
-| Regra | Valor |
+| Rule | Value |
 |---|---|
-| endianness | **little-endian** em todos os inteiros e `f64` (IEEE 754). Todos os alvos da v1 são little-endian; um alvo big-endian é `J0770` |
-| alinhamento | o blob começa num endereço múltiplo de 8; cada secção começa num offset múltiplo de 8; os registos de cada secção têm tamanho múltiplo de 8 (salvo `STRINGS`, `CODE` e `BLOBS`, que são bytes); o enchimento é 0 |
-| offsets | relativos ao início do blob, `u32` |
-| `strref` | 8 B: `u32` offset em `STRINGS`, `u16` comprimento, `u16` 0. UTF-8 sem NUL |
-| `poolref` | 8 B: `u32` índice em `U32POOL` (em elementos), `u32` número de elementos |
-| índices | `u32`, `0xFFFFFFFF` = nenhum |
-| durações | `u32` µs, salvo os campos `_ms` (`u32` ms) e `stuck_detect_us` (`u64`) (`ref/00` §3) |
-| valores | `u64` com os bits do tipo (`ref/00` §4.1) |
-| path-hash | os primeiros 8 B do SHA-256 do caminho canónico em UTF-8, lidos como `u64` LE |
+| endianness | **little-endian** in all integers and `f64` (IEEE 754). All v1 targets are little-endian; a big-endian target is `J0770` |
+| alignment | the blob starts at an address that is a multiple of 8; each section starts at an offset that is a multiple of 8; the records of each section have a size that is a multiple of 8 (except `STRINGS`, `CODE` and `BLOBS`, which are bytes); the padding is 0 |
+| offsets | relative to the start of the blob, `u32` |
+| `strref` | 8 B: `u32` offset in `STRINGS`, `u16` length, `u16` 0. UTF-8 without NUL |
+| `poolref` | 8 B: `u32` index in `U32POOL` (in elements), `u32` number of elements |
+| indices | `u32`, `0xFFFFFFFF` = none |
+| durations | `u32` µs, except the `_ms` fields (`u32` ms) and `stuck_detect_us` (`u64`) (`ref/00` §3) |
+| values | `u64` with the bits of the type (`ref/00` §4.1) |
+| path-hash | the first 8 B of the SHA-256 of the canonical path in UTF-8, read as a `u64` LE |
 
-#### 2.13.2 Cabeçalho (128 B)
+#### 2.13.2 Header (128 B)
 
-| Offset | Tipo | Campo | Regra |
+| Offset | Type | Field | Rule |
 |---|---|---|---|
-| 0 | `[4]u8` | magia `"JKGN"` | |
-| 4 | `u16` | `format` | 1 na v1 |
+| 0 | `[4]u8` | magic `"JKGN"` | |
+| 4 | `u16` | `format` | 1 in v1 |
 | 6 | `u16` | `header_size` | 128 |
-| 8 | `u32` | `image_len` | bytes de `[0, image_len)`, múltiplo de 8; é o que o SHA-256 cobre |
-| 12 | `u32` | `flags` | bit 0 `SIGNED` (há *trailer*), bit 1 `DEV` (`mode = "dev"`; um nó em `prod` nunca envia um blob com este bit, `J0794`, §2.16), bit 2 `EMBEDDED`, bit 3 `NODE_BOUND`; outros 0 |
-| 16 | `u64` | `gen_seq` | inteiro crescente por nó (`ref/00` §5) |
-| 24 | `[32]u8` | `source_hash` | **o hash da geração** do MCU: o SHA-256 do descritor de geração da ref/10 §2.6.2, calculado sobre o manifesto efetivo do MCU, o lock e os contratos. É o que o `jk`, o `jokerd` e o Deck mostram, o que o `HELLO` anuncia (chave 6.2) e o `hash` de `mcu-generation` no estado desejado |
-| 56 | `[32]u8` | `registry_hash` | o do documento 16, §7 (lista ordenada de `SignalId`, tipos, grupos) |
-| 88 | `[8]u8` | `board_id` | primeiros 8 B do SHA-256 de `"<placa>@<major>"` |
-| 96 | `u16` | `expr_isa` | 1 na v1 (§2.13.4) |
+| 8 | `u32` | `image_len` | bytes of `[0, image_len)`, a multiple of 8; it is what the SHA-256 covers |
+| 12 | `u32` | `flags` | bit 0 `SIGNED` (there is a *trailer*), bit 1 `DEV` (`mode = "dev"`; a node in `prod` never sends a blob with this bit, `J0794`, §2.16), bit 2 `EMBEDDED`, bit 3 `NODE_BOUND`; others 0 |
+| 16 | `u64` | `gen_seq` | increasing integer per node (`ref/00` §5) |
+| 24 | `[32]u8` | `source_hash` | **the generation hash** of the MCU: the SHA-256 of the generation descriptor of ref/10 §2.6.2, computed over the MCU's effective manifest, the lock and the contracts. It is what `jk`, `jokerd` and the Deck show, what `HELLO` announces (key 6.2) and the `hash` of `mcu-generation` in the desired state |
+| 56 | `[32]u8` | `registry_hash` | that of document 16, §7 (ordered list of `SignalId`s, types, groups) |
+| 88 | `[8]u8` | `board_id` | first 8 B of the SHA-256 of `"<board>@<major>"` |
+| 96 | `u16` | `expr_isa` | 1 in v1 (§2.13.4) |
 | 98 | `u16` | `section_count` | |
 | 100 | `u32` | `section_table_off` | 128 |
-| 104 | `u32` | `trailer_off` | `image_len` se `SIGNED`, senão 0 |
+| 104 | `u32` | `trailer_off` | `image_len` if `SIGNED`, otherwise 0 |
 | 108 | `u32` | `trailer_len` | |
-| 112 | `u32` | `min_runtime` | `major << 16 \| minor` do `joker-micro` mínimo |
-| 116 | `u32` | `image_crc32c` | CRC-32C da imagem com este campo a 0 (deteção rápida de flash corrompida, antes do SHA-256) |
-| 120 | `[8]u8` | reservado | 0 |
+| 112 | `u32` | `min_runtime` | `major << 16 \| minor` of the minimum `joker-micro` |
+| 116 | `u32` | `image_crc32c` | CRC-32C of the image with this field at 0 (quick detection of corrupted flash, before the SHA-256) |
+| 120 | `[8]u8` | reserved | 0 |
 
-**Tabela de secções:** `section_count` entradas de 16 B, ordenadas por `kind`: `u16 kind`, `u16 flags` (bit 0 `REQUIRED`), `u32 offset`, `u32 length` (bytes), `u32 count` (registos; 0 para secções de bytes). Um leitor que encontre um `kind` desconhecido com `REQUIRED` recusa (`JK_E_GEN_VERSION`); sem `REQUIRED`, salta-o (regra 2 do `ref/00` §1). Todas as secções da v1 são `REQUIRED`.
+**Section table:** `section_count` entries of 16 B, sorted by `kind`: `u16 kind`, `u16 flags` (bit 0 `REQUIRED`), `u32 offset`, `u32 length` (bytes), `u32 count` (records; 0 for byte sections). A reader that finds an unknown `kind` with `REQUIRED` rejects it (`JK_E_GEN_VERSION`); without `REQUIRED`, it skips it (rule 2 of `ref/00` §1). All v1 sections are `REQUIRED`.
 
-#### 2.13.3 Secções
+#### 2.13.3 Sections
 
-O índice de um registo numa secção **é** o seu identificador na geração: o registo *n* de `SIGNALS` é o `SignalId` *n*, e assim por diante. As secções vazias omitem-se.
+The index of a record in a section **is** its identifier in the generation: record *n* of `SIGNALS` is `SignalId` *n*, and so on. Empty sections are omitted.
 
-| `kind` | Secção | Registo | Conteúdo |
+| `kind` | Section | Record | Content |
 |---|---|---|---|
-| 0x0001 | `STRINGS` | bytes | todas as strings, sem repetição, pela ordem da primeira referência |
-| 0x0002 | `CAPS` | 8 B | necessidades da geração: `u16 cap_id`, `u16 0`, `u32 valor`, por `cap_id` crescente (tabela seguinte) |
-| 0x0003 | `REQUIRES` | 32 B | `u8 kind` (1 app, 2 driver), `u8 0`, `u16 major`, `u16 minor`, `u16 patch`, `strref nome`, `[8]u8 hash` (apps: o `meta_hash`, os primeiros 8 B do SHA-256 do CBOR `joker:meta`; drivers: os primeiros 8 B do digest do descritor do driver com que o `jk build` planeou, ref/06 §2.3, §3.7; `extern`: 0), `[8]u8 0` |
-| 0x0004 | `SIGNALS` | 40 B | `u64 path_hash`, `strref caminho` (canónico), `u8 tipo` (`ref/00` §6), `u8 direção` (0 entrada, 1 saída, 2 derivado, 3 parâmetro de classe), `u8 grandeza` (0 nenhuma, 1 `active_power` … 7 `temperature_difference`, pela ordem do 16 §5), `u8 flags` (bit 0 tem `AUX`, bit 1 exportado no `HELLO`, bit 2 enviado em `SAMPLES`, bit 3 texto), `u32 max_age_us` (`0xFFFFFFFF` = sem), `u32 aux` (índice em `SIGNAL_AUX`), `strref unidade`, `u32 0`. Ordenados por caminho canónico (documento 01, §3.1) |
-| 0x0005 | `PATHS` | 24 B | `u64 path_hash`, `u32 SignalId`, `strref caminho` (só `u32` offset + `u16` comprimento), `u16 flags` (bit 0 canónico, bit 1 membro de instância, bit 2 alias), `u32 0`; **todos** os caminhos (canónicos e aliases, P1), ordenados por `path_hash` para busca binária |
-| 0x0006 | `SIGNAL_AUX` | 48 B | `f64 limit_lo`, `f64 limit_hi` (NaN = sem), `f64 deadband_aquisição` (0 = sem), `u64 stuck_detect_us` (0 = sem), `u32 debounce_us`, `u32 enum` (índice em `ENUMS`), `u32 0`, `u32 0` |
-| 0x0007 | `ENUMS` | 16 B | `strref nome`, `u32 primeira variante`, `u16 n`, `u8 kind` (0 enum, 1 bits), `u8 0` |
-| 0x0008 | `VARIANTS` | 16 B | `strref nome`, `u64 valor` (enum) ou índice do bit (bits) |
-| 0x0009 | `GROUPS` | 48 B | `strref nome`, `u32 period_us`, `u8 overrun` (0 `skip`, 1 `catch_up`, 2 `degrade`, 3 `trip`), `u8 flags`, `u16 trip_after`, `u32 primeira tarefa`, `u16 n_tarefas`, `u16 degrade_ticks`, `poolref latch` (SignalIds latchados, ordenados), `poolref saídas` (saídas de que é dono), `u32 trace_bytes`, `u32 0` |
-| 0x000A | `TASKS` | 8 B | `u16 app`, `u16 tarefa` (índice nos metadados da app), `u16 flags` (bit 0 `optional`), `u16 0`; pela ordem do tick (`order`) |
-| 0x000B | `WRITERS` | 24 B | `strref identidade` (`app:<nome>`, `extern:<app>`, `bridge:<link>:<nível>`, `impl:<instância>`), `u8 writer_kind` (`ref/00` §6), `u8 nível` (1–16), `u16 flags`, `u32 lease_us` (0 = A9), `u32 dono` (app, link ou `NONE`), `u8 papel`, `[3]u8 0` |
-| 0x000C | `OUTPUTS` | 152 B | ver a tabela abaixo |
-| 0x000D | `OUTPUT_WRITERS` | 8 B | `u32 escritor`, `u8 nível`, `u8 flags`, `u16 0`: os níveis do árbitro de cada saída (A5; a unicidade já foi verificada pelo `J0210`) |
-| 0x000E | `ATOMIC` | 32 B | `strref nome`, `poolref membros` (pela `order`), `u8 on_rate` (0 `independent`, 1 `proportional`), `u8 tem_commit`, `u16 0`, `u32 sinal de commit`, `u64 valor de commit` |
-| 0x000F | `U32POOL` | 4 B | listas de `u32` referidas por `poolref` |
-| 0x0010 | `PROGRAMS` | 32 B | `u32 code_off`, `u32 code_len`, `u32 state_off`, `u16 state_len`, `u8 max_stack` (≤ 32), `u8 tipo do resultado`, `u8 kind` (1 `calc`, 2 alarme `when`, 3 alarme `suppress_when`, 4 `interlock`, 5 limite de `range`, 6 `reset_when`, 7 consulta, 8 atribuição de método, 9 permissivo de ação, 10 argumento de uma chamada a um método de membro), `u8 flags`, `u16 n_args`, `u32 grupo de avaliação`, `u32 alvo` (sinal, alarme, saída ou membro; no `kind` 10, o membro de classe), `u32 0` (no `kind` 10, o índice em `METHODS` do método chamado) |
+| 0x0001 | `STRINGS` | bytes | all strings, without repetition, in order of first reference |
+| 0x0002 | `CAPS` | 8 B | needs of the generation: `u16 cap_id`, `u16 0`, `u32 value`, by increasing `cap_id` (next table) |
+| 0x0003 | `REQUIRES` | 32 B | `u8 kind` (1 app, 2 driver), `u8 0`, `u16 major`, `u16 minor`, `u16 patch`, `strref name`, `[8]u8 hash` (apps: the `meta_hash`, the first 8 B of the SHA-256 of the `joker:meta` CBOR; drivers: the first 8 B of the digest of the driver descriptor that `jk build` planned with, ref/06 §2.3, §3.7; `extern`: 0), `[8]u8 0` |
+| 0x0004 | `SIGNALS` | 40 B | `u64 path_hash`, `strref path` (canonical), `u8 type` (`ref/00` §6), `u8 direction` (0 input, 1 output, 2 derived, 3 class parameter), `u8 quantity` (0 none, 1 `active_power` … 7 `temperature_difference`, in the order of 16 §5), `u8 flags` (bit 0 has `AUX`, bit 1 exported in `HELLO`, bit 2 sent in `SAMPLES`, bit 3 text), `u32 max_age_us` (`0xFFFFFFFF` = none), `u32 aux` (index in `SIGNAL_AUX`), `strref unit`, `u32 0`. Sorted by canonical path (document 01, §3.1) |
+| 0x0005 | `PATHS` | 24 B | `u64 path_hash`, `u32 SignalId`, `strref path` (only `u32` offset + `u16` length), `u16 flags` (bit 0 canonical, bit 1 instance member, bit 2 alias), `u32 0`; **all** paths (canonical and aliases, P1), sorted by `path_hash` for binary search |
+| 0x0006 | `SIGNAL_AUX` | 48 B | `f64 limit_lo`, `f64 limit_hi` (NaN = none), `f64 acquisition_deadband` (0 = none), `u64 stuck_detect_us` (0 = none), `u32 debounce_us`, `u32 enum` (index in `ENUMS`), `u32 0`, `u32 0` |
+| 0x0007 | `ENUMS` | 16 B | `strref name`, `u32 first variant`, `u16 n`, `u8 kind` (0 enum, 1 bits), `u8 0` |
+| 0x0008 | `VARIANTS` | 16 B | `strref name`, `u64 value` (enum) or bit index (bits) |
+| 0x0009 | `GROUPS` | 48 B | `strref name`, `u32 period_us`, `u8 overrun` (0 `skip`, 1 `catch_up`, 2 `degrade`, 3 `trip`), `u8 flags`, `u16 trip_after`, `u32 first task`, `u16 n_tasks`, `u16 degrade_ticks`, `poolref latch` (latched SignalIds, sorted), `poolref outputs` (outputs it owns), `u32 trace_bytes`, `u32 0` |
+| 0x000A | `TASKS` | 8 B | `u16 app`, `u16 task` (index in the app's metadata), `u16 flags` (bit 0 `optional`), `u16 0`; in tick order (`order`) |
+| 0x000B | `WRITERS` | 24 B | `strref identity` (`app:<name>`, `extern:<app>`, `bridge:<link>:<level>`, `impl:<instance>`), `u8 writer_kind` (`ref/00` §6), `u8 level` (1–16), `u16 flags`, `u32 lease_us` (0 = A9), `u32 owner` (app, link or `NONE`), `u8 role`, `[3]u8 0` |
+| 0x000C | `OUTPUTS` | 152 B | see the table below |
+| 0x000D | `OUTPUT_WRITERS` | 8 B | `u32 writer`, `u8 level`, `u8 flags`, `u16 0`: the arbiter levels of each output (A5; uniqueness was already verified by `J0210`) |
+| 0x000E | `ATOMIC` | 32 B | `strref name`, `poolref members` (in `order`), `u8 on_rate` (0 `independent`, 1 `proportional`), `u8 has_commit`, `u16 0`, `u32 commit signal`, `u64 commit value` |
+| 0x000F | `U32POOL` | 4 B | lists of `u32` referred to by `poolref` |
+| 0x0010 | `PROGRAMS` | 32 B | `u32 code_off`, `u32 code_len`, `u32 state_off`, `u16 state_len`, `u8 max_stack` (≤ 32), `u8 result type`, `u8 kind` (1 `calc`, 2 alarm `when`, 3 alarm `suppress_when`, 4 `interlock`, 5 `range` limit, 6 `reset_when`, 7 query, 8 method assignment, 9 action permissive, 10 argument of a call to a member method), `u8 flags`, `u16 n_args`, `u32 evaluation group`, `u32 target` (signal, alarm, output or member; in `kind` 10, the class member), `u32 0` (in `kind` 10, the index in `METHODS` of the called method) |
 | 0x0011 | `CODE` | bytes | bytecode (§2.13.4) |
-| 0x0012 | `CONSTS` | 16 B | `u8 tipo`, `[7]u8 0`, `u64 bits` |
-| 0x0013 | `ALARMS` | 56 B | `strref nome`, `u32 when`, `u32 suppress_when` (programas), `u32 delay_on_us`, `u32 delay_off_us`, `u8 severidade`, `u8 flags` (bit 0 da app), `u16 0`, `u32 sinal state`, `u32 sinal active`, `strref mensagem` (modelo com `{caminho}`), `poolref trips` (saídas de `actions.trip`), `u32 0` |
-| 0x0014 | `CLASSES` | 56 B | `strref "pacote/nome"`, `u16 major`, `u16 minor`, `u16 patch`, `u16 n_capacidades`, `[32]u8 hash do contrato` (17 §6), `u32 primeiro membro`, `u16 n_membros`, `u16 0` |
-| 0x0015 | `MEMBERS` | 24 B | `strref nome`, `u8 kind` (1 `in`, 2 `out`, 3 `param`, 4 `event`, 5 `action`, 6 `method`, 7 `query`, 8 membro de classe), `u8 tipo`, `u8 capacidade` (`0xFF` = nenhuma), `u8 flags` (bit 0 `@optional`, bit 1 obrigatório para `health`, bit 2 `atomic`, bit 3 `@long`), `u32 aux` (método: índice em `METHODS`; ação: `@timeout` em ms; evento: offset do esquema em `BLOBS`; membro de classe: índice em `CLASSES`), `u32 aux2` (membro de classe: `u16 min`, `u16 max` da coleção, ou `1`, `1` num membro fixo), `u32 0` |
-| 0x0016 | `METHODS` | 16 B | `u32 classe`, `u16 membro`, `u8 n_atribuições` (atribuições e argumentos de chamadas), `u8 flags` (bit 0 `atomic`), `u32 primeiro programa` (consecutivos: `kind` 8 por atribuição, `kind` 10 por argumento de uma chamada a um método de membro, 17 §4.1; uma chamada sem argumentos ocupa um `kind` 10 com `code_len` 0), `u32 order` (índice em `U32POOL` de `n_atribuições` membros) |
-| 0x0017 | `INSTANCES` | 32 B | `strref nome`, `u32 classe`, `u32 mapa` (índice em `U32POOL` de `n_membros` SignalIds; `NONE` para membros sem sinal; num membro de classe, o índice em `U32POOL` da lista de instâncias ligadas, precedida do seu comprimento), `u32 capacidades` (bits), `u8 origem` (0 implícita, 1 composta, 2 virtual), `u8 flags` (bit 0: só membro, sem nome de topo no link, ref/07 §6.3), `[2]u8 0`, `u32 implementada por` (app ou `NONE`), `u32 0` |
-| 0x0018 | `ACTIONS` | 32 B | `u32 instância`, `u16 membro`, `u8 implementador` (1 driver, 2 `extern`, 3 app, 4 link), `u8 papel mínimo`, `u32 permit` (programa), `u32 timeout_ms`, `u32 dedup_window_ms`, `u32 índice do implementador`, `u32 fila` (dispositivo que serializa), `u32 0` |
-| 0x0019 | `EVENTS` | 24 B | `u32 instância` (ou `NONE` para evento de app), `u16 membro`, `u16 flags` (bit 0 para o link, bit 1 para a fila do firmware), `u32 origem` (porta de app), `u32 esquema` (offset em `BLOBS`), `u32 comprimento do esquema`, `u32 profundidade da fila` |
-| 0x001A | `APPS` | 48 B | `strref nome`, `u16 major`, `u16 minor`, `u16 patch`, `u16 flags` (bit 0 `extern`), `u32 escritor`, `u32 primeira porta`, `u16 n_portas`, `u16 n_parâmetros`, `u32 primeiro parâmetro`, `u32 kv_bytes`, `[8]u8 meta_hash`, `u32 0` |
-| 0x001B | `APP_PORTS` | 24 B | `u32 alvo` (sinal, instância, alarme ou `NONE` se opcional sem ligação), `u8 kind` (1 entrada, 2 saída, 3 interna, 4 publicada, 5 evento de entrada, 6 evento de saída, 7 equipamento, 8 alarme, 9 elemento de `Many`), `u8 conversão` (0 nenhuma, 1 afim), `u16 índice em Many`, `f64 fator`, `f64 offset` — a conversão de unidade da ligação (documento 02, §3) já resolvida |
-| 0x001C | `PARAMS` | 40 B | `strref nome`, `u32 app`, `u8 tipo`, `u8 flags` (bit 0 alterável em runtime, bit 1 persistível), `u16 0`, `u64 valor`, `f64 mínimo`, `f64 máximo` (NaN = sem) |
-| 0x001D | `DEVICES` | 32 B | `strref nome`, `strref driver`, `u16 major do driver`, `u16 flags`, `u32 config` (offset em `BLOBS`), `u32 comprimento`, `u32 descritor` (offset em `BLOBS` dos 32 B do SHA-256 do descritor do driver com que o `jk build` planeou, ref/06 §2.3; `NONE` para `extern`; os primeiros 8 B repetem-se no registo `REQUIRES` do driver) — a configuração é o `micro-device-config` do `spec/cddl/jdp.cddl` (ref/06 §3.7): o digest do descritor (chave 0, o mesmo deste campo), o `device-spec` com o esquema `config` do descritor, as `point-spec` com os `SignalId`s do MCU, o plano de leitura e o barramento. O `HELLO` resume os descritores na chave 15 (ref/07 §6.4) |
-| 0x001E | `BLOBS` | bytes | CBOR determinístico: configurações de drivers e de links, esquemas de eventos, cada item alinhado a 8 |
-| 0x001F | `LINKS` | 32 B | `strref nome`, `u8 transporte` (1 `uart`, 2 `rs485`, 3 `can`, 4 `usb_cdc`, 5 `udp`, 6 `tcp`), `u8 enquadramento` (1 fluxo, 2 datagrama), `u8 autenticação` (0 nenhuma, 1 opcional, 2 obrigatória), `u8 par` (0 nó Linux, 1 Deck), `u16 níveis permitidos` (bit *n*−1 = nível *n*), `u16 mtu`, `u32 primeiro escritor` (um por nível permitido, consecutivos), `u32 config` (offset em `BLOBS`), `u32 comprimento`, `u32 0` |
-| 0x0020 | `NODE` | 48 B | `strref nome do nó` (se `NODE_BOUND`), `u32 service_deadline_ms`, `u8 fonte do relógio` (0 nenhuma, 1 `link`, 2 `extern`), `u8 flags` (bit 0 `freeze_on_trip`), `u16 0`, `u32 max_holdover_ms` (`0xFFFFFFFF` = sem limite), `u32 trace_bytes` total, `u32 anel de SAMPLES` (entradas), `u32 fila de eventos do firmware`, `u32 confirmação por omissão (ms)`, `[12]u8 0` |
-| 0x0021 | `CATALOG` | bytes | o catálogo do Joker Link (ref/07 §6.3), **tal e qual**: o que o `CATALOG` transfere; o seu SHA-256 é o hash do catálogo do `HELLO`. Presente se a geração tiver links |
-| 0x0022 | `SECRETS` | bytes | um `secret-bundle` (ref/02 §2.4, `spec/cddl/secrets.cddl`) com as entradas cifradas para a chave X25519 do MCU (registo 19), só com o `wrap` do MCU; presente em MCUs autónomos com segredos (ref/04 §4.14) e em qualquer MCU M2 cujo `[net.wifi]` tenha `password` (ref/01 §5.22) |
-| 0x0023 | `TRUST` | bytes | cadeia de bundles de confiança novos (`trust-chain` no CDDL), por ordem de versão; o MCU instala-os (registo 18) antes de verificar a assinatura do blob (§2.13.5) |
-| 0x0024 | `NET` | bytes | `micro-net` em CBOR determinístico (`spec/cddl/joker-micro.cddl`): a configuração do Wi-Fi do `[net.wifi]` (ref/01 §5.22): `ssid`, `country`, `hostname` e o **nome** do segredo da palavra-passe, que se procura em `SECRETS`; nunca o valor. Só em MCUs M2 com `[net.wifi]` |
-| 0x0040–0x0043 | reservados | — | `MODELS`, `BLOCKS`, `STREAMS` (v1.1, "Preparado para ML"), `SCHEDULES` (escritas agendadas, M6, v1.1) |
-| 0x0044 | reservado | — | `WASM_APPS` (apps em `wasmi`, v1.4) |
-| 0x8000–0xFFFF | privados | — | nunca `REQUIRED`; ignorados pelo `joker-micro` |
+| 0x0012 | `CONSTS` | 16 B | `u8 type`, `[7]u8 0`, `u64 bits` |
+| 0x0013 | `ALARMS` | 56 B | `strref name`, `u32 when`, `u32 suppress_when` (programs), `u32 delay_on_us`, `u32 delay_off_us`, `u8 severity`, `u8 flags` (bit 0 from the app), `u16 0`, `u32 state signal`, `u32 active signal`, `strref message` (template with `{path}`), `poolref trips` (outputs of `actions.trip`), `u32 0` |
+| 0x0014 | `CLASSES` | 56 B | `strref "package/name"`, `u16 major`, `u16 minor`, `u16 patch`, `u16 n_capabilities`, `[32]u8 contract hash` (17 §6), `u32 first member`, `u16 n_members`, `u16 0` |
+| 0x0015 | `MEMBERS` | 24 B | `strref name`, `u8 kind` (1 `in`, 2 `out`, 3 `param`, 4 `event`, 5 `action`, 6 `method`, 7 `query`, 8 class member), `u8 type`, `u8 capability` (`0xFF` = none), `u8 flags` (bit 0 `@optional`, bit 1 required for `health`, bit 2 `atomic`, bit 3 `@long`), `u32 aux` (method: index in `METHODS`; action: `@timeout` in ms; event: offset of the schema in `BLOBS`; class member: index in `CLASSES`), `u32 aux2` (class member: `u16 min`, `u16 max` of the collection, or `1`, `1` in a fixed member), `u32 0` |
+| 0x0016 | `METHODS` | 16 B | `u32 class`, `u16 member`, `u8 n_assignments` (assignments and call arguments), `u8 flags` (bit 0 `atomic`), `u32 first program` (consecutive: `kind` 8 per assignment, `kind` 10 per argument of a call to a member method, 17 §4.1; a call without arguments takes one `kind` 10 with `code_len` 0), `u32 order` (index in `U32POOL` of `n_assignments` members) |
+| 0x0017 | `INSTANCES` | 32 B | `strref name`, `u32 class`, `u32 map` (index in `U32POOL` of `n_members` SignalIds; `NONE` for members without a signal; in a class member, the index in `U32POOL` of the list of bound instances, preceded by its length), `u32 capabilities` (bits), `u8 origin` (0 implicit, 1 composite, 2 virtual), `u8 flags` (bit 0: member only, no top-level name on the link, ref/07 §6.3), `[2]u8 0`, `u32 implemented by` (app or `NONE`), `u32 0` |
+| 0x0018 | `ACTIONS` | 32 B | `u32 instance`, `u16 member`, `u8 implementer` (1 driver, 2 `extern`, 3 app, 4 link), `u8 minimum role`, `u32 permit` (program), `u32 timeout_ms`, `u32 dedup_window_ms`, `u32 implementer index`, `u32 queue` (device that serializes), `u32 0` |
+| 0x0019 | `EVENTS` | 24 B | `u32 instance` (or `NONE` for an app event), `u16 member`, `u16 flags` (bit 0 for the link, bit 1 for the firmware queue), `u32 origin` (app port), `u32 schema` (offset in `BLOBS`), `u32 schema length`, `u32 queue depth` |
+| 0x001A | `APPS` | 48 B | `strref name`, `u16 major`, `u16 minor`, `u16 patch`, `u16 flags` (bit 0 `extern`), `u32 writer`, `u32 first port`, `u16 n_ports`, `u16 n_parameters`, `u32 first parameter`, `u32 kv_bytes`, `[8]u8 meta_hash`, `u32 0` |
+| 0x001B | `APP_PORTS` | 24 B | `u32 target` (signal, instance, alarm or `NONE` if optional and unbound), `u8 kind` (1 input, 2 output, 3 internal, 4 published, 5 input event, 6 output event, 7 equipment, 8 alarm, 9 element of `Many`), `u8 conversion` (0 none, 1 affine), `u16 index in Many`, `f64 factor`, `f64 offset` — the unit conversion of the binding (document 02, §3) already resolved |
+| 0x001C | `PARAMS` | 40 B | `strref name`, `u32 app`, `u8 type`, `u8 flags` (bit 0 changeable at runtime, bit 1 persistable), `u16 0`, `u64 value`, `f64 minimum`, `f64 maximum` (NaN = none) |
+| 0x001D | `DEVICES` | 32 B | `strref name`, `strref driver`, `u16 driver major`, `u16 flags`, `u32 config` (offset in `BLOBS`), `u32 length`, `u32 descriptor` (offset in `BLOBS` of the 32 B of the SHA-256 of the driver descriptor that `jk build` planned with, ref/06 §2.3; `NONE` for `extern`; the first 8 B are repeated in the driver's `REQUIRES` record) — the configuration is the `micro-device-config` of `spec/cddl/jdp.cddl` (ref/06 §3.7): the descriptor digest (key 0, the same as this field), the `device-spec` with the descriptor's `config` schema, the `point-spec`s with the MCU's `SignalId`s, the read plan and the bus. `HELLO` summarizes the descriptors in key 15 (ref/07 §6.4) |
+| 0x001E | `BLOBS` | bytes | deterministic CBOR: driver and link configurations, event schemas, each item aligned to 8 |
+| 0x001F | `LINKS` | 32 B | `strref name`, `u8 transport` (1 `uart`, 2 `rs485`, 3 `can`, 4 `usb_cdc`, 5 `udp`, 6 `tcp`), `u8 framing` (1 stream, 2 datagram), `u8 authentication` (0 none, 1 optional, 2 required), `u8 peer` (0 Linux node, 1 Deck), `u16 allowed levels` (bit *n*−1 = level *n*), `u16 mtu`, `u32 first writer` (one per allowed level, consecutive), `u32 config` (offset in `BLOBS`), `u32 length`, `u32 0` |
+| 0x0020 | `NODE` | 48 B | `strref node name` (if `NODE_BOUND`), `u32 service_deadline_ms`, `u8 clock source` (0 none, 1 `link`, 2 `extern`), `u8 flags` (bit 0 `freeze_on_trip`), `u16 0`, `u32 max_holdover_ms` (`0xFFFFFFFF` = no limit), `u32 trace_bytes` total, `u32 SAMPLES ring` (entries), `u32 firmware event queue`, `u32 default confirmation (ms)`, `[12]u8 0` |
+| 0x0021 | `CATALOG` | bytes | the Joker Link catalog (ref/07 §6.3), **as is**: what `CATALOG` transfers; its SHA-256 is the catalog hash of `HELLO`. Present if the generation has links |
+| 0x0022 | `SECRETS` | bytes | a `secret-bundle` (ref/02 §2.4, `spec/cddl/secrets.cddl`) with the entries encrypted for the MCU's X25519 key (record 19), only with the MCU's `wrap`; present on standalone MCUs with secrets (ref/04 §4.14) and on any M2 MCU whose `[net.wifi]` has `password` (ref/01 §5.22) |
+| 0x0023 | `TRUST` | bytes | chain of new trust bundles (`trust-chain` in the CDDL), in version order; the MCU installs them (record 18) before verifying the blob's signature (§2.13.5) |
+| 0x0024 | `NET` | bytes | `micro-net` in deterministic CBOR (`spec/cddl/joker-micro.cddl`): the Wi-Fi configuration of `[net.wifi]` (ref/01 §5.22): `ssid`, `country`, `hostname` and the **name** of the password secret, which is looked up in `SECRETS`; never the value. Only on M2 MCUs with `[net.wifi]` |
+| 0x0040–0x0043 | reserved | — | `MODELS`, `BLOCKS`, `STREAMS` (v1.1, document 11, §"Ready for ML"), `SCHEDULES` (scheduled writes, M6, v1.1) |
+| 0x0044 | reserved | — | `WASM_APPS` (apps in `wasmi`, v1.4) |
+| 0x8000–0xFFFF | private | — | never `REQUIRED`; ignored by `joker-micro` |
 
 **`OUTPUTS` (152 B):**
 
-| Offset | Tipo | Campo |
+| Offset | Type | Field |
 |---|---|---|
-| 0 | `u32` | sinal |
-| 4 | `u32` | grupo dono (A11) |
-| 8 | `u8` × 4 | `on_range` (0 `clamp`, 1 `reject`, 2 `trip`), `on_interlock` (0 `safe`, 1 `hold`), `safe_kind` (0 valor, 1 `relinquish`), `safer` (0 `equal`, 1 `lower`, 2 `higher`) |
-| 12 | `u32` | flags: bit 0 `permit_uncertain`, bit 1 tem `rate`, bit 2 tem `safe_ramp`, bit 3 tem `deadband`, bit 4 tem `verify`, bit 5 `pulse`, bit 6 trip persistente (omissão 1) |
-| 16 | `u64` | valor `safe` |
-| 24 | 16 B | limite inferior: `u8 kind` (0 nenhum, 1 constante, 2 programa), `[3]u8 0`, `u32 programa`, `f64 constante` (E6) |
-| 40 | 16 B | limite superior, idem |
-| 56 | `f64` | `rate` (unidade/s) |
+| 0 | `u32` | signal |
+| 4 | `u32` | owning group (A11) |
+| 8 | `u8` × 4 | `on_range` (0 `clamp`, 1 `reject`, 2 `trip`), `on_interlock` (0 `safe`, 1 `hold`), `safe_kind` (0 value, 1 `relinquish`), `safer` (0 `equal`, 1 `lower`, 2 `higher`) |
+| 12 | `u32` | flags: bit 0 `permit_uncertain`, bit 1 has `rate`, bit 2 has `safe_ramp`, bit 3 has `deadband`, bit 4 has `verify`, bit 5 `pulse`, bit 6 persistent trip (default 1) |
+| 16 | `u64` | `safe` value |
+| 24 | 16 B | lower limit: `u8 kind` (0 none, 1 constant, 2 program), `[3]u8 0`, `u32 program`, `f64 constant` (E6) |
+| 40 | 16 B | upper limit, likewise |
+| 56 | `f64` | `rate` (unit/s) |
 | 64 | `f64` | `safe_ramp` |
 | 72 | `f64` | `deadband` |
 | 80 | `u32` | `min_interval_us` |
 | 84 | `u32` | `grace_us` (E4) |
-| 88 | `u32` | `interlock` (programa) |
-| 92 | `u32` | `reset_when` (programa) |
+| 88 | `u32` | `interlock` (program) |
+| 92 | `u32` | `reset_when` (program) |
 | 96 | `poolref` | `requires_good` |
-| 104 | `u32` | `max_lease_ms` (A9; omissão 15 min) |
-| 108 | `u32` | `max_manual_ms` (A10; omissão 8 h) |
-| 112 | `u16`, `u16`, `u32` | `max_actuations`: contagem, 0, janela em s |
-| 120 | `u32` | `verify.readback` (sinal) |
+| 104 | `u32` | `max_lease_ms` (A9; default 15 min) |
+| 108 | `u32` | `max_manual_ms` (A10; default 8 h) |
+| 112 | `u16`, `u16`, `u32` | `max_actuations`: count, 0, window in s |
+| 120 | `u32` | `verify.readback` (signal) |
 | 124 | `u32` | `verify.within_us` |
 | 128 | `f64` | `verify.tolerance` |
 | 136 | `u32` | `pulse_us` |
-| 140 | `u32` | grupo atómico (índice em `ATOMIC`) |
-| 144 | `u32` | primeiro em `OUTPUT_WRITERS` |
-| 148 | `u16`, `u16` | número de escritores; níveis manuais permitidos (bits 3–5) |
+| 140 | `u32` | atomic group (index in `ATOMIC`) |
+| 144 | `u32` | first in `OUTPUT_WRITERS` |
+| 148 | `u16`, `u16` | number of writers; allowed manual levels (bits 3–5) |
 
-**Capacidades (`cap_id`).** A mesma numeração em `CAPS` (o que a geração precisa), no descritor de firmware (o máximo do build, §2.14) e nas chaves de `[target.capacity]` (§2.17), com os nomes em `snake_case`:
+**Capabilities (`cap_id`).** The same numbering in `CAPS` (what the generation needs), in the firmware descriptor (the build's maximum, §2.14) and in the keys of `[target.capacity]` (§2.17), with the names in `snake_case`:
 
-| id | nome | id | nome | id | nome |
+| id | name | id | name | id | name |
 |---|---|---|---|---|---|
 | 1 | `signals` | 15 | `members` | 29 | `u32pool` |
 | 2 | `paths` | 16 | `instances` | 30 | `image_entries` |
 | 3 | `outputs` | 17 | `methods` | 31 | `text_signals` |
-| 4 | `groups` | 18 | `actions` | 32 | `inbox` (por grupo) |
-| 5 | `tasks` | 19 | `events` | 33 | `method_queue` (por grupo) |
+| 4 | `groups` | 18 | `actions` | 32 | `inbox` (per group) |
+| 5 | `tasks` | 19 | `events` | 33 | `method_queue` (per group) |
 | 6 | `writers` | 20 | `apps` | 34 | `action_pending` |
 | 7 | `output_writers` | 21 | `app_ports` | 35 | `event_queue` |
 | 8 | `atomic` | 22 | `params` | 36 | `trace_bytes` |
@@ -1106,409 +1106,413 @@ O índice de um registo numa secção **é** o seu identificador na geração: o
 | 11 | `consts` | 25 | `strings_bytes` | 39 | `manual_writes` |
 | 12 | `expr_state_bytes` | 26 | `blobs_bytes` | 40 | `app_state_bytes` |
 | 13 | `alarms` | 27 | `enums` | | |
-| 14 | `classes` | 28 | `variants` | 41 | `radio_heap_bytes` (só ESP32 com Wi-Fi, §2.15.2) |
+| 14 | `classes` | 28 | `variants` | 41 | `radio_heap_bytes` (only ESP32 with Wi-Fi, §2.15.2) |
 
-**`J0710` e `JK_E_GEN_CAPACITY`.** Uma geração cabe num build se, para cada `cap_id`, a necessidade (`CAPS`) for ≤ ao máximo do descritor. O `jk check` e o `jk build --generation` fazem esta comparação antes de gravar (`J0710`, com a lista das capacidades excedidas e a estimativa de RAM e flash por componente do §2.9.1); o `joker-micro` repete-a no `jk_generation_open` (`JK_E_GEN_CAPACITY`) e nunca confia no `jk`. Com geração embutida, as capacidades do build são as da geração mais a folga de `[target.capacity]`.
+**`J0710` and `JK_E_GEN_CAPACITY`.** A generation fits in a build if, for each `cap_id`, the need (`CAPS`) is ≤ the descriptor's maximum. `jk check` and `jk build --generation` make this comparison before writing (`J0710`, with the list of exceeded capabilities and the RAM and flash estimate per component of §2.9.1); `joker-micro` repeats it in `jk_generation_open` (`JK_E_GEN_CAPACITY`) and never trusts `jk`. With an embedded generation, the build's capabilities are those of the generation plus the headroom of `[target.capacity]`.
 
-#### 2.13.4 Bytecode das expressões (ISA 1)
+#### 2.13.4 Expression bytecode (ISA 1)
 
-O mesmo bytecode é avaliado pelo `joker-expr` no Linux (em memória) e no MCU (no blob). A semântica é a do documento 02, §10 e do documento 16, §3–4; a ISA só fixa a codificação.
+The same bytecode is evaluated by `joker-expr` on Linux (in memory) and on the MCU (in the blob). The semantics are those of document 02, §10 and of document 16, §3–4; the ISA only fixes the encoding.
 
-**Máquina:** pilha de células de 16 B (`u64` bits, `u8` tipo, `u8` código de qualidade, `u8` motivo, `u8` flags, `u32` 0), profundidade ≤ `max_stack` ≤ 32. Cada programa tem o seu estado (`state_off`, `state_len`) no nó: janelas, temporizadores de `held`, bits de `rose`/`fell`/`hyst`. O contexto de avaliação dá o snapshot do grupo, o instante do latch e, nas atribuições de métodos, os argumentos e o chamador.
+**Machine:** a stack of 16 B cells (`u64` bits, `u8` type, `u8` quality code, `u8` reason, `u8` flags, `u32` 0), depth ≤ `max_stack` ≤ 32. Each program has its state (`state_off`, `state_len`) in the node: windows, `held` timers, `rose`/`fell`/`hyst` bits. The evaluation context gives the group's snapshot, the latch instant and, in method assignments, the arguments and the caller.
 
-**Codificação:** um `u8` de *opcode*, seguido dos operandos em little-endian, sem alinhamento. Os saltos são relativos ao fim da instrução e **só para a frente**: não há ciclos (as expressões são totais), e o tempo de um programa é limitado pelo seu tamanho.
+**Encoding:** a `u8` *opcode*, followed by the operands in little-endian, without alignment. Jumps are relative to the end of the instruction and **forward only**: there are no loops (expressions are total), and the time of a program is bounded by its size.
 
-| Op | Mnemónica | Operandos | Pilha | Semântica |
+| Op | Mnemonic | Operands | Stack | Semantics |
 |---|---|---|---|---|
 | 0x01 | `CONST` | `u16 k` | → v | `CONSTS[k]`, `Good` |
 | 0x02 | `TRUE` / 0x03 `FALSE` | — | → b | |
-| 0x04 | `LOAD` | `u32 sinal` | → s | amostra do snapshot, com envelhecimento; um `out` dá o valor **aplicado** (17 §11) |
-| 0x05 | `OWN` | `u32 sinal` | → v | `own(x)` (só em atribuições de métodos; 16 §4) |
-| 0x06 | `ARG` | `u8 i` | → v | argumento *i* do método |
-| 0x08 | `AGE` | `u32 sinal` | → f64 s | `age(x)` |
-| 0x10 | `AFFINE` | `u16 ka`, `u16 kb` | x → x·a+b | conversão de unidade resolvida no `jk check` |
-| 0x11 | `TOF` | — | i → f64 | inteiro para f64 |
-| 0x20–0x24 | `ADD`, `SUB`, `MUL`, `DIV`, `NEG` | — | a b → r | em f64; divisão por zero, raiz de negativo, `NaN` → `Bad(nan)` (16 §4); qualidade: a pior (16 §3.2) |
-| 0x28–0x2D | `EQ`, `NE`, `LT`, `LE`, `GT`, `GE` | — | a b → bool | inteiros com o mesmo sinal comparam-se exatamente; o resto em f64 |
+| 0x04 | `LOAD` | `u32 signal` | → s | sample from the snapshot, with aging; an `out` gives the **applied** value (17 §11) |
+| 0x05 | `OWN` | `u32 signal` | → v | `own(x)` (only in method assignments; 16 §4) |
+| 0x06 | `ARG` | `u8 i` | → v | argument *i* of the method |
+| 0x08 | `AGE` | `u32 signal` | → f64 s | `age(x)` |
+| 0x10 | `AFFINE` | `u16 ka`, `u16 kb` | x → x·a+b | unit conversion resolved in `jk check` |
+| 0x11 | `TOF` | — | i → f64 | integer to f64 |
+| 0x20–0x24 | `ADD`, `SUB`, `MUL`, `DIV`, `NEG` | — | a b → r | in f64; division by zero, root of a negative, `NaN` → `Bad(nan)` (16 §4); quality: the worst (16 §3.2) |
+| 0x28–0x2D | `EQ`, `NE`, `LT`, `LE`, `GT`, `GE` | — | a b → bool | integers with the same signedness compare exactly; the rest in f64 |
 | 0x30 | `NOT` | — | b → b | |
-| 0x31 | `JFG` | `i16` | b → b | se o topo é `false` com `Good`, salta (mantém-no): o curto-circuito de `&&` (02 §4) |
-| 0x32 | `JTG` | `i16` | b → b | se o topo é `true` com `Good`, salta: o de `\|\|` |
-| 0x33 | `AND` / 0x34 `OR` | — | a b → b | lógico, com o curto-circuito simétrico do 16 §3.2: um `false (Good)` em qualquer dos lados decide o `AND`, um `true (Good)` decide o `OR`; senão, a pior qualidade (o `JFG`/`JTG` só poupa a avaliação do lado direito) |
-| 0x38 | `JMP` | `i16` | — | só para a frente |
-| 0x39 | `IF` | `i16 else`, `i16 fim` | c → | `c` `Bad` → empurra `Bad` do tipo do resultado e salta para o fim; senão guarda a qualidade de `c` e segue (`true`) ou salta para `else` (16 §3.2) |
-| 0x3A | `ENDIF` | — | r → r | se `c` era `Uncertain`, o resultado fica, no máximo, `Uncertain` |
+| 0x31 | `JFG` | `i16` | b → b | if the top is `false` with `Good`, jumps (keeps it): the short-circuit of `&&` (02 §4) |
+| 0x32 | `JTG` | `i16` | b → b | if the top is `true` with `Good`, jumps: that of `\|\|` |
+| 0x33 | `AND` / 0x34 `OR` | — | a b → b | logical, with the symmetric short-circuit of 16 §3.2: a `false (Good)` on either side decides the `AND`, a `true (Good)` decides the `OR`; otherwise, the worst quality (`JFG`/`JTG` only spares the evaluation of the right side) |
+| 0x38 | `JMP` | `i16` | — | forward only |
+| 0x39 | `IF` | `i16 else`, `i16 end` | c → | `c` `Bad` → pushes `Bad` of the result type and jumps to the end; otherwise keeps the quality of `c` and continues (`true`) or jumps to `else` (16 §3.2) |
+| 0x3A | `ENDIF` | — | r → r | if `c` was `Uncertain`, the result is, at most, `Uncertain` |
 | 0x40–0x45 | `ABS`, `MIN`, `MAX`, `CLAMP`, `SQRT`, `POW` | — | … → r | |
-| 0x48 | `GOOD` | — | s → bool | `good(x)`, sempre `Good` |
-| 0x49 | `QUALITY` | — | s → u64 | `quality(x)` (código), sempre `Good` |
-| 0x50–0x53 | `WAVG`, `WMIN`, `WMAX`, `WRATE` | `u16 estado`, `u32 janela_us` | x → r | janelas (≤ 15 min, `J0305`); qualidade pela regra dos 10% (16 §3.2) |
-| 0x58 | `HELD` | `u16 estado`, `u32 dur_us` | b → b | 16 §3.2 |
-| 0x59 | `ROSE` / 0x5A `FELL` | `u16 estado` | b → b | |
-| 0x5B | `HYST` | `u16 estado` | x lo hi → b | |
+| 0x48 | `GOOD` | — | s → bool | `good(x)`, always `Good` |
+| 0x49 | `QUALITY` | — | s → u64 | `quality(x)` (code), always `Good` |
+| 0x50–0x53 | `WAVG`, `WMIN`, `WMAX`, `WRATE` | `u16 state`, `u32 window_us` | x → r | windows (≤ 15 min, `J0305`); quality by the 10% rule (16 §3.2) |
+| 0x58 | `HELD` | `u16 state`, `u32 dur_us` | b → b | 16 §3.2 |
+| 0x59 | `ROSE` / 0x5A `FELL` | `u16 state` | b → b | |
+| 0x5B | `HYST` | `u16 state` | x lo hi → b | |
 | 0x5C | `BIT` | — | x n → b | |
-| 0x60 | `AGG` | `u8 f`, `u32 lista`, `u16 n` | → r | `any` 0, `all` 1, `count` 2, `sum` 3, `maxs` 4, `mins` 5 sobre `n` sinais de `U32POOL` |
-| 0x70 | `RET` | — | r → | resultado do programa |
+| 0x60 | `AGG` | `u8 f`, `u32 list`, `u16 n` | → r | `any` 0, `all` 1, `count` 2, `sum` 3, `maxs` 4, `mins` 5 over `n` signals of `U32POOL` |
+| 0x70 | `RET` | — | r → | result of the program |
 
-**Verificador** (no `jk_generation_open`; falha → `JK_E_GEN_FORMAT`): *opcodes* conhecidos na ISA do blob; saltos dentro do programa e para a frente; profundidade da pilha ≤ `max_stack` em todos os caminhos; sinais, constantes, listas e estado dentro das secções e do `state_len`; `OWN` e `ARG` só em atribuições de métodos; o programa termina em `RET` com o tipo declarado.
+**Verifier** (in `jk_generation_open`; failure → `JK_E_GEN_FORMAT`): *opcodes* known in the blob's ISA; jumps inside the program and forward; stack depth ≤ `max_stack` on all paths; signals, constants, lists and state within the sections and within `state_len`; `OWN` and `ARG` only in method assignments; the program ends in `RET` with the declared type.
 
-Uma ISA nova (2, …) só acrescenta *opcodes*; um firmware que só conheça a 1 recusa um blob com `expr_isa = 2` (`JK_E_GEN_VERSION`), e o `jk build --generation` não o produz para esse firmware (`J0789`).
+A new ISA (2, …) only adds *opcodes*; a firmware that only knows 1 refuses a blob with `expr_isa = 2` (`JK_E_GEN_VERSION`), and `jk build --generation` does not produce it for that firmware (`J0789`).
 
-#### 2.13.5 Assinatura
+#### 2.13.5 Signature
 
-Um blob assinado tem, a seguir à imagem (`trailer_off = image_len`), um **COSE_Sign1** (RFC 9052, `ref/00` §7) cuja carga útil é o **manifesto de OTA do Joker Link** (`ota-manifest`, ref/07 §9.1; `generation-trailer` no CDDL), que identifica a imagem pelo SHA-256. É **a única forma** de assinatura de uma geração de MCU: o OTA pelo link envia este manifesto no `begin`, e o MCU grava-o como *trailer*; o `jk_ota_*` recebe o ficheiro `.jkgen` inteiro (imagem e *trailer*); o arranque volta a verificá-lo. A imagem fica no sítio, alinhada e mapeável, e a verificação Ed25519 corre sobre poucas dezenas de bytes.
+A signed blob has, after the image (`trailer_off = image_len`), a **COSE_Sign1** (RFC 9052, `ref/00` §7) whose payload is the **Joker Link OTA manifest** (`ota-manifest`, ref/07 §9.1; `generation-trailer` in the CDDL), which identifies the image by its SHA-256. It is **the only form** of signature of an MCU generation: OTA over the link sends this manifest in `begin`, and the MCU writes it as the *trailer*; `jk_ota_*` receives the whole `.jkgen` file (image and *trailer*); boot verifies it again. The image stays in place, aligned and mappable, and the Ed25519 verification runs over a few dozen bytes.
 
-| Parte | Conteúdo |
+| Part | Content |
 |---|---|
-| cabeçalho protegido | `{1: -8 (EdDSA), 4: kid}`; `kid` = os 16 primeiros bytes do SHA-256 da chave pública (ref/02 §2.5) |
-| não protegido | `{}` |
-| carga útil (`ota-manifest`) | `1` = 1 (`generation`), `2` alvo, `3` o `gen_seq` em decimal, `4` = `image_len`, `5` SHA-256 de `[0, image_len)`, `6` = 0, `7` = `gen_seq`, `8` = `source_hash`, `9` hash das capacidades do firmware alvo (§2.14), `12` = `board_id`, `13` = `format`, `? 14` nome do nó, `? 15` = `registry_hash` |
-| assinatura | Ed25519 sobre o `Sig_structure` `["Signature1", protegido, h'', carga]` |
+| protected header | `{1: -8 (EdDSA), 4: kid}`; `kid` = the first 16 bytes of the SHA-256 of the public key (ref/02 §2.5) |
+| unprotected | `{}` |
+| payload (`ota-manifest`) | `1` = 1 (`generation`), `2` target, `3` the `gen_seq` in decimal, `4` = `image_len`, `5` SHA-256 of `[0, image_len)`, `6` = 0, `7` = `gen_seq`, `8` = `source_hash`, `9` capabilities hash of the target firmware (§2.14), `12` = `board_id`, `13` = `format`, `? 14` node name, `? 15` = `registry_hash` |
+| signature | Ed25519 over the `Sig_structure` `["Signature1", protected, h'', payload]` |
 
-A verificação exige que `4`, `5`, `7`, `8`, `12`, `13` (e `15`, se existir) coincidam com a imagem e o cabeçalho, que `9` seja o hash das capacidades deste firmware (senão `JK_E_GEN_CAPACITY`) e, se houver `14`, que seja o nome do nó na área `IDENTITY` (`JK_E_GEN_NODE`).
+Verification requires that `4`, `5`, `7`, `8`, `12`, `13` (and `15`, if present) match the image and the header, that `9` be the capabilities hash of this firmware (otherwise `JK_E_GEN_CAPACITY`) and, if there is a `14`, that it be the node name in the `IDENTITY` area (`JK_E_GEN_NODE`).
 
-**Quem assina** (D7, ref/00 §7.1): a geração, uma chave com o papel `config`; o firmware, uma chave com o papel `firmware` (o mesmo manifesto, com `1` = 2 e o `security_version` do firmware em `6`). As chaves e os papéis vêm do **bundle de confiança** do MCU (registo 18 da área `IDENTITY`, ≤ 2 KiB, o perfil micro do `trust-bundle` da ref/10 §2.4.3); sem bundle, as âncoras de `platform->trust_keys` valem para todos os papéis (ref/02 §2.5.4). Um bundle novo chega na secção `TRUST` de um blob (MCUs atrás de um nó) ou pelo agente (MCUs autónomos, ref/10 §2.15), e só é aceite se estiver assinado por uma âncora ou por uma chave `root` do bundle instalado e tiver `version` maior; o MCU instala a cadeia da secção `TRUST` **antes** de verificar a assinatura do blob que a traz.
+**Who signs** (D7, ref/00 §7.1): the generation, a key with the `config` role; the firmware, a key with the `firmware` role (the same manifest, with `1` = 2 and the firmware's `security_version` in `6`). The keys and roles come from the MCU's **trust bundle** (record 18 of the `IDENTITY` area, ≤ 2 KiB, the micro profile of the `trust-bundle` of ref/10 §2.4.3); without a bundle, the anchors of `platform->trust_keys` are valid for all roles (ref/02 §2.5.4). A new bundle arrives in the `TRUST` section of a blob (MCUs behind a node) or through the agent (standalone MCUs, ref/10 §2.15), and is only accepted if it is signed by an anchor or by a `root` key of the installed bundle and has a greater `version`; the MCU installs the chain of the `TRUST` section **before** verifying the signature of the blob that carries it.
 
-#### 2.13.6 Determinismo do `jk build --generation`
+#### 2.13.6 Determinism of `jk build --generation`
 
-O mesmo conjunto (manifesto efetivo, `joker.lock`, contratos, descritor de firmware, chave) dá **sempre os mesmos bytes**:
+The same set (effective manifest, `joker.lock`, contracts, firmware descriptor, key) **always gives the same bytes**:
 
-- registos pela ordem canónica: sinais pelo caminho; grupos, escritores, apps, classes, instâncias, alarmes, dispositivos e links pelo nome; membros pela ordem de declaração do contrato canónico (17 §6); programas pela ordem das secções que os referem;
-- strings deduplicadas pela ordem da primeira referência, na ordem das secções;
-- enchimento a zeros, CBOR determinístico, sem datas, caminhos de ficheiros ou nomes de máquina;
-- o formato e a ISA são os **mais altos que o firmware suporta** (descritor, chaves 5 e 6) e que a geração precisa; nunca mais altos;
-- Ed25519 é determinístico (RFC 8032).
+- records in canonical order: signals by path; groups, writers, apps, classes, instances, alarms, devices and links by name; members in the declaration order of the canonical contract (17 §6); programs in the order of the sections that refer to them;
+- strings deduplicated in order of first reference, in section order;
+- zero padding, deterministic CBOR, no dates, file paths or machine names;
+- the format and the ISA are the **highest that the firmware supports** (descriptor, keys 5 and 6) and that the generation needs; never higher;
+- Ed25519 is deterministic (RFC 8032).
 
-`jk build --generation --check-reproducible` constrói duas vezes e compara. A conformidade tem blobs de referência: o mesmo projeto tem de dar os mesmos bytes em qualquer máquina.
+`jk build --generation --check-reproducible` builds twice and compares. Conformance has reference blobs: the same project must give the same bytes on any machine.
 
-### 2.14 Descritor de firmware (`firmware.jkfw`)
+### 2.14 Firmware descriptor (`firmware.jkfw`)
 
-Cada build de MCU (firmware, biblioteca ou crate) produz um descritor em CBOR determinístico (`firmware-descriptor` no CDDL), que também fica dentro da imagem (secção de ligação `.joker.fw`) e é anunciado no `HELLO`. É o contrato entre um firmware genérico e os blobs que aceita.
+Each MCU build (firmware, library or crate) produces a descriptor in deterministic CBOR (`firmware-descriptor` in the CDDL), which also stays inside the image (link section `.joker.fw`) and is announced in `HELLO`. It is the contract between a generic firmware and the blobs it accepts.
 
-| Chave | Conteúdo |
+| Key | Content |
 |---|---|
-| 1 | versão do `joker-micro` (SemVer) |
-| 2 | versão da ABI, empacotada |
-| 3, 4 | placa e `board_id` |
-| 5, 6 | formato de blob e ISA mais altos que entende |
-| 7 | capacidades máximas (`cap_id` → valor) |
-| 8 | apps ligadas: `[nome, versão, meta_hash]` |
-| 9 | drivers: `[nome, major, digest do descritor]` (o digest falta só no `extern`) |
-| 10 | transportes de link |
+| 1 | `joker-micro` version (SemVer) |
+| 2 | ABI version, packed |
+| 3, 4 | board and `board_id` |
+| 5, 6 | highest blob format and ISA it understands |
+| 7 | maximum capabilities (`cap_id` → value) |
+| 8 | linked apps: `[name, version, meta_hash]` |
+| 9 | drivers: `[name, major, descriptor digest]` (the digest is missing only for `extern`) |
+| 10 | link transports |
 | 11 | features |
-| 12 | hash da interface (biblioteca e crate; zeros no modo firmware) |
-| 13 | pilha por contexto |
-| 14 | áreas de flash (modo firmware) |
-| 15 | FPU, o mesmo enum do campo `fpu` das placas (ref/03 §2.3): `"none"` (sem FPU: `f32` e `f64` por software, `J0780` e `J0721`), `"sp"` (precisão simples em hardware; `f64` por software, `J0721`), `"sp+dcp"` (precisão simples mais um coprocessador de dupla precisão, como o DCP do RP2350: o `f64` é acelerado e não dá `J0721`), `"dp"` (simples e dupla em hardware) |
-| 16 | tempo medido entre o reset e o primeiro tick, ms |
-| 17 | `security_version` do firmware (o contador de segurança, anti-rollback; ref/07 §9.5) |
-| 18 | versão do **núcleo** compilado (`"<maj>.<min>"` do `joker-core`); é o que o lock fixa em `[mcu.<d>] core` e o que o `jk check` usa para o `J0796` (§3.11). Sem ela (firmware anterior à regra), conta como a major.minor da chave 1 |
+| 12 | interface hash (library and crate; zeros in firmware mode) |
+| 13 | stack per context |
+| 14 | flash areas (firmware mode) |
+| 15 | FPU, the same enum as the boards' `fpu` field (ref/03 §2.3): `"none"` (no FPU: `f32` and `f64` in software, `J0780` and `J0721`), `"sp"` (single precision in hardware; `f64` in software, `J0721`), `"sp+dcp"` (single precision plus a double-precision coprocessor, like the RP2350's DCP: `f64` is accelerated and does not give `J0721`), `"dp"` (single and double in hardware) |
+| 16 | measured time between reset and the first tick, ms |
+| 17 | `security_version` of the firmware (the security counter, anti-rollback; ref/07 §9.5) |
+| 18 | version of the compiled **core** (`"<maj>.<min>"` of `joker-core`); it is what the lock pins in `[mcu.<d>] core` and what `jk check` uses for `J0796` (§3.11). Without it (firmware older than the rule), it counts as the major.minor of key 1 |
 
-- O **hash das capacidades** é o SHA-256 do CBOR determinístico da chave 7. Vai no `HELLO` (chave 5.5) e no manifesto de uma geração (chave 9): um blob feito para outro conjunto de capacidades é recusado antes de gastar flash.
-- O **digest do descritor** é o SHA-256 do descritor inteiro; vai no `HELLO` (chave 5.9) e no relatório ao Deck (ref/10 §2.10.1, `mcus`).
-- Os drivers (chave 9) levam o digest do descritor de cada driver (ref/06 §2.3), para o `jk build --generation` recusar um plano feito com outro descritor (`J0773`).
+- The **capabilities hash** is the SHA-256 of the deterministic CBOR of key 7. It goes in `HELLO` (key 5.5) and in the manifest of a generation (key 9): a blob made for another set of capabilities is refused before spending flash.
+- The **descriptor digest** is the SHA-256 of the whole descriptor; it goes in `HELLO` (key 5.9) and in the report to the Deck (ref/10 §2.10.1, `mcus`).
+- The drivers (key 9) carry the descriptor digest of each driver (ref/06 §2.3), so that `jk build --generation` rejects a plan made with another descriptor (`J0773`).
 
-O `jk` mostra-o em JSON com os mesmos campos (`jk inspect firmware.jkfw`).
+`jk` shows it in JSON with the same fields (`jk inspect firmware.jkfw`).
 
-### 2.15 Alvos e orçamentos
+### 2.15 Targets and budgets
 
-#### 2.15.1 Classes de alvo (19 §3.1)
+#### 2.15.1 Target classes (19 §3.1)
 
-| Alvo | Classe | Núcleo | FPU | RAM | Flash | Capacidades por omissão (sinais / saídas / grupos / instâncias / apps) | HAL (`[board] chip` de exemplo), feature |
-|---|---|---|---|---|---|---|---|
-| RP2350 | **M1** (referência) | 2× Cortex-M33, 150 MHz | `sp+dcp` | 520 KiB | 4 MiB (externa, XIP) | 256 / 64 / 8 / 32 / 4 | `embassy-rp` (`rp235xa`), `chip-rp` |
-| STM32G4 (G474) | M1 | Cortex-M4F, 170 MHz | `sp` | 128 KiB | 512 KiB | 128 / 32 / 4 / 16 / 2 | `embassy-stm32` (`stm32g474re`), `chip-stm32` |
-| ESP32-C6 | **M2** | RISC-V, 160 MHz | **`none`** | 512 KiB | 4 MiB (externa) | 256 / 64 / 8 / 32 / 4 | `esp-hal` (`esp32c6`), `chip-esp` |
-| ESP32-S3 | M2 | 2× Xtensa LX7, 240 MHz | `sp` | 512 KiB (+ PSRAM) | 8 MiB (externa) | 512 / 128 / 8 / 64 / 8 | `esp-hal` (`esp32s3`), `chip-esp` |
-| ESP32 (original) | M2, **só desenvolvimento** (documento 23) | 2× Xtensa LX6, 240 MHz | `sp` | 520 KiB | 4 MiB (externa) | 256 / 64 / 4 / 32 / 4 | `esp-hal` (`esp32`), `chip-esp` |
-| STM32H5 (H563) | M2 | Cortex-M33, 250 MHz | `sp` | 640 KiB | 2 MiB | 512 / 128 / 8 / 64 / 8 | `embassy-stm32` (`stm32h563zi`), `chip-stm32` |
-| STM32H7 (H743) | M2 | Cortex-M7, 480 MHz | `dp` | 1 MiB | 2 MiB | 1024 / 256 / 8 / 128 / 8 | `embassy-stm32` (`stm32h743zi`), `chip-stm32` |
+| Target | Class | Core | FPU | RAM | Flash | Default capabilities (signals / outputs / groups / instances / apps) | HAL (example `[board] chip`), feature | Version |
+|---|---|---|---|---|---|---|---|---|
+| RP2350 | **M1** (reference) | 2× Cortex-M33, 150 MHz | `sp+dcp` | 520 KiB | 4 MiB (external, XIP) | 256 / 64 / 8 / 32 / 4 | `embassy-rp` (`rp235xa`), `chip-rp` | 1.0 |
+| STM32G4 (G474) | M1 | Cortex-M4F, 170 MHz | `sp` | 128 KiB | 512 KiB | 128 / 32 / 4 / 16 / 2 | `embassy-stm32` (`stm32g474re`), `chip-stm32` | 1.0.x |
+| ESP32-C6 | **M2** | RISC-V, 160 MHz | **`none`** | 512 KiB | 4 MiB (external) | 256 / 64 / 8 / 32 / 4 | `esp-hal` (`esp32c6`), `chip-esp` | 1.0.x |
+| ESP32-S3 | M2 | 2× Xtensa LX7, 240 MHz | `sp` | 512 KiB (+ PSRAM) | 8 MiB (external) | 512 / 128 / 8 / 64 / 8 | `esp-hal` (`esp32s3`), `chip-esp` | 1.0 |
+| ESP32 (original) | M2, **development only** (document 23) | 2× Xtensa LX6, 240 MHz | `sp` | 520 KiB | 4 MiB (external) | 256 / 64 / 4 / 32 / 4 | `esp-hal` (`esp32`), `chip-esp` | 1.0 |
+| STM32H5 (H563) | M2 | Cortex-M33, 250 MHz | `sp` | 640 KiB | 2 MiB | 512 / 128 / 8 / 64 / 8 | `embassy-stm32` (`stm32h563zi`), `chip-stm32` | 1.0.x |
+| STM32H7 (H743) | M2 | Cortex-M7, 480 MHz | `dp` | 1 MiB | 2 MiB | 1024 / 256 / 8 / 128 / 8 | `embassy-stm32` (`stm32h743zi`), `chip-stm32` | 1.0.x |
 
-As capacidades por omissão vêm do perfil de placa (`ref/03`) e sobrepõem-se com `[target.capacity]`. A versão de cada HAL é **exata** e fixada no `Cargo.lock` do workspace, e muda uma vez por fase (documento 13, §5.1); o `esp-hal` usa `unstable` para o ADC, o toque e o watchdog, isolado no `chip-esp`. O ESP32-C6 não tem FPU: toda a vírgula flutuante é por software, e as apps com `f32` recebem o aviso `J0780`.
+The "Version" column is the 1.0 cut of document 26, §5 (ADR 0035): the 1.0 MCU targets are the RP2350 and the ESP32 family on Xtensa (the original ESP32 and the ESP32-S3); the ESP32-C6 and the STM32 targets are 1.0.x. The default capabilities come from the board profile (`ref/03`) and are overridden with `[target.capacity]`. The version of each HAL is **exact** and pinned in the workspace's `Cargo.lock`, and changes once per phase (document 13, §5.1); `esp-hal` uses `unstable` for the ADC, touch and the watchdog, isolated in `chip-esp`. The ESP32-C6 has no FPU: all floating point is in software, and apps with `f32` get the warning `J0780`.
 
-#### 2.15.2 Orçamento de referência (a medir na Fase 2)
+#### 2.15.2 Reference budget (to be measured in Phase 2)
 
-Configuração do documento 19, §3.1: núcleo + Joker Link (UART, com cifra) + Modbus RTU + 1 app + 64 sinais (16 saídas, 2 grupos), num RP2350. Alvo: **≤ 160 KiB de flash e ≤ 48 KiB de RAM** (porta de saída 4 da Fase 2, documento 11).
+Configuration of document 19, §3.1: core + Joker Link (UART, with encryption) + Modbus RTU + 1 app + 64 signals (16 outputs, 2 groups), on an RP2350. Target: **≤ 160 KiB of flash and ≤ 48 KiB of RAM** (exit gate 4 of Phase 2, document 11).
 
-| Componente | Flash (alvo) | RAM (alvo) |
+| Component | Flash (target) | RAM (target) |
 |---|---|---|
-| núcleo (registo, árbitro, envelope, alarmes, classes, métodos) | 44 KiB | — |
-| `joker-expr` (VM, janelas) | 12 KiB | — |
-| Joker Link (CBOR, COBS, CRC) | 14 KiB | 3 KiB (buffers de 1 KiB, estado) |
-| cifra e assinatura (ChaCha20-Poly1305, Ed25519 só verificação, SHA-256/512) | 24 KiB | — |
-| Embassy + HAL + temporizadores | 18 KiB | 2 KiB |
-| driver Modbus RTU | 8 KiB | 0,5 KiB |
-| persistência + OTA | 7 KiB | 0,5 KiB (buffer de página) |
-| app (código) | 4 KiB | 1 KiB (estado) |
-| `libm` f32, formatação mínima | 5 KiB | — |
-| geração (64 sinais, embutida) | 6 KiB | — |
-| slots (64 × 32 B) e imagens (2 grupos × 32 portas × 16 B) | — | 3 KiB |
-| saídas (16 × (96 + 3 × 24) B) | — | 2,7 KiB |
-| expressões, filas (caixas, métodos, eventos, ações) | — | 4 KiB |
-| traço (U9) | — | 16 KiB |
-| pilhas (serviço 4 KiB, 2 grupos 2 × 1,5 KiB, ISR 1 KiB) | — | 8 KiB |
-| **Total** | **142 KiB** | **40,7 KiB** |
+| core (registry, arbiter, envelope, alarms, classes, methods) | 44 KiB | — |
+| `joker-expr` (VM, windows) | 12 KiB | — |
+| Joker Link (CBOR, COBS, CRC) | 14 KiB | 3 KiB (1 KiB buffers, state) |
+| encryption and signature (ChaCha20-Poly1305, Ed25519 verification only, SHA-256/512) | 24 KiB | — |
+| Embassy + HAL + timers | 18 KiB | 2 KiB |
+| Modbus RTU driver | 8 KiB | 0.5 KiB |
+| persistence + OTA | 7 KiB | 0.5 KiB (page buffer) |
+| app (code) | 4 KiB | 1 KiB (state) |
+| `libm` f32, minimal formatting | 5 KiB | — |
+| generation (64 signals, embedded) | 6 KiB | — |
+| slots (64 × 32 B) and images (2 groups × 32 ports × 16 B) | — | 3 KiB |
+| outputs (16 × (96 + 3 × 24) B) | — | 2.7 KiB |
+| expressions, queues (boxes, methods, events, actions) | — | 4 KiB |
+| trace (U9) | — | 16 KiB |
+| stacks (service 4 KiB, 2 groups 2 × 1.5 KiB, ISR 1 KiB) | — | 8 KiB |
+| **Total** | **142 KiB** | **40.7 KiB** |
 
-Se o orçamento falhar, o primeiro corte é o traço (8 KiB) e o segundo a verificação Ed25519 em firmware sem geração em flash (feature `gen-flash`).
+If the budget fails, the first cut is the trace (8 KiB) and the second the Ed25519 verification in firmware without a generation in flash (`gen-flash` feature).
 
-**A exceção declarada: o rádio do ESP32.** O núcleo não aloca, mas o Wi-Fi do ESP32 (`esp-radio`) precisa de um heap (`esp-alloc`) e de um escalonador preemptivo (`esp-rtos`). A regra:
+**The declared exception: the ESP32 radio.** The core does not allocate, but the ESP32's Wi-Fi (`esp-radio`) needs a heap (`esp-alloc`) and a preemptive scheduler (`esp-rtos`). The rule:
 
-| Regra | Porquê |
+| Rule | Why |
 |---|---|
-| o heap e o `esp-rtos` só existem no firmware de uma placa ESP32 com `[net] wifi = true` e um `[net.wifi]` no manifesto do MCU (ref/01 §5.22); sem Wi-Fi, não entram na imagem | o resto dos alvos não paga o custo |
-| o heap tem **tamanho fixo**, declarado na placa (`[capacities] radio_heap_bytes`, omissão 72 KiB), é só do rádio e fica fora do núcleo: nenhum crate do núcleo, driver ou app lhe acede (o `#[global_allocator]` só é visível no módulo `chip-esp`) | o invariante "o núcleo não aloca" continua verdadeiro |
-| o heap e as pilhas do `esp-rtos` **contam no `J0710`**, somados à RAM da geração | a geração não pode caber "no papel" e falhar com o rádio ligado |
-| as tarefas do rádio correm com prioridade abaixo dos executores dos grupos (`[irq] reserved` da placa, ref/03 §2.3.3) | o rádio não preempta o ciclo |
-| o **jitter dos grupos mede-se com o rádio ativo** (tráfego UDP no link), além de com ele desligado, na porta 5 da Fase 2 e no `jk bench --target mcu` | a interferência do escalonador do rádio é o risco (documento 25, §5) |
+| the heap and `esp-rtos` only exist in the firmware of an ESP32 board with `[net] wifi = true` and a `[net.wifi]` in the MCU manifest (ref/01 §5.22); without Wi-Fi, they do not go into the image | the other targets do not pay the cost |
+| the heap has a **fixed size**, declared in the board (`[capacities] radio_heap_bytes`, default 72 KiB), belongs only to the radio and stays outside the core: no core crate, driver or app accesses it (the `#[global_allocator]` is only visible in the `chip-esp` module) | the invariant "the core does not allocate" remains true |
+| the heap and the `esp-rtos` stacks **count in `J0710`**, added to the generation's RAM | the generation must not fit "on paper" and fail with the radio on |
+| the radio tasks run at a priority below the group executors (the board's `[irq] reserved`, ref/03 §2.3.3) | the radio does not preempt the cycle |
+| the **group jitter is measured with the radio active** (UDP traffic on the link), as well as with it off, at gate 5 of Phase 2 and in `jk bench --target mcu` | interference from the radio's scheduler is the risk (document 25, §5) |
 
-A versão do `esp-radio` (beta em 2026) fica fixada exatamente no workspace (documento 13, §5.1).
+The `esp-radio` version (beta in 2026) is pinned exactly in the workspace (document 13, §5.1).
 
-#### 2.15.3 Pilha e tempo
+#### 2.15.3 Stack and time
 
-| Alvo | Métrica | Alvo (a medir) |
+| Target | Metric | Target (to be measured) |
 |---|---|---|
-| RP2350 | jitter do tick a 1 kHz, p99,9 | ≤ 10 µs (porta 5 da Fase 2) |
-| RP2350 | `jk_tick` de 64 sinais, 16 saídas, 1 app simples | ≤ 50 µs |
-| RP2350 | envelope + árbitro por saída | ≤ 1 µs |
-| RP2350 | `jk_set_input_f32` | ≤ 0,5 µs |
-| RP2350 | `jk_generation_open` de um blob de 16 KiB (SHA-256 + Ed25519) | ≤ 30 ms |
-| M1 | reset → primeiro tick (sem link) | ≤ 100 ms |
-| todos | ciclo máximo | ~10 kHz com lógica simples (19 U4) |
+| RP2350 | tick jitter at 1 kHz, p99.9 | ≤ 10 µs (gate 5 of Phase 2) |
+| RP2350 | `jk_tick` of 64 signals, 16 outputs, 1 simple app | ≤ 50 µs |
+| RP2350 | envelope + arbiter per output | ≤ 1 µs |
+| RP2350 | `jk_set_input_f32` | ≤ 0.5 µs |
+| RP2350 | `jk_generation_open` of a 16 KiB blob (SHA-256 + Ed25519) | ≤ 30 ms |
+| M1 | reset → first tick (without link) | ≤ 100 ms |
+| all | maximum cycle | ~10 kHz with simple logic (19 U4) |
 
-### 2.16 Códigos `J07xx` novos
+### 2.16 New `J07xx` codes
 
-Erros do `jk check` e do `jk build` para alvos MCU. Os `J0710`, `J0720` e `J0721` vêm do documento 19 e ficam definidos aqui (o `J0720` também na ref/04 §4.16).
+Errors of `jk check` and `jk build` for MCU targets. `J0710`, `J0720` and `J0721` come from document 19 and are defined here (`J0720` also in ref/04 §4.16).
 
-| Código | Gravidade | Mensagem curta |
+| Code | Severity | Short message |
 |---|---|---|
-| `J0710` | error | a geração não cabe nas capacidades do firmware ou do alvo (com as capacidades excedidas e a estimativa de RAM e flash, §2.13.3; num ESP32 com Wi-Fi, inclui o heap do rádio, §2.15.2) |
-| `J0720` | error | API ou secção do manifesto indisponível no Joker Micro (§2.11.5, ref/04 §4.14) |
-| `J0721` | warning | `f64` num MCU sem FPU de dupla precisão (`fpu` = `none` ou `sp`, §2.14) |
-| `J0770` | error | alvo MCU desconhecido ou não suportado (placa sem perfil MCU, arquitetura big-endian) |
-| `J0771` | error | `--generation` sem descritor de firmware válido (`--firmware`) |
-| `J0772` | error | a geração usa uma app que o firmware não contém (nome, major ou `meta_hash` diferentes) |
-| `J0773` | error | a geração usa um driver que o firmware não contém (nome, major ou digest do descritor diferentes) |
-| `J0774` | error | pilha estimada acima do orçamento de um contexto |
-| `J0775` | error | colisão de identificadores gerados (C ou Rust) |
-| `J0776` | error | mais grupos de ciclo do que o alvo suporta (8 na v1) |
-| `J0777` | error | período de grupo abaixo do mínimo do alvo (100 µs) ou não representável no temporizador |
-| `J0778` | error | persistência pedida (trips, `kv`, parâmetros persistentes) sem área de persistência |
-| `J0779` | error-in-prod | blob de geração sem assinatura |
-| `J0780` | warning | vírgula flutuante (`f32`) por software num alvo sem FPU |
-| `J0781` | error | blob ou firmware maior do que a sua área de flash |
-| `J0782` | error | tipo de sinal indisponível no Joker Micro v1 (bloco, stream) |
-| `J0783` | error | escritas agendadas (`schedule_depth > 0`, `timed`) num MCU: chegam na 1.1 |
-| `J0784` | error | `kv` de app acima de 16 KiB |
-| `J0785` | error | sinal de dispositivo `extern` sem `type`, `direction` ou (se numérico) `unit` |
-| `J0786` | error-in-prod | placa sem saídas seguras no reset (`reset_safe = false`); aceitável com justificação por `[target] accept_unsafe_reset` (ver a seguir à tabela) |
-| `J0787` | warning | identificador gerado com mais de 63 caracteres |
-| `J0788` | error-in-prod | geração em flash não ligada a um nó (`node`) |
-| `J0789` | error | a geração precisa de um formato de blob, ISA ou `min_runtime` acima do que o firmware suporta |
-| `J0790` | error | entrada obrigatória da interface externa sem correspondência na geração |
-| `J0791` | warning | pilha de um contexto não medível (recursão ou chamadas indiretas); o orçamento não fica verificado |
-| `J0792` | warning | desgaste estimado da flash: vida abaixo de 10 anos com as taxas declaradas |
-| `J0793` | warning | entrada opcional da interface externa sem correspondência na geração |
-| `J0794` | error | nó em `prod` com um MCU cuja geração é `dev` (o manifesto do MCU tem `mode = "dev"`, ou o blob tem o bit `DEV`) |
-| `J0795` | error | firmware Joker Micro sem recetor de OTA: feature `ota` desligada, ou placa sem `FW_STAGING`, `GEN_A`/`GEN_B` ou bootloader A/B (§2.12.6) |
-| `J0796` | error | a geração usa funcionalidades que o núcleo do MCU (`[mcu.<d>] core` no lock) não conhece (ref/02 §2.1; §3.11) |
+| `J0710` | error | the generation does not fit in the capabilities of the firmware or the target (with the exceeded capabilities and the RAM and flash estimate, §2.13.3; on an ESP32 with Wi-Fi, it includes the radio heap, §2.15.2) |
+| `J0720` | error | API or manifest section unavailable on Joker Micro (§2.11.5, ref/04 §4.14) |
+| `J0721` | warning | `f64` on an MCU without a double-precision FPU (`fpu` = `none` or `sp`, §2.14) |
+| `J0770` | error | unknown or unsupported MCU target (board without an MCU profile, big-endian architecture) |
+| `J0771` | error | `--generation` without a valid firmware descriptor (`--firmware`) |
+| `J0772` | error | the generation uses an app that the firmware does not contain (different name, major or `meta_hash`) |
+| `J0773` | error | the generation uses a driver that the firmware does not contain (different name, major or descriptor digest) |
+| `J0774` | error | estimated stack above the budget of a context |
+| `J0775` | error | collision of generated identifiers (C or Rust) |
+| `J0776` | error | more cycle groups than the target supports (8 in v1) |
+| `J0777` | error | group period below the target minimum (100 µs) or not representable in the timer |
+| `J0778` | error | persistence requested (trips, `kv`, persistent parameters) without a persistence area |
+| `J0779` | error-in-prod | unsigned generation blob |
+| `J0780` | warning | software floating point (`f32`) on a target without an FPU |
+| `J0781` | error | blob or firmware larger than its flash area |
+| `J0782` | error | signal type unavailable in Joker Micro v1 (block, stream) |
+| `J0783` | error | scheduled writes (`schedule_depth > 0`, `timed`) on an MCU: they arrive in 1.1 |
+| `J0784` | error | app `kv` above 16 KiB |
+| `J0785` | error | `extern` device signal without `type`, `direction` or (if numeric) `unit` |
+| `J0786` | error-in-prod | board without safe outputs at reset (`reset_safe = false`); acceptable with a justification through `[target] accept_unsafe_reset` (see after the table) |
+| `J0787` | warning | generated identifier with more than 63 characters |
+| `J0788` | error-in-prod | generation in flash not bound to a node (`node`) |
+| `J0789` | error | the generation needs a blob format, ISA or `min_runtime` above what the firmware supports |
+| `J0790` | error | required entry of the external interface with no match in the generation |
+| `J0791` | warning | stack of a context not measurable (recursion or indirect calls); the budget is not verified |
+| `J0792` | warning | estimated flash wear: life below 10 years with the declared rates |
+| `J0793` | warning | optional entry of the external interface with no match in the generation |
+| `J0794` | error | node in `prod` with an MCU whose generation is `dev` (the MCU manifest has `mode = "dev"`, or the blob has the `DEV` bit) |
+| `J0795` | error | Joker Micro firmware without an OTA receiver: `ota` feature disabled, or board without `FW_STAGING`, `GEN_A`/`GEN_B` or an A/B bootloader (§2.12.6) |
+| `J0796` | error | the generation uses features that the MCU's core (`[mcu.<d>] core` in the lock) does not know (ref/02 §2.1; §3.11) |
 
-`J0797`–`J0799` ficam livres.
+`J0797`–`J0799` remain free.
 
-**O MCU num nó em `prod`.** Um nó em `prod` só envia a um MCU blobs de geração `prod` (bit `DEV` do cabeçalho a 0, §2.13.2). O `jk check` do manifesto do nó verifica-o a partir do manifesto do MCU (a chave `micro` do dispositivo `joker-link`, ref/01 anexo A) e dá `J0794`; o `jokerd` volta a verificá-lo antes de levar um blob pelo link (`OTA` de geração, ref/07 §9) e recusa a geração do nó com o mesmo código, e o Deck também, na validação. Um nó em `dev` leva os dois. O MCU não decide isto sozinho: o que ele aceita é a sua própria política (o `min_mode` do bundle de confiança, ref/02 §2.5.4).
+**The MCU in a node in `prod`.** A node in `prod` only sends `prod` generation blobs to an MCU (bit `DEV` of the header at 0, §2.13.2). The `jk check` of the node manifest verifies this from the MCU manifest (the `micro` key of the `joker-link` device, ref/01 appendix A) and gives `J0794`; `jokerd` verifies it again before carrying a blob over the link (generation `OTA`, ref/07 §9) and rejects the node's generation with the same code, and so does the Deck, at validation. A node in `dev` carries both. The MCU does not decide this by itself: what it accepts is its own policy (the `min_mode` of the trust bundle, ref/02 §2.5.4).
 
-**`J0786` com justificação.** Com o manifesto do MCU em `prod`, o `J0786` é erro. Uma placa sem saídas seguras no reset pode ser aceite com justificação, como o fallback em falta (`accept_missing_fallback`, ref/01 §5.10): a chave `accept_unsafe_reset = "<justificação>"` no `[target]` do manifesto do MCU (ref/01 §5.22) passa o `J0786` a aviso, e o `jk lock` copia-a para `[accepted] accept_unsafe_reset."<placa>"` do lock desse manifesto (ref/02 §2.1.14). A aceitação não muda o firmware: os pinos continuam no estado de reset do hardware até ao passo 6 do arranque (§2.12.3); só fica escrito, assinado com a geração, quem aceitou isso e porquê.
+**`J0786` with a justification.** With the MCU manifest in `prod`, `J0786` is an error. A board without safe outputs at reset may be accepted with a justification, like the missing fallback (`accept_missing_fallback`, ref/01 §5.10): the key `accept_unsafe_reset = "<justification>"` in the `[target]` of the MCU manifest (ref/01 §5.22) turns `J0786` into a warning, and `jk lock` copies it to `[accepted] accept_unsafe_reset."<board>"` of that manifest's lock (ref/02 §2.1.14). The acceptance does not change the firmware: the pins stay in the hardware reset state until step 6 of boot (§2.12.3); it only records, signed with the generation, who accepted it and why.
 
-### 2.17 O que isto pede ao manifesto e às placas
+### 2.17 What this asks of the manifest and the boards
 
-Este documento não define chaves do manifesto nem de placas: estão na `ref/01` (`[target]`, `[target.capacity]`, `[target.extern]`, `[target.micro]`, `[link]` no §5.22, apps `extern`, `[clock] sync`) e na `ref/03` (placas MCU). A tabela resume o que o `jk build` lê delas.
+This document defines no manifest or board keys: they are in `ref/01` (`[target]`, `[target.capacity]`, `[target.extern]`, `[target.micro]`, `[link]` in §5.22, `extern` apps, `[clock] sync`) and in `ref/03` (MCU boards). The table summarizes what `jk build` reads from them.
 
-| Onde | Chave | Tipo | Para quê |
+| Where | Key | Type | What for |
 |---|---|---|---|
-| `[target]` | `board = "<placa MCU>"` | string | o `jk build --target mcu:<placa>` e o `board_id` |
-| `[target]` | `accept_unsafe_reset = "<justificação>"` (ref/01 §5.22) | string | aceita o `J0786` em `prod`; vai para o `[accepted]` do lock do MCU e não muda o comportamento do firmware (§2.16) |
-| `[project]` | `mode` | `"dev"` \| `"prod"` | bit `DEV` do cabeçalho; um nó em `prod` só envia blobs `prod` (`J0794`, §2.16) |
-| `[target.capacity]` | os nomes do §2.13.3 (`signals = 128`, `trace_bytes = "16 KiB"`, …) | inteiro ou tamanho | capacidades do build |
-| `[target.extern]` | `expose = ["alarm.**", "calc.*"]` | seletores | sinais que o firmware pode ler (§2.8.2) |
-| `[target.micro]` | `service_deadline = "100ms"`, `freeze_on_trip = true`, `samples_ring = 256`, `event_queue = 16`, `confirm = "5m"` | | secção `NODE` |
-| `[clock]` | `sync = "link" \| "extern" \| "none"` (valores novos para MCU) | string | fonte do relógio |
-| `[devices.<d>]` | `driver = "extern"` | string | dispositivo alimentado pelo integrador |
-| `[devices.<d>.signals]` | `<nome> = { type, unit, direction, … }` | tabela | sinais de um dispositivo sem perfil (`J0785`) |
-| `[apps.<a>]` | `kind = "extern"`, `writer = { … }`, `writes = [saídas]`, `reads = [seletores]` | | escritor externo |
-| `[apps.<a>.params]` | `<p> = { value = …, runtime = true, persist = true }` | | parâmetros alteráveis (§2.6.l) |
-| `[link]` (ref/01 §5.22) e `[outputs.<s>] remote_levels` | transporte (`bus` ou `address`), `addr`, `auth`, `peer`, níveis delegados | | secção `LINKS` |
-| `[net.wifi]` (ref/01 §5.22) | `ssid`, `password = "secret:<nome>"`, `country`, `hostname` | strings | secções `NET` e `SECRETS`; exige `[net] wifi = true` na placa |
-| `[devices.<d>]` com `driver = "esp32"` (ref/01 anexo A) | sinais com `touch = <0–9>`, `rssi = true`, `uptime = true` | | secção `DEVICES`; o `touch` resolve-se pelo `touch_channel` dos `[pins]` da placa |
-| perfil de placa MCU (`ref/03` §2.3.1, §2.3.3) | `[board]` com `os = "none"`, `mcu_class`, `chip` (o nome do HAL, que escolhe a família `chip-*`), `arch` (triplo Rust), `fpu` (o enum do §2.14, chave 15), `memory`, `flash`, `reset_safe`, `stack`; `[areas]` (offsets e tamanhos), `[irq] priorities`, `[watchdog]`, `[capacities]` por omissão, `[link] default` (modo de manutenção) | | §2.12, §2.15 |
+| `[target]` | `board = "<MCU board>"` | string | `jk build --target mcu:<board>` and the `board_id` |
+| `[target]` | `accept_unsafe_reset = "<justification>"` (ref/01 §5.22) | string | accepts `J0786` in `prod`; it goes to the `[accepted]` of the MCU's lock and does not change the firmware's behavior (§2.16) |
+| `[project]` | `mode` | `"dev"` \| `"prod"` | `DEV` bit of the header; a node in `prod` only sends `prod` blobs (`J0794`, §2.16) |
+| `[target.capacity]` | the names of §2.13.3 (`signals = 128`, `trace_bytes = "16 KiB"`, …) | integer or size | capabilities of the build |
+| `[target.extern]` | `expose = ["alarm.**", "calc.*"]` | selectors | signals the firmware may read (§2.8.2) |
+| `[target.micro]` | `service_deadline = "100ms"`, `freeze_on_trip = true`, `samples_ring = 256`, `event_queue = 16`, `confirm = "5m"` | | `NODE` section |
+| `[clock]` | `sync = "link" \| "extern" \| "none"` (new values for MCU) | string | clock source |
+| `[devices.<d>]` | `driver = "extern"` | string | device fed by the integrator |
+| `[devices.<d>.signals]` | `<name> = { type, unit, direction, … }` | table | signals of a device without a profile (`J0785`) |
+| `[apps.<a>]` | `kind = "extern"`, `writer = { … }`, `writes = [outputs]`, `reads = [selectors]` | | external writer |
+| `[apps.<a>.params]` | `<p> = { value = …, runtime = true, persist = true }` | | changeable parameters (§2.6.l) |
+| `[link]` (ref/01 §5.22) and `[outputs.<s>] remote_levels` | transport (`bus` or `address`), `addr`, `auth`, `peer`, delegated levels | | `LINKS` section |
+| `[net.wifi]` (ref/01 §5.22) | `ssid`, `password = "secret:<name>"`, `country`, `hostname` | strings | `NET` and `SECRETS` sections; requires `[net] wifi = true` on the board |
+| `[devices.<d>]` with `driver = "esp32"` (ref/01 appendix A) | signals with `touch = <0–9>`, `rssi = true`, `uptime = true` | | `DEVICES` section; `touch` is resolved through the `touch_channel` of the board's `[pins]` |
+| MCU board profile (`ref/03` §2.3.1, §2.3.3) | `[board]` with `os = "none"`, `mcu_class`, `chip` (the HAL name, which chooses the `chip-*` family), `arch` (Rust triple), `fpu` (the enum of §2.14, key 15), `memory`, `flash`, `reset_safe`, `stack`; `[areas]` (offsets and sizes), `[irq] priorities`, `[watchdog]`, default `[capacities]`, `[link] default` (maintenance mode) | | §2.12, §2.15 |
 
-**Como a palavra-passe do Wi-Fi chega ao MCU.** O MCU precisa dela antes de ter rede, e ninguém no caminho a deve poder ler:
+**How the Wi-Fi password reaches the MCU.** The MCU needs it before it has a network, and nobody on the way should be able to read it:
 
-1. **Chave do MCU.** Um MCU M2 com `[net.wifi] password` tem uma chave X25519 de segredos no registo 19 da área `IDENTITY`, como um MCU autónomo. É gerada no enrolamento: `jk node enroll <mcu> --link <d> --ca <pasta>` (coprocessador, documento 07 §3.1) ou o enrolamento de um MCU autónomo; a chave pública vai no certificado do MCU, e o MCU passa a ser o destinatário `node:<mcu>` do `secrets.toml.enc` (ref/02 §2.4.8, com a atestação do §3.4.2).
-2. **Cifra.** `jk secret set wifi_bancada` cifra o valor para os destinatários, incluindo `node:<mcu>`, como qualquer segredo. Um nome em falta é `J0920`; sem o `wrap` do MCU, `J0922`.
-3. **Build.** `jk build --generation` copia a entrada, **ainda cifrada**, para a secção `SECRETS` do blob, só com o `wrap` de `node:<mcu>`, e escreve em `NET` o nome do segredo. O `jk` não decifra nada: não precisa da chave de escrow. A assinatura do blob (§2.13.5) cobre as duas secções.
-4. **Transporte.** O blob chega ao MCU por `jk flash` ou pelo link (OTA de geração, ref/07 §9). O nó Linux e o Deck levam-no sem o conseguir ler, tal como os outros segredos (ref/02 §3.4.3).
-5. **Arranque.** O firmware verifica o blob, decifra a entrada com a chave do registo 19 (HPKE, ref/02 §2.4.4), liga-se ao Wi-Fi e apaga a cópia em claro da RAM depois de a passar ao rádio. O valor nunca vai para o traço, para o `HELLO` nem para a persistência.
+1. **MCU key.** An M2 MCU with `[net.wifi] password` has an X25519 secrets key in record 19 of the `IDENTITY` area, like a standalone MCU. It is generated at enrollment: `jk node enroll <mcu> --link <d> --ca <directory>` (coprocessor, document 07 §3.1) or the enrollment of a standalone MCU; the public key goes in the MCU's certificate, and the MCU becomes the recipient `node:<mcu>` of `secrets.toml.enc` (ref/02 §2.4.8, with the attestation of §3.4.2).
+2. **Encryption.** `jk secret set wifi_bench` encrypts the value for the recipients, including `node:<mcu>`, like any secret. A missing name is `J0920`; without the MCU's `wrap`, `J0922`.
+3. **Build.** `jk build --generation` copies the entry, **still encrypted**, into the `SECRETS` section of the blob, only with the `wrap` of `node:<mcu>`, and writes the name of the secret in `NET`. `jk` decrypts nothing: it does not need the escrow key. The blob's signature (§2.13.5) covers both sections.
+4. **Transport.** The blob reaches the MCU by `jk flash` or over the link (generation OTA, ref/07 §9). The Linux node and the Deck carry it without being able to read it, just like the other secrets (ref/02 §3.4.3).
+5. **Boot.** The firmware verifies the blob, decrypts the entry with the key of record 19 (HPKE, ref/02 §2.4.4), connects to the Wi-Fi and erases the plaintext copy from RAM after passing it to the radio. The value never goes to the trace, to `HELLO` or to persistence.
 
-Como o primeiro blob tem de chegar antes de haver rede, a primeira gravação é sempre por `jk flash` ou pelo link série; um link só por IP num MCU sem geração válida cai no modo de manutenção, que usa o `[link] default` da placa (§2.12.3). **Rodar um segredo num MCU: a exceção à ADR 0024 §3.** Num nó Linux, rodar um segredo não cria uma geração nova (ref/02 §3.4.4). Num MCU, o segredo vai **dentro do blob** (secção `SECRETS`), e por isso rodá-lo produz um **blob novo com o mesmo manifesto**: `jk secret set` seguido de `jk build --generation` (ou do `jk apply`, que o faz quando a `rev` de um segredo do MCU sobe) dá um blob com **novo `gen_seq`** (o anti-rollback do §2.12 continua a valer) e novo `image_hash`, mas o mesmo `source_hash` e o mesmo `registry_hash`: a geração Linux e o seu digest não mudam, e o Deck não vê nada que dependa do valor. O blob novo segue o caminho normal (confirmação, rollback, §3.7), e o MCU tem de chegar à rede nova com o blob anterior ou pelo link série.
+Since the first blob must arrive before there is a network, the first flashing is always by `jk flash` or over the serial link; an IP-only link on an MCU without a valid generation falls into maintenance mode, which uses the board's `[link] default` (§2.12.3). **Rotating a secret on an MCU: the exception to ADR 0024 §3.** On a Linux node, rotating a secret does not create a new generation (ref/02 §3.4.4). On an MCU, the secret goes **inside the blob** (`SECRETS` section), and so rotating it produces a **new blob with the same manifest**: `jk secret set` followed by `jk build --generation` (or by `jk apply`, which does it when the `rev` of an MCU secret goes up) gives a blob with a **new `gen_seq`** (the anti-rollback of §2.12 still applies) and a new `image_hash`, but the same `source_hash` and the same `registry_hash`: the Linux generation and its digest do not change, and the Deck sees nothing that depends on the value. The new blob follows the normal path (confirmation, rollback, §3.7), and the MCU must reach the new network with the previous blob or over the serial link.
 
 ---
 
-## 3. Comportamento esperado
+## 3. Expected behavior
 
-### 3.1 O tick
+### 3.1 The tick
 
-- A ordem dos passos é a do documento 01, §4, e as regras são as do documento 16 (árbitro A1–A14, envelope E1–E10, qualidade §3, expressões §4). O MCU não tem regras próprias: é o mesmo `joker-core`.
-- **Passo 2:** a caixa de cada grupo recebe, por ordem de chegada, as propostas e os registos de método dos escritores externos (`jk_propose`, `jk_call_method`), do link (`PROPOSE`, `CALL`) e das tarefas async das apps. Todas contam como async para a regra A4: a última do mesmo escritor vence, e uma de ciclo do mesmo escritor no mesmo tick vence-as.
-- **Passo 4:** as tarefas de ciclo são chamadas nativas. Não há *epoch*: uma tarefa que não termina encrava o grupo, e o `jk_supervise` força o `safe` das suas saídas a 3 períodos (§3.4). Um `Err` termina a tarefa sem descartar as propostas já feitas; um *panic* é `jk_fatal` (§2.6.b).
-- **Passo 7:** o commit escreve o valor aplicado na caixa de buffer duplo de cada saída (o leitor nunca espera), marca `CHANGED`, marca para o serviço os registos persistentes a gravar e põe na fila do link as mudanças a anunciar (`OUTCOMES`, `SAMPLES`).
-- `now_us` do `jk_tick` é o instante do latch: o `cx.now()` das apps, o `t_mono` do traço e a base dos leases (A2). A política `overrun` usa a duração medida com `jk_now_us()` e só afeta os ticks seguintes, com a flag gravada no traço, para o replay ser exato.
+- The order of the steps is that of document 01, §4, and the rules are those of document 16 (arbiter A1–A14, envelope E1–E10, quality §3, expressions §4). The MCU has no rules of its own: it is the same `joker-core`.
+- **Step 2:** each group's box receives, in order of arrival, the proposals and method records of the external writers (`jk_propose`, `jk_call_method`), of the link (`PROPOSE`, `CALL`) and of the apps' async tasks. They all count as async for rule A4: the last one from the same writer wins, and a cycle one from the same writer in the same tick beats them.
+- **Step 4:** the cycle tasks are native calls. There is no *epoch*: a task that does not finish jams the group, and `jk_supervise` forces the `safe` of its outputs at 3 periods (§3.4). An `Err` ends the task without discarding the proposals already made; a *panic* is `jk_fatal` (§2.6.b).
+- **Step 7:** the commit writes the applied value into each output's double-buffered box (the reader never waits), marks `CHANGED`, marks for the service the persistent records to write and queues on the link the changes to announce (`OUTCOMES`, `SAMPLES`).
+- The `now_us` of `jk_tick` is the latch instant: the apps' `cx.now()`, the trace's `t_mono` and the base of the leases (A2). The `overrun` policy uses the duration measured with `jk_now_us()` and only affects the following ticks, with the flag recorded in the trace, so that replay is exact.
 
-### 3.2 Determinismo e conformidade
+### 3.2 Determinism and conformance
 
-- Os casos de conformidade (documento 16, §8) correm no MCU com um firmware de conformidade (`joker-micro-conformance`, documento 13, tarefa 22), que recebe os ticks do caso por sonda (RTT) ou pelo link, chama `jk_set_input_ex`, `jk_propose`, `jk_tick` com os tempos do caso, e devolve os resultados. **Têm de dar os mesmos bytes que no Linux** (ADR 0020).
-- Nada de não determinista entra nas decisões de um tick: nem `jk_now_us`, nem a ordem de preempção entre grupos (um grupo só vê de outro os valores aplicados à data do seu latch, documento 02, §6.3), nem o momento em que uma ISR escreveu uma entrada (o latch fixa-a, e o traço grava-a).
-- O traço do MCU é o do documento 16, §7, com os tempos em ns (µs × 1000, exato) e sem compressão; o `jk replay` corre o mesmo núcleo no portátil (19 U9).
+- The conformance cases (document 16, §8) run on the MCU with a conformance firmware (`joker-micro-conformance`, document 13, task 22), which receives the case's ticks by probe (RTT) or over the link, calls `jk_set_input_ex`, `jk_propose`, `jk_tick` with the case's times, and returns the results. **They must give the same bytes as on Linux** (ADR 0020).
+- Nothing nondeterministic enters the decisions of a tick: not `jk_now_us`, not the preemption order between groups (a group only sees from another the values applied as of its latch, document 02, §6.3), not the moment at which an ISR wrote an input (the latch fixes it, and the trace records it).
+- The MCU trace is that of document 16, §7, with times in ns (µs × 1000, exact) and without compression; `jk replay` runs the same core on the laptop (19 U9).
 
-### 3.3 Entradas e leituras
+### 3.3 Inputs and reads
 
-- Uma entrada escrita antes do `jk_tick` de um grupo é vista nesse tick; escrita durante o tick, no seguinte. Nunca a meio.
-- O envelhecimento (`max_age`, documento 01, §3.3) calcula-se no latch com o `now_us` do tick e, no `jk_read`, com o `now_us` passado.
-- Uma colisão do leitor com o escritor dá a amostra anterior completa, e conta-se. Com o escritor numa ISR e o grupo numa tarefa, só acontece se a ISR preemptar o latch entre as duas metades de uma cópia de 32 B: é raro e inofensivo.
+- An input written before a group's `jk_tick` is seen in that tick; written during the tick, in the next one. Never midway.
+- Aging (`max_age`, document 01, §3.3) is computed at the latch with the tick's `now_us` and, in `jk_read`, with the `now_us` passed.
+- A collision of the reader with the writer gives the previous complete sample, and is counted. With the writer in an ISR and the group in a task, it only happens if the ISR preempts the latch between the two halves of a 32 B copy: it is rare and harmless.
 
-### 3.4 Saídas e estado seguro
+### 3.4 Outputs and safe state
 
-| Situação | O que o integrador lê em `jk_get_output` | Garantido por |
+| Situation | What the integrator reads in `jk_get_output` | Guaranteed by |
 |---|---|---|
-| antes do `jk_init` | nada (`JK_E_STATE`): os pinos estão no estado de reset do hardware | a placa (`reset_safe`, `J0786`) |
-| depois do `jk_init`, antes do primeiro tick | o `safe` | A8 |
-| nenhum escritor ativo (leases expirados, link em baixo) | o `safe` (`JK_OUTF_SAFE`) | A6 |
-| grupo encravado > 3 períodos | o `safe` (`JK_OUTF_FORCED`), se o integrador ainda estiver a ler; senão, escreve-o a partir da ISR do supervisor | `jk_supervise` |
-| trip | o `safe` (`JK_OUTF_TRIPPED`, `Bad(tripped)`), persistente | E7, §2.10 |
-| `jk_force_safe(true)` | o `safe` (`JK_OUTF_FORCED`) | |
-| nó parado (`HALTED`) | o `safe`; `feed_watchdog = 0`, e o watchdog reinicia o MCU | §3.9 |
-| MCU congelado | nada: o watchdog de hardware reinicia; até lá, o último valor fica nos pinos | watchdog + fallback do equipamento (documento 01, §8) |
-| `safe = "relinquish"` em vigor | `JK_RELINQUISHED` | documento 03, §6.1 |
+| before `jk_init` | nothing (`JK_E_STATE`): the pins are in the hardware reset state | the board (`reset_safe`, `J0786`) |
+| after `jk_init`, before the first tick | the `safe` | A8 |
+| no active writer (leases expired, link down) | the `safe` (`JK_OUTF_SAFE`) | A6 |
+| group jammed > 3 periods | the `safe` (`JK_OUTF_FORCED`), if the integrator is still reading; otherwise, it writes it from the supervisor ISR | `jk_supervise` |
+| trip | the `safe` (`JK_OUTF_TRIPPED`, `Bad(tripped)`), persistent | E7, §2.10 |
+| `jk_force_safe(true)` | the `safe` (`JK_OUTF_FORCED`) | |
+| node stopped (`HALTED`) | the `safe`; `feed_watchdog = 0`, and the watchdog restarts the MCU | §3.9 |
+| MCU frozen | nothing: the hardware watchdog restarts it; until then, the last value stays on the pins | watchdog + equipment fallback (document 01, §8) |
+| `safe = "relinquish"` in effect | `JK_RELINQUISHED` | document 03, §6.1 |
 
-O valor devolvido é **sempre admissível**: o integrador aplica-o sem pensar. É isso que torna o MCU coprocessador seguro por desenho (19 §6, U1).
+The returned value is **always admissible**: the integrator applies it without thinking. That is what makes the coprocessor MCU safe by design (19 §6, U1).
 
-### 3.5 Concorrência
+### 3.5 Concurrency
 
-- As estruturas partilhadas entre contextos são só estas, todas sem locks: slots (escritor único), caixas das saídas (buffer duplo, escritor = grupo dono), caixas de propostas por grupo (SPSC: produtor = serviço, consumidor = grupo), filas de eventos, `OUTCOMES` e `SAMPLES` por grupo (SPSC: produtor = grupo, consumidor = serviço), bits de `force_safe` e de congelamento do traço (atómicos). A ordem de memória é *acquire/release*; em multi-núcleo, a memória do nó tem de ser coerente (§2.9.3).
-- Grupos diferentes nunca partilham estado mutável: cada um tem a sua imagem, as suas saídas, o seu anel de traço e as suas estatísticas (documento 01, §3.4).
+- The structures shared between contexts are only these, all lock-free: slots (single writer), output boxes (double buffer, writer = owning group), proposal boxes per group (SPSC: producer = service, consumer = group), event queues, `OUTCOMES` and `SAMPLES` per group (SPSC: producer = group, consumer = service), `force_safe` and trace-freeze bits (atomic). The memory order is *acquire/release*; on multicore, the node memory must be coherent (§2.9.3).
+- Different groups never share mutable state: each one has its image, its outputs, its trace ring and its statistics (document 01, §3.4).
 
-### 3.6 Link e leases
+### 3.6 Link and leases
 
-- As propostas do par (nó Linux ou Deck) entram com o nível que trazem, desde que esteja nos níveis permitidos do link (senão `rejected(not_owner)`), e com um lease ≤ `max_lease` do link (A9, 16 A12; o MCU não os persiste, §2.10.1). O escritor é o par (link, nível) da tabela `WRITERS`.
-- Se o link cair, nada acontece de imediato: os leases expiram no latch do grupo dono (A2), e o envelope aplica o `safe`. O tempo até ao seguro é, no máximo, o lease mais um período do grupo (19 U1: ≤ 40 ms com um lease de 3 × 10 ms).
-- O `HELLO` anuncia o `source_hash` (o hash da geração), o `registry_hash`, o `gen_seq`, o descritor de firmware (versão, digest da imagem e do descritor, hash das capacidades, `security_version`), o resumo dos descritores dos drivers planeados, os parâmetros alterados localmente e as exportações da geração (sinais, instâncias, contratos das classes, ações), a partir do blob. O formato é do `ref/07` §6.4.
+- The peer's proposals (Linux node or Deck) enter with the level they carry, as long as it is among the link's allowed levels (otherwise `rejected(not_owner)`), and with a lease ≤ the link's `max_lease` (A9, 16 A12; the MCU does not persist them, §2.10.1). The writer is the pair (link, level) of the `WRITERS` table.
+- If the link drops, nothing happens immediately: the leases expire at the latch of the owning group (A2), and the envelope applies the `safe`. The time until safe is, at most, the lease plus one period of the group (19 U1: ≤ 40 ms with a lease of 3 × 10 ms).
+- `HELLO` announces the `source_hash` (the generation hash), the `registry_hash`, the `gen_seq`, the firmware descriptor (version, image and descriptor digests, capabilities hash, `security_version`), the summary of the descriptors of the planned drivers, the locally changed parameters and the generation's exports (signals, instances, class contracts, actions), from the blob. The format is that of `ref/07` §6.4.
 
-### 3.7 Gerações
+### 3.7 Generations
 
-- Troca num limite de tick, com herança do valor aplicado, dos leases e dos trips das saídas que se mantêm (A8, documento 18, P6). Uma saída nova começa em `safe`; uma saída removida deixa de existir (o firmware deixa de a aplicar: o integrador vê `JK_E_SIGNAL` se ainda a tiver na interface, ou a interface impediu a geração, `J0790`).
-- Confirmação e rollback como no documento 01, §15, a quente, sem reiniciar o MCU.
-- A geração ativa e a anterior têm de ficar mapeadas até à confirmação. No modo firmware, são as duas áreas A/B.
+- Swap at a tick boundary, inheriting the applied value, the leases and the trips of the outputs that remain (A8, document 18, P6). A new output starts in `safe`; a removed output ceases to exist (the firmware stops applying it: the integrator sees `JK_E_SIGNAL` if it still has it in the interface, or the interface prevented the generation, `J0790`).
+- Confirmation and rollback as in document 01, §15, hot, without restarting the MCU.
+- The active generation and the previous one must remain mapped until confirmation. In firmware mode, they are the two A/B areas.
 
-### 3.8 Tempo
+### 3.8 Time
 
-- O relógio começa `Unsynced`. Com a fonte `link`, cada `TIME` fixa a correspondência e põe-no `Synced`; sem `TIME` passa a `Holdover` e, depois de `max_holdover`, a `Unsynced` (documento 03, §3). Com a fonte `extern`, o mesmo com `jk_time_set_utc`.
-- As apps com `requires_clock = "synced"` têm as saídas bloqueadas (`rejected(clock_unsynced)` no passo 0 do envelope, que leva ao `safe`) enquanto o relógio não estiver `Synced` (documento 01, §7 e §18; 16, E1).
-- Os instantes monotónicos do MCU nunca saem dele sem o par UTC (`ref/00` §3); o `jokerd` converte µs ↔ ns na fronteira.
+- The clock starts `Unsynced`. With the `link` source, each `TIME` sets the mapping and makes it `Synced`; without `TIME` it moves to `Holdover` and, after `max_holdover`, to `Unsynced` (document 03, §3). With the `extern` source, the same with `jk_time_set_utc`.
+- Apps with `requires_clock = "synced"` have their outputs blocked (`rejected(clock_unsynced)` at step 0 of the envelope, which leads to `safe`) while the clock is not `Synced` (document 01, §7 and §18; 16, E1).
+- The MCU's monotonic instants never leave it without the UTC pair (`ref/00` §3); `jokerd` converts µs ↔ ns at the boundary.
 
-### 3.9 Erros e falhas internas
+### 3.9 Errors and internal failures
 
-- Nenhum erro de chamada muda estado: uma função que devolve um erro não fez nada (exceto as que o dizem: `jk_action_result` com `JK_E_FULL` mantém o bilhete).
-- Uma invariante interna partida (um estado impossível, um índice fora do blob que o verificador devia ter apanhado) põe o nó em `HALTED`: todas as saídas em `safe`, todas as funções com estado devolvem `JK_E_HALTED`, `jk_supervise` deixa de pedir o watchdog, e `jk_fatal(JK_E_INTERNAL, detalhe)` é chamado no próximo contexto de serviço ou de grupo. O detalhe identifica o sítio e vai para o registo do próximo arranque, se houver persistência.
+- No call error changes state: a function that returns an error has done nothing (except those that say so: `jk_action_result` with `JK_E_FULL` keeps the ticket).
+- A broken internal invariant (an impossible state, an index outside the blob that the verifier should have caught) puts the node in `HALTED`: all outputs in `safe`, all stateful functions return `JK_E_HALTED`, `jk_supervise` stops asking for the watchdog, and `jk_fatal(JK_E_INTERNAL, detail)` is called in the next service or group context. The detail identifies the location and goes to the log of the next boot, if there is persistence.
 
-### 3.10 Limites
+### 3.10 Limits
 
-| Coisa | Limite v1 |
+| Thing | v1 limit |
 |---|---|
-| grupos por nó | 8 (ABI: 32) |
-| período mínimo de grupo | 100 µs (~10 kHz, 19 U4) |
-| argumentos de um método pela ABI (`jk_value_t`) | 8; mais, por CBOR |
-| chave de idempotência | 1–64 B ASCII imprimível (`ref/00` §10) |
-| `string`/`bytes` num sinal | 64 B |
-| evento ou argumento de ação | 1 KiB, listas de 64 |
-| `kv` por app | 16 KiB (19 §3) |
-| níveis do árbitro | 16 |
-| pilha de expressões | 32 células |
-| blob | 16 MiB (`u32` offsets; na prática, a área de geração) |
-| MTU do link | a do `ref/07`, por transporte |
+| groups per node | 8 (ABI: 32) |
+| minimum group period | 100 µs (~10 kHz, 19 U4) |
+| arguments of a method through the ABI (`jk_value_t`) | 8; more, through CBOR |
+| idempotency key | 1–64 B printable ASCII (`ref/00` §10) |
+| `string`/`bytes` in a signal | 64 B |
+| event or action argument | 1 KiB, lists of 64 |
+| `kv` per app | 16 KiB (19 §3) |
+| arbiter levels | 16 |
+| expression stack | 32 cells |
+| blob | 16 MiB (`u32` offsets; in practice, the generation area) |
+| link MTU | that of `ref/07`, per transport |
 
-### 3.11 Compatibilidade
+### 3.11 Compatibility
 
-| Entre | Regra |
+| Between | Rule |
 |---|---|
-| código C e biblioteca | ABI: mesma major, minor do header ≤ minor da biblioteca, mesmo hash de interface (§2.3) |
-| firmware e blob | o firmware lê os formatos e ISAs até aos do seu descritor; o `jk` escreve o mais alto que o firmware lê (§2.13.6). Um `jk` 1.3 produz blobs para um firmware genérico 1.0; um firmware 1.3 lê os blobs de um `jk` 1.0 |
-| firmware novo e persistência antiga | o formato do diário (§2.10.2) só cresce: tipos novos, campos CBOR novos (ignorados pelos antigos) |
-| firmware e `jokerd` | pelo `link_version` do `HELLO` (`ref/07`) |
-| geração e núcleo do firmware | o lock fixa a versão do núcleo de cada MCU (`[mcu.<d>] core = "1.0"`, ref/02 §2.1.10). O `jk check` só deixa numa geração do MCU o que esse núcleo conhece: uma funcionalidade de uma minor posterior (regra do núcleo, instrução de expressão, secção do blob, chave do manifesto) é `J0796`, com a versão que a introduziu. Para a usar, grava-se primeiro um firmware com um núcleo mais novo (OTA de firmware, §2.12.6) e atualiza-se o lock |
-| apps e firmware | uma app nativa é código do firmware; mudar de app é um firmware novo (ou, na 1.4, `wasmi`). A geração refere a app por nome, major e `meta_hash` (`J0772`) |
-| 1.x | regra de ouro do ADR 0022: nenhum blob, persistência, header ou chamada que funcione numa 1.y deixa de funcionar numa 1.z > y |
+| C code and library | ABI: same major, header minor ≤ library minor, same interface hash (§2.3) |
+| firmware and blob | the firmware reads the formats and ISAs up to those of its descriptor; `jk` writes the highest one the firmware reads (§2.13.6). A 1.3 `jk` produces blobs for a 1.0 generic firmware; a 1.3 firmware reads the blobs of a 1.0 `jk` |
+| new firmware and old persistence | the journal format (§2.10.2) only grows: new types, new CBOR fields (ignored by the old ones) |
+| firmware and `jokerd` | through the `link_version` of `HELLO` (`ref/07`) |
+| generation and firmware core | the lock pins the core version of each MCU (`[mcu.<d>] core = "1.0"`, ref/02 §2.1.10). `jk check` only lets into an MCU generation what that core knows: a feature from a later minor (core rule, expression instruction, blob section, manifest key) is `J0796`, with the version that introduced it. To use it, a firmware with a newer core is flashed first (firmware OTA, §2.12.6) and the lock is updated |
+| apps and firmware | a native app is firmware code; changing an app is a new firmware (or, in 1.4, `wasmi`). The generation refers to the app by name, major and `meta_hash` (`J0772`) |
+| 1.x | golden rule of ADR 0022: no blob, persistence, header or call that works in a 1.y stops working in a 1.z > y |
 
 ---
 
-## 4. Estresse
+## 4. Stress
 
-**D1 — O header foi regenerado, mas a biblioteca antiga ficou no projeto.** O integrador acrescentou um sinal ao manifesto, correu `jk build --lib` e copiou só o header. Os índices mudaram, e `JK_SIG_TANK_LEVEL` agora aponta para outro sinal. **Quebrava** em silêncio. **Correção incorporada:** `jk_init` é uma macro que passa `sizeof(node)`, `JK_ABI_VERSION` e `JK_PROJECT_IFACE_HASH`; a biblioteca recusa com `JK_E_ABI` (`J-E2503`) antes de ler qualquer entrada.
+**D1 — The header was regenerated, but the old library stayed in the project.** The integrator added a signal to the manifest, ran `jk build --lib` and copied only the header. The indices changed, and `JK_SIG_TANK_LEVEL` now points to another signal. **Broke** silently. **Fix incorporated:** `jk_init` is a macro that passes `sizeof(node)`, `JK_ABI_VERSION` and `JK_PROJECT_IFACE_HASH`; the library refuses with `JK_E_ABI` (`J-E2503`) before reading any input.
 
-**D2 — Firmware genérico e uma geração nova com mais sinais.** No modo biblioteca com geração em flash, a geração do site B tem um sinal que a do site A não tinha, e todos os `SignalId` a seguir deslocam-se. Um header com `SignalId`s estaria errado em metade dos sites. **Quebrava. Correção incorporada:** os identificadores do header são índices da **interface externa**, fixada no build da biblioteca e ligada por nome a cada geração no `jk_init` (§2.1, §2.8.2). Uma geração a que falte uma entrada obrigatória é recusada (`J0790` no build, `JK_E_GEN_FIRMWARE` no MCU).
+**D2 — Generic firmware and a new generation with more signals.** In library mode with a generation in flash, the generation of site B has a signal that site A's did not have, and all the `SignalId`s after it shift. A header with `SignalId`s would be wrong at half the sites. **Broke. Fix incorporated:** the header's identifiers are indices of the **external interface**, fixed at library build time and bound by name to each generation in `jk_init` (§2.1, §2.8.2). A generation that lacks a required entry is rejected (`J0790` at build time, `JK_E_GEN_FIRMWARE` on the MCU).
 
-**D3 — Seqlock num MCU de um núcleo.** O integrador escreve uma entrada numa tarefa de prioridade baixa e o grupo corre numa interrupção de prioridade alta. Com um seqlock clássico, o latch que interrompe o escritor a meio espera que a versão fique par, e a tarefa que a tornaria par nunca volta a correr. **Quebrava** (bloqueio total). **Correção incorporada:** leitores sem espera: uma colisão devolve a amostra completa anterior e conta-se (§2.4.1). Proposta de nota ao documento 01, §3.2 (relatório).
+**D3 — Seqlock on a single-core MCU.** The integrator writes an input in a low-priority task and the group runs in a high-priority interrupt. With a classic seqlock, the latch that interrupts the writer midway waits for the version to become even, and the task that would make it even never runs again. **Broke** (total deadlock). **Fix incorporated:** wait-free readers: a collision returns the previous complete sample and is counted (§2.4.1). Proposed note to document 01, §3.2 (report).
 
-**D4 — Duas tarefas chamam `jk_tick` do mesmo grupo.** Um integrador de FreeRTOS arranca o laço duas vezes por engano. **Aguenta:** a bandeira de ocupado do contexto de grupo devolve `JK_E_REENTRANT` à segunda chamada, sem efeito. Grupos **diferentes** em tarefas diferentes são o uso previsto.
+**D4 — Two tasks call `jk_tick` of the same group.** A FreeRTOS integrator starts the loop twice by mistake. **Holds:** the busy flag of the group context returns `JK_E_REENTRANT` to the second call, without effect. **Different** groups in different tasks are the intended use.
 
-**D5 — Falta de energia 1 ms depois de um trip.** O trip está no nó, mas o `jk_service` ainda não o gravou. **Não aguenta por inteiro:** o trip perde-se, e a saída arranca em `safe` mas sem trip. **Mitigação declarada:** o registo do trip é gravado no primeiro `jk_service` (≤ `service_deadline`); `jk_shutdown` grava em *brown-out* se a placa tiver aviso; e se a condição persistir (o caso habitual, um alarme `actions.trip`), o trip volta a acontecer no primeiro tick. A diferença face ao `fsync` do Linux fica escrita no §2.10.3 e no relatório para o documento 19.
+**D5 — Power outage 1 ms after a trip.** The trip is in the node, but `jk_service` has not yet written it. **Does not fully hold:** the trip is lost, and the output boots in `safe` but without the trip. **Declared mitigation:** the trip record is written at the first `jk_service` (≤ `service_deadline`); `jk_shutdown` writes on *brown-out* if the board has a warning; and if the condition persists (the usual case, an `actions.trip` alarm), the trip happens again at the first tick. The difference from Linux's `fsync` is written in §2.10.3 and in the report for document 19.
 
-**D6 — O `jokerd` morre (U1).** Os leases das propostas do link expiram no latch do grupo dono do MCU; em ≤ lease + 1 período as saídas estão em `safe`. Se for o **laço do MCU** a encravar, a ISR do integrador com `jk_supervise` força o `safe` a 3 períodos e deixa de alimentar o watchdog, que reinicia o MCU. **Aguenta.**
+**D6 — `jokerd` dies (U1).** The leases of the link's proposals expire at the latch of the MCU's owning group; in ≤ lease + 1 period the outputs are in `safe`. If it is the **MCU's loop** that jams, the integrator's ISR with `jk_supervise` forces the `safe` at 3 periods and stops feeding the watchdog, which restarts the MCU. **Holds.**
 
-**D7 — Um blob válido do site A carregado no site B.** Mesmo firmware genérico, mesma chave de assinatura: a assinatura verifica. **Quebrava** (o site B passava a ter os envelopes do site A). **Correção incorporada:** o manifesto COSE pode ligar o blob a um nó (chave 14), comparado com a área `IDENTITY` (`JK_E_GEN_NODE`); em `prod` a ligação é obrigatória (`J0788`). O anti-rollback (`gen_seq > confirmed_seq`) impede também a reposição de um blob antigo do próprio site.
+**D7 — A valid blob from site A loaded at site B.** Same generic firmware, same signing key: the signature verifies. **Broke** (site B would get site A's envelopes). **Fix incorporated:** the COSE manifest may bind the blob to a node (key 14), compared with the `IDENTITY` area (`JK_E_GEN_NODE`); in `prod` the binding is required (`J0788`). Anti-rollback (`gen_seq > confirmed_seq`) also prevents restoring an old blob of the site itself.
 
-**D8 — Firmware genérico 1.0 em campo, `jk` 1.3 no portátil.** O `jk` 1.3 tem uma função de expressão nova. **Aguenta:** o `jk build --generation` lê o descritor do firmware, escreve o formato e a ISA que o firmware entende, e dá `J0789` se a geração precisar de algo que só existe num firmware mais novo, com a sugestão de atualizar o firmware primeiro.
+**D8 — Generic 1.0 firmware in the field, 1.3 `jk` on the laptop.** The 1.3 `jk` has a new expression function. **Holds:** `jk build --generation` reads the firmware descriptor, writes the format and the ISA the firmware understands, and gives `J0789` if the generation needs something that only exists in a newer firmware, with the suggestion to update the firmware first.
 
-**D9 — Uma app com `f32` num ESP32-C6.** O C6 não tem FPU; o `J0721` só falava de `f64`. Uma malha PID de 1 kHz em `f32` custa 10× mais do que o esperado. **Quebrava** (o aviso não saía). **Correção incorporada:** o descritor declara a FPU, e o `jk build` procura as rotinas de vírgula flutuante por software no objeto da app: `J0721` para `f64` sem FPU de dupla precisão e o novo `J0780` para `f32` sem FPU.
+**D9 — An app with `f32` on an ESP32-C6.** The C6 has no FPU; `J0721` only talked about `f64`. A 1 kHz PID loop in `f32` costs 10× more than expected. **Broke** (the warning did not come out). **Fix incorporated:** the descriptor declares the FPU, and `jk build` looks for the software floating-point routines in the app's object: `J0721` for `f64` without a double-precision FPU and the new `J0780` for `f32` without an FPU.
 
-**D10 — Um `int` num sinal `bool`, um `double` num `f32`, uma string de 80 B.** Erros comuns de C. **Aguenta:** a macro `_Generic` escolhe o setter pelo tipo do valor; a tabela do §2.5.4 aceita `0`/`1` num `bool` e arredonda um `double` para `f32`; um `double` num `u64` é `JK_E_TYPE` e a string longa `JK_E_VALUE`, ambos sem efeito e com código. Handles tipados em compilação existem no crate Rust (`In<T>`, `Out<T>`), e não em C (§5).
+**D10 — An `int` in a `bool` signal, a `double` in an `f32`, an 80 B string.** Common C errors. **Holds:** the `_Generic` macro chooses the setter by the type of the value; the table of §2.5.4 accepts `0`/`1` in a `bool` and rounds a `double` to `f32`; a `double` in a `u64` is `JK_E_TYPE` and the long string `JK_E_VALUE`, both without effect and with a code. Compile-time typed handles exist in the Rust crate (`In<T>`, `Out<T>`), and not in C (§5).
 
-**D11 — Uma geração nova a meio de uma rampa (documento 18, P6).** A saída `p_set` está a subir a 10 kW/s. **Aguenta:** `jk_generation_swap` mantém o último valor aplicado, os leases com a mesma identidade e o estado de trip; a taxa continua a partir do último aplicado (E2). Com a janela de confirmação expirada, o regresso à geração anterior é igual, no sentido contrário.
+**D11 — A new generation in the middle of a ramp (document 18, P6).** The output `p_set` is rising at 10 kW/s. **Holds:** `jk_generation_swap` keeps the last applied value, the leases with the same identity and the trip state; the rate continues from the last applied value (E2). With the confirmation window expired, the return to the previous generation is the same, in the opposite direction.
 
-**D12 — Pilha esgotada com quatro grupos aninhados.** Cada grupo é um executor de interrupção com prioridade própria; os quatro podem estar ativos ao mesmo tempo sobre a mesma pilha principal. **Quebrava** (corrupção silenciosa de memória). **Correção incorporada:** o `jk check` soma as pilhas de todos os níveis de prioridade e compara com a da placa (`J0774`); no modo firmware, o `joker-micro` liga com `flip-link` (Cortex-M), e um transbordo passa a ser uma falha de hardware, logo um reset, e não corrupção.
+**D12 — Stack exhausted with four nested groups.** Each group is an interrupt executor with its own priority; all four may be active at the same time on the same main stack. **Broke** (silent memory corruption). **Fix incorporated:** `jk check` adds up the stacks of all priority levels and compares with the board's (`J0774`); in firmware mode, `joker-micro` links with `flip-link` (Cortex-M), and an overflow becomes a hardware fault, hence a reset, and not corruption.
 
 ---
 
-## 5. Decisões e alternativas rejeitadas
+## 5. Decisions and rejected alternatives
 
-| Decisão | Alternativa rejeitada | Porquê |
+| Decision | Rejected alternative | Why |
 |---|---|---|
-| dois headers: `joker_node.h` fixo e `joker_project.h` gerado | um só header gerado (a leitura literal do 19 §4.2) | o fixo pode ser revisto, versionado e compilado em CI como contrato; o gerado muda a cada build |
-| identificadores = índices da interface externa, ligados por nome no `jk_init` | `SignalId`s da geração no header | partiam com cada geração em flash (D2) |
-| `jk_now_us` definido pelo integrador, mas lido só no link e nas estatísticas | a biblioteca lê o relógio no tick | ADR 0007: o tempo do tick tem de ser o do argumento, para o traço e o replay |
-| `jk_platform_t` com callbacks e `user` | símbolos fracos (`__attribute__((weak))`) | não são C11, e não permitem dois nós |
-| valores positivos informativos (`JK_EMPTY`, `JK_PENDING`, `JK_RELINQUISHED`) | só `JK_OK` e erros, com parâmetros de saída | "não há mais eventos" não é um erro; o `ref/00` §8 só fixa o 0 e os negativos |
-| setters genéricos com `_Generic` + funções tipadas | handles tipados em C (`struct` por tipo) | não servem em `switch`, pesam no DX e o C++ não tem `_Generic`; a verificação fica em runtime (`JK_E_TYPE`), e em compilação no Rust |
-| escritores externos com propostas "async" antes do tick | *callbacks* C chamados dentro do tick (passo 4) | o WCET do C do integrador não entra na admissão, e a reentrância a partir do tick seria uma armadilha; drenadas no passo 2 dão o mesmo efeito no laço único |
-| `jk_link_poll` inclui um passo de `jk_service` | serviço só explícito | o exemplo do documento 19 não chamaria o serviço, e a persistência nunca correria |
-| um contexto de serviço por nó | serviço multi-thread | as filas ficam SPSC e sem locks; o trabalho do serviço é pequeno |
-| blob binário de tabelas fixas, usado no sítio (XIP) | CBOR, FlatBuffers | CBOR obrigaria a copiar para RAM; FlatBuffers traz uma dependência e um verificador que não conhece a nossa semântica; as tabelas são o formato do núcleo |
-| COSE_Sign1 sobre o manifesto de OTA da ref/07, com o SHA-256 da imagem | COSE com a imagem na carga útil; um *claim* próprio do blob ao lado do manifesto de OTA | a imagem deixaria de estar alinhada e mapeável, e o Ed25519 teria de percorrer tudo; duas formas de assinar a mesma coisa seriam dois verificadores |
-| saltos só para a frente no bytecode | saltos livres | as expressões são totais; o verificador garante tempo limitado pelo tamanho |
-| diário de persistência definido pela biblioteca | um KV do integrador | a atomicidade, o desgaste e a compatibilidade entre versões de firmware são garantias nossas |
-| memória do nó como tipo concreto gerado | arena genérica | sem `unsafe` fora do `ffi` (invariante 10 do `AGENTS.md`) |
-| *panic* de app = `jk_fatal` | apanhar o *panic* | não há `catch_unwind` em `no_std`; um estado meio atualizado é pior do que um reset para o estado seguro |
+| two headers: fixed `joker_node.h` and generated `joker_project.h` | a single generated header (the literal reading of 19 §4.2) | the fixed one can be reviewed, versioned and compiled in CI as a contract; the generated one changes with every build |
+| identifiers = indices of the external interface, bound by name in `jk_init` | the generation's `SignalId`s in the header | they would break with every generation in flash (D2) |
+| `jk_now_us` defined by the integrator, but read only in the link and in the statistics | the library reads the clock in the tick | ADR 0007: the tick's time must be the argument's, for the trace and the replay |
+| `jk_platform_t` with callbacks and `user` | weak symbols (`__attribute__((weak))`) | they are not C11, and they do not allow two nodes |
+| informative positive values (`JK_EMPTY`, `JK_PENDING`, `JK_RELINQUISHED`) | only `JK_OK` and errors, with output parameters | "there are no more events" is not an error; `ref/00` §8 only fixes 0 and the negatives |
+| generic setters with `_Generic` + typed functions | typed handles in C (one `struct` per type) | they do not work in `switch`, weigh on DX and C++ has no `_Generic`; the check stays at runtime (`JK_E_TYPE`), and at compile time in Rust |
+| external writers with "async" proposals before the tick | C *callbacks* called inside the tick (step 4) | the WCET of the integrator's C does not enter admission, and reentrancy from the tick would be a trap; drained at step 2 they give the same effect in the single loop |
+| `jk_link_poll` includes a `jk_service` step | explicit service only | the example of document 19 would not call the service, and persistence would never run |
+| one service context per node | multithreaded service | the queues stay SPSC and lock-free; the service's work is small |
+| binary blob of fixed tables, used in place (XIP) | CBOR, FlatBuffers | CBOR would force copying to RAM; FlatBuffers brings a dependency and a verifier that does not know our semantics; the tables are the core's format |
+| COSE_Sign1 over the OTA manifest of ref/07, with the SHA-256 of the image | COSE with the image in the payload; a blob-specific *claim* beside the OTA manifest | the image would no longer be aligned and mappable, and Ed25519 would have to go over all of it; two ways of signing the same thing would be two verifiers |
+| forward-only jumps in the bytecode | free jumps | expressions are total; the verifier guarantees time bounded by size |
+| persistence journal defined by the library | an integrator KV | atomicity, wear and compatibility across firmware versions are our guarantees |
+| node memory as a generated concrete type | generic arena | no `unsafe` outside `ffi` (invariant 10 of `AGENTS.md`) |
+| app *panic* = `jk_fatal` | catching the *panic* | there is no `catch_unwind` in `no_std`; a half-updated state is worse than a reset to the safe state |
 
 ---
 
-## 6. Marcações de versão
+## 6. Version markers
 
-| Elemento | v1.0 | Reservado |
+| Element | v1.0 | Reserved |
 |---|---|---|
-| ABI C | 1.0, todas as funções deste documento | numa 1.x só se acrescenta (§2.3) |
-| tipos de sinal | 0–8 | 16 bloco, 17 stream (v1.1, "Preparado para ML") |
-| secções do blob | 0x0001–0x0024 | 0x0040 `MODELS`, 0x0041 `BLOCKS`, 0x0042 `STREAMS` (v1.1); 0x0043 `SCHEDULES` (escritas agendadas, M6, v1.1); 0x0044 `WASM_APPS` (`wasmi`, v1.4) |
-| traço | `n_saídas_ML = 0` sempre | saídas de modelos no MCU (v1.4, Burn Flex `no_std`) |
-| escritas agendadas (`write_at`, `timed`) | não no MCU (`J0783`) | v1.1 |
-| ML | não | v1.1 experiência em M2, v1.4 produção (documento 21, §6) |
-| apps | nativas em Rust | `wasmi` em M2 (v1.4); Structured Text nativo (v1.2), pelo mesmo `NativeApp` |
-| transportes do link | `uart`, `rs485`, `can`, `usb_cdc`, `udp`, `tcp` | 7 `lorawan`, 8 `nbiot` (v1.4, só com procura) |
-| baixo consumo | `jk_service_next_us` já existe | grupos acordados por eventos e orçamento energético (v1.4) |
-| capacidades | `cap_id` 1–41 | 42+ acrescentam-se no fim |
-| códigos | `J0770`–`J0794`, `J-E2501`–`J-E2599` | `J0795`–`J0799`, `J-E2600`–`J-E2999` |
-| caminhos qualificados por nó (`@nó.…`) | não | v2 (documento 21, §8) |
+| C ABI (library mode) | **reserved**: closed in this document, not shipped (ADR 0035) | 1.2, the Joker Micro C library (document 26, §5); then a 1.x only adds (§2.3) |
+| delivery modes | firmware and Rust crate, with the generation in flash and the OTA receiver | C library (1.2) |
+| targets | RP2350, ESP32 and ESP32-S3 (§2.15.1) | ESP32-C6 and STM32 (1.0.x) |
+| MCU drivers | `gpio`, `adc`, `pwm`, `i2c`, `modbus-rtu` (client), `esp32`, `extern` | `spi`, `uart`, `modbus-rtu-slave`, `onewire` (1.0.x); `can` (1.1) |
+| signal types | 0–8 | 16 block, 17 stream (v1.1, document 11, §"Ready for ML") |
+| blob sections | 0x0001–0x0024 | 0x0040 `MODELS`, 0x0041 `BLOCKS`, 0x0042 `STREAMS` (v1.1); 0x0043 `SCHEDULES` (scheduled writes, M6, v1.1); 0x0044 `WASM_APPS` (`wasmi`, v1.4) |
+| trace | `n_ml_outputs = 0` always | model outputs on the MCU (v1.4, Burn Flex `no_std`) |
+| scheduled writes (`write_at`, `timed`) | not on the MCU (`J0783`) | v1.1 |
+| ML | no | v1.1 trial on M2, v1.4 production (document 21, §6) |
+| apps | native in Rust | `wasmi` on M2 (v1.4); native Structured Text (v1.2), through the same `NativeApp` |
+| link transports | `uart`, `rs485` (full-duplex), `udp`, `tcp` | `usb_cdc` (1.0.x); `can` and `rs485` half-duplex (1.1; ref/07 §3.1); 7 `lorawan`, 8 `nbiot` (v1.4, only on demand) |
+| low power | `jk_service_next_us` already exists | event-woken groups and energy budget (v1.4) |
+| capabilities | `cap_id` 1–41 | 42+ are added at the end |
+| codes | `J0770`–`J0794`, `J-E2501`–`J-E2599` | `J0795`–`J0799`, `J-E2600`–`J-E2999` |
+| node-qualified paths (`@node.…`) | no | v2 (document 21, §8) |
+

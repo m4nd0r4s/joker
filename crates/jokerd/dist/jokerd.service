@@ -1,0 +1,16 @@
+[Unit]
+Description=Joker runtime
+After=network-online.target time-sync.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/jokerd --state-dir /var/lib/joker --manifest /etc/joker/joker.toml
+Restart=on-failure
+RestartSec=2
+LimitMEMLOCK=infinity
+LimitRTPRIO=99
+StateDirectory=joker
+
+[Install]
+WantedBy=multi-user.target

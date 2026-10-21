@@ -1,0 +1,4953 @@
+schema = 1
+
+[[code]]
+id = "J-E0001"
+severity = "error"
+message = "component world is newer than this runtime"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0002"
+severity = "error"
+message = "component world or cycle ABI is outside the supported window"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0003"
+severity = "error-in-prod"
+message = "component uses an unstable feature"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0004"
+severity = "error"
+message = "joker:meta missing or invalid"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0005"
+severity = "error"
+message = "joker:meta world does not match the component imports"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0006"
+severity = "error"
+message = "component imports an interface that is not allowed"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0007"
+severity = "error"
+message = "app name in joker:meta does not match the manifest"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0008"
+severity = "error"
+message = "init-context rejected by the SDK (layout mismatch)"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0009"
+severity = "error"
+message = "component is not a valid Wasm component or failed to compile"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0010"
+severity = "error"
+message = "no usable AOT artifact for this engine and component"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0011"
+severity = "error"
+message = "app refused the new parameters"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0050"
+severity = "error"
+message = "the app returned an error"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0101"
+severity = "error"
+message = "value unavailable: quality is not Good"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0102"
+severity = "error"
+message = "value unavailable: quality is Bad"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0103"
+severity = "error"
+message = "port is not bound"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0104"
+severity = "error"
+message = "value type does not match the port"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0105"
+severity = "error"
+message = "record does not decode against its schema"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0203"
+severity = "error"
+message = "proposal buffer full; later proposals dropped"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0204"
+severity = "error"
+message = "write was not applied"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0205"
+severity = "error"
+message = "proposal-only writer cannot write directly"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0206"
+severity = "error"
+message = "write canceled: the generation changed before the commit"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0207"
+severity = "error"
+message = "scheduled-write queue full"
+doc = "ref/04 §7"
+since = "1.1"
+status = "reserved"
+
+[[code]]
+id = "J-E0209"
+severity = "error"
+message = "this writer cannot create intents"
+doc = "ref/04 §7"
+since = "1.1"
+status = "reserved"
+
+[[code]]
+id = "J-E0210"
+severity = "error"
+message = "intent TTL above max_manual"
+doc = "ref/04 §7"
+since = "1.1"
+status = "reserved"
+
+[[code]]
+id = "J-E0301"
+severity = "error"
+message = "action denied by its permissive"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0302"
+severity = "error"
+message = "action not allowed for this caller's role"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0303"
+severity = "error"
+message = "action timed out"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0304"
+severity = "error"
+message = "device reported an error"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0305"
+severity = "error"
+message = "invalid action arguments"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0306"
+severity = "error"
+message = "action queue of the device is full"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0307"
+severity = "error"
+message = "device not connected"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0308"
+severity = "error"
+message = "action canceled"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0309"
+severity = "error"
+message = "invalid idempotency key"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0310"
+severity = "error"
+message = "idempotency key reused with different arguments"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0311"
+severity = "error"
+message = "the instance does not support this action"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0312"
+severity = "error"
+message = "the action implementation trapped"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0313"
+severity = "error"
+message = "not a long action"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0401"
+severity = "error"
+message = "invalid history range"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0402"
+severity = "error"
+message = "history result too large"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0403"
+severity = "error"
+message = "signal is not recorded"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0404"
+severity = "error"
+message = "kv quota exceeded"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0405"
+severity = "error"
+message = "invalid kv key"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0406"
+severity = "error"
+message = "kv value too large"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0407"
+severity = "error"
+message = "kv storage error"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0408"
+severity = "error"
+message = "secret not declared or not bound"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0409"
+severity = "error"
+message = "secret not found on this node"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0410"
+severity = "error"
+message = "event payload too large or invalid"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0411"
+severity = "warning"
+message = "event dropped for a full consumer"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0412"
+severity = "warning"
+message = "mailbox full or message too large"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0413"
+severity = "warning"
+message = "network destination not allowed"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0414"
+severity = "error"
+message = "too many ports in one request"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0501"
+severity = "error"
+message = "instance health is Failed"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0502"
+severity = "error"
+message = "the instance lacks this capability"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0503"
+severity = "error"
+message = "no instance with this name in the Many"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0504"
+severity = "error"
+message = "invalid method arguments"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0505"
+severity = "error"
+message = "method not in the class contract"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0506"
+severity = "error"
+message = "member not bound on this instance"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0507"
+severity = "error"
+message = "write to a member of a virtual instance: the implementation owns it"
+doc = "ref/04 §7"
+also = ["16 §6", "ref/05 §14.6"]
+
+[[code]]
+id = "J-E0601"
+severity = "error"
+message = "feature not available in this runtime"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0602"
+severity = "error"
+message = "inference deadline exceeded"
+doc = "ref/04 §7"
+since = "1.1"
+status = "reserved"
+
+[[code]]
+id = "J-E0603"
+severity = "error"
+message = "inference backend error"
+doc = "ref/04 §7"
+since = "1.1"
+status = "reserved"
+
+[[code]]
+id = "J-E0604"
+severity = "error"
+message = "tensor shape or dtype mismatch"
+doc = "ref/04 §7"
+since = "1.1"
+status = "reserved"
+
+[[code]]
+id = "J-E0605"
+severity = "error"
+message = "tensor too large for the Wasm boundary (1 MiB)"
+doc = "ref/04 §7"
+since = "1.1"
+status = "reserved"
+
+[[code]]
+id = "J-E0606"
+severity = "error"
+message = "frame expired"
+doc = "ref/04 §7"
+since = "1.1"
+status = "reserved"
+
+[[code]]
+id = "J-E0607"
+severity = "warning"
+message = "blocks lost (slow consumer)"
+doc = "ref/04 §7"
+since = "1.1"
+status = "reserved"
+
+[[code]]
+id = "J-E0701"
+severity = "error"
+message = "`{api}` is only available in async tasks (TaskIo)"
+doc = "ref/04 §4.16"
+
+[[code]]
+id = "J-E0702"
+severity = "error"
+message = "`{port}` is written by the {domain} domain; declare #[internal(writer = \"…\")] to change it"
+doc = "ref/04 §4.16"
+
+[[code]]
+id = "J-E0703"
+severity = "error"
+message = "numeric port `{port}` needs a unit; use unit = \"1\" for a dimensionless value"
+doc = "ref/04 §4.16"
+
+[[code]]
+id = "J-E0705"
+severity = "error"
+message = "invalid duration `{lit}`; expected e.g. \"200ms\", \"1.5s\", \"90m\""
+doc = "ref/04 §4.16"
+
+[[code]]
+id = "J-E0706"
+severity = "error"
+message = "default {v} is outside range {range}"
+doc = "ref/04 §4.16"
+
+[[code]]
+id = "J-E0707"
+severity = "error"
+message = "`{ty}` is not a port type; use {suggestion}"
+doc = "ref/04 §4.16"
+
+[[code]]
+id = "J-E0708"
+severity = "error"
+message = "internal record `{ty}` may encode to {n} bytes; the limit is 64"
+doc = "ref/04 §4.16"
+
+[[code]]
+id = "J-E0709"
+severity = "error"
+message = "port name `{name}` is reserved"
+doc = "ref/04 §4.16"
+
+[[code]]
+id = "J-E0710"
+severity = "error"
+message = "app name `{name}` must match [a-z][a-z0-9_]{0,31} and not start with \"joker\""
+doc = "ref/04 §4.16"
+
+[[code]]
+id = "J-E0711"
+severity = "error"
+message = "a crate holds exactly one #[joker::app], at the crate root"
+doc = "ref/04 §4.16"
+
+[[code]]
+id = "J-E0712"
+severity = "error"
+message = "`` expected `fn(&mut CycleIo<App>, &mut State) -> Result<()>` `` (or the async one)"
+doc = "ref/04 §4.16"
+
+[[code]]
+id = "J-E0713"
+severity = "error"
+message = "a task needs exactly one trigger: every, on, on_event, at or startup"
+doc = "ref/04 §4.16"
+
+[[code]]
+id = "J-E0714"
+severity = "error"
+message = "cycle task `{task}` needs period = \"…\""
+doc = "ref/04 §4.16"
+
+[[code]]
+id = "J-E0715"
+severity = "error"
+message = "class `{class}` has no capability `{cap}`"
+doc = "ref/04 §4.16"
+
+[[code]]
+id = "J-E0716"
+severity = "error"
+message = "action `{action}` of `{class}` has no handler"
+doc = "ref/04 §4.16"
+
+[[code]]
+id = "J-E0717"
+severity = "error"
+message = "Many<_, {min}, {max}>: expected 0 <= MIN <= MAX <= 1024"
+doc = "ref/04 §4.16"
+
+[[code]]
+id = "J-E0718"
+severity = "error"
+message = "`{api}` is reserved for v1.1; enable the `unstable-{feature}` feature"
+doc = "ref/04 §4.16"
+
+[[code]]
+id = "J-E0719"
+severity = "error"
+message = "cycle state `{ty}` must be 'static"
+doc = "ref/04 §4.16"
+
+[[code]]
+id = "J-E0720"
+severity = "error"
+message = "field `{field}` of `{ty}` cannot be persisted"
+doc = "ref/04 §4.16"
+
+[[code]]
+id = "J-E0721"
+severity = "error"
+message = "field `{field}`: `{ty}` is not a record field type"
+doc = "ref/04 §4.16"
+
+[[code]]
+id = "J-E0800"
+severity = "error"
+message = "read with a quality the accessor does not accept (`QualityError`)"
+doc = "ref/05 §31"
+
+[[code]]
+id = "J-E0802"
+severity = "error"
+message = "cycle API called in async (`dt`, `pending`, `last_outcome`, `set`, mailbox receive on the wrong side)"
+doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J-E0803"
+severity = "error"
+message = "assignment to the app view: state is per domain; use `st`, `Internal` or `Mailbox`"
+doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J-E0804"
+severity = "error"
+message = "`Internal` with a non-scalar field or above 64 B encoded"
+doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J-E0805"
+severity = "error"
+message = "encoding limit: signal `string`/`bytes` > 64 B, record string > 1 KiB, list > 64, invalid idempotency key"
+doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J-E0806"
+severity = "error"
+message = "value outside the port type (integer range, unsafe integer, invalid duration literal, negative counter)"
+doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J-E0807"
+severity = "error"
+message = "unknown instance in a `Many` (name or position)"
+doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J-E0808"
+severity = "error"
+message = "member of a capability the instance does not have"
+doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J-E0809"
+severity = "error"
+message = "API from a later version unavailable in this runtime"
+doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J-E0810"
+severity = "error"
+message = "host call during the app declaration"
+doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J-E0811"
+severity = "error"
+message = "`kv`: key or value out of bounds"
+doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J-E0813"
+severity = "error"
+message = "task or handler declared incorrectly (domain, signature, trigger, action without handler)"
+doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J-E0815"
+severity = "error"
+message = "persistent state not encodable, above 64 KiB, or incompatible without `migrate`"
+doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J-E0816"
+severity = "error"
+message = "uncaught exception in a task (treated as `panic`)"
+doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J-E0817"
+severity = "error"
+message = "secret not declared"
+doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J-E0818"
+severity = "error"
+message = "host call in native mode (outside Wasm)"
+doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J-E0850"
+severity = "error"
+message = "invalid entry point: no app, more than one, not inheriting from `App`, several languages in the same directory"
+doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J-E0851"
+severity = "error"
+message = "invalid parameter declaration (`range`, `default`)"
+doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J-E0852"
+severity = "error"
+message = "version in the code differs from the package version"
+doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J-E0853"
+severity = "error"
+message = "packaging impossible: native dependency without a `wasm32-wasi` wheel, `node:*` import"
+doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J-E0854"
+severity = "error-in-prod"
+message = "tier 2 cycle task below the minimum period or with `wcet` above 50% of the period"
+doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J-E0855"
+severity = "error-in-prod"
+message = "tier 2 on an architecture without Cranelift (armv7/Pulley)"
+doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J-E0856"
+severity = "error"
+message = "requested world that the SDK cannot generate"
+doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J-E0857"
+severity = "error"
+message = "invalid, reserved or repeated name in the declaration"
+doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J-E0858"
+severity = "warning"
+message = "task writes to a module global variable (not shared between cycle and async)"
+doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J-E0859"
+severity = "error"
+message = "async API called in a cycle task (static analysis)"
+doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J-E0860"
+severity = "error"
+message = "component or `include` above the maximum size"
+doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J-E0861"
+severity = "error"
+message = "toolchain missing or wrong version (Node, Python, `componentize-py`)"
+doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J-E0862"
+severity = "error"
+message = "the declaration differs between native execution and pre-initialization"
+doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J-E0863"
+severity = "warning"
+message = "generic exception catch around reads in a cycle task"
+doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J-E0864"
+severity = "warning"
+message = "no ecosystem lock: build not reproducible"
+doc = "ref/05 §31"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J-E0881"
+severity = "error"
+message = "node unreachable or timeout (socket, TCP, SSH, socket permissions)"
+doc = "ref/05 §31"
+
+[[code]]
+id = "J-E0882"
+severity = "error"
+message = "the node refused the client identity (user certificate missing, expired or without a role)"
+doc = "ref/05 §31"
+
+[[code]]
+id = "J-E0883"
+severity = "error"
+message = "operation or API version not supported by the node"
+doc = "ref/05 §31"
+
+[[code]]
+id = "J-E0884"
+severity = "error"
+message = "node response does not conform to the schema"
+doc = "ref/05 §31"
+
+[[code]]
+id = "J-E0885"
+severity = "warning"
+message = "local clock skewed from the node (> 10 s); writes may be refused"
+doc = "ref/05 §31"
+
+[[code]]
+id = "J-E0886"
+severity = "warning"
+message = "subscription with loss (`Gap`)"
+doc = "ref/05 §31"
+
+[[code]]
+id = "J-E0888"
+severity = "error"
+message = "optional dependency missing (`joker-client[pandas]`)"
+doc = "ref/05 §31"
+
+[[code]]
+id = "J-E0889"
+severity = "error"
+message = "estimated result above `max_points`"
+doc = "ref/05 §31"
+
+[[code]]
+id = "J-E0901"
+severity = "trap"
+message = "async API called from the cycle instance"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0902"
+severity = "trap"
+message = "cycle API called from the async instance"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0903"
+severity = "trap"
+message = "heap allocation during a cycle task"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0904"
+severity = "trap"
+message = "cycle task deadline exceeded"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0905"
+severity = "trap"
+message = "guest panicked or called exit"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0906"
+severity = "trap"
+message = "memory limit exceeded"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0907"
+severity = "trap"
+message = "malformed proposal buffer or invalid port use"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0908"
+severity = "error"
+message = "app is in crashloop"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0909"
+severity = "error"
+message = "init failed or timed out"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0910"
+severity = "trap"
+message = "stack overflow"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0911"
+severity = "trap"
+message = "fuel exhausted"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0914"
+severity = "error"
+message = "migrate failed; previous version kept"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0915"
+severity = "error"
+message = "exported state too large"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E1000"
+severity = "error"
+message = "internal API error"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1001"
+severity = "error"
+message = "no identity (tunnel without a valid session)"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1002"
+severity = "error"
+message = "insufficient role for this operation"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1003"
+severity = "error"
+message = "identity refused (CN outside the grammar, certificate without a rule applicable to the transport)"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1004"
+severity = "error"
+message = "request with `Origin`: CORS disabled"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1005"
+severity = "error"
+message = "endpoint does not exist"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1006"
+severity = "error"
+message = "method not allowed"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1007"
+severity = "error"
+message = "response type not available"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1008"
+severity = "error"
+message = "request content type not accepted"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1009"
+severity = "error"
+message = "request above the limit (body, URL, headers, inline content)"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1010"
+severity = "error"
+message = "malformed JSON"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1011"
+severity = "error"
+message = "unknown field or parameter"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1012"
+severity = "error"
+message = "invalid field or parameter value"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1013"
+severity = "error"
+message = "required field missing"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1014"
+severity = "error"
+message = "rate or connection limit exceeded"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1015"
+severity = "error"
+message = "API unavailable (startup, shutdown)"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1016"
+severity = "error"
+message = "timed out waiting for the core or the equipment"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1017"
+severity = "error"
+message = "feature reserved for a later version or not in this build"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1018"
+severity = "error"
+message = "operation not allowed in this mode (`dev`/`prod`)"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1020"
+severity = "error"
+message = "`Joker-Nonce` or `Joker-Timestamp` missing in a mutating request over TCP"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1021"
+severity = "error"
+message = "`Joker-Timestamp` outside the ±30 s window"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1022"
+severity = "error"
+message = "repeated nonce (replay)"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1023"
+severity = "error"
+message = "required `Idempotency-Key` missing"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1024"
+severity = "error"
+message = "`Idempotency-Key` reused with different content"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1025"
+severity = "error"
+message = "invalid `Idempotency-Key`"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1026"
+severity = "error"
+message = "the generation changed (`If-Match`)"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1027"
+severity = "error"
+message = "required `If-Match` missing"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1028"
+severity = "error"
+message = "request with the same key still in progress"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1029"
+severity = "error"
+message = "nonce memory full; try again later"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1030"
+severity = "error"
+message = "malformed selector or too many selectors"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1031"
+severity = "error"
+message = "selector resolves to too many signals"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1032"
+severity = "error"
+message = "invalid or expired cursor"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1033"
+severity = "error"
+message = "unknown signal (with suggestions)"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1034"
+severity = "error"
+message = "invalid time interval"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1035"
+severity = "error"
+message = "invalid duration literal"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1036"
+severity = "error"
+message = "value incompatible with the signal type"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1037"
+severity = "error"
+message = "coherent read with too many signals"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1038"
+severity = "error"
+message = "history result too large: aggregate or paginate"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1039"
+severity = "error"
+message = "step, tier or aggregate not applicable"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1100"
+severity = "error"
+message = "the signal is not an output"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1101"
+severity = "error"
+message = "manual write without TTL (A10)"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1102"
+severity = "error"
+message = "TTL above `max_manual`"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1103"
+severity = "error"
+message = "TTL below 1 s"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1104"
+severity = "error"
+message = "level outside the `manual` band"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1105"
+severity = "error"
+message = "manual level held by another principal (use `takeover`)"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1106"
+severity = "error"
+message = "write without a reason"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1107"
+severity = "error"
+message = "manual level not held"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1108"
+severity = "error"
+message = "releasing another principal's level requires `force`"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1110"
+severity = "error"
+message = "write ticket does not exist or expired"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1120"
+severity = "error"
+message = "the output is not in trip"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1200"
+severity = "error"
+message = "unknown alarm"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1201"
+severity = "error"
+message = "shelving without TTL"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1202"
+severity = "error"
+message = "shelving TTL above `max_shelve`"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1203"
+severity = "error"
+message = "alarm not shelved"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1204"
+severity = "error"
+message = "nothing to acknowledge (`normal` or `unknown`)"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1300"
+severity = "error"
+message = "unknown intent"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1301"
+severity = "error"
+message = "intent already decided or expired"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1302"
+severity = "error"
+message = "the approval cannot extend the intent TTL"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1400"
+severity = "error"
+message = "unknown action"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1401"
+severity = "error"
+message = "invalid action arguments"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1402"
+severity = "error"
+message = "action permissive false"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1403"
+severity = "error"
+message = "device action queue full"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1404"
+severity = "error"
+message = "unknown invocation"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1405"
+severity = "error"
+message = "the invocation cannot be canceled"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1406"
+severity = "error"
+message = "(result) the action exceeded the timeout"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1407"
+severity = "error"
+message = "(result) the equipment returned an error"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1408"
+severity = "error"
+message = "(result) the implementation refused the action"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1409"
+severity = "error"
+message = "(result) action canceled"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1410"
+severity = "error"
+message = "unknown instance"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1411"
+severity = "error"
+message = "unknown method"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1412"
+severity = "error"
+message = "invalid method arguments"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1413"
+severity = "error"
+message = "unknown class in this generation"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1414"
+severity = "error"
+message = "conformance against equipment in `prod` requires `allow_prod`"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1415"
+severity = "error"
+message = "(result) the action's device is not connected"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1500"
+severity = "error"
+message = "unknown app"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1501"
+severity = "error"
+message = "app or device lifecycle not allowed now (generation swap in progress)"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1502"
+severity = "error"
+message = "`kv` key does not exist"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1510"
+severity = "error"
+message = "shadow does not exist"
+doc = "ref/09 §7"
+since = "1.1"
+status = "reserved"
+
+[[code]]
+id = "J-E1511"
+severity = "error"
+message = "there is already an active shadow for the app"
+doc = "ref/09 §7"
+since = "1.1"
+status = "reserved"
+
+[[code]]
+id = "J-E1512"
+severity = "error"
+message = "promotion criteria not met (use `force`)"
+doc = "ref/09 §7"
+since = "1.1"
+status = "reserved"
+
+[[code]]
+id = "J-E1600"
+severity = "error"
+message = "unknown generation"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1601"
+severity = "error"
+message = "the generation did not pass validation (diagnostics in `errors`)"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1602"
+severity = "error"
+message = "missing blobs (list in `detail`)"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1603"
+severity = "error"
+message = "blob digest does not match the content"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1604"
+severity = "error"
+message = "upload does not exist or expired"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1605"
+severity = "error"
+message = "invalid or out-of-order `Content-Range`"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1606"
+severity = "error"
+message = "chunk or blob above the limit"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1607"
+severity = "error"
+message = "signature missing or rejected by the trust policy"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1608"
+severity = "error"
+message = "another generation transition in progress"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1609"
+severity = "error"
+message = "`base` is not the current generation"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1610"
+severity = "error"
+message = "the generation requires a confirmation window (ADR 0015)"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1611"
+severity = "error"
+message = "nothing to confirm"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1612"
+severity = "error"
+message = "invalid state transition for this generation"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1613"
+severity = "error"
+message = "target generation is no longer stored"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1614"
+severity = "error"
+message = "pending generation discarded or expired"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1615"
+severity = "error"
+message = "the generation source is not allowed by the node's `[policy] apply_from`"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1620"
+severity = "error"
+message = "invalid runtime artifact (signature, architecture, version)"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1621"
+severity = "error"
+message = "runtime update in progress"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1622"
+severity = "error"
+message = "the other slot has no usable runtime"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1623"
+severity = "error"
+message = "confirmation window outside 30 s–24 h"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1700"
+severity = "error"
+message = "unknown trace"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1701"
+severity = "error"
+message = "the group has no continuous trace ring"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1702"
+severity = "error"
+message = "interval outside the ring or the historian retention"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1703"
+severity = "error"
+message = "trace quota exhausted"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1704"
+severity = "error"
+message = "unknown job"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1705"
+severity = "error"
+message = "job of the same type in progress"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1706"
+severity = "error"
+message = "trace not ready yet"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1707"
+severity = "error"
+message = "disruptive operation with active outputs requires `allow_live`"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1708"
+severity = "error"
+message = "invalid discovery or equipment URI"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1800"
+severity = "error"
+message = "unknown device"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1801"
+severity = "error"
+message = "the device is not `joker-link`"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1802"
+severity = "error"
+message = "MCU disconnected"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1803"
+severity = "error"
+message = "artifact incompatible with the MCU"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1804"
+severity = "error"
+message = "MCU OTA in progress"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1900"
+severity = "error"
+message = "malformed WebSocket message or wrong subprotocol"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1901"
+severity = "error"
+message = "unknown `op`"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1902"
+severity = "error"
+message = "unknown topic or no role for it"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1903"
+severity = "error"
+message = "too many subscriptions, or sampling budget exhausted"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1904"
+severity = "error"
+message = "subscription does not exist"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1905"
+severity = "error"
+message = "`min_interval` below the minimum"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1906"
+severity = "error"
+message = "slow client: connection closed (4008)"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1907"
+severity = "error"
+message = "session not resumable"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1908"
+severity = "error"
+message = "missing heartbeat (4002)"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1909"
+severity = "error"
+message = "unknown session"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1910"
+severity = "error"
+message = "enrollment state does not allow the operation"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1911"
+severity = "error"
+message = "certificate does not match the key or invalid chain"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1912"
+severity = "error"
+message = "enrollment only over the bootstrap channel (the Unix socket, local or over SSH)"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1913"
+severity = "error"
+message = "enrollment code (`Joker-Enroll-Code`) wrong, expired or already used"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1920"
+severity = "error"
+message = "invalid sealed envelope"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1921"
+severity = "error"
+message = "undeclared secret"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1930"
+severity = "error"
+message = "the signal does not belong to a `sim` device"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E1940"
+severity = "error"
+message = "the agent is disabled on this node (no authority)"
+doc = "ref/09 §7"
+
+[[code]]
+id = "J-E2001"
+severity = "warning"
+message = "frame with invalid CRC-32C (counter)"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2002"
+severity = "warning"
+message = "frame above the maximum size"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2003"
+severity = "warning"
+message = "invalid COBS or short frame"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2004"
+severity = "warning"
+message = "ISO-TP: wrong sequence, timeout or overflow"
+doc = "ref/07 §10.3"
+since = "1.1"
+status = "reserved"
+
+[[code]]
+id = "J-E2005"
+severity = "warning"
+message = "unknown frame format (`fmt` or `kind`)"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2006"
+severity = "error"
+message = "malformed message: invalid CBOR, trailing bytes, required field missing or with the wrong type"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2007"
+severity = "warning"
+message = "unknown message type"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2008"
+severity = "error"
+message = "reassembled message above `max_msg`"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2009"
+severity = "error"
+message = "retransmissions exhausted on a reliable message: session terminated"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2012"
+severity = "error"
+message = "internal error in the peer"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2101"
+severity = "error"
+message = "authentication failed (invalid Poly1305 tag)"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2102"
+severity = "warning"
+message = "frame replayed or outside the anti-replay window"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2103"
+severity = "error"
+message = "unknown `kid`: MCU not enrolled on this node"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2104"
+severity = "error"
+message = "plaintext frame refused: authentication is required"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2105"
+severity = "error"
+message = "session counter exhausted without a key update"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2106"
+severity = "error"
+message = "link key rotation failed; the MCU reverted to the previous key"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2201"
+severity = "error"
+message = "incompatible Joker Link version (no common major)"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2202"
+severity = "error-in-prod"
+message = "the MCU does not match the node's lock or generation: session in `observe`"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2203"
+severity = "error"
+message = "the catalog does not match the `HELLO` hash"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2204"
+severity = "warning"
+message = "unknown session"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2205"
+severity = "error"
+message = "link lost (`link_timeout`)"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2206"
+severity = "error"
+message = "MCU without a valid generation: session in `maintenance`"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2207"
+severity = "error"
+message = "session refused: identity not authorized for this device"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2208"
+severity = "error"
+message = "message not allowed in the session mode, or feature not declared"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2209"
+severity = "error"
+message = "class exported by the MCU with an incompatible major: instance not created"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2302"
+severity = "error"
+message = "proposal, `READ` or `RESET` on a signal that is not an MCU output, or with the wrong type"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2303"
+severity = "warning"
+message = "remote lease above `max_lease`: clamped; or level not delegated to the link"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2304"
+severity = "error"
+message = "unknown write result: the `OUTCOMES` did not arrive in time"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2305"
+severity = "warning"
+message = "a remote lease expired on the MCU"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2310"
+severity = "error"
+message = "unknown identifier (`sid`, `mid`, `aid`, `alid`, `iid`, `id`)"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2311"
+severity = "error"
+message = "invalid arguments"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2312"
+severity = "error"
+message = "action rejected by the permissive"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2313"
+severity = "error"
+message = "insufficient role"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2314"
+severity = "error"
+message = "action timeout"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2315"
+severity = "error"
+message = "busy: action queue or deduplication table full"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2316"
+severity = "warning"
+message = "action canceled"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2317"
+severity = "error"
+message = "idempotency key missing or invalid"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2318"
+severity = "error"
+message = "unknown result: the link or the MCU restarted before the `RESULT`; the request was not repeated"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2319"
+severity = "error"
+message = "write not sent: session in `observe` or `maintenance`"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2320"
+severity = "warning"
+message = "`RESET` of an output that is not tripped"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2401"
+severity = "error"
+message = "OTA: invalid signature"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2402"
+severity = "error"
+message = "OTA: key without the role required for this artifact type"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2403"
+severity = "error"
+message = "OTA: the image digest does not match the manifest"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2404"
+severity = "error"
+message = "OTA: below the anti-rollback floor"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2405"
+severity = "error"
+message = "OTA: wrong target or type for this MCU"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2406"
+severity = "error"
+message = "OTA: no space in the area"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2407"
+severity = "error"
+message = "OTA: flash write failed"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2408"
+severity = "error"
+message = "OTA: unknown or expired transfer"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2409"
+severity = "error"
+message = "OTA: the update was not confirmed within the window; rollback"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2410"
+severity = "error"
+message = "OTA: generation incompatible with the firmware capabilities"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2420"
+severity = "error"
+message = "`TRACE`: segment does not exist or is not frozen"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2430"
+severity = "warning"
+message = "`TIME`: sample rejected (delay above `time_max_delay`)"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2431"
+severity = "warning"
+message = "MCU clock in `holdover` or `unsynced`"
+doc = "ref/07 §10.3"
+
+[[code]]
+id = "J-E2501"
+severity = "error"
+message = "invalid argument"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J-E2502"
+severity = "error"
+message = "call outside the allowed state"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J-E2503"
+severity = "error"
+message = "ABI, node size or interface incompatible with the library"
+doc = "ref/08 §2.7"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J-E2504"
+severity = "error"
+message = "node or blob not 8-byte aligned"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J-E2505"
+severity = "error"
+message = "function not included in this build"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J-E2506"
+severity = "error"
+message = "concurrent call in an exclusive context"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J-E2507"
+severity = "error"
+message = "node stopped by an internal failure"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J-E2510"
+severity = "error"
+message = "malformed blob"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J-E2511"
+severity = "error"
+message = "unknown format, ISA or required section"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J-E2512"
+severity = "error"
+message = "the generation does not fit the build's capabilities (counterpart of `J0710`)"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J-E2513"
+severity = "error"
+message = "invalid or missing signature"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J-E2514"
+severity = "error"
+message = "untrusted key"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J-E2515"
+severity = "error"
+message = "`gen_seq` below the minimum (anti-rollback)"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J-E2516"
+severity = "error"
+message = "incompatible board, apps, drivers, runtime or interface"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J-E2517"
+severity = "error"
+message = "blob bound to another node"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J-E2518"
+severity = "error"
+message = "image CRC or SHA-256 does not match"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J-E2520"
+severity = "error"
+message = "signal outside the interface"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J-E2521"
+severity = "error"
+message = "wrong direction for this function"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J-E2522"
+severity = "error"
+message = "incompatible type"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J-E2523"
+severity = "error"
+message = "unknown group"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J-E2524"
+severity = "error"
+message = "time going backward"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J-E2525"
+severity = "error"
+message = "queue or buffer full"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J-E2526"
+severity = "error"
+message = "unknown instance, member, alarm, parameter, writer or ticket"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J-E2527"
+severity = "error"
+message = "invalid method or action arguments"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J-E2528"
+severity = "error"
+message = "value outside the type's domain"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J-E2529"
+severity = "error"
+message = "invalid combination of code and quality reason"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J-E2530"
+severity = "error"
+message = "parameter out of range or not changeable"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J-E2531"
+severity = "error"
+message = "TTL missing or above the maximum"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J-E2532"
+severity = "error"
+message = "level not allowed"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J-E2533"
+severity = "error"
+message = "operation already in progress"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J-E2540"
+severity = "error"
+message = "flash callback failed"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J-E2541"
+severity = "warning"
+message = "corrupted persistent record (ignored)"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J-E2542"
+severity = "error"
+message = "persistence area full"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J-E2550"
+severity = "warning"
+message = "framing or protocol error on the link"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J-E2551"
+severity = "error"
+message = "link authentication failed"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J-E2552"
+severity = "error"
+message = "incompatible link version"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J-E2553"
+severity = "warning"
+message = "transport down"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J-E2560"
+severity = "error"
+message = "invalid OTA sequence"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J-E2561"
+severity = "error"
+message = "received image did not verify"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J-E2599"
+severity = "error"
+message = "internal invariant (code passed to `jk_fatal`)"
+doc = "ref/08 §2.7"
+
+[[code]]
+id = "J0101"
+severity = "error"
+message = "unknown signal (with suggestion)"
+doc = "ref/01 §10.1"
+also = ["03 §15"]
+
+[[code]]
+id = "J0107"
+severity = "error"
+message = "incompatible unit (dimension)"
+doc = "ref/01 §10.1"
+also = ["03 §15"]
+
+[[code]]
+id = "J0108"
+severity = "error"
+message = "incompatible quantity (W vs var)"
+doc = "ref/01 §10.1"
+also = ["03 §15"]
+
+[[code]]
+id = "J0109"
+severity = "error"
+message = "unit not in the catalog"
+doc = "ref/01 §10.1"
+also = ["ref/04 §4.16"]
+
+[[code]]
+id = "J0110"
+severity = "error"
+message = "required port without a binding"
+doc = "ref/01 §10.1"
+also = ["03 §15"]
+
+[[code]]
+id = "J0120"
+severity = "error"
+message = "parameter outside the range declared by the app"
+doc = "ref/01 §10.1"
+also = ["03 §15"]
+
+[[code]]
+id = "J0121"
+severity = "error"
+message = "unknown parameter"
+doc = "ref/01 §10.1"
+also = ["03 §15"]
+
+[[code]]
+id = "J0130"
+severity = "warning"
+message = "group period outside the task's `period_tolerance`"
+doc = "ref/01 §10.1"
+
+[[code]]
+id = "J0140"
+severity = "error"
+message = "unknown key (already fixed in `ref/00`)"
+doc = "ref/01 §10.2"
+also = ["03 §15", "ref/01 §10.1"]
+
+[[code]]
+id = "J0141"
+severity = "error"
+message = "reserved key or name (`_…`, `joker…`, prefixes `calc.`, `alarm.`, `app.`, `bridge.`, `joker.`, `@`)"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0142"
+severity = "error"
+message = "required key missing in the effective manifest"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0143"
+severity = "error"
+message = "wrong value type"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0144"
+severity = "error"
+message = "value outside the allowed set"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0145"
+severity = "error"
+message = "invalid key combination (exclusive, dependent, or not applicable on this target)"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0146"
+severity = "error"
+message = "file is not valid TOML 1.0 or is not UTF-8"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0147"
+severity = "error"
+message = "invalid `[project] joker`, or it requires a newer runtime than this one"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0148"
+severity = "error"
+message = "key introduced in a version later than the one declared in `joker`"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0149"
+severity = "error"
+message = "manifest limit exceeded (§11.3)"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0150"
+severity = "error"
+message = "invalid name (grammar, length, dots in a name key)"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0151"
+severity = "error"
+message = "number without a unit where a quantity or duration is required"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0152"
+severity = "error"
+message = "invalid duration (syntax, zero, negative, above the key's maximum)"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0153"
+severity = "error"
+message = "invalid path"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0154"
+severity = "error"
+message = "invalid selector"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0155"
+severity = "error"
+message = "selector without matches (outputs, bindings, envelopes, atomics, trips, bridges)"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0156"
+severity = "warning"
+message = "telemetry, exposure or security selector without matches"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0157"
+severity = "error"
+message = "invalid reference, unknown scheme, or reference in a key that does not accept it"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0158"
+severity = "error"
+message = "expression with a syntax error"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0159"
+severity = "error"
+message = "invalid budget, size or data volume literal"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0160"
+severity = "error"
+message = "referenced file not found (`extends`, `path`, `model`, `eds`, keys…), or non-local `extends`"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0161"
+severity = "error"
+message = "`extends` in a cycle"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0162"
+severity = "error"
+message = "`extends` with more than 8 levels or 32 files"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0163"
+severity = "warning"
+message = "`unset` with nothing to remove"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0164"
+severity = "error"
+message = "invalid merge directive, or repeated element in an ordered list"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0165"
+severity = "error"
+message = "overlay changes the type of a key (table ↔ value)"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0166"
+severity = "error"
+message = "`widen` without sufficient justification (< 10 characters) or on a key that is not an envelope key"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0167"
+severity = "warning"
+message = "`widen` in a layer that widens nothing"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0168"
+severity = "error-in-prod"
+message = "widening without the matching entry in `[accepted]` in the lock"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0169"
+severity = "warning"
+message = "input manifest with a name outside the `joker.toml` / `joker.<variant>.toml` rule (accepted only through `--manifest`)"
+doc = "ref/01 §10.2"
+also = ["ref/01 §7.7", "ADR 0026"]
+
+[[code]]
+id = "J0170"
+severity = "error"
+message = "driver unknown in this build, or tier W/X without `[drivers]`"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0171"
+severity = "error"
+message = "bus does not exist, has an incompatible type, or has incompatible protocols"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0172"
+severity = "error"
+message = "profile or board not found, or profile without a major"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0173"
+severity = "error"
+message = "key that this driver does not accept"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0174"
+severity = "error"
+message = "created alias or path collides with another path"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0175"
+severity = "error"
+message = "adjustment of the same signal declared in two places with different values"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0176"
+severity = "error"
+message = "adjustment incompatible with the signal's type, direction or origin"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0177"
+severity = "error"
+message = "`discover = true` on a driver without discovery"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0178"
+severity = "error"
+message = "two devices with the same address on the same bus, or a device with the same kernel resource as a referenced `board.<name>`"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0179"
+severity = "error"
+message = "Joker Link without authentication on an IP transport"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0180"
+severity = "error"
+message = "invalid app source (none or two; digest different from the lock)"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0181"
+severity = "error"
+message = "invalid binding form for the port type"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0182"
+severity = "error"
+message = "unknown task or group in `[apps.*.cycles]`"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0183"
+severity = "error"
+message = "`as = \"fraction\"`/`\"percent\"` between units that are not `%` and `1`"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0184"
+severity = "error"
+message = "invalid `net.allow`"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0185"
+severity = "error-in-prod"
+message = "referenced secret does not exist in the node's vault"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0186"
+severity = "error"
+message = "app resource class inconsistent with that of the groups, or `rt` in async"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0187"
+severity = "error"
+message = "`native` app that is not in this runtime build"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0188"
+severity = "error"
+message = "`shadow.of` not resolvable"
+doc = "ref/01 §10.2"
+since = "1.1"
+status = "reserved"
+
+[[code]]
+id = "J0189"
+severity = "error"
+message = "port bound in two places"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0190"
+severity = "error"
+message = "circular dependency between `calc` and alarms"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0191"
+severity = "error"
+message = "`implemented_by` points to an app that does not exist or does not implement the class"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0192"
+severity = "error"
+message = "instance with more than one source (`map`, `implemented_by`, `sim`); in a virtual instance, a `map` may only bind class members"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0193"
+severity = "error"
+message = "unknown class or capability"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0194"
+severity = "error"
+message = "invalid adapter for the member's direction or type"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0195"
+severity = "error"
+message = "ambiguous or incomplete recording policy"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0196"
+severity = "error"
+message = "colliding alarm name or created path (including an alarm named `app`: app alarms live in `alarm.app.<app>.<name>`, §5.15)"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0197"
+severity = "error"
+message = "`keep` with an unknown layer"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0198"
+severity = "error"
+message = "uplink with `classes`, `live` or `history` invalid for its `kind`"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0199"
+severity = "error"
+message = "invalid bridge (`to`, `writable`, `listen`/`bus`, `fields`)"
+doc = "ref/01 §10.2"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J0201"
+severity = "error"
+message = "output without `safe`"
+doc = "ref/01 §10.1"
+also = ["03 §15"]
+
+[[code]]
+id = "J0202"
+severity = "error"
+message = "`rate` (or `safe_ramp`) with a unit inconsistent with the output"
+doc = "ref/01 §10.1"
+also = ["03 §15"]
+
+[[code]]
+id = "J0203"
+severity = "error"
+message = "`safe` outside the `range`"
+doc = "ref/01 §10.1"
+
+[[code]]
+id = "J0205"
+severity = "error-in-prod"
+message = "device fallback missing or inconsistent with `safe`"
+doc = "ref/01 §10.1"
+also = ["03 §15"]
+
+[[code]]
+id = "J0206"
+severity = "error"
+message = "scheduled writes without `on_late`"
+doc = "ref/01 §10.1"
+since = "1.1"
+also = ["03 §15"]
+status = "reserved"
+
+[[code]]
+id = "J0207"
+severity = "error"
+message = "`safe = \"relinquish\"` on a driver without support"
+doc = "ref/01 §10.1"
+also = ["03 §15"]
+
+[[code]]
+id = "J0210"
+severity = "error"
+message = "two writers at the same level of the same output"
+doc = "ref/01 §10.1"
+also = ["03 §15"]
+
+[[code]]
+id = "J0211"
+severity = "error"
+message = "output with several writers and one without `writer`"
+doc = "ref/01 §10.1"
+also = ["03 §15"]
+
+[[code]]
+id = "J0212"
+severity = "error"
+message = "proposal-only writer with a direct write"
+doc = "ref/01 §10.1"
+since = "1.1"
+also = ["03 §15"]
+status = "reserved"
+
+[[code]]
+id = "J0213"
+severity = "error"
+message = "lease above `max_lease` (on an MCU output, the link's `max_lease`)"
+doc = "ref/01 §10.1"
+
+[[code]]
+id = "J0215"
+severity = "error"
+message = "two envelopes for the same signal"
+doc = "ref/01 §10.1"
+
+[[code]]
+id = "J0220"
+severity = "error"
+message = "overlay widens the envelope without `widen`"
+doc = "ref/01 §10.1"
+also = ["03 §15"]
+
+[[code]]
+id = "J0230"
+severity = "error"
+message = "`range` with minimum ≥ maximum, or without two elements"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0231"
+severity = "error"
+message = "`safe` with a type incompatible with the output"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0232"
+severity = "error"
+message = "non-constant `safe`"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0233"
+severity = "error"
+message = "envelope key that does not apply to the output type"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0234"
+severity = "error"
+message = "envelope on a path that is not an output of this node (or governed by a Joker Micro)"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0235"
+severity = "error"
+message = "invalid `verify`"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0236"
+severity = "warning"
+message = "`reset_when` on an output that never trips"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0237"
+severity = "error"
+message = "`group` does not exist"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0238"
+severity = "warning"
+message = "`safer` without a device fallback (ignored)"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0239"
+severity = "error"
+message = "scheduled writes above 256, or `timed` on a driver without timed outputs (1.1)"
+doc = "ref/01 §10.2"
+since = "1.1"
+status = "reserved"
+
+[[code]]
+id = "J0240"
+severity = "error"
+message = "invalid `[net.wifi]`: `ssid` empty or longer than 32 B, `country` outside ISO 3166-1 alpha-2, or `hostname` outside the grammar"
+doc = "ref/01 §10.2"
+also = ["ref/01 §5.22"]
+
+[[code]]
+id = "J0241"
+severity = "error"
+message = "IP transport on an MCU without `[net.wifi]` (`[link] address`, `[telemetry.uplink]`)"
+doc = "ref/01 §10.2"
+also = ["ref/01 §5.22"]
+
+[[code]]
+id = "J0242"
+severity = "error-in-prod"
+message = "open Wi-Fi network: `[net.wifi]` without `password`"
+doc = "ref/01 §10.2"
+also = ["ref/01 §5.22"]
+
+[[code]]
+id = "J0243"
+severity = "warning"
+message = "the board has no Wasm engine for the architecture: native apps only"
+doc = "ref/01 §10.2"
+also = ["01 §22"]
+
+[[code]]
+id = "J0250"
+severity = "error"
+message = "invalid `level`, or compact form inconsistent with `priority`"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0251"
+severity = "error"
+message = "`priority` outside the band"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0252"
+severity = "error"
+message = "app or bridge in the `manual` band"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0253"
+severity = "error"
+message = "bridge in the `safety` band"
+doc = "ref/01 §10.2"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J0254"
+severity = "error"
+message = "`proposal` writer with `level`, `priority` or `lease`"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0255"
+severity = "error"
+message = "`max_lease` > 24 h or `max_manual` > 7 d"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0256"
+severity = "error"
+message = "lease shorter than the owning group's period"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0257"
+severity = "warning"
+message = "`writer` on an app without outputs"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0270"
+severity = "error"
+message = "output in two atomic groups"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0271"
+severity = "error"
+message = "atomic group without a common transport"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0272"
+severity = "error"
+message = "atomic group with outputs from different owning groups"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0273"
+severity = "error"
+message = "atomic group `order` is not a permutation of `outputs`"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0274"
+severity = "error"
+message = "invalid `commit.signal`"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0275"
+severity = "error"
+message = "`fallback.configure = true` on a profile without `[fallback]`"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0276"
+severity = "error-in-prod"
+message = "`keepalive` inconsistent with the equipment fallback timeout"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0277"
+severity = "warning"
+message = "`accept_missing_fallback` on an output that has a fallback"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0280"
+severity = "error"
+message = "`period` outside the target's limits"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0281"
+severity = "error"
+message = "`order` references an app or task that does not run in this group"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0282"
+severity = "error"
+message = "group with a resource class that is not `rt`"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0283"
+severity = "error"
+message = "explicit `priority` inverts the rate-monotonic order"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0284"
+severity = "error"
+message = "`cpu` outside `[resources.rt]`"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0285"
+severity = "error"
+message = "`trace.continuous` above 7 d"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0286"
+severity = "warning"
+message = "`overrun = \"degrade\"` without `optional` tasks"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0287"
+severity = "warning"
+message = "`overrun = \"catch_up\"` in a group with time-dependent outputs"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0288"
+severity = "error"
+message = "reserved group name used in a way that is not allowed"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0290"
+severity = "error"
+message = "feature reserved for a later version of this runtime"
+doc = "ref/01 §10.2"
+also = ["03 §15"]
+
+[[code]]
+id = "J0291"
+retired = true
+replaced_by = "J0140"
+message = "the `api.mtls` key was removed (TCP is always mTLS; the key gives `J0140`). The number is not reused"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0292"
+severity = "error"
+message = "`security.trust` references a key that is not in the node's trust bundle with that role (the same code in `jk check` and on the node, on apply)"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0293"
+severity = "warning"
+message = "role granted to any principal"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0294"
+severity = "error-in-prod"
+message = "plaintext secret in a secret-type key"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0295"
+severity = "error"
+message = "invalid principal in `[security.roles]`"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0296"
+severity = "error-in-prod"
+message = "connection without TLS or without security (`mqtt://`, `http://`, OPC UA `None`)"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0297"
+severity = "warning"
+message = "bridge with writes listening on all interfaces"
+doc = "ref/01 §10.2"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J0298"
+severity = "warning"
+message = "action with `role = \"viewer\"`: counts as `operator`, which is the API minimum"
+doc = "ref/01 §10.2"
+
+[[code]]
+id = "J0301"
+severity = "error"
+message = "expression with incompatible dimensions"
+doc = "ref/01 §10.1"
+also = ["03 §15"]
+
+[[code]]
+id = "J0302"
+severity = "error"
+message = "unknown signal in an expression"
+doc = "ref/01 §10.1"
+
+[[code]]
+id = "J0303"
+severity = "error"
+message = "enum without that variant"
+doc = "ref/01 §10.1"
+
+[[code]]
+id = "J0304"
+severity = "error"
+message = "expression with incompatible types (operand, enum of another type, unreadable signal, wrong result type)"
+doc = "ref/01 §10.1"
+also = ["ADR 0034"]
+
+[[code]]
+id = "J0305"
+severity = "error"
+message = "window above the maximum (15 min)"
+doc = "ref/01 §10.1"
+also = ["03 §15"]
+
+[[code]]
+id = "J0306"
+severity = "error"
+message = "`own()` outside a class method"
+doc = "ref/01 §10.1"
+
+[[code]]
+id = "J0307"
+severity = "error"
+message = "unknown function, wrong number of arguments, or an argument that must be a path, a duration or a constant"
+doc = "ref/01 §10.1"
+also = ["ADR 0034"]
+
+[[code]]
+id = "J0350"
+severity = "error"
+message = "cycle group not schedulable (M23)"
+doc = "ref/01 §10.1"
+also = ["03 §15"]
+
+[[code]]
+id = "J0351"
+severity = "error"
+message = "group < 10 ms without `kernel = \"preempt_rt\"`"
+doc = "ref/01 §10.1"
+also = ["03 §15"]
+
+[[code]]
+id = "J0352"
+severity = "warning"
+message = "group ≥ 10 ms without PREEMPT_RT: jitter not guaranteed"
+doc = "ref/01 §10.1"
+also = ["03 §15"]
+
+[[code]]
+id = "J0360"
+severity = "error"
+message = "resource class without CPUs, or with CPUs overlapping `rt` (except on a board with `cpus = 1`, where it is a note)"
+doc = "ref/01 §10.1"
+also = ["03 §15"]
+
+[[code]]
+id = "J0370"
+severity = "error"
+message = "bus overloaded"
+doc = "ref/01 §10.1"
+also = ["03 §15"]
+
+[[code]]
+id = "J0380"
+severity = "error"
+message = "estimated memory above 70% of the board's RAM"
+doc = "ref/01 §10.1"
+also = ["03 §15"]
+
+[[code]]
+id = "J0381"
+severity = "warning"
+message = "projected or measured write load above what the board's storage medium (`storage`) can sustain"
+doc = "ref/01 §10.1"
+also = ["ref/03 §2.3.1", "01 §12"]
+
+[[code]]
+id = "J0401"
+severity = "error-in-prod"
+message = "device drift against the lock (`kind`: `firmware`, `serial`, `identity`, `map`, `fallback`, `cert`)"
+doc = "ref/02 §2.6"
+also = ["03 §15"]
+
+[[code]]
+id = "J0410"
+severity = "error-in-prod"
+message = "lock missing (in `dev` it is created)"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0411"
+severity = "error-in-prod"
+message = "lock out of date against the manifest"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0412"
+severity = "error"
+message = "unsupported lock version"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0413"
+severity = "warning"
+message = "lock not in canonical form"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0414"
+severity = "error"
+message = "merge conflict in the lock"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0415"
+severity = "error"
+message = "`source = \"path:…\"` does not exist or is outside the project"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0420"
+severity = "error"
+message = "artifact digest different from the one pinned in the lock"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0421"
+severity = "warning"
+message = "pinned version withdrawn from the registry"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0422"
+severity = "error"
+message = "different contract hash for the same class version"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0423"
+severity = "error"
+message = "manifest `digest` different from the lock"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0430"
+severity = "error-in-prod"
+message = "cycle task without a measured WCET"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0431"
+severity = "error-in-prod"
+message = "stale WCET (different app, board or runtime)"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0432"
+severity = "warning"
+message = "measured WCET above the one declared by the app"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0440"
+severity = "error-in-prod"
+message = "`widen` or `accept_unsafe_reset` without approval in the lock, or for another value or another board"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0441"
+severity = "warning"
+message = "acceptance in the lock without a match in the manifest"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0442"
+severity = "error"
+message = "justification empty or shorter than 10 characters"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0450"
+severity = "error-in-prod"
+message = "device with `discover = true` without pinned discovery"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0451"
+severity = "error-in-prod"
+message = "profile fallback without verification pinned in the lock"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0452"
+severity = "error"
+message = "discovery captured with another driver or profile"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0460"
+severity = "error-in-prod"
+message = "MCU different from the lock or from the node's generation (`kind`: `firmware`, `runtime`, `features`, `generation`, `catalog`)"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0461"
+severity = "error"
+message = "Joker Link or ABI major incompatible with the MCU"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0470"
+severity = "warning"
+message = "node runtime different from the lock's"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0480"
+severity = "error-in-prod"
+message = "lock captured on another node"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0490"
+severity = "error"
+message = "section reserved for a later version (`models` before 1.1)"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0501"
+severity = "error"
+message = "model with no backend available on the target board"
+doc = "03 §15"
+since = "1.1"
+status = "reserved"
+
+[[code]]
+id = "J0502"
+severity = "error"
+message = "`.jkm` with a Burn version incompatible with the runtime"
+doc = "03 §15"
+since = "1.1"
+status = "reserved"
+
+[[code]]
+id = "J0510"
+severity = "error"
+message = "pipeline with incompatible formats between steps"
+doc = "03 §15"
+since = "1.1"
+status = "reserved"
+
+[[code]]
+id = "J0601"
+severity = "error"
+message = "required member of a class with no mapping in the instance"
+doc = "03 §15"
+
+[[code]]
+id = "J0602"
+severity = "error"
+message = "capability required by the app (`requires`) or declared in the instance without the members mapped"
+doc = "03 §15"
+
+[[code]]
+id = "J0603"
+severity = "error"
+message = "`const:` mapping on an `out` member (document 14, §5.2)"
+doc = "03 §15"
+
+[[code]]
+id = "J0604"
+severity = "error"
+message = "name collision between an instance and a device in the first segment (document 16, P3)"
+doc = "03 §15"
+
+[[code]]
+id = "J0610"
+severity = "error"
+message = "number of instances outside the bounds of `Many<C, MIN, MAX>`"
+doc = "03 §15"
+
+[[code]]
+id = "J0620"
+severity = "error"
+message = "more than 3 layers of chained virtual instances"
+doc = "03 §15"
+
+[[code]]
+id = "J0630"
+severity = "error"
+message = "major version of the instance's class differs from the one requested by the app"
+doc = "03 §15"
+
+[[code]]
+id = "J0640"
+severity = "error"
+message = "`jk class verify` on a non-simulated instance without `--allow-actuation`"
+doc = "03 §15"
+also = ["ref/03 §2.6.3", "07 §7.1", "ref/09 §5.11"]
+
+[[code]]
+id = "J0641"
+severity = "error"
+message = "`jk class verify` rejected: a `safety` or `manual` level is active on the instance's outputs"
+doc = "03 §15"
+also = ["ref/03 §2.6.3", "07 §7.1", "ref/09 §5.11"]
+
+[[code]]
+id = "J0650"
+severity = "error"
+message = "class member bound to a name that is not an instance"
+doc = "03 §15"
+also = ["ref/01 §5.13", "ref/07 §8.3"]
+
+[[code]]
+id = "J0651"
+severity = "error"
+message = "instance bound to a class member with another class or another major"
+doc = "03 §15"
+also = ["ref/01 §5.13"]
+
+[[code]]
+id = "J0652"
+severity = "error"
+message = "instance bound to a class member without the capabilities the member requires (`@requires`)"
+doc = "03 §15"
+also = ["ref/01 §5.13"]
+
+[[code]]
+id = "J0653"
+severity = "error"
+message = "number of instances bound to a class member outside `[min..max]`, or a list on a fixed member"
+doc = "03 §15"
+also = ["ref/01 §5.13", "ref/03 §2.2.14"]
+
+[[code]]
+id = "J0654"
+severity = "error"
+message = "cycle between composite instances: an instance is a member of itself"
+doc = "03 §15"
+also = ["ref/01 §5.13"]
+
+[[code]]
+id = "J0655"
+severity = "warning"
+message = "instance with `out` members that reaches different apps by different paths, one of them through a composition"
+doc = "03 §15"
+also = ["16 §6", "ref/01 §5.13", "14 §4.6"]
+
+[[code]]
+id = "J0656"
+severity = "error"
+message = "virtual instance of a class whose methods call methods of the members"
+doc = "03 §15"
+also = ["17 §4.1", "16 §6", "ref/01 §5.13"]
+
+[[code]]
+id = "J0710"
+severity = "error"
+message = "the generation does not fit the firmware's or the target's capabilities (with the exceeded capabilities and the RAM and flash estimate, §2.13.3)"
+doc = "ref/08 §2.16"
+
+[[code]]
+id = "J0720"
+severity = "error"
+message = "API or manifest section unavailable on Joker Micro (§2.11.5, ref/04 §4.14)"
+doc = "ref/08 §2.16"
+also = ["ref/04 §4.16"]
+
+[[code]]
+id = "J0721"
+severity = "warning"
+message = "`f64` on an MCU without a double-precision FPU (`fpu` = `none` or `sp`, §2.14)"
+doc = "ref/08 §2.16"
+
+[[code]]
+id = "J0730"
+severity = "error-in-prod"
+message = "liveness condition not met: the lease of a remote writer does not survive one lost renewal"
+doc = "ref/07 §10.2"
+
+[[code]]
+id = "J0731"
+severity = "error"
+message = "writer level outside the levels delegated to the link on that MCU output, or delegated level already used by a local MCU writer"
+doc = "ref/07 §10.2"
+
+[[code]]
+id = "J0732"
+severity = "warning"
+message = "estimated link traffic above 70% of the transport capacity"
+doc = "ref/07 §10.2"
+
+[[code]]
+id = "J0733"
+severity = "error"
+message = "link `max_lease` above the `max_lease` of an MCU output"
+doc = "ref/07 §10.2"
+
+[[code]]
+id = "J0734"
+severity = "error"
+message = "`max_frame`, `max_msg`, `window` or `bulk_max` outside the transport limits"
+doc = "ref/07 §10.2"
+
+[[code]]
+id = "J0735"
+severity = "error"
+message = "MCU atomic group that does not fit in one frame, or that mixes MCU outputs with outputs of another owner"
+doc = "ref/07 §10.2"
+
+[[code]]
+id = "J0736"
+severity = "error"
+message = "invalid or duplicate link address on the same bus (RS-485: 1–247; CAN: 1–253)"
+doc = "ref/07 §10.2"
+
+[[code]]
+id = "J0737"
+severity = "error"
+message = "link CAN identifiers conflict with another device on the bus"
+doc = "ref/07 §10.2"
+since = "1.1"
+status = "reserved"
+
+[[code]]
+id = "J0738"
+severity = "warning"
+message = "Joker Link without authentication (`auth = \"none\"`) on a closed bus"
+doc = "ref/07 §10.2"
+
+[[code]]
+id = "J0739"
+severity = "warning"
+message = "`max_age` of an MCU signal less than 2 × `refresh`"
+doc = "ref/07 §10.2"
+
+[[code]]
+id = "J0740"
+severity = "error"
+message = "MCU path with more than 8 segments under the device prefix"
+doc = "ref/07 §10.2"
+
+[[code]]
+id = "J0741"
+severity = "error"
+message = "the MCU has apps with `requires_clock = \"synced\"` and the link has no `TIME` (`time_interval = 0`)"
+doc = "ref/07 §10.2"
+
+[[code]]
+id = "J0742"
+severity = "error"
+message = "estimated link traffic above 100% of the transport capacity: does not fit"
+doc = "ref/07 §10.2"
+
+[[code]]
+id = "J0770"
+severity = "error"
+message = "unknown or unsupported MCU target (board without an MCU profile, big-endian architecture)"
+doc = "ref/08 §2.16"
+
+[[code]]
+id = "J0771"
+severity = "error"
+message = "`--generation` without a valid firmware descriptor (`--firmware`)"
+doc = "ref/08 §2.16"
+
+[[code]]
+id = "J0772"
+severity = "error"
+message = "the generation uses an app that the firmware does not contain (different name, major or `meta_hash`)"
+doc = "ref/08 §2.16"
+
+[[code]]
+id = "J0773"
+severity = "error"
+message = "the generation uses a driver that the firmware does not contain (different name, major or descriptor digest)"
+doc = "ref/08 §2.16"
+
+[[code]]
+id = "J0774"
+severity = "error"
+message = "estimated stack above the budget of a context"
+doc = "ref/08 §2.16"
+
+[[code]]
+id = "J0775"
+severity = "error"
+message = "collision of generated identifiers (C or Rust)"
+doc = "ref/08 §2.16"
+
+[[code]]
+id = "J0776"
+severity = "error"
+message = "more cycle groups than the target supports (8 in v1)"
+doc = "ref/08 §2.16"
+
+[[code]]
+id = "J0777"
+severity = "error"
+message = "group period below the target minimum (100 µs) or not representable in the timer"
+doc = "ref/08 §2.16"
+
+[[code]]
+id = "J0778"
+severity = "error"
+message = "persistence requested (trips, `kv`, persistent parameters) without a persistence area"
+doc = "ref/08 §2.16"
+
+[[code]]
+id = "J0779"
+severity = "error-in-prod"
+message = "unsigned generation blob"
+doc = "ref/08 §2.16"
+
+[[code]]
+id = "J0780"
+severity = "warning"
+message = "software floating point (`f32`) on a target without an FPU"
+doc = "ref/08 §2.16"
+
+[[code]]
+id = "J0781"
+severity = "error"
+message = "blob or firmware larger than its flash area"
+doc = "ref/08 §2.16"
+
+[[code]]
+id = "J0782"
+severity = "error"
+message = "signal type unavailable in Joker Micro v1 (block, stream)"
+doc = "ref/08 §2.16"
+
+[[code]]
+id = "J0783"
+severity = "error"
+message = "scheduled writes (`schedule_depth > 0`, `timed`) on an MCU: they arrive in 1.1"
+doc = "ref/08 §2.16"
+
+[[code]]
+id = "J0784"
+severity = "error"
+message = "app `kv` above 16 KiB"
+doc = "ref/08 §2.16"
+
+[[code]]
+id = "J0785"
+severity = "error"
+message = "`extern` device signal without `type`, `direction` or (if numeric) `unit`"
+doc = "ref/08 §2.16"
+
+[[code]]
+id = "J0786"
+severity = "error-in-prod"
+message = "board without safe outputs on reset (`reset_safe = false`); acceptable with `accept_unsafe_reset`"
+doc = "ref/08 §2.16"
+
+[[code]]
+id = "J0787"
+severity = "warning"
+message = "generated identifier with more than 63 characters"
+doc = "ref/08 §2.16"
+
+[[code]]
+id = "J0788"
+severity = "error-in-prod"
+message = "generation in flash not bound to a node (`node`)"
+doc = "ref/08 §2.16"
+
+[[code]]
+id = "J0789"
+severity = "error"
+message = "the generation needs a blob format, ISA or `min_runtime` above what the firmware supports"
+doc = "ref/08 §2.16"
+
+[[code]]
+id = "J0790"
+severity = "error"
+message = "required entry of the external interface with no match in the generation"
+doc = "ref/08 §2.16"
+
+[[code]]
+id = "J0791"
+severity = "warning"
+message = "stack of a context not measurable; budget not verified"
+doc = "ref/08 §2.16"
+
+[[code]]
+id = "J0792"
+severity = "warning"
+message = "estimated flash wear: lifetime below 10 years"
+doc = "ref/08 §2.16"
+
+[[code]]
+id = "J0793"
+severity = "warning"
+message = "optional entry of the external interface with no match in the generation"
+doc = "ref/08 §2.16"
+
+[[code]]
+id = "J0794"
+severity = "error"
+message = "node in `prod` with an MCU whose generation is `dev`"
+doc = "ref/08 §2.16"
+
+[[code]]
+id = "J0795"
+severity = "error"
+message = "Joker Micro firmware without an OTA receiver (feature `ota` disabled, or board without `FW_STAGING`, `GEN_A`/`GEN_B` or an A/B bootloader)"
+doc = "ref/08 §2.16"
+also = ["ref/08 §2.12.6", "19 §3"]
+
+[[code]]
+id = "J0796"
+severity = "error"
+message = "the generation uses features that the MCU core (`[mcu.<d>] core` in the lock) does not know"
+doc = "ref/08 §2.16"
+also = ["ref/08 §3.11", "ref/02 §2.1.10", "ref/01 §5.22"]
+
+[[code]]
+id = "J0800"
+severity = "error"
+message = "`schema` missing, or not the first key/value pair of the file"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0801"
+severity = "error"
+message = "unsupported `schema` version"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0802"
+severity = "error"
+message = "the file requires a newer runtime (`joker`)"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0803"
+severity = "error"
+message = "wrong file type: the content is not of the type of the name suffix, the name has no type suffix, or whoever references it asks for another type"
+doc = "ref/03 §2.9"
+also = ["ref/03 §2.1.6", "ADR 0026"]
+
+[[code]]
+id = "J0804"
+severity = "error"
+message = "name or version inconsistent with the file path"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0805"
+severity = "error"
+message = "invalid name, or name in a reserved namespace"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0806"
+severity = "error"
+message = "invalid literal (duration, quantity, instant, interval, tolerance, quality, result, state)"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0807"
+severity = "error"
+message = "key reserved for a future version"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0808"
+severity = "error"
+message = "device driver incompatible with the profile family"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0809"
+severity = "error"
+message = "invalid raw type, or raw type incompatible with the address"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0810"
+severity = "error"
+message = "invalid address or function code for the driver or for the direction"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0811"
+severity = "error"
+message = "point overlap or path collision in the profile"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0812"
+severity = "error"
+message = "point or step on a `forbidden` address"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0813"
+severity = "error"
+message = "coherent group does not fit in one request"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0814"
+severity = "error"
+message = "enum or bit nonexistent, duplicate or out of range"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0815"
+severity = "error"
+message = "signal scale, offset, unit or type inconsistent with the raw type"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0816"
+severity = "error"
+message = "invalid `limits`, `stuck_detect` or `max_age`"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0817"
+severity = "error"
+message = "invalid `poll`"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0818"
+severity = "error"
+message = "`quirks` unknown or out of range for the family"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0819"
+severity = "error"
+message = "device `config` outside the profile schema"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0820"
+severity = "error"
+message = "profile fallback badly declared"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0821"
+severity = "error"
+message = "invalid action step"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0822"
+severity = "error"
+message = "action arguments missing, extra or with the wrong type"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0823"
+severity = "error"
+message = "unknown `implements` class"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0824"
+severity = "error"
+message = "invalid `implements` mapping (direction, adapter, undeclared capability)"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0825"
+severity = "error"
+message = "discovery or `[profile] identity` badly declared"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0826"
+severity = "error-in-prod"
+message = "equipment firmware outside the range declared by the profile"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0827"
+severity = "error"
+message = "unknown board in `jk build --target` (in the manifest, an unknown `[target] board` is `J0172`, ref/01)"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0828"
+severity = "error"
+message = "resource nonexistent on the board (line, port, bus, accelerator)"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0829"
+severity = "error"
+message = "inconsistent board profile (architecture, system, CPUs, pins)"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0830"
+severity = "error"
+message = "firmware capabilities above the board memory"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0831"
+severity = "error"
+message = "unknown generator, or generator with invalid parameters"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0832"
+severity = "error"
+message = "simulated signal with more than one source"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0833"
+severity = "error"
+message = "invalid dynamics (function outside `[dynamics]`, algebraic loop, initial state missing)"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0834"
+severity = "error"
+message = "invalid simulated fault"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0835"
+severity = "error"
+message = "invalid panel (repeated or reserved key, incompatible type)"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0836"
+severity = "error"
+message = "simulation parameter unknown, without a value or with the wrong dimension"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0837"
+severity = "error"
+message = "Wasm plant incompatible with the model"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0838"
+severity = "error"
+message = "scenario action on a nonexistent or non-simulated target"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0839"
+severity = "error"
+message = "instant or interval outside the scenario or inverted"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0840"
+severity = "error"
+message = "expectation without a predicate or with incompatible predicates"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0841"
+severity = "error"
+message = "selector with no matches"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0842"
+severity = "error"
+message = "expectation failed"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0843"
+severity = "error"
+message = "instant of a core case not aligned with the period"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0844"
+severity = "error"
+message = "unknown reference in a case (writer, output, instance, member, method)"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0845"
+severity = "error"
+message = "suite does not match the file or the class"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0846"
+severity = "warning"
+message = "case skipped: the instance does not have the capability or is not simulatable"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0847"
+severity = "error"
+message = "invalid class package"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0848"
+severity = "error"
+message = "publication rejected: metadata missing, reserved namespace, version already published or incompatible without bumping the major, or board with `tier = \"dev\"`"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0849"
+severity = "error"
+message = "publication without a valid conformance report"
+doc = "ref/03 §2.9"
+
+[[code]]
+id = "J0850"
+severity = "error"
+message = "tier N driver not compiled into the node's runtime"
+doc = "ref/06 §7"
+
+[[code]]
+id = "J0851"
+severity = "error"
+message = "driver descriptor missing, malformed or inconsistent with `[drivers]`"
+doc = "ref/06 §7"
+
+[[code]]
+id = "J0852"
+severity = "error"
+message = "device key outside the driver schema (type, range, values, required key missing)"
+doc = "ref/06 §7"
+
+[[code]]
+id = "J0853"
+severity = "error"
+message = "point address outside the driver's address schema"
+doc = "ref/06 §7"
+
+[[code]]
+id = "J0854"
+severity = "error"
+message = "the profile or the manifest requires a capability that the driver does not declare"
+doc = "ref/06 §7"
+
+[[code]]
+id = "J0855"
+severity = "error"
+message = "the driver's `plan` failed without a valid code, or ran out of *fuel*"
+doc = "ref/06 §7"
+
+[[code]]
+id = "J0856"
+severity = "error"
+message = "inconsistent plan (coverage, batches, periods, limits)"
+doc = "ref/06 §7"
+
+[[code]]
+id = "J0857"
+severity = "error"
+message = "non-deterministic plan: the node computed a different plan from `jk check`"
+doc = "ref/06 §7"
+
+[[code]]
+id = "J0858"
+severity = "error"
+message = "the `safe` of an output is not representable in the raw type"
+doc = "ref/06 §7"
+
+[[code]]
+id = "J0859"
+severity = "error"
+message = "`joker:driver` world version not supported by this runtime"
+doc = "ref/06 §7"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J0860"
+severity = "error-in-prod"
+message = "driver component uses unstable items of the world"
+doc = "ref/06 §7"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J0861"
+severity = "error"
+message = "no common JDP version"
+doc = "ref/06 §7"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J0862"
+severity = "error"
+message = "JDP authentication refused (peer credentials or token)"
+doc = "ref/06 §7"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J0863"
+severity = "error"
+message = "JDP protocol violation; driver terminated"
+doc = "ref/06 §7"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J0864"
+severity = "error"
+message = "could not start the tier X driver (executable, user, unit)"
+doc = "ref/06 §7"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J0865"
+severity = "error-in-prod"
+message = "tier X driver without its own user or with privileged groups"
+doc = "ref/06 §7"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J0866"
+severity = "error"
+message = "driver in crashloop"
+doc = "ref/06 §7"
+
+[[code]]
+id = "J0867"
+severity = "warning"
+message = "call to the driver exceeded the deadline"
+doc = "ref/06 §7"
+
+[[code]]
+id = "J0868"
+severity = "error"
+message = "tier W driver: trap or resource limit exceeded"
+doc = "ref/06 §7"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J0869"
+severity = "warning"
+message = "invalid sample from the driver (point, raw type, quality, size)"
+doc = "ref/06 §7"
+
+[[code]]
+id = "J0870"
+severity = "warning"
+message = "ingest ring full: samples dropped"
+doc = "ref/06 §7"
+
+[[code]]
+id = "J0871"
+severity = "error"
+message = "write to the equipment during discovery or scan"
+doc = "ref/06 §7"
+
+[[code]]
+id = "J0872"
+severity = "error"
+message = "tier X driver executable invalid for the node's architecture"
+doc = "ref/06 §7"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J0873"
+severity = "error"
+message = "transport not supported by this host for this tier"
+doc = "ref/06 §7"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J0874"
+severity = "error"
+message = "resources declared by the driver above what is allowed"
+doc = "ref/06 §7"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J0875"
+severity = "error"
+message = "driver without `no_std` support on a Joker Micro target"
+doc = "ref/06 §7"
+
+[[code]]
+id = "J0876"
+severity = "warning"
+message = "connection to the equipment failed (`connect`)"
+doc = "ref/06 §7"
+
+[[code]]
+id = "J0877"
+severity = "warning"
+message = "write rejected or not supported by the equipment"
+doc = "ref/06 §7"
+
+[[code]]
+id = "J0878"
+severity = "warning"
+message = "timed write applied outside the tolerance"
+doc = "ref/06 §7"
+since = "1.1"
+status = "reserved"
+
+[[code]]
+id = "J0879"
+severity = "error"
+message = "driver conformance case failed"
+doc = "ref/06 §7"
+
+[[code]]
+id = "J0880"
+severity = "error"
+message = "driver publication without a valid conformance report"
+doc = "ref/06 §7"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J0881"
+severity = "error"
+message = "tier X driver hung (health unanswered); terminated"
+doc = "ref/06 §7"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J0882"
+severity = "error"
+message = "tier W driver used a forbidden import in plan mode"
+doc = "ref/06 §7"
+since = "1.2"
+status = "reserved"
+
+[[code]]
+id = "J0883"
+severity = "warning"
+message = "tier N driver blocked the `io` thread for more than 1 ms"
+doc = "ref/06 §7"
+
+[[code]]
+id = "J0884"
+severity = "warning"
+message = "atomic group with outputs on different driver instances: the order between them is not guaranteed on the wire"
+doc = "ref/06 §7"
+
+[[code]]
+id = "J0885"
+severity = "error"
+message = "driver descriptor name, tier, version or digest differs from the lock, or plan made with another descriptor"
+doc = "ref/06 §7"
+
+[[code]]
+id = "J0886"
+severity = "warning"
+message = "driver above the log or progress rate; messages discarded"
+doc = "ref/06 §7"
+
+[[code]]
+id = "J0887"
+severity = "error"
+message = "malformed driver fixture or conformance case"
+doc = "ref/06 §7"
+
+[[code]]
+id = "J0888"
+severity = "warning"
+message = "`range` bound not representable in the raw type (saturated)"
+doc = "ref/06 §7"
+
+[[code]]
+id = "J0900"
+severity = "error"
+message = "invalid node configuration (`jokerd` starts with defaults)"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0901"
+severity = "error"
+message = "generation key in `node.toml`"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0902"
+severity = "warning"
+message = "node without identity: in enrollment mode"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0903"
+severity = "error"
+message = "node certificate expired"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0904"
+severity = "error"
+message = "insecure permissions on `/etc/joker` or on the state"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0905"
+severity = "error"
+message = "state layout newer than the runtime"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0906"
+severity = "error"
+message = "`dev` generation rejected by the node policy"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0907"
+severity = "warning"
+message = "state files changed outside `jokerd`"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0908"
+severity = "error"
+message = "another `jokerd` already uses this state directory"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0909"
+severity = "error"
+message = "node name differs from the certificate CN"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0910"
+severity = "error"
+message = "invalid client configuration"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0911"
+severity = "error"
+message = "unknown or ambiguous node"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0912"
+severity = "error"
+message = "node certificate does not verify (CA or name)"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0913"
+severity = "error"
+message = "private key with insecure permissions or inside the project"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0914"
+severity = "warning"
+message = "unknown `JK_*` variable"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0915"
+severity = "error"
+message = "unsigned artifact or generation in `prod`"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0916"
+severity = "error"
+message = "artifact or generation signed by a key without that role in the effective policy (a `[security.trust]` outside the bundle is `J0292`, ref/01)"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0917"
+severity = "error"
+message = "key revoked or expired"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0918"
+severity = "error"
+message = "invalid trust bundle: not signed by an anchor, or version not higher than the active one"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0919"
+severity = "error"
+message = "invalid key file"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0920"
+severity = "error-in-prod"
+message = "secret referenced and nonexistent"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0921"
+retired = true
+replaced_by = "J0157"
+message = "a `secret:` on a key that does not accept secrets is `J0157` (ref/01). The number is not reused and no document cites it"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0922"
+severity = "error-in-prod"
+message = "secret not encrypted for this node"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0923"
+severity = "error"
+message = "secret does not authenticate (tampered with or wrong key)"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0924"
+severity = "error"
+message = "secret `rev` lower than the node's"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0925"
+severity = "error-in-prod"
+message = "plaintext credential in the manifest, or plaintext secrets in the project"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0926"
+severity = "error-in-prod"
+message = "secret signature missing or invalid"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0927"
+severity = "error"
+message = "app secret without a binding, or binding to a name that the app does not declare"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0928"
+severity = "error"
+message = "invalid secret name, or limits exceeded"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0929"
+severity = "error"
+message = "recipient KEM key without attestation"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0930"
+severity = "error"
+message = "enrollment token invalid, expired or already used"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0931"
+severity = "error"
+message = "the bundle received at enrollment is not signed by the root given in the token"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0932"
+severity = "error"
+message = "node name invalid, already used in the organization, or different from the CSR"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0933"
+severity = "warning"
+message = "identity key in a file, without a TPM or secure element (or required attestation missing)"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0934"
+severity = "error"
+message = "node certificate revoked"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0935"
+severity = "warning"
+message = "node certificate near its end or expired; renewal pending"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0936"
+severity = "error"
+message = "renewal refused: outside `renew_grace` or invalid proof"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0937"
+severity = "error"
+message = "hardware fingerprint differs from the one at enrollment: node in quarantine"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0938"
+severity = "error"
+message = "the same identity is connected from two nodes: suspected clone"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0939"
+severity = "error"
+message = "invalid trust bundle or floor: signature, unknown root or non-increasing version"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0940"
+severity = "error"
+message = "invalid COSE signature, algorithm not accepted or unknown `kid`"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0941"
+severity = "error"
+message = "the document is not from the node's authority (`deck` role missing or another Deck)"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0942"
+severity = "error"
+message = "desired state `seq` is not greater than the last accepted one"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0943"
+severity = "error"
+message = "`seq` repeated with different content (two issuers)"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0944"
+severity = "error"
+message = "document or command addressed to another node or organization"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0945"
+severity = "error"
+message = "document expired or issued in the future (clock synchronized)"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0946"
+severity = "error"
+message = "unsupported format: version, unknown critical key or invalid source"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0947"
+severity = "error"
+message = "unauthorized downgrade, or downgrade below the security floor"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0948"
+severity = "error"
+message = "runtime incompatible with the board, the architecture or the local state"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0949"
+severity = "error"
+message = "artifact list inconsistent with the generation, the lock or the MCUs"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0950"
+severity = "error"
+message = "downloaded artifact does not match the digest or the size"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0951"
+severity = "error"
+message = "desired state or artifact without any accepted signature for its type (an invalid signature is `J0940`)"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0952"
+severity = "error"
+message = "artifact not downloaded within `fetch_deadline`"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0953"
+severity = "error"
+message = "insufficient disk space to prepare the apply"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0954"
+severity = "error"
+message = "generation rejected by validation (causes in `causes`)"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0955"
+severity = "error"
+message = "computed generation hash differs from the declared one"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0956"
+severity = "error"
+message = "`mode = \"dev\"` generation rejected on a `prod` node"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0957"
+severity = "error"
+message = "artifact type or feature not supported in this version"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0958"
+severity = "error"
+message = "app compiled for a WIT world that the target runtime does not accept"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0959"
+severity = "warning"
+message = "apply deferred (window, clock, pause, local changes)"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0960"
+severity = "error"
+message = "confirmation window expired: rollback"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0961"
+severity = "error"
+message = "health failed during confirmation: rollback"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0962"
+severity = "warning"
+message = "local limit of applies per day reached"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0963"
+severity = "error"
+message = "incompatible MCU firmware (board, ABI, security counter)"
+doc = "ref/10 §2.20"
+since = "1.1"
+status = "reserved"
+
+[[code]]
+id = "J0964"
+severity = "error"
+message = "MCU generation blob rejected (cause in `causes`, e.g. `J0710`)"
+doc = "ref/10 §2.20"
+since = "1.1"
+status = "reserved"
+
+[[code]]
+id = "J0965"
+severity = "error"
+message = "MCU update over Joker Link failed or did not confirm"
+doc = "ref/10 §2.20"
+since = "1.1"
+status = "reserved"
+
+[[code]]
+id = "J0966"
+severity = "warning"
+message = "running generation changed locally: desired state on hold"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0967"
+severity = "error"
+message = "command without a valid target (phase not pending or different hash)"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0968"
+severity = "error"
+message = "command outside the time window or expired"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0969"
+severity = "error"
+message = "generation rejected by the Deck during confirmation: rollback"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0970"
+severity = "warning"
+message = "event queue full: events dropped"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0971"
+severity = "warning"
+message = "report truncated for exceeding the limit"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0972"
+severity = "warning"
+message = "node clock skewed against the Deck by more than 5 min"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0973"
+severity = "warning"
+message = "node protocol minor outside the ones supported by the Deck (minimal core only)"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0974"
+severity = "warning"
+message = "Deck unreachable for more than `offline_warn`"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0975"
+severity = "error"
+message = "Deck or broker certificate does not match the bundle pins"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0976"
+severity = "error"
+message = "message above the transport or profile limit"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0977"
+severity = "error"
+message = "MQTT publish rejected by the broker (ACL)"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0978"
+severity = "error"
+message = "malformed message, or message with mixed key forms"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0979"
+severity = "error"
+message = "invalid confirmation policy, calendar or window"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "J0980"
+severity = "error"
+message = "remote sessions disabled on this node"
+doc = "ref/10 §2.20"
+since = "1.3"
+status = "reserved"
+
+[[code]]
+id = "J0981"
+severity = "error"
+message = "requested role above what the node grants to this Deck user"
+doc = "ref/10 §2.20"
+since = "1.3"
+status = "reserved"
+
+[[code]]
+id = "J0982"
+severity = "error"
+message = "limit of concurrent sessions reached"
+doc = "ref/10 §2.20"
+since = "1.3"
+status = "reserved"
+
+[[code]]
+id = "J0983"
+severity = "error"
+message = "session expired, closed, or `ttl` above `max_ttl`"
+doc = "ref/10 §2.20"
+since = "1.3"
+status = "reserved"
+
+[[code]]
+id = "J0984"
+severity = "error"
+message = "local consent refused or not given in time"
+doc = "ref/10 §2.20"
+since = "1.3"
+status = "reserved"
+
+[[code]]
+id = "J0985"
+severity = "error"
+message = "transport without support for remote sessions"
+doc = "ref/10 §2.20"
+since = "1.3"
+status = "reserved"
+
+[[code]]
+id = "J0986"
+severity = "error"
+message = "tunnel request to an endpoint forbidden in remote sessions"
+doc = "ref/10 §2.20"
+since = "1.3"
+status = "reserved"
+
+[[code]]
+id = "J0987"
+severity = "warning"
+message = "expired key accepted because the clock is not `synced`"
+doc = "ref/02 §2.6"
+
+[[code]]
+id = "J0990"
+severity = "error"
+message = "micro profile: critical key outside the subset"
+doc = "ref/10 §2.20"
+since = "1.1"
+status = "reserved"
+
+[[code]]
+id = "J0991"
+severity = "error"
+message = "micro profile: window with a time zone other than UTC"
+doc = "ref/10 §2.20"
+since = "1.1"
+status = "reserved"
+
+[[code]]
+id = "J0992"
+severity = "error"
+message = "desired state with a generation rejected: the node's `[policy] apply_from` does not include `deck`"
+doc = "ref/10 §2.20"
+
+[[code]]
+id = "JC0107"
+severity = "error"
+message = "physical quantity without a unit"
+doc = "17 §7"
+
+[[code]]
+id = "JC0201"
+severity = "error"
+message = "method assigns to an `out` more than once"
+doc = "17 §7"
+
+[[code]]
+id = "JC0204"
+severity = "error"
+message = "method assigns to something that is not `out`"
+doc = "17 §7"
+
+[[code]]
+id = "JC0205"
+severity = "error"
+message = "`atomic` without `order`, or `order` with unassigned members"
+doc = "17 §7"
+
+[[code]]
+id = "JC0206"
+severity = "error"
+message = "argument with the same name as a member"
+doc = "17 §7"
+
+[[code]]
+id = "JC0207"
+severity = "error"
+message = "reserved name (`name`, `index`, `health`, `read`, `raw`, `has`) on a member, query, method, event or action"
+doc = "17 §7"
+
+[[code]]
+id = "JC0210"
+severity = "error"
+message = "use of a member of a capability outside it"
+doc = "17 §7"
+
+[[code]]
+id = "JC0301"
+severity = "error"
+message = "expression with incompatible dimensions"
+doc = "17 §7"
+
+[[code]]
+id = "JC0310"
+severity = "error"
+message = "queries in a cycle"
+doc = "17 §7"
+
+[[code]]
+id = "JC0320"
+severity = "error"
+message = "query with a window above 15 min"
+doc = "17 §7"
+
+[[code]]
+id = "JC0401"
+severity = "error"
+message = "action used in a method (including a member's: `compressor.reset()`)"
+doc = "17 §7"
+
+[[code]]
+id = "JC0402"
+severity = "error"
+message = "action without `@timeout`"
+doc = "17 §7"
+
+[[code]]
+id = "JC0501"
+severity = "error"
+message = "composition with depth > 3 (counted as in §8)"
+doc = "17 §7"
+
+[[code]]
+id = "JC0502"
+severity = "error"
+message = "method that calls a method of a collection member, or that iterates over it"
+doc = "17 §7"
+also = ["17 §4.1", "17 §8"]
+
+[[code]]
+id = "JC0503"
+severity = "error"
+message = "call to a method that the member does not have, or of a capability that the member does not require with `@requires`"
+doc = "17 §7"
+also = ["17 §4.1"]
+
+[[code]]
+id = "JC0504"
+severity = "error"
+message = "`@requires` with a capability that the member's class does not have"
+doc = "17 §7"
+also = ["17 §3.2"]
+
+[[code]]
+id = "JC0601"
+severity = "error"
+message = "version incompatible with the previous one without bumping the major (§9)"
+doc = "17 §7"
+
+[[code]]
+id = "JW0230"
+severity = "warning"
+message = "method conditioned on an `in` (looks like an interlock; check that the manifest also has it)"
+doc = "17 §7"

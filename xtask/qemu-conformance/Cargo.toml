@@ -1,0 +1,31 @@
+[package]
+name = "joker-qemu-conformance"
+description = "Conformance firmware: the core suites, embedded as data, run on Cortex-M33 (QEMU mps2-an505) and RISC-V (QEMU virt) with no allocator (docs/13 §5)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "joker-qemu-conformance"
+test = false
+bench = false
+
+[dependencies]
+joker-case-runner.workspace = true
+joker-core.workspace = true
+
+[target.'cfg(target_os = "none")'.dependencies]
+joker-qemu-sys = { path = "../qemu-sys" }
+semihosting = { version = "0.1.25", features = ["stdio", "panic-handler"] }
+
+[target.'cfg(all(target_arch = "arm", target_os = "none"))'.dependencies]
+cortex-m-rt = "0.7.5"
+
+[target.'cfg(all(target_arch = "riscv32", target_os = "none"))'.dependencies]
+riscv-rt = { version = "0.18.0", features = ["single-hart"] }
+
+[lints]
+workspace = true

@@ -14,7 +14,7 @@ Instructions for any agent (or person) working in this repository. Short on purp
 ## 2. Non-negotiable invariants
 
 1. **`joker-core` and `joker-expr` do no I/O**, do not read the clock and do not generate randomness. The clock comes in through the `Clock` trait (ADR 0007).
-2. **`joker-units`, `joker-expr`, `joker-core`, `joker-link-proto` and `joker-agent-proto` are `#![no_std]`** (the normative list is `docs/13` §1) and do not allocate on the tick path; every structure has a fixed capacity. `alloc` is an optional feature, only for building the registry on Linux (ADR 0020). A new dependency in these crates must be `no_std`. Synchronisation in the core is only through `critical-section` and `portable-atomic`.
+2. **`joker-units`, `joker-expr`, `joker-core`, `joker-link-proto` and `joker-agent-proto` are `#![no_std]`** (the normative list is `docs/13` §1) and do not allocate on the tick path; every structure has a fixed capacity. `alloc` is an optional feature, only for building the registry on Linux (ADR 0020). A new dependency in these crates must be `no_std`. Synchronization in the core is only through `critical-section` and `portable-atomic`.
 3. **No write path bypasses the envelope**: not apps, not the CLI, not the API, not bridges. Drivers only receive writes that were already applied (*committed*).
 4. **Quality never disappears silently.** A `Bad` sample is never turned into a number. An API that returns only the value returns `Result`.
 5. **Every output has a declared safe state.** There is no default value; a missing `safe` is a validation error.
@@ -62,7 +62,7 @@ The conformance front writes its cases from the specification only and never rea
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
-cargo build --target thumbv8m.main-none-eabihf -p joker-units -p joker-expr -p joker-core
+cargo build --target thumbv8m.main-none-eabihf -p joker-units -p joker-expr -p joker-core -p joker-hal
 ```
 
 - If you touched the semantics of the envelope, the arbiter or the process image, a case in `conformance/` covers it.

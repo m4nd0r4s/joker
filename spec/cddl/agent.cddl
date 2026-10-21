@@ -1,17 +1,17 @@
-; spec/cddl/agent.cddl — protocolo do agente, agent/1 (docs/ref/10-protocolo-do-agente.md)
+; spec/cddl/agent.cddl — agent protocol, agent/1 (docs/ref/10-agent-protocol.md)
 ;
-; Forma dupla. Cada chave escreve-se ("nome" / n):
-;   - CBOR (MQTT, CoAP, documentos assinados): só a chave inteira n e as formas binárias
-;     (tempo em ns, duração em ns, digest em 32 B, ULID em 16 B, enums numéricos);
-;   - JSON (HTTPS): só a chave de texto "nome" e as formas de texto
-;     (RFC 3339, literal de duração, "sha256:<hex>", ULID em Crockford base32, enums por nome).
-;   Misturar as duas formas na mesma mensagem é um erro (status bad_request).
-; Os valores dos enums estão nas tabelas da ref/10, §2.2; aqui aparecem como `enum`.
-; Chaves 1–99: v1. Chaves 100–119: reservadas para a v2 (sites). Chaves negativas (CBOR)
-; e chaves de texto começadas por "x_" (JSON): extensões privadas, ignoradas.
-; Nenhuma chave se reutiliza depois de removida (ref/00, §1).
+; Dual form. Each key is written ("name" / n):
+;   - CBOR (MQTT, CoAP, signed documents): only the integer key n and the binary forms
+;     (time in ns, duration in ns, digest in 32 B, ULID in 16 B, numeric enums);
+;   - JSON (HTTPS): only the text key "name" and the text forms
+;     (RFC 3339, duration literal, "sha256:<hex>", ULID in Crockford base32, enums by name).
+;   Mixing both forms in the same message is an error (status bad_request).
+; The enum values are in the tables of ref/10, §2.2; here they appear as `enum`.
+; Keys 1–99: v1. Keys 100–119: reserved for v2 (sites). Negative keys (CBOR)
+; and text keys starting with "x_" (JSON): private extensions, ignored.
+; No key is reused after it is removed (ref/00, §1).
 
-; ------------------------------------------------------------------ raiz
+; ------------------------------------------------------------------ root
 
 agent-message = desired-state / command / trust-bundle / floor-statement /
                 enroll-request / enroll-reply / renew-request / renew-proof / renew-reply /
@@ -20,25 +20,25 @@ agent-message = desired-state / command / trust-bundle / floor-statement /
                 registry-token-request / registry-token / enroll-nonce /
                 blob-request / blob-chunk / tunnel-frame
 
-; ------------------------------------------------------------------ tipos comuns
+; ------------------------------------------------------------------ common types
 
-time      = int / tdate                 ; CBOR: s64 ns UTC desde 1970; JSON: RFC 3339 com Z
-duration  = uint / tstr                 ; CBOR: ns; JSON: literal de duração (ref/00, §3.1)
-digest    = bstr .size 32 / tstr        ; JSON: "sha256:" + 64 hex minúsculos
-ulid      = bstr .size 16 / tstr        ; JSON: 26 caracteres Crockford base32
-kid       = bstr .size 16 / tstr        ; 16 primeiros bytes do SHA-256 da chave pública; JSON: hex
-name      = tstr                        ; rótulo DNS (ref/00, §5): nó, org, Deck, site
-path      = tstr                        ; caminho do documento 02, §9
+time      = int / tdate                 ; CBOR: s64 ns UTC since 1970; JSON: RFC 3339 with Z
+duration  = uint / tstr                 ; CBOR: ns; JSON: duration literal (ref/00, §3.1)
+digest    = bstr .size 32 / tstr        ; JSON: "sha256:" + 64 lowercase hex
+ulid      = bstr .size 16 / tstr        ; JSON: 26 Crockford base32 characters
+kid       = bstr .size 16 / tstr        ; first 16 bytes of the SHA-256 of the public key; JSON: hex
+name      = tstr                        ; DNS label (ref/00, §5): node, org, Deck, site
+path      = tstr                        ; path of document 02, §9
 semver    = tstr
-seq       = uint                        ; sempre < 2^53 (cabe num número JSON)
+seq       = uint                        ; always < 2^53 (fits in a JSON number)
 bytes     = bstr / tstr                 ; JSON: base64 (RFC 4648, §4)
-enum      = uint / tstr                 ; CBOR: valor; JSON: nome snake_case
-cose      = bstr / tstr                 ; COSE_Sign1 (RFC 9052), CBOR; em JSON, base64
-code      = tstr                        ; J-code do registo (ref/00, §8)
+enum      = uint / tstr                 ; JSON: snake_case name
+cose      = bstr / tstr                 ; COSE_Sign1 (RFC 9052), CBOR; in JSON, base64
+code      = tstr                        ; J-code of the registry (ref/00, §8)
 pct       = float / uint                ; 0–100
-extension = ( * (nint / tstr) => any )  ; nint em CBOR; em JSON só chaves "x_..."
+extension = ( * (nint / tstr) => any )  ; nint in CBOR; in JSON only "x_..." keys
 
-; ------------------------------------------------------------------ estado (resposta genérica)
+; ------------------------------------------------------------------ status (generic response)
 
 status-reply = {
   ("status" / 1) => enum,               ; agent-status
@@ -48,48 +48,48 @@ status-reply = {
   extension
 }
 
-; ------------------------------------------------------------------ confiança
+; ------------------------------------------------------------------ trust
 
 trust-bundle = {
   ("v" / 1) => 1,
   ("org" / 2) => name,
   ("version" / 3) => seq,
   ("issued" / 4) => time,
-  ? ("authority" / 5) => name,          ; deck_id; ausente = nó sem Deck
+  ? ("authority" / 5) => name,          ; deck_id; absent = node without a Deck
   ("keys" / 6) => [+ trust-key],
   ? ("deck_urls" / 7) => [+ tstr],
-  ? ("deck_tls" / 8) => [+ digest],     ; SHA-256 do SPKI aceite no TLS do Deck e do broker
-  ? ("mqtt" / 9) => [+ tstr],           ; URLs mqtts:// do broker
-  ? ("coap" / 10) => [+ tstr],          ; URLs coaps:// (perfil micro)
-  ? ("scope" / 11) => [+ tstr],         ; nós ou sites a que o bundle se aplica ("*" = todos)
+  ? ("deck_tls" / 8) => [+ digest],     ; SHA-256 of the SPKI accepted in the TLS of the Deck and of the broker
+  ? ("mqtt" / 9) => [+ tstr],           ; mqtts:// URLs of the broker
+  ? ("coap" / 10) => [+ tstr],          ; coaps:// URLs (micro profile; RESERVED 1.1, ADR 0035)
+  ? ("scope" / 11) => [+ tstr],         ; nodes or sites the bundle applies to ("*" = all)
   ? ("min_mode" / 12) => enum,          ; mode: dev 0, prod 1
   extension
 }
 
 trust-key = {
   ("kid" / 1) => kid,
-  ("alg" / 2) => -8,                    ; COSE EdDSA: as chaves da organização são Ed25519 (D7, ADR 0025)
-  ("key" / 3) => bytes,                 ; chave pública crua, 32 B
+  ("alg" / 2) => -8,                    ; COSE EdDSA: the organization keys are Ed25519 (D7, ADR 0025)
+  ("key" / 3) => bytes,                 ; raw public key, 32 B
   ("roles" / 4) => [+ enum],            ; trust-role: root 0, deck 1, runtime 2, apps 3, config 4, profiles 5,
                                         ; boards 6, classes 7, firmware 8, models 9 (1.1), drivers 10, secrets 11
   ? ("not_after" / 5) => time,
-  ? ("deck" / 6) => name,               ; obrigatório para o papel deck
+  ? ("deck" / 6) => name,               ; required for the deck role
   extension
 }
 
 floor-statement = {
   ("v" / 1) => 1,
-  ("role" / 2) => enum,                 ; trust-role do tipo de artefacto
+  ("role" / 2) => enum,                 ; trust-role of the artifact type
   ("seq" / 3) => seq,
   ("issued" / 4) => time,
   ? ("min_version" / 5) => semver,
   ? ("revoked" / 6) => [* digest],
-  ? ("scope" / 7) => tstr,              ; placa, arquitetura ou "*"
-  ? ("min_counter" / 8) => uint,        ; contador de segurança do firmware de MCU (MCUboot)
+  ? ("scope" / 7) => tstr,              ; board, architecture or "*"
+  ? ("min_counter" / 8) => uint,        ; security counter of the MCU firmware (MCUboot)
   extension
 }
 
-; ------------------------------------------------------------------ enrolamento e certificados
+; ------------------------------------------------------------------ enrollment and certificates
 
 enroll-request = {
   ("token" / 1) => tstr,
@@ -97,14 +97,14 @@ enroll-request = {
   ("csr" / 3) => bytes,                 ; PKCS#10 DER; SAN URI urn:joker:kem:x25519:<base64url> (ref/02 §3.2.3)
   ("hw" / 4) => digest,
   ("key_storage" / 5) => enum,          ; tpm 0, secure_element 1, file 2
-  ("kind" / 6) => enum,                 ; node-kind: linux 0, micro 1
+  ("kind" / 6) => enum,                 ; node-kind: linux 0, micro 1 (RESERVED 1.1)
   ? ("board" / 7) => tstr,
   ? ("runtime" / 8) => semver,
   ? ("attestation" / 9) => attestation,
   extension
 }
 
-attestation = {                         ; opcional na 1.0; o Deck pode exigi-lo na 1.3
+attestation = {                         ; optional in 1.0; the Deck may require it in 1.3
   ("kind" / 1) => enum,                 ; tpm2 0
   ("ek_cert" / 2) => bytes,
   ("ak" / 3) => bytes,
@@ -114,36 +114,36 @@ attestation = {                         ; opcional na 1.0; o Deck pode exigi-lo 
 }
 
 enroll-reply = {
-  ("cert" / 1) => [+ bytes],            ; cadeia X.509 DER, folha primeiro
-  ("trust" / 2) => cose,                ; trust-bundle assinado pela raiz da organização
+  ("cert" / 1) => [+ bytes],            ; X.509 DER chain, leaf first
+  ("trust" / 2) => cose,                ; trust-bundle signed by the organization root
   ? ("deck" / 3) => name,
   ? ("settings" / 4) => agent-settings,
-  ("anchors" / 5) => [+ trust-key],     ; chaves root: trust.anchors do node.toml (ref/02)
+  ("anchors" / 5) => [+ trust-key],     ; root keys: trust.anchors of node.toml (ref/02)
   extension
 }
 
 enroll-nonce = {
-  ("nonce" / 1) => bytes,              ; 32 B, válido 5 min
+  ("nonce" / 1) => bytes,              ; 32 B, valid for 5 min
   extension
 }
 
 renew-request = {
-  ("csr" / 1) => bytes,                 ; chave de identidade nova; a mesma chave KEM no SAN
-  ("proof" / 2) => cose,                ; COSE_Sign1 da chave antiga sobre renew-proof
+  ("csr" / 1) => bytes,                 ; new identity key; the same KEM key in the SAN
+  ("proof" / 2) => cose,                ; COSE_Sign1 of the old key over renew-proof
   ("hw" / 3) => digest,
   extension
 }
 
 renew-proof = {
   ("node" / 1) => name,
-  ("csr" / 2) => digest,                ; SHA-256 do CSR DER
+  ("csr" / 2) => digest,                ; SHA-256 of the DER CSR
   ("ts" / 3) => time,
   ("nonce" / 4) => ulid,
 }
 
 renew-reply = {
   ("cert" / 1) => [+ bytes],
-  ? ("trust" / 2) => [+ cose],          ; cadeia de bundles desde a versão do nó
+  ? ("trust" / 2) => [+ cose],          ; bundle chain from the node's version
   extension
 }
 
@@ -161,9 +161,9 @@ hello = {
   ("key_storage" / 9) => enum,
   ("time" / 10) => time,
   ("clock" / 11) => enum,               ; clock_quality (ref/00, §6)
-  ("desired_seq" / 12) => seq,          ; último estado desejado aceite (0 = nenhum)
+  ("desired_seq" / 12) => seq,          ; last accepted desired state (0 = none)
   ("report_seq" / 13) => seq,
-  ("event_seq" / 14) => seq,            ; último evento emitido
+  ("event_seq" / 14) => seq,            ; last emitted event
   ("trust_version" / 15) => seq,
   ? ("capabilities" / 16) => [* enum],  ; capability
   ? ("kind" / 17) => enum,              ; node-kind
@@ -177,24 +177,24 @@ hello-reply = {
   ("event_ack" / 4) => seq,
   ("need_full" / 5) => bool,
   ? ("settings" / 6) => agent-settings,
-  ? ("trust" / 7) => [+ cose],          ; bundles mais novos, por ordem de versão
-  ? ("status" / 8) => enum,             ; agent-status (quarentena, revogado)
+  ? ("trust" / 7) => [+ cose],          ; newer bundles, in version order
+  ? ("status" / 8) => enum,             ; agent-status (quarantine, revoked)
   ? ("code" / 9) => code,
   extension
 }
 
-agent-settings = {                      ; o nó limita cada valor às suas margens (ref/10, §2.9)
+agent-settings = {                      ; the node clamps each value to its margins (ref/10, §2.9)
   ? ("poll_wait" / 1) => duration,
   ? ("poll_interval" / 2) => duration,
   ? ("report_min_interval" / 3) => duration,
   ? ("full_interval" / 4) => duration,
   ? ("heartbeat" / 5) => duration,
   ? ("event_batch" / 6) => uint,
-  ? ("drain_rate" / 7) => uint,         ; eventos/s ao esvaziar a fila
+  ? ("drain_rate" / 7) => uint,         ; events/s when draining the queue
   extension
 }
 
-; ------------------------------------------------------------------ estado desejado
+; ------------------------------------------------------------------ desired state
 
 desired-state = {
   ("v" / 1) => 1,
@@ -211,16 +211,16 @@ desired-state = {
   ? ("confirm" / 12) => confirm-policy,
   ? ("rollout" / 13) => rollout-info,
   ? ("schedule" / 14) => schedule,
-  ? ("mcus" / 15) => [* mcu-target],
+  ? ("mcus" / 15) => [* mcu-target],    ; RESERVED 1.1 (orchestrated MCU OTA, ADR 0035)
   ? ("trust" / 16) => [+ cose],
   ? ("floors" / 17) => [+ cose],
   ? ("settings" / 18) => agent-settings,
   ? ("override_local" / 19) => bool,
   ? ("crit" / 20) => [+ uint],
   ? ("note" / 21) => tstr,
-  ? ("secrets" / 22) => bytes,         ; secret-bundle (joker.secrets.v1, spec/cddl/secrets.cddl) deste nó
-  ; 23: reservado (modelos, 1.1)
-  ; 100–119: reservado (v2, sites)
+  ? ("secrets" / 22) => bytes,         ; secret-bundle (joker.secrets.v1, spec/cddl/secrets.cddl) of this node
+  ; 23: reserved (models, 1.1)
+  ; 100–119: reserved (v2, sites)
   extension
 }
 
@@ -233,28 +233,28 @@ runtime-target = {
 }
 
 generation-target = {
-  ("hash" / 1) => digest,               ; SHA-256 do generation-descriptor (o hash da geração)
-  ("config" / 2) => digest,             ; digest do artefacto joker.config.v1+cbor (COSE_Sign1 do descritor, papel config)
+  ("hash" / 1) => digest,               ; SHA-256 of the generation-descriptor (the generation hash)
+  ("config" / 2) => digest,             ; digest of the joker.config.v1+cbor artifact (COSE_Sign1 of the descriptor, config role)
   ? ("label" / 3) => tstr,
   ? ("source" / 4) => git-ref,
   extension
 }
 
-; o descritor de uma geração (ref/10 §2.6.2); payload do artefacto joker.config.v1+cbor.
-; Só existe em CBOR determinístico (é o que se assina e o que tem hash).
+; the descriptor of a generation (ref/10 §2.6.2); payload of the joker.config.v1+cbor artifact.
+; Exists only in deterministic CBOR (it is what is signed and what is hashed).
 generation-descriptor = {
   1 => 1,                               ; v
-  2 => enum,                            ; node-kind: linux 0, micro 1
-  3 => { * tstr => any },               ; manifesto efetivo (omissões materializadas, sem x_*; ref/01 §8.3)
-  4 => bstr .size 32,                   ; digest canónico do joker.lock (ref/02 §2.1)
-  5 => [* bstr .size 32],               ; hashes dos contratos das classes, por ordem de bytes
-  6 => [* gen-artifact],                ; por ordem de name
+  2 => enum,                            ; node-kind: linux 0, micro 1 (RESERVED 1.1)
+  3 => { * tstr => any },               ; effective manifest (defaults materialized, no x_*; ref/01 §8.3)
+  4 => bstr .size 32,                   ; canonical digest of joker.lock (ref/02 §2.1)
+  5 => [* bstr .size 32],               ; contract hashes of the classes, in byte order
+  6 => [* gen-artifact],                ; in name order
   7 => enum,                            ; mode: dev 0, prod 1
 }
 
 gen-artifact = {
-  1 => tstr,                            ; name, como o manifesto o refere
-  2 => tstr,                            ; media type, forma curta (ref/00 §7.1)
+  1 => tstr,                            ; name, as the manifest refers to it
+  2 => tstr,                            ; media type, short form (ref/00 §7.1)
   3 => bstr .size 32,                   ; digest
 }
 
@@ -269,8 +269,8 @@ artifact = {
   ("digest" / 1) => digest,
   ("media_type" / 2) => tstr,
   ("size" / 3) => uint,
-  ? ("ref" / 4) => tstr,                ; referência OCI legível (registry.example.com/apps/x:3.2.0)
-  ? ("signatures" / 5) => [+ digest],   ; manifestos de assinatura, para registos sem referrers
+  ? ("ref" / 4) => tstr,                ; readable OCI reference (registry.example.com/apps/x:3.2.0)
+  ? ("signatures" / 5) => [+ digest],   ; signature manifests, for registries without referrers
   extension
 }
 
@@ -306,15 +306,15 @@ schedule = {
 }
 
 window = {
-  ("days" / 1) => [+ uint],             ; ISO 8601: 1 = segunda … 7 = domingo
+  ("days" / 1) => [+ uint],             ; ISO 8601: 1 = Monday … 7 = Sunday
   ("start" / 2) => tstr,                ; "HH:MM", 24 h
   ("length" / 3) => duration,
-  ? ("tz" / 4) => tstr,                 ; IANA; omissão "UTC"; o perfil micro só aceita "UTC"
+  ? ("tz" / 4) => tstr,                 ; IANA; default "UTC"; the micro profile only accepts "UTC"
   extension
 }
 
-mcu-target = {
-  ("device" / 1) => path,               ; dispositivo do manifesto com driver joker-link
+mcu-target = {                          ; RESERVED 1.1 (orchestrated MCU OTA, ADR 0035)
+  ("device" / 1) => path,               ; manifest device with the joker-link driver
   ? ("firmware" / 2) => mcu-firmware,
   ? ("generation" / 3) => mcu-generation,
   ? ("confirm" / 4) => confirm-policy,
@@ -335,7 +335,7 @@ mcu-generation = {
   extension
 }
 
-; ------------------------------------------------------------------ comandos (Deck → nó)
+; ------------------------------------------------------------------ commands (Deck → node)
 
 command = {
   ("id" / 1) => ulid,
@@ -350,11 +350,11 @@ command = {
 
 command-args = confirm-args / upload-args / renew-args / session-open-args / session-close-args
 
-confirm-args = {                        ; confirm (0) e reject (1)
+confirm-args = {                        ; confirm (0) and reject (1)
   ("seq" / 1) => seq,
   ("phase" / 2) => enum,                ; phase
-  ("hash" / 3) => digest,               ; digest da runtime, hash da geração ou do blob do MCU
-  ? ("device" / 4) => path,             ; fase mcu
+  ("hash" / 3) => digest,               ; digest of the runtime, generation hash or hash of the MCU blob
+  ? ("device" / 4) => path,             ; mcu phase (RESERVED 1.1)
   extension
 }
 
@@ -368,7 +368,7 @@ upload-args = {
   ("what" / 2) => enum,                 ; upload-kind: decisions 0, logs 1, trace 2, events 3
   ? ("from" / 3) => time,
   ? ("to" / 4) => time,
-  ? ("filter" / 5) => tstr,             ; seletor de caminhos (documento 02, §9)
+  ? ("filter" / 5) => tstr,             ; path selector (document 02, §9)
   ? ("max_bytes" / 6) => uint,
   extension
 }
@@ -376,10 +376,10 @@ upload-args = {
 session-open-args = {                   ; agent/1.3
   ("id" / 1) => ulid,
   ("user" / 2) => user-claim,
-  ("role" / 3) => enum,                 ; role pedido (ref/00, §6)
+  ("role" / 3) => enum,                 ; requested role (ref/00, §6)
   ("reason" / 4) => tstr,
   ("ttl" / 5) => duration,
-  ? ("tunnel" / 6) => tstr,             ; URL wss:// do túnel
+  ? ("tunnel" / 6) => tstr,             ; wss:// URL of the tunnel
   extension
 }
 
@@ -416,13 +416,13 @@ poll-reply = {
   extension
 }
 
-; ------------------------------------------------------------------ estado reportado
+; ------------------------------------------------------------------ reported state
 
 report = {
   ("v" / 1) => 1,
   ("node" / 2) => name,
   ("seq" / 3) => seq,
-  ? ("base" / 4) => seq,                ; presente = delta (merge patch, RFC 7386) sobre o relatório base
+  ? ("base" / 4) => seq,                ; present = delta (merge patch, RFC 7386) over the base report
   ("time" / 5) => time,
   ("clock" / 6) => enum,
   ("body" / 7) => report-body,
@@ -435,7 +435,7 @@ report-ack = {
   extension
 }
 
-; num delta, qualquer valor pode ser null (apaga a entrada), e os mapas fundem-se.
+; in a delta, any value may be null (deletes the entry), and maps are merged.
 report-body = {
   ? ("node" / 1) => node-info / null,
   ? ("runtime" / 2) => runtime-info / null,
@@ -455,11 +455,11 @@ report-body = {
   ? ("identity" / 16) => identity-info / null,
   ? ("agent" / 17) => agent-info / null,
   ? ("truncated" / 18) => [+ uint] / null,
-  ; 19: reservado (intenções pendentes, 1.1/1.3)
-  ; 20: reservado (modelos, sombra, 1.1)
+  ; 19: reserved (pending intents, 1.1/1.3)
+  ; 20: reserved (models, shadow, 1.1)
   ? ("secrets" / 21) => { * tstr => secret-info / null } / null,
   ? ("drivers" / 22) => { * tstr => driver-info / null } / null,
-  ; 100–119: reservado (v2)
+  ; 100–119: reserved (v2)
   extension
 }
 
@@ -480,16 +480,16 @@ runtime-info = {
   ? ("version" / 1) => semver,
   ? ("slot" / 2) => enum,               ; a 0, b 1
   ? ("previous" / 3) => semver,
-  ? ("state" / 4) => enum,              ; generation_state da fase runtime (ref/00, §6)
+  ? ("state" / 4) => enum,              ; generation_state of the runtime phase (ref/00, §6)
   ? ("proto_minor" / 5) => uint,
-  ? ("worlds" / 6) => [+ tstr],         ; mundos WIT aceites (joker:runtime@1.0.0, …)
+  ? ("worlds" / 6) => [+ tstr],         ; accepted WIT worlds (joker:runtime@1.0.0, …)
   extension
 }
 
 generation-info = {
   ? ("confirmed" / 1) => gen-ref,
   ? ("running" / 2) => gen-ref,
-  ? ("state" / 3) => enum,              ; generation_state da geração em execução
+  ? ("state" / 3) => enum,              ; generation_state of the running generation
   ? ("previous" / 4) => gen-ref,
   ? ("origin" / 5) => enum,             ; gen-origin: agent 0, local 1, import 2, session 3,
                                         ; shadow 4, rollback 5, boot 6
@@ -514,7 +514,7 @@ desired-info = {
   ? ("code" / 5) => code,
   ? ("causes" / 6) => [+ code],
   ? ("fetched" / 7) => [done: uint, total: uint],        ; bytes
-  ? ("next" / 8) => time,               ; próxima tentativa ou abertura de janela
+  ? ("next" / 8) => time,               ; next attempt or window opening
   ? ("rollout" / 9) => ulid,
   extension
 }
@@ -551,7 +551,7 @@ device-info = {
 instance-info = {
   ("health" / 1) => enum,               ; instance-health
   ? ("class" / 2) => tstr,
-  ? ("failed" / 3) => [+ tstr],         ; membros em falha
+  ? ("failed" / 3) => [+ tstr],         ; failed members
   extension
 }
 
@@ -596,9 +596,9 @@ resources = {
   ? ("temp" / 7) => float,              ; °C
   ? ("throttled" / 8) => bool,
   ? ("store_lag" / 9) => duration,
-  ? ("heap_free" / 10) => uint,         ; perfil micro
-  ? ("heap_min" / 11) => uint,          ; perfil micro
-  ? ("rssi" / 12) => int,               ; dBm, perfil micro
+  ? ("heap_free" / 10) => uint,         ; micro profile
+  ? ("heap_min" / 11) => uint,          ; micro profile
+  ? ("rssi" / 12) => int,               ; dBm, micro profile
   ? ("boot_count" / 13) => uint,
   ? ("reset_reason" / 14) => tstr,
   ? ("uplinks" / 15) => { * tstr => uplink-info / null },
@@ -622,19 +622,19 @@ mcu-info = {
   ? ("link_version" / 8) => tstr,       ; "1.0"
   ? ("boot_count" / 9) => uint,
   ? ("reset_reason" / 10) => tstr,
-  ? ("counter" / 11) => uint,           ; contador de segurança do firmware (security_version)
-  ? ("descriptor" / 12) => digest,      ; SHA-256 do firmware.jkfw
+  ? ("counter" / 11) => uint,           ; firmware security counter (security_version)
+  ? ("descriptor" / 12) => digest,      ; SHA-256 of firmware.jkfw
   ? ("gen_seq" / 13) => uint,
   ? ("session_mode" / 14) => enum,      ; session_mode (ref/00 §6)
-  ? ("confirm_left" / 15) => duration,  ; tempo que falta na janela de confirmação
-  ? ("params" / 16) => [* tstr],        ; parâmetros alterados localmente (deriva)
-  ? ("drivers" / 17) => digest,         ; resumo dos descritores dos drivers (ref/07 §6.4, chave 15)
+  ? ("confirm_left" / 15) => duration,  ; time left in the confirmation window
+  ? ("params" / 16) => [* tstr],        ; parameters changed locally (drift)
+  ? ("drivers" / 17) => digest,         ; summary of the driver descriptors (ref/07 §6.4, key 15)
   extension
 }
 
 secret-info = {
   ("rev" / 1) => uint,
-  ? ("ok" / 2) => bool,                  ; decifrado e verificado
+  ? ("ok" / 2) => bool,                  ; decrypted and verified
   extension
 }
 
@@ -650,22 +650,22 @@ identity-info = {
   ? ("not_after" / 2) => time,
   ? ("key_storage" / 3) => enum,
   ? ("trust_version" / 4) => seq,
-  ? ("floors" / 5) => { * tstr => seq },  ; papel → seq do piso aplicado
+  ? ("floors" / 5) => { * tstr => seq },  ; role → seq of the applied floor
   extension
 }
 
 agent-info = {
-  ? ("transport" / 1) => enum,          ; transport: https 0, mqtt 1, coap 2
-  ? ("queue" / 2) => uint,              ; eventos por confirmar
+  ? ("transport" / 1) => enum,          ; transport: https 0, mqtt 1, coap 2 (RESERVED 1.1)
+  ? ("queue" / 2) => uint,              ; events awaiting confirmation
   ? ("queue_bytes" / 3) => uint,
-  ? ("dropped" / 4) => uint,            ; desde o enrolamento
-  ? ("oldest" / 5) => time,             ; evento mais antigo por confirmar
+  ? ("dropped" / 4) => uint,            ; since enrollment
+  ? ("oldest" / 5) => time,             ; oldest event awaiting confirmation
   ? ("paused_until" / 6) => time,
-  ? ("hold" / 7) => bool,               ; alterações locais em espera
+  ? ("hold" / 7) => bool,               ; local changes on hold
   extension
 }
 
-; ------------------------------------------------------------------ eventos
+; ------------------------------------------------------------------ events
 
 event-batch = {
   ("node" / 1) => name,
@@ -684,7 +684,7 @@ event = {
   ("ts" / 3) => time,
   ("clock" / 4) => enum,
   ("boot" / 5) => ulid,
-  ("mono" / 6) => uint,                 ; ns desde o arranque (par de ts, ref/00, §3)
+  ("mono" / 6) => uint,                 ; ns since boot (pair of ts, ref/00, §3)
   ("type" / 7) => enum,                 ; event-type
   ("body" / 8) => event-body,
   extension
@@ -700,23 +700,23 @@ alarm-event = {
   ("to" / 3) => enum,
   ("severity" / 4) => enum,
   ? ("message" / 5) => tstr,
-  ? ("by" / 6) => tstr,                 ; quem reconheceu ou arquivou
+  ? ("by" / 6) => tstr,                 ; who acknowledged or shelved
   ? ("shelved_until" / 7) => time,
   extension
 }
 
 decision-event = {
   ("output" / 1) => path,
-  ("writer" / 2) => tstr,               ; app:…, user:… (user:deck:<deck_id>/user:<id> em sessões), bridge:…
-  ("outcome" / 3) => enum,              ; resultado de escrita (ref/00, §4.4)
-  ? ("reason" / 4) => enum,             ; motivo de rejected (ref/00, §4.4)
+  ("writer" / 2) => tstr,               ; app:…, user:… (user:deck:<deck_id>/user:<id> in sessions), bridge:…
+  ("outcome" / 3) => enum,              ; write result (ref/00, §4.4)
+  ? ("reason" / 4) => enum,             ; reason for rejected (ref/00, §4.4)
   ? ("level" / 5) => tstr,
   ? ("value" / 6) => any,
   ? ("applied" / 7) => any,
   ? ("ttl" / 8) => duration,
-  ? ("why" / 9) => tstr,                ; --reason do operador
+  ? ("why" / 9) => tstr,                ; --reason of the operator
   ? ("session" / 10) => ulid,
-  ? ("count" / 11) => uint,             ; decisões iguais agregadas
+  ? ("count" / 11) => uint,             ; identical decisions aggregated
   ? ("tick" / 12) => uint,
   extension
 }
@@ -763,7 +763,7 @@ session-event = {
 
 gap-event = {
   ("ranges" / 1) => [+ [from: seq, to: seq]],
-  ("counts" / 2) => { * enum => uint },  ; event-type → quantos se perderam
+  ("counts" / 2) => { * enum => uint },  ; event-type → how many were dropped
   extension
 }
 
@@ -798,7 +798,8 @@ agent-event = {
   extension
 }
 
-; ------------------------------------------------------------------ artefactos por MQTT (perfil micro)
+; ------------------------------------------------------------------ artifacts over MQTT (micro profile)
+; RESERVED 1.1: the micro profile ships in 1.1 (ADR 0035).
 
 blob-request = {
   ("digest" / 1) => digest,
@@ -815,14 +816,14 @@ blob-chunk = {
   extension
 }
 
-; ------------------------------------------------------------------ token do registo
+; ------------------------------------------------------------------ registry token
 
 registry-token-request = {
-  ("scope" / 1) => [+ tstr],            ; "repository:<nome>:pull"
+  ("scope" / 1) => [+ tstr],            ; "repository:<name>:pull"
   extension
 }
 
-; ------------------------------------------------------------------ estado da ligação MQTT (tópico status, retido; também a will)
+; ------------------------------------------------------------------ MQTT connection status (status topic, retained; also the will)
 
 status-message = {
   ("online" / 1) => bool,

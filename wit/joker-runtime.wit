@@ -1,7 +1,7 @@
 /// joker:runtime — the world of Joker apps.
 ///
-/// Normative reference: docs/ref/04-wit-e-sdk-rust.md. Representation rules: docs/ref/00-convencoes.md.
-/// Semantics (arbiter, envelope, quality): docs/16-semantica-do-nucleo.md.
+/// Normative reference: docs/ref/04-wit-and-rust-sdk.md. Representation rules: docs/ref/00-conventions.md.
+/// Semantics (arbiter, envelope, quality): docs/16-core-semantics.md.
 ///
 /// Versioning (ADR 0022, ref/04 §2.9):
 /// - items without a gate exist since the first version of the package;
@@ -120,6 +120,7 @@ interface types {
         /// The active level that won (1–16).
         overridden(level),
         deferred,
+        /// Only produced from 1.1, with app shadow (M16; ADR 0035); a 1.0 host never returns it.
         shadowed,
         rejected(reject-reason),
         tripped,
@@ -246,7 +247,7 @@ interface async-io {
     random-u64: func() -> u64;
     /// Progress of an action this app is serving in `on-action` (virtual instances).
     report-progress: func(request: u64, fraction: option<f32>, message: string);
-    /// True once the caller cancelled the action this app is serving.
+    /// True once the caller canceled the action this app is serving.
     is-cancelled: func(request: u64) -> bool;
 
     enum aggregate { raw, mean, min, max, first, last, count }
@@ -371,6 +372,7 @@ interface guest {
         period-ns: u64,
     }
 
+    /// `shadow` is only set from 1.1, with app shadow (M16; ADR 0035); a 1.0 host never sets it.
     enum run-mode { normal, shadow, replay, test }
 
     record init-context {

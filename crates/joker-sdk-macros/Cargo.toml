@@ -1,0 +1,20 @@
+[package]
+name = "joker-sdk-macros"
+description = "The #[joker::app] and #[joker::cycle] macros of the Joker Rust SDK"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn.workspace = true
+quote.workspace = true
+proc-macro2.workspace = true
+
+[lints]
+workspace = true

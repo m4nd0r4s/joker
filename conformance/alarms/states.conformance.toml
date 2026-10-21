@@ -1,0 +1,121 @@
+schema = 1
+
+[suite]
+kind        = "core"
+id          = "alarms.states"
+spec        = ["02 §11", "16 §3.2", "ref/01 §5.15"]
+period      = "100ms"
+hosts       = ["linux", "mcu"]
+description = "Alarm life cycle without acknowledgement, Bad conditions to Unknown, Uncertain evaluated normally, and trip actions on outputs"
+
+[[signals]]
+path = "x.m"
+type = "f64"
+unit = "kW"
+
+[[outputs]]
+path  = "x.p_set"
+type  = "f64"
+unit  = "kW"
+range = ["-100 kW", "100 kW"]
+safe  = "0 kW"
+
+[[alarms]]
+id       = "hi"
+when     = "x.m > 50 kW"
+severity = "high"
+
+[[alarms]]
+id       = "tr"
+when     = "x.m > 90 kW"
+severity = "critical"
+actions  = { trip = ["x.p_set"] }
+
+[[writers]]
+id    = "a"
+level = "control:10"
+lease = "2s"
+kind  = "cycle"
+
+[[case]]
+id   = "false_condition_is_normal"
+name = "A false condition leaves the alarm normal and inactive"
+spec = ["02 §11"]
+do   = [{ at = "0ms", input = "x.m", value = "10 kW" }]
+expect = [{ at = "0ms", alarm = "hi", state = "normal", active = false }]
+
+[[case]]
+id   = "true_condition_activates"
+name = "A true condition (delay_on 0) makes the alarm active and unacknowledged"
+spec = ["02 §11", "ref/01 §5.15"]
+do   = [{ at = "0ms", input = "x.m", value = "60 kW" }]
+expect = [{ at = "0ms", alarm = "hi", state = "active_unacked", active = true }]
+
+[[case]]
+id   = "return_to_normal_unacked"
+name = "An unacknowledged alarm whose condition clears goes to RTN unacknowledged"
+spec = ["02 §11"]
+do   = [
+  { at = "0ms",   input = "x.m", value = "60 kW" },
+  { at = "100ms", input = "x.m", value = "10 kW" },
+]
+expect = [{ at = "100ms", alarm = "hi", state = "rtn_unacked", active = false }]
+
+[[case]]
+id   = "rtn_back_to_active"
+name = "A condition that becomes true again in RTN unacknowledged returns to active unacknowledged"
+spec = ["02 §11"]
+do   = [
+  { at = "0ms",   input = "x.m", value = "60 kW" },
+  { at = "100ms", input = "x.m", value = "10 kW" },
+  { at = "200ms", input = "x.m", value = "60 kW" },
+]
+expect = [{ at = "200ms", alarm = "hi", state = "active_unacked", active = true }]
+
+[[case]]
+id   = "bad_condition_is_unknown"
+name = "A Bad condition puts the alarm in Unknown"
+spec = ["16 §3.2", "02 §4"]
+do   = [{ at = "0ms", input = "x.m", quality = "bad(comm_failure)" }]
+expect = [{ at = "0ms", alarm = "hi", state = "unknown" }]
+
+[[case]]
+id   = "uncertain_condition_evaluates"
+name = "An Uncertain condition is evaluated normally"
+spec = ["16 §3.2"]
+do   = [{ at = "0ms", input = "x.m", value = "60 kW", quality = "uncertain(substituted)" }]
+expect = [{ at = "0ms", alarm = "hi", state = "active_unacked", active = true }]
+
+[[case]]
+id   = "trip_action_trips_output"
+name = "An alarm with a trip action trips the output on becoming active; it stays at safe until reset"
+spec = ["ref/01 §5.15", "02 §11", "01 §7", "16 E7"]
+do   = [
+  { at = "0ms",   input = "x.m", value = "95 kW" },
+  { at = "0ms",   propose = "x.p_set", writer = "a", value = "10 kW" },
+  { at = "100ms", input = "x.m", value = "10 kW" },
+  { at = "200ms", propose = "x.p_set", writer = "a", value = "10 kW" },
+  { at = "300ms", reset = "x.p_set" },
+  { at = "400ms", propose = "x.p_set", writer = "a", value = "10 kW" },
+]
+expect = [
+  { at = "0ms",   alarm = "tr", active = true },
+  { at = "0ms",   output = "x.p_set", equals = "0 kW" },
+  { at = "200ms", output = "x.p_set", equals = "0 kW" },
+  { at = "400ms", output = "x.p_set", outcome = "accepted", equals = "10 kW", level = "control:10" },
+]
+
+[[case]]
+id   = "reset_while_alarm_active_trips_again"
+name = "A reset while the tripping alarm is still active trips the output again"
+spec = ["ref/01 §5.15"]
+do   = [
+  { at = "0ms",   input = "x.m", value = "95 kW" },
+  { at = "0ms",   propose = "x.p_set", writer = "a", value = "10 kW" },
+  { at = "200ms", reset = "x.p_set" },
+  { at = "400ms", propose = "x.p_set", writer = "a", value = "10 kW" },
+]
+expect = [
+  { at = "400ms", alarm = "tr", active = true },
+  { at = "400ms", output = "x.p_set", equals = "0 kW" },
+]

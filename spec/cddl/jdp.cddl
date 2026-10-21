@@ -1,7 +1,7 @@
 ; jdp.cddl — Joker Driver Protocol (tier X), version 1, and the shared driver structures.
 ;
 ; Normative reference: docs/ref/06-drivers.md (§2 common model, §5 JDP). Representation rules:
-; docs/ref/00-convencoes.md (§7: CBOR with integer keys; deterministic CBOR where hashed).
+; docs/ref/00-conventions.md (§7: CBOR with integer keys; deterministic CBOR where hashed).
 ;
 ; This file defines:
 ;   1. the control messages exchanged on the JDP control socket (one CBOR data item per
@@ -23,6 +23,10 @@
 ; ---------------------------------------------------------------------------------------------
 ; 1. Control messages
 ; ---------------------------------------------------------------------------------------------
+
+; Reserved for 1.2 (ADR 0035): the tier X host ships in 1.2, so no 1.0 jokerd sends or accepts
+; these messages. Sections 2 to 5 are 1.0: tier N drivers, the descriptors and the Joker Micro
+; blob use them.
 
 jdp-message = hello / welcome
             / plan-req / plan-res

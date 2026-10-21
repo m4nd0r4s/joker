@@ -1,6 +1,6 @@
 /// joker:sim — Wasm plants for the `sim` driver.
 ///
-/// Normative reference: docs/ref/03-perfis-placas-sim.md, §2.4.10 (keys of `[plant]`, errors J0832,
+/// Normative reference: docs/ref/03-profiles-boards-sim.md, §2.4.10 (keys of `[plant]`, errors J0832,
 /// J0837). This file is the machine-readable copy kept in `wit/` (ref/04 §2.10); if the two differ,
 /// ref/03 wins and this file is the bug.
 ///

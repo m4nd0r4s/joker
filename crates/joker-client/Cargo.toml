@@ -1,0 +1,22 @@
+[package]
+name = "joker-client"
+description = "Rust client of the Joker local API (ref/05 part B), used by jk"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+joker-api = { path = "../joker-api", default-features = false }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+toml = { version = "1.1.8", default-features = false, features = ["parse", "std"] }
+humantime = "2.3"
+
+[dev-dependencies]
+tempfile = "3.23"
+
+[lints]
+workspace = true

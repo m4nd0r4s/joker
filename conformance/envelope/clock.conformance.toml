@@ -1,0 +1,143 @@
+schema = 1
+
+[suite]
+kind        = "core"
+id          = "envelope.clock"
+spec        = ["16 E1", "01 §7 step 0", "01 §18", "16 §3.3"]
+period      = "100ms"
+hosts       = ["linux", "mcu"]
+description = "Step 0: a winning writer that requires a synced clock is Rejected(ClockUnsynced) outside synced, before any other step, the output goes to safe and the lease is renewed"
+
+[[outputs]]
+path     = "x.p_set"
+type     = "f64"
+unit     = "kW"
+range    = ["-100 kW", "100 kW"]
+on_range = "trip"
+safe     = "0 kW"
+
+[[outputs]]
+path  = "x.q_set"
+type  = "f64"
+unit  = "kW"
+range = ["-100 kW", "100 kW"]
+rate  = "10 kW/s"
+safe  = "0 kW"
+
+[[writers]]
+id             = "t"
+level          = "control:10"
+lease          = "300ms"
+kind           = "cycle"
+requires_clock = "synced"
+
+[[writers]]
+id    = "h"
+level = "control:9"
+lease = "300ms"
+kind  = "cycle"
+
+[[writers]]
+id    = "n"
+level = "control:11"
+lease = "300ms"
+kind  = "cycle"
+
+[[case]]
+id   = "synced_clock_accepts"
+name = "With the clock synced the writer's proposal is accepted"
+spec = ["16 E1"]
+do   = [
+  { at = "0ms", clock = "synced" },
+  { at = "0ms", propose = "x.p_set", writer = "t", value = "10 kW" },
+]
+expect = [{ at = "0ms", output = "x.p_set", outcome = "accepted", equals = "10 kW", level = "control:10" }]
+
+[[case]]
+id   = "unsynced_clock_rejects"
+name = "Unsynced clock: Rejected(ClockUnsynced) and the output goes to safe"
+spec = ["16 E1", "01 §7 step 0"]
+do   = [
+  { at = "0ms", clock = "unsynced" },
+  { at = "0ms", propose = "x.p_set", writer = "t", value = "10 kW" },
+]
+expect = [{ at = "0ms", output = "x.p_set", outcome = "rejected(clock_unsynced)", equals = "0 kW", level = "control:10" }]
+
+[[case]]
+id   = "holdover_is_not_synced"
+name = "Holdover is outside synced and also rejects"
+spec = ["16 E1", "01 §18"]
+do   = [
+  { at = "0ms", clock = "holdover" },
+  { at = "0ms", propose = "x.p_set", writer = "t", value = "10 kW" },
+]
+expect = [{ at = "0ms", output = "x.p_set", outcome = "rejected(clock_unsynced)", equals = "0 kW" }]
+
+[[case]]
+id   = "clock_step_precedes_range"
+name = "An out-of-range proposal with on_range = trip is rejected by step 0 and does not trip"
+spec = ["16 E1"]
+do   = [
+  { at = "0ms",   clock = "unsynced" },
+  { at = "0ms",   propose = "x.p_set", writer = "t", value = "150 kW" },
+  { at = "100ms", clock = "synced" },
+  { at = "100ms", propose = "x.p_set", writer = "t", value = "10 kW" },
+]
+expect = [
+  { at = "0ms",   output = "x.p_set", outcome = "rejected(clock_unsynced)", equals = "0 kW" },
+  { at = "100ms", output = "x.p_set", outcome = "accepted", equals = "10 kW", level = "control:10" },
+]
+
+[[case]]
+id   = "clock_rejection_renews_lease"
+name = "Rejected(ClockUnsynced) renews the writer's lease"
+spec = ["16 E1", "16 A3"]
+do   = [
+  { at = "0ms",   clock = "synced" },
+  { at = "0ms",   propose = "x.p_set", writer = "t", value = "10 kW" },
+  { at = "200ms", clock = "unsynced" },
+  { at = "200ms", propose = "x.p_set", writer = "t", value = "10 kW" },
+  { at = "300ms", clock = "synced" },
+]
+expect = [
+  { at = "200ms", output = "x.p_set", outcome = "rejected(clock_unsynced)", equals = "0 kW", level = "control:10" },
+  { at = "400ms", output = "x.p_set", level = "control:10" },
+  { at = "500ms", output = "x.p_set", equals = "0 kW", level = "none" },
+]
+
+[[case]]
+id   = "writer_without_requirement_unaffected"
+name = "A writer that does not require a synced clock is not affected by step 0"
+spec = ["16 E1", "16 §3.3"]
+do   = [
+  { at = "0ms", clock = "unsynced" },
+  { at = "0ms", propose = "x.p_set", writer = "n", value = "10 kW" },
+]
+expect = [{ at = "0ms", output = "x.p_set", outcome = "accepted", equals = "10 kW", level = "control:11" }]
+
+[[case]]
+id   = "only_the_winning_writer_counts"
+name = "Step 0 looks at the winning writer: an overridden clock-dependent writer does not block"
+spec = ["16 E1", "16 A5"]
+do   = [
+  { at = "0ms", clock = "unsynced" },
+  { at = "0ms", propose = "x.q_set", writer = "t", value = "20 kW" },
+  { at = "0ms", propose = "x.q_set", writer = "h", value = "0.5 kW" },
+]
+expect = [{ at = "0ms", output = "x.q_set", outcome = "accepted", equals = "0.5 kW", level = "control:9" }]
+
+[[case]]
+id   = "clock_rejection_goes_to_safe_without_ramp"
+name = "Going to safe on Rejected(ClockUnsynced) is immediate when there is no safe_ramp"
+spec = ["16 E1", "01 §7"]
+do   = [
+  { at = "0ms",   clock = "synced" },
+  { at = "0ms",   propose = "x.q_set", writer = "t", value = "50 kW" },
+  { at = "100ms", propose = "x.q_set", writer = "t", value = "50 kW" },
+  { at = "200ms", clock = "unsynced" },
+  { at = "200ms", propose = "x.q_set", writer = "t", value = "50 kW" },
+]
+expect = [
+  { at = "100ms", output = "x.q_set", equals = "2 kW", tolerance = "0.001 kW" },
+  { at = "200ms", output = "x.q_set", outcome = "rejected(clock_unsynced)", equals = "0 kW", level = "control:10" },
+]

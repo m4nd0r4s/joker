@@ -1,6 +1,6 @@
 /// joker:driver — the world of tier W drivers (drivers compiled to WebAssembly components).
 ///
-/// Normative reference: docs/ref/06-drivers.md (§4). Representation rules: docs/ref/00-convencoes.md.
+/// Normative reference: docs/ref/06-drivers.md (§4). Representation rules: docs/ref/00-conventions.md.
 /// The same contract exists for tier N (Rust trait, ref/06 §3) and tier X (JDP, ref/06 §5): the
 /// records below have the same fields, in the same order, as the Rust types and the CDDL of
 /// spec/cddl/jdp.cddl.
@@ -11,10 +11,11 @@
 /// end, interfaces). Items reserved for a later minor carry `@unstable(feature = <name>)`: a
 /// component that uses them is refused in `prod` (J0860).
 ///
-/// Stability (ref/06 §4): in 1.0 and 1.1 the whole world is `@unstable(feature = driver-world)`
-/// and only in-tree drivers (the project catalog, built from crates/joker-drivers/) use it in
-/// `prod`; an out-of-tree tier W component is J0860 in `prod`. It becomes stable
-/// (`@since(version = 1.2.0)`) and open to third parties in 1.2.
+/// Stability (ref/06 §4; ADR 0035): the tier W host ships in 1.2, so in 1.0 and 1.1 the whole
+/// package (the world and its four interfaces) is `@unstable(feature = driver-world)` and a 1.0
+/// `jokerd` loads no tier W component. When the host ships, only in-tree drivers (the project
+/// catalog, built from crates/joker-drivers/) use it in `prod`; an out-of-tree tier W component is
+/// J0860 in `prod`. It becomes stable (`@since(version = 1.2.0)`) and open to third parties in 1.2.
 ///
 /// Instantiation (ref/06 §4.4): one component instance (one wasmtime Store) per driver instance,
 /// i.e. per device, or per bus for drivers with `instance = bus`. `plan` also runs in a separate,
@@ -26,6 +27,7 @@
 package joker:driver@0.1.0;
 
 /// Shared types.
+@unstable(feature = driver-world)
 interface types {
     use joker:runtime/types@0.1.0.{quality-code, error};
 
@@ -327,7 +329,7 @@ interface types {
         /// Deterministic CBOR of the device keys to paste in the manifest (`{ "unit_id": 1 }`).
         config: list<u8>,
         info: device-info,
-        /// Profile reference suggested by the driver, if it recognises the device.
+        /// Profile reference suggested by the driver, if it recognizes the device.
         profile: option<string>,
     }
 
@@ -340,6 +342,7 @@ interface types {
 }
 
 /// Host services. Every call is attributed to the calling instance (one Store per instance).
+@unstable(feature = driver-world)
 interface host {
     use types.{raw-sample, link-state};
     use joker:runtime/types@0.1.0.{instant};
@@ -354,12 +357,13 @@ interface host {
     report-link: func(state: link-state, detail: string);
     /// Progress of a long action (permille 0–1000).
     progress: func(call: u64, permille: u16, message: string);
-    /// True if the core cancelled the action `call` (the driver should stop and return `cancelled`).
+    /// True if the core canceled the action `call` (the driver should stop and return `cancelled`).
     cancelled: func(call: u64) -> bool;
 }
 
 /// Transports. The driver never opens a transport: it receives, at `open`, exactly the one the
 /// manifest gives it (`bus`, `address`). Every error is an `io-error` with a closed kind.
+@unstable(feature = driver-world)
 interface transport {
     enum io-error-kind {
         timeout,
@@ -474,8 +478,9 @@ interface transport {
 }
 
 /// Exported by the driver. Calls to one instance are never concurrent, except that a pending `read`
-/// of a `push` batch may be cancelled by the host to run `write`, `read-addr`, `write-addr` or
+/// of a `push` batch may be canceled by the host to run `write`, `read-addr`, `write-addr` or
 /// `invoke` (ref/06 §2.14): push reads must be cancel-safe.
+@unstable(feature = driver-world)
 interface guest {
     use joker:runtime/types@0.1.0.{error};
     use types.{
@@ -498,7 +503,7 @@ interface guest {
 
     /// One execution of a batch. One sample per point of the batch, no other points.
     /// For a `push` batch: returns as soon as at least one sample is available, or `ok([])` at the
-    /// deadline; may be cancelled.
+    /// deadline; may be canceled.
     read: async func(b: batch) -> result<list<raw-sample>, batch-failure>;
 
     /// Applies committed writes in the given order. Exactly one ack per write, same order.

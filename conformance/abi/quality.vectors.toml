@@ -1,0 +1,138 @@
+schema = 1
+
+[vectors]
+kind        = "abi.quality"
+id          = "abi.quality"
+spec        = ["ref/08 §2.5.3", "ref/00 §4.3", "01 §3.2"]
+hosts       = ["linux", "mcu"]
+description = "jk_quality_t: code in bits 0-7, reason in bits 8-15, flags in bits 16-31; JK_Q composes and JK_Q_CODE, JK_Q_REASON, JK_Q_FLAGS, JK_Q_IS_GOOD decompose"
+
+[[vector]]
+id      = "good_none"
+op      = "quality_word"
+spec    = ["ref/08 §2.5.3"]
+code    = "good"
+reason  = "none"
+flags   = 0x0
+word    = 0
+is_good = true
+
+[[vector]]
+id      = "good_overridden"
+op      = "quality_word"
+spec    = ["ref/08 §2.5.3"]
+code    = "good"
+reason  = "overridden"
+flags   = 0x0
+word    = 256
+is_good = true
+
+[[vector]]
+id      = "good_local_override"
+op      = "quality_word"
+spec    = ["ref/08 §2.5.3"]
+code    = "good"
+reason  = "local_override"
+flags   = 0x0
+word    = 512
+is_good = true
+
+[[vector]]
+id      = "uncertain_stale"
+op      = "quality_word"
+spec    = ["ref/08 §2.5.3"]
+code    = "uncertain"
+reason  = "stale"
+flags   = 0x0
+word    = 769
+is_good = false
+
+[[vector]]
+id      = "uncertain_initial"
+op      = "quality_word"
+spec    = ["ref/08 §2.5.3"]
+code    = "uncertain"
+reason  = "initial"
+flags   = 0x0
+word    = 2305
+is_good = false
+
+[[vector]]
+id      = "uncertain_clock_unsynced"
+op      = "quality_word"
+spec    = ["ref/08 §2.5.3"]
+code    = "uncertain"
+reason  = "clock_unsynced"
+flags   = 0x0
+word    = 2049
+is_good = false
+
+[[vector]]
+id      = "bad_comm_failure"
+op      = "quality_word"
+spec    = ["ref/08 §2.5.3"]
+code    = "bad"
+reason  = "comm_failure"
+flags   = 0x0
+word    = 3074
+is_good = false
+
+[[vector]]
+id      = "bad_nan"
+op      = "quality_word"
+spec    = ["ref/08 §2.5.3"]
+code    = "bad"
+reason  = "nan"
+flags   = 0x0
+word    = 4354
+is_good = false
+
+[[vector]]
+id      = "bad_tripped"
+op      = "quality_word"
+spec    = ["ref/08 §2.5.3"]
+code    = "bad"
+reason  = "tripped"
+flags   = 0x0
+word    = 4610
+is_good = false
+
+[[vector]]
+id      = "bad_deadline"
+op      = "quality_word"
+spec    = ["ref/08 §2.5.3"]
+code    = "bad"
+reason  = "deadline"
+flags   = 0x0
+word    = 4866
+is_good = false
+
+[[vector]]
+id      = "uncertain_stale_ts_src_mono"
+op      = "quality_word"
+spec    = ["ref/08 §2.5.3"]
+code    = "uncertain"
+reason  = "stale"
+flags   = 0x10000
+word    = 66305
+is_good = false
+
+[[vector]]
+id      = "bad_comm_failure_ts_src_mono"
+op      = "quality_word"
+spec    = ["ref/08 §2.5.3"]
+code    = "bad"
+reason  = "comm_failure"
+flags   = 0x10000
+word    = 68610
+is_good = false
+
+[[vector]]
+id      = "good_private_reason"
+op      = "quality_word"
+spec    = ["ref/08 §2.5.3", "ref/00 §4.3"]
+code    = "good"
+reason  = 240
+flags   = 0x0
+word    = 61440
+is_good = true

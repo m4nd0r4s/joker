@@ -13,6 +13,9 @@
  *  - every pointer passed to a callback is valid only until the callback returns;
  *  - no function of libjdp calls exit() or abort(); fatal protocol errors make jdp_main() return.
  *
+ * Availability (ADR 0035): the tier X host ships in 1.2. libjdp and this header are closed now and
+ * become stable with the host; a 1.0 jokerd starts no tier X driver.
+ *
  * Versioning (ref/00 §1): JDP_ABI_VERSION_MAJOR changes only with an incompatible ABI change;
  * a minor only adds functions and appends fields at the end of structs whose first field is
  * `size` (the caller sets it to sizeof).

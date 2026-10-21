@@ -13,6 +13,9 @@ allow = [
     "Zlib",
 ]
 confidence-threshold = 0.9
+exceptions = [
+    { allow = ["BSD-1-Clause"], crate = "assert_no_alloc" },
+]
 
 [bans]
 multiple-versions = "warn"

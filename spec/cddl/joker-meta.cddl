@@ -1,8 +1,8 @@
 ; joker:meta — the metadata custom section of a Joker app component.
-; Normative reference: docs/ref/04-wit-e-sdk-rust.md, §5. Representation: docs/ref/00-convencoes.md.
+; Normative reference: docs/ref/04-wit-and-rust-sdk.md, §5. Representation: docs/ref/00-conventions.md.
 ;
 ; Encoding: deterministic CBOR (RFC 8949 §4.2.1), integer map keys (ref/00 §7).
-; Readers ignore unknown keys (ref/00 §1, regra 2); writers never reuse a removed key (ref/00 §1, regra 4).
+; Readers ignore unknown keys (ref/00 §1, rule 2); writers never reuse a removed key (ref/00 §1, rule 4).
 ;
 ; Where it lives (ref/04 §5.1):
 ;   - Wasm: custom section named "joker:meta" at component level (written by `jk build`), or, in a
@@ -109,7 +109,7 @@ port = {
   0: port-name,                 ; struct field name
   1: port-kind,
   ? 2: signal-type,             ; for signal-like kinds; absent for action, mailbox, model, stream, block
-  ? 3: unit,                    ; catalogue of doc 16 §5; absent = no unit (bool, enum, bits, text)
+  ? 3: unit,                    ; catalog of doc 16 §5; absent = no unit (bool, enum, bits, text)
   ? 4: quantity,
   ? 5: optional,                ; may stay unbound (default false)
   ? 6: many,                    ; #[input(many)] / #[output(many)]

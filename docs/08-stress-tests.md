@@ -1,24 +1,24 @@
-# 08 — Rodadas de estresse (casos de uso)
+# 08 — Stress rounds (use cases)
 
-Seis casos de uso, escolhidos para atacar eixos diferentes do desenho: energia e regulação, latência determinista com visão, dados de alta taxa com treino no dispositivo, robótica multi-ritmo, frota heterogénea e ML a atuar ao lado de humanos. Em cada um: modelar a sério, encontrar o que não cabe e decidir o que fazer. As conclusões alimentam o documento 10. O documento 09 faz o mesmo à arquitetura em abstrato.
+Six use cases, chosen to attack different axes of the design: energy and regulation, deterministic latency with vision, high-rate data with on-device training, multi-rate robotics, a heterogeneous fleet and ML actuating alongside humans. In each one: model it seriously, find what does not fit and decide what to do. The conclusions feed document 10. Document 09 does the same to the architecture in the abstract.
 
-Critério de sucesso de uma rodada: **não é** conseguir modelar tudo. É saber exatamente o que não cabe e porquê, e decidir se é uma **lacuna a fechar** (nova primitiva, M-n) ou uma **fronteira a declarar** (documento 12).
+Success criterion of a round: it **is not** managing to model everything. It is knowing exactly what does not fit and why, and deciding whether it is a **gap to close** (new primitive, M-n) or a **boundary to declare** (document 12).
 
-As rodadas 2 (visão), 3 (vibração) e 6 (ML a atuar) usam funcionalidades da **v1.1** (ML, streams, pipelines, sinais em bloco, escritas agendadas, propostas), e a rodada 1 usa-as na previsão. Continuam válidas como estresse do desenho, e as primitivas que produziram estão marcadas para a 1.1 no documento 10; nos blocos, as chaves 1.1 levam a nota "(1.1)" (ADR 0019). Os blocos seguem as referências (`ref/01`, `ref/03`), que prevalecem se divergirem.
+Rounds 2 (vision), 3 (vibration) and 6 (ML actuating) use **v1.1** features (ML, streams, pipelines, block signals, scheduled writes, proposals), and round 1 uses them in the forecast. They remain valid as stress on the design, and the primitives they produced are marked for 1.1 in document 10; in the blocks, the 1.1 keys carry the note "(1.1)" (ADR 0019). The blocks follow the references (`ref/01`, `ref/03`), which prevail if they diverge.
 
-Os números de latência de hardware (inferência em Hailo, readout de câmara, jitter em PREEMPT_RT) são **estimativas a medir**, e não medições.
+The hardware latency figures (inference on Hailo, camera readout, jitter on PREEMPT_RT) are **estimates to measure**, not measurements.
 
 ---
 
-## Rodada 1 — Armazenamento em bateria com FV e peak shaving (RevPi Connect 5)
+## Round 1 — Battery storage with PV and peak shaving (RevPi Connect 5)
 
-### 1.1 O cenário
+### 1.1 The scenario
 
-Um site comercial com uma ligação à rede contratada a **400 kW** e uma carga entre 150 e 650 kW. Tem **FV de 300 kWp** (3 inversores SunSpec em Modbus TCP), uma **bateria de 250 kWh / 125 kW** (PCS em Modbus TCP, BMS em Modbus TCP), um **medidor no ponto de ligação** (Modbus TCP, 200 ms) e um **recetor de telecomando do operador de rede** com 4 contactos (100/60/30/0% de injeção FV) ligados às entradas digitais do RevPi DIO.
+A commercial site with a grid connection contracted at **400 kW** and a load between 150 and 650 kW. It has **300 kWp of PV** (3 SunSpec inverters on Modbus TCP), a **250 kWh / 125 kW battery** (PCS on Modbus TCP, BMS on Modbus TCP), a **meter at the point of connection** (Modbus TCP, 200 ms) and a **grid operator ripple-control receiver** with 4 contacts (100/60/30/0% PV export) wired to the digital inputs of the RevPi DIO.
 
-Objetivos: (1) nunca ultrapassar 400 kW na rede; (2) cumprir a redução de injeção pedida pelo operador em poucos segundos; (3) maximizar o autoconsumo; (4) planear o SOC com uma previsão de 24 h.
+Goals: (1) never exceed 400 kW on the grid; (2) comply with the export reduction requested by the operator within a few seconds; (3) maximize self-consumption; (4) plan the SOC with a 24 h forecast.
 
-### 1.2 O modelo
+### 1.2 The model
 
 ```toml
 [target]
@@ -47,7 +47,7 @@ address = "192.168.10.41:502"
 profile = "sunspec"
 discover = true
 poll = "500ms"
-# inv2, inv3 idênticos
+# inv2, inv3 identical
 [devices.io]
 driver = "revpi"
 
@@ -76,7 +76,7 @@ max_lease = "15m"
 
 [outputs."inv*.w_max_lim_pct"]
 range = ["0 %", "100 %"]
-safe  = "0 %"                          # sem controlo, sem injeção: é o lado seguro para o operador de rede
+safe  = "0 %"                          # no control, no export: it is the safe side for the grid operator
 safer = "lower"
 max_lease = "10s"
 
@@ -100,63 +100,63 @@ resources = "ml"
 deadline = "5s"
 ```
 
-A app `peak_shaver` é a do documento 04, §3: o ciclo de 200 ms segue o limite, e uma tarefa async a cada 15 min pede a previsão e publica o plano num `Internal<Plan>`.
+The `peak_shaver` app is the one from document 04, §3: the 200 ms cycle tracks the limit, and an async task every 15 min requests the forecast and publishes the plan in an `Internal<Plan>`.
 
-### 1.3 O que funcionou
+### 1.3 What worked
 
-- **Portabilidade.** A `peak_shaver` não sabe que o PCS é da Acme. Noutro site, com outro PCS e outro medidor, só mudam o perfil e as ligações. A conversão W→kW e %→fração é da runtime.
-- **Interlock de frequência.** Com a rede fora de 49,8–50,2 Hz, o PCS vai para 0 kW no próprio tick, qualquer que seja a opinião da app.
-- **Separação de prioridades.** A redução do operador de rede (`supervisor`, 7) atua nos inversores, e o otimizador (`optimizer`, 13) na bateria. Se amanhã o otimizador também quiser mexer nos inversores, o árbitro garante que a redução ganha.
-- **A previsão não atrasa o controlo.** O TCN demora ~0,3–1 s em CPU (a medir) e corre no domínio async, com o controlo a seguir o último plano válido. O plano expirado dispara um alarme e o controlo passa ao modo conservador.
-- **Store-and-forward.** Uma queda de 3 dias no LTE não perdeu dados: o cursor do uplink retomou do historian.
+- **Portability.** The `peak_shaver` does not know the PCS is from Acme. On another site, with another PCS and another meter, only the profile and the bindings change. The W→kW and %→fraction conversion belongs to the runtime.
+- **Frequency interlock.** With the grid outside 49.8–50.2 Hz, the PCS goes to 0 kW in the same tick, whatever the app's opinion.
+- **Separation of priorities.** The grid operator's reduction (`supervisor`, 7) acts on the inverters, and the optimizer (`optimizer`, 13) on the battery. If tomorrow the optimizer also wants to touch the inverters, the arbiter guarantees that the reduction wins.
+- **The forecast does not delay control.** The TCN takes ~0.3–1 s on CPU (to measure) and runs in the async domain, with control following the last valid plan. The expired plan raises an alarm and control switches to conservative mode.
+- **Store-and-forward.** A 3-day LTE outage lost no data: the uplink cursor resumed from the historian.
 
-### 1.4 O que quebrou
+### 1.4 What broke
 
-**(a) Dois watchdogs que não se conhecem.** O PCS tem o seu próprio timeout de comunicação: sem escrita em 60 s, vai para um valor de fallback configurável. O Joker tem um lease de 2 s. Três configurações erradas aparecem logo no primeiro site:
-- fallback do PCS a "manter o último valor": com o `jokerd` morto a descarregar a 125 kW, a bateria descarrega até ao limite do BMS;
-- timeout do PCS de 5 s com o reinício da placa a demorar 25 s: o PCS entra em fallback a cada atualização da runtime, e isso não é um erro, mas é ruído e desgaste;
-- inversores com fallback a 100% de injeção: com o controlo perdido durante uma ordem de 0%, o site injeta tudo.
+**(a) Two watchdogs that do not know each other.** The PCS has its own communication timeout: without a write in 60 s, it goes to a configurable fallback value. Joker has a 2 s lease. Three wrong configurations show up on the very first site:
+- PCS fallback set to "hold the last value": with `jokerd` dead while discharging at 125 kW, the battery discharges down to the BMS limit;
+- PCS timeout of 5 s with the board restart taking 25 s: the PCS enters fallback on every runtime update, and that is not an error, but it is noise and wear;
+- inverters with fallback at 100% export: with control lost during a 0% order, the site exports everything.
 
-O desenho tinha estado seguro, mas não tinha o **estado seguro do equipamento**. **Lacuna a fechar → M1** (fallback do dispositivo declarado no perfil, configurado e verificado no arranque, com regras de coerência face ao `safe` e ao tempo de reinício).
+The design had a safe state, but it did not have the **equipment safe state**. **Gap to close → M1** (device fallback declared in the profile, configured and verified at startup, with coherence rules against `safe` and the restart time).
 
-**(b) O mapa de registos muda sem aviso.** O SunSpec descobre-se: o mapa depende da cadeia de modelos do inversor. Uma atualização de firmware acrescentou um modelo a meio e deslocou o 704 (controlos DER) em 50 registos. Um mapa estático teria escrito o limite de injeção no registo errado. **Lacuna a fechar → M2** (descoberta com resultado fixado no `joker.lock`; deriva em `prod` bloqueia as saídas até haver revisão).
+**(b) The register map changes without warning.** SunSpec is discovered: the map depends on the inverter's model chain. A firmware update added a model in the middle and shifted 704 (DER controls) by 50 registers. A static map would have written the export limit to the wrong register. **Gap to close → M2** (discovery with the result pinned in `joker.lock`; drift in `prod` blocks the outputs until there is a review).
 
-**(c) "Prove que cumpriu a ordem do operador de rede."** Numa auditoria, o operador pede prova de que o site reduziu para 30% em menos de X segundos depois do sinal, durante os 14 dias em que houve ordens. O historian tem os sinais, mas não tem a **causalidade**: que tick leu o `rse.k3`, que proposta saiu, e quando foi aplicada e confirmada. **Lacuna a fechar → M3** (rastreio causal no registo de decisões: cada escrita aplicada guarda o id do tick, os `(SignalId, seq)` que a tarefa leu e os instantes de proposta, commit e readback).
+**(c) "Prove that you complied with the grid operator's order."** In an audit, the operator asks for proof that the site reduced to 30% in less than X seconds after the signal, during the 14 days in which there were orders. The historian has the signals, but it does not have the **causality**: which tick read `rse.k3`, which proposal came out, and when it was applied and confirmed. **Gap to close → M3** (causal tracing in the decision log: each applied write stores the tick id, the `(SignalId, seq)` the task read and the proposal, commit and readback instants).
 
-**(d) Distribuir a redução pelos 3 inversores.** Um limite de site de 30% pode ser distribuído de muitas maneiras (igual por todos, proporcional à potência disponível, ou prioritário para o inversor com pior rendimento). Considerou-se uma primitiva de "saídas agrupadas com alocação" e **rejeitou-se**: é política, não mecanismo, e pertence à app. O núcleo fica pequeno de propósito.
+**(d) Distributing the reduction across the 3 inverters.** A site limit of 30% can be distributed in many ways (equal for all, proportional to available power, or prioritized for the inverter with the worst efficiency). A primitive of "grouped outputs with allocation" was considered and **rejected**: it is policy, not mechanism, and it belongs to the app. The core stays small on purpose.
 
-**(e) Skew entre medidor e PCS.** `calc.site_load = meter.p_total - pcs.p_ac` junta dois pedidos diferentes, com até 200 ms entre eles. Num degrau de carga de 200 kW, o erro momentâneo é grande. Não há primitiva nova: a coerência só existe dentro de um pedido (documento 02, §6.2), e o remédio é o `align = "meter"` no poll do PCS (ler logo depois do medidor), ou tratar o transitório na app. Fica documentado.
+**(e) Skew between meter and PCS.** `calc.site_load = meter.p_total - pcs.p_ac` combines two different requests, with up to 200 ms between them. On a 200 kW load step, the momentary error is large. There is no new primitive: coherence only exists within a request (document 02, §6.2), and the remedy is `align = "meter"` on the PCS poll (read right after the meter), or handling the transient in the app. It is documented.
 
-**(f) Contagem fiscal.** O cliente quer faturar a energia com os dados do Joker. **Fronteira a declarar → 12, §9**: o Joker não é um contador certificado. Transporta e guarda os valores do contador certificado, mas não os certifica.
+**(f) Fiscal metering.** The customer wants to bill energy with Joker's data. **Boundary to declare → 12, §9**: Joker is not a certified meter. It carries and stores the values of the certified meter, but does not certify them.
 
-### 1.5 Veredicto
+### 1.5 Verdict
 
-O modelo aguentou. As três lacunas (M1–M3) são de **robustez**, não de expressividade, e são exatamente as que rebentam no primeiro ano de operação. O caso típico da IZAAC cabe no Joker sem código de infraestrutura na app.
+The model held. The three gaps (M1–M3) are about **robustness**, not expressiveness, and they are exactly the ones that blow up in the first year of operation. IZAAC's typical case fits in Joker with no infrastructure code in the app.
 
 ---
 
-## Rodada 2 — Inspeção visual com ejeção temporizada (RPi 5 + AI HAT+ Hailo-8L)
+## Round 2 — Visual inspection with timed ejection (RPi 5 + AI HAT+ Hailo-8L)
 
-### 2.1 O cenário
+### 2.1 The scenario
 
-Uma linha de embalagem com **2 peças/s** num tapete a **0,5 m/s**. Uma fotocélula dispara a câmara (trigger de hardware). A câmara fica **200 mm antes** do ejetor, o que dá **400 ms** entre a foto e a passagem da peça. O ejetor é uma válvula pneumática numa saída digital: impulso de 50 ms, e tolerância de **±5 ms** para acertar na peça. O modelo é um YOLO pequeno para defeitos, a 640×640, na Hailo-8L.
+A packaging line with **2 parts/s** on a conveyor at **0.5 m/s**. A photoelectric sensor triggers the camera (hardware trigger). The camera sits **200 mm before** the ejector, which gives **400 ms** between the photo and the part passing. The ejector is a pneumatic valve on a digital output: a 50 ms pulse, and a tolerance of **±5 ms** to hit the part. The model is a small YOLO for defects, at 640×640, on the Hailo-8L.
 
-Orçamento de latência (estimativas a medir):
+Latency budget (estimates to measure):
 
-| Etapa | Tempo |
+| Stage | Time |
 |---|---|
-| trigger → exposição | ~1 ms |
-| readout + DMA (1920×1080 NV12, 3,1 MB) | ~33 ms |
-| crop + letterbox + conversão (NEON) | ~4 ms |
-| inferência Hailo-8L | ~10–15 ms |
-| NMS + evento | ~1 ms |
-| decisão (app) + agendamento | < 1 ms |
-| **total** | **~55 ms**, contra 400 ms disponíveis |
+| trigger → exposure | ~1 ms |
+| readout + DMA (1920×1080 NV12, 3.1 MB) | ~33 ms |
+| crop + letterbox + conversion (NEON) | ~4 ms |
+| Hailo-8L inference | ~10–15 ms |
+| NMS + event | ~1 ms |
+| decision (app) + scheduling | < 1 ms |
+| **total** | **~55 ms**, against 400 ms available |
 
-### 2.2 O modelo
+### 2.2 The model
 
 ```toml
-# (1.1): câmara, streams, modelos, pipelines e saídas temporizadas
+# (1.1): camera, streams, models, pipelines and timed outputs
 [devices.cam0]
 driver = "v4l2"
 device = "/dev/video0"
@@ -183,7 +183,7 @@ isolation = "process"
 [pipelines.inspect]
 from  = "cam0.frames"
 steps = [
-  { op = "correlate", with = "line.photoeye", window = "5ms" },   # associa o frame ao flanco do trigger
+  { op = "correlate", with = "line.photoeye", window = "5ms" },   # associates the frame with the trigger edge
   { op = "crop", roi = [480, 0, 960, 1080] },
   { op = "letterbox", size = [640, 640] },
   { op = "model", name = "detector" },
@@ -197,7 +197,7 @@ safe = false
 timed = true
 schedule_depth = 16
 pulse = "50ms"
-on_late = "apply_now"                   # obrigatório (J0206); ver 2.4(c)
+on_late = "apply_now"                   # required (J0206); see 2.4(c)
 
 [apps.inspector]
 path   = "apps/inspector"
@@ -206,52 +206,52 @@ bind   = { detections = "vision.detections", ejector = "line.ejector" }
 params = { travel = "400 ms" }
 ```
 
-A app é a do documento 04, §3.5.
+The app is the one from document 04, §3.5.
 
-### 2.3 O que funcionou
+### 2.3 What worked
 
-- **O modelo de sinais aguenta a lógica.** A app tem 20 linhas e não sabe o que é V4L2, Hailo ou GPIO.
-- **Fallback de backend.** Sem a AI HAT+ (numa bancada de testes), o mesmo `.jkm` cai para `ort:cpu` com o payload ONNX e corre a ~250 ms por frame (a medir). É lento para a linha, mas serve para desenvolver.
-- **Isolamento do NPU.** O runtime da Hailo corre em `joker-ml-detector`. Um encravamento do driver mata esse processo e não o `jokerd`, e o ejetor continua sob controlo.
+- **The signal model holds the logic.** The app has 20 lines and does not know what V4L2, Hailo or GPIO is.
+- **Backend fallback.** Without the AI HAT+ (on a test bench), the same `.jkm` falls back to `ort:cpu` with the ONNX payload and runs at ~250 ms per frame (to measure). It is slow for the line, but it is good enough for development.
+- **NPU isolation.** The Hailo runtime runs in `joker-ml-detector`. A driver hang kills that process and not `jokerd`, and the ejector stays under control.
 
-### 2.4 O que quebrou
+### 2.4 What broke
 
-**(a) Um frame não é um sinal.** 3,1 MB a 30 fps são 93 MB/s. Não cabem num slot de 32 bytes, e copiá-los para um historian ou para uma fila de eventos é absurdo. **Lacuna a fechar → M4** (streams: pool de buffers dmabuf/memfd, frames com contagem de referências, semântica `latest`/`queue`).
+**(a) A frame is not a signal.** 3.1 MB at 30 fps is 93 MB/s. It does not fit in a 32-byte slot, and copying it to a historian or to an event queue is absurd. **Gap to close → M4** (streams: pool of dmabuf/memfd buffers, reference-counted frames, `latest`/`queue` semantics).
 
-**(b) Frames através do Wasm.** A primeira versão dava o frame à app, que chamava o modelo. Cada frame atravessava a fronteira Wasm duas vezes (3,1 MB + tensor de 1,2 MB), o que a 30 fps são ~130 MB/s de cópias numa CPU que também faz NEON. **Lacuna a fechar → M5** (pipelines nativos: stream → pré-processamento → modelo → pós-processamento → evento, sem passar pela memória Wasm; a app recebe 16 caixas).
+**(b) Frames through Wasm.** The first version gave the frame to the app, which called the model. Each frame crossed the Wasm boundary twice (3.1 MB + 1.2 MB tensor), which at 30 fps is ~130 MB/s of copies on a CPU that also does NEON. **Gap to close → M5** (native pipelines: stream → preprocessing → model → postprocessing → event, without going through Wasm memory; the app receives 16 boxes).
 
-**(c) A decisão é async, e a atuação tem de ser precisa.** A decisão sai ~55 ms depois do trigger com jitter de dezenas de ms, e o ejetor tem de disparar a 400 ms ±5 ms. Um grupo de ciclo de 1 ms daria ±1 ms mas obrigaria a um grupo de 1 ms só para isto. **Lacuna a fechar → M6** (escritas agendadas: `write_at(v, t)` com `t` derivado do `ts_hw` (monotónico, do kernel) do trigger, executadas pela thread do driver com `timerfd` e precisão alvo de ±100 µs, com `on_late` explícito).
+**(c) The decision is async, and the actuation must be precise.** The decision comes out ~55 ms after the trigger with jitter of tens of ms, and the ejector must fire at 400 ms ±5 ms. A 1 ms cycle group would give ±1 ms but would force a 1 ms group just for this. **Gap to close → M6** (scheduled writes: `write_at(v, t)` with `t` derived from the trigger's `ts_hw` (monotonic, from the kernel), executed by the driver thread with `timerfd` and a target precision of ±100 µs, with explicit `on_late`).
 
-Ao modelar o `on_late`, apareceu a pergunta certa: **qual é o lado seguro?** Se a decisão chega tarde, ejetar a peça (possível falso positivo, custa uma peça) ou deixá-la passar (possível defeito entregue ao cliente)? Para esta linha, o seguro é **ejetar**. Por isso o pipeline tem `deadline = "120ms"`, e um frame que falha o deadline produz um evento `Bad(Deadline)` que a app trata como defeito. O `on_late = "apply_now"` do ejetor passa a ser irrelevante, porque a decisão atrasada já foi convertida em "ejetar". A lição geral é que o `on_late` não pode ter um valor por omissão, tal como o `safe` (`J0206`).
+While modeling `on_late`, the right question came up: **which is the safe side?** If the decision arrives late, eject the part (possible false positive, costs one part) or let it through (possible defect delivered to the customer)? For this line, the safe side is to **eject**. That is why the pipeline has `deadline = "120ms"`, and a frame that misses the deadline produces a `Bad(Deadline)` event that the app treats as a defect. The ejector's `on_late = "apply_now"` becomes irrelevant, because the late decision has already been converted into "eject". The general lesson is that `on_late` must not have a default, just like `safe` (`J0206`).
 
-**(d) Correlação trigger ↔ frame.** Se um trigger se perde (a peça passou, mas a câmara não disparou) ou a câmara gera um frame espúrio, a associação "frame n ↔ peça n" desliza e o ejetor passa a acertar na peça errada **para sempre**. Resolve-se sem primitiva nova, com uma operação de pipeline: `correlate(with = "line.photoeye", window = "5ms")` associa cada frame ao flanco com timestamp de kernel mais próximo. Um frame sem flanco, ou um flanco sem frame, gera um evento de erro (e a peça correspondente é ejetada).
+**(d) Trigger ↔ frame correlation.** If a trigger is lost (the part went by, but the camera did not fire) or the camera produces a spurious frame, the "frame n ↔ part n" association slips and the ejector starts hitting the wrong part **forever**. It is solved without a new primitive, with a pipeline operation: `correlate(with = "line.photoeye", window = "5ms")` associates each frame with the nearest edge with a kernel timestamp. A frame without an edge, or an edge without a frame, generates an error event (and the corresponding part is ejected).
 
-**(e) Compilar para a Hailo.** O HEF é gerado offline com o compilador do fabricante, que é proprietário e corre em x86. **Fronteira a declarar → 12, §6**: o Joker transporta e executa payloads de fabricante com assinatura declarada, mas não compila para NPUs.
+**(e) Compiling for the Hailo.** The HEF is generated offline with the vendor's compiler, which is proprietary and runs on x86. **Boundary to declare → 12, §6**: Joker carries and executes vendor payloads with a declared signature, but does not compile for NPUs.
 
-**(f) O Burn não chega à NPU.** Confirmado na prática: o backend por omissão serve para desenvolvimento e fallback, e o HailoRT é necessário em produção. Reforça a ADR 0009 (Burn por omissão, **não exclusivo**).
+**(f) Burn does not reach the NPU.** Confirmed in practice: the default backend serves for development and fallback, and HailoRT is needed in production. It reinforces ADR 0009 (Burn by default, **not exclusive**).
 
-**(g) Imagens com pessoas.** A câmara apanha operadores. **Fronteira → 12, §10**: por omissão, os streams não são gravados nem enviados (`record = false`), e há uma operação `blur_faces` opcional, mas o enquadramento legal (RGPD, acordos com trabalhadores) é do integrador.
+**(g) Images with people.** The camera captures operators. **Boundary → 12, §10**: by default, streams are neither recorded nor sent (`record = false`), and there is an optional `blur_faces` operation, but the legal framework (GDPR, agreements with workers) belongs to the integrator.
 
-### 2.5 Veredicto
+### 2.5 Verdict
 
-A abstração de sinais aguentou a lógica, mas não os dados. Sem M4–M6, o Joker não servia para visão. Com eles, a app continua trivial e o caminho quente é nativo e sem cópias.
+The signal abstraction held the logic, but not the data. Without M4–M6, Joker was of no use for vision. With them, the app stays trivial and the hot path is native and copy-free.
 
 ---
 
-## Rodada 3 — Manutenção preditiva por vibração com treino no dispositivo (CM5)
+## Round 3 — Predictive maintenance by vibration with on-device training (CM5)
 
-### 3.1 O cenário
+### 3.1 The scenario
 
-8 bombas numa estação de tratamento de água, cada uma com um acelerómetro triaxial ligado a uma placa ADC de 24 bits com relógio próprio (a amostragem é feita pelo hardware e lida por SPI a partir de uma FIFO). **25,6 kS/s × 3 eixos × 8 = 614 400 amostras/s**, ou seja ~2,5 MB/s em f32.
+8 pumps in a water treatment plant, each with a triaxial accelerometer connected to a 24-bit ADC board with its own clock (sampling is done by the hardware and read over SPI from a FIFO). **25.6 kS/s × 3 axes × 8 = 614,400 samples/s**, that is ~2.5 MB/s in f32.
 
-- Features a cada 1 s por eixo (uma janela de 4096 pontos por segundo): RMS, pico, fator de crista, curtose e 8 bandas de FFT → 24 × 12 = 288 features/s, ou 36 por bomba mais a velocidade.
-- Um autoencoder (`joker.ae@1`) **por bomba**, treinado no local com 7 dias de funcionamento normal.
-- Alarme quando o erro de reconstrução fica acima do limiar durante 5 min. Nada atua automaticamente: a proteção da bomba é do relé de proteção do motor.
+- Features every 1 s per axis (one window of 4096 points per second): RMS, peak, crest factor, kurtosis and 8 FFT bands → 24 × 12 = 288 features/s, or 36 per pump plus the speed.
+- One autoencoder (`joker.ae@1`) **per pump**, trained on site with 7 days of normal operation.
+- Alarm when the reconstruction error stays above the threshold for 5 min. Nothing actuates automatically: pump protection belongs to the motor protection relay.
 
-### 3.2 O modelo
+### 3.2 The model
 
 ```toml
-# (1.1): sinais em bloco, pipelines, modelos, treino e gravação por gatilho
+# (1.1): block signals, pipelines, models, training and triggered recording
 [buses.spi0]
 kind = "spi"
 dev  = "/dev/spidev0.0"
@@ -264,19 +264,19 @@ drdy = "gpio.line_5"
 rate = "25600 Hz"
 
 [devices.adc.signals]
-"ch1" = { alias = "p1.acc.x", kind = "block", unit = "gn", block = 2560 }   # blocos de 100 ms
-# … 24 canais
+"ch1" = { alias = "p1.acc.x", kind = "block", unit = "gn", block = 2560 }   # 100 ms blocks
+# … 24 channels
 
 [pipelines.p1_features]
 from  = ["p1.acc.x", "p1.acc.y", "p1.acc.z"]
 steps = [
-  { op = "window", n = 4096, hop = 25600 },    # 1 janela por segundo
+  { op = "window", n = 4096, hop = 25600 },    # 1 window per second
   { op = "detrend" },
   { op = "fft", n = 4096, window = "hann" },
   { op = "bands", edges_hz = [10, 50, 100, 200, 500, 1000, 2000, 5000, 10000] },
   { op = "stats", fields = ["rms", "peak", "crest", "kurtosis"] },
 ]
-to = "p1.features"                  # evento com 36 floats (+ velocidade no exemplo 03), 1/s
+to = "p1.features"                  # event with 36 floats (+ speed in example 03), 1/s
 
 [pipelines.p1_anomaly]
 from  = "p1.features"
@@ -302,41 +302,41 @@ output = "candidate"
 "p*.features" = { every = "1s", keep = { raw = "30d", "1m" = "730d" } }
 ```
 
-### 3.3 O que funcionou
+### 3.3 What worked
 
-- **Burn a treinar no dispositivo.** Um autoencoder pequeno (37 → 24 → 8 → 24 → 37, ~2 k parâmetros) com 600 k janelas treina em minutos num núcleo de CM5 (estimativa, poucas épocas), em `SCHED_IDLE`. É o argumento mais forte a favor do Burn: nenhum motor só de inferência faria isto sem Python no dispositivo.
-- **Pipelines para sinais.** FFT, bandas e estatísticas correm nativamente com NEON. O custo estimado, 24 FFTs de 4096 pontos por segundo, é ~6 M operações de vírgula flutuante por segundo (5·N·log₂N), o que é desprezável.
-- **Nada atua.** O Joker como sistema de monitorização é um subconjunto natural do desenho.
+- **Burn training on the device.** A small autoencoder (37 → 24 → 8 → 24 → 37, ~2 k parameters) with 600 k windows trains in minutes on one CM5 CPU core (estimate, few epochs), in `SCHED_IDLE`. It is the strongest argument in favor of Burn: no inference-only engine would do this without Python on the device.
+- **Pipelines for signals.** FFT, bands and statistics run natively with NEON. The estimated cost, 24 FFTs of 4096 points per second, is ~6 M floating-point operations per second (5·N·log₂N), which is negligible.
+- **Nothing actuates.** Joker as a monitoring system is a natural subset of the design.
 
-### 3.4 O que quebrou
+### 3.4 What broke
 
-**(a) 614 k amostras/s não são sinais escalares.** Passar cada amostra pelo slot, pela imagem de processo e pelo historian é inviável: são ~0,6 M escritas de slot por segundo só para estes sinais (~2 M operações contando latch e historian), cada uma com 32 bytes de metadados para 4 bytes de dados, e sem noção do relógio de amostragem, que é o que a FFT precisa. **Lacuna a fechar → M7** (sinais em bloco: `t0`, período, n amostras contíguas, qualidade por bloco, anel por sinal).
+**(a) 614 k samples/s are not scalar signals.** Passing each sample through the slot, the process image and the historian is unfeasible: that is ~0.6 M slot writes per second for these signals alone (~2 M operations counting latch and historian), each one with 32 bytes of metadata for 4 bytes of data, and with no notion of the sampling clock, which is what the FFT needs. **Gap to close → M7** (block signals: `t0`, period, n contiguous samples, per-block quality, ring per signal).
 
-**(b) Amostragem com relógio do Linux.** A primeira ideia foi ler o ADC por SPI a cada 39 µs a partir de uma thread RT. Mesmo com PREEMPT_RT, o jitter de dezenas de µs destrói a FFT. **Fronteira a declarar → 12, §3**: acima de ~1 kHz, a amostragem **tem de** ser feita por hardware (ADC com relógio próprio e FIFO/DMA), e o Joker lê blocos. O Joker não é um sistema de aquisição de sinais com timing garantido por software.
+**(b) Sampling with the Linux clock.** The first idea was to read the ADC over SPI every 39 µs from an RT thread. Even with PREEMPT_RT, jitter of tens of µs destroys the FFT. **Boundary to declare → 12, §3**: above ~1 kHz, sampling **must** be done by hardware (ADC with its own clock and FIFO/DMA), and Joker reads blocks. Joker is not a signal acquisition system with software-guaranteed timing.
 
-**(c) 2,5 MB/s em disco são 212 GB/dia.** Guardar tudo é impossível num eMMC de 32 GB, mas a forma de onda *à volta de uma anomalia* é o dado mais valioso para o engenheiro de fiabilidade. A política de gravação ganhou um modo `on_trigger` com `pre` e `post`: um anel em RAM de 10 s por canal (24 canais × 25 600 × 4 B × 10 s ≈ 25 MB) que é despejado quando o gatilho dispara, com o `post` escrito diretamente para disco. Um `pre` de 60 s custaria ~150 MB de RAM, e por isso o `jk check` soma estes anéis no `J0380`. Isto passou a fazer parte do **M7**.
+**(c) 2.5 MB/s on disk is 212 GB/day.** Storing everything is impossible on a 32 GB eMMC, but the waveform *around an anomaly* is the most valuable data for the reliability engineer. The recording policy gained an `on_trigger` mode with `pre` and `post`: a 10 s RAM ring per channel (24 channels × 25,600 × 4 B × 10 s ≈ 25 MB) that is flushed when the trigger fires, with the `post` written directly to disk. A `pre` of 60 s would cost ~150 MB of RAM, and that is why `jk check` adds up these rings in `J0380`. This became part of **M7**.
 
-**(d) O treino disputa CPU com o controlo.** Num CM5 com 4 núcleos, o treino semanal de 8 autoencoders em simultâneo satura os núcleos e sobe a temperatura, e o *throttling* térmico aumenta o jitter de todo o sistema, incluindo o núcleo `rt`. **Lacuna a fechar → M8** (classes de recursos com cpusets e limites de memória; treino em `SCHED_IDLE`, preemptível, com pausa sob pressão térmica; um treino de cada vez por omissão).
+**(d) Training competes for CPU with control.** On a CM5 with 4 CPU cores, the weekly training of 8 autoencoders simultaneously saturates the cores and raises the temperature, and thermal *throttling* increases the jitter of the whole system, including the `rt` core. **Gap to close → M8** (resource classes with cpusets and memory limits; training in `SCHED_IDLE`, preemptible, paused under thermal pressure; one training at a time by default).
 
-**(e) "Que modelo disparou este alarme, e treinado com quê?"** Seis meses depois, o alarme da bomba 3 dispara e o engenheiro pergunta se o modelo foi treinado com o rolamento já degradado. **Lacuna a fechar → M10** (linhagem: intervalo do historian, hash dos segmentos, filtro `where`, versão do Burn, métricas de validação, `.jkm` pai).
+**(e) "Which model raised this alarm, and trained on what?"** Six months later, pump 3's alarm fires and the engineer asks whether the model was trained with the bearing already degraded. **Gap to close → M10** (lineage: historian interval, segment hash, `where` filter, Burn version, validation metrics, parent `.jkm`).
 
-**(f) Alarmes que piscam.** Com um limiar fixo, o erro de reconstrução oscila à volta do limite e o alarme liga e desliga 40 vezes por dia. A equipa de operação desliga-o ao terceiro dia. **Lacuna a fechar → M9** (alarmes de primeira classe com `delay_on`/`delay_off`, histerese, shelving com TTL e supressão por desenho, `p1.running`). O limiar é aprendido na validação (p99,9 do erro no holdout), guardado no `.jkm` e lido por `model_threshold()`.
+**(f) Flapping alarms.** With a fixed threshold, the reconstruction error oscillates around the limit and the alarm goes on and off 40 times a day. The operations team disables it on the third day. **Gap to close → M9** (first-class alarms with `delay_on`/`delay_off`, hysteresis, shelving with TTL and suppression by design, `p1.running`). The threshold is learned in validation (p99.9 of the error on the holdout), stored in the `.jkm` and read by `model_threshold()`.
 
-**(g) Uma bomba que muda de regime.** Uma bomba com variador trabalha a 30 Hz de dia e a 45 Hz à noite, e o autoencoder treinado sobretudo de dia marca a noite como anomalia. Isto é um problema de modelação (incluir a velocidade nas features) e não de runtime. Fica como nota de modelação no exemplo 03.
+**(g) A pump that changes regime.** A pump with a variable-frequency drive runs at 30 Hz by day and 45 Hz at night, and the autoencoder trained mostly by day flags the night as an anomaly. This is a modeling problem (include the speed in the features), not a runtime one. It stays as a modeling note in example 03.
 
-### 3.5 Veredicto
+### 3.5 Verdict
 
-O modelo de sinais precisava de uma forma de onda (M7) e o sistema precisava de governar recursos (M8). A combinação **pipelines nativos + Burn a treinar no local + alarmes a sério** é um produto em si.
+The signal model needed a waveform (M7) and the system needed to govern resources (M8). The combination **native pipelines + Burn training on site + proper alarms** is a product in itself.
 
 ---
 
-## Rodada 4 — AGV com EtherCAT, ROS 2 e laser de segurança (PC industrial x86)
+## Round 4 — AGV with EtherCAT, ROS 2 and safety laser (x86 industrial PC)
 
-### 4.1 O cenário
+### 4.1 The scenario
 
-Um AGV diferencial com 2 servodrives CiA 402 em EtherCAT a **1 kHz** (os drives fecham internamente as malhas de corrente e velocidade a 16 kHz; o Joker envia setpoints de velocidade em modo cíclico síncrono). A odometria e o controlo de trajetória local correm a **100 Hz**. O Nav2 (ROS 2) corre no mesmo PC e envia `cmd_vel` a 10–20 Hz. Há um LiDAR 2D (UDP, 10 Hz, ~1 440 pontos por volta), uma bateria em CAN e um **laser scanner de segurança + PLC de segurança** com STO cablado aos drives.
+A differential AGV with 2 CiA 402 servo drives on EtherCAT at **1 kHz** (the drives close the current and velocity loops internally at 16 kHz; Joker sends velocity setpoints in cyclic synchronous mode). Odometry and local trajectory control run at **100 Hz**. Nav2 (ROS 2) runs on the same PC and sends `cmd_vel` at 10–20 Hz. There is a 2D LiDAR (UDP, 10 Hz, ~1,440 points per revolution), a battery on CAN and a **safety laser scanner + safety PLC** with STO hardwired to the drives.
 
-### 4.2 O modelo
+### 4.2 The model
 
 ```toml
 [buses.ecat]
@@ -354,7 +354,7 @@ driver = "ethercat"
 bus = "ecat"
 position = 1
 profile = "acme/servo-cia402@2"
-[devices.safety] # só leitura
+[devices.safety] # read-only
 driver = "ethercat"
 bus = "ecat"
 position = 2
@@ -362,7 +362,7 @@ profile = "acme/safety-plc-fsoe-status@1"
 [devices.lidar]
 driver = "x:sick-tim"
 address = "192.168.0.1"
-[drivers.sick-tim]                      # tier X: processo à parte (ref/06 §5)
+[drivers.sick-tim]                      # tier X: separate process (ref/06 §5)
 tier = "x"
 exec = "/usr/lib/joker/drivers/joker-drv-sick-tim"
 
@@ -375,7 +375,7 @@ trip_after = 3
 period = "10ms"
 resources = "rt"
 
-[atomic.wheels] # M20: mesmo frame EtherCAT
+[atomic.wheels] # M20: same EtherCAT frame
 outputs = ["drive_l.v_set", "drive_r.v_set"]
 on_rate = "proportional"
 
@@ -383,7 +383,7 @@ on_rate = "proportional"
 range = ["-2.0 m/s", "2.0 m/s"]
 rate  = "1.5 m/s2"
 safe  = "0 m/s"
-safe_ramp = "2.5 m/s2"                  # travagem controlada; a de emergência é o STO do PLC de segurança
+safe_ramp = "2.5 m/s2"                  # controlled braking; the emergency one is the safety PLC's STO
 interlock = "safety.run_permit && !safety.field_warning"
 
 [bridges.ros]
@@ -399,50 +399,50 @@ writer = { level = "control", priority = 10, lease = "5ms" }
 bind   = { v_cmd = "bridge.ros.cmd_v", w_cmd = "bridge.ros.cmd_w", v_l = "drive_l.v_set", v_r = "drive_r.v_set", enc_l = "drive_l.pos", enc_r = "drive_r.pos" }
 ```
 
-### 4.3 O que funcionou
+### 4.3 What worked
 
-- **Idade e lease como homem-morto.** O `cmd_vel` do ROS chega a `bridge.ros.cmd_v/w` com `max_age = 200ms`. Se o Nav2 morrer ou encravar, em ≤ 200 ms os valores ficam `Stale`, o `get()?` da app falha, a app deixa de escrever, o lease de 5 ms das rodas expira e os setpoints vão para 0 com a rampa de travagem. Isto não depende do código do Nav2 estar certo.
-- **Multi-ritmo.** O grupo de 1 ms só faz a cinemática inversa e o envio, e o de 10 ms faz a odometria. A semântica entre grupos (documento 02, §6.3) chega: a odometria vê as posições aplicadas até ao seu latch.
-- **O permissivo da segurança.** `safety.run_permit` vem do PLC de segurança. Sem ele, o Joker nem tenta mexer. O envelope junta-se à segurança funcional sem fingir que a substitui.
+- **Age and lease as a dead man's switch.** ROS's `cmd_vel` arrives at `bridge.ros.cmd_v/w` with `max_age = 200ms`. If Nav2 dies or hangs, within ≤ 200 ms the values become `Stale`, the app's `get()?` fails, the app stops writing, the wheels' 5 ms lease expires and the setpoints go to 0 with the braking ramp. This does not depend on Nav2's code being correct.
+- **Multi-rate.** The 1 ms group only does the inverse kinematics and the sending, and the 10 ms group does the odometry. The semantics between groups (document 02, §6.3) is enough: odometry sees the positions applied up to its latch.
+- **The safety permissive.** `safety.run_permit` comes from the safety PLC. Without it, Joker does not even try to move. The envelope joins functional safety without pretending to replace it.
 
-### 4.4 O que quebrou
+### 4.4 What broke
 
-**(a) Rodas que recebem setpoints de ticks diferentes.** Se o árbitro limitar a roda esquerda (rampa) e aceitar a direita tal como vem, o AGV curva sem ninguém ter pedido. As duas escritas têm de passar ou falhar juntas e de sair no mesmo frame. Isto já tinha aparecido no documento 09, ataque 1, e a rodada confirma-o. **→ M20** (grupos atómicos). Um detalhe novo: a **limitação de taxa num grupo atómico tem de ser proporcional**. Se uma roda for limitada a 60% do passo pedido, a outra também é, para preservar a curvatura. Passa a ser a regra `on_rate = "proportional"` dos grupos atómicos.
+**(a) Wheels that receive setpoints from different ticks.** If the arbiter clamps the left wheel (ramp) and accepts the right one as it comes, the AGV turns without anyone having asked. The two writes must pass or fail together and must go out in the same frame. This had already appeared in document 09, attack 1, and the round confirms it. **→ M20** (atomic groups). A new detail: **rate limiting in an atomic group must be proportional**. If one wheel is clamped to 60% of the requested step, the other one is too, to preserve the curvature. It becomes the `on_rate = "proportional"` rule of atomic groups.
 
-**(b) Integração com ROS 2.** Sem uma ponte, cada projeto escreveria um nó ROS que lê a API do Joker, com latência, tipos e perda de lease. **Lacuna a fechar → M11** (pontes declarativas: ROS 2 via Zenoh/`rmw_zenoh`, servidor OPC UA, servidor Modbus, com a regra de que **uma escrita que chega por uma ponte é uma escrita de um escritor declarado**, com nível, lease e envelope).
+**(b) Integration with ROS 2.** Without a bridge, each project would write a ROS node that reads Joker's API, with latency, types and lease loss. **Gap to close → M11** (declarative bridges: ROS 2 via Zenoh/`rmw_zenoh`, OPC UA server, Modbus server, with the rule that **a write that arrives through a bridge is a write from a declared writer**, with level, lease and envelope).
 
-**(c) 1 kHz com jitter apertado.** O EtherCAT com DC tolera algum jitter no mestre, mas um p99,9 de 100 µs a 1 kHz é a fronteira do que o Linux com PREEMPT_RT garante num x86 com núcleo isolado (a medir no alvo). Com 4 kHz ou malhas de posição no mestre, deixa de ser razoável. **Fronteira → 12, §2**: o Joker faz controlo cíclico até ~1 kHz em hardware qualificado; acima disso, as malhas vivem nos drives.
+**(c) 1 kHz with tight jitter.** EtherCAT with DC tolerates some jitter in the controller, but a p99.9 of 100 µs at 1 kHz is the boundary of what Linux with PREEMPT_RT guarantees on an x86 with an isolated CPU core (to measure on the target). With 4 kHz or position loops in the controller, it is no longer reasonable. **Boundary → 12, §2**: Joker does cyclic control up to ~1 kHz on qualified hardware; above that, the loops live in the drives.
 
-**(d) Segurança funcional.** Há a tentação de pôr a monitorização de velocidade segura, as zonas do laser ou a paragem de emergência no Joker. **Fronteira → 12, §1**: o Joker não é, nem vai ser, um sistema certificado SIL/PL. O nível `safety` do árbitro serve para ações de proteção *de software* e nunca substitui a cadeia de segurança certificada.
+**(d) Functional safety.** There is the temptation to put safe speed monitoring, the laser zones or the emergency stop in Joker. **Boundary → 12, §1**: Joker is not, and will not be, a SIL/PL certified system. The arbiter's `safety` level serves *software* protective actions and never replaces the certified safety chain.
 
-**(e) Nuvens de pontos.** O LiDAR a 10 Hz é pequeno (~12 KB por volta), mas um LiDAR 3D são MB/s. Confirma o M4 (streams) para dados de robótica, com um formato `pointcloud` nos metadados do frame.
+**(e) Point clouds.** The LiDAR at 10 Hz is small (~12 KB per revolution), but a 3D LiDAR is MB/s. It confirms M4 (streams) for robotics data, with a `pointcloud` format in the frame metadata.
 
-**(f) Wi-Fi intermitente.** O AGV perde a rede em partes do armazém. O store-and-forward já cobria a telemetria. Os comandos da frota (missões) não passam pelo Joker: vêm pelo ROS.
+**(f) Intermittent Wi-Fi.** The AGV loses the network in parts of the warehouse. Store-and-forward already covered telemetry. Fleet commands (missions) do not go through Joker: they come through ROS.
 
-### 4.5 Veredicto
+### 4.5 Verdict
 
-O Joker encaixa como a **camada entre o ROS e o hardware** (o que costuma ser um `ros2_control` com código à medida), com envelope, leases e EtherCAT nativo. As fronteiras (segurança funcional e taxas acima de 1 kHz) são claras e têm de ficar escritas em destaque.
+Joker fits as the **layer between ROS and the hardware** (what is usually a `ros2_control` with custom code), with envelope, leases and native EtherCAT. The boundaries (functional safety and rates above 1 kHz) are clear and must be written down prominently.
 
 ---
 
-## Rodada 5 — Frota heterogénea de 3 000 controladores de bombas de calor
+## Round 5 — Heterogeneous fleet of 3,000 heat pump controllers
 
-### 5.1 O cenário
+### 5.1 The scenario
 
-3 000 edifícios (moradias e pequenos comerciais), cada um com uma bomba de calor (Modbus RTU), dois relés SG-Ready (2 saídas digitais), um contador de calor M-Bus e, em ~30%, um inversor FV (Modbus TCP). A **redução por ordem do operador de rede para consumidores controláveis** é aplicada através dos relés ou de um limite de potência. A app é a mesma em todo o lado: otimização térmica com tarifa dinâmica e previsão de FV.
+3,000 buildings (houses and small commercial buildings), each with a heat pump (Modbus RTU), two SG-Ready relays (2 digital outputs), an M-Bus heat meter and, in ~30%, a PV inverter (Modbus TCP). The **grid operator's reduction order for controllable consumers** is applied through the relays or a power limit. The app is the same everywhere: thermal optimization with dynamic tariff and PV forecast.
 
-| Hardware | Quantidade | CPU | RAM | Armazenamento | Ligação |
+| Hardware | Quantity | CPU | RAM | Storage | Connection |
 |---|---|---|---|---|---|
-| CM4 em caixa DIN | 1 800 | aarch64 4×A72 | 2 GB | eMMC 16 GB | Ethernet/LTE |
-| PC industrial | 900 | x86_64 | 4 GB | SSD 64 GB | Ethernet |
-| gateway antigo | 300 | **armv7** 2×A7 | **512 MB** | **eMMC 4 GB** | **LTE, 50 MB/mês** |
+| CM4 in DIN enclosure | 1,800 | aarch64 4×A72 | 2 GB | eMMC 16 GB | Ethernet/LTE |
+| industrial PC | 900 | x86_64 | 4 GB | SSD 64 GB | Ethernet |
+| old gateway | 300 | **armv7** 2×A7 | **512 MB** | **eMMC 4 GB** | **LTE, 50 MB/month** |
 
-Atualizações: apps todos os meses, runtime a cada trimestre, e configuração quando o cliente muda de tarifa.
+Updates: apps every month, runtime every quarter, and configuration when the customer changes tariff.
 
-### 5.2 O modelo
+### 5.2 The model
 
 ```toml
-# templates/joker.hp-v3.toml — partilhado por todos
+# templates/joker.hp-v3.toml — shared by all
 [apps.hp_opt]
 source = "oci://…/hp-optimizer:3.2.0"
 writer = { level = "optimizer", priority = 13, lease = "20m" }
@@ -457,7 +457,7 @@ max_lease = "30m"
 source = "oci://…/grid-limit:1.1.0"
 writer = { level = "supervisor", priority = 7, lease = "5m" }
 
-# templates/joker.cm4-din.toml — overlay da placa CM4 em caixa DIN
+# templates/joker.cm4-din.toml — overlay for the CM4 board in a DIN enclosure
 [devices.io]
 driver = "gpio"
 chip = "gpiochip0"
@@ -479,69 +479,69 @@ tariff = "dynamic:epex-de"
 comfort_min = "20.5 °C"
 ```
 
-### 5.3 O que funcionou
+### 5.3 What worked
 
-- **A mesma app em três arquiteturas.** O `hp-optimizer.wasm` é o mesmo ficheiro nos 3 000 dispositivos. O `jk build --target` produz o `.cwasm` para aarch64 e x86_64, e o armv7 usa o Pulley (§5.4a).
-- **Aliases por placa.** A app liga-se a `sgready.a`, e o overlay de cada placa diz que GPIO ou relé USB é esse. O código não conhece placas.
-- **Perfil por modelo de bomba.** 14 modelos de bomba de calor no parque dão 14 perfis e nenhuma app nova.
+- **The same app on three architectures.** `hp-optimizer.wasm` is the same file on the 3,000 devices. `jk build --target` produces the `.cwasm` for aarch64 and x86_64, and armv7 uses Pulley (§5.4a).
+- **Aliases per board.** The app binds to `sgready.a`, and each board's overlay says which GPIO or USB relay that is. The code does not know boards.
+- **Profile per pump model.** 14 heat pump models in the installed base give 14 profiles and no new app.
 
-### 5.4 O que quebrou
+### 5.4 What broke
 
-**(a) armv7 sem Cranelift.** O Cranelift não gera código para ARM de 32 bits, e o wasmtime corre lá com o interpretador Pulley, estimado em uma ordem de grandeza mais lento do que o AOT (a medir). Para uma app com ciclo de 10 s e ~200 µs de cálculo, isto são ~2–4 ms, o que é aceitável. O desenho não muda, mas o `jk check` passa a **usar o WCET medido no alvo real** (`jk bench`), e não o do portátil (M23). Os modelos ML nativos (Burn Flex compilado para armv7) não são afetados, mas os modelos como componente Wasm (documento 06, §3.4) sim.
+**(a) armv7 without Cranelift.** Cranelift does not generate code for 32-bit ARM, and wasmtime runs there with the Pulley interpreter, estimated at an order of magnitude slower than AOT (to measure). For an app with a 10 s cycle and ~200 µs of computation, that is ~2–4 ms, which is acceptable. The design does not change, but `jk check` now **uses the WCET measured on the real target** (`jk bench`), not the one from the laptop (M23). Native ML models (Burn Flex compiled for armv7) are not affected, but models as a Wasm component (document 06, §3.4) are.
 
-**(b) 50 MB por mês.** Com 40 sinais a 1 min em Sparkplug B (~60 bytes por métrica com overhead), são ~100 MB/mês, o dobro do orçamento, e o alarme de uma falha na bomba não pode esperar pela próxima janela. **Lacuna a fechar → M12** (orçamentos de uplink com classes de prioridade, projeção mensal e degradação por agregação antes de descartar; alarmes nunca degradados).
+**(b) 50 MB per month.** With 40 signals at 1 min in Sparkplug B (~60 bytes per metric with overhead), that is ~100 MB/month, twice the budget, and the alarm for a pump fault cannot wait for the next window. **Gap to close → M12** (uplink budgets with priority classes, monthly projection and degradation by aggregation before discarding; alarms never degraded).
 
-**(c) 3 000 manifestos.** Copiar e colar manifestos garante deriva ao fim de seis meses. **Lacuna a fechar → M13** (overlays com `extends`, regras de fusão explícitas, envelopes que só podem apertar sem `widen` justificado, `jk diff`/`jk explain` com a origem de cada chave).
+**(c) 3,000 manifests.** Copying and pasting manifests guarantees drift within six months. **Gap to close → M13** (overlays with `extends`, explicit merge rules, envelopes that may only tighten without a justified `widen`, `jk diff`/`jk explain` with the origin of each key).
 
-**(d) Arrancar em 1970.** Os gateways armv7 não têm pilha de RTC. Depois de um corte de energia arrancam com a data de 1970 até o NTP responder, o que pode demorar minutos com LTE fraco. Os timestamps saem errados, a tarifa horária é aplicada à hora errada e as janelas das expressões ficam confusas. **Lacuna a fechar → M14** (qualidade do relógio por amostra e por tick, correspondência monotónica↔UTC corrigida retroativamente no historian, `requires_clock = "synced"` por app: sem relógio, as saídas da app vão para `safe`, e com as bombas de calor em SG-Ready "normal" o edifício continua aquecido).
+**(d) Booting in 1970.** The armv7 gateways have no RTC battery. After a power outage they boot with the date of 1970 until NTP responds, which can take minutes with weak LTE. The timestamps come out wrong, the hourly tariff is applied at the wrong time and the expression windows get confused. **Gap to close → M14** (clock quality per sample and per tick, monotonic↔UTC mapping corrected retroactively in the historian, `requires_clock = "synced"` per app: without a clock, the app's outputs go to `safe`, and with the heat pumps in SG-Ready "normal" the building stays heated).
 
-**(e) Desgaste do eMMC de 4 GB.** Com ~2 KB/s de escrita do historian mais o WAL, são ~63 GB/ano. Um eMMC de 4 GB com ~3 000 ciclos P/E aguenta ~12 TB, portanto ~190 anos no papel e muito menos com amplificação de escrita do controlador (a medir). É aceitável, mas o `fsync = "batch"` e os blocos de 4 KiB são obrigatórios, e o `jk doctor` passa a mostrar o desgaste estimado (`/sys/block/mmcblk0/device/life_time`).
+**(e) Wear of the 4 GB eMMC.** With ~2 KB/s of historian writes plus the WAL, that is ~63 GB/year. A 4 GB eMMC with ~3,000 P/E cycles withstands ~12 TB, so ~190 years on paper and much less with the controller's write amplification (to measure). It is acceptable, but `fsync = "batch"` and 4 KiB blocks are required, and `jk doctor` now shows the estimated wear (`/sys/block/mmcblk0/device/life_time`).
 
-**(f) Rollouts, coortes e estado desejado de 3 000 dispositivos.** Quem decide que 5% recebem primeiro a 3.2.0, e que se a taxa de alarmes subir se para? **Fronteira → 12, §7**: o Joker não é o servidor de frota. Fornece o **agente**: documento de estado desejado assinado (runtime, apps, modelos, config), estado reportado, saúde, aplicação com confirmação e rollback local. O servidor (coortes, ondas, painéis) é outro produto: pode ser construído por cima, ou usar-se Mender, balena ou similar para a camada de SO. O protocolo do agente fica especificado para isso ser possível.
+**(f) Rollouts, cohorts and desired state of 3,000 devices.** Who decides that 5% receive 3.2.0 first, and that if the alarm rate rises it stops? **Boundary → 12, §7**: Joker is not the fleet server. It provides the **agent**: signed desired-state document (runtime, apps, models, config), reported state, health, apply with confirmation and local rollback. The server (cohorts, waves, dashboards) is another product: it can be built on top, or Mender, balena or similar can be used for the OS layer. The agent protocol is specified so that this is possible.
 
-**(g) Três modelos de consumo de memória.** 512 MB com o SO, o `jokerd`, 3 apps Rust e o historian: ~120 MB no total, com folga. Uma app TypeScript (motor JS embutido, ~40 MB) já aperta. **Nota de desenho:** o `jk check` estima a memória total do site e falha com `J0380` acima de 70% da RAM da placa.
+**(g) Three memory consumption models.** 512 MB with the OS, `jokerd`, 3 Rust apps and the historian: ~120 MB in total, with headroom. A TypeScript app (embedded JS engine, ~40 MB) already makes it tight. **Design note:** `jk check` estimates the total memory of the site and fails with `J0380` above 70% of the board's RAM.
 
-### 5.5 Veredicto
+### 5.5 Verdict
 
-O "corre em qualquer lado" aguentou, com o custo conhecido do Pulley em armv7. As lacunas (M12–M14) são todas de **operação em escala**, e é nelas que os projetos de frota morrem. A fronteira do servidor de frota tem de ficar explícita para não virar *scope creep*.
+"Runs anywhere" held, with the known cost of Pulley on armv7. The gaps (M12–M14) are all about **operation at scale**, and that is where fleet projects die. The fleet server boundary must be made explicit so that it does not turn into *scope creep*.
 
 ---
 
-## Rodada 6 — ML a atuar ao lado de humanos: AVAC com política aprendida e assistente LLM
+## Round 6 — ML actuating alongside humans: HVAC with a learned policy and an LLM assistant
 
-### 6.1 O cenário
+### 6.1 The scenario
 
-Um edifício de escritórios com 12 000 m², 4 UTAs e 120 caixas VAV em BACnet/IP, e um sistema de gestão técnica (SGTC) existente que os operadores usam. Uma política (MPC com modelo aprendido, treinada offline num gémeo digital) propõe a cada 5 min a temperatura de insuflação das UTAs e os caudais mínimos das VAV, com o objetivo de −15% de energia sem sair da banda de conforto. Um LLM local (Jetson Orin) responde a perguntas dos operadores ("porque é que o 3.º piso está quente?") e sugere ações.
+An office building with 12,000 m², 4 AHUs and 120 VAV boxes on BACnet/IP, and an existing building management system (BMS) that the operators use. A policy (MPC with a learned model, trained offline on a digital twin) proposes every 5 min the supply temperature of the AHUs and the minimum flow rates of the VAVs, with the goal of −15% energy without leaving the comfort band. A local LLM (Jetson Orin) answers operators' questions ("why is the 3rd floor hot?") and suggests actions.
 
-### 6.2 O modelo
+### 6.2 The model
 
 ```toml
-# (1.1): modelos, fallback por KPI e escritores só-proposta
-[devices.bms] # prioridade BACnet usada pelo Joker
+# (1.1): models, KPI-based fallback and proposal-only writers
+[devices.bms] # BACnet priority used by Joker
 driver = "x:bacnet-ip"
 network = "10.20.0.0/16"
 priority = 12
 
-[drivers.bacnet-ip]                   # tier X sobre uma biblioteca C (6.4 g)
+[drivers.bacnet-ip]                   # tier X over a C library (6.4 g)
 tier = "x"
 exec = "/usr/lib/joker/drivers/joker-drv-bacnet-ip"
 
 [outputs."ahu*.supply_sp"]
 range = ["13 °C", "20 °C"]
 rate  = "0.5 °C/min"
-safe  = "relinquish"                 # entregar ao SGTC: liberta a prioridade BACnet do Joker
-interlock = "avg(zone.worst_temp_dev, 15m) < 1.5 K"   # 15 min é a janela máxima (J0305)
+safe  = "relinquish"                 # hand over to the BMS: releases Joker's BACnet priority
+interlock = "avg(zone.worst_temp_dev, 15m) < 1.5 K"   # 15 min is the maximum window (J0305)
 max_lease = "15m"
 
 [apps.hvac_policy]
 source = "oci://…/hvac-mpc:2.0.0"
 writer = { level = "optimizer", priority = 14, lease = "12m" }
-fallback = { controller = "app:hvac_rules", when = "ood_ratio(model:hvac_net, 30m) > 0.2 || !good(model:hvac_net)" }   # (1.1); `when` é um KPI, avaliado em bg (ref/01 §6.5)
+fallback = { controller = "app:hvac_rules", when = "ood_ratio(model:hvac_net, 30m) > 0.2 || !good(model:hvac_net)" }   # (1.1); `when` is a KPI, evaluated in bg (ref/01 §6.5)
 
 [apps.hvac_policy.shadow]
-of = "none"                          # primeira versão: sombra contra o que o SGTC faz hoje
+of = "none"                          # first version: shadow against what the BMS does today
 until = { duration = "14d" }
-promote = { outputs = "ahu3.**" }    # promoção parcial: só a UTA 3
+promote = { outputs = "ahu3.**" }    # partial promotion: only AHU 3
 
 [apps.assistant]
 path   = "apps/ops-assistant"
@@ -549,42 +549,42 @@ writer = { kind = "proposal" }       # M18 (1.1)
 bind   = { llm = "model:ops_llm" }   # (1.1)
 ```
 
-### 6.3 O que funcionou
+### 6.3 What worked
 
-- **O envelope limita a política.** O modelo pode estar errado, mas não pode pedir 8 °C de insuflação, nem mudar 5 °C num minuto, nem continuar a otimizar com uma zona fora de conforto há 15 minutos.
-- **O relinquish como estado seguro.** Aqui o "seguro" não é um valor: é **devolver o controlo ao SGTC**. `safe = "relinquish"` com um driver BACnet liberta da prioridade do Joker no *priority array* do equipamento, e o equipamento volta ao que o SGTC diz. O conceito de estado seguro do Joker generaliza sem esforço.
+- **The envelope bounds the policy.** The model may be wrong, but it cannot ask for 8 °C supply, nor change 5 °C in one minute, nor keep optimizing with a zone out of comfort for 15 minutes.
+- **Relinquish as the safe state.** Here "safe" is not a value: it is **handing control back to the BMS**. `safe = "relinquish"` with a BACnet driver releases Joker's priority in the equipment's *priority array*, and the equipment goes back to what the BMS says. Joker's safe-state concept generalizes effortlessly.
 
-### 6.4 O que quebrou
+### 6.4 What broke
 
-**(a) "O operador mexeu e o modelo desfez."** Um operador sobe a insuflação da UTA 2 no SGTC por uma queixa de frio, e 5 minutos depois o modelo volta a baixá-la. Isto é o que mata a confiança num sistema de otimização. São precisas duas camadas: no **equipamento**, o Joker escreve numa prioridade BACnet (12) *inferior* à dos operadores do SGTC (8), e por isso o override manual no SGTC ganha no próprio equipamento; no **Joker**, as escritas manuais pela CLI/HMI e as do modelo precisam de prioridades com leases, com o manual a expirar sozinho. **Lacuna a fechar → M15** (árbitro com 16 níveis e leases, TTL obrigatório nos níveis manuais; o nível BACnet do Joker é declarado por dispositivo e verificado).
+**(a) "The operator changed it and the model undid it."** An operator raises AHU 2's supply in the BMS because of a cold complaint, and 5 minutes later the model lowers it again. This is what kills trust in an optimization system. Two layers are needed: on the **equipment**, Joker writes at a BACnet priority (12) *lower* than that of the BMS operators (8), and so the manual override in the BMS wins in the equipment itself; in **Joker**, manual writes through the CLI/HMI and the model's writes need priorities with leases, with the manual one expiring on its own. **Gap to close → M15** (arbiter with 16 levels and leases, mandatory TTL on the manual levels; Joker's BACnet level is declared per device and verified).
 
-**(b) Pôr um modelo em produção sem fé.** "Ativamos e vemos" não é aceitável num edifício ocupado. **Lacuna a fechar → M16** (modo sombra: a política corre com as entradas reais e as suas escritas são gravadas como `Shadowed`, comparadas com o que o SGTC fez; promoção por critérios, **parcial por saídas** (só a UTA 3 primeiro) e com despromoção automática por KPI).
+**(b) Putting a model into production without faith.** "We switch it on and see" is not acceptable in an occupied building. **Gap to close → M16** (shadow mode: the policy runs with the real inputs and its writes are recorded as `Shadowed`, compared with what the BMS did; promotion by criteria, **partial by outputs** (only AHU 3 first) and with automatic demotion by KPI).
 
-**(c) Um dia fora do treino.** Uma onda de frio a −12 °C, nunca vista no gémeo digital. A política dá valores plausíveis, mas errados. **Lacuna a fechar → M17** (guarda de entrada no `.jkm` com estatísticas de treino; `Uncertain(OutOfDistribution)`; controlador de fallback declarado que ocupa o nível do modelo enquanto a condição se mantém).
+**(c) A day outside the training.** A cold wave at −12 °C, never seen in the digital twin. The policy gives plausible but wrong values. **Gap to close → M17** (input guard in the `.jkm` with training statistics; `Uncertain(OutOfDistribution)`; declared fallback controller that takes the model's level while the condition lasts).
 
-**(d) O LLM propõe, e alguém tem de aprovar.** O assistente sugere "subir o caudal mínimo das VAV do piso 3 para 40%". Deixá-lo escrever é inaceitável, e obrigar o operador a escrever o comando à mão perde o valor da sugestão. **Lacuna a fechar → M18** (escritores só-proposta: intenções com justificação e TTL, aprovadas por um humano com papel `operator`, executadas como escrita manual em nome de quem aprovou; tudo no registo de decisões).
+**(d) The LLM proposes, and someone must approve.** The assistant suggests "raise the minimum flow rate of the floor 3 VAVs to 40%". Letting it write is unacceptable, and forcing the operator to type the command by hand loses the value of the suggestion. **Gap to close → M18** (proposal-only writers: intents with justification and TTL, approved by a human with the `operator` role, executed as a manual write on behalf of whoever approved; everything in the decision log).
 
-**(e) Poupar energia à custa do conforto, devagar.** O envelope limita ações instantâneas, mas "a média de conforto piorou 0,4 K em duas semanas" é uma propriedade da política ao longo do tempo. As expressões de janela (`avg(…, 30m)`) cobrem parte, e os KPIs de despromoção do M16 cobrem o resto *depois* de o problema acontecer. **Fronteira → 12, §4**: o envelope limita o que um modelo pode fazer, não garante que o faça bem. A qualidade da política é responsabilidade de quem a treina e valida, e o Joker dá-lhe as ferramentas (sombra, KPIs, replay), não a garantia.
+**(e) Saving energy at the expense of comfort, slowly.** The envelope bounds instantaneous actions, but "average comfort worsened by 0.4 K in two weeks" is a property of the policy over time. Window expressions (`avg(…, 30m)`) cover part of it, and M16's demotion KPIs cover the rest *after* the problem happens. **Boundary → 12, §4**: the envelope bounds what a model can do, it does not guarantee that it does it well. The quality of the policy is the responsibility of whoever trains and validates it, and Joker gives them the tools (shadow, KPIs, replay), not the guarantee.
 
-**(f) Explicar uma decisão três meses depois.** "Porque é que a UTA 1 insuflou a 19 °C no dia 12 às 14:05?" O M3 (rastreio causal) responde com o tick, as entradas, a versão da app e a versão do modelo. Com o M22 (saídas do modelo gravadas), o replay reproduz exatamente a decisão. Não é preciso nada novo, e a rodada confirma o valor de M3 + M22.
+**(f) Explaining a decision three months later.** "Why did AHU 1 supply at 19 °C on the 12th at 14:05?" M3 (causal tracing) answers with the tick, the inputs, the app version and the model version. With M22 (model outputs recorded), the replay reproduces the decision exactly. Nothing new is needed, and the round confirms the value of M3 + M22.
 
-**(g) BACnet.** A pilha BACnet é complexa (descoberta, COV, segmentação), e o primeiro driver será tier X sobre uma biblioteca C madura. Não é uma lacuna de desenho, é trabalho de catálogo.
+**(g) BACnet.** The BACnet stack is complex (discovery, COV, segmentation), and the first driver will be tier X over a mature C library. It is not a design gap, it is catalog work.
 
-### 6.5 Veredicto
+### 6.5 Verdict
 
-Esta é a rodada que justifica o Joker face a "um script Python com uma biblioteca de ML". O envelope, a arbitragem com leases, a sombra, a guarda de entrada e as propostas com aprovação transformam "um modelo a mexer no edifício" em algo que um responsável de manutenção aceita. A fronteira do §6.4(e) tem de ficar dita sem rodeios.
+This is the round that justifies Joker against "a Python script with an ML library". The envelope, arbitration with leases, shadow, the input guard and proposals with approval turn "a model touching the building" into something a maintenance manager accepts. The boundary of §6.4(e) must be stated bluntly.
 
 ---
 
-## Resumo
+## Summary
 
-| # | Rodada | Eixo atacado | Lacunas fechadas | Fronteiras declaradas |
+| # | Round | Axis attacked | Gaps closed | Boundaries declared |
 |---|---|---|---|---|
-| 1 | BESS + FV (RevPi Connect 5) | robustez de campo, regulação | M1 fallback do dispositivo, M2 descoberta e lock, M3 rastreio causal | contagem fiscal |
-| 2 | Inspeção visual (RPi 5 + Hailo) | dados volumosos, latência determinista | M4 streams, M5 pipelines nativos, M6 escritas agendadas | compilação para NPU, privacidade de imagem |
-| 3 | Vibração + treino (CM5) | alta taxa, treino no local, alarmes | M7 sinais em bloco (e gravação por gatilho), M8 classes de recursos, M9 alarmes, M10 linhagem | amostragem por hardware acima de ~1 kHz |
-| 4 | AGV (x86 + EtherCAT + ROS 2) | multi-ritmo, interop, segurança | M11 pontes (M20 confirmado, com taxa proporcional) | segurança funcional, controlo > 1 kHz |
-| 5 | Frota heterogénea (3 000) | portabilidade, operação em escala | M12 orçamentos de uplink, M13 overlays, M14 qualidade do relógio | servidor de frota |
-| 6 | AVAC + LLM | ML a atuar, humanos no circuito | M15 arbitragem, M16 sombra, M17 guarda + fallback, M18 propostas | qualidade das decisões de modelos |
+| 1 | BESS + PV (RevPi Connect 5) | field robustness, regulation | M1 device fallback, M2 discovery and lock, M3 causal tracing | fiscal metering |
+| 2 | Visual inspection (RPi 5 + Hailo) | bulky data, deterministic latency | M4 streams, M5 native pipelines, M6 scheduled writes | compilation for NPU, image privacy |
+| 3 | Vibration + training (CM5) | high rate, on-site training, alarms | M7 block signals (and triggered recording), M8 resource classes, M9 alarms, M10 lineage | hardware sampling above ~1 kHz |
+| 4 | AGV (x86 + EtherCAT + ROS 2) | multi-rate, interop, safety | M11 bridges (M20 confirmed, with proportional rate) | functional safety, control > 1 kHz |
+| 5 | Heterogeneous fleet (3,000) | portability, operation at scale | M12 uplink budgets, M13 overlays, M14 clock quality | fleet server |
+| 6 | HVAC + LLM | ML actuating, humans in the loop | M15 arbitration, M16 shadow, M17 guard + fallback, M18 proposals | quality of model decisions |
 
-**Nenhuma rodada partiu o modelo central** (sinal + imagem de processo + envelope). Todas as lacunas se fecharam com primitivas **acrescentadas à volta** do núcleo, e nenhuma obrigou a alterar a semântica de leitura ou de escrita já definida. É o sinal de que a abstração está no sítio certo, e é também o risco: 18 primitivas é muito, e o roadmap (documento 11) põe-nas por ordem.
+**No round broke the central model** (signal + process image + envelope). All the gaps were closed with primitives **added around** the core, and none forced a change to the read or write semantics already defined. It is the sign that the abstraction is in the right place, and it is also the risk: 18 primitives is a lot, and the roadmap (document 11) puts them in order.

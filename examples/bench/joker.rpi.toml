@@ -1,0 +1,9 @@
+extends = ["joker.toml"]
+
+[devices.pi]
+driver = "sysfs"
+poll   = "1s"
+
+[devices.pi.signals]
+act_led  = { led = "ACT", direction = "output" }
+cpu_temp = { thermal = "thermal_zone0" }

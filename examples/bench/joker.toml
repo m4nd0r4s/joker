@@ -1,0 +1,16 @@
+[project]
+name  = "bench"
+joker = "1.0"
+mode  = "dev"
+
+[outputs."pi.act_led"]
+safe = false
+
+[cycles.main]
+period = "20ms"
+
+[apps.light]
+path   = "apps/light"
+bind   = { led = "pi.act_led" }
+params = { half_period = "500 ms" }
+cycles = { blink = "main" }

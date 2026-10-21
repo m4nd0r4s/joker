@@ -15,6 +15,13 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
 
+  codes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show
+      - run: cargo test -p joker-manifest --test corpus
+
   no-std:
     runs-on: ubuntu-latest
     strategy:
@@ -23,10 +30,223 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: rustup show
-      - run: cargo build --target ${{ matrix.target }} -p joker-units -p joker-expr -p joker-core
+      - run: cargo build --target ${{ matrix.target }} -p joker-units -p joker-expr -p joker-core -p joker-hal
+      - run: cargo build --target ${{ matrix.target }} -p joker-hal --features alloc,plan
+
+  conformance:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show
+      - run: >-
+          cargo run --package xtask -- conformance
+          --known-failures xtask/conformance-known-failures.toml
+          --json target/conformance/report.json
+          --markdown target/conformance/report.md
+      - if: always()
+        run: cat target/conformance/report.md >> "$GITHUB_STEP_SUMMARY" || true
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conformance-${{ matrix.arch }}
+          path: target/conformance/
+
+  qemu:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: thumbv8m
+            target: thumbv8m.main-none-eabihf
+            qemu: qemu-system-arm
+          - arch: riscv32
+            target: riscv32imac-unknown-none-elf
+            qemu: qemu-system-misc
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ${{ matrix.qemu }}
+      - name: conformance in QEMU, no allocator linked (docs/13 §5, docs/11 Phase 0 gates 2-3)
+        run: >-
+          cargo run --package xtask -- qemu --target ${{ matrix.target }}
+          --known-failures xtask/conformance-known-failures.toml
+          --json target/conformance/report.json
+          --markdown target/conformance/report.md
+      - name: lint the firmware for its target
+        run: >-
+          JOKER_CONFORMANCE_CASES="$PWD/target/qemu-conformance/cases.rs"
+          cargo clippy --target ${{ matrix.target }}
+          -p joker-qemu-conformance -p joker-qemu-sys -p joker-case-runner -- -D warnings
+      - if: always()
+        run: cat target/conformance/report.md >> "$GITHUB_STEP_SUMMARY" || true
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conformance-${{ matrix.arch }}
+          path: target/conformance/
+
+  determinism:
+    needs: [conformance, qemu]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: conformance-*
+      - name: same result sequence on x86_64, aarch64, Cortex-M33 and RISC-V (docs/16 §7, docs/11 Phase 0 gate 2)
+        run: |
+          digests() {
+            jq -S '[.suites[].cases[] | {id, status, sequence_digest}]' "$1/report.json"
+          }
+          status=0
+          for arch in aarch64 thumbv8m riscv32; do
+            if diff <(digests conformance-x86_64) <(digests "conformance-$arch"); then
+              echo "x86_64 = $arch"
+            else
+              echo "::error title=Determinism::$arch differs from x86_64"
+              status=1
+            fi
+          done
+          exit "$status"
+
+  xtensa:
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    env:
+      ESPUP_VERSION: 0.18.0
+      ESP_TOOLCHAIN: 1.99.0.0
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    outputs:
+      msrv: ${{ steps.msrv.outcome }}
+      build: ${{ steps.build.outcome }}
+      rust: ${{ steps.toolchain.outputs.rust }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/espup
+          key: espup-${{ env.ESPUP_VERSION }}-${{ runner.os }}
+      - name: esp toolchain ${{ env.ESP_TOOLCHAIN }} (espup ${{ env.ESPUP_VERSION }})
+        id: toolchain
+        run: |
+          command -v espup || cargo install espup --version "$ESPUP_VERSION" --locked
+          espup install --targets esp32 --toolchain-version "$ESP_TOOLCHAIN" --export-file "$HOME/export-esp.sh"
+          echo "rust=$(rustc +esp --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+      - name: core MSRV at most the esp toolchain (docs/13 §5.1)
+        id: msrv
+        continue-on-error: true
+        run: cargo run --package xtask -- msrv --max "${{ steps.toolchain.outputs.rust }}"
+      - name: core for xtensa-esp32-none-elf
+        id: build
+        continue-on-error: true
+        working-directory: xtask/xtensa-core
+        run: |
+          . "$HOME/export-esp.sh"
+          cargo +esp build --release --locked
+      - name: result
+        run: |
+          if [ "${{ steps.msrv.outcome }}" != success ] || [ "${{ steps.build.outcome }}" != success ]; then
+            echo "::warning title=Xtensa core build::msrv ${{ steps.msrv.outcome }}, build ${{ steps.build.outcome }} (non-blocking, docs/13 §5)"
+            exit 1
+          fi
+
+  xtensa-report:
+    needs: xtensa
+    if: always()
+    runs-on: ubuntu-24.04
+    permissions:
+      issues: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      MSRV: ${{ needs.xtensa.outputs.msrv }}
+      BUILD: ${{ needs.xtensa.outputs.build }}
+      RUST: ${{ needs.xtensa.outputs.rust }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: post the result on the pull request
+        if: github.event_name == 'pull_request'
+        env:
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          marker='<!-- xtensa-core -->'
+          body="$marker
+          **Xtensa core build** (non-blocking, docs/13 §5): MSRV check \`${MSRV:-skipped}\`, \`xtensa-esp32-none-elf\` build \`${BUILD:-skipped}\` with the esp toolchain (Rust ${RUST:-?}). [Run]($RUN_URL)"
+          id=$(gh api "repos/$GH_REPO/issues/$PR/comments" --paginate --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | head -n 1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$GH_REPO/issues/comments/$id" -f body="$body" || echo "::warning::could not update the PR comment"
+          else
+            gh pr comment "$PR" --body "$body" || echo "::warning::could not comment on the PR"
+          fi
+      - name: open or close the alert on main
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          title="Xtensa core build failing"
+          open=$(gh issue list --state open --search "in:title \"$title\"" --json number --jq '.[0].number')
+          if [ "$MSRV" = success ] && [ "$BUILD" = success ]; then
+            [ -z "$open" ] || gh issue close "$open" --comment "Fixed on ${{ github.sha }}: $RUN_URL"
+          elif [ -z "$open" ]; then
+            gh issue create --title "$title" --body "MSRV check: $MSRV, build: $BUILD (Rust $RUST). $RUN_URL. A failure on Xtensa is fixed before the end of the phase (docs/13 §5)."
+          else
+            gh issue comment "$open" --body "Still failing on ${{ github.sha }}: $RUN_URL"
+          fi
+
+  bench-firmware-logic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show
+      - run: cargo fmt --all --check --manifest-path tools/bench/esp32-modbus/Cargo.toml
+      - run: cargo clippy --manifest-path tools/bench/esp32-modbus/logic/Cargo.toml --all-targets -- -D warnings
+      - run: cargo test --manifest-path tools/bench/esp32-modbus/logic/Cargo.toml
 
   deny:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: EmbarkStudios/cargo-deny-action@v2
+
+  vet:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show
+      - run: cargo install --locked cargo-vet --version 0.10.2
+      - run: cargo vet --locked
+
+  supply-chain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show
+      - run: cargo test --locked -p joker-supply-chain
+
+  spec-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python3 tools/spec-lint/spec_lint.py --max-score 0.5
+      - run: python3 -c "import tomllib; tomllib.load(open('crates/joker-manifest/codes.toml', 'rb'))"
+
+  cross-aarch64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cross
+      - run: cross build --release --target aarch64-unknown-linux-gnu -p jokerd

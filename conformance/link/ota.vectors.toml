@@ -1,0 +1,32 @@
+schema = 1
+
+[vectors]
+kind        = "link.ota"
+id          = "link.ota"
+spec        = ["ref/07 §9.1", "ref/08 §2.13.5"]
+hosts       = ["linux", "mcu"]
+description = "The signed OTA manifest: Ed25519 key, key id, board id, image digest, deterministic manifest, Sig_structure and the COSE_Sign1 that is also the trailer of a generation blob"
+
+[[vector]]
+id             = "generation_manifest"
+op             = "cose_sign1"
+spec           = ["ref/07 §9.1"]
+seed           = "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f"
+public_key     = "174553b456dddfc6908ecab1c101fe6ab21e2baa0617795b7d43a63482993fd5"
+kid            = "68894d58f18f2c34d49eb2f4b110e042"
+board          = "acme/io16-rp2350@1"
+board_id       = "8bb5bccf6eedea71"
+image_zero_len = 8192
+image_digest   = "9f1dcbc35c350d6027f98be0f5c8b43b42ca52b7604459c0c42be3aa88913d47"
+manifest_diag  = """
+{1: 1, 2: "acme/io16-rp2350", 3: "8", 4: 8192,
+ 5: h'9f1dcbc35c350d6027f98be0f5c8b43b42ca52b7604459c0c42be3aa88913d47',
+ 6: 3, 7: 8,
+ 8: h'85378bbfa265d5109625f8c9e2e5e280e8e8e2af3497a4dfc8d74159b357553f',
+ 9: h'd1d9be4b6c268eef97fb159f5743637124413bd9a93a991d3ec8225bd33faae8',
+ 11: [1, 0], 12: h'8bb5bccf6eedea71', 13: 1}"""
+manifest       = "ac0101027061636d652f696f31362d727032333530036138041920000558209f1dcbc35c350d6027f98be0f5c8b43b42ca52b7604459c0c42be3aa88913d470603070808582085378bbfa265d5109625f8c9e2e5e280e8e8e2af3497a4dfc8d74159b357553f095820d1d9be4b6c268eef97fb159f5743637124413bd9a93a991d3ec8225bd33faae80b8201000c488bb5bccf6eedea710d01"
+protected      = "a20127045068894d58f18f2c34d49eb2f4b110e042"
+sig_structure_sha256 = "796d7461d9e6b947f2c917d334003992816699f859192088a9643800e59a0ef1"
+signature      = "9bd8741baa97ce1667cfb12570f4cd84af9377d6d2cd5a7449a8a1d1e96ea616aec54e5722cf1a462703d9ebf8125162fd9041c8eca71e98517d4c9c155f960c"
+cose_sign1     = "d28455a20127045068894d58f18f2c34d49eb2f4b110e042a05899ac0101027061636d652f696f31362d727032333530036138041920000558209f1dcbc35c350d6027f98be0f5c8b43b42ca52b7604459c0c42be3aa88913d470603070808582085378bbfa265d5109625f8c9e2e5e280e8e8e2af3497a4dfc8d74159b357553f095820d1d9be4b6c268eef97fb159f5743637124413bd9a93a991d3ec8225bd33faae80b8201000c488bb5bccf6eedea710d0158409bd8741baa97ce1667cfb12570f4cd84af9377d6d2cd5a7449a8a1d1e96ea616aec54e5722cf1a462703d9ebf8125162fd9041c8eca71e98517d4c9c155f960c"

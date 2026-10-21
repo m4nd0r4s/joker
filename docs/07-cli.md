@@ -1,311 +1,311 @@
 # 07 — CLI (`jk`)
 
-A `jk` é o único ponto de contacto para quem desenvolve e opera, e é também um cliente da API local (documento 01, §14): tudo o que ela faz, uma HMI ou um script também pode fazer. A biblioteca que a `jk` usa é o crate `joker-client` (ref/05, parte B).
+`jk` is the only point of contact for those who develop and operate, and it is also a client of the local API (document 01, §14): everything it does, an HMI or a script can also do. The library that `jk` uses is the `joker-client` crate (ref/05, part B).
 
-**Onde está o detalhe.** Os endpoints que cada comando usa estão na tabela de mapeamento da ref/09, §9.1, e os códigos de saída na ref/09, §9.2. A configuração do cliente, os contextos de nós, o lock, os segredos e a confiança estão na ref/02. Os comandos do agente e do enrolamento pelo Deck estão na ref/10, §2.18. Este documento é o índice dos comandos; onde uma referência define uma opção, vale a referência.
+**Where the detail is.** The endpoints each command uses are in the mapping table of ref/09, §9.1, and the exit codes in ref/09, §9.2. The client configuration, the node contexts, the lock, the secrets and trust are in ref/02. The agent commands and the enrollment through the Deck are in ref/10, §2.18. This document is the index of the commands; where a reference defines an option, the reference prevails.
 
-## 1. Princípios
+## 1. Principles
 
-1. **O mesmo comando no portátil e no dispositivo.** `--node <alvo>` (ou `JK_NODE`) aponta para um `jokerd`. Aceita um nome de contexto de `[nodes]` do ficheiro do cliente, `local`, ou um endereço literal: `unix:<caminho>`, `<host>:<porta>` (TCP com mTLS; um nome sem porta, que não seja um contexto, vai à 7443) ou `ssh://[<utilizador>@]<host>[:<porta>]` (túnel SSH até ao socket Unix do nó). A resolução está na ref/02, §3.3.1. Sem alvo, usa a runtime local.
-2. **Erros ao estilo do rustc:** código, localização no ficheiro, explicação, ajuda. `jk explain J0107` mostra a página completa.
-3. **Nada perigoso sem ser explícito.** Escritas manuais pedem `--ttl` e `--reason` e mostram o envelope antes de aplicar; `apply` em `prod` exige `--confirm` quando a geração mexe em rede, segurança, uplinks ou na própria API (ADR 0015). Os comandos que mudam o nó mostram na primeira linha o nó, o modo e de onde veio a escolha (`→ lisboa-01 (prod) · de JK_NODE`). `--confirm`, `--yes`, `--ttl`, `--reason`, `--level`, `--reveal` e `--allow-dev` **não têm variável de ambiente**, de propósito (ref/02, §2.3.3).
-4. **Saída para humanos por omissão e `--json` sempre disponível.** As saídas humanas que aparecem nos documentos e na trilha são **ilustrativas**: o texto, a ordem e o alinhamento podem mudar entre versões sem aviso. O contrato é o `--json`, que é o JSON da API (ref/09) do endpoint que o comando usa (ref/09, §9.1), sem embrulho; nos comandos locais, o da referência do comando. Scripts e testes usam o `--json`.
-5. **`--env <variante>`** (ou `JK_ENV`) escolhe o overlay de entrada pela variante: `--env lab` é `--manifest joker.lab.toml` (ADR 0026). É assim que se alterna entre overlays (`--env sim`, `--env rpi`). **`--manifest <ficheiro>`** (ou `JK_MANIFEST`) aceita qualquer caminho (`--manifest sites/lisboa-01/joker.verao.toml`); um ficheiro com nome fora da regra `joker.<variante>.toml` dá o aviso `J0169`. Por omissão, `joker.toml`. As duas opções juntas são um erro de utilização; a precedência entre opções, variáveis e `.joker/config.toml` (`defaults.env`, `defaults.manifest`) está na ref/01 §7.7. Cada manifesto de entrada tem o seu lock na mesma pasta: `joker.lock` para o `joker.toml`, `joker.<variante>.lock` para cada overlay (`--env rpi` → `joker.rpi.lock`); `--lock <ficheiro>` escolhe outro.
-6. **Opções globais:** `--node`, `--env`, `--manifest`, `--lock`, `--locked` (nenhum comando escreve o lock; qualquer mudança necessária é `J0411`, é a opção para CI), `--offline` (só a cache local), `--json`, `--color`, `--timeout`, `--cert`, `--key`, `--ca`, `--sign-key`. Precedência: opção > variável `JK_*` > `.joker/config.toml` do projeto > `config.toml` do utilizador > omissão. `jk config show [--origin]` mostra o valor efetivo e de onde veio (ref/02, §2.3).
-7. **Pedidos estritos, versões misturadas.** A `jk` pergunta ao nó que versão e que funcionalidades tem e recusa, com uma mensagem clara, uma opção que o nó não suporta (ref/09, §9.3). As opções 1.1 existem na `jk` 1.0 e respondem `J-E1017`.
-8. **Nunca se compila no nó.** O `jokerd`, os drivers tier X, as apps e o AOT (`.cwasm`) compilam-se no portátil ou na CI, por build cruzado para o triplo da placa (`aarch64-unknown-linux-gnu`, `armv7-unknown-linux-gnueabihf`, `arm-unknown-linux-gnueabihf` para o ARMv6 do Pi Zero W, `x86_64-unknown-linux-gnu`), e só depois se enviam ao nó (`jk apply`, `jk runtime upgrade`, ou o Deck). O `jk runtime build` e o `jk dev --node` compilam **no portátil** e enviam o resultado; nenhum comando pede um compilador, o `cargo` ou os cabeçalhos do kernel no nó. Uma placa de 512 MiB não compila o `jokerd`, e um nó de produção não deve ter uma toolchain.
+1. **The same command on the laptop and on the device.** `--node <target>` (or `JK_NODE`) points at a `jokerd`. It accepts a context name from `[nodes]` in the client file, `local`, or a literal address: `unix:<path>`, `<host>:<port>` (TCP with mTLS; a name without a port, which is not a context, goes to 7443) or `ssh://[<user>@]<host>[:<port>]` (SSH tunnel to the node's Unix socket). The resolution is in ref/02, §3.3.1. Without a target, it uses the local runtime.
+2. **Errors in the style of rustc:** code, location in the file, explanation, help. `jk explain J0107` shows the full page.
+3. **Nothing dangerous without being explicit.** Manual writes require `--ttl` and `--reason` and show the envelope before applying; `apply` in `prod` requires `--confirm` when the generation touches network, security, uplinks or the API itself (ADR 0015). The commands that change the node show on the first line the node, the mode and where the choice came from (`→ lisboa-01 (prod) · from JK_NODE`). `--confirm`, `--yes`, `--ttl`, `--reason`, `--level`, `--reveal` and `--allow-dev` **have no environment variable**, on purpose (ref/02, §2.3.3).
+4. **Human output by default and `--json` always available.** The human outputs that appear in the documents and in the track are **illustrative**: the text, the order and the alignment may change between versions without notice. The contract is `--json`, which is the API JSON (ref/09) of the endpoint the command uses (ref/09, §9.1), without a wrapper; for local commands, the one in the command's reference. Scripts and tests use `--json`.
+5. **`--env <variant>`** (or `JK_ENV`) chooses the input overlay by variant: `--env lab` is `--manifest joker.lab.toml` (ADR 0026). This is how you switch between overlays (`--env sim`, `--env rpi`). **`--manifest <file>`** (or `JK_MANIFEST`) accepts any path (`--manifest sites/lisboa-01/joker.summer.toml`); a file whose name is outside the `joker.<variant>.toml` rule gives warning `J0169`. By default, `joker.toml`. Both options together are a usage error; the precedence between options, variables and `.joker/config.toml` (`defaults.env`, `defaults.manifest`) is in ref/01 §7.7. Each input manifest has its lock in the same directory: `joker.lock` for `joker.toml`, `joker.<variant>.lock` for each overlay (`--env rpi` → `joker.rpi.lock`); `--lock <file>` chooses another.
+6. **Global options:** `--node`, `--env`, `--manifest`, `--lock`, `--locked` (no command writes the lock; any necessary change is `J0411`, it is the option for CI), `--offline` (local cache only), `--json`, `--color`, `--timeout`, `--cert`, `--key`, `--ca`, `--sign-key`. Precedence: option > `JK_*` variable > the project's `.joker/config.toml` > the user's `config.toml` > default. `jk config show [--origin]` shows the effective value and where it came from (ref/02, §2.3).
+7. **Strict requests, mixed versions.** `jk` asks the node what version and what features it has and rejects, with a clear message, an option the node does not support (ref/09, §9.3). The 1.1 options exist in `jk` 1.0 and answer `J-E1017`.
+8. **Nothing is ever compiled on the node.** `jokerd`, tier X drivers, apps and AOT (`.cwasm`) are compiled on the laptop or in CI, by cross build for the board's triple (`aarch64-unknown-linux-gnu`, `armv7-unknown-linux-gnueabihf`, `arm-unknown-linux-gnueabihf` for the ARMv6 of the Pi Zero W, `x86_64-unknown-linux-gnu`), and only then sent to the node (`jk apply`, `jk runtime upgrade`, or the Deck). `jk runtime build` and `jk dev --node` compile **on the laptop** and send the result; no command requires a compiler, `cargo` or the kernel headers on the node. A 512 MiB board does not compile `jokerd`, and a production node should not have a toolchain.
 
 ---
 
-## 2. Projeto e desenvolvimento
+## 2. Project and development
 
-| Comando | Faz |
+| Command | Does |
 |---|---|
-| `jk init [--name <n>]` | transforma a pasta atual (vazia) num projeto: `joker.toml` mínimo, `sim/`, `.gitignore` e um `.taplo.toml` que associa cada sufixo (`*.profile.toml`, `*.board.toml`, `*.sim.toml`, `*.scenario.toml`, `joker*.toml`…) ao esquema JSON do seu tipo, para completação e erros no editor (ADR 0026; ref/03 §2.1.6). O `jk new` escreve o mesmo |
-| `jk new <nome> [--template sim-tank\|bess\|vision\|vibration\|empty]` | cria um projeto numa pasta nova (manifesto, app de exemplo, cenários `sim/`) |
-| `jk app new <nome> [--lang rust\|ts\|py]` | cria uma app em `apps/` (TypeScript na 1.0, Python na 1.2; ref/05) |
-| `jk check` | valida o manifesto, as ligações, as unidades, os envelopes, a admissão RT (M23), o orçamento dos barramentos, os segredos referidos e as capacidades dos MCUs (`J0710`); com `--node`, também no nó (`dry_run`) |
-| `jk fmt [<ficheiro>…] [--check]` | forma canónica dos TOML e dos cenários: literais de duração canónicos, formas de apresentação (`Bad(CommFailure)`) reescritas em `snake_case` (ref/00, §2 e §3.1) |
-| `jk build [--target <placa\|triplo>] [--world joker:runtime@<v>]` | compila as apps para Wasm, pré-compila o AOT para o alvo; `--world` gera para um nó mais antigo (ref/05). Os alvos MCU estão no §2.2 |
-| `jk dev [--node <alvo>] [--panel]` | corre a runtime (local com `sim`, ou remota) com hot-reload das apps e do manifesto a cada gravação; com `--node`, compila as apps e o AOT no portátil e envia-os ao nó (§1, princípio 8); `--panel` mostra um painel interativo com os sinais `sim` que declaram `panel` (lâmpadas, botões por tecla, sliders) |
-| `jk test [cenário…] [--fuzz N]` | testes unitários das apps e cenários de site (`sim/`) com relógio virtual |
-| `jk bench [<app>] [--target mcu:<placa>]` | mede o WCET das tarefas de ciclo no alvo e grava-o no `[wcet]` do lock (mínimo de 10 000 execuções; ref/02, §2.1.13). Num MCU, com o contador de ciclos do núcleo: por sonda, ou, numa placa sem sonda (`[probe] tool = "espflash"`), por série (ref/08, §2.12.5) |
-| `jk diff [--against <geração\|ficheiro>]` | manifesto efetivo depois dos overlays; diferenças face ao que está a correr |
-| `jk explain <chave\|código\|pipeline>` | origem de uma chave (overlay), explicação de um erro, plano de um pipeline |
-| `jk explain <caminho de saída>` | o estado do árbitro de uma saída, no nó: grupo dono, níveis ocupados (escritor, valor, lease), nível ativo, envelope e último resultado (`GET /v1/outputs/{path}`, `OutputState`; ref/09, §5.6). Um argumento que é ao mesmo tempo uma chave do manifesto e uma saída é lido como saída; `jk explain 'outputs."<saída>"'` pede a chave |
-| `jk inspect <app.wasm\|driver.wasm\|firmware.jkfw\|model.jkm>` | metadados: portas, tarefas, mundo WIT, assinatura, linhagem; o descritor de um driver; o descritor de um firmware (ref/08, §2.14) |
-| `jk lsp` | servidor de linguagem para os TOML e os `.jkc` |
-| `jk sim <cenário>` | corre só a planta simulada, sem apps (para ver a dinâmica) |
+| `jk init [--name <n>]` | turns the current (empty) directory into a project: minimal `joker.toml`, `sim/`, `.gitignore` and a `.taplo.toml` that associates each suffix (`*.profile.toml`, `*.board.toml`, `*.sim.toml`, `*.scenario.toml`, `joker*.toml`…) with the JSON schema of its type, for completion and errors in the editor (ADR 0026; ref/03 §2.1.6). `jk new` writes the same |
+| `jk new <name> [--template sim-tank\|bess\|vision\|vibration\|empty]` | creates a project in a new directory (manifest, example app, `sim/` scenarios) |
+| `jk app new <name> [--lang rust\|ts\|py]` | creates an app in `apps/` (TypeScript and Python in 1.2; ref/05, document 26 §5) |
+| `jk check` | validates the manifest, the bindings, the units, the envelopes, RT admission (M23), the bus budget, the referenced secrets and the MCU capabilities (`J0710`); with `--node`, also on the node (`dry_run`) |
+| `jk fmt [<file>…] [--check]` | canonical form of the TOML files and the scenarios: canonical duration literals, display forms (`Bad(CommFailure)`) rewritten in `snake_case` (ref/00, §2 and §3.1) |
+| `jk build [--target <board\|triple>] [--world joker:runtime@<v>]` | compiles the apps to Wasm, precompiles the AOT for the target; `--world` generates for an older node (ref/05). The MCU targets are in §2.2 |
+| `jk dev [--node <target>] [--panel]` | runs the runtime (local with `sim`, or remote) with hot-reload of the apps and the manifest on every save; with `--node`, compiles the apps and the AOT on the laptop and sends them to the node (§1, principle 8); `--panel` shows an interactive dashboard with the `sim` signals that declare `panel` (lamps, buttons by key, sliders) |
+| `jk test [cenário…] [--fuzz N]` | unit tests of the apps and site scenarios (`sim/`) with a virtual clock |
+| `jk bench [<app>] [--target mcu:<board>]` | measures the WCET of the cycle tasks on the target and records it in the lock's `[wcet]` (minimum of 10,000 runs; ref/02, §2.1.13). On an MCU, with the core's cycle counter: by probe, or, on a board without a probe (`[probe] tool = "espflash"`), over serial (ref/08, §2.12.5) |
+| `jk diff [--against <generation\|file>]` | effective manifest after the overlays; differences from what is running |
+| `jk explain <key\|code\|pipeline>` | origin of a key (overlay), explanation of an error, plan of a pipeline |
+| `jk explain <output path>` | the arbiter state of an output, on the node: owning group, occupied levels (writer, value, lease), active level, envelope and last result (`GET /v1/outputs/{path}`, `OutputState`; ref/09, §5.6). An argument that is at the same time a manifest key and an output is read as an output; `jk explain 'outputs."<output>"'` asks for the key |
+| `jk inspect <app.wasm\|driver.wasm\|firmware.jkfw\|model.jkm>` | metadata: ports, tasks, WIT world, signature, lineage; the descriptor of a driver; the descriptor of a firmware (ref/08, §2.14) |
+| `jk lsp` | language server for the TOML files and the `.jkc` files (1.0.x; document 26, §5) |
+| `jk sim <scenario>` | runs only the simulated plant, without apps (to see the dynamics) |
 
-### 2.1 O lock
+### 2.1 The lock
 
-O detalhe (o que cada opção escreve e a forma canónica) está na ref/02, §2.1.15 e §3.1.
+The detail (what each option writes and the canonical form) is in ref/02, §2.1.15 and §3.1.
 
-| Comando | Faz |
+| Command | Does |
 |---|---|
-| `jk lock` | resolve placas, perfis, classes, apps, drivers e MCUs; copia as aprovações (`accepted`); poda entradas órfãs. Nunca sobe uma versão que ainda satisfaz o manifesto |
-| `jk lock --node <nó>` | também captura, pelo nó e só com leituras, a descoberta e os fallbacks **em falta**, e escreve `runtime` e `node` |
-| `jk lock --update <seletor> --node <nó>` | recaptura os dispositivos indicados (depois de uma deriva) |
-| `jk lock --rebind --node <nó>` | aceita um nó diferente do registado e recaptura tudo; mantém o WCET se a placa for a mesma (um template copiado para outro site) |
-| `jk lock --upgrade [<referência>…]` | volta a resolver para a versão mais recente dentro da major |
-| `jk lock --check` | não escreve; em CI falha com o código 7 se o lock estiver desatualizado ou com deriva |
-| `jk lock --offline` | só a cache local; o que não se resolve é `J0411` |
+| `jk lock` | resolves boards, profiles, classes, apps, drivers and MCUs; copies the approvals (`accepted`); prunes orphan entries. It never bumps a version that still satisfies the manifest |
+| `jk lock --node <node>` | also captures, through the node and with reads only, the **missing** discovery and fallbacks, and writes `runtime` and `node` |
+| `jk lock --update <selector> --node <node>` | recaptures the indicated devices (after a drift) |
+| `jk lock --rebind --node <node>` | accepts a node different from the recorded one and recaptures everything; keeps the WCET if the board is the same (a template copied to another site) |
+| `jk lock --upgrade [<reference>…]` | resolves again to the most recent version within the major |
+| `jk lock --check` | does not write; in CI fails with code 7 if the lock is outdated or has drift |
+| `jk lock --offline` | local cache only; what does not resolve is `J0411` |
 
-Em `dev`, `jk check`, `jk build`, `jk dev` e `jk test` atualizam sozinhos as secções que não precisam do nó; em `prod`, nunca. `jk apply` nunca escreve o lock.
+In `dev`, `jk check`, `jk build`, `jk dev` and `jk test` update by themselves the sections that do not need the node; in `prod`, never. `jk apply` never writes the lock.
 
-### 2.2 Joker Micro: build e gravação
+### 2.2 Joker Micro: build and flashing
 
-| Comando | Faz |
+| Command | Does |
 |---|---|
-| `jk build --target mcu:<placa>` | firmware com a geração embutida (ELF, UF2 ou bin) |
-| `jk build --target mcu:<placa> --generic` | firmware genérico, que lê a geração da flash, e o seu descritor `firmware.jkfw`; traz todos os transportes do `[link] transports` da placa (ref/08, §2.12.1) |
-| `jk build --target mcu:<placa> --generation --firmware <firmware.jkfw> [--check-reproducible]` | o blob de geração `<site>.jkgen`, assinado (em `dev`, pode ir sem assinatura, e o firmware aceita-o; em `prod`, `J0779`), no formato e na ISA que esse firmware entende (`J0789` se precisar de mais); `--check-reproducible` constrói duas vezes e compara |
-| `jk build --target mcu:<placa> --lib` | modo biblioteca C: `libjoker_node.a`, `joker_node.h` (fixo) e `joker_project.h` (gerado) |
-| `jk build --target mcu:<placa> --crate` | modo crate: o crate gerado `joker-project` em `target/joker/crate/` |
-| `jk flash [--identity]` | grava o firmware, o blob e, com `--identity`, a área de identidade: por sonda (`probe-rs`) ou por série (`espflash`, no ESP32), conforme o `[probe]` da placa (ref/03 §2.3.3) |
-| `jk trace-dump --probe` | lê os anéis de traço da RAM de um MCU por sonda, sem símbolos |
+| `jk build --target mcu:<board>` | firmware with the embedded generation (ELF, UF2 or bin) |
+| `jk build --target mcu:<board> --generic` | generic firmware, which reads the generation from flash, and its descriptor `firmware.jkfw`; it carries all the transports of the board's `[link] transports` (ref/08, §2.12.1) |
+| `jk build --target mcu:<board> --generation --firmware <firmware.jkfw> [--check-reproducible]` | the generation blob `<site>.jkgen`, signed (in `dev`, it may go unsigned, and the firmware accepts it; in `prod`, `J0779`), in the format and ISA that firmware understands (`J0789` if it needs more); `--check-reproducible` builds twice and compares |
+| `jk build --target mcu:<board> --lib` | C library mode: `libjoker_node.a`, `joker_node.h` (fixed) and `joker_project.h` (generated); **1.2** (ref/08 §1) |
+| `jk build --target mcu:<board> --crate` | crate mode: the generated crate `joker-project` in `target/joker/crate/` |
+| `jk flash [--identity]` | flashes the firmware, the blob and, with `--identity`, the identity area: by probe (`probe-rs`) or over serial (`espflash`, on the ESP32), according to the board's `[probe]` (ref/03 §2.3.3) |
+| `jk trace-dump --probe` | reads the trace rings from an MCU's RAM by probe, without symbols |
 
-Os modos e os artefactos estão no documento 19, §4, e na ref/08, §2.2, §2.12–§2.14.
+The modes and the artifacts are in document 19, §4, and in ref/08, §2.2, §2.12–§2.14.
 
-## 3. Nó e deploy
+## 3. Node and deploy
 
-Um **nó** é uma placa com `jokerd` (documento 15, §1). A opção `--node` escolhe o nó; os `[devices]` do manifesto são outra coisa (os equipamentos com que o nó fala).
+A **node** is a board with `jokerd` (document 15, §1). The `--node` option chooses the node; the manifest's `[devices]` are something else (the equipment the node talks to).
 
-| Comando | Faz |
+| Command | Does |
 |---|---|
-| `jk node enroll <alvo> …` | enrolamento: identidade P-256 (no TPM se existir) e chave KEM X25519, certificado, âncoras; opções no §3.1 |
-| `jk node renew` | renova o certificado já (a chave KEM mantém-se) |
-| `jk node trust show` | bundle de confiança ativo, âncoras, versão, chaves por papel |
-| `jk node trust push <bundle.cose>` | instala um bundle novo (assinado por uma âncora, `version` maior) |
-| `jk node trust set --anchors <keys/…pub>… [--revoked <id>…]` | troca de âncoras, assinada por uma âncora atual; é, com o enrolamento, a única escrita no `node.toml` |
-| `jk doctor [--ml] [--rt] [--allow-live]` | verifica o kernel (PREEMPT_RT, `isolcpus`), permissões, grupos, watchdog, relógio, aceleradores (e se são reais), disco, fallbacks dos dispositivos, ficheiros do nó alterados à mão (`J0907`); `--rt` com saídas ativas em `prod` exige `--allow-live` (ref/09, §5.17) |
-| `jk apply [--confirm 5m] [--dry-run]` | envia a configuração, os artefactos e os segredos que a geração refere, mostra o plano de diff (o que reinicia, o que recarrega, porque pede confirmação) e aplica |
-| `jk publish --manifest <m>… [--registry <oci>] [--sign-key <papel>=<chave>…]` | para uma frota com Deck: para cada manifesto de entrada, calcula a geração do nó (manifesto efetivo, lock, contratos e artefactos por digest; o mesmo descritor e o mesmo hash que o `jk apply` e o Deck calculam, ref/10 §2.6.2), **assina-a** com a chave do papel `config`, assina as apps (`apps`), os drivers W e X (`drivers`) e os blobs de geração dos MCUs (`config`), e publica tudo no registo (omissão: `defaults.registry`), que é o `artifacts.store` do Deck (documento 20, §4.4.2). `--sign-key` repete-se por papel; sem ela, `user.signing_key` para todos. Não fala com nenhum nó. O Deck só distribui artefactos assim assinados: sem eles, regista `J0915` e não emite nada para esse nó. Um papel sem chave, ou uma chave que o bundle não dá a esse papel, faz o `jk publish` falhar antes de publicar (`J0915`, `J0292`) |
-| `jk confirm` | confirma a geração pendente e, com ela, o OTA de cada MCU que essa ativação pôs em experiência (geração ou firmware; ref/07 §9.4, ref/09 §5.13) |
-| `jk rollback [<geração>]` | reativa uma geração anterior (a mesma, com o mesmo número e o mesmo hash; ref/00, §5) |
-| `jk generations` | histórico de ativações (quem, quando, origem, diff, estado) |
-| `jk runtime upgrade <versão>` | OTA da runtime (slots A/B) |
-| `jk runtime build --features <lista> [--target <placa\|triplo>]` | build personalizado do `jokerd` com drivers e backends tier N (documento 09, ataque 7), **no portátil ou na CI**, por build cruzado para o triplo da placa (§1, princípio 8); o resultado chega ao nó pelo `jk runtime upgrade` (upload `joker.runtime.v1`, ref/09) |
-| `jk migrate [--dry-run]` | reescreve manifestos e locks para o esquema da runtime atual (opcional na série 1; obrigatório na 2.0). Também **renomeia os ficheiros de um projeto anterior à ADR 0026** (tipo no nome): perfis (`profiles/x/y@1.toml` → `…@1.profile.toml`), placas (`.board.toml`), modelos de simulação (`sim/esp.toml` → `sim/esp.sim.toml`), cenários (`.scenario.toml`), suites (`.conformance.toml`), pacotes (`package.toml` → `<pacote>.package.toml`), fixtures de drivers (`.fixture.toml`) e overlays (`rpi.toml` → `joker.rpi.toml`, com o lock `rpi.lock` → `joker.rpi.lock`). O tipo de cada ficheiro decide-se pelo conteúdo (a tabela de identificação, ref/03 §2.1.6), e não pela pasta; os ficheiros que não consegue classificar ficam como estão e são listados. Atualiza as referências por caminho (`extends`, `model`, `manifest` dos cenários) e acrescenta o `.taplo.toml` se faltar. Usa `git mv` quando o projeto está num repositório Git, para o histórico seguir os ficheiros. `--dry-run` mostra as mudanças sem as fazer |
+| `jk node enroll <target> …` | enrollment: P-256 identity (in the TPM if there is one) and X25519 KEM key, certificate, anchors; options in §3.1 |
+| `jk node renew` | renews the certificate now (the KEM key is kept) |
+| `jk node trust show` | active trust bundle, anchors, version, keys per role |
+| `jk node trust push <bundle.cose>` | installs a new bundle (signed by an anchor, greater `version`) |
+| `jk node trust set --anchors <keys/…pub>… [--revoked <id>…]` | change of anchors, signed by a current anchor; it is, with enrollment, the only write to `node.toml` |
+| `jk doctor [--ml] [--rt] [--allow-live]` | checks the kernel (PREEMPT_RT, `isolcpus`), permissions, groups, watchdog, clock, accelerators (and whether they are real), disk, device fallbacks, node files changed by hand (`J0907`); `--rt` with live outputs in `prod` requires `--allow-live` (ref/09, §5.17) |
+| `jk apply [--confirm 5m] [--dry-run]` | sends the configuration, the artifacts and the secrets that the generation refers to, shows the diff plan (what restarts, what reloads, why it asks for confirmation) and applies |
+| `jk publish --manifest <m>… [--registry <oci>] [--sign-key <role>=<key>…]` | for a fleet with a Deck: for each input manifest, computes the node's generation (effective manifest, lock, contracts and artifacts by digest; the same descriptor and the same hash that `jk apply` and the Deck compute, ref/10 §2.6.2), **signs it** with the key of the `config` role, signs the apps (`apps`), the W and X drivers (`drivers`) and the MCU generation blobs (`config`), and publishes everything to the registry (default: `defaults.registry`), which is the Deck's `artifacts.store` (document 20, §4.4.2). `--sign-key` is repeated per role; without it, `user.signing_key` for all. It does not talk to any node. The Deck only distributes artifacts signed this way: without them, it logs `J0915` and emits nothing for that node. A role without a key, or a key that the bundle does not give to that role, makes `jk publish` fail before publishing (`J0915`, `J0292`) |
+| `jk confirm` | confirms the pending generation and, with it, the OTA of each MCU that this activation put on trial (the generation; firmware carried by an activation is 1.1; ref/07 §9.4, ref/09 §5.13) |
+| `jk rollback [<generation>]` | reactivates a previous generation (the same one, with the same number and the same hash; ref/00, §5) |
+| `jk generations` | history of activations (who, when, origin, diff, status) |
+| `jk runtime upgrade <version>` | OTA of the runtime (A/B slots) |
+| `jk runtime build --features <list> [--target <board\|triple>]` | custom build of `jokerd` with tier N drivers and backends (document 09, attack 7), **on the laptop or in CI**, by cross build for the board's triple (§1, principle 8); the result reaches the node through `jk runtime upgrade` (upload `joker.runtime.v1`, ref/09) |
+| `jk migrate [--dry-run]` | rewrites manifests and locks to the schema of the current runtime (optional in series 1; required in 2.0). It also **renames the files of a project older than ADR 0026** (type in the name): profiles (`profiles/x/y@1.toml` → `…@1.profile.toml`), boards (`.board.toml`), simulation models (`sim/esp.toml` → `sim/esp.sim.toml`), scenarios (`.scenario.toml`), suites (`.conformance.toml`), packages (`package.toml` → `<package>.package.toml`), driver fixtures (`.fixture.toml`) and overlays (`rpi.toml` → `joker.rpi.toml`, with the lock `rpi.lock` → `joker.rpi.lock`). The type of each file is decided by its content (the identification table, ref/03 §2.1.6), and not by the directory; the files it cannot classify stay as they are and are listed. It updates the references by path (`extends`, `model`, `manifest` of the scenarios) and adds the `.taplo.toml` if missing. It uses `git mv` when the project is in a Git repository, so the history follows the files. `--dry-run` shows the changes without making them |
 
-### 3.1 Enrolamento, chaves e CA
+### 3.1 Enrollment, keys and CA
 
 ```
-jk node enroll <alvo> --ca <pasta|url> [--name <nó>] [--site <s>] [--org <o>]
+jk node enroll <target> --ca <directory|url> [--name <node>] [--site <s>] [--org <o>]
                [--anchor <keys/x.pub>]… [--allow-dev] [--tpm required|preferred|off]
-               [--code <código>] [--force]
-jk node enroll <alvo> --deck <url> --token <t>
-jk node enroll mcu:<porta> --deck <url> --token <t>
-jk node enroll <mcu> --link <dispositivo> [--probe] [--ca <pasta>]
+               [--code <code>] [--force]
+jk node enroll <target> --deck <url> --token <t>
+jk node enroll mcu:<port> --deck <url> --token <t>
+jk node enroll <mcu> --link <device> [--probe] [--ca <directory>]
 ```
 
-| Opção | Faz |
+| Option | Does |
 |---|---|
-| `--ca <pasta>` | assina o CSR com uma CA local; se a pasta não existir, cria uma CA de desenvolvimento como `jk ca init --dev` (e o nó fica com `policy.allow_dev = true`). O contexto `[nodes.<nó>]` fica com o endereço de arranque (`ssh://…`); muda-se para `<host>:7443` quando o nó escutar TCP (ref/02, §3.2.3) |
-| `--ca <url>`, `--deck <url> --token <t>` | enrola numa CA ou num Deck; a resposta traz as âncoras e o primeiro bundle (ref/10, §3.1.2) |
-| `--anchor <.pub>` | âncoras de confiança do nó (repetível) |
-| `--allow-dev` | aceitar gerações `mode = "dev"`; um bundle com `min_mode = prod` recusa-as na mesma |
-| `--tpm required\|preferred\|off` | onde vive a chave de identidade; `required` falha sem TPM |
-| `--code <código>` | o código de uso único que o nó mostra (`jokerd enroll-code`), enviado pelo socket local (acesso físico, ou `ssh://…`): prova que quem enrola teve acesso ao nó, e dispensa ser `root` ou do grupo `joker-admin` no nó (ref/02, §3.2.3). **Nunca há uma porta de enrolamento aberta à rede**; o enrolamento pelo Deck usa o token, e é o nó que liga para fora (ref/09, §2.1) |
-| `--force` | volta a enrolar um nó já enrolado, com chave nova (os segredos têm de ser cifrados de novo) |
-| `--link <dispositivo>` | enrola um MCU atrás de um nó: gera a `K_link` do dispositivo `joker-link` e grava-a no MCU e no nó (`secret:link.<dispositivo>`; ref/07, §4.7). Com `--ca`, numa placa M2, também gera a chave KEM X25519 do MCU, grava-lhe um certificado da CA com essa chave no SAN e acrescenta o MCU como destinatário `node:<mcu>` do `secrets.toml.enc`: é o que permite levar-lhe segredos, como a palavra-passe do Wi-Fi (`[net.wifi]`, ref/01 §5.22; ref/02 §2.4.8) |
-| `--probe` | grava a identidade do MCU por sonda, em vez de pelo link |
+| `--ca <directory>` | signs the CSR with a local CA; if the directory does not exist, creates a development CA like `jk ca init --dev` (and the node gets `policy.allow_dev = true`). The `[nodes.<node>]` context gets the bootstrap address (`ssh://…`); it is changed to `<host>:7443` when the node listens on TCP (ref/02, §3.2.3) |
+| `--ca <url>`, `--deck <url> --token <t>` | enrolls with a CA or a Deck; the response carries the anchors and the first bundle (ref/10, §3.1.2) |
+| `--anchor <.pub>` | trust anchors of the node (repeatable) |
+| `--allow-dev` | accept `mode = "dev"` generations; a bundle with `min_mode = prod` rejects them anyway |
+| `--tpm required\|preferred\|off` | where the identity key lives; `required` fails without a TPM |
+| `--code <code>` | the one-time code the node shows (`jokerd enroll-code`), sent through the local socket (physical access, or `ssh://…`): it proves that whoever enrolls had access to the node, and removes the need to be `root` or in the `joker-admin` group on the node (ref/02, §3.2.3). **There is never an enrollment port open to the network**; enrollment through the Deck uses the token, and it is the node that connects outward (ref/09, §2.1) |
+| `--force` | enrolls an already enrolled node again, with a new key (the secrets must be encrypted again) |
+| `--link <device>` | enrolls an MCU behind a node: generates the `K_link` of the `joker-link` device and writes it to the MCU and to the node (`secret:link.<device>`; ref/07, §4.7). With `--ca`, on an M2 board, it also generates the MCU's X25519 KEM key, writes to it a certificate from the CA with that key in the SAN and adds the MCU as recipient `node:<mcu>` of `secrets.toml.enc`: this is what allows secrets to be delivered to it, such as the Wi-Fi password (`[net.wifi]`, ref/01 §5.22; ref/02 §2.4.8) |
+| `--probe` | writes the MCU's identity by probe, instead of through the link |
 
-| Comando | Faz |
+| Command | Does |
 |---|---|
-| `jk ca init <pasta> --org <org> [--user <nome>] [--dev]` | cria a CA local (raiz Ed25519, emissora P-256 e o nome da organização; ref/10, §3.1.1) **e** o certificado de utilizador `admin-<utilizador>` (papel `admin` pela regra do nó), que regista em `[user]` do `config.toml` do cliente (ref/02, §3.3.3) |
-| `jk ca bundle <pasta> --key <papel>=<pub>… [--deck <id>=<pub> --deck-url <url>] [--min-mode prod] --out <f>` | constrói e assina com a raiz da CA o bundle de confiança (chaves por papel, o Deck, o modo mínimo), que o `jk node trust push` instala e o Deck entrega no enrolamento (ref/02, §2.5.5) |
-| `jk key gen <nome> --kind signing\|secrets` | chave de assinatura Ed25519 (artefactos, gerações, segredos, bundles) ou de escrow X25519 (segredos); a privada fica fora do projeto, o `.pub` em `keys/` (ref/02, §2.5) |
-| `jk config show [--origin]` | configuração efetiva do cliente e a origem de cada valor |
-| `jk config set <chave> <valor> [--project]` | muda uma chave do `config.toml` do utilizador (ou, com `--project`, do `.joker/config.toml`), validada pelo esquema da ref/02 §2.3.2: por exemplo `jk config set nodes.pi.address pi.local:7443` depois do enrolamento (ref/02, §3.2.3, passo 5) |
+| `jk ca init <directory> --org <org> [--user <name>] [--dev]` | creates the local CA (Ed25519 root, P-256 issuer and the organization name; ref/10, §3.1.1) **and** the user certificate `admin-<user>` (role `admin` by the node's rule), which it records in `[user]` of the client's `config.toml` (ref/02, §3.3.3) |
+| `jk ca bundle <directory> --key <role>=<pub>… [--deck <id>=<pub> --deck-url <url>] [--min-mode prod] --out <f>` | builds and signs with the CA root the trust bundle (keys per role, the Deck, the minimum mode), which `jk node trust push` installs and the Deck delivers at enrollment (ref/02, §2.5.5) |
+| `jk key gen <name> --kind signing\|secrets` | Ed25519 signing key (artifacts, generations, secrets, bundles) or X25519 escrow key (secrets); the private key stays outside the project, the `.pub` in `keys/` (ref/02, §2.5) |
+| `jk config show [--origin]` | effective client configuration and the origin of each value |
+| `jk config set <key> <value> [--project]` | changes a key of the user's `config.toml` (or, with `--project`, of `.joker/config.toml`), validated by the schema of ref/02 §2.3.2: for example `jk config set nodes.pi.address pi.local:7443` after enrollment (ref/02, §3.2.3, step 5) |
 
-### 3.2 Segredos
+### 3.2 Secrets
 
-Os segredos vivem no `secrets.toml.enc`, cifrados por destinatário e versionáveis (ADR 0024; ref/02, §2.4).
+Secrets live in `secrets.toml.enc`, encrypted per recipient and versionable (ADR 0024; ref/02, §2.4).
 
-| Comando | Faz |
+| Command | Does |
 |---|---|
-| `jk secret set <nome> [--nodes a,b] [--file <f>] [--description <d>]` | pede o valor sem eco (ou lê do stdin ou de `--file`), sobe o `rev`, cifra para os destinatários e assina |
-| `jk secret get <nome> --reveal` | decifra com a chave de escrow; sem `--reveal`, recusa |
-| `jk secret list` | nomes, `rev`, tipo, nós, destinatários em falta; nunca valores |
-| `jk secret rm <nome>` | remove a entrada |
-| `jk secret import <ficheiro\|->` | importa um ficheiro em claro (cada entrada é um `set`) |
-| `jk secret recipient add --node <nó>` \| `--user <nome> --key <x25519.pub>` | acrescenta um nó (pela chave KEM atestada no certificado) ou uma pessoa de escrow |
-| `jk secret recipient rm <destinatário>` | retira um destinatário; **não revoga**: roda-se o valor a seguir |
-| `jk secret push --node <nó>` | envia as entradas para o nó sem criar uma geração |
-| `jk secret status --node <nó>` | compara nomes e `rev` do ficheiro com os do nó |
+| `jk secret set <name> [--nodes a,b] [--file <f>] [--description <d>]` | asks for the value without echo (or reads from stdin or from `--file`), bumps `rev`, encrypts for the recipients and signs |
+| `jk secret get <name> --reveal` | decrypts with the escrow key; without `--reveal`, refuses |
+| `jk secret list` | names, `rev`, type, nodes, missing recipients; never values |
+| `jk secret rm <name>` | removes the entry |
+| `jk secret import <file\|->` | imports a plaintext file (each entry is a `set`) |
+| `jk secret recipient add --node <node>` \| `--user <name> --key <x25519.pub>` | adds a node (by the KEM key attested in the certificate) or an escrow person |
+| `jk secret recipient rm <recipient>` | removes a recipient; **does not revoke**: the value is rotated afterwards |
+| `jk secret push --node <node>` | sends the entries to the node without creating a generation |
+| `jk secret status --node <node>` | compares names and `rev` of the file with those of the node |
 
-### 3.3 Agente e sessões
+### 3.3 Agent and sessions
 
-Falam com a API local do nó, que fala com o Deck (ref/10, §2.18).
+They talk to the node's local API, which talks to the Deck (ref/10, §2.18).
 
-| Comando | Faz |
+| Command | Does |
 |---|---|
-| `jk agent status` | ligação ao Deck, autoridade, `seq`, fila, pausa, espera por alterações locais, sessões |
-| `jk agent desired [--json]` | o estado desejado atual, descodificado, e o estado da aplicação |
-| `jk agent pause --ttl <d> --reason "…"`, `jk agent resume` | suspende as trocas de geração pedidas pelo Deck (o download e os relatórios continuam) |
-| `jk agent import <pasta>` | aplica um estado desejado e artefactos trazidos à mão (sem rede) |
-| `jk session list`, `jk session accept <id>`, `jk session close <id>` | sessões remotas pedidas pelo Deck (**1.3**) |
+| `jk agent status` | connection to the Deck, authority, `seq`, queue, pause, wait for local changes, sessions |
+| `jk agent desired [--json]` | the current desired state, decoded, and the state of the apply |
+| `jk agent pause --ttl <d> --reason "…"`, `jk agent resume` | suspends the generation swaps requested by the Deck (download and reports continue) |
+| `jk agent import <directory>` | applies a desired state and artifacts brought by hand (no network) |
+| `jk session list`, `jk session accept <id>`, `jk session close <id>` | remote sessions requested by the Deck (**1.3**) |
 
-## 4. Operação
+## 4. Operation
 
-| Comando | Faz |
+| Command | Does |
 |---|---|
-| `jk status [--instances]` | resumo: gerações, grupos (jitter, overruns), dispositivos (link), apps (estado), alarmes ativos, trips; `--instances` lista as instâncias de classes, a origem (perfil, manifesto, app) e a saúde |
-| `jk top` | TUI ao vivo com ciclo, drivers, envelope, store, link |
-| `jk read <seletor> [--watch]` | lê sinais com qualidade e idade (`jk read 'pcs.**' --watch`) |
-| `jk read <seletor> --refresh` | força a leitura de `param` com `poll = "on_demand"` |
-| `jk write <saída> <valor> --ttl <t> --reason "…" [--level manual:<n>] [--takeover]` | escrita manual como escritor `user:<principal>`: mostra o envelope, o nível ativo e o resultado previsto, e pede confirmação. O nível por omissão é `manual:4`; `--ttl` e `--reason` são obrigatórios; um nível ocupado por outra pessoa só se toma com `--takeover`, que fica no registo de decisões |
-| `jk release <saída> [--level …]` | liberta um nível manual |
-| `jk trace <sinal>` | segue um sinal: driver → aquisição → apps que o leem → propostas → árbitro → envelope → commit → readback |
-| `jk decisions [--output <s>] [--since 1h \| --from … --to …] [--cause <sinal>] [--report pdf\|csv]` | registo de decisões (M3): cada escrita, com resultado, motivo e as entradas de que dependia; `--cause` filtra as escritas que leram um dado sinal; `--report` gera um relatório de cumprimento (o PDF é feito pela `jk`, não pelo nó) |
-| `jk alarms [--active]`, `jk alarm ack <id>`, `jk alarm shelve <id> <ttl> "<motivo>"`, `jk alarm unshelve <id>` | alarmes; o arquivo tem TTL obrigatório, até `max_shelve` |
-| `jk trips`, `jk reset <saída> --reason "…"` | trips e reset |
-| `jk intents`, `jk intent approve <id>`, `jk intent reject <id>` | intenções de escritores só-proposta (M18, **1.1**; na 1.0 a lista está sempre vazia) |
-| `jk action <dispositivo\|instância>.<ação> [args] --key <k>` | invoca uma ação de um dispositivo ou de uma instância (M19) |
-| `jk call <instância>.<método> [args] --ttl <t> --reason "…"` | chama um método de classe como escritor `manual` (documento 17, §4.1) |
-| `jk app <start\|stop\|restart\|logs> <app>` | ciclo de vida de apps |
-| `jk device stop <dispositivo> --reason "…"`, `jk device start <dispositivo>` | para e volta a arrancar o driver de um dispositivo (papel `operator`, auditado): parado, o link fica `stopped`, os sinais `bad(not_connected)` e as saídas com o fallback do dispositivo. É volátil, como o `stop` de uma app: vale até ao próximo arranque do `jokerd` ou à próxima geração (ref/09, §5.12) |
-| `jk logs [--app <a>] [--follow]` | logs estruturados |
+| `jk status [--instances]` | summary: generations, groups (jitter, overruns), devices (link), apps (state), active alarms, trips; `--instances` lists the class instances, the origin (profile, manifest, app) and the health |
+| `jk top` | live TUI with cycle, drivers, envelope, store, link |
+| `jk read <selector> [--watch]` | reads signals with quality and age (`jk read 'pcs.**' --watch`) |
+| `jk read <selector> --refresh` | forces the read of a `param` with `poll = "on_demand"` |
+| `jk write <output> <value> --ttl <t> --reason "…" [--level manual:<n>] [--takeover]` | manual write as writer `user:<principal>`: shows the envelope, the active level and the predicted result, and asks for confirmation. The default level is `manual:4`; `--ttl` and `--reason` are required; a level occupied by someone else is only taken with `--takeover`, which goes into the decision log |
+| `jk release <output> [--level …]` | releases a manual level |
+| `jk trace <signal>` | follows a signal: driver → acquisition → apps that read it → proposals → arbiter → envelope → commit → readback |
+| `jk decisions [--output <s>] [--since 1h \| --from … --to …] [--cause <signal>] [--report pdf\|csv]` | decision log (M3): each write, with result, reason and the inputs it depended on; `--cause` filters the writes that read a given signal; `--report` generates a compliance report (the PDF is made by `jk`, not by the node) |
+| `jk alarms [--active]`, `jk alarm ack <id>`, `jk alarm shelve <id> <ttl> "<reason>"`, `jk alarm unshelve <id>` | alarms; shelving has a required TTL, up to `max_shelve` |
+| `jk trips`, `jk reset <output> --reason "…"` | trips and reset |
+| `jk intents`, `jk intent approve <id>`, `jk intent reject <id>` | intents of proposal-only writers (M18, **1.1**; in 1.0 the list is always empty) |
+| `jk action <device\|instance>.<action> [args] --key <k>` | invokes an action of a device or of an instance (M19) |
+| `jk call <instance>.<method> [args] --ttl <t> --reason "…"` | calls a class method as a `manual` writer (document 17, §4.1) |
+| `jk app <start\|stop\|restart\|logs> <app>` | app lifecycle |
+| `jk device stop <device> --reason "…"`, `jk device start <device>` | stops and starts again the driver of a device (role `operator`, audited): while stopped, the link is `stopped`, the signals `bad(not_connected)` and the outputs on the device fallback. It is volatile, like an app's `stop`: it holds until the next startup of `jokerd` or the next generation (ref/09, §5.12) |
+| `jk logs [--app <a>] [--follow]` | structured logs |
 
-## 5. Dados
+## 5. Data
 
-| Comando | Faz |
+| Command | Does |
 |---|---|
-| `jk history <seletor> --from … --to … [--step 1m]` | consulta o historian |
-| `jk export <seletor> --from … --to … --parquet out.parquet` | exporta (o Parquet é escrito pela `jk`) |
-| `jk record --for 2h [--groups fast] --out x.jktrace` | grava um traço reproduzível; no início, guarda o estado de cada app (`export-state`) num segmento de estado (documento 16, §7) |
-| `jk replay x.jktrace [--app a@versão] [--diff] [--rerun-models]` | reproduz (documento 04, §7), a partir do estado gravado pelo `jk record`; num traço sem estado (`trace-dump`, `trace-from-history`), a partir do `init`, e avisa que os primeiros ticks podem divergir; `--rerun-models` é 1.1 |
-| `jk trace-dump --group fast --last 30m --out x.jktrace` | extrai do anel de traço contínuo do grupo (exato nas entradas, mas sem o estado das apps: o replay começa do `init`) |
-| `jk trace-from-history <intervalo> --app <a> --out x.jktrace` | reconstrói um traço aproximado a partir do historian |
-| `jk link status` | uplinks: ligação, lag do cursor, orçamento (M12), perdas |
+| `jk history <selector> --from … --to … [--step 1m]` | queries the historian |
+| `jk export <selector> --from … --to … --parquet out.parquet` | exports (the Parquet is written by `jk`) |
+| `jk record --for 2h [--groups fast] --out x.jktrace` | records a replayable trace; at the start, saves the state of each app (`export-state`) in a state segment (document 16, §7) |
+| `jk replay x.jktrace [--app a@versão] [--diff] [--rerun-models]` | replays (document 04, §7), from the state recorded by `jk record`; in a trace without state (`trace-dump`, `trace-from-history`), from `init`, and warns that the first ticks may diverge; `--rerun-models` is 1.1 |
+| `jk trace-dump --group fast --last 30m --out x.jktrace` | extracts from the group's continuous trace ring (exact in the inputs, but without the app state: replay starts from `init`) |
+| `jk trace-from-history <interval> --app <a> --out x.jktrace` | rebuilds an approximate trace from the historian |
+| `jk link status` | uplinks: connection, cursor lag, budget (M12, 1.1), drops |
 
-## 6. Sombra e ML
+## 6. Shadow and ML
 
-| Comando | Faz | Versão |
+| Command | Does | Version |
 |---|---|---|
-| `jk shadow start <app> <candidato>`, `jk shadow status`, `jk shadow diff`, `jk shadow promote`, `jk shadow abort` | modo sombra de apps (M16) | 1.0 |
-| `jk shadow … <modelo>` | modo sombra de modelos | **1.1** |
-| `jk model build <onnx\|dir> [--via burn\|ort] [--arch joker.tcn@2 --weights w.safetensors]` | cria o `.jkm`; com `--via burn` lista os operadores em falta | **1.1** |
-| `jk model inspect <m.jkm>` | assinatura, guarda, backends disponíveis, linhagem | **1.1** |
-| `jk model bench <m.jkm> [--node …] [--backend …]` | latência e memória por backend no alvo | **1.1** |
-| `jk model lineage <m>` | árvore de linhagem (M10) | **1.1** |
-| `jk model migrate <m.jkm> --burn <versão>` | migra os pesos entre versões do Burn | **1.1** |
-| `jk train <job> [--now]`, `jk train status` | treino no dispositivo | **1.1** |
+| `jk shadow start <app> <candidate>`, `jk shadow status`, `jk shadow diff`, `jk shadow promote`, `jk shadow abort` | shadow mode of apps (M16) | **1.1** (document 26, §5) |
+| `jk shadow … <model>` | shadow mode of models | **1.1** |
+| `jk model build <onnx\|dir> [--via burn\|ort] [--arch joker.tcn@2 --weights w.safetensors]` | creates the `.jkm`; with `--via burn` lists the missing operators | **1.1** |
+| `jk model inspect <m.jkm>` | signature, guard, available backends, lineage | **1.1** |
+| `jk model bench <m.jkm> [--node …] [--backend …]` | latency and memory per backend on the target | **1.1** |
+| `jk model lineage <m>` | lineage tree (M10) | **1.1** |
+| `jk model migrate <m.jkm> --burn <version>` | migrates the weights between Burn versions | **1.1** |
+| `jk train <job> [--now]`, `jk train status` | on-device training | **1.1** |
 
-## 7. Descoberta, perfis, placas e drivers
+## 7. Discovery, profiles, boards and drivers
 
-| Comando | Faz |
+| Command | Does |
 |---|---|
-| `jk discover <uri>` | descoberta só de leitura (documento 05, §7) |
-| `jk profile import <sunspec\|nodeset\|eds\|esi> <ficheiro>` | gera um perfil para revisão |
-| `jk profile import csv <ficheiro> --name <fabricante>/<modelo> --driver modbus [--out <ficheiro>] [--modicon]` | gera um **rascunho** de perfil a partir de um mapa de registos em CSV (colunas `signal,fc,at,type,direction,unit,scale,offset,label,description`); o que o CSV não diz fica marcado `# REVER`; `--modicon` lê o `at` na notação antiga de base 1 (`30002` → registo 1). Formato e regras na ref/03 §2.2.19 |
-| `jk profile check <perfil>` | valida um perfil sem equipamento (esquema, unidades, `plan` do driver) |
-| `jk profile diff <a> <b>` | compara duas versões e diz que parte da versão tem de subir (ref/03, §2.2) |
-| `jk profile test <perfil> --uri <uri> [--node <alvo>]` | lê todos os sinais do perfil de um equipamento real e mostra valores, unidades, qualidade, latência medida e erros; **nunca escreve**. A URI diz o protocolo, a porta ou o endereço e a unidade: `modbus-rtu:<porta>?baud=<b>&unit=<u>`, `modbus-tcp://<host>:<porta>?unit=<u>` (gramática completa na ref/03 §2.2.20). Sem `--node`, o driver corre no portátil |
-| `jk profile publish <perfil>` | publica no registo (exige `jk profile diff` e relatórios de conformidade, ref/03 §2.8) |
-| `jk board show <placa>` | o perfil de uma placa: IO fixo, portas, watchdog, capacidades, sonda |
-| `jk board probe --node <nó> [--name <placa>] [--out <ficheiro>]` | lê o inventário de hardware do nó (`GET /v1/node/hardware`, só leituras) e escreve um **rascunho** de perfil de placa (omissão: `boards/<placa>.board.toml`); o que o inventário não pode saber (nível, kernel alvo, `fallback` do IO fixo, `recommended`) fica marcado `# REVER` (ref/03 §2.3.7) |
-| `jk board check <ficheiro> [--node <nó>]` | valida um perfil de placa (`J0800`–`J0849`); com `--node`, confirma no nó que a arquitetura, as CPUs, os periféricos, as linhas e os caminhos declarados existem (`J0828`, `J0829`) e lista os `# REVER` que faltam resolver |
-| `jk board new <nome> --from <placa>` | copia um perfil de placa existente (do projeto ou do registo) para `boards/<nome>.board.toml`, com `name` novo, `version = "1.0.0"` e `tier = "dev"` marcado `# REVER` |
-| `jk board publish <ficheiro>` | publica uma placa no registo (sem `# REVER` por resolver; ref/03 §2.3.7 e §2.8.4). Uma placa `tier = "dev"` nunca se publica (`J0848`) |
-| `jk driver test <ref> [--fixture <f>] [--case <glob>] [--report <out.cbor>]` | suite de conformidade de drivers contra um driver N, W (`w:./x.wasm`) ou X (`x:./binário`) (ref/06, §6) |
-| `jk driver meta <driver>.driver.toml` | gera o descritor CBOR de um driver a partir de TOML (para drivers C) |
+| `jk discover <uri>` | read-only discovery (document 05, §7) |
+| `jk profile import <sunspec\|nodeset\|eds\|esi> <file>` | generates a profile for review |
+| `jk profile import csv <file> --name <vendor>/<model> --driver modbus [--out <file>] [--modicon]` | generates a profile **draft** from a register map in CSV (columns `signal,fc,at,type,direction,unit,scale,offset,label,description`); what the CSV does not say is marked `# REVIEW`; `--modicon` reads `at` in the old 1-based notation (`30002` → register 1). Format and rules in ref/03 §2.2.19 |
+| `jk profile check <profile>` | validates a profile without equipment (schema, units, the driver's `plan`) |
+| `jk profile diff <a> <b>` | compares two versions and says which part of the version must go up (ref/03, §2.2) |
+| `jk profile test <profile> --uri <uri> [--node <target>]` | reads all the signals of the profile from a real piece of equipment and shows values, units, quality, measured latency and errors; **never writes**. The URI gives the protocol, the port or the address and the unit: `modbus-rtu:<port>?baud=<b>&unit=<u>`, `modbus-tcp://<host>:<port>?unit=<u>` (full grammar in ref/03 §2.2.20). Without `--node`, the driver runs on the laptop |
+| `jk profile publish <profile>` | publishes to the registry (requires `jk profile diff` and conformance reports, ref/03 §2.8) |
+| `jk board show <board>` | the profile of a board: fixed IO, ports, watchdog, capabilities, probe |
+| `jk board probe --node <node> [--name <board>] [--out <file>]` | reads the node's hardware inventory (`GET /v1/node/hardware`, reads only) and writes a board profile **draft** (default: `boards/<board>.board.toml`); what the inventory cannot know (tier, target kernel, `fallback` of the fixed IO, `recommended`) is marked `# REVIEW` (ref/03 §2.3.7) |
+| `jk board check <file> [--node <node>]` | validates a board profile (`J0800`–`J0849`); with `--node`, confirms on the node that the architecture, the CPUs, the peripherals, the lines and the declared paths exist (`J0828`, `J0829`) and lists the `# REVIEW` left to resolve |
+| `jk board new <name> --from <board>` | copies an existing board profile (from the project or from the registry) to `boards/<name>.board.toml`, with a new `name`, `version = "1.0.0"` and `tier = "dev"` marked `# REVIEW` |
+| `jk board publish <file>` | publishes a board to the registry (with no unresolved `# REVIEW`; ref/03 §2.3.7 and §2.8.4). A `tier = "dev"` board is never published (`J0848`) |
+| `jk driver test <ref> [--fixture <f>] [--case <glob>] [--report <out.cbor>]` | driver conformance suite against an N, W (`w:./x.wasm`) or X (`x:./binário`) driver (ref/06, §6) |
+| `jk driver meta <driver>.driver.toml` | generates the CBOR descriptor of a driver from TOML (for C drivers) |
 
 ## 7.1 Classes (M24)
 
-| Comando | Faz |
+| Command | Does |
 |---|---|
-| `jk class list [--std\|--project]` | classes disponíveis, com versões |
-| `jk class show <classe>` | membros, capacidades, métodos, consultas, normas de referência |
-| `jk class new <nome>@<major>` | esqueleto de classe + ficheiro de conformidade |
-| `jk class verify <classe> --instance <i> [--allow-actuation] [--report <f>]` | corre a suite de conformidade da classe contra uma instância. Numa instância que não é simulada exige `--allow-actuation` (`J0640`) e `mode = "dev"`, recusa-se se houver um nível `safety` ou `manual` ativo nas saídas da instância (`J0641`), e escreve em `manual:3` com TTL igual à duração da suite: as apps continuam a correr e ficam `overridden` durante o teste (ref/03, §2.6.3); `--report` escreve o relatório que a publicação exige (ref/03, §2.6 e §2.8) |
-| `jk class publish <ficheiro>` | publica no registo (exige conformidade e corre o `jk class diff`) |
-| `jk class fmt\|check\|diff\|doc\|gen` | formatar, validar (JC-codes), comparar versões (documento 17, §9), gerar documentação e tipos |
-| `jk explain <instância>` | mapeamento de cada membro, origem (perfil/manifesto/app), latência das camadas virtuais; numa instância composta, a árvore dos membros de classe (instância ligada, classe, origem e saúde de cada nó, indentados), a profundidade (`JC0501`) e as camadas (`J0620`), e as composições de que a instância é membro (`GET /v1/instances/{i}`, ref/09 §5.11; exemplo no documento 14, §9.3) |
+| `jk class list [--std\|--project]` | available classes, with versions |
+| `jk class show <class>` | members, capabilities, methods, queries, reference standards |
+| `jk class new <name>@<major>` | class skeleton + conformance file |
+| `jk class verify <class> --instance <i> [--allow-actuation] [--report <f>]` | runs the class conformance suite against an instance. On an instance that is not simulated it requires `--allow-actuation` (`J0640`) and `mode = "dev"`, refuses to run if there is an active `safety` or `manual` level on the instance's outputs (`J0641`), and writes at `manual:3` with a TTL equal to the duration of the suite: the apps keep running and are `overridden` during the test (ref/03, §2.6.3); `--report` writes the report that publication requires (ref/03, §2.6 and §2.8) |
+| `jk class publish <file>` | publishes to the registry (requires conformance and runs `jk class diff`) |
+| `jk class fmt\|check\|diff\|doc\|gen` | format, validate (JC-codes), compare versions (document 17, §9), generate documentation and types |
+| `jk explain <instance>` | mapping of each member, origin (profile/manifest/app), latency of the virtual layers; on a composite instance, the tree of the class members (bound instance, class, origin and health of each node, indented), the depth (`JC0501`) and the layers (`J0620`), and the compositions the instance is a member of (`GET /v1/instances/{i}`, ref/09 §5.11; example in document 14, §9.3) |
 
-Fora da v1.0: `jk ui` (Joker Studio, 1.3) e `jk class extract` (depois da v1).
+Outside v1.0: `jk ui` (Joker Studio, 1.3) and `jk class extract` (after v1).
 
-## 8. Códigos de saída
+## 8. Exit codes
 
-| Código | Significado |
+| Code | Meaning |
 |---|---|
-| 0 | sucesso |
-| 1 | erro de utilização |
-| 2 | validação falhou (J-codes) |
-| 3 | o dispositivo recusou (permissões, assinatura, envelope) |
-| 4 | timeout ou dispositivo inacessível |
-| 5 | confirmação expirou e houve rollback |
-| 6 | teste ou cenário falhou |
-| 7 | deriva detetada (`jk lock --check`) |
+| 0 | success |
+| 1 | usage error |
+| 2 | validation failed (J-codes) |
+| 3 | the device refused (permissions, signature, envelope) |
+| 4 | timeout or device unreachable |
+| 5 | confirmation expired and there was a rollback |
+| 6 | test or scenario failed |
+| 7 | drift detected (`jk lock --check`) |
 
-A correspondência com as respostas da API está na ref/09, §9.2.
+The correspondence with the API responses is in ref/09, §9.2.
 
-## 9. Fluxos completos
+## 9. Complete flows
 
-**Do portátil ao campo:**
+**From the laptop to the field:**
 
 ```sh
 jk new site-porto --template bess
 cd site-porto
-jk dev                                      # planta simulada; itera na app
-jk test                                     # cenários sim/ contra o manifesto real
+jk dev                                      # simulated plant; iterate on the app
+jk test                                     # sim/ scenarios against the real manifest
 jk node enroll revpi-porto.local --ca ~/org-ca
 jk doctor --node revpi-porto.local --rt   # kernel, isolcpus, watchdog, fallbacks
 jk discover sunspec://192.168.10.30 --node revpi-porto.local
-jk lock --node revpi-porto.local          # fixa mapas descobertos, firmware, fallbacks
-jk bench --node revpi-porto.local         # WCET real → lock
-jk check                                    # admissão RT com WCET medido
-jk secret recipient add --node revpi-porto # cifra os segredos também para este nó
+jk lock --node revpi-porto.local          # pins discovered maps, firmware, fallbacks
+jk bench --node revpi-porto.local         # real WCET → lock
+jk check                                    # RT admission with measured WCET
+jk secret recipient add --node revpi-porto # encrypts the secrets for this node too
 jk apply --node revpi-porto.local --confirm 10m
 jk status --node revpi-porto.local
 jk confirm --node revpi-porto.local
 ```
 
-**Um incidente:**
+**An incident:**
 
 ```sh
 jk decisions --output pcs.p_set --since "2026-09-24 03:00" --to "03:30"
-jk trace-from-history "03:00..03:30" --app peak_shaver --out incidente.jktrace
-#   ↑ traço aproximado: só é exato se as entradas da app estavam gravadas ao ritmo do grupo
-#     (o `trace.continuous` do grupo guarda um anel de traço exato das últimas N horas)
-jk replay incidente.jktrace --diff --app peak_shaver@1.4.3
+jk trace-from-history "03:00..03:30" --app peak_shaver --out incident.jktrace
+#   ↑ approximate trace: it is only exact if the app's inputs were recorded at the group's rate
+#     (the group's `trace.continuous` keeps an exact trace ring of the last N hours)
+jk replay incident.jktrace --diff --app peak_shaver@1.4.3
 ```
 
-**Uma versão nova de uma app, em sombra (1.0):**
+**A new version of an app, in shadow (1.1):**
 
 ```sh
-jk shadow start peak_shaver peak-shaver-1.5.0.wasm --node linha2
-jk shadow status peak_shaver --node linha2   # 48 h depois
-jk shadow promote peak_shaver --node linha2
+jk shadow start peak_shaver peak-shaver-1.5.0.wasm --node line2
+jk shadow status peak_shaver --node line2   # 48 h later
+jk shadow promote peak_shaver --node line2
 ```
 
-**Um modelo novo (1.1):**
+**A new model (1.1):**
 
 ```sh
 jk model build yolo-parts-v8.onnx --via ort
-jk model bench yolo-parts-v8.jkm --node linha2 --backend hailo,burn:cpu
-jk shadow start detector yolo-parts-v8.jkm --node linha2
-jk shadow status detector --node linha2   # 48 h depois
-jk shadow promote detector --node linha2
+jk model bench yolo-parts-v8.jkm --node line2 --backend hailo,burn:cpu
+jk shadow start detector yolo-parts-v8.jkm --node line2
+jk shadow status detector --node line2   # 48 h later
+jk shadow promote detector --node line2
 ```
 
-**Uma placa que ainda não tem perfil, e um equipamento com mapa de registos** (ref/03 §2.3.7 e §2.2.19):
+**A board that does not have a profile yet, and a piece of equipment with a register map** (ref/03 §2.3.7 and §2.2.19):
 
 ```sh
-jk board probe --node zero --name rpi-zero-w           # rascunho em boards/rpi-zero-w.board.toml, com # REVER
-jk board check boards/rpi-zero-w.board.toml --node zero      # depois de resolver os # REVER
-jk profile import csv mapa.csv --name local/xy-md02 --driver modbus
+jk board probe --node zero --name rpi-zero-w           # draft in boards/rpi-zero-w.board.toml, with # REVIEW
+jk board check boards/rpi-zero-w.board.toml --node zero      # after resolving the # REVIEW
+jk profile import csv map.csv --name local/xy-md02 --driver modbus
 jk profile test local/xy-md02@1 --node zero --uri "modbus-tcp://192.168.1.50:502?unit=1"
 jk check --env zero                                      # joker.zero.toml, lock joker.zero.lock
 ```
 
-**Um MCU coprocessador, com firmware genérico:**
+**A coprocessor MCU, with generic firmware:**
 
 ```sh
 jk build --target mcu:rp2350 --generic          # firmware.uf2 + firmware.jkfw
-jk flash --identity                                      # por sonda, uma vez
+jk flash --identity                                      # by probe, once
 jk node enroll pump-mcu --link pump_mcu --node revpi-porto.local
 jk build --target mcu:rp2350 --generation --firmware firmware.jkfw
-jk apply --node revpi-porto.local --confirm 10m          # o nó leva o blob ao MCU pelo link
+jk apply --node revpi-porto.local --confirm 10m          # the node takes the blob to the MCU through the link
 ```

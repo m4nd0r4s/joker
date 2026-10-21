@@ -1,0 +1,19 @@
+schema = 1
+
+[model]
+description = "ESP32 with the bench firmware, with the signals of its profile"
+profile = "local/bench-esp32@1"
+
+[signals]
+button = { init = false, bounce = "5ms", panel = { label = "BOOT", kind = "momentary", key = "b" } }
+touch  = { init = 60, noise = 1, resolution = 1, panel = { label = "Touch", kind = "slider", keys = ["down", "up"], step = 5, min = 0, max = 100 } }
+rssi   = { gen = { kind = "noise", mean = -55, std = 3 } }
+uptime = { init = 0 }
+fw     = { init = 1 }
+
+[dynamics]
+led_rb = "led"
+uptime = "integrate(1)"
+
+[faults]
+panel = { key = "d", disconnect = true }

@@ -1,15 +1,15 @@
 ; =============================================================================
-; Joker Link v1.0 — corpos das mensagens, catálogo e manifesto de OTA
-; Referência: docs/ref/07-joker-link.md (normativa). RFC 8610 (CDDL).
+; Joker Link v1.0 — message bodies, catalog and OTA manifest
+; Reference: docs/ref/07-joker-link.md (normative). RFC 8610 (CDDL).
 ;
-; - O cabeçalho da trama (L2, ref/07 §4.1) e o cabeçalho da mensagem
-;   (ref/07 §5.1) são BINÁRIOS e não estão descritos aqui.
-; - Cada corpo é um único item CBOR (um mapa com chaves inteiras), ou vazio
-;   (0 bytes) no ACK.
-; - Emissores: CBOR determinístico (RFC 8949 §4.2.1). Leitores: aceitam
-;   qualquer codificação bem formada, ignoram chaves desconhecidas e mapeiam
-;   valores de enum desconhecidos para "desconhecido" (ref/00 §1).
-; - O tipo da mensagem vem do cabeçalho; "link-body" só agrupa os corpos.
+; - The frame header (L2, ref/07 §4.1) and the message header
+;   (ref/07 §5.1) are BINARY and are not described here.
+; - Each body is a single CBOR item (a map with integer keys), or empty
+;   (0 bytes) in ACK.
+; - Senders: deterministic CBOR (RFC 8949 §4.2.1). Readers: accept
+;   any well-formed encoding, ignore unknown keys and map
+;   unknown enum values to "unknown" (ref/00 §1).
+; - The message type comes from the header; "link-body" only groups the bodies.
 ; =============================================================================
 
 link-body = hello / ready / bye / ping / pong / ack / error / keyrot /
@@ -17,7 +17,7 @@ link-body = hello / ready / bye / ping / pong / ack / error / keyrot /
             action / result / cancel / events / alarms / alarm-cmd / reset /
             restart / time / trace / ota
 
-; ---------------------------------------------------------------- tipos base
+; ---------------------------------------------------------------- base types
 u8   = 0..255
 u16  = 0..65535
 u32  = 0..4294967295
@@ -26,25 +26,25 @@ i32  = -2147483648..2147483647
 s64  = -9223372036854775808..9223372036854775807
 hash32  = bstr .size 32            ; SHA-256
 nonce16 = bstr .size 16
-kid8    = bstr .size 8             ; kid da K_link (ref/07 §4.2)
-kid16   = bstr .size 16            ; kid de uma chave de assinatura: SHA-256(chave pública)[0..16] (ref/02 §2.5)
-path-hash = u64                    ; primeiros 8 B do SHA-256 do caminho canónico (ref/00 §5)
-mono-us = u64                      ; monotónico do MCU, µs desde o arranque
-host-us = u64                      ; monotónico do nó Linux, µs (só em TIME)
-utc-us  = s64                      ; UTC, µs desde 1970-01-01T00:00:00Z
-dur-ms  = u32                      ; duração em ms
-sid     = u32                      ; SignalId na geração do MCU
-level   = 1..16                    ; nível do árbitro (1 = mais alto)
-origin  = u32                      ; escritor do nó Linux (ref/00 §5); informativo
-quality = u32                      ; código | motivo << 8 | flags << 16 (ref/00 §4.3)
+kid8    = bstr .size 8             ; kid of K_link (ref/07 §4.2)
+kid16   = bstr .size 16            ; kid of a signing key: SHA-256(public key)[0..16] (ref/02 §2.5)
+path-hash = u64                    ; first 8 B of the SHA-256 of the canonical path (ref/00 §5)
+mono-us = u64                      ; MCU monotonic, µs since boot
+host-us = u64                      ; Linux node monotonic, µs (only in TIME)
+utc-us  = s64                      ; UTC, µs since 1970-01-01T00:00:00Z
+dur-ms  = u32                      ; duration in ms
+sid     = u32                      ; SignalId in the MCU generation
+level   = 1..16                    ; arbiter level (1 = highest)
+origin  = u32                      ; Linux node writer (ref/00 §5); informative
+quality = u32                      ; code | reason << 8 | flags << 16 (ref/00 §4.3)
 status  = uint                     ; ref/07 §10.1
 link-version = [major: u8, minor: u8]
-idem-key = tstr .regexp "[ -~]{1,64}"   ; ASCII imprimível, 1–64 B (ref/00 §5)
+idem-key = tstr .regexp "[ -~]{1,64}"   ; printable ASCII, 1–64 B (ref/00 §5)
 
-; valor de um sinal (ref/07 §6.1); o tipo real vem do catálogo
+; value of a signal (ref/07 §6.1); the actual type comes from the catalog
 value  = bool / int / float / tstr .size (0..64) / bstr .size (0..64)
-; registo (argumentos, resultados, eventos): chaves inteiras = posição do campo no esquema,
-; a contar de 0 (D2, ref/00 §4.1, ref/04 §4.10)
+; record (arguments, results, events): integer keys = position of the field in the schema,
+; counting from 0 (D2, ref/00 §4.1, ref/04 §4.10)
 record = { * uint => any }
 
 writer-kind   = &(cycle: 0, async: 1, manual: 2, bridge: 3, impl: 4, proposal: 5) / uint
@@ -68,81 +68,81 @@ session-mode  = &(full: 0, observe: 1, maintenance: 2, refused: 3) / uint
 ; ------------------------------------------------------------------ HELLO 0x01
 hello = hello-offer / hello-answer / hello-request
 
-hello-offer = {                    ; MCU -> nó Linux
-  1 => 0,                          ; fase: oferta
+hello-offer = {                    ; MCU -> Linux node
+  1 => 0,                          ; phase: offer
   2 => [+ [major: u8, max-minor: u8]],
   3 => nonce16,                    ; nonce_d
   4 => identity,
   5 => firmware-info,
-  ? 6 => generation-info,          ; ausente: MCU sem geração válida
-  ? 7 => hash32,                   ; hash do registo (16 §7)
-  ? 8 => hash32,                   ; hash do catálogo (ref/07 §6.2)
+  ? 6 => generation-info,          ; absent: MCU without a valid generation
+  ? 7 => hash32,                   ; registry hash (16 §7)
+  ? 8 => hash32,                   ; catalog hash (ref/07 §6.2)
   ? 9 => [* contract-ref],
-  ? 10 => bool,                    ; true: a lista 9 está truncada
+  ? 10 => bool,                    ; true: list 9 is truncated
   11 => caps,
   12 => boot-info,
-  13 => mono-us,                   ; agora, no MCU
-  ? 14 => bstr .size 32,           ; RESERVADO 1.x: chave pública X25519 efémera
-  ? 15 => hash32,                  ; drivers planeados: SHA-256 de [* [nome, major, digest do descritor]]
-  ? 16 => [* [path-hash, value]],  ; parâmetros substituídos localmente (≤ 8)
-  ? 17 => bool,                    ; true: há mais parâmetros alterados do que os da chave 16
+  13 => mono-us,                   ; now, on the MCU
+  ? 14 => bstr .size 32,           ; RESERVED 1.x: ephemeral X25519 public key
+  ? 15 => hash32,                  ; planned drivers: SHA-256 of [* [name, major, descriptor digest]]
+  ? 16 => [* [path-hash, value]],  ; parameters overridden locally (≤ 8)
+  ? 17 => bool,                    ; true: more parameters were changed than those in key 16
   * uint => any
 }
 
-hello-answer = {                   ; nó Linux -> MCU
-  1 => 1,                          ; fase: resposta
-  2 => link-version,               ; versão escolhida
+hello-answer = {                   ; Linux node -> MCU
+  1 => 1,                          ; phase: answer
+  2 => link-version,               ; chosen version
   3 => nonce16,                    ; nonce_h
-  4 => nonce16,                    ; eco do nonce_d
+  4 => nonce16,                    ; echo of nonce_d
   5 => session-mode,
-  ? 6 => u32,                      ; session id (≠ 0); ausente se refused
-  ? 7 => session-params,           ; ausente se refused
+  ? 6 => u32,                      ; session id (≠ 0); absent if refused
+  ? 7 => session-params,           ; absent if refused
   ? 8 => status,
-  ? 9 => tstr,                     ; código do registo (J-E22xx)
-  ? 10 => tstr,                    ; detalhe
-  ? 14 => bstr .size 32,           ; RESERVADO 1.x
+  ? 9 => tstr,                     ; registry code (J-E22xx)
+  ? 10 => tstr,                    ; detail
+  ? 14 => bstr .size 32,           ; RESERVED 1.x
   * uint => any
 }
 
-hello-request = {                  ; nó Linux -> MCU: "recomeça o handshake"
+hello-request = {                  ; Linux node -> MCU: "restart the handshake"
   1 => 2,
   ? 8 => status,
   * uint => any
 }
 
 identity = {
-  1 => tstr,                       ; nome do MCU (rótulo DNS, ref/00 §5)
-  2 => bstr .size (4..32),         ; identificador único de hardware
-  ? 3 => tstr,                     ; placa
+  1 => tstr,                       ; MCU name (DNS label, ref/00 §5)
+  2 => bstr .size (4..32),         ; unique hardware identifier
+  ? 3 => tstr,                     ; board
   * uint => any
 }
 
 firmware-info = {
-  1 => tstr,                       ; versão SemVer
-  2 => hash32,                     ; digest da imagem
-  ? 3 => tstr,                     ; alvo (família de firmware / placa)
+  1 => tstr,                       ; SemVer version
+  2 => hash32,                     ; image digest
+  ? 3 => tstr,                     ; target (firmware family / board)
   ? 4 => [u8, u8],                 ; JK_ABI_VERSION_MAJOR, _MINOR (ref/08)
-  ? 5 => hash32,                   ; hash da tabela de capacidades (ref/08)
-  ? 6 => tstr,                     ; versão do Joker Micro (runtime), SemVer
-  ? 7 => [* tstr],                 ; features compiladas, ordenadas (ref/02 [mcu])
+  ? 5 => hash32,                   ; hash of the capability table (ref/08)
+  ? 6 => tstr,                     ; Joker Micro (runtime) version, SemVer
+  ? 7 => [* tstr],                 ; compiled features, sorted (ref/02 [mcu])
   ? 8 => capacity,
-  ? 9 => hash32,                   ; SHA-256 do descritor de firmware (firmware.jkfw, ref/08 §2.14)
-  ? 10 => u32,                     ; security_version confirmado (anti-rollback)
+  ? 9 => hash32,                   ; SHA-256 of the firmware descriptor (firmware.jkfw, ref/08 §2.14)
+  ? 10 => u32,                     ; confirmed security_version (anti-rollback)
   * uint => any
 }
-capacity = {                       ; cap_id -> valor, numeração da ref/08 §2.13.3
+capacity = {                       ; cap_id -> value, numbering of ref/08 §2.13.3
   ? 1 => u32,                      ; signals
   ? 3 => u32,                      ; outputs
   ? 4 => u32,                      ; groups
   ? 16 => u32,                     ; instances
   ? 36 => u32,                     ; trace_bytes
   ? 37 => u32,                     ; kv_bytes
-  * (1..40) => u32                 ; as restantes capacidades, se couberem
+  * (1..40) => u32                 ; the remaining capacities, if they fit
 }
 
 generation-info = {
-  1 => u64,                        ; gen_seq do blob
-  2 => hash32,                     ; hash da geração (source_hash do blob, ref/08 §2.13.2)
+  1 => u64,                        ; gen_seq of the blob
+  2 => hash32,                     ; generation hash (source_hash of the blob, ref/08 §2.13.2)
   3 => gen-state,
   4 => &(embedded: 0, flash: 1) / uint,
   * uint => any
@@ -151,25 +151,25 @@ generation-info = {
 contract-ref = [class: tstr, version: tstr, contract: hash32]
 
 caps = {
-  1 => u16,                        ; max_frame que o MCU recebe
-  2 => u16,                        ; max_msg (mensagem remontada)
-  3 => u8,                         ; janela fiável de receção
+  1 => u16,                        ; max_frame the MCU receives
+  2 => u16,                        ; max_msg (reassembled message)
+  3 => u8,                         ; reliable receive window
   4 => uint,                       ; features (ref/07 §6.4.1)
-  5 => u8,                         ; capacidade da tabela de deduplicação
-  6 => u8,                         ; capacidade de escritores remotos (saída, nível)
-  ? 7 => u32,                      ; bytes do anel de traço
+  5 => u8,                         ; capacity of the deduplication table
+  6 => u8,                         ; capacity of remote writers (output, level)
+  ? 7 => u32,                      ; trace ring bytes
   * uint => any
 }
 
 boot-info = {
-  1 => u32,                        ; contador de arranques
+  1 => u32,                        ; boot counter
   2 => reset-reason,
-  3 => 0..1,                       ; slot de firmware ativo (A = 0, B = 1)
-  4 => bool,                       ; firmware em experiência (trial)
-  5 => gen-state,                  ; resultado da última atualização de firmware
-  ? 6 => 0..1,                     ; slot de geração ativo
-  ? 7 => bool,                     ; geração em experiência
-  ? 8 => dur-ms,                   ; tempo restante da janela de confirmação
+  3 => 0..1,                       ; active firmware slot (A = 0, B = 1)
+  4 => bool,                       ; firmware on trial
+  5 => gen-state,                  ; result of the last firmware update
+  ? 6 => 0..1,                     ; active generation slot
+  ? 7 => bool,                     ; generation on trial
+  ? 8 => dur-ms,                   ; time left in the confirmation window
   * uint => any
 }
 reset-reason = &(unknown: 0, power_on: 1, pin: 2, watchdog: 3, software: 4,
@@ -182,14 +182,14 @@ session-params = {
   4 => dur-ms,                     ; keepalive
   5 => dur-ms,                     ; link_timeout
   6 => dur-ms,                     ; report
-  7 => dur-ms,                     ; refresh (0 = desligado)
+  7 => dur-ms,                     ; refresh (0 = off)
   8 => dur-ms,                     ; max_lease
   9 => dur-ms,                     ; rto_min
-  10 => u8,                        ; retransmit (reenvios de uma mensagem F)
+  10 => u8,                        ; retransmit (resends of an F message)
   11 => dur-ms,                    ; ack_delay
-  12 => dur-ms,                    ; time_interval (0 = sem TIME)
+  12 => dur-ms,                    ; time_interval (0 = no TIME)
   13 => u16,                       ; bulk_max
-  ? 14 => u8,                      ; turn_frames (só half-duplex)
+  ? 14 => u8,                      ; turn_frames (half-duplex only; RESERVED 1.1)
   * uint => any
 }
 
@@ -202,27 +202,27 @@ bye-reason = &(shutdown: 0, rehandshake: 1, generation_change: 2, reboot: 3,
                ota_activate: 4, error: 5) / uint
 
 ; -------------------------------------------------------- PING 0x04, PONG 0x05
-ping = { 1 => u64, * uint => any }                    ; t: µs, relógio de quem envia
-pong = { 1 => u64, 2 => u64, * uint => any }          ; eco de t; t de quem responde
+ping = { 1 => u64, * uint => any }                    ; t: µs, sender's clock
+pong = { 1 => u64, 2 => u64, * uint => any }          ; echo of t; responder's t
 
 ; -------------------------------------------------------------------- ACK 0x06
-ack = {}                                              ; corpo vazio (0 bytes) ou mapa vazio
+ack = {}                                              ; empty body (0 bytes) or empty map
 
 ; ------------------------------------------------------------------ ERROR 0x07
 error = {
   1 => status,
-  ? 2 => tstr,                     ; código do registo ("J-E2310")
-  ? 3 => u8,                       ; tipo da mensagem que o causou
-  ? 4 => u16,                      ; seq do pacote que o causou
-  ? 5 => u16,                      ; rseq, se era fiável
-  ? 6 => tstr,                     ; detalhe (≤ 128 B)
+  ? 2 => tstr,                     ; registry code ("J-E2310")
+  ? 3 => u8,                       ; type of the message that caused it
+  ? 4 => u16,                      ; seq of the packet that caused it
+  ? 5 => u16,                      ; rseq, if it was reliable
+  ? 6 => tstr,                     ; detail (≤ 128 B)
   * uint => any
 }
 
 ; ----------------------------------------------------------------- KEYROT 0x08
 keyrot = keyrot-offer / keyrot-stored
-keyrot-offer  = { 1 => 0, 2 => kid8, 3 => bstr .size 32, * uint => any }   ; nó Linux -> MCU
-keyrot-stored = { 1 => 1, 2 => kid8, * uint => any }                      ; MCU -> nó Linux
+keyrot-offer  = { 1 => 0, 2 => kid8, 3 => bstr .size 32, * uint => any }   ; Linux node -> MCU
+keyrot-stored = { 1 => 1, 2 => kid8, * uint => any }                      ; MCU -> Linux node
 
 ; ---------------------------------------------------------------- CATALOG 0x10
 catalog-msg = catalog-req / catalog-data
@@ -231,27 +231,27 @@ catalog-data = { 1 => 1, 2 => u32, 3 => u32, 4 => bstr, * uint => any } ; offset
 
 ; ------------------------------------------------------------------- READ 0x11
 read = {
-  ? 1 => [* sid],                  ; ausente: todos os sinais
-  ? 2 => bool,                     ; true: também um snapshot de ALARMS
+  ? 1 => [* sid],                  ; absent: all signals
+  ? 2 => bool,                     ; true: also a snapshot of ALARMS
   * uint => any
 }
 
 ; ---------------------------------------------------------------- SAMPLES 0x12
 samples = {
-  1 => mono-us,                    ; t0: base de tempo do lote
+  1 => mono-us,                    ; t0: time base of the batch
   2 => [* sample],
-  ? 3 => uint,                     ; flags: bit 0 refresh, bit 1 resposta a READ, bit 2 última da resposta
-  ? 4 => u16,                      ; rseq do READ a que responde
-  ? 5 => u32,                      ; amostras coalescidas (substituídas antes do envio)
+  ? 3 => uint,                     ; flags: bit 0 refresh, bit 1 answer to READ, bit 2 last of the answer
+  ? 4 => u16,                      ; rseq of the READ it answers
+  ? 5 => u32,                      ; coalesced samples (replaced before sending)
   * uint => any
 }
 sample = [
   sid,
-  seq: u16,                        ; 16 bits baixos da seq do MCU
+  seq: u16,                        ; low 16 bits of the MCU seq
   v: value,
-  ? dt: u32,                       ; µs depois de t0 (omissão 0)
-  ? q: quality,                    ; omissão 0 (good, none, sem flags)
-  ? ts-src: utc-us / null,         ; UTC da origem, se existir
+  ? dt: u32,                       ; µs after t0 (default 0)
+  ? q: quality,                    ; default 0 (good, none, no flags)
+  ? ts-src: utc-us / null,         ; source UTC, if any
   * any
 ]
 
@@ -261,73 +261,73 @@ writer-block = [
   origin,
   level,
   kind: writer-kind,
-  lease: dur-ms,                   ; 1 ≤ lease ≤ max_lease da sessão
+  lease: dur-ms,                   ; 1 ≤ lease ≤ max_lease of the session
   props: [* prop],
-  ? calls: [* call-rec],           ; registos de método (17 §4.1)
+  ? calls: [* call-rec],           ; method records (17 §4.1)
   * any
 ]
 prop = [
   sid,
-  v: value / null,                 ; null = relinquish nesse nível
-  ? at: mono-us,                   ; RESERVADO 1.1 (escritas agendadas, M6)
+  v: value / null,                 ; null = relinquish at that level
+  ? at: mono-us,                   ; RESERVED 1.1 (scheduled writes, M6)
   * any
 ]
 call-rec = [mid: u16, args: record / null, * any]
 
 ; --------------------------------------------------------------- OUTCOMES 0x14
 outcomes = {
-  1 => u16,                        ; ref: seq do último PROPOSE consumido
-  2 => mono-us,                    ; t do tick do MCU
+  1 => u16,                        ; ref: seq of the last consumed PROPOSE
+  2 => mono-us,                    ; t of the MCU tick
   3 => [* outcome-entry],
-  ? 4 => [* expired-entry],        ; leases remotos que expiraram neste tick
-  ? 5 => u32,                      ; resultados perdidos (janela cheia)
+  ? 4 => [* expired-entry],        ; remote leases that expired in this tick
+  ? 5 => u32,                      ; results dropped (full window)
   * uint => any
 }
 outcome-entry = [
   sid, origin, level,
   o: outcome,
-  ? applied: value / null,         ; valor aplicado; null = igual ao proposto
-  ? detail: reject-reason / level, ; rejected: motivo; overridden: nível ativo
+  ? applied: value / null,         ; applied value; null = same as proposed
+  ? detail: reject-reason / level, ; rejected: reason; overridden: active level
   * any
 ]
 expired-entry = [sid, origin, level, * any]
 
 ; ------------------------------------------------------------------- CALL 0x15
 call = {
-  1 => u32,                        ; id do pedido
-  2 => u16,                        ; mid (catálogo)
+  1 => u32,                        ; request id
+  2 => u16,                        ; mid (catalog)
   3 => origin,
   4 => level,
   5 => writer-kind,
-  6 => dur-ms,                     ; lease das escritas expandidas
-  ? 7 => record,                   ; argumentos
+  6 => dur-ms,                     ; lease of the expanded writes
+  ? 7 => record,                   ; arguments
   ? 8 => idem-key,
   * uint => any
 }
 
 ; ----------------------------------------------------------------- ACTION 0x16
 action = {
-  1 => u32,                        ; id do pedido
-  2 => u16,                        ; aid (catálogo)
-  ? 3 => record,                   ; argumentos
+  1 => u32,                        ; request id
+  2 => u16,                        ; aid (catalog)
+  ? 3 => record,                   ; arguments
   4 => idem-key,
-  5 => role,                       ; papel de quem pediu (verificado no nó Linux)
-  ? 6 => dur-ms,                   ; timeout pedido (≤ o do MCU)
+  5 => role,                       ; role of the requester (checked on the Linux node)
+  ? 6 => dur-ms,                   ; requested timeout (≤ the MCU's)
   * uint => any
 }
 
 ; ----------------------------------------------------------------- RESULT 0x17
 result = {
-  1 => u32,                        ; id do pedido (CALL, ACTION, ALARM_CMD, RESET, RESTART)
+  1 => u32,                        ; request id (CALL, ACTION, ALARM_CMD, RESET, RESTART)
   2 => result-state,
-  ? 3 => any,                      ; valor de Ok(...) (registo ou null)
+  ? 3 => any,                      ; value of Ok(...) (record or null)
   ? 4 => status,
-  ? 5 => tstr,                     ; código do registo
-  ? 6 => 0..100,                   ; progresso (running)
-  ? 7 => [* outcome-entry],        ; CALL: resultados das escritas expandidas
-  ? 8 => tstr,                     ; detalhe
-  ? 9 => bool,                     ; true: repetido pela deduplicação
-  ? 10 => [* [sid, value]],        ; CALL: propostas da expansão (para renovar o lease)
+  ? 5 => tstr,                     ; registry code
+  ? 6 => 0..100,                   ; progress (running)
+  ? 7 => [* outcome-entry],        ; CALL: results of the expanded writes
+  ? 8 => tstr,                     ; detail
+  ? 9 => bool,                     ; true: repeated by deduplication
+  ? 10 => [* [sid, value]],        ; CALL: proposals of the expansion (to renew the lease)
   * uint => any
 }
 result-state = &(ok: 0, err: 1, running: 2, cancelled: 3) / uint
@@ -351,10 +351,10 @@ alarm-tr = [
 
 ; -------------------------------------------------------------- ALARM_CMD 0x1B
 alarm-cmd = {
-  1 => u32,                        ; id do pedido
+  1 => u32,                        ; request id
   2 => u16,                        ; alid
   3 => &(ack: 0, shelve: 1, unshelve: 2) / uint,
-  ? 4 => dur-ms,                   ; ttl (obrigatório em shelve)
+  ? 4 => dur-ms,                   ; ttl (required in shelve)
   5 => role,
   * uint => any
 }
@@ -371,14 +371,14 @@ time-probe = { 1 => 0, 2 => host-us, * uint => any }                       ; t1
 time-echo  = { 1 => 1, 2 => host-us, 3 => mono-us, 4 => mono-us, * uint => any } ; t1, t2, t3
 time-set   = {
   1 => 2,
-  5 => mono-us,                    ; instante M do MCU
-  6 => utc-us,                     ; UTC em M
+  5 => mono-us,                    ; MCU instant M
+  6 => utc-us,                     ; UTC at M
   7 => clock-quality,
   8 => clock-source,
-  ? 9 => i32,                      ; correção de taxa do relógio do MCU, ppb
-  ? 10 => u32,                     ; erro estimado, µs
+  ? 9 => i32,                      ; rate correction of the MCU clock, ppb
+  ? 10 => u32,                     ; estimated error, µs
   ? 11 => dur-ms,                  ; max_holdover
-  ? 12 => utc-us,                  ; holdover desde (quando 7 = holdover)
+  ? 12 => utc-us,                  ; holdover since (when 7 = holdover)
   * uint => any
 }
 
@@ -401,7 +401,7 @@ seg-info = [
 ; -------------------------------------------------------------------- OTA 0x22
 ota = ota-begin / ota-ready / ota-data / ota-ack / ota-end / ota-verified /
       ota-activate / ota-confirm / ota-abort / ota-state
-ota-kind = &(generation: 1, firmware: 2, model: 3, app: 4) / uint   ; 0 nunca; 3, 4: RESERVADOS 1.4
+ota-kind = &(generation: 1, firmware: 2, model: 3, app: 4) / uint   ; 0 never; 3, 4: RESERVED 1.4
 
 ota-begin    = { 1 => 0, 2 => u16, 3 => ota-kind, 4 => u32,
                  5 => bstr .cbor COSE_Sign1_Tagged, ? 6 => u16, * uint => any }
@@ -415,28 +415,28 @@ ota-confirm  = { 1 => 7, 3 => ota-kind, * uint => any }
 ota-abort    = { 1 => 8, 2 => u16, 10 => status, ? 12 => tstr, * uint => any }
 ota-state    = { 1 => 9, 3 => ota-kind, 13 => gen-state, * uint => any }
 
-; Manifesto assinado (payload do COSE_Sign1)
+; Signed manifest (payload of the COSE_Sign1)
 ota-manifest = {
   1 => ota-kind,
-  2 => tstr,                       ; alvo (família de firmware / placa)
-  3 => tstr,                       ; versão (SemVer no firmware; gen decimal na geração)
-  4 => u32,                        ; tamanho da imagem
-  5 => hash32,                     ; SHA-256 da imagem
-  6 => u32,                        ; security_version (firmware: contador anti-rollback; geração: 0)
-  ? 7 => u64,                      ; gen_seq (geração; anti-rollback da geração)
-  ? 8 => hash32,                   ; hash da geração (source_hash do blob)
-  ? 9 => hash32,                   ; hash das capacidades do firmware alvo (ref/08 §2.14)
-  ? 10 => utc-us,                  ; criado em
-  ? 11 => link-version,            ; versão mínima do Joker Link
-  ? 12 => bstr .size 8,            ; board_id (geração; = cabeçalho do blob)
-  ? 13 => u16,                     ; format do blob (geração)
-  ? 14 => tstr,                    ; nó a que o blob está ligado (NODE_BOUND)
-  ? 15 => hash32,                  ; registry_hash (geração)
+  2 => tstr,                       ; target (firmware family / board)
+  3 => tstr,                       ; version (SemVer for firmware; decimal gen for a generation)
+  4 => u32,                        ; image size
+  5 => hash32,                     ; SHA-256 of the image
+  6 => u32,                        ; security_version (firmware: anti-rollback counter; generation: 0)
+  ? 7 => u64,                      ; gen_seq (generation; generation anti-rollback)
+  ? 8 => hash32,                   ; generation hash (source_hash of the blob)
+  ? 9 => hash32,                   ; hash of the capabilities of the target firmware (ref/08 §2.14)
+  ? 10 => utc-us,                  ; created at
+  ? 11 => link-version,            ; minimum Joker Link version
+  ? 12 => bstr .size 8,            ; board_id (generation; = blob header)
+  ? 13 => u16,                     ; blob format (generation)
+  ? 14 => tstr,                    ; node the blob is bound to (NODE_BOUND)
+  ? 15 => hash32,                  ; registry_hash (generation)
   * uint => any
 }
-; Numa geração, este COSE_Sign1 é também o trailer do blob .jkgen (ref/08 §2.13.5): uma só forma.
+; In a generation, this COSE_Sign1 is also the trailer of the .jkgen blob (ref/08 §2.13.5): a single form.
 
-; COSE_Sign1 (RFC 9052) restrito a EdDSA/Ed25519
+; COSE_Sign1 (RFC 9052) restricted to EdDSA/Ed25519
 COSE_Sign1_Tagged = #6.18(COSE_Sign1)
 COSE_Sign1 = [
   protected:   bstr .cbor cose-protected,
@@ -444,10 +444,10 @@ COSE_Sign1 = [
   payload:     bstr .cbor ota-manifest,
   signature:   bstr .size 64
 ]
-cose-protected = { 1 => -8, 4 => kid16, * (int / tstr) => any }   ; alg EdDSA, kid de 16 B
+cose-protected = { 1 => -8, 4 => kid16, * (int / tstr) => any }   ; alg EdDSA, 16 B kid
 
-; ============================================================ CATÁLOGO (§6.2)
-; Bytes transferidos por CATALOG; SHA-256 destes bytes = hash do catálogo.
+; ============================================================ CATALOG (§6.2)
+; Bytes transferred by CATALOG; SHA-256 of these bytes = catalog hash.
 catalog = {
   1 => [* signal-desc],
   ? 2 => [* instance-desc],
@@ -456,39 +456,39 @@ catalog = {
   ? 5 => [* event-desc],
   ? 6 => [* alarm-desc],
   ? 7 => [* group-desc],
-  8 => tstr,                       ; nome do MCU
+  8 => tstr,                       ; MCU name
   * uint => any
 }
 signal-desc = {
   1 => sid,
-  2 => tstr,                       ; caminho no MCU (02 §9)
+  2 => tstr,                       ; path on the MCU (02 §9)
   3 => sig-type,
-  4 => tstr,                       ; unidade (catálogo do 16 §5; "1" = adimensional)
+  4 => tstr,                       ; unit (catalog of 16 §5; "1" = dimensionless)
   5 => &(input: 0, output: 1, internal: 2, param: 3, derived: 4) / uint,
-  ? 6 => u16,                      ; gid do grupo dono
-  ? 7 => [* [u64, tstr]],          ; enum: variantes; bits: nomes dos bits
-  ? 8 => u16,                      ; saídas: níveis delegados ao link (bit L-1)
-  ? 9 => [value, value],           ; saídas: range (informativo)
-  ? 10 => value / "relinquish",    ; saídas: safe (informativo)
-  ? 11 => dur-ms,                  ; max_age no MCU
-  ? 12 => tstr,                    ; grandeza (16 §5)
-  ? 13 => u8,                      ; largura N de bits<N> / enum<N>
+  ? 6 => u16,                      ; gid of the owning group
+  ? 7 => [* [u64, tstr]],          ; enum: variants; bits: bit names
+  ? 8 => u16,                      ; outputs: levels delegated to the link (bit L-1)
+  ? 9 => [value, value],           ; outputs: range (informative)
+  ? 10 => value / "relinquish",    ; outputs: safe (informative)
+  ? 11 => dur-ms,                  ; max_age on the MCU
+  ? 12 => tstr,                    ; quantity (16 §5)
+  ? 13 => u8,                      ; width N of bits<N> / enum<N>
   * uint => any
 }
 instance-desc = {
   1 => u32,                        ; iid
-  2 => tstr,                       ; nome da instância no MCU
-  3 => tstr,                       ; classe ("std/pump@1")
-  4 => tstr,                       ; versão completa ("1.2.0")
-  5 => hash32,                     ; hash do contrato (17 §6)
-  ? 6 => [* tstr],                 ; capacidades
+  2 => tstr,                       ; instance name on the MCU
+  3 => tstr,                       ; class ("std/pump@1")
+  4 => tstr,                       ; full version ("1.2.0")
+  5 => hash32,                     ; contract hash (17 §6)
+  ? 6 => [* tstr],                 ; capabilities
   7 => [* [member: tstr, sid]],
   ? 8 => [* [member: tstr, [* u32]]],   ; class members (17 §8): iids, in collection order
   ? 9 => bool,                     ; true: only a member, no top-level name on the node (ref/07 §8.3)
   * uint => any
 }
-method-desc = { 1 => u16, 2 => tstr, 3 => u32, ? 4 => bool, * uint => any }   ; mid, caminho, iid, atomic
-action-desc = { 1 => u16, 2 => tstr, ? 3 => u32, 4 => role, 5 => dur-ms, ? 6 => bool, * uint => any } ; aid, caminho, iid, papel, timeout, long
+method-desc = { 1 => u16, 2 => tstr, 3 => u32, ? 4 => bool, * uint => any }   ; mid, path, iid, atomic
+action-desc = { 1 => u16, 2 => tstr, ? 3 => u32, 4 => role, 5 => dur-ms, ? 6 => bool, * uint => any } ; aid, path, iid, role, timeout, long
 event-desc  = { 1 => u16, 2 => tstr, ? 3 => u32, ? 4 => [* [tstr, sig-type, tstr]], * uint => any }
 alarm-desc  = { 1 => u16, 2 => tstr, 3 => severity, ? 4 => tstr, ? 5 => sid, * uint => any }
-group-desc  = { 1 => u16, 2 => tstr, 3 => u32, * uint => any }   ; gid, nome, período em µs
+group-desc  = { 1 => u16, 2 => tstr, 3 => u32, * uint => any }   ; gid, name, period in µs

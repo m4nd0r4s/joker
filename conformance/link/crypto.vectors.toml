@@ -1,0 +1,115 @@
+schema = 1
+
+[vectors]
+kind        = "link.crypto"
+id          = "link.crypto"
+spec        = ["ref/07 §4.1", "ref/07 §4.2", "ref/07 §4.4", "ref/07 §4.8"]
+hosts       = ["linux", "mcu"]
+description = "Joker Link L2 security: key schedule, handshake and session frames with ChaCha20-Poly1305, rejection of tampered frames, and the anti-replay window"
+
+[[vector]]
+id         = "key_schedule"
+op         = "key_schedule"
+spec       = ["ref/07 §4.2", "ref/07 §4.8"]
+k_link     = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+nonce_d    = "101112131415161718191a1b1c1d1e1f"
+nonce_h    = "202122232425262728292a2b2c2d2e2f"
+sid        = 1
+kid        = "47d78759c31e7116"
+k_hs       = "773e29c63397f8122ebf0daba10addbe8bb96ca12fee10f037b64b34c476c278"
+k_d2h      = "34e79c45b75e7288b5e7c76e92fca2f304f6d063eb6d8b4a5eb02fb2d789738d"
+k_h2d      = "79631917c20c7f57af300949270905396b76bbc760d5d2513725029ff751f213"
+k_d2h_next = "e6fea0e448d8bd138bdc0ad699ced2ccac9295bdd179224804982065cf3d3948"
+
+[[vector]]
+id     = "kid_of_rotated_key"
+op     = "kid"
+spec   = ["ref/07 §4.2", "ref/07 §6.8"]
+k_link = "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f"
+kid    = "e1092152bcfa5913"
+
+[[vector]]
+id        = "session_frame_ping"
+op        = "seal_session"
+spec      = ["ref/07 §4.1", "ref/07 §4.8"]
+key       = "34e79c45b75e7288b5e7c76e92fca2f304f6d063eb6d8b4a5eb02fb2d789738d"
+phase     = 0
+sid       = 1
+ctr       = 5
+plaintext = "04100c000900ff000000a1011a0012ec2e"
+frame     = "200100000005000000cb540e42306a12411a73f39b4ef279b462157881d6414ed6f70d1d3e25e1beb160"
+
+[[vector]]
+id        = "handshake_frame_hello"
+op        = "seal_handshake"
+spec      = ["ref/07 §4.1", "ref/07 §4.8"]
+key       = "773e29c63397f8122ebf0daba10addbe8bb96ca12fee10f037b64b34c476c278"
+kid       = "47d78759c31e7116"
+nonce     = "404142434445464748494a4b"
+plaintext = "01000000000000000000a10102"
+frame     = "1047d78759c31e7116404142434445464748494a4b7f91303cbdd9f549983e0c16b43e5536a6db43220446bef47bc8e60ca9"
+
+[[vector]]
+id     = "tampered_tag_rejected"
+op     = "open_session"
+spec   = ["ref/07 §4.4"]
+key    = "34e79c45b75e7288b5e7c76e92fca2f304f6d063eb6d8b4a5eb02fb2d789738d"
+frame  = "200100000005000000cb540e42306a12411a73f39b4ef279b462157881d6414ed6f70d1d3e25e1beb161"
+result = "discard"
+code   = "J-E2101"
+
+[[vector]]
+id     = "tampered_ciphertext_rejected"
+op     = "open_session"
+spec   = ["ref/07 §4.4"]
+key    = "34e79c45b75e7288b5e7c76e92fca2f304f6d063eb6d8b4a5eb02fb2d789738d"
+frame  = "200100000005000000ca540e42306a12411a73f39b4ef279b462157881d6414ed6f70d1d3e25e1beb160"
+result = "discard"
+code   = "J-E2101"
+
+[[vector]]
+id        = "open_session_ping"
+op        = "open_session"
+spec      = ["ref/07 §4.1", "ref/07 §4.8"]
+key       = "34e79c45b75e7288b5e7c76e92fca2f304f6d063eb6d8b4a5eb02fb2d789738d"
+frame     = "200100000005000000cb540e42306a12411a73f39b4ef279b462157881d6414ed6f70d1d3e25e1beb160"
+result    = "accept"
+sid       = 1
+ctr       = 5
+plaintext = "04100c000900ff000000a1011a0012ec2e"
+
+[[vector]]
+id     = "first_byte_fields"
+op     = "first_byte"
+spec   = ["ref/07 §4.1"]
+cases  = [
+  { byte = 0x00, fmt = 0, kind = "plaintext", phase = 0, result = "accept" },
+  { byte = 0x10, fmt = 0, kind = "handshake", phase = 0, result = "accept" },
+  { byte = 0x20, fmt = 0, kind = "session",   phase = 0, result = "accept" },
+  { byte = 0x28, fmt = 0, kind = "session",   phase = 1, result = "accept" },
+  { byte = 0x27, fmt = 0, kind = "session",   phase = 0, result = "accept" },
+  { byte = 0x30, fmt = 0, kind = "reserved",  phase = 0, result = "discard" },
+  { byte = 0x60, fmt = 1, kind = "session",   phase = 0, result = "discard", code = "J-E2005" },
+]
+
+[[vector]]
+id    = "replay_window"
+op    = "replay_window"
+spec  = ["ref/07 §4.4"]
+steps = [
+  { ctr = 0,  result = "accept" },
+  { ctr = 1,  result = "accept" },
+  { ctr = 5,  result = "accept" },
+  { ctr = 3,  result = "accept" },
+  { ctr = 3,  result = "discard", code = "J-E2102" },
+  { ctr = 5,  result = "discard", code = "J-E2102" },
+  { ctr = 70, result = "accept" },
+  { ctr = 6,  result = "discard", code = "J-E2102" },
+  { ctr = 7,  result = "accept" },
+  { ctr = 7,  result = "discard", code = "J-E2102" },
+  { ctr = 69, result = "accept" },
+  { ctr = 70, result = "discard", code = "J-E2102" },
+  { ctr = 200, result = "accept" },
+  { ctr = 136, result = "discard", code = "J-E2102" },
+  { ctr = 137, result = "accept" },
+]

@@ -1,0 +1,113 @@
+schema = 1
+
+[suite]
+kind        = "core"
+id          = "expressions.temporal"
+spec        = ["02 §10", "16 §3.2"]
+period      = "100ms"
+hosts       = ["linux", "mcu"]
+description = "Stateful functions held, rose and fell: initial state false, held timer restarted by Bad, rose and fell false on Bad"
+
+[[signals]]
+path = "x.c"
+type = "bool"
+
+[[calc]]
+path = "calc.held_c"
+expr = "held(x.c, 300ms)"
+
+[[calc]]
+path = "calc.rose_c"
+expr = "rose(x.c)"
+
+[[calc]]
+path = "calc.fell_c"
+expr = "fell(x.c)"
+
+[[case]]
+id   = "held_after_duration"
+name = "held is true once the condition has held for at least the duration"
+spec = ["02 §10", "16 §3.2"]
+do   = [{ at = "0ms", input = "x.c", value = true }]
+expect = [
+  { at = "0ms",   signal = "calc.held_c", equals = false },
+  { at = "200ms", signal = "calc.held_c", equals = false },
+  { at = "300ms", signal = "calc.held_c", equals = true },
+  { at = "500ms", signal = "calc.held_c", equals = true },
+]
+
+[[case]]
+id   = "held_resets_when_false"
+name = "A false condition restarts held"
+spec = ["02 §10"]
+do   = [
+  { at = "0ms",   input = "x.c", value = true },
+  { at = "200ms", input = "x.c", value = false },
+  { at = "300ms", input = "x.c", value = true },
+]
+expect = [
+  { at = "500ms", signal = "calc.held_c", equals = false },
+  { at = "600ms", signal = "calc.held_c", equals = true },
+]
+
+[[case]]
+id   = "held_restarts_after_bad"
+name = "A Bad input restarts the held timer"
+spec = ["16 §3.2"]
+do   = [
+  { at = "0ms",   input = "x.c", value = true },
+  { at = "200ms", input = "x.c", quality = "bad(comm_failure)" },
+  { at = "300ms", input = "x.c", value = true },
+]
+expect = [
+  { at = "500ms", signal = "calc.held_c", equals = false },
+  { at = "600ms", signal = "calc.held_c", equals = true },
+]
+
+[[case]]
+id   = "rose_on_rising_edge"
+name = "rose is true only in the tick where the condition becomes true"
+spec = ["02 §10"]
+do   = [
+  { at = "0ms",   input = "x.c", value = false },
+  { at = "100ms", input = "x.c", value = true },
+]
+expect = [
+  { at = "0ms",   signal = "calc.rose_c", equals = false },
+  { at = "100ms", signal = "calc.rose_c", equals = true },
+  { at = "200ms", signal = "calc.rose_c", equals = false },
+]
+
+[[case]]
+id   = "rose_from_initial_state"
+name = "The initial state is false, so a condition true on the first tick is a rising edge"
+spec = ["16 §3.2"]
+do   = [{ at = "0ms", input = "x.c", value = true }]
+expect = [{ at = "0ms", signal = "calc.rose_c", equals = true }]
+
+[[case]]
+id   = "fell_on_falling_edge"
+name = "fell is true only in the tick where the condition becomes false"
+spec = ["02 §10"]
+do   = [
+  { at = "0ms",   input = "x.c", value = true },
+  { at = "100ms", input = "x.c", value = false },
+]
+expect = [
+  { at = "0ms",   signal = "calc.fell_c", equals = false },
+  { at = "100ms", signal = "calc.fell_c", equals = true },
+  { at = "200ms", signal = "calc.fell_c", equals = false },
+]
+
+[[case]]
+id   = "edges_false_on_bad"
+name = "With a Bad input, rose and fell are Bad"
+spec = ["16 §3.2", "ADR 0034 §12"]
+do   = [
+  { at = "0ms",   input = "x.c", value = true },
+  { at = "100ms", input = "x.c", quality = "bad(comm_failure)" },
+]
+expect = [
+  { at = "100ms", signal = "calc.rose_c", quality = "bad" },
+  { at = "100ms", signal = "calc.fell_c", quality = "bad" },
+]

@@ -1,0 +1,437 @@
+schema = 1
+
+[vectors]
+kind        = "link.message"
+id          = "link.messages"
+spec        = ["ref/07 §5.1", "ref/07 §5.2", "ref/07 §6.2"]
+hosts       = ["linux", "mcu"]
+description = "Every message example of ref/07: binary header fields and the deterministic CBOR body, against its diagnostic notation"
+
+[[vector]]
+id      = "hello_offer"
+spec    = ["ref/07 §6.4"]
+message = "01000000000000000000ac010002818201000350101112131415161718191a1b1c1d1e1f04a3016c696f2d7270323335302d30310248e66038b7c3a2f12d037061636d652f696f31362d72703233353005a50165312e302e33025820e5c2ed6fe0a694040f93b1e0bfaa1b140df0e51de29f6903f76ac093089ca470037061636d652f696f31362d7270323335300665312e302e330782646770696f6a6d6f646275732d72747506a4010702582069e2071fe2dbff9a0f8a270b5d88c4b886a9b048d61f21ec6793faef6adbbd85030204010758209be86532d0f649500bb9e54961364246fc50c2ab410232ef8a8b5c2dd52b597608582025c7c73ece719aafc154ea525c9d0616cf4499a4297d1f703cfa06e10bbb3d630981836b7374642f72656c6179403165312e302e30582036df9772a6e35a5decb09ff8bbc1a1aab2b9266c65c2bebb638de85d2ef6514a0ba701190400021910000304041903ff05100608071940000ca501182a0201030004f405020d1a0012d687"
+header  = { type = 1, flags = 0, seq = 0, ack = 0, ack_bits = 0 }
+body    = "ac010002818201000350101112131415161718191a1b1c1d1e1f04a3016c696f2d7270323335302d30310248e66038b7c3a2f12d037061636d652f696f31362d72703233353005a50165312e302e33025820e5c2ed6fe0a694040f93b1e0bfaa1b140df0e51de29f6903f76ac093089ca470037061636d652f696f31362d7270323335300665312e302e330782646770696f6a6d6f646275732d72747506a4010702582069e2071fe2dbff9a0f8a270b5d88c4b886a9b048d61f21ec6793faef6adbbd85030204010758209be86532d0f649500bb9e54961364246fc50c2ab410232ef8a8b5c2dd52b597608582025c7c73ece719aafc154ea525c9d0616cf4499a4297d1f703cfa06e10bbb3d630981836b7374642f72656c6179403165312e302e30582036df9772a6e35a5decb09ff8bbc1a1aab2b9266c65c2bebb638de85d2ef6514a0ba701190400021910000304041903ff05100608071940000ca501182a0201030004f405020d1a0012d687"
+diag    = """
+{
+  1: 0,
+  2: [[1, 0]],
+  3: h'101112131415161718191a1b1c1d1e1f',
+  4: {1: "io-rp2350-01", 2: h'e66038b7c3a2f12d', 3: "acme/io16-rp2350"},
+  5: {1: "1.0.3", 2: h'e5c2ed6fe0a694040f93b1e0bfaa1b140df0e51de29f6903f76ac093089ca470', 3: "acme/io16-rp2350", 6: "1.0.3", 7: ["gpio", "modbus-rtu"]},
+  6: {1: 7, 2: h'69e2071fe2dbff9a0f8a270b5d88c4b886a9b048d61f21ec6793faef6adbbd85', 3: 2, 4: 1},
+  7: h'9be86532d0f649500bb9e54961364246fc50c2ab410232ef8a8b5c2dd52b5976',
+  8: h'25c7c73ece719aafc154ea525c9d0616cf4499a4297d1f703cfa06e10bbb3d63',
+  9: [["std/relay@1", "1.0.0", h'36df9772a6e35a5decb09ff8bbc1a1aab2b9266c65c2bebb638de85d2ef6514a']],
+  11: {1: 1024, 2: 4096, 3: 4, 4: 1023, 5: 16, 6: 8, 7: 16384},
+  12: {1: 42, 2: 1, 3: 0, 4: false, 5: 2},
+  13: 1234567
+}"""
+
+[[vector]]
+id      = "hello_answer"
+spec    = ["ref/07 §6.4"]
+message = "01000000000000000000a70101028201000350202122232425262728292a2b2c2d2e2f0450101112131415161718191a1b1c1d1e1f0500060107ad011904000219100003040418320518c8060a071903e808191388090a0a080b020c1927100d190100"
+header  = { type = 1, flags = 0, seq = 0, ack = 0, ack_bits = 0 }
+body    = "a70101028201000350202122232425262728292a2b2c2d2e2f0450101112131415161718191a1b1c1d1e1f0500060107ad011904000219100003040418320518c8060a071903e808191388090a0a080b020c1927100d190100"
+diag    = """
+{
+  1: 1,
+  2: [1, 0],
+  3: h'202122232425262728292a2b2c2d2e2f',
+  4: h'101112131415161718191a1b1c1d1e1f',
+  5: 0,
+  6: 1,
+  7: {1: 1024, 2: 4096, 3: 4, 4: 50, 5: 200, 6: 10, 7: 1000, 8: 5000, 9: 10, 10: 8, 11: 2, 12: 10000, 13: 256}
+}"""
+
+[[vector]]
+id      = "hello_request"
+spec    = ["ref/07 §6.4"]
+message = "01000000000000000000a10102"
+header  = { type = 1, flags = 0, seq = 0, ack = 0, ack_bits = 0 }
+body    = "a10102"
+diag    = """
+{1: 2}"""
+
+[[vector]]
+id      = "ready"
+spec    = ["ref/07 §6.5"]
+message = "020100000000000000000000a20100021a0012ec2e"
+header  = { type = 2, flags = 1, seq = 0, ack = 0, ack_bits = 0, rseq = 0 }
+body    = "a20100021a0012ec2e"
+diag    = """
+{1: 0, 2: 1240110}"""
+
+[[vector]]
+id      = "bye"
+spec    = ["ref/07 §6.6"]
+message = "03108f034d00ffffffffa10102"
+header  = { type = 3, flags = 16, seq = 911, ack = 77, ack_bits = 4294967295 }
+body    = "a10102"
+diag    = """
+{1: 2}"""
+
+[[vector]]
+id      = "ping"
+spec    = ["ref/07 §6.7"]
+message = "04100c000900ff000000a1011a0012ec2e"
+header  = { type = 4, flags = 16, seq = 12, ack = 9, ack_bits = 255 }
+body    = "a1011a0012ec2e"
+diag    = """
+{1: 1240110}"""
+
+[[vector]]
+id      = "pong"
+spec    = ["ref/07 §6.7"]
+message = "05100a000c00ffff0000a2011a0012ec2e021a053ef639"
+header  = { type = 5, flags = 16, seq = 10, ack = 12, ack_bits = 65535 }
+body    = "a2011a0012ec2e021a053ef639"
+diag    = """
+{1: 1240110, 2: 88012345}"""
+
+[[vector]]
+id      = "ack"
+spec    = ["ref/07 §6.7"]
+message = "06100d000b00ffffffff"
+header  = { type = 6, flags = 16, seq = 13, ack = 11, ack_bits = 4294967295 }
+body    = ""
+
+[[vector]]
+id      = "keyrot_offer"
+spec    = ["ref/07 §6.8"]
+message = "081132003c00000000000500a301000248e1092152bcfa5913035820202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f"
+header  = { type = 8, flags = 17, seq = 50, ack = 60, ack_bits = 0, rseq = 5 }
+body    = "a301000248e1092152bcfa5913035820202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f"
+diag    = """
+{
+  1: 0,
+  2: h'e1092152bcfa5913',
+  3: h'202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f'
+}"""
+
+[[vector]]
+id      = "keyrot_stored"
+spec    = ["ref/07 §6.8"]
+message = "08113d003200000000000900a201010248e1092152bcfa5913"
+header  = { type = 8, flags = 17, seq = 61, ack = 50, ack_bits = 0, rseq = 9 }
+body    = "a201010248e1092152bcfa5913"
+diag    = """
+{1: 1, 2: h'e1092152bcfa5913'}"""
+
+[[vector]]
+id      = "samples"
+spec    = ["ref/07 §6.9"]
+message = "12102c039201ffffffffa2011a0012ebc0028383001904b1f5840119036df418fa851828191400f95e72190708190301"
+header  = { type = 18, flags = 16, seq = 812, ack = 402, ack_bits = 4294967295 }
+body    = "a2011a0012ebc0028383001904b1f5840119036df418fa851828191400f95e72190708190301"
+diag    = """
+{
+  1: 1240000,
+  2: [[0, 1201, true], [1, 877, false, 250], [40, 5120, 412.5, 1800, 769]]
+}"""
+
+[[vector]]
+id      = "read"
+spec    = ["ref/07 §6.10"]
+message = "111103000500000000000200a1018218281829"
+header  = { type = 17, flags = 17, seq = 3, ack = 5, ack_bits = 0, rseq = 2 }
+body    = "a1018218281829"
+diag    = """
+{1: [40, 41]}"""
+
+[[vector]]
+id      = "catalog_request"
+spec    = ["ref/07 §6.11"]
+message = "101101000000000000000000a30100020003190384"
+header  = { type = 16, flags = 17, seq = 1, ack = 0, ack_bits = 0, rseq = 0 }
+body    = "a30100020003190384"
+diag    = """
+{1: 0, 2: 0, 3: 900}"""
+
+[[vector]]
+id      = "catalog_data"
+spec    = ["ref/07 §6.11"]
+message = "101102000100000000000100a401010200031907510445a8012e2e2e"
+header  = { type = 16, flags = 17, seq = 2, ack = 1, ack_bits = 0, rseq = 1 }
+body    = "a401010200031907510445a8012e2e2e"
+diag    = """
+{1: 1, 2: 0, 3: 1873, 4: h'a8012e2e2e'}"""
+abbreviated = true
+
+[[vector]]
+id      = "propose"
+spec    = ["ref/07 §6.12"]
+message = "131092012c03ffffffffa1018285110a00181e828210f58211f486170402191388818212f6818203a100f95380"
+header  = { type = 19, flags = 16, seq = 402, ack = 812, ack_bits = 4294967295 }
+body    = "a1018285110a00181e828210f58211f486170402191388818212f6818203a100f95380"
+diag    = """
+{
+  1: [[17, 10, 0, 30, [[16, true], [17, false]]], [23, 4, 2, 5000, [[18, null]], [[3, {0: 60.0}]]]]
+}"""
+
+[[vector]]
+id      = "outcomes"
+spec    = ["ref/07 §6.13"]
+message = "14102d039201ffffffffa401190192021a0012ef4403838410110a018611110a05f5038514170403f94a4004818313181f0d"
+header  = { type = 20, flags = 16, seq = 813, ack = 402, ack_bits = 4294967295 }
+body    = "a401190192021a0012ef4403838410110a018611110a05f5038514170403f94a4004818313181f0d"
+diag    = """
+{
+  1: 402,
+  2: 1240900,
+  3: [[16, 17, 10, 1], [17, 17, 10, 5, true, 3], [20, 23, 4, 3, 12.5]],
+  4: [[19, 31, 13]]
+}"""
+
+[[vector]]
+id      = "call"
+spec    = ["ref/07 §6.14"]
+message = "151193012d03000000000700a70119232902030317040405020619138807a100f95380"
+header  = { type = 21, flags = 17, seq = 403, ack = 813, ack_bits = 0, rseq = 7 }
+body    = "a70119232902030317040405020619138807a100f95380"
+diag    = """
+{1: 9001, 2: 3, 3: 23, 4: 4, 5: 2, 6: 5000, 7: {0: 60.0}}"""
+
+[[vector]]
+id      = "action"
+spec    = ["ref/07 §6.15"]
+message = "161194012d03000000000800a40119232a020104781a30314a385a334b344d354e3650375138523953305431563257330501"
+header  = { type = 22, flags = 17, seq = 404, ack = 813, ack_bits = 0, rseq = 8 }
+body    = "a40119232a020104781a30314a385a334b344d354e3650375138523953305431563257330501"
+diag    = """
+{1: 9002, 2: 1, 4: "01J8Z3K4M5N6P7Q8R9S0T1V2W3", 5: 1}"""
+
+[[vector]]
+id      = "result_call"
+spec    = ["ref/07 §6.16"]
+message = "17112e039401000000001f00a40119232902000782841417040184151704010a828214f953808215f5"
+header  = { type = 23, flags = 17, seq = 814, ack = 404, ack_bits = 0, rseq = 31 }
+body    = "a40119232902000782841417040184151704010a828214f953808215f5"
+diag    = """
+{
+  1: 9001,
+  2: 0,
+  7: [[20, 23, 4, 1], [21, 23, 4, 1]],
+  10: [[20, 60.0], [21, true]]
+}"""
+
+[[vector]]
+id      = "result_action"
+spec    = ["ref/07 §6.16"]
+message = "17112f039401000000002000a30119232a020003f6"
+header  = { type = 23, flags = 17, seq = 815, ack = 404, ack_bits = 0, rseq = 32 }
+body    = "a30119232a020003f6"
+diag    = """
+{1: 9002, 2: 0, 3: null}"""
+
+[[vector]]
+id      = "cancel"
+spec    = ["ref/07 §6.17"]
+message = "181195012f03000000000900a10119232b"
+header  = { type = 24, flags = 17, seq = 405, ack = 815, ack_bits = 0, rseq = 9 }
+body    = "a10119232b"
+diag    = """
+{1: 9003}"""
+
+[[vector]]
+id      = "events"
+spec    = ["ref/07 §6.18"]
+message = "191130039501000000002100a2011a0012efa8028183021878a10011"
+header  = { type = 25, flags = 17, seq = 816, ack = 405, ack_bits = 0, rseq = 33 }
+body    = "a2011a0012efa8028183021878a10011"
+diag    = """
+{1: 1241000, 2: [[2, 120, {0: 17}]]}"""
+
+[[vector]]
+id      = "alarms"
+spec    = ["ref/07 §6.19"]
+message = "1a1131039501000000002200a3011a0012efa802818301010003f4"
+header  = { type = 26, flags = 17, seq = 817, ack = 405, ack_bits = 0, rseq = 34 }
+body    = "a3011a0012efa802818301010003f4"
+diag    = """
+{1: 1241000, 2: [[1, 1, 0]], 3: false}"""
+
+[[vector]]
+id      = "alarm_cmd"
+spec    = ["ref/07 §6.20"]
+message = "1b1196013103000000000a00a50119232c02010301041a006ddd000501"
+header  = { type = 27, flags = 17, seq = 406, ack = 817, ack_bits = 0, rseq = 10 }
+body    = "a50119232c02010301041a006ddd000501"
+diag    = """
+{1: 9004, 2: 1, 3: 1, 4: 7200000, 5: 1}"""
+
+[[vector]]
+id      = "reset"
+spec    = ["ref/07 §6.21"]
+message = "1c1197013103000000000b00a30119232d02120301"
+header  = { type = 28, flags = 17, seq = 407, ack = 817, ack_bits = 0, rseq = 11 }
+body    = "a30119232d02120301"
+diag    = """
+{1: 9005, 2: 18, 3: 1}"""
+
+[[vector]]
+id      = "restart"
+spec    = ["ref/07 §6.22"]
+message = "1d1198013103000000000c00a30119232e02000302"
+header  = { type = 29, flags = 17, seq = 408, ack = 817, ack_bits = 0, rseq = 12 }
+body    = "a30119232e02000302"
+diag    = """
+{1: 9006, 2: 0, 3: 2}"""
+
+[[vector]]
+id      = "time_probe"
+spec    = ["ref/07 §6.23"]
+message = "20109801310300000000a20100021b00000012e9f522d2"
+header  = { type = 32, flags = 16, seq = 408, ack = 817, ack_bits = 0 }
+body    = "a20100021b00000012e9f522d2"
+diag    = """
+{1: 0, 2: 81234567890}"""
+
+[[vector]]
+id      = "time_echo"
+spec    = ["ref/07 §6.23"]
+message = "20103203980100000000a40101021b00000012e9f522d2031a0012f19c041a0012f1a8"
+header  = { type = 32, flags = 16, seq = 818, ack = 408, ack_bits = 0 }
+body    = "a40101021b00000012e9f522d2031a0012f19c041a0012f1a8"
+diag    = """
+{1: 1, 2: 81234567890, 3: 1241500, 4: 1241512}"""
+
+[[vector]]
+id      = "time_set"
+spec    = ["ref/07 §6.23"]
+message = "20109901320300000000a70102051a0012f1a8061b00065c37a9b04a4007000801093904af0a18b4"
+header  = { type = 32, flags = 16, seq = 409, ack = 818, ack_bits = 0 }
+body    = "a70102051a0012f1a8061b00065c37a9b04a4007000801093904af0a18b4"
+diag    = """
+{1: 2, 5: 1241512, 6: 1790244000123456, 7: 0, 8: 1, 9: -1200, 10: 180}"""
+
+[[vector]]
+id      = "trace_info"
+spec    = ["ref/07 §6.24"]
+message = "211133039901000000002300a2010102818400011940001a0012ebc0"
+header  = { type = 33, flags = 17, seq = 819, ack = 409, ack_bits = 0, rseq = 35 }
+body    = "a2010102818400011940001a0012ebc0"
+diag    = """
+{1: 1, 2: [[0, 1, 16384, 1240000]]}"""
+
+[[vector]]
+id      = "trace_read"
+spec    = ["ref/07 §6.24"]
+message = "21119a013303000000000c00a401020300040005190200"
+header  = { type = 33, flags = 17, seq = 410, ack = 819, ack_bits = 0, rseq = 12 }
+body    = "a401020300040005190200"
+diag    = """
+{1: 2, 3: 0, 4: 0, 5: 512}"""
+
+[[vector]]
+id      = "trace_data"
+spec    = ["ref/07 §6.24"]
+message = "211034039a0100000000a501030300040006494a4b545201002e2e2e07f4"
+header  = { type = 33, flags = 16, seq = 820, ack = 410, ack_bits = 0 }
+body    = "a501030300040006494a4b545201002e2e2e07f4"
+diag    = """
+{1: 3, 3: 0, 4: 0, 6: h'4a4b545201002e2e2e', 7: false}"""
+abbreviated = true
+
+[[vector]]
+id      = "error"
+spec    = ["ref/07 §6.26"]
+message = "07100e002800ffffffffa5010602674a2d45323331300316041901940508"
+header  = { type = 7, flags = 16, seq = 14, ack = 40, ack_bits = 4294967295 }
+body    = "a5010602674a2d45323331300316041901940508"
+diag    = """
+{1: 6, 2: "J-E2310", 3: 22, 4: 404, 5: 8}"""
+
+[[vector]]
+id      = "ota_begin"
+spec    = ["ref/07 §9.3"]
+message = "22119b013403000000000d00a601000201030104192000054c3c434f53455f5369676e313e06190200"
+header  = { type = 34, flags = 17, seq = 411, ack = 820, ack_bits = 0, rseq = 13 }
+body    = "a601000201030104192000054c3c434f53455f5369676e313e06190200"
+diag    = """
+{1: 0, 2: 1, 3: 1, 4: 8192, 5: h'3c434f53455f5369676e313e', 6: 512}"""
+abbreviated = true
+
+[[vector]]
+id      = "ota_ready"
+spec    = ["ref/07 §9.3"]
+message = "221135039b01000000002400a5010102010619020007000804"
+header  = { type = 34, flags = 17, seq = 821, ack = 411, ack_bits = 0, rseq = 36 }
+body    = "a5010102010619020007000804"
+diag    = """
+{1: 1, 2: 1, 6: 512, 7: 0, 8: 4}"""
+
+[[vector]]
+id      = "ota_data"
+spec    = ["ref/07 §9.3"]
+message = "22109c01350300000000a40102020107000947000000002e2e2e"
+header  = { type = 34, flags = 16, seq = 412, ack = 821, ack_bits = 0 }
+body    = "a40102020107000947000000002e2e2e"
+diag    = """
+{1: 2, 2: 1, 7: 0, 9: h'000000002e2e2e'}"""
+abbreviated = true
+
+[[vector]]
+id      = "ota_ack"
+spec    = ["ref/07 §9.3"]
+message = "221036039f0100000000a30103020107190800"
+header  = { type = 34, flags = 16, seq = 822, ack = 415, ack_bits = 0 }
+body    = "a30103020107190800"
+diag    = """
+{1: 3, 2: 1, 7: 2048}"""
+
+[[vector]]
+id      = "ota_end"
+spec    = ["ref/07 §9.3"]
+message = "2211ac013e03000000000e00a201040201"
+header  = { type = 34, flags = 17, seq = 428, ack = 830, ack_bits = 0, rseq = 14 }
+body    = "a201040201"
+diag    = """
+{1: 4, 2: 1}"""
+
+[[vector]]
+id      = "ota_verified"
+spec    = ["ref/07 §9.3"]
+message = "22113f03ac01000000002500a3010502010a00"
+header  = { type = 34, flags = 17, seq = 831, ack = 428, ack_bits = 0, rseq = 37 }
+body    = "a3010502010a00"
+diag    = """
+{1: 5, 2: 1, 10: 0}"""
+
+[[vector]]
+id      = "ota_activate"
+spec    = ["ref/07 §9.4"]
+message = "2211ad013f03000000000f00a3010602010b19ea60"
+header  = { type = 34, flags = 17, seq = 429, ack = 831, ack_bits = 0, rseq = 15 }
+body    = "a3010602010b19ea60"
+diag    = """
+{1: 6, 2: 1, 11: 60000}"""
+
+[[vector]]
+id      = "ota_confirm"
+spec    = ["ref/07 §9.4"]
+message = "22110c001400000000000200a201070301"
+header  = { type = 34, flags = 17, seq = 12, ack = 20, ack_bits = 0, rseq = 2 }
+body    = "a201070301"
+diag    = """
+{1: 7, 3: 1}"""
+
+[[vector]]
+id      = "ota_state"
+spec    = ["ref/07 §9.4"]
+message = "221115000c00000000000300a3010903010d02"
+header  = { type = 34, flags = 17, seq = 21, ack = 12, ack_bits = 0, rseq = 3 }
+body    = "a3010903010d02"
+diag    = """
+{1: 9, 3: 1, 13: 2}"""
+
+[[vector]]
+id      = "ota_abort"
+spec    = ["ref/07 §9.4"]
+message = "22114003ad01000000002600a4010802010a130c674a2d4532343033"
+header  = { type = 34, flags = 17, seq = 832, ack = 429, ack_bits = 0, rseq = 38 }
+body    = "a4010802010a130c674a2d4532343033"
+diag    = """
+{1: 8, 2: 1, 10: 19, 12: "J-E2403"}"""
