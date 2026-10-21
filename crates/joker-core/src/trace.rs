@@ -1019,7 +1019,7 @@ mod tests {
     fn state_segment_round_trip() {
         let apps = [
             AppState {
-                name: "luz",
+                name: "light",
                 group: 0,
                 first_seq: 12,
                 state: 0,

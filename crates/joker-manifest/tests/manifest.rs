@@ -186,27 +186,27 @@ fn context() -> Context {
         },
     );
     c.apps.insert(
-        "luz".into(),
+        "light".into(),
         AppInterface {
             ports: [
                 ("led", port(PortKind::Output, Bool, None, false)),
                 ("temp", port(PortKind::Input, Float, Some("°C"), false)),
-                ("botao", port(PortKind::Input, Bool, None, false)),
-                ("led_estado", port(PortKind::Input, Bool, None, false)),
-                ("ajuste", port(PortKind::Input, Float, Some("1"), false)),
+                ("button", port(PortKind::Input, Bool, None, false)),
+                ("led_status", port(PortKind::Input, Bool, None, false)),
+                ("adjust", port(PortKind::Input, Float, Some("1"), false)),
             ]
             .into_iter()
             .map(|(k, v)| (k.to_owned(), v))
             .collect(),
             params: [
                 ("half_period", param(Float, Some("ms"), None, true)),
-                ("t_frio", param(Float, Some("°C"), None, true)),
-                ("t_quente", param(Float, Some("°C"), None, true)),
+                ("t_cold", param(Float, Some("°C"), None, true)),
+                ("t_hot", param(Float, Some("°C"), None, true)),
             ]
             .into_iter()
             .map(|(k, v)| (k.to_owned(), v))
             .collect(),
-            tasks: [("pisca".to_owned(), Some(Duration::from_millis(20)))]
+            tasks: [("blink".to_owned(), Some(Duration::from_millis(20)))]
                 .into_iter()
                 .collect(),
             ..AppInterface::default()
@@ -244,7 +244,9 @@ fn run(files: &[(&str, &str)], entry: &str) -> Report {
     for (path, text) in files {
         fs.file(*path, *text);
     }
-    fs.dir("apps/peak").dir("apps/luz").dir("bancada/apps/luz");
+    fs.dir("apps/peak")
+        .dir("apps/light")
+        .dir("bench/apps/light");
     check(&fs, Path::new(entry), &context())
 }
 
@@ -283,14 +285,14 @@ fn bench_manifests_of_docs_23_pass() {
     }
     let owned: Vec<(String, String)> = files
         .iter()
-        .map(|(n, t)| (format!("bancada/{n}"), t.clone()))
+        .map(|(n, t)| (format!("bench/{n}"), t.clone()))
         .collect();
     let refs: Vec<(&str, &str)> = owned
         .iter()
         .map(|(n, t)| (n.as_str(), t.as_str()))
         .collect();
     for node in ["lab", "zero"] {
-        let report = run(&refs, &format!("bancada/joker.{node}.toml"));
+        let report = run(&refs, &format!("bench/joker.{node}.toml"));
         assert!(
             !report.has_errors(),
             "joker.{node}.toml:\n{}",

@@ -480,7 +480,7 @@ fn a_full_site_checks_clean() {
 #[test]
 fn a_micro_manifest_checks_clean() {
     let text = format!(
-        "{MICRO}[link]\naddress = \"udp:192.168.1.10:7471\"\n[net.wifi]\nssid = \"bancada\"\npassword = \"secret:wifi\"\ncountry = \"PT\"\nhostname = \"esp-bancada\"\n[clock]\nsync = \"link\"\n[devices.x]\ndriver = \"extern\"\n[devices.x.signals]\nlevel = {{ type = \"f64\", direction = \"input\", unit = \"m\" }}\n"
+        "{MICRO}[link]\naddress = \"udp:192.168.1.10:7471\"\n[net.wifi]\nssid = \"bench\"\npassword = \"secret:wifi\"\ncountry = \"PT\"\nhostname = \"esp-bench\"\n[clock]\nsync = \"link\"\n[devices.x]\ndriver = \"extern\"\n[devices.x.signals]\nlevel = {{ type = \"f64\", direction = \"input\", unit = \"m\" }}\n"
     );
     let report = run(&text);
     assert!(!report.has_errors(), "{}", report.render());

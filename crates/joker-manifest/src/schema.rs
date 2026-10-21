@@ -52,47 +52,47 @@ pub enum KeyKind {
 /// The type of a value (ref/01 §2.2).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Ty {
-    /// `Texto`.
+    /// `Text`.
     Text,
     /// `Bool`.
     Bool,
-    /// `Inteiro` within a range.
+    /// `Integer` within a range.
     Int(i64, i64),
-    /// `Número`.
+    /// `Number`.
     Number,
-    /// `Nome`.
+    /// `Name`.
     Name,
-    /// `NomeDns`.
+    /// `DnsName`.
     DnsName,
-    /// `Duração`.
+    /// `Duration`.
     Duration,
-    /// `Quantidade`.
+    /// `Quantity`.
     Quantity,
-    /// `Taxa`.
+    /// `Rate`.
     Rate,
-    /// `Orçamento`.
+    /// `Budget`.
     Budget,
-    /// `Tamanho`.
+    /// `Size`.
     Size,
-    /// `VolumeDados`.
+    /// `DataVolume`.
     Volume,
-    /// `Percentagem`.
+    /// `Percentage`.
     Percent,
-    /// `Valor<S>`, typed against the signal.
+    /// `Value<S>`, typed against the signal.
     Value,
     /// `Expr<T>`, compiled by `joker-expr`.
     Expr,
-    /// `Caminho`.
+    /// `Path`.
     Path,
-    /// `Seletor`.
+    /// `Selector`.
     Selector,
-    /// `Caminho` or `Seletor`.
+    /// `Path` or `Selector`.
     PathOrSelector,
-    /// `Ficheiro`.
+    /// `File`.
     File,
     /// `Ref` (`oci://`, `app:`, `class:`, …).
     Ref,
-    /// `Nível`.
+    /// `Level`.
     Level,
     /// A `"secret:<name>"` reference (ref/01 §3.10).
     Secret,

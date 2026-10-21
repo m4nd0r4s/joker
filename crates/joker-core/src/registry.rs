@@ -635,11 +635,12 @@ mod tests {
         let mut b = RegistryBuilder::new(&mut s, &mut a, &mut g);
         b.signal(SignalMeta::input("esp_io.boot", ValueType::Bool, KW))
             .unwrap();
-        b.alias(Alias::new("botao.clicked", "esp_io.boot")).unwrap();
-        b.alias(Alias::new("painel.botao.clicked", "botao.clicked"))
+        b.alias(Alias::new("button.clicked", "esp_io.boot"))
+            .unwrap();
+        b.alias(Alias::new("panel.button.clicked", "button.clicked"))
             .unwrap();
         let r = b.build().unwrap();
-        assert_eq!(r.resolve("painel.botao.clicked"), Some(SignalId(0)));
+        assert_eq!(r.resolve("panel.button.clicked"), Some(SignalId(0)));
 
         let mut s = [SignalMeta::EMPTY; 4];
         let mut a = [Alias::EMPTY; 3];

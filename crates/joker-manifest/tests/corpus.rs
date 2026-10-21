@@ -26,14 +26,13 @@ static MENTION: LazyLock<Regex> =
 
 static RANGE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(&format!(
-        r"`?({CODE})`?\s*(?:–|—|-|…|\.\.)\s*`?({CODE})`?|`?({CODE})`?\s+(?:em diante|onwards?|and (?:up|above))"
+        r"`?({CODE})`?\s*(?:–|—|-|…|\.\.)\s*`?({CODE})`?|`?({CODE})`?\s+(?:onwards?|and (?:up|above))"
     ))
     .unwrap()
 });
 
-static FREE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"ficam livres|fica livre|(?:stays?|remains?|are|is|left) free").unwrap()
-});
+static FREE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?:stays?|remains?|are|is|left) free").unwrap());
 
 static HEADING: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(#+)\s+(?:§\s*)?(\d+(?:\.\d+)*)\.?\s").unwrap());
@@ -367,7 +366,7 @@ fn an_injected_unknown_code_is_reported() {
 
 #[test]
 fn ranges_and_free_lists_are_not_mentions() {
-    let line = "`J0244`–`J0249` and `J0278` ficam livres (o `J0987` foi atribuído). Use `J0107`.";
+    let line = "`J0244`–`J0249` and `J0278` stay free (`J0987` was assigned). Use `J0107`.";
     assert_eq!(mentions(line), ["J0987", "J0107"]);
     let free: Vec<String> = free_codes(line).iter().map(ToString::to_string).collect();
     let expected: Vec<String> = (244..=249)
@@ -375,7 +374,6 @@ fn ranges_and_free_lists_are_not_mentions() {
         .map(|n| format!("J{n:04}"))
         .collect();
     assert_eq!(free, expected);
-    assert!(mentions("códigos `J-E2500` em diante").is_empty());
     assert!(mentions("codes `J-E2500` onwards").is_empty());
     let english = "`J0244`–`J0249` and `J0278` stay free (`J0987` was assigned by ref/02).";
     assert_eq!(mentions(english), ["J0987"]);

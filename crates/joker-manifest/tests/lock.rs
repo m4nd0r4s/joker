@@ -99,8 +99,8 @@ fn the_m0_subset_round_trips() {
 fn built(reverse: bool) -> Lock {
     let mut lock = Lock::new();
     let mut apps = vec![
-        ("luz", Path::new("bancada/apps/luz")),
-        ("blink", Path::new("bancada/apps/blink")),
+        ("light", Path::new("bench/apps/light")),
+        ("blink", Path::new("bench/apps/blink")),
     ];
     if reverse {
         apps.reverse();
@@ -112,7 +112,7 @@ fn built(reverse: bool) -> Lock {
                 version: "0.1.0".into(),
                 digest: hex(7),
                 wit: "joker:runtime@1.0.0".into(),
-                source: Source::path(Path::new("bancada"), &PathBuf::from(dir)),
+                source: Source::path(Path::new("bench"), &PathBuf::from(dir)),
             },
         );
     }
@@ -132,7 +132,7 @@ fn built(reverse: bool) -> Lock {
         &Pin {
             resolved: "1.0.0".into(),
             digest: hex(3),
-            source: Source::path(Path::new("bancada"), Path::new("bancada/profiles/local")),
+            source: Source::path(Path::new("bench"), Path::new("bench/profiles/local")),
         },
     );
     lock.set_driver(
@@ -175,12 +175,12 @@ fn a_reformatted_lock_keeps_its_digest() {
     let messy = canonical
         .replace("version = 1\n", "version=1\n")
         .replace(
-            "[apps.luz]\nversion = \"0.1.0\"\n",
-            "[apps.luz]\nwit = \"joker:runtime@1.0.0\"\nversion = \"0.1.0\"\n",
+            "[apps.light]\nversion = \"0.1.0\"\n",
+            "[apps.light]\nwit = \"joker:runtime@1.0.0\"\nversion = \"0.1.0\"\n",
         )
         .replacen(
-            "wit = \"joker:runtime@1.0.0\"\nsource = \"path:apps/luz\"",
-            "source = \"path:apps/luz\"",
+            "wit = \"joker:runtime@1.0.0\"\nsource = \"path:apps/light\"",
+            "source = \"path:apps/light\"",
             1,
         );
     assert_ne!(messy, canonical);
@@ -296,22 +296,22 @@ fn manifest(text: &str) -> Manifest {
         },
     );
     let mut fs = MemoryFileSystem::default();
-    fs.file("bancada/joker.toml", text).dir("bancada/apps/luz");
-    let report = joker_manifest::check(&fs, Path::new("bancada/joker.toml"), &context);
+    fs.file("bench/joker.toml", text).dir("bench/apps/light");
+    let report = joker_manifest::check(&fs, Path::new("bench/joker.toml"), &context);
     assert!(!report.has_errors(), "{}", report.render());
     report.manifest.unwrap()
 }
 
-const SITE: &str = "[project]\nname = \"bancada\"\nmode = \"dev\"\n[target]\nboard = \"rpi3b-plus@1\"\n[devices.esp]\ndriver = \"modbus-tcp\"\naddress = \"192.168.1.60:502\"\nprofile = \"local/bench-esp32@1\"\n[outputs.\"esp.led\"]\nsafe = false\n[apps.luz]\npath = \"apps/luz\"\n";
+const SITE: &str = "[project]\nname = \"bench\"\nmode = \"dev\"\n[target]\nboard = \"rpi3b-plus@1\"\n[devices.esp]\ndriver = \"modbus-tcp\"\naddress = \"192.168.1.60:502\"\nprofile = \"local/bench-esp32@1\"\n[outputs.\"esp.led\"]\nsafe = false\n[apps.light]\npath = \"apps/light\"\n";
 
 #[test]
 fn the_lock_follows_the_manifest() {
     let site = manifest(SITE);
     let mut fs = MemoryFileSystem::default();
-    fs.dir("bancada/apps/luz")
-        .dir("bancada/apps/blink")
-        .dir("bancada/profiles/local");
-    let lock_dir = Path::new("bancada");
+    fs.dir("bench/apps/light")
+        .dir("bench/apps/blink")
+        .dir("bench/profiles/local");
+    let lock_dir = Path::new("bench");
     let codes = |lock: &Lock, m: &Manifest| -> Vec<&'static str> {
         lock::check_manifest(lock, m, &fs, lock_dir, lock_dir)
             .iter()
@@ -328,15 +328,15 @@ fn the_lock_follows_the_manifest() {
     lock.sections
         .get_mut("apps")
         .unwrap()
-        .retain(|k, _| k[0] == "luz");
+        .retain(|k, _| k[0] == "light");
     lock.sections.remove("drivers");
     assert!(codes(&lock, &site).is_empty(), "{:?}", codes(&lock, &site));
     let pinned = manifest(&format!("{SITE}digest = \"{}\"\n", hex(8)));
     assert_eq!(codes(&lock, &pinned), ["J0423"]);
     let mut outside = lock.clone();
-    let mut app = outside.app("luz").unwrap();
+    let mut app = outside.app("light").unwrap();
     app.source = Source::Path("../../elsewhere".into());
-    outside.set_app("luz", &app);
+    outside.set_app("light", &app);
     assert_eq!(codes(&outside, &site), ["J0415"]);
     lock.sections.remove("boards");
     assert_eq!(codes(&lock, &site), ["J0411"]);
@@ -425,7 +425,7 @@ fn node_captured_sections_follow_the_manifest() {
     );
     let mut iface = joker_manifest::context::AppInterface::default();
     iface.tasks.insert("blink".into(), None);
-    context.apps.insert("luz".into(), iface);
+    context.apps.insert("light".into(), iface);
     let text = format!(
         "{SITE}cycles = {{ blink = \"default\" }}\n[devices.mcu]\ndriver = \"joker-link\"\n"
     )
@@ -434,9 +434,9 @@ fn node_captured_sections_follow_the_manifest() {
         "profile = \"local/bench-esp32@1\"\ndiscover = true\n",
     );
     let mut fs = MemoryFileSystem::default();
-    fs.file("bancada/joker.toml", text.as_str())
-        .dir("bancada/apps/luz");
-    let report = joker_manifest::check(&fs, Path::new("bancada/joker.toml"), &context);
+    fs.file("bench/joker.toml", text.as_str())
+        .dir("bench/apps/light");
+    let report = joker_manifest::check(&fs, Path::new("bench/joker.toml"), &context);
     assert!(!report.has_errors(), "{}", report.render());
     let site = report.manifest.unwrap();
     let target = lock::Target {
@@ -455,7 +455,7 @@ fn node_captured_sections_follow_the_manifest() {
     found.sort_unstable();
     assert_eq!(found, ["J0411", "J0430", "J0450", "J0451"]);
     let full = format!(
-        "{}\nversion = 1\n\n[apps.luz]\nversion = \"0.1.0\"\ndigest = \"{}\"\nwit = \"joker:runtime@1.0.0\"\nsource = \"path:apps/luz\"\n\n[mcu.mcu]\ntarget = \"mcu:esp32\"\nmode = \"generation\"\nruntime = \"1.0.3\"\ncore = \"1.0\"\nlink = \"1.0\"\nfeatures = [\"gpio\"]\ncapacity = {{ signals = 256 }}\n\n[discovered.esp]\ndriver = \"modbus-tcp\"\nprofile = \"other/profile@1\"\nat = \"2026-09-20T10:14:03Z\"\ndigest = \"{}\"\n\n[fallback.esp]\noutputs = [\"esp.led\"]\ntimeout = \"2s\"\nvalue = false\nconfigured = false\n\n[wcet]\n\"luz.blink\" = {{ p999 = \"38us\", max = \"51us\", samples = 100000, board = \"rpi3b-plus\", runtime = \"1.1.0\", app = \"{}\", measured = \"2026-09-20T10:20:00Z\" }}\n",
+        "{}\nversion = 1\n\n[apps.light]\nversion = \"0.1.0\"\ndigest = \"{}\"\nwit = \"joker:runtime@1.0.0\"\nsource = \"path:apps/light\"\n\n[mcu.mcu]\ntarget = \"mcu:esp32\"\nmode = \"generation\"\nruntime = \"1.0.3\"\ncore = \"1.0\"\nlink = \"1.0\"\nfeatures = [\"gpio\"]\ncapacity = {{ signals = 256 }}\n\n[discovered.esp]\ndriver = \"modbus-tcp\"\nprofile = \"other/profile@1\"\nat = \"2026-09-20T10:14:03Z\"\ndigest = \"{}\"\n\n[fallback.esp]\noutputs = [\"esp.led\"]\ntimeout = \"2s\"\nvalue = false\nconfigured = false\n\n[wcet]\n\"light.blink\" = {{ p999 = \"38us\", max = \"51us\", samples = 100000, board = \"rpi3b-plus\", runtime = \"1.1.0\", app = \"{}\", measured = \"2026-09-20T10:20:00Z\" }}\n",
         lock::HEADER,
         hex(7),
         hex(8),
@@ -508,8 +508,8 @@ fn the_lock_sits_next_to_its_entry_manifest() {
         PathBuf::from("joker.lock")
     );
     assert_eq!(
-        lock::path_for(Path::new("sites/lisboa-01/joker.verao.toml")),
-        PathBuf::from("sites/lisboa-01/joker.verao.lock")
+        lock::path_for(Path::new("sites/lisboa-01/joker.summer.toml")),
+        PathBuf::from("sites/lisboa-01/joker.summer.lock")
     );
     assert_eq!(
         lock::path_for(Path::new("site.toml")),

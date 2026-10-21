@@ -124,12 +124,12 @@ mod tests {
     #[test]
     fn seed_depends_on_every_input() {
         let h = [7u8; 32];
-        let base = instance_seed(&h, "luz", "cycle", None);
-        assert_eq!(base, instance_seed(&h, "luz", "cycle", None));
-        assert_ne!(base, instance_seed(&h, "luz", "task", None));
+        let base = instance_seed(&h, "light", "cycle", None);
+        assert_eq!(base, instance_seed(&h, "light", "cycle", None));
+        assert_ne!(base, instance_seed(&h, "light", "task", None));
         assert_ne!(base, instance_seed(&h, "lux", "cycle", None));
-        assert_ne!(base, instance_seed(&h, "luz", "cycle", Some("pump")));
-        assert_ne!(base, instance_seed(&[8u8; 32], "luz", "cycle", None));
+        assert_ne!(base, instance_seed(&h, "light", "cycle", Some("pump")));
+        assert_ne!(base, instance_seed(&[8u8; 32], "light", "cycle", None));
     }
 
     #[test]

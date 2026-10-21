@@ -38,7 +38,7 @@ fn plan_of_the_bench() {
 }
 
 #[test]
-fn luz_blinks_and_every_change_is_recorded() {
+fn light_blinks_and_every_change_is_recorded() {
     let loaded = common::bench();
     let plan = &loaded.plan;
     let shared = Shared::new(plan);

@@ -400,10 +400,10 @@ mod tests {
 
     #[test]
     fn idents_and_worlds() {
-        assert!(is_ident("luz"));
+        assert!(is_ident("light"));
         assert!(is_ident("peak_shaver2"));
-        assert!(!is_ident("Luz"));
-        assert!(!is_ident("2luz"));
+        assert!(!is_ident("Light"));
+        assert!(!is_ident("2light"));
         assert!(!is_ident(""));
         assert_eq!(parse_world("joker:runtime@0.1.0"), Some((0, 1, 0)));
         assert_eq!(parse_world("joker:runtime@0.1"), None);
