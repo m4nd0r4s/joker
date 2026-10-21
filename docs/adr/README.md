@@ -36,5 +36,6 @@
 | [0033](0033-write-outcomes-and-decision-records.md) | Write outcomes per proposal and per tick, and decision records |
 | [0052](0052-aot-cache-identity-and-cycle-subset-host.md) | AOT cache identity, load errors, WASI terminals and the seed expansion |
 | [0053](0053-sdk-error-size-and-the-sys-crate.md) | The size of the SDK error, and the `joker-sdk-sys` crate |
+| [0056](0056-allocation-free-cycle-calls.md) | Allocation-free cycle calls: reserved buffers of `on-cycle`, the trapping allocator and `J-E0903` |
 
 Mudar uma decisão = escrever uma ADR nova que a substitui, e atualizar os documentos afetados no mesmo conjunto de commits.

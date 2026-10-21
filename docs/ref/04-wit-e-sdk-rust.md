@@ -203,7 +203,7 @@ A interface é **autónoma** (não usa `types`) de propósito: `joker:driver` im
 | `export-state() -> result<list<u8>, error>` | ambas | troca a quente da versão antiga | 100 ms | `Err`: a nova versão começa com o estado inicial |
 | `migrate(previous, from-version) -> result<_, error>` | ambas | troca a quente da versão nova, depois de `init` | 1 s | `Err`: a versão antiga continua (`J-E0914`) |
 
-`cycle-result { proposals: list<u8>, error: option<error> }` existe porque um `result<list<u8>, error>` perderia as propostas de uma tarefa que devolve `Err`, e o documento 04 §3.2 manda mantê-las.
+`cycle-result { proposals: list<u8>, error: option<error> }` existe porque um `result<list<u8>, error>` perderia as propostas de uma tarefa que devolve `Err`, e o documento 04 §3.2 manda mantê-las. O host lê o `cycle-result` depois de a chamada voltar: a memória do resultado não pode mudar até à chamada seguinte à instância, e um post-return do `on-cycle`, se existir, não a liberta nem a reutiliza (§4.13, ADR 0056).
 
 `trigger`: `startup`; `timer(instant)` para `every` e `at`; `change(change)` para `on = "<porta>"`; `event(event-delivery)` para `on_event`.
 
@@ -443,7 +443,7 @@ fn main() {
 |---|---|---|
 | `joker-sdk` | a API das apps; `use joker::prelude::*` | sim; `alloc` só no backend Wasm e em Linux nativo |
 | `joker-sdk-macros` | as macros; versão igual à do `joker-sdk` (dependência `=`) | — (proc-macro) |
-| `joker-sdk-sys` | os bindings `wit-bindgen` do mundo, as macros de baixo nível que as do SDK expandem e o `critical-section` dos componentes (ADR 0053) | sim |
+| `joker-sdk-sys` | os bindings `wit-bindgen` do mundo, as macros de baixo nível que as do SDK expandem, o `critical-section` dos componentes (ADR 0053), e o caminho de ciclo sem alocação: `cabi_realloc`, o export `on-cycle` e o alocador global (ADR 0056) | sim |
 | `joker-classes-std` | handles gerados pelo `jkc` para `classes/std/`, reexportados em `joker::classes::std` | sim |
 | `joker-build` | gera as classes locais em `build.rs` | — |
 | `joker-test` | o harness (§6) | não |
@@ -1117,10 +1117,13 @@ A regra é a do invariante 6 do `AGENTS.md`, levada à instância Wasm:
 |---|---|
 | `init`, `migrate`, `on-params` (ciclo) | permitida (estado inicial, tabelas do SDK) |
 | `on-cycle` | **proibida**: o alocador global da instância de ciclo faz trap (`J-E0903`) |
-| ABI canónico de `on-cycle` | a imagem e o resultado usam buffers reservados no `init` (`cabi_realloc` devolve-os); os valores de arena de `cycle-io.read` usam uma arena de 4 KiB reposta a cada tick |
+| ABI canónico de `on-cycle` | a imagem e o resultado usam buffers reservados no `init` (`cabi_realloc` devolve-os); os valores de arena de `cycle-io.read` usam uma arena de 4 KiB reposta a cada tick (ADR 0056) |
 | instância async | permitida (limite: `memory.max`, `J-E0906`) |
 
 - Tudo o que a API de ciclo devolve é `Copy` ou limitado (`BoundedVec`, `BoundedString`); a formatação do log usa a pilha.
+- O `joker-sdk-sys` implementa isto (ADR 0056): o `init` reserva um buffer de imagem de `image-len` bytes e um de propostas de `proposal-capacity` bytes; fora do `on-cycle`, o `cabi_realloc` empresta o buffer de imagem ao host para um pedido de `image-len` bytes com alinhamento 1, e dá memória do heap para o resto; dentro, serve tudo da arena de 4 KiB, e o que não cabe faz trap `J-E0903`. O export `on-cycle` é escrito à mão (não pelo `wit-bindgen`): a tarefa escreve as propostas no buffer reservado, o `cycle-result` aponta para ele e para buffers estáticos do erro (código 16 B, mensagem 256 B), e não há post-return.
+- O alocador global de um componente é o do `joker-sdk-sys`: o do sistema fora do `on-cycle`; dentro, uma alocação escreve no log o registo `J-E0903: heap allocation during a cycle task` (`error`, sem campos) e faz trap. Quando uma chamada acaba num trap Wasm e esse registo veio nessa chamada, o host reporta `J-E0903` e não `J-E0905`, mesmo que o filtro de nível ou o limite de ritmo deitem o registo fora. Libertar memória é permitido.
+- O estado de cada tarefa de ciclo com estado é criado no `init`; o primeiro tick não aloca. A capacidade reservada no `init` (ou no `Default` do estado) pode usar-se no ciclo; crescer para lá dela faz trap.
 - Isto substitui o alocador bump reposto a cada tick do documento 04, §3.2: com ele, um `Vec` guardado no `st` ficava a apontar para memória reutilizada no tick seguinte, sem erro nenhum (§10, S3).
 - O `joker-sdk` é `#![no_std]`. O `alloc` entra só nos backends `wasm` e `native-linux`, e só nas APIs async que devolvem coleções de tamanho variável (`History`, `Secret`, `Vec` do `kv`).
 
@@ -1517,7 +1520,7 @@ Gama deste documento: `J-E0001`–`J-E0799` e `J-E0900`–`J-E0999`. Todos entra
 | `J-E0701`…`J-E0721` | error | erros de compilação | §4.16 |
 | `J-E0901` | trap | async API called from the cycle instance | `async-io`, `kv`, `secrets`, `ml`, `frames`, `blocks` |
 | `J-E0902` | trap | cycle API called from the async instance | `cycle-io` |
-| `J-E0903` | trap | heap allocation during a cycle task | §4.13 |
+| `J-E0903` | trap | heap allocation during a cycle task | §4.13; o SDK escreve `J-E0903: …` no log antes do trap (ADR 0056) |
 | `J-E0904` | trap | cycle task deadline exceeded | epoch (01 §4) |
 | `J-E0905` | trap | guest panicked or called exit | |
 | `J-E0906` | trap | memory limit exceeded | `memory.max` |
