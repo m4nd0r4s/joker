@@ -329,7 +329,7 @@ The step language of the profiles (ref/03 §2.2.12: `write`, `read`, `wait`, `un
 - `read-addr { device, addr, expect, width, type-name } → raw-value | batch-failure`;
 - `write-addr { device, addr, value, type-name } → () | batch-failure`.
 
-The address comes already in CBOR in the driver's `address` schema, and the value already encoded (§2.7; a step with `signal = "<output>"` is scaled by the core). They go through the device's serialized queue and through the bus scheduler, with the priority of writes. The steps serve the profile actions, `[connect]`, `[relinquish]`, `[config] apply` and the fallback (M1). That way, a new driver has actions, fallback and relinquish **without writing code for it**.
+The address comes already in CBOR in the driver's `address` schema, and the value already encoded (§2.7; a step with `signal = "<output>"` is scaled by the core). They go through the device's serialized queue and through the bus scheduler, with the priority of writes. The steps serve the profile actions, `[connect]`, `[relinquish]`, `[config] apply` and the fallback (M1). That way, a new driver has actions, fallback and relinquish **without writing code for it**. The exception is the `sim` driver: the steps of a model's `[actions]` change signals that only the driver has, so they are native actions of the driver (ref/03 §2.4.9, ADR 0054).
 
 **Native actions** (`[actions.<a>] native = { … }`: an OPC UA method, a CANopen SDO, a vendor command) reach `invoke(action-call { call, action, args })`:
 

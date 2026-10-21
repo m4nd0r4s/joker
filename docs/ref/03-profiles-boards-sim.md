@@ -1074,9 +1074,11 @@ An `input` signal without `gen`, without `[dynamics]` and without `panel` is con
 | `square` | **`low`**, **`high`**, **`period`**, `duty` (0–1, default 0.5) | |
 | `noise` | **`mean`**, **`std`** | Gaussian, seed of the model |
 | `walk` | **`start`**, **`std`** (per `step`), `min`, `max` | bounded random walk |
-| `replay` | **`file`** (CSV or Parquet), **`column`**, `time_column` (default `t`), `loop` (bool) | recorded values, step interpolation |
+| `replay` | **`file`** (CSV; Parquet is reserved, `J0807`), **`column`**, `time_column` (default `t`), `loop` (bool) | recorded values, step interpolation |
 
 `amp`, `std` and differences use the **difference** unit when the signal is in `°C` (`amp = "3 K"`, 16 §4). Unknown generator or missing key: `J0831`.
+
+**`replay`** reads a CSV with a header row: `time_column` in seconds or as a duration literal, strictly increasing; values bare (in the unit of the signal) or quantities. The value at `t` is that of the last row at or before `t`, and that of the first row before it. With `loop`, the series repeats with a period from the first row to the end of the last, which lasts as long as the interval before it (ADR 0054).
 
 #### 2.4.6 `[dynamics]`
 
@@ -1096,10 +1098,13 @@ arg      := expr | name "=" expr               (named arguments: only in the fun
 |---|---|---|
 | `integrate(d, min = a, max = b)` | `unit(d) · s` = unit of the signal | explicit Euler: `x ← clamp(x + d · step, a, b)`; `min`/`max` optional |
 | `lag(u, tau)` | that of `u` | `x ← x + (u − x) · step / tau` |
-| `delay(u, t)` | that of `u` | value of `u` `t` ago (ring of `t/step` samples; `t ≤ 15 min`, `J0305`) |
+| `delay(u, t)` | that of `u` | value of `u` `t` ago (ring of `max(1, round(t / step))` samples; `t ≤ 15 min`, `J0305`) |
 
 - The operands are the signals of the model itself (without the device prefix), `param.<name>` and literals. Signals of other devices are not read.
-- **Order:** at each `step`, first the applied outputs are read, then the stateless expressions are evaluated in the topological order of the dependencies and, finally, the states (`integrate`, `lag`, `delay`) are updated in path order. A cycle that does not go through a stateful function is `J0833`.
+- **Functions that are not in dynamics:** `good`, `quality` and `age` read the quality of an acquired sample, which a plant value does not have: `J0833`. `own` is `J0306`. Every other function and operator of 02 §10 is available, typed as in 16 §4 and ADR 0034 (ADR 0054).
+- **Stateful calls** hold their state in the unit of the signal, starting at `init`: `integrate(d)` takes `d` in the difference unit of the signal per second; `lag` and `delay` take `u` in the unit of the signal. They may appear anywhere in the entry and may nest.
+- **Order:** at each `step`, first the applied outputs are read, then the stateless expressions are evaluated in the topological order of the dependencies. After the step, every argument of a stateful call is evaluated with the old states, and then all the states (`integrate`, `lag`, `delay`) change at once (explicit Euler, independent of order; ADR 0054). A cycle that does not go through a stateful function is `J0833`.
+- Every sub-expression is evaluated at every step, both branches of `if` included (ADR 0034), so a function with memory samples once per step. A window holds `ceil(w / step)` samples and, before it is full, is computed over the samples it has.
 - Arithmetic in IEEE 754 `f64` with round-to-nearest; no FMA. The same model gives the same bits on x86_64 and aarch64.
 
 #### 2.4.7 `panel`
@@ -1137,7 +1142,7 @@ panel   = { key = "f", toggle = "bad(comm_failure)", signals = ["temp", "hum"] }
 
 | Effect | Form | Semantics |
 |---|---|---|
-| `quality` | quality literal | acquisition delivers the signal with that quality (the value stays the last good one) |
+| `quality` | quality literal | acquisition delivers the signal with that quality: a `bad(…)` carries no value, and an `uncertain(…)` keeps the value the signal had when the fault started, the last good one (ADR 0051) |
 | `freeze` | `true` | the value stops changing, with quality `good` (what `stuck_detect` must catch) |
 | `value` | value | forced value, with quality `good` (broken sensor lying) |
 | `offset` | quantity | added offset |
@@ -1146,10 +1151,14 @@ panel   = { key = "f", toggle = "bad(comm_failure)", signals = ["temp", "hum"] }
 
 **Fault keys:** the `panel` key (table, or list of tables) with `key`, an effect in toggle form (`toggle = "<quality>"`, `freeze = true` or `disconnect = true`) and `signals` (default: all the `input` signals of the model). That is why `panel` and `"*"` are reserved names in `[faults]`, and a signal named `panel` cannot have scheduled faults (`J0834`). Overlapping faults on the same signal, nonexistent signal or `for ≤ 0`: `J0834`.
 
+**`"*"`** takes every effect: `disconnect` downs the device, and the others apply to every acquired signal. A non-`disconnect` fault on `"*"` counts as a fault on every signal for the overlap rule (`J0834`). Faults on an `output` are `J0834` (ADR 0054).
+
 #### 2.4.9 `[actions]`, `[enums]` and `[implements]`
 
 - `[enums]` and `[implements]` as in profiles (§2.2.8, §2.2.14). The targets of the maps are signals of the model and `"actions.<name>"`.
-- `[actions.<name>]` has `args`, `timeout` and `steps`, with the steps `wait`, `fail_if = { signal, equals, message }` and `set = { <signal> = value }` (changes signals of the model; on a signal with `gen` or dynamics, it fixes the value until the next `set` with `release = true`).
+- `[actions.<name>]` has `args`, `timeout` and `steps`, with the steps `wait`, `fail_if = { signal, equals, message }` and `set = { <signal> = value }` (changes signals of the model; on a signal with `gen` or dynamics, it fixes the value until it is released).
+- **Release:** a `set` table with `release = true` releases the signals it names, whose values are ignored: they go back to their generator, dynamics or `init`. A signal named `release` cannot be set.
+- The model's actions are **native actions** of the `sim` driver (capability `native-actions`, ref/06 §2.10): the core sends `invoke` with the action's name, and the driver runs the steps against the plant. Other steps are `J0821`, and so is a `wait` beyond the timeout; the timeout of the manifest, when given, wins (17 §4.2). A `fail_if` that matches ends with `device` and its `message`. The arguments arrive as the record of ref/06 §2.10, and a number is in the unit declared in `args` and is converted to the unit of the signal (ADR 0054).
 
 #### 2.4.10 `[plant]`: plant in Wasm
 
@@ -1175,6 +1184,8 @@ world plant {
 ```
 
 The plant has no imports (no clock, no randomness, no I/O): it is deterministic by construction. A `step` that returns a number of values different from `outputs`, or an `Err`, puts the device in `bad(device_fault)` and is `J0837` in `jk check` when detectable by the type.
+
+The driver runs the plant through two traits, `PlantEngine` (`init`) and `PlantInstance` (`step`); the Wasm host of the node implements the engine. A build without an engine refuses a model with `[plant]` at `open` with `J0837` (ADR 0054).
 
 #### 2.4.11 Class simulators (reserved 1.0.x)
 
