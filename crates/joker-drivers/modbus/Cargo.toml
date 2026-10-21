@@ -11,6 +11,7 @@ publish.workspace = true
 [dependencies]
 joker-hal = { workspace = true, features = ["std", "plan"] }
 toml = { version = "1.1.8", default-features = false, features = ["parse", "serde", "std"] }
+embedded-io-async.workspace = true
 
 [dev-dependencies]
 joker-hal = { workspace = true, features = ["testing"] }

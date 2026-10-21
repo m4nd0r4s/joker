@@ -1317,6 +1317,7 @@ dependencies = [
 name = "joker-driver-modbus"
 version = "0.0.0"
 dependencies = [
+ "embedded-io-async",
  "joker-core",
  "joker-hal",
  "toml",
