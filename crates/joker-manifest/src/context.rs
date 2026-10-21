@@ -212,6 +212,10 @@ pub struct ProfileInfo {
     pub poll: Option<Duration>,
     /// `[defaults] timeout`.
     pub timeout: Option<Duration>,
+    /// `[actions.<a>]`, by name, with the action's own default timeout
+    /// (explicit `timeout`, or derived from its steps); `None` when the
+    /// profile declares the action without a default (ref/03 §2.2.12).
+    pub actions: BTreeMap<String, Option<Duration>>,
 }
 
 /// A known board.

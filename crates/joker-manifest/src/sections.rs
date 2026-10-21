@@ -2343,7 +2343,11 @@ impl Checker<'_> {
         let mut actions: Vec<(Span, Option<String>)> = Vec::new();
         let mut permits: Vec<(Span, String)> = Vec::new();
         for device in manifest.devices.values() {
-            for action in device.actions.values() {
+            let profile = device
+                .profile
+                .as_ref()
+                .and_then(|p| self.context.profiles.get(&p.value));
+            for (name, action) in &device.actions {
                 if let Some(role) = action.as_table().and_then(|t| t.get("role")) {
                     actions.push((role.node.span, role.node.as_str().map(str::to_owned)));
                 }
@@ -2351,6 +2355,29 @@ impl Checker<'_> {
                     && let Some(source) = permit.node.as_str()
                 {
                     permits.push((permit.node.span, source.to_owned()));
+                }
+                if let Some(profile) = profile {
+                    match profile.actions.get(name) {
+                        None => self.push(
+                            Diagnostic::new("J0101", format!("unknown action `{name}`"))
+                                .at(action.span),
+                        ),
+                        Some(default_timeout) => {
+                            let has_timeout =
+                                action.as_table().and_then(|t| t.get("timeout")).is_some();
+                            if !has_timeout && default_timeout.is_none() {
+                                self.push(
+                                    Diagnostic::new(
+                                        "J0142",
+                                        format!(
+                                            "missing required key `timeout` for action `{name}`"
+                                        ),
+                                    )
+                                    .at(action.span),
+                                );
+                            }
+                        }
+                    }
                 }
             }
         }
