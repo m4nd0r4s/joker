@@ -47,7 +47,7 @@ pub mod prelude {
 
 #[doc(hidden)]
 pub mod __private {
-    pub use crate::io::{CycleCx, Layout, PortDecl, PortKind, ProposalBuffer, TaskCx};
+    pub use crate::io::{CycleCx, Layout, PortDecl, PortKind, ProposalBuffer, TaskCx, new_state};
     pub use crate::runtime::{AppEntry, CycleTask, Runtime};
     pub use inventory;
     pub use joker_sdk_sys as sys;

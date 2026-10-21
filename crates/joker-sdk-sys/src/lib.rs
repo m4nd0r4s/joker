@@ -4,8 +4,11 @@
 //! invariant 10); everything above it is safe.
 //!
 //! A component exports the world's `guest` interface with
-//! `joker_sdk_sys::export!(MyGuest with_types_in joker_sdk_sys)`. The
-//! `@unstable` items are not generated (ref/04 §2.9).
+//! [`export_guest!`]: `wit-bindgen` generates every export but `on-cycle`,
+//! which [`cycle`] implements without heap allocation (ref/04 §4.13,
+//! ADR 0056), with the reserved-buffer `cabi_realloc` and the global
+//! allocator that traps with `J-E0903` in a cycle task. The `@unstable`
+//! items are not generated (ref/04 §2.9).
 //!
 //! The SDK macros expand to [`meta_fragment!`] and [`export_guest!`], so the
 //! `unsafe` attributes they need come from this crate and not from the app's.
@@ -15,11 +18,16 @@
 #![no_std]
 
 extern crate alloc;
+#[cfg(target_arch = "wasm32")]
+extern crate std;
+
+pub mod cycle;
 
 wit_bindgen::generate!({
     path: "../../wit/joker-runtime.wit",
     world: "joker:runtime/app",
     generate_all,
+    skip: ["on-cycle"],
     pub_export_macro: true,
     default_bindings_module: "joker_sdk_sys",
 });
@@ -37,15 +45,25 @@ macro_rules! meta_fragment {
     };
 }
 
-/// Exports the world's `guest` interface, implemented by `$runtime`, from a
-/// Wasm component. Expands to nothing on other targets.
+/// Exports the world's `guest` interface from a Wasm component: `$runtime`
+/// implements the generated `Guest` trait and [`cycle::CycleGuest`] for
+/// `on-cycle`. Expands to nothing on other targets.
 #[macro_export]
 macro_rules! export_guest {
     ($runtime:path) => {
-        #[cfg(target_family = "wasm")]
+        #[cfg(target_arch = "wasm32")]
         const _: () = {
             use $runtime as __JokerRuntime;
     $crate::export!(__JokerRuntime with_types_in $crate);
+
+            #[unsafe(export_name = "joker:runtime/guest@0.1.0#on-cycle")]
+            unsafe extern "C" fn __joker_on_cycle(
+                task: i32,
+                image: *mut u8,
+                len: usize,
+            ) -> *mut u8 {
+                unsafe { $crate::cycle::on_cycle::<__JokerRuntime>(task, image, len) }
+            }
         };
     };
 }

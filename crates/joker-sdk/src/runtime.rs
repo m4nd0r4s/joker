@@ -1,7 +1,8 @@
 //! The exports of the world (ref/04 §2.6), implemented once for every app:
-//! `init` checks the port table against what `#[joker::app]` declared, and
+//! `init` checks the port table against what `#[joker::app]` declared,
+//! reserves the buffers of the cycle path and creates the task states, and
 //! `on-cycle` dispatches to the task registered by `#[joker::cycle]`, in
-//! name order (ref/04 §4.1, §5.3).
+//! name order (ref/04 §4.1, §5.3), without allocating (§4.13).
 
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
@@ -10,8 +11,9 @@ use core::any::Any;
 use core::cell::RefCell;
 
 use critical_section::Mutex;
+use joker_sdk_sys::cycle::{CycleGuest, CycleOut};
 use joker_sdk_sys::exports::joker::runtime::guest::{
-    ActionRequest, CycleResult, Guest, InitContext, ParamChange, Trigger,
+    ActionRequest, Guest, InitContext, ParamChange, Trigger,
 };
 use joker_sdk_sys::joker::runtime::{cycle_io, types};
 
@@ -36,6 +38,8 @@ pub struct CycleTask {
     pub name: &'static str,
     /// Runs one tick of the task.
     pub run: fn(&mut TaskCx<'_>) -> Result<()>,
+    /// Creates the state of the task at `init`, if it has one.
+    pub state: fn() -> Option<Box<dyn Any + Send>>,
 }
 
 inventory::collect!(AppEntry);
@@ -45,7 +49,7 @@ struct State {
     layout: Vec<Layout>,
     tasks: Vec<&'static CycleTask>,
     states: Vec<Option<Box<dyn Any + Send>>>,
-    buffer: ProposalBuffer,
+    pending: Vec<Option<u64>>,
 }
 
 static STATE: Mutex<RefCell<Option<State>>> = Mutex::new(RefCell::new(None));
@@ -60,10 +64,6 @@ fn error(code: &str, message: impl ToString) -> types::Error {
         code: code.to_string(),
         message: message.to_string(),
     }
-}
-
-fn wit_error(e: &Error) -> types::Error {
-    error(e.code().as_str(), e.message())
 }
 
 fn check(cx: &InitContext, app: &AppEntry) -> core::result::Result<Vec<Layout>, String> {
@@ -110,14 +110,15 @@ impl Guest for Runtime {
         let layout = check(&cx, app).map_err(|m| error("J-E0008", m))?;
         let mut tasks: Vec<&'static CycleTask> = inventory::iter::<CycleTask>.into_iter().collect();
         tasks.sort_by(|a, b| a.name.cmp(b.name));
-        let states = tasks.iter().map(|_| None).collect();
-        let buffer = ProposalBuffer::new(cx.proposal_capacity as usize, layout.len());
+        let states = tasks.iter().map(|t| (t.state)()).collect();
+        let pending = alloc::vec![None; layout.len()];
+        joker_sdk_sys::cycle::reserve(cx.image_len as usize, cx.proposal_capacity as usize);
         critical_section::with(|cs| {
             STATE.borrow_ref_mut(cs).replace(State {
                 layout,
                 tasks,
                 states,
-                buffer,
+                pending,
             });
         });
         Ok(())
@@ -126,45 +127,6 @@ impl Guest for Runtime {
     fn on_params(changes: Vec<ParamChange>) -> core::result::Result<(), types::Error> {
         drop(changes);
         Ok(())
-    }
-
-    fn on_cycle(task: u32, image: Vec<u8>) -> CycleResult {
-        critical_section::with(|cs| {
-            let mut guard = STATE.borrow_ref_mut(cs);
-            let Some(state) = guard.as_mut() else {
-                return CycleResult {
-                    proposals: Vec::new(),
-                    error: Some(error("J-E0008", "on-cycle before init")),
-                };
-            };
-            let Some(entry) = state.tasks.get(task as usize).copied() else {
-                return CycleResult {
-                    proposals: Vec::new(),
-                    error: Some(error("J-E0008", alloc::format!("no cycle task {task}"))),
-                };
-            };
-            let buffer = core::mem::take(&mut state.buffer);
-            let cx = CycleCx::new(&image, &state.layout, entry.name, buffer);
-            let result = match state.states.get_mut(task as usize) {
-                Some(slot) => (entry.run)(&mut TaskCx::new(&cx, slot)),
-                None => Err(Error::new(
-                    crate::error::Code::from_static("J-E0008"),
-                    "no task state",
-                )),
-            };
-            state.buffer = cx.into_buffer();
-            let full = state.buffer.is_full();
-            let proposals = state.buffer.finish();
-            let error = match result {
-                Err(e) => Some(wit_error(&e)),
-                Ok(()) if full => Some(error(
-                    "J-E0203",
-                    "proposal buffer full; later proposals dropped",
-                )),
-                Ok(()) => None,
-            };
-            CycleResult { proposals, error }
-        })
     }
 
     async fn run_task(task: u32, why: Trigger) -> core::result::Result<(), types::Error> {
@@ -190,6 +152,43 @@ impl Guest for Runtime {
     fn migrate(previous: Vec<u8>, from_version: String) -> core::result::Result<(), types::Error> {
         drop((previous, from_version));
         Ok(())
+    }
+}
+
+impl CycleGuest for Runtime {
+    fn on_cycle(task: u32, image: &[u8], out: &mut CycleOut<'_>) {
+        critical_section::with(|cs| {
+            let mut guard = STATE.borrow_ref_mut(cs);
+            let Some(state) = guard.as_mut() else {
+                out.fail("J-E0008", "on-cycle before init");
+                return;
+            };
+            let Some(entry) = state.tasks.get(task as usize).copied() else {
+                out.fail("J-E0008", "no such cycle task");
+                return;
+            };
+            let (len, full, result) = {
+                let buffer = ProposalBuffer::new(out.proposals(), &mut state.pending);
+                let cx = CycleCx::new(image, &state.layout, entry.name, buffer);
+                let result = match state.states.get_mut(task as usize) {
+                    Some(slot) => (entry.run)(&mut TaskCx::new(&cx, slot)),
+                    None => Err(Error::new(
+                        crate::error::Code::from_static("J-E0008"),
+                        "no task state",
+                    )),
+                };
+                let (len, full) = cx.finish();
+                (len, full, result)
+            };
+            out.set_len(len);
+            match result {
+                Err(e) => out.fail(e.code().as_str(), e.message()),
+                Ok(()) if full => {
+                    out.fail("J-E0203", "proposal buffer full; later proposals dropped")
+                }
+                Ok(()) => {}
+            }
+        });
     }
 }
 

@@ -3,7 +3,6 @@
 //! the proposal buffer (ref/04 §3).
 
 use alloc::boxed::Box;
-use alloc::vec::Vec;
 use core::any::Any;
 use core::cell::RefCell;
 use core::marker::PhantomData;
@@ -77,6 +76,7 @@ pub struct Layout {
 
 const HEADER: usize = 64;
 const ENTRY: usize = 24;
+const HEADER_LEN: usize = 8;
 const WRITE: u8 = 1;
 const NOTE: u8 = 6;
 const RELINQUISH: u8 = 1;
@@ -108,47 +108,52 @@ fn u64_at(b: &[u8], at: usize) -> u64 {
     u64::from_le_bytes(w)
 }
 
-/// The proposal buffer of one call (ref/04 §3.3).
+/// The proposal buffer of one call (ref/04 §3.3), written in place into the
+/// buffer `joker-sdk-sys` reserved at `init` (ref/04 §4.13).
 #[doc(hidden)]
-#[derive(Debug, Default)]
-pub struct ProposalBuffer {
-    bytes: Vec<u8>,
+#[derive(Debug)]
+pub struct ProposalBuffer<'a> {
+    bytes: &'a mut [u8],
+    len: usize,
     records: u16,
-    capacity: usize,
     full: bool,
-    pending: Vec<Option<u64>>,
+    pending: &'a mut [Option<u64>],
 }
 
-impl ProposalBuffer {
-    /// An empty buffer of `capacity` bytes for `ports` ports.
-    pub fn new(capacity: usize, ports: usize) -> Self {
+impl<'a> ProposalBuffer<'a> {
+    /// An empty buffer over `bytes`, with one pending slot per port. A
+    /// buffer shorter than its 8-byte header holds nothing: every proposal
+    /// is dropped.
+    pub fn new(bytes: &'a mut [u8], pending: &'a mut [Option<u64>]) -> Self {
+        pending.fill(None);
         let mut b = Self {
-            bytes: Vec::with_capacity(capacity),
+            bytes,
+            len: 0,
             records: 0,
-            capacity,
             full: false,
-            pending: alloc::vec![None; ports],
+            pending,
         };
-        b.reset();
+        match b.bytes.get_mut(..HEADER_LEN) {
+            Some(h) => {
+                h.copy_from_slice(&[1, 0, 0, 0, 0, 0, 0, 0]);
+                b.len = HEADER_LEN;
+            }
+            None => b.full = true,
+        }
         b
     }
 
-    fn reset(&mut self) {
-        self.bytes.clear();
-        self.bytes.extend_from_slice(&[1, 0, 0, 0, 0, 0, 0, 0]);
-        self.records = 0;
-        self.full = false;
-        self.pending.fill(None);
-    }
-
     fn push(&mut self, record: &[u8]) {
-        if self.full || self.bytes.len() + record.len() > self.capacity || self.records == u16::MAX
-        {
+        let end = self.len + record.len();
+        if self.full || end > self.bytes.len() || self.records == u16::MAX {
             self.full = true;
             return;
         }
-        self.bytes.extend_from_slice(record);
-        self.records += 1;
+        if let Some(dst) = self.bytes.get_mut(self.len..end) {
+            dst.copy_from_slice(record);
+            self.len = end;
+            self.records += 1;
+        }
     }
 
     fn write(&mut self, port: u32, flags: u8, value: u64) {
@@ -177,14 +182,14 @@ impl ProposalBuffer {
         self.full
     }
 
-    /// The finished buffer, handed to the host. The buffer starts again empty.
-    pub fn finish(&mut self) -> Vec<u8> {
-        let len = self.bytes.len() as u32;
-        self.bytes[2..4].copy_from_slice(&self.records.to_le_bytes());
-        self.bytes[4..8].copy_from_slice(&len.to_le_bytes());
-        let out = core::mem::replace(&mut self.bytes, Vec::with_capacity(self.capacity));
-        self.reset();
-        out
+    /// Completes the header and returns the length of the buffer handed to
+    /// the host.
+    pub fn finish(&mut self) -> usize {
+        if let Some(h) = self.bytes.get_mut(..HEADER_LEN) {
+            h[2..4].copy_from_slice(&self.records.to_le_bytes());
+            h[4..8].copy_from_slice(&(self.len as u32).to_le_bytes());
+        }
+        self.len
     }
 }
 
@@ -196,7 +201,7 @@ pub struct CycleCx<'a> {
     layout: &'a [Layout],
     n_slots: usize,
     task: &'static str,
-    buffer: RefCell<ProposalBuffer>,
+    buffer: RefCell<ProposalBuffer<'a>>,
 }
 
 struct Raw {
@@ -208,15 +213,14 @@ struct Raw {
 }
 
 impl<'a> CycleCx<'a> {
-    /// A call over `image`, with the layout from `init` and the instance's
-    /// buffer (taken back with [`CycleCx::into_buffer`]).
+    /// A call over `image`, with the layout from `init` and the call's
+    /// buffer (completed with [`CycleCx::finish`]).
     pub fn new(
         image: &'a [u8],
         layout: &'a [Layout],
         task: &'static str,
-        mut buffer: ProposalBuffer,
+        buffer: ProposalBuffer<'a>,
     ) -> Self {
-        buffer.reset();
         Self {
             image,
             layout,
@@ -226,9 +230,11 @@ impl<'a> CycleCx<'a> {
         }
     }
 
-    /// Gives the buffer back.
-    pub fn into_buffer(self) -> ProposalBuffer {
-        self.buffer.into_inner()
+    /// Completes the proposal buffer: its length, and whether a proposal
+    /// was dropped because it did not fit (`J-E0203`).
+    pub fn finish(&self) -> (usize, bool) {
+        let mut buffer = self.buffer.borrow_mut();
+        (buffer.finish(), buffer.is_full())
     }
 
     fn layout(&self, port: u32) -> Layout {
@@ -289,6 +295,13 @@ impl<'a> CycleCx<'a> {
     }
 }
 
+/// The initial state of a stateful cycle task, created at `init`, where
+/// allocation is allowed.
+#[doc(hidden)]
+pub fn new_state<S: Default + Send + 'static>() -> Option<Box<dyn Any + Send>> {
+    Some(Box::new(S::default()))
+}
+
 /// The context a cycle task runs in.
 #[doc(hidden)]
 pub struct TaskCx<'a> {
@@ -310,15 +323,22 @@ impl<'a> TaskCx<'a> {
         Self { cx, state }
     }
 
-    /// Runs a task with state `S`, created with `Default` on the first tick.
+    /// Runs a task with state `S`, created by [`new_state`] at `init`: a
+    /// cycle task cannot allocate it (ref/04 §4.13).
     pub fn run<A: App, S: Default + Send + 'static>(
         &mut self,
         f: fn(&mut CycleIo<'_, A>, &mut S) -> Result<()>,
     ) -> Result<()> {
-        let state = self.state.get_or_insert_with(|| Box::new(S::default()));
-        let st = state.downcast_mut::<S>().ok_or_else(|| {
-            Error::new(Code::from_static("J-E0008"), "task state of another type")
-        })?;
+        let st = self
+            .state
+            .as_mut()
+            .and_then(|s| s.downcast_mut::<S>())
+            .ok_or_else(|| {
+                Error::new(
+                    Code::from_static("J-E0008"),
+                    "task state missing or of another type",
+                )
+            })?;
         let mut io = CycleIo {
             cx: self.cx,
             view: A::cycle_view(self.cx),
@@ -603,6 +623,7 @@ impl<'a, T: PortValue> ParamHandle<'a, T> {
 mod tests {
     use super::*;
     use crate::value::{QualityCode, QualityReason};
+    use alloc::vec::Vec;
 
     fn image(samples: &[(u64, u8, u8, u16)], results: &[(u8, u8, u8, u8, u64, u64)]) -> Vec<u8> {
         let mut b = alloc::vec![0u8; HEADER + ENTRY * (samples.len() + results.len())];
@@ -659,7 +680,14 @@ mod tests {
             ],
             &[(2, 0, 12, MINE_ACTIVE, 1, 1)],
         );
-        let cx = CycleCx::new(&img, &LAYOUT, "t", ProposalBuffer::new(1024, 3));
+        let mut bytes = [0u8; 1024];
+        let mut pending = [None; 3];
+        let cx = CycleCx::new(
+            &img,
+            &LAYOUT,
+            "t",
+            ProposalBuffer::new(&mut bytes, &mut pending),
+        );
         let t: CycleInput<'_, f64> = CycleInput::__new(&cx, 0, "temp");
         assert_eq!(
             t.get().unwrap_err().quality,
@@ -685,8 +713,9 @@ mod tests {
         assert_eq!(led.pending(), Some(false));
         led.relinquish();
         assert_eq!(led.pending(), None);
-        let mut buffer = cx.into_buffer();
-        let out = buffer.finish();
+        let (len, full) = cx.finish();
+        assert!(!full);
+        let out = &bytes[..len];
         assert_eq!(&out[..8], &[1, 0, 3, 0, 42, 0, 0, 0]);
         assert_eq!(&out[8..14], &[NOTE, 0, 0, 0, 0, 0]);
         assert_eq!(out[14], WRITE);
@@ -701,14 +730,40 @@ mod tests {
             outcome: Some(0),
             bound: true,
         }];
-        let cx = CycleCx::new(&img, &layout, "t", ProposalBuffer::new(8 + 14 * 2, 1));
+        let mut bytes = [0u8; 8 + 14 * 2];
+        let mut pending = [None; 1];
+        let cx = CycleCx::new(
+            &img,
+            &layout,
+            "t",
+            ProposalBuffer::new(&mut bytes, &mut pending),
+        );
         let o: CycleOutput<'_, u64> = CycleOutput::__new(&cx, 0, "o");
         o.set(1);
         o.set(2);
         o.set(3);
-        let mut buffer = cx.into_buffer();
-        assert!(buffer.is_full());
-        assert_eq!(buffer.finish().len(), 36);
-        assert!(!buffer.is_full());
+        assert_eq!(cx.finish(), (36, true));
+        assert_eq!(&bytes[..8], &[1, 0, 2, 0, 36, 0, 0, 0]);
+    }
+
+    #[test]
+    fn a_buffer_without_room_for_its_header_holds_nothing() {
+        let img = image(&[(0, 0, 0, 0)], &[]);
+        let layout = [Layout {
+            slot: Some(0),
+            outcome: Some(0),
+            bound: true,
+        }];
+        let mut pending = [None; 1];
+        let cx = CycleCx::new(
+            &img,
+            &layout,
+            "t",
+            ProposalBuffer::new(&mut [], &mut pending),
+        );
+        let o: CycleOutput<'_, u64> = CycleOutput::__new(&cx, 0, "o");
+        o.set(1);
+        assert_eq!(o.pending(), None);
+        assert_eq!(cx.finish(), (0, true));
     }
 }

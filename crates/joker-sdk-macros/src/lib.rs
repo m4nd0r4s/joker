@@ -765,9 +765,15 @@ fn expand_cycle(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStre
     let fragment = Cbor::Map(vec![(0, Cbor::Uint(1)), (1, Cbor::Map(task))]).to_bytes();
     let fragment = bytes_tokens(&fragment);
     let section = format_ident!("__JOKER_META_TASK_{}", name.to_uppercase());
-    let run = match state {
-        Some(s) => quote!(cx.run::<#app, #s>(#ident)),
-        None => quote!(cx.run_stateless::<#app>(#ident)),
+    let (run, init) = match state {
+        Some(s) => (
+            quote!(cx.run::<#app, #s>(#ident)),
+            quote!(::joker::__private::new_state::<#s>),
+        ),
+        None => (
+            quote!(cx.run_stateless::<#app>(#ident)),
+            quote!(|| ::core::option::Option::None),
+        ),
     };
     Ok(quote! {
         #func
@@ -778,6 +784,7 @@ fn expand_cycle(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStre
             ::joker::__private::CycleTask {
                 name: #name,
                 run: |cx: &mut ::joker::__private::TaskCx<'_>| #run,
+                state: #init,
             }
         }
     })
