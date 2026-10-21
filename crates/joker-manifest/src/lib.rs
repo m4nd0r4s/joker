@@ -18,6 +18,7 @@ pub mod grammar;
 pub mod layers;
 pub mod lock;
 pub mod model;
+pub mod profile;
 pub mod schema;
 mod sections;
 pub mod source;
