@@ -390,10 +390,7 @@ fn every_1_1_case_reports_its_code() {
 
 #[test]
 fn every_ref01_code_is_emitted_or_deferred() {
-    let deferred: [(&str, &str); 12] = [
-        ("J0167", "AUR-227: envelopes only tighten"),
-        ("J0168", "AUR-227: widen against the lock"),
-        ("J0220", "AUR-227: envelopes only tighten"),
+    let deferred: [(&str, &str); 9] = [
         ("J0283", "AUR-225: rate-monotonic priorities"),
         ("J0350", "AUR-225: RT admission"),
         ("J0370", "AUR-225: bus budget"),

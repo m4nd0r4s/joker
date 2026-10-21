@@ -387,12 +387,112 @@ fn drift_is_detected_by_kind() {
 }
 
 #[test]
+fn node_captured_sections_follow_the_manifest() {
+    let mut context = Context::default();
+    context.boards.insert(
+        "rpi3b-plus".into(),
+        joker_manifest::context::BoardInfo {
+            majors: vec![1],
+            arch: "aarch64".into(),
+            ..joker_manifest::context::BoardInfo::default()
+        },
+    );
+    context.drivers.insert(
+        "modbus-tcp".into(),
+        DriverInfo {
+            buses: vec![BusKind::Ethernet],
+            profile_required: true,
+            config: ["address".to_owned()].into_iter().collect(),
+            discover: true,
+            ..DriverInfo::default()
+        },
+    );
+    context
+        .drivers
+        .insert("joker-link".into(), DriverInfo::default());
+    context.profiles.insert(
+        "local/bench-esp32@1".into(),
+        ProfileInfo {
+            signals: [(
+                "led".to_owned(),
+                SignalInfo::new(SignalType::Bool, Direction::Output),
+            )]
+            .into_iter()
+            .collect(),
+            fallback: true,
+            ..ProfileInfo::default()
+        },
+    );
+    let mut iface = joker_manifest::context::AppInterface::default();
+    iface.tasks.insert("blink".into(), None);
+    context.apps.insert("luz".into(), iface);
+    let text = format!(
+        "{SITE}cycles = {{ blink = \"default\" }}\n[devices.mcu]\ndriver = \"joker-link\"\n"
+    )
+    .replace(
+        "profile = \"local/bench-esp32@1\"\n",
+        "profile = \"local/bench-esp32@1\"\ndiscover = true\n",
+    );
+    let mut fs = MemoryFileSystem::default();
+    fs.file("bancada/joker.toml", text.as_str())
+        .dir("bancada/apps/luz");
+    let report = joker_manifest::check(&fs, Path::new("bancada/joker.toml"), &context);
+    assert!(!report.has_errors(), "{}", report.render());
+    let site = report.manifest.unwrap();
+    let target = lock::Target {
+        board: Some("rpi3b-plus".into()),
+        runtime: Some("1.0.3".into()),
+    };
+    let codes = |lock: &Lock| -> Vec<&'static str> {
+        lock::check_sections(lock, &site, &context, &target)
+            .iter()
+            .map(|d| d.code)
+            .collect()
+    };
+    let (empty, _) = read(&format!("{}\n", lock::HEADER.to_owned() + "\nversion = 1"));
+    let empty = empty.unwrap();
+    let mut found = codes(&empty);
+    found.sort_unstable();
+    assert_eq!(found, ["J0411", "J0430", "J0450", "J0451"]);
+    let full = format!(
+        "{}\nversion = 1\n\n[apps.luz]\nversion = \"0.1.0\"\ndigest = \"{}\"\nwit = \"joker:runtime@1.0.0\"\nsource = \"path:apps/luz\"\n\n[mcu.mcu]\ntarget = \"mcu:esp32\"\nmode = \"generation\"\nruntime = \"1.0.3\"\ncore = \"1.0\"\nlink = \"1.0\"\nfeatures = [\"gpio\"]\ncapacity = {{ signals = 256 }}\n\n[discovered.esp]\ndriver = \"modbus-tcp\"\nprofile = \"other/profile@1\"\nat = \"2026-09-20T10:14:03Z\"\ndigest = \"{}\"\n\n[fallback.esp]\noutputs = [\"esp.led\"]\ntimeout = \"2s\"\nvalue = false\nconfigured = false\n\n[wcet]\n\"luz.blink\" = {{ p999 = \"38us\", max = \"51us\", samples = 100000, board = \"rpi3b-plus\", runtime = \"1.1.0\", app = \"{}\", measured = \"2026-09-20T10:20:00Z\" }}\n",
+        lock::HEADER,
+        hex(7),
+        hex(8),
+        hex(7)
+    );
+    let (full, read_codes) = read(&full);
+    assert!(read_codes.is_empty(), "{read_codes:?}");
+    let full = full.unwrap();
+    let mut found = codes(&full);
+    found.sort_unstable();
+    assert_eq!(found, ["J0431", "J0452"]);
+    let hello = lock::Hello {
+        firmware: None,
+        runtime: Some("1.0.4".into()),
+        core: Some("1.0".into()),
+        link: Some("2.0".into()),
+        features: Some(vec!["gpio".into(), "i2c".into()]),
+    };
+    let mut found: Vec<&str> = lock::check_hello(&full, "mcu", &hello, 1)
+        .iter()
+        .map(|d| d.code)
+        .collect();
+    found.sort_unstable();
+    assert_eq!(found, ["J0460", "J0460", "J0460", "J0461"]);
+    assert_eq!(lock::missing(Path::new("joker.lock")).code, "J0410");
+}
+
+#[test]
 fn every_lock_code_has_a_case() {
     let literal = Regex::new(r#""(J0\d{3})""#).unwrap();
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source = std::fs::read_to_string(root.join("src/lock.rs")).unwrap();
     let code = source.split("#[cfg(test)]").next().unwrap_or("");
-    let tests = std::fs::read_to_string(root.join("tests/lock.rs")).unwrap();
+    let tests: String = std::fs::read_dir(root.join("tests"))
+        .unwrap()
+        .map(|e| std::fs::read_to_string(e.unwrap().path()).unwrap())
+        .collect();
     let missing: Vec<String> = literal
         .captures_iter(code)
         .map(|c| c[1].to_owned())

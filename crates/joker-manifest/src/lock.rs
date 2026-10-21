@@ -1260,6 +1260,12 @@ fn parse(file: FileId, text: &str, diags: &mut Diagnostics) -> Option<Lock> {
     Some(lock)
 }
 
+/// The finding for an entry manifest without its lock (`J0410`): an error
+/// in `prod`, and in `dev` the lock is created.
+pub fn missing(path: &Path) -> Diagnostic {
+    Diagnostic::new("J0410", format!("lock `{}` is missing", path.display())).help("run `jk lock`")
+}
+
 /// The lock of an entry manifest: same folder, `.lock` in place of `.toml`
 /// (ref/02 §2.1.1).
 pub fn path_for(entry: &Path) -> PathBuf {
@@ -1505,6 +1511,399 @@ pub fn drift(lock: &Lock, device: &str, facts: &DeviceFacts) -> Vec<Drift> {
             })
         })
         .collect()
+}
+
+/// Who approves and when, for the `[accepted]` entries `jk lock` writes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Approval {
+    /// `user:<name>` (ref/00 §5).
+    pub by: String,
+    /// RFC 3339 UTC, to the second.
+    pub at: String,
+}
+
+fn node_value(node: &Node) -> LockValue {
+    let mut diags = Diagnostics::default();
+    Reader { diags: &mut diags }.any("value", node)
+}
+
+impl Lock {
+    /// Records a widening in `[accepted] widen` (ref/02 §2.1.14).
+    pub fn set_widen(&mut self, widening: &crate::tighten::Widening, approval: &Approval) {
+        let mut fields = vec![(
+            "reason".to_owned(),
+            LockValue::Text(widening.reason.clone()),
+        )];
+        if let Some(value) = &widening.value {
+            fields.push(("value".to_owned(), node_value(value)));
+        }
+        fields.push(("by".to_owned(), LockValue::Text(approval.by.clone())));
+        fields.push(("at".to_owned(), LockValue::Text(approval.at.clone())));
+        self.sections
+            .entry("accepted".to_owned())
+            .or_default()
+            .insert(
+                vec![
+                    "widen".to_owned(),
+                    format!("{}.{}", widening.output, widening.key),
+                ],
+                fields,
+            );
+    }
+
+    /// Records an `accept_missing_fallback` in `[accepted]`.
+    pub fn set_acceptance(&mut self, acceptance: &crate::tighten::Acceptance, approval: &Approval) {
+        let fields = vec![
+            (
+                "reason".to_owned(),
+                LockValue::Text(acceptance.reason.clone()),
+            ),
+            ("by".to_owned(), LockValue::Text(approval.by.clone())),
+            ("at".to_owned(), LockValue::Text(approval.at.clone())),
+        ];
+        self.sections
+            .entry("accepted".to_owned())
+            .or_default()
+            .insert(
+                vec![
+                    "accept_missing_fallback".to_owned(),
+                    acceptance.output.clone(),
+                ],
+                fields,
+            );
+    }
+
+    fn accepted(&self, sub: &str, key: &str) -> Option<&Fields> {
+        self.sections
+            .get("accepted")?
+            .get(&vec![sub.to_owned(), key.to_owned()])
+    }
+}
+
+/// Checks `[accepted]` against the widenings and acceptances of the
+/// manifest (ref/01 §7.4, ref/02 §3.1.4 check 12): a widening without its
+/// entry, or with another text or value, is `J0168`; an acceptance without
+/// its entry is `J0440`; an entry the manifest no longer has is `J0441`.
+pub fn check_accepted(
+    lock: &Lock,
+    widenings: &[crate::tighten::Widening],
+    acceptances: &[crate::tighten::Acceptance],
+) -> Diagnostics {
+    let mut diags = Diagnostics::default();
+    let mut expected: BTreeSet<Vec<String>> = BTreeSet::new();
+    for w in widenings {
+        let key = format!("{}.{}", w.output, w.key);
+        expected.insert(vec!["widen".to_owned(), key.clone()]);
+        let entry = lock.accepted("widen", &key);
+        let reason_ok = entry.and_then(|f| text(f, "reason")) == Some(w.reason.as_str());
+        let value_ok = entry.is_some_and(|f| {
+            let locked = f.iter().find(|(k, _)| k == "value").map(|(_, v)| v);
+            locked == w.value.as_ref().map(node_value).as_ref()
+        });
+        if !(reason_ok && value_ok) {
+            let what = if entry.is_none() {
+                "has no entry"
+            } else {
+                "differs from its entry"
+            };
+            diags.push(
+                Diagnostic::new(
+                    "J0168",
+                    format!("widening of `{key}` {what} in `[accepted]`"),
+                )
+                .at(w.span)
+                .help("run `jk lock` to record the approval"),
+            );
+        }
+    }
+    for a in acceptances {
+        expected.insert(vec!["accept_missing_fallback".to_owned(), a.output.clone()]);
+        let entry = lock.accepted("accept_missing_fallback", &a.output);
+        if entry.and_then(|f| text(f, "reason")) != Some(a.reason.as_str()) {
+            diags.push(
+                Diagnostic::new(
+                    "J0440",
+                    format!(
+                        "`accept_missing_fallback` of `{}` without its approval in the lock",
+                        a.output
+                    ),
+                )
+                .at(a.span)
+                .help("run `jk lock` to record the approval"),
+            );
+        }
+    }
+    if let Some(entries) = lock.sections.get("accepted") {
+        for key in entries.keys() {
+            if key.first().is_some_and(|s| s != "accept_unsafe_reset") && !expected.contains(key) {
+                diags.push(Diagnostic::new(
+                    "J0441",
+                    format!(
+                        "`[accepted] {}` matches nothing in the manifest",
+                        key.join(".")
+                    ),
+                ));
+            }
+        }
+    }
+    diags
+}
+
+/// The facts of the board and node a lock is checked against.
+#[derive(Debug, Clone, Default)]
+pub struct Target {
+    /// The resolved board (`"rpi3b-plus"`), for `[wcet] board`.
+    pub board: Option<String>,
+    /// The node runtime (`"1.0.3"`), for `[wcet] runtime`.
+    pub runtime: Option<String>,
+}
+
+/// Checks the node-captured sections against the manifest (ref/02 §3.1.4
+/// checks 5, 9, 10 and 11): `[classes]` and `[mcu]` complete, `[discovered]`
+/// for every `discover = true`, `[fallback]` for every device whose profile
+/// declares one, and a valid `[wcet]` for every cycle task.
+pub fn check_sections(
+    lock: &Lock,
+    manifest: &Manifest,
+    context: &crate::context::Context,
+    target: &Target,
+) -> Diagnostics {
+    let mut diags = Diagnostics::default();
+    let classes: BTreeSet<String> = manifest
+        .pending
+        .get("instances")
+        .and_then(Node::as_table)
+        .into_iter()
+        .flatten()
+        .filter_map(|(_, e)| {
+            e.node
+                .as_table()?
+                .get("class")?
+                .node
+                .as_str()
+                .map(crate::context::class_ref)
+        })
+        .collect();
+    let micros: BTreeSet<String> = manifest
+        .devices
+        .iter()
+        .filter(|(_, d)| d.driver.as_ref().is_some_and(|d| d.value == "joker-link"))
+        .map(|(n, _)| n.clone())
+        .collect();
+    for (section, want) in [("classes", classes), ("mcu", micros)] {
+        let have: BTreeSet<String> = lock.keys(section).into_iter().collect();
+        for missing in want.difference(&have) {
+            diags.push(
+                Diagnostic::new(
+                    "J0411",
+                    format!("lock out of date: `[{section}.{missing}]` is missing"),
+                )
+                .help("run `jk lock`"),
+            );
+        }
+        for orphan in have.difference(&want) {
+            diags.push(
+                Diagnostic::new(
+                    "J0411",
+                    format!(
+                        "lock out of date: `[{section}.{orphan}]` matches nothing in the manifest"
+                    ),
+                )
+                .help("run `jk lock` to prune it"),
+            );
+        }
+    }
+    for (name, device) in &manifest.devices {
+        if let Some(discover) = &device.discover
+            && discover.value
+        {
+            match lock.discovered(name) {
+                None => diags.push(
+                    Diagnostic::new(
+                        "J0450",
+                        format!(
+                            "device `{name}` with `discover = true` has no `[discovered.{name}]`"
+                        ),
+                    )
+                    .at(discover.span)
+                    .help("run `jk lock --node <node>` to capture it"),
+                ),
+                Some(fields) => {
+                    let driver_ok =
+                        device.driver.as_ref().map(|d| d.value.as_str()) == text(fields, "driver");
+                    let profile_ok = device.profile.as_ref().map(|p| p.value.as_str())
+                        == text(fields, "profile");
+                    if !driver_ok || !profile_ok {
+                        diags.push(
+                            Diagnostic::new("J0452", format!("`[discovered.{name}]` was captured with another driver or profile"))
+                                .at(discover.span),
+                        );
+                    }
+                }
+            }
+        }
+        let has_fallback = device
+            .profile
+            .as_ref()
+            .and_then(|p| context.profiles.get(&p.value))
+            .is_some_and(|p| p.fallback);
+        if has_fallback {
+            let outputs: BTreeSet<String> = manifest
+                .outputs
+                .keys()
+                .filter(|k| k.split('.').next() == Some(name.as_str()))
+                .cloned()
+                .collect();
+            if outputs.is_empty() {
+                continue;
+            }
+            let locked: BTreeSet<String> = lock
+                .sections
+                .get("fallback")
+                .and_then(|s| s.get(&vec![name.clone()]))
+                .and_then(|f| f.iter().find(|(k, _)| k == "outputs"))
+                .map(|(_, v)| match v {
+                    LockValue::List(items) => items
+                        .iter()
+                        .filter_map(|i| match i {
+                            LockValue::Text(s) => Some(s.clone()),
+                            _ => None,
+                        })
+                        .collect(),
+                    _ => BTreeSet::new(),
+                })
+                .unwrap_or_default();
+            if !outputs.is_subset(&locked) {
+                diags.push(
+                    Diagnostic::new(
+                        "J0451",
+                        format!("the fallback of `{name}` is not verified in the lock"),
+                    )
+                    .at(device.key)
+                    .help(format!(
+                        "run `jk lock --node <node>` to capture `[fallback.{name}]`"
+                    )),
+                );
+            }
+        }
+    }
+    let minor = |v: &str| v.split('.').take(2).collect::<Vec<_>>().join(".");
+    for (app_name, app) in &manifest.apps {
+        for task in app.cycles.keys() {
+            let key = format!("{app_name}.{task}");
+            let entry = lock
+                .sections
+                .get("wcet")
+                .and_then(|s| s.get(&vec![key.clone()]));
+            let Some(fields) = entry else {
+                diags.push(
+                    Diagnostic::new(
+                        "J0430",
+                        format!("cycle task `{key}` without a measured WCET"),
+                    )
+                    .help("run `jk bench` on the target board"),
+                );
+                continue;
+            };
+            let app_ok = lock
+                .app(app_name)
+                .is_some_and(|pin| text(fields, "app") == Some(pin.digest.as_str()));
+            let board_ok = target
+                .board
+                .as_deref()
+                .is_none_or(|b| text(fields, "board") == Some(b));
+            let runtime_ok = target
+                .runtime
+                .as_deref()
+                .is_none_or(|r| text(fields, "runtime").map(minor) == Some(minor(r)));
+            if !(app_ok && board_ok && runtime_ok) {
+                diags.push(
+                    Diagnostic::new(
+                        "J0431",
+                        format!("WCET of `{key}` is stale (app, board or runtime differ)"),
+                    )
+                    .help("run `jk bench` again"),
+                );
+            }
+        }
+    }
+    diags
+}
+
+/// What a Joker Micro announces in its `HELLO` (ref/07 §6.4).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Hello {
+    /// The firmware digest.
+    pub firmware: Option<String>,
+    /// The Joker Micro version.
+    pub runtime: Option<String>,
+    /// The core version, `"<maj>.<min>"`.
+    pub core: Option<String>,
+    /// The Joker Link version, `"<maj>.<min>"`.
+    pub link: Option<String>,
+    /// The compiled features, sorted.
+    pub features: Option<Vec<String>>,
+}
+
+/// Compares a `HELLO` with `[mcu.<device>]` (ref/02 §3.1.5): each difference
+/// is `J0460` with its kind, and a Joker Link major the node cannot speak is
+/// `J0461`.
+pub fn check_hello(lock: &Lock, device: &str, hello: &Hello, node_link_major: u32) -> Diagnostics {
+    let mut diags = Diagnostics::default();
+    let Some(fields) = lock
+        .sections
+        .get("mcu")
+        .and_then(|s| s.get(&vec![device.to_owned()]))
+    else {
+        return diags;
+    };
+    let checks: [(&str, &str, Option<&str>); 4] = [
+        ("firmware", "firmware", hello.firmware.as_deref()),
+        ("runtime", "runtime", hello.runtime.as_deref()),
+        ("core", "core", hello.core.as_deref()),
+        ("link", "link", hello.link.as_deref()),
+    ];
+    for (kind, field, actual) in checks {
+        if let (Some(locked), Some(actual)) = (text(fields, field), actual)
+            && locked != actual
+        {
+            diags.push(Diagnostic::new(
+                "J0460",
+                format!("MCU `{device}` differs from the lock (kind={kind}): locked {locked}, found {actual}"),
+            ));
+        }
+    }
+    if let Some(actual) = &hello.features {
+        let locked: Vec<String> = fields
+            .iter()
+            .find(|(k, _)| k == "features")
+            .map(|(_, v)| match v {
+                LockValue::List(items) => items
+                    .iter()
+                    .filter_map(|i| match i {
+                        LockValue::Text(s) => Some(s.clone()),
+                        _ => None,
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            })
+            .unwrap_or_default();
+        if &locked != actual {
+            diags.push(Diagnostic::new(
+                "J0460",
+                format!("MCU `{device}` differs from the lock (kind=features)"),
+            ));
+        }
+    }
+    if let Some(link) = &hello.link
+        && link.split('.').next().and_then(|m| m.parse::<u32>().ok()) != Some(node_link_major)
+    {
+        diags.push(Diagnostic::new(
+            "J0461",
+            format!("MCU `{device}` speaks Joker Link {link}, which this node does not"),
+        ));
+    }
+    diags
 }
 
 #[cfg(test)]

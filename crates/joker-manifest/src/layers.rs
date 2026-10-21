@@ -394,6 +394,11 @@ enum Directive<'a> {
     Invalid(&'static str),
 }
 
+/// Whether a node is `{ unset = true }`.
+pub fn is_unset(node: &Node) -> bool {
+    matches!(directive(node), Some(Directive::Unset))
+}
+
 fn directive(node: &Node) -> Option<Directive<'_>> {
     let table = node.as_table()?;
     if let Some(unset) = table.get("unset") {
@@ -438,7 +443,9 @@ pub fn merge(layers: &[Layer], diags: &mut Diagnostics) -> Table {
     merged
 }
 
-fn merge_table(acc: &mut Table, layer: &Table, diags: &mut Diagnostics) {
+/// Merges one layer's table into an accumulated one, with the rules of
+/// ref/01 §7.2.
+pub fn merge_table(acc: &mut Table, layer: &Table, diags: &mut Diagnostics) {
     for (key, entry) in layer {
         match directive(&entry.node) {
             Some(Directive::Unset) => {

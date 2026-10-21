@@ -20,6 +20,7 @@ pub mod model;
 pub mod schema;
 mod sections;
 pub mod source;
+pub mod tighten;
 pub mod value;
 
 use std::path::Path;
@@ -45,6 +46,10 @@ pub struct Report {
     pub effective: Option<effective::Canon>,
     /// Its hash (ref/01 §8.3), when there are no errors.
     pub hash: Option<String>,
+    /// The widenings that `widen` covers, for `[accepted]` in the lock.
+    pub widenings: Vec<tighten::Widening>,
+    /// The `accept_missing_fallback` keys, for `[accepted]` in the lock.
+    pub acceptances: Vec<tighten::Acceptance>,
 }
 
 impl Report {
@@ -113,12 +118,16 @@ pub fn check(fs: &dyn FileSystem, entry: &Path, context: &Context) -> Report {
         paths: check::PathRegistry::new(),
         effective: None,
         hash: None,
+        widenings: Vec::new(),
+        acceptances: Vec::new(),
     };
     let Some(top) = layers.last() else {
         return report;
     };
     let top_span = source::Span::new(top.file, 0, 0);
     let merged = layers::merge(&layers, &mut report.diagnostics);
+    report.widenings = tighten::check(&layers, &merged, &mut report.diagnostics);
+    report.acceptances = tighten::acceptances(&merged);
     if report.diagnostics.has_errors(Mode::Dev) {
         return report;
     }
