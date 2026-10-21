@@ -28,7 +28,7 @@ joker-serial-sys = { workspace = true, optional = true }
 [dev-dependencies]
 joker-hal = { path = ".", features = ["testing"] }
 critical-section = { workspace = true, features = ["std"] }
-tokio = { workspace = true, features = ["net", "time", "rt", "macros"] }
+tokio = { workspace = true, features = ["net", "time", "rt", "macros", "io-util"] }
 rustix = { workspace = true, features = ["fs", "termios", "pty"] }
 
 [lints]

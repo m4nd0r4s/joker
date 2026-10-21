@@ -23,6 +23,7 @@ use rustix::termios::{
     ControlModes, OptionalActions, QueueSelector, SpecialCodeIndex, tcflush, tcgetattr, tcsetattr,
 };
 use tokio::io::unix::AsyncFd;
+use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::cbor::Cbor;
 use crate::cx::Host;
@@ -332,6 +333,84 @@ impl SerialIo for TokioSerial {
     }
 }
 
+/// A connected TCP socket on tokio's reactor.
+#[derive(Debug)]
+pub struct TokioTcp(tokio::net::TcpStream);
+
+impl crate::link::TcpIo for TokioTcp {
+    fn poll_read(&mut self, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<Result<usize, IoError>> {
+        let mut read_buf = tokio::io::ReadBuf::new(buf);
+        match Pin::new(&mut self.0).poll_read(cx, &mut read_buf) {
+            Poll::Ready(Ok(())) => Poll::Ready(Ok(read_buf.filled().len())),
+            Poll::Ready(Err(e)) => Poll::Ready(Err(io_error(&e))),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+
+    fn poll_write(&mut self, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize, IoError>> {
+        match Pin::new(&mut self.0).poll_write(cx, buf) {
+            Poll::Ready(Ok(n)) => Poll::Ready(Ok(n)),
+            Poll::Ready(Err(e)) => Poll::Ready(Err(io_error(&e))),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+
+    fn poll_flush(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), IoError>> {
+        match Pin::new(&mut self.0).poll_flush(cx) {
+            Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
+            Poll::Ready(Err(e)) => Poll::Ready(Err(io_error(&e))),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+/// Connects to a fixed address on tokio's reactor, reconnecting on every
+/// call (ref/06 §3.4, `Link::Tcp`).
+pub struct TokioTcpConnector {
+    addr: std::net::SocketAddr,
+    connecting: Option<Pin<Box<dyn Future<Output = io::Result<tokio::net::TcpStream>> + Send>>>,
+}
+
+impl core::fmt::Debug for TokioTcpConnector {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("TokioTcpConnector")
+            .field("addr", &self.addr)
+            .finish_non_exhaustive()
+    }
+}
+
+impl TokioTcpConnector {
+    /// A connector for `addr`. Must run inside a tokio runtime.
+    pub fn new(addr: std::net::SocketAddr) -> Self {
+        Self {
+            addr,
+            connecting: None,
+        }
+    }
+}
+
+impl crate::link::TcpConnect for TokioTcpConnector {
+    fn poll_connect(
+        &mut self,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<crate::link::TcpStream, IoError>> {
+        let fut = self
+            .connecting
+            .get_or_insert_with(|| Box::pin(tokio::net::TcpStream::connect(self.addr)));
+        match fut.as_mut().poll(cx) {
+            Poll::Ready(Ok(stream)) => {
+                self.connecting = None;
+                Poll::Ready(Ok(crate::link::TcpStream::new(TokioTcp(stream))))
+            }
+            Poll::Ready(Err(e)) => {
+                self.connecting = None;
+                Poll::Ready(Err(io_error(&e)))
+            }
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -413,5 +492,33 @@ mod tests {
         let r = short.within(port.receive_exact(&mut buf)).await;
         assert!(r.is_err(), "{r:?} {buf:?}");
         assert!(host.now().mono_ns >= 20_000_000);
+    }
+
+    #[tokio::test]
+    async fn tcp_connects_and_carries_bytes_both_ways() {
+        use crate::link::TcpEndpoint;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let accept = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut buf = [0u8; 2];
+            tokio::io::AsyncReadExt::read_exact(&mut socket, &mut buf)
+                .await
+                .unwrap();
+            tokio::io::AsyncWriteExt::write_all(&mut socket, &[9, 9])
+                .await
+                .unwrap();
+            buf
+        });
+        let mut endpoint = TcpEndpoint::new(TokioTcpConnector::new(addr));
+        let mut stream = endpoint.connect().await.unwrap();
+        use embedded_io_async::{Read, Write};
+        stream.write_all(&[7, 8]).await.unwrap();
+        let echoed = accept.await.unwrap();
+        assert_eq!(echoed, [7, 8]);
+        let mut buf = [0u8; 2];
+        stream.read_exact(&mut buf).await.unwrap();
+        assert_eq!(buf, [9, 9]);
     }
 }
