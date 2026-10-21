@@ -231,4 +231,4 @@ The subdivisions of these ranges, one per reference and without overlaps, are in
 | bus budget model beyond RTU | **decided:** ADR 0049 |
 | JSON schema of the manifest | **generated** from the types of `joker-manifest` (`ref/01` is the source; document 03 is the explanation) |
 
-**Already decided in this round:** the base of the `extends` paths (relative to the file that declares them, `ref/01` §7.1 and §7.5) and the exact definition of "only tighten" (`ref/01` §7.4). The tier 2 admission uses the measured **maximum**, and not the p99.9 (D15, `ref/05`); the formula for tier 1 apps remains in the ADR of task 17.
+**Already decided in this round:** the base of the `extends` paths (relative to the file that declares them, `ref/01` §7.1 and §7.5) and the exact definition of "only tighten" (`ref/01` §7.4). The tier 2 admission uses the measured **maximum**, and not the p99.9 (D15, `ref/05`); for tier 1 apps it is the p99.9, as ADR 0048 (task 17) decides.
