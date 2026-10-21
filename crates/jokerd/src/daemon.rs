@@ -1,17 +1,15 @@
-//! The daemon process: load the manifest, start its generation, run the
-//! simulated devices on tokio, and stop cleanly on SIGTERM or SIGINT.
+//! The daemon process: boot the last confirmed generation (or the given
+//! manifest), run the simulated devices on tokio, roll back unconfirmed
+//! generations when their window ends, and stop cleanly on SIGTERM.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use crate::cycle::CycleError;
+use crate::control::{Config, Controller};
 use crate::decisions::DecisionLog;
-use crate::io::{DeviceIo, SimDevice};
-use crate::load::{instantiate, load};
+use crate::devices::{Devices, SimDevices};
 use crate::pacer::{Monotonic, SystemPacer};
-use crate::runner::{Running, Start};
 use crate::task::TaskProvider;
-use crate::trace_ring::DEFAULT_RETENTION;
 
 /// Command-line options of `jokerd`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,81 +60,100 @@ pub fn lock_memory() -> Result<(), String> {
     }
 }
 
-/// Starts the manifest at `entry` as generation 1 with the host clocks.
-pub fn start_entry(
-    entry: &Path,
-    tasks: &dyn TaskProvider,
-    log: crate::decisions::SharedLog,
+/// The controller of a daemon, shared by the API and the timers.
+pub type SharedController = Arc<Mutex<Controller>>;
+
+/// Locks the controller, recovering from a poisoned lock.
+pub fn lock_controller(c: &SharedController) -> std::sync::MutexGuard<'_, Controller> {
+    c.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Builds the controller of a state directory, boots the last confirmed
+/// generation, and, when there is none, proposes and activates `entry`.
+pub fn controller(
+    options: &Options,
+    tasks: Arc<dyn TaskProvider>,
+    devices: Arc<dyn Devices>,
     clock: Monotonic,
-) -> Result<Running, String> {
-    let fs = joker_manifest::OsFileSystem;
-    let loaded = load(&fs, entry, tasks).map_err(|e| e.to_string())?;
-    let groups = instantiate(&loaded.plan, &loaded.manifest, tasks).map_err(|e| e.to_string())?;
-    let pacer = Box::new(SystemPacer::new(clock, SystemPacer::host_clock_quality()));
-    Running::start(
-        Arc::new(loaded.plan),
-        groups,
-        pacer,
+) -> Result<Controller, String> {
+    let log = DecisionLog::open(&options.state_dir.join("decisions.jsonl"))
+        .map_err(|e| format!("decision log: {e}"))?;
+    let log = Arc::new(Mutex::new(log));
+    let quality = SystemPacer::host_clock_quality();
+    let mut c = Controller::new(
+        &options.state_dir,
         log,
-        Start {
-            generation: 1,
-            inherit: Default::default(),
-            retention: DEFAULT_RETENTION,
-            max_ticks: None,
-        },
+        tasks,
+        devices,
+        Box::new(move || Box::new(SystemPacer::new(clock, quality))),
+        Config::default(),
     )
-    .map_err(|e: CycleError| e.0)
+    .map_err(|e| e.to_string())?;
+    if c.boot().map_err(|e| e.to_string())?.is_none()
+        && let Some(entry) = &options.entry
+    {
+        let manifest =
+            std::fs::read_to_string(entry).map_err(|e| format!("{}: {e}", entry.display()))?;
+        let lock_path = entry.with_extension("lock");
+        let lock = std::fs::read_to_string(lock_path).unwrap_or_default();
+        let g = c
+            .propose(&manifest, &lock, Some("initial manifest".into()), false)
+            .map_err(|e| {
+                format!(
+                    "{e}\n{}",
+                    e.errors
+                        .iter()
+                        .map(|(_, r)| r.as_str())
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                )
+            })?;
+        c.activate(g.number, None, None)
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(c)
 }
 
 /// Runs the daemon until a termination signal.
-pub fn run(options: Options, tasks: &dyn TaskProvider) -> Result<(), String> {
+pub fn run(options: Options, tasks: Arc<dyn TaskProvider>) -> Result<(), String> {
     std::fs::create_dir_all(&options.state_dir)
         .map_err(|e| format!("{}: {e}", options.state_dir.display()))?;
     if let Err(e) = lock_memory() {
         eprintln!("warning: {e}; the cycle thread may page");
     }
-    let log = DecisionLog::open(&options.state_dir.join("decisions.jsonl"))
-        .map_err(|e| format!("decision log: {e}"))?;
-    let log = Arc::new(Mutex::new(log));
     let clock = Monotonic::start();
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .thread_name("io")
         .enable_all()
         .build()
         .map_err(|e| format!("tokio: {e}"))?;
-    let running = match &options.entry {
-        Some(entry) => Some(start_entry(entry, tasks, Arc::clone(&log), clock)?),
-        None => None,
-    };
-    let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
-    if let Some(r) = &running {
-        let sims: Vec<String> = r
-            .plan
-            .signals
-            .iter()
-            .filter_map(|s| s.device.clone())
-            .collect::<std::collections::BTreeSet<_>>()
-            .into_iter()
-            .collect();
-        for device in sims {
-            let io = DeviceIo::new(&r.plan, Arc::clone(&r.shared), clock, &device);
-            runtime.spawn(
-                SimDevice::new(io).run(std::time::Duration::from_millis(10), stop_rx.clone()),
-            );
-        }
-    }
-    runtime.block_on(async {
+    let devices = Arc::new(SimDevices::new(
+        runtime.handle().clone(),
+        clock,
+        std::time::Duration::from_millis(10),
+    ));
+    let controller: SharedController =
+        Arc::new(Mutex::new(controller(&options, tasks, devices, clock)?));
+    let timer = Arc::clone(&controller);
+    runtime.block_on(async move {
         let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
             .map_err(|e| format!("signal: {e}"))?;
-        tokio::select! {
-            _ = term.recv() => {}
-            _ = tokio::signal::ctrl_c() => {}
+        let mut poll = tokio::time::interval(std::time::Duration::from_millis(100));
+        loop {
+            tokio::select! {
+                _ = term.recv() => break,
+                _ = tokio::signal::ctrl_c() => break,
+                _ = poll.tick() => {
+                    let timer = Arc::clone(&timer);
+                    let result = tokio::task::spawn_blocking(move || lock_controller(&timer).poll()).await;
+                    if let Ok(Err(e)) = result {
+                        eprintln!("jokerd: {e}");
+                    }
+                }
+            }
         }
         Ok::<(), String>(())
     })?;
-    let _ = stop_tx.send(true);
-    if let Some(r) = running {
-        r.stop().map_err(|e| e.0)?;
-    }
+    lock_controller(&controller).shutdown();
     Ok(())
 }

@@ -13,7 +13,7 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    match run(options, &NativeTasks) {
+    match run(options, std::sync::Arc::new(NativeTasks)) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("jokerd: {e}");

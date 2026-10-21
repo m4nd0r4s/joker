@@ -1,9 +1,12 @@
 //! The Joker daemon (docs/01 §2, ADR 0016).
 
 pub mod catalog;
+pub mod control;
 pub mod cycle;
 pub mod daemon;
 pub mod decisions;
+pub mod devices;
+pub mod generations;
 pub mod io;
 pub mod load;
 pub mod native;
