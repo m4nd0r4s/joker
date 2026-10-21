@@ -173,21 +173,21 @@ All sections are optional except `[profile]` and `[signals]` (the latter may be 
 
 | `driver` in the profile | Accepted device `driver` | Version |
 |---|---|---|
-| `modbus` | `modbus-tcp`, `modbus-rtu`; on an MCU, `modbus-rtu` (client) and `modbus-slave` (the map that the MCU serves) | 1.0 |
+| `modbus` | `modbus-tcp`, `modbus-rtu`; on an MCU, `modbus-rtu` (client) and `modbus-slave` (the map that the MCU serves) | 1.0 (`modbus-slave` on an MCU: reserved 1.0.x) |
 | `i2c` | `i2c` | 1.0 |
-| `spi` | `spi` | 1.0 (`spi-adc` with blocks: 1.1) |
+| `spi` | `spi` | reserved 1.0.x (`J0807`; `spi-adc` with blocks: 1.1) |
 | `gpio` | `gpio` | 1.0 (expander profiles; the SoC lines come from the board) |
-| `revpi` | `revpi` | 1.0 |
+| `revpi` | `revpi` | reserved 1.0.x (`J0807`) |
 | `mqtt` | `mqtt` | 1.0 |
-| `opcua` | `opcua` | 1.0 |
-| `canopen` | `canopen`; `can` for profiles of simple CAN frames | 1.0 |
-| `mbus` | `m-bus` | 1.0 |
-| `onewire`, `serial-line` | same | 1.0 |
+| `opcua` | `opcua` | reserved 1.0.x (`J0807`) |
+| `canopen` | `canopen`; `can` for profiles of simple CAN frames | reserved 1.1 (`J0807`) |
+| `mbus` | `m-bus` | reserved 1.0.x (`J0807`) |
+| `onewire`, `serial-line` | same | reserved 1.0.x (`J0807`) |
 | `ethercat`, `bacnet`, `iec104`, `iec61850`, `dlms` | same, `x:bacnet-ip` | reserved 1.2 (`J0807`) |
-| `x:<name>`, `w:<name>` | the external or Wasm driver with that name | 1.0 (address keys in the `address` schema of the descriptor, validated by `plan`) |
+| `x:<name>`, `w:<name>` | the external or Wasm driver with that name | reserved 1.2, with the tier W and X hosts (`J0807`; address keys in the `address` schema of the descriptor, validated by `plan`) |
 | `joker/link-*` (generated, §2.2.16) | `joker-link` | 1.0 (addressing by the MCU's `SignalId`; not written by hand) |
 
-A device whose `driver` is not accepted by the profile's family is `J0808`. The `driver` of the profile must be in `protocols` of the driver descriptor (ref/06 §2.3).
+The versions follow the 1.0 cut of document 26, §5 (ADR 0035). A device whose `driver` is not accepted by the profile's family is `J0808`. The `driver` of the profile must be in `protocols` of the driver descriptor (ref/06 §2.3).
 
 #### 2.2.3 `[defaults]`
 
@@ -266,7 +266,7 @@ A key that is neither generic nor from the driver's address schema is `J0140`. `
 | `byte_order` | `big` \| `little` | no (default `big`) | |
 | `channel` | integer 0–255 | one of `reg` or `channel` | channel of a *chip handler* of the driver (`[profile] quirks.chip`), for chips with read sequences (ADCs with multiplexer: ADS1115) |
 
-**Other families of 1.0** (the keys are validated by the `plan` of the driver; the list is closed):
+**Other families** (the keys are validated by the `plan` of the driver; the list is closed; of these, only `gpio` and `mqtt` are 1.0, and the others are reserved with the version of the table of §2.2.2):
 
 | Family | Address keys |
 |---|---|
@@ -1176,7 +1176,9 @@ world plant {
 
 The plant has no imports (no clock, no randomness, no I/O): it is deterministic by construction. A `step` that returns a number of values different from `outputs`, or an `Err`, puts the device in `bad(device_fault)` and is `J0837` in `jk check` when detectable by the type.
 
-#### 2.4.11 Class simulators
+#### 2.4.11 Class simulators (reserved 1.0.x)
+
+Class simulators ship in a 1.0.x patch release (document 26, §5; ADR 0035). In 1.0, a `<name>.sim.toml` in a class package is `J0807`, and `[instances.<i>] sim` is `J0290` (ref/01); the `sim` driver with a device model (§2.4.1–§2.4.10) is 1.0.
 
 Each class may bring a simulation model in `classes/<package>/<name>.sim.toml`, with the same schema, `[params]` and an `[implements]` of the class itself. `[instances.<i>] sim = true` uses it with the `default` values; `sim = { … }` passes parameters (ref/01). The instance does not need a device: the runtime creates an internal `sim` device with the name of the instance.
 
@@ -1838,11 +1840,13 @@ In `mode = "dev"`, the `error-in-prod` codes appear as `W08xx` with the same num
 
 ## 6. Version markers
 
+The 1.0 column is the cut of document 26, §5 (ADR 0028, ADR 0035); what is not in it is reserved: the format exists and is validated, and using it is `J0807`.
+
 | Topic | 1.0 | Reserved |
 |---|---|---|
-| profiles | everything in §2.2 with the families marked 1.0 | `kind = "block" \| "stream"` (1.1); families `ethercat`, `bacnet`, `iec104`, `iec61850`, `dlms` (1.2); `extends` (1.x); several implicit instances per device (`instances`, 1.x); discovery `canopen_lss`, `opcua_browse` (1.x) |
-| boards | Linux and MCU (§2.3) | `[accel]`: accepted and validated already, used by ML in **1.1** (document 11, §"Ready for ML"); Wasm on M2 MCUs (`capacities.wasm`, 1.4) |
-| simulation | generators, dynamics, faults, panel, actions, `implements`, `[plant]`, class simulators | `sim-camera` and stream and block sources (1.1); simulator that **serves** the protocol of a profile (`serve = { profile, protocol }`, for `jk profile test` against Hub simulators, 1.5) |
+| profiles | everything in §2.2 with the families marked 1.0 | families `revpi`, `spi`, `opcua`, `mbus`, `onewire`, `serial-line`, and `modbus` served by `modbus-slave` on an MCU (1.0.x); `canopen` and `can` (1.1); `x:<name>`, `w:<name>` (1.2, with the tier W and X hosts); `kind = "block" \| "stream"` (1.1); families `ethercat`, `bacnet`, `iec104`, `iec61850`, `dlms` (1.2); `extends` (1.x); several implicit instances per device (`instances`, 1.x); discovery `canopen_lss`, `opcua_browse` (1.x) |
+| boards | Linux and MCU (§2.3); the MCU boards of the 1.0 catalog are ESP32 and RP2350 | catalog boards for ESP32-C6 and STM32 (1.0.x; the format already describes them); `[accel]`: accepted and validated already, used by ML in **1.1** (document 11, §"Ready for ML"); Wasm on M2 MCUs (`capacities.wasm`, 1.4) |
+| simulation | generators, dynamics, faults, panel, actions, `implements`, `[plant]` | class simulators (§2.4.11, 1.0.x); `sim-camera` and stream and block sources (1.1); simulator that **serves** the protocol of a profile (`serve = { profile, protocol }`, for `jk profile test` against Hub simulators, 1.5) |
 | scenarios | §2.5 | `metric` (1.1, with the pipelines and ML; example 02); `[[inject]]` on streams (1.1) |
 | conformance | §2.6 | writer `kind = "proposal"` (1.1, M18); expectations on model outputs (1.1, M22) |
 | Hub | §2.8 with the minimal Hub (OCI registry + checks) | `application/vnd.joker.model.v1+jkm` (1.1, already reserved in 11); public Hub with mandatory evidence by a certified simulator (1.5) |
