@@ -239,7 +239,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: python3 tools/spec-lint/spec_lint.py --max-score 0.5
-      - run: python3 -c "import tomllib; tomllib.load(open('spec/codes.toml', 'rb'))"
+      - run: python3 -c "import tomllib; tomllib.load(open('crates/joker-manifest/codes.toml', 'rb'))"
 
   cross-aarch64:
     runs-on: ubuntu-latest

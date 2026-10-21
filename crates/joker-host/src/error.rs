@@ -3,7 +3,7 @@
 
 use core::fmt;
 
-/// Codes of `spec/codes.toml` used by the host.
+/// Codes of `crates/joker-manifest/codes.toml` used by the host.
 pub mod codes {
     /// Component world is newer than this runtime.
     pub const WORLD_TOO_NEW: &str = "J-E0001";
