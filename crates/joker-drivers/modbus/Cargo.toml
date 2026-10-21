@@ -1,0 +1,20 @@
+[package]
+name = "joker-driver-modbus"
+description = "Joker modbus-rtu driver: a Modbus RTU client on a serial bus"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+joker-hal = { workspace = true, features = ["std", "plan"] }
+toml = { version = "1.1.8", default-features = false, features = ["parse", "serde", "std"] }
+
+[dev-dependencies]
+joker-hal = { workspace = true, features = ["testing"] }
+joker-core.workspace = true
+
+[lints]
+workspace = true

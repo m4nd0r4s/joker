@@ -1,0 +1,17 @@
+[package]
+name = "joker-xtensa-core"
+description = "Build probe: the no_std core crates compiled for xtensa-esp32-none-elf with the esp toolchain (docs/13 §5.1)"
+version = "0.0.0"
+edition = "2024"
+license = "Apache-2.0 OR MIT"
+publish = false
+
+[workspace]
+
+[dependencies]
+joker-units = { path = "../../crates/joker-units", default-features = false }
+joker-expr = { path = "../../crates/joker-expr", default-features = false }
+joker-core = { path = "../../crates/joker-core", default-features = false }
+
+[profile.release]
+opt-level = "s"

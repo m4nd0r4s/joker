@@ -1,0 +1,7 @@
+schema = 1
+
+[model]
+description = "Bench Raspberry Pi, simulated: for now, only the ACT LED"
+
+[signals]
+act_led = { type = "bool", direction = "output", label = "ACT LED", panel = { label = "ACT", kind = "lamp" } }

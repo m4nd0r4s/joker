@@ -31,7 +31,28 @@
 | [0027](0027-composite-classes.md) | Composite classes end to end: binding, nested paths, methods, health, profiles and Joker Micro |
 | [0028](0028-stable-equals-implemented.md) | Stable = implemented; what does not ship in 1.0 stays reserved |
 | [0029](0029-english-project-language.md) | English is the project language; code has docstrings only, no comments |
+| [0030](0030-unit-syntax-and-kinds.md) | Unit syntax, quantity kinds in compounds, and literal error codes |
+| [0031](0031-registry-hash-encoding.md) | Signal ordering and the registry hash encoding |
+| [0032](0032-dt-after-overrun-skip.md) | `dt()` counts whole periods, also after `overrun = "skip"` |
+| [0033](0033-write-outcomes-and-decision-records.md) | Write outcomes per proposal and per tick, and decision records |
+| [0034](0034-expression-typing-and-evaluation.md) | Expression typing, `J0304` and `J0307`, and the semantics of windows and stateful functions |
 | [0035](0035-reconcile-the-references-with-the-1-0-cut.md) | Reconcile the references with the 1.0 cut: what the cut does not keep is reserved, and the planning decisions it left open |
 | [0036](0036-english-identifiers-in-the-specification.md) | English identifiers in the specification: illustrative names renamed, `"$value"` and `n_wide` |
+| [0037](0037-trace-v1-encoding-details.md) | Encoding details of the `.jktrace` v1 format |
+| [0038](0038-envelope-steps-2-to-6.md) | Details of envelope steps 2–6 |
+| [0039](0039-atomic-groups-in-the-envelope.md) | Atomic groups in the envelope |
+| [0040](0040-alarm-lifecycle-and-unknown.md) | Alarm lifecycle: delays, `Unknown`, suppression and shelving |
+| [0041](0041-method-expansion-and-queries-in-the-core.md) | Method expansion, `own()` and queries in the core |
+| [0042](0042-core-case-initial-state-and-staging.md) | Initial state and staging of a core conformance case |
+| [0043](0043-causal-sets-and-method-records-in-the-trace.md) | Causal sets, and method records in the trace |
+| [0047](0047-m0-driver-contract-subset.md) | The M0 subset of the driver contract (`joker-hal`) |
+| [0048](0048-rt-admission-and-memory-estimate.md) | Real-time admission: the formula, what the WCET contains, and the memory estimate |
+| [0049](0049-bus-budget-beyond-modbus-rtu.md) | The bus budget beyond Modbus RTU |
+| [0051](0051-m0-sim-driver.md) | The M0 `sim` driver: how the model reaches it, the format subset and its time |
+| [0052](0052-aot-cache-identity-and-cycle-subset-host.md) | AOT cache identity, load errors, WASI terminals and the seed expansion |
+| [0053](0053-sdk-error-size-and-the-sys-crate.md) | The size of the SDK error, and the `joker-sdk-sys` crate |
+| [0054](0054-complete-sim-driver.md) | The complete `sim` driver: what reaches it, the dynamics language, actions and the plant surface |
+| [0055](0055-supply-chain-and-dependency-policies.md) | Supply chain and dependency policies: CI checks, core allowlist, MCU licences, `cargo vet`, toolchains and the wasmtime LTS line |
+| [0056](0056-allocation-free-cycle-calls.md) | Allocation-free cycle calls: reserved buffers of `on-cycle`, the trapping allocator and `J-E0903` |
 
 Changing a decision = writing a new ADR that replaces it, and updating the affected documents in the same set of commits.

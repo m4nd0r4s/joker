@@ -1,0 +1,170 @@
+schema = 1
+
+[suite]
+kind        = "core"
+id          = "envelope.quality"
+spec        = ["01 §7 step 3", "16 E4", "16 A3", "01 §3.3"]
+period      = "100ms"
+hosts       = ["linux", "mcu"]
+description = "requires_good: Rejected(Quality) after grace, on_interlock applies, lease renewal, staleness of dependencies"
+
+[[signals]]
+path = "x.m"
+type = "f64"
+unit = "kW"
+
+[[signals]]
+path    = "x.n"
+type    = "f64"
+unit    = "kW"
+max_age = "300ms"
+
+[[outputs]]
+path          = "x.p_set"
+type          = "f64"
+unit          = "kW"
+range         = ["-100 kW", "100 kW"]
+requires_good = ["x.m"]
+safe          = "0 kW"
+
+[[outputs]]
+path          = "x.h_set"
+type          = "f64"
+unit          = "kW"
+range         = ["-100 kW", "100 kW"]
+requires_good = ["x.m"]
+on_interlock  = "hold"
+safe          = "0 kW"
+
+[[outputs]]
+path          = "x.g_set"
+type          = "f64"
+unit          = "kW"
+range         = ["-100 kW", "100 kW"]
+requires_good = ["x.m"]
+grace         = "300ms"
+safe          = "0 kW"
+
+[[outputs]]
+path          = "x.s_set"
+type          = "f64"
+unit          = "kW"
+range         = ["-100 kW", "100 kW"]
+requires_good = ["x.n"]
+safe          = "0 kW"
+
+[[writers]]
+id    = "a"
+level = "control:10"
+lease = "2s"
+kind  = "cycle"
+
+[[writers]]
+id    = "b"
+level = "control:9"
+lease = "300ms"
+kind  = "cycle"
+
+[[case]]
+id   = "good_dependency_accepts"
+name = "A Good dependency lets the proposal through"
+spec = ["01 §7 step 3"]
+do   = [
+  { at = "0ms", input = "x.m", value = "1 kW" },
+  { at = "0ms", propose = "x.p_set", writer = "a", value = "10 kW" },
+]
+expect = [{ at = "0ms", output = "x.p_set", outcome = "accepted", equals = "10 kW", level = "control:10" }]
+
+[[case]]
+id   = "bad_dependency_rejects_without_grace"
+name = "With grace 0 (the default) a Bad dependency rejects at once and applies safe"
+spec = ["16 E4", "01 §7 step 3"]
+do   = [
+  { at = "0ms", input = "x.m", quality = "bad(comm_failure)" },
+  { at = "0ms", propose = "x.p_set", writer = "a", value = "10 kW" },
+]
+expect = [{ at = "0ms", output = "x.p_set", outcome = "rejected(quality)", equals = "0 kW", level = "control:10" }]
+
+[[case]]
+id   = "uncertain_dependency_rejects"
+name = "requires_good needs Good: an Uncertain dependency also rejects"
+spec = ["01 §7 step 3", "16 E4"]
+do   = [
+  { at = "0ms", input = "x.m", value = "1 kW", quality = "uncertain(substituted)" },
+  { at = "0ms", propose = "x.p_set", writer = "a", value = "10 kW" },
+]
+expect = [{ at = "0ms", output = "x.p_set", outcome = "rejected(quality)", equals = "0 kW" }]
+
+[[case]]
+id   = "quality_rejection_holds"
+name = "on_interlock = hold also governs Rejected(Quality)"
+spec = ["16 E4", "16 E3"]
+do   = [
+  { at = "0ms",   input = "x.m", value = "1 kW" },
+  { at = "0ms",   propose = "x.h_set", writer = "a", value = "10 kW" },
+  { at = "100ms", input = "x.m", quality = "bad(comm_failure)" },
+  { at = "100ms", propose = "x.h_set", writer = "a", value = "20 kW" },
+]
+expect = [{ at = "100ms", output = "x.h_set", outcome = "rejected(quality)", equals = "10 kW", level = "control:10" }]
+
+[[case]]
+id   = "grace_delays_rejection"
+name = "requires_good only fails after the dependency has been bad for grace"
+spec = ["16 E4"]
+do   = [
+  { at = "0ms",   input = "x.m", value = "1 kW" },
+  { at = "0ms",   propose = "x.g_set", writer = "a", value = "10 kW" },
+  { at = "100ms", input = "x.m", quality = "bad(comm_failure)" },
+  { at = "100ms", propose = "x.g_set", writer = "a", value = "20 kW" },
+  { at = "200ms", propose = "x.g_set", writer = "a", value = "20 kW" },
+  { at = "500ms", propose = "x.g_set", writer = "a", value = "20 kW" },
+]
+expect = [
+  { at = "100ms", output = "x.g_set", outcome = "accepted", equals = "20 kW" },
+  { at = "200ms", output = "x.g_set", outcome = "accepted", equals = "20 kW" },
+  { at = "500ms", output = "x.g_set", outcome = "rejected(quality)", equals = "0 kW", level = "control:10" },
+]
+
+[[case]]
+id   = "grace_restarts_after_recovery"
+name = "A Good sample in between restarts the grace period"
+spec = ["16 E4"]
+do   = [
+  { at = "0ms",   input = "x.m", value = "1 kW" },
+  { at = "100ms", input = "x.m", quality = "bad(comm_failure)" },
+  { at = "200ms", input = "x.m", value = "1 kW" },
+  { at = "300ms", input = "x.m", quality = "bad(comm_failure)" },
+  { at = "500ms", propose = "x.g_set", writer = "a", value = "20 kW" },
+]
+expect = [{ at = "500ms", output = "x.g_set", outcome = "accepted", equals = "20 kW", level = "control:10" }]
+
+[[case]]
+id   = "quality_rejection_renews_lease"
+name = "A proposal rejected for quality renews the writer's lease"
+spec = ["16 A3", "16 E4"]
+do   = [
+  { at = "0ms",   input = "x.m", value = "1 kW" },
+  { at = "0ms",   propose = "x.p_set", writer = "b", value = "10 kW" },
+  { at = "200ms", input = "x.m", quality = "bad(comm_failure)" },
+  { at = "200ms", propose = "x.p_set", writer = "b", value = "20 kW" },
+  { at = "300ms", input = "x.m", value = "1 kW" },
+]
+expect = [
+  { at = "200ms", output = "x.p_set", outcome = "rejected(quality)", equals = "0 kW", level = "control:9" },
+  { at = "400ms", output = "x.p_set", level = "control:9" },
+  { at = "500ms", output = "x.p_set", equals = "0 kW", level = "none" },
+]
+
+[[case]]
+id   = "stale_dependency_rejects"
+name = "A dependency older than max_age is Uncertain(Stale) and fails requires_good"
+spec = ["01 §3.3", "16 E4"]
+do   = [
+  { at = "0ms",   input = "x.n", value = "1 kW" },
+  { at = "0ms",   propose = "x.s_set", writer = "a", value = "10 kW" },
+  { at = "400ms", propose = "x.s_set", writer = "a", value = "10 kW" },
+]
+expect = [
+  { at = "0ms",   output = "x.s_set", outcome = "accepted", equals = "10 kW" },
+  { at = "400ms", output = "x.s_set", outcome = "rejected(quality)", equals = "0 kW", level = "control:10" },
+]

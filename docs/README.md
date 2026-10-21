@@ -40,6 +40,7 @@ Status: **design document.** None of this is implemented. The figures attributed
 | `ref/` | **Normative references of all the interfaces** (ADR 0023): `00` conventions · `01` manifest · `02` lock, node, client, secrets · `03` profiles, boards, simulation, scenarios, conformance · `04` WIT and Rust SDK · `05` Python and TypeScript SDKs, clients · `06` N/W/X drivers · `07` Joker Link · `08` Joker Micro C ABI · `09` HTTP API · `10` agent protocol |
 | `proposals/` | Proposals and their reasoning; **not normative** (the IDL one was incorporated into 17) |
 | `adr/` | Architecture decision records |
+| `policies/` | Repository policies that CI enforces: dependencies, `cargo vet`, licences, toolchains and the wasmtime line (ADR 0055); rank with the ADRs |
 | `GLOSSARY.md` | English term for every domain word, translation style, the file-name map (ADR 0029) and the identifier map (ADR 0036) |
 | `errata/` | Errata found while translating the specification, with their status; **not normative** |
 | `examples/` | Guided walkthrough and three complete projects |
@@ -49,7 +50,7 @@ Status: **design document.** None of this is implemented. The figures attributed
 
 ## Precedence (v1)
 
-When two documents diverge, the following prevail, in this order: **16** and **ref/00** (core semantics and representation) → **17** (`.jkc`) → **ref/01–ref/10** (interface references, with the files of `wit/` and `spec/`) → **01–05, 14, 19** (normative per area, which explain) → **20** (principles and contracts of the family) → **06–07, 15** → ADRs → **08–13, 18, 21, 22, 24–26** (analysis and planning) → **examples/**, **track/** and **proposals/** (illustrative). An example that contradicts a normative document is a bug in the example.
+When two documents diverge, the following prevail, in this order: **16** and **ref/00** (core semantics and representation) → **17** (`.jkc`) → **ref/01–ref/10** (interface references, with the files of `wit/` and `spec/`) → **01–05, 14, 19** (normative per area, which explain) → **20** (principles and contracts of the family) → **06–07, 15** → ADRs and `policies/` → **08–13, 18, 21, 22, 24–26** (analysis and planning) → **examples/**, **track/** and **proposals/** (illustrative). An example that contradicts a normative document is a bug in the example.
 
 ## Where to start
 

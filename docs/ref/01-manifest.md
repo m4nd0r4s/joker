@@ -201,7 +201,7 @@ The language is that of document 02, §10, with the edge cases of document 16, �
 - **References** (`model:`, `pipe:`, `class:`) are not paths (16, P4) and do not appear in expressions, except in the model functions of the 1.1 positions (`good(model:m)`, `ood_ratio(model:m, 15m)`, `model_threshold(m)`).
 - **Evaluation group:** the expressions of an output run in its owning group (A11); `calc` and alarms run in the fastest group that consumes them, or in the implicit `calc` group (100 ms), or in the group indicated by `group` (§5.13, §5.14).
 - **Dependencies between `calc`** form an acyclic graph; a cycle is `J0190`.
-- An expression with a syntax error is `J0158`; unknown signal `J0302`; unknown variant `J0303`; dimensions `J0301`; window above the maximum `J0305`.
+- An expression with a syntax error is `J0158`; unknown signal `J0302`; unknown variant `J0303`; dimensions `J0301`; types `J0304`; window above the maximum `J0305`; function or arguments `J0307`. The typing rules and the semantics of windows and stateful functions are in ADR 0034.
 
 ### 3.8 Paths and names
 
@@ -1566,7 +1566,7 @@ After the merge (§7), `jk check` builds the effective manifest in this order. E
 | 5 | expand the selectors, materialize the defaults (A9, A11, writers, leases, implicit groups) | `J0155`, `J0156` |
 | 6 | bindings, parameters, instances | `J0107`–`J0130`, `J018x`, `J019x`, `J06xx` |
 | 7 | envelopes, arbiter, fallback, atomic groups | `J02xx` |
-| 8 | expressions (types, units, windows) | `J03xx` (0301–0306) |
+| 8 | expressions (types, units, windows) | `J03xx` (0301–0307) |
 | 9 | cycles, RT admission, buses, memory | `J028x`, `J0350`–`J0380` |
 | 10 | `prod` rules (signatures, lock, secrets, TLS) | `error-in-prod` |
 
@@ -1675,8 +1675,10 @@ doc      = "01 §8"
 | `J0301` | error | expression with incompatible dimensions | expressions | 03 §15 |
 | `J0302` | error | unknown signal in an expression | expressions, `message` | 02 §10 |
 | `J0303` | error | enum without that variant | expressions, `Value` | 02 §10 |
+| `J0304` | error | expression with incompatible types (operand, enum of another type, unreadable signal, result of the wrong type) | expressions | ADR 0034 |
 | `J0305` | error | window above the maximum (15 min) | expressions | 16 §4 |
 | `J0306` | error | `own()` outside a class method | expressions | 16 §4 |
+| `J0307` | error | unknown function, wrong arity, or an argument that must be a path, duration or constant | expressions | ADR 0034 |
 | `J0350` | error | cycle group not schedulable (M23) | `cycles` | 03 §15 |
 | `J0351` | error | group < 10 ms without `kernel = "preempt_rt"` | `cycles`, `target` | 03 §15 |
 | `J0352` | warning | group ≥ 10 ms without PREEMPT_RT: jitter not guaranteed | `cycles`, `target` | 16 §9 |

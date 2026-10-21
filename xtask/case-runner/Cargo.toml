@@ -1,0 +1,20 @@
+[package]
+name = "joker-case-runner"
+description = "Drives joker-core through a core conformance case with fixed storage: the executor, the expectations and the result digest shared by the host runner and the MCU firmware (docs/13 §3, §5)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+joker-core.workspace = true
+joker-expr.workspace = true
+joker-units.workspace = true
+
+[dev-dependencies]
+critical-section = { workspace = true, features = ["std"] }
+
+[lints]
+workspace = true

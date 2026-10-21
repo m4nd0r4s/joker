@@ -1,0 +1,16 @@
+schema = 1
+
+[params]
+mean   = { default = "22 °C" }
+amp    = { default = "3 K" }
+period = { default = "10m" }
+
+[signals]
+temp = { type = "f64", unit = "°C", gen = { kind = "sine", mean = "$mean", amp = "$amp", period = "$period" }, noise = "0.05 K",
+         panel = { label = "Temp", kind = "gauge", keys = ["down", "up"], step = "0.5 K" } }
+
+[faults]
+panel = { key = "f", toggle = "bad(comm_failure)" }
+
+[implements."std/temp_sensor@1"]
+map = { temperature = "temp" }

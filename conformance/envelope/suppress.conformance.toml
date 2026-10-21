@@ -1,0 +1,188 @@
+schema = 1
+
+[suite]
+kind        = "core"
+id          = "envelope.suppress"
+spec        = ["01 §7 step 6", "16 E8", "16 A3", "ref/01 §5.10"]
+period      = "100ms"
+hosts       = ["linux", "mcu"]
+description = "Deadband, min_interval and the actuation budget: Suppressed renews the lease and does not count as an actuation; an exhausted budget is Rejected(Budget)"
+
+[[outputs]]
+path     = "x.d_set"
+type     = "f64"
+unit     = "kW"
+range    = ["-100 kW", "100 kW"]
+deadband = "0.5 kW"
+safe     = "0 kW"
+
+[[outputs]]
+path         = "x.m_set"
+type         = "f64"
+unit         = "kW"
+range        = ["-100 kW", "100 kW"]
+min_interval = "300ms"
+safe         = "0 kW"
+
+[[outputs]]
+path           = "x.b_set"
+type           = "f64"
+unit           = "kW"
+range          = ["-100 kW", "100 kW"]
+max_actuations = "2/10s"
+safe           = "0 kW"
+
+[[outputs]]
+path           = "x.e_set"
+type           = "f64"
+unit           = "kW"
+range          = ["-100 kW", "100 kW"]
+deadband       = "0.5 kW"
+max_actuations = "2/10s"
+safe           = "0 kW"
+
+[[outputs]]
+path           = "x.w_set"
+type           = "f64"
+unit           = "kW"
+range          = ["-100 kW", "100 kW"]
+max_actuations = "2/1s"
+safe           = "0 kW"
+
+[[writers]]
+id    = "a"
+level = "control:10"
+lease = "2s"
+kind  = "cycle"
+
+[[writers]]
+id    = "b"
+level = "control:9"
+lease = "300ms"
+kind  = "cycle"
+
+[[case]]
+id   = "deadband_suppresses_small_change"
+name = "A change smaller than the deadband is Suppressed and the applied value stays"
+spec = ["01 §7 step 6", "16 E8"]
+do   = [
+  { at = "0ms",   propose = "x.d_set", writer = "a", value = "5 kW" },
+  { at = "100ms", propose = "x.d_set", writer = "a", value = "5.2 kW" },
+]
+expect = [
+  { at = "0ms",   output = "x.d_set", outcome = "accepted", equals = "5 kW" },
+  { at = "100ms", output = "x.d_set", outcome = "suppressed", equals = "5 kW", level = "control:10" },
+]
+
+[[case]]
+id   = "deadband_passes_large_change"
+name = "A change larger than the deadband is applied"
+spec = ["01 §7 step 6"]
+do   = [
+  { at = "0ms",   propose = "x.d_set", writer = "a", value = "5 kW" },
+  { at = "100ms", propose = "x.d_set", writer = "a", value = "6 kW" },
+]
+expect = [{ at = "100ms", output = "x.d_set", outcome = "accepted", equals = "6 kW", level = "control:10" }]
+
+[[case]]
+id   = "suppressed_renews_lease"
+name = "A Suppressed proposal renews the writer's lease"
+spec = ["16 E8", "16 A3"]
+do   = [
+  { at = "0ms",   propose = "x.d_set", writer = "b", value = "5 kW" },
+  { at = "200ms", propose = "x.d_set", writer = "b", value = "5.2 kW" },
+]
+expect = [
+  { at = "200ms", output = "x.d_set", outcome = "suppressed", equals = "5 kW", level = "control:9" },
+  { at = "400ms", output = "x.d_set", equals = "5 kW", level = "control:9" },
+  { at = "500ms", output = "x.d_set", equals = "0 kW", level = "none" },
+]
+
+[[case]]
+id   = "min_interval_suppresses"
+name = "A new value inside min_interval of the last write is Suppressed"
+spec = ["01 §7 step 6", "16 E8"]
+do   = [
+  { at = "500ms", propose = "x.m_set", writer = "a", value = "5 kW" },
+  { at = "600ms", propose = "x.m_set", writer = "a", value = "6 kW" },
+]
+expect = [
+  { at = "500ms", output = "x.m_set", outcome = "accepted", equals = "5 kW" },
+  { at = "600ms", output = "x.m_set", outcome = "suppressed", equals = "5 kW", level = "control:10" },
+]
+
+[[case]]
+id   = "min_interval_value_applies_later"
+name = "The effective value passes the envelope on every tick, so the suppressed value is applied once min_interval has elapsed"
+spec = ["16 A7", "01 §7 step 6"]
+do   = [
+  { at = "500ms", propose = "x.m_set", writer = "a", value = "5 kW" },
+  { at = "600ms", propose = "x.m_set", writer = "a", value = "6 kW" },
+]
+expect = [
+  { at = "700ms",  output = "x.m_set", equals = "5 kW" },
+  { at = "900ms",  output = "x.m_set", equals = "6 kW", level = "control:10" },
+]
+
+[[case]]
+id   = "budget_exhausted_rejects"
+name = "The third actuation inside the budget window is Rejected(Budget)"
+spec = ["01 §7 step 6", "ref/01 §5.10"]
+do   = [
+  { at = "0ms",   propose = "x.b_set", writer = "a", value = "1 kW" },
+  { at = "100ms", propose = "x.b_set", writer = "a", value = "2 kW" },
+  { at = "200ms", propose = "x.b_set", writer = "a", value = "3 kW" },
+]
+expect = [
+  { at = "0ms",   output = "x.b_set", outcome = "accepted", equals = "1 kW" },
+  { at = "100ms", output = "x.b_set", outcome = "accepted", equals = "2 kW" },
+  { at = "200ms", output = "x.b_set", outcome = "rejected(budget)", level = "control:10" },
+]
+
+[[case]]
+id   = "same_value_is_not_an_actuation"
+name = "Writing the value already applied does not consume the budget"
+spec = ["ref/01 §5.10"]
+do   = [
+  { at = "0ms",   propose = "x.b_set", writer = "a", value = "1 kW" },
+  { at = "100ms", propose = "x.b_set", writer = "a", value = "1 kW" },
+  { at = "200ms", propose = "x.b_set", writer = "a", value = "2 kW" },
+  { at = "300ms", propose = "x.b_set", writer = "a", value = "3 kW" },
+]
+expect = [
+  { at = "200ms", output = "x.b_set", outcome = "accepted", equals = "2 kW" },
+  { at = "300ms", output = "x.b_set", outcome = "rejected(budget)" },
+]
+
+[[case]]
+id   = "suppressed_does_not_count"
+name = "Suppressed writes do not count against max_actuations"
+spec = ["16 E8", "ref/01 §5.10"]
+do   = [
+  { at = "0ms",   propose = "x.e_set", writer = "a", value = "1 kW" },
+  { at = "100ms", propose = "x.e_set", writer = "a", value = "1.2 kW" },
+  { at = "200ms", propose = "x.e_set", writer = "a", value = "2 kW" },
+  { at = "300ms", propose = "x.e_set", writer = "a", value = "2.1 kW" },
+  { at = "400ms", propose = "x.e_set", writer = "a", value = "3 kW" },
+]
+expect = [
+  { at = "100ms", output = "x.e_set", outcome = "suppressed", equals = "1 kW" },
+  { at = "200ms", output = "x.e_set", outcome = "accepted", equals = "2 kW" },
+  { at = "300ms", output = "x.e_set", outcome = "suppressed", equals = "2 kW" },
+  { at = "400ms", output = "x.e_set", outcome = "rejected(budget)" },
+]
+
+[[case]]
+id   = "budget_window_slides"
+name = "Once the earlier actuations leave the sliding window, the output can actuate again"
+spec = ["ref/01 §3.4", "ref/01 §5.10"]
+do   = [
+  { at = "0ms",    propose = "x.w_set", writer = "a", value = "1 kW" },
+  { at = "100ms",  propose = "x.w_set", writer = "a", value = "2 kW" },
+  { at = "200ms",  propose = "x.w_set", writer = "a", value = "3 kW" },
+  { at = "1200ms", propose = "x.w_set", writer = "a", value = "3 kW" },
+]
+expect = [
+  { at = "200ms",  output = "x.w_set", outcome = "rejected(budget)" },
+  { at = "1200ms", output = "x.w_set", equals = "3 kW", level = "control:10" },
+]

@@ -1,0 +1,27 @@
+[package]
+name = "joker-api"
+description = "The Joker local HTTP API (ref/09): routes, request types and problems over the Unix socket"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[features]
+default = ["server"]
+server = ["dep:axum", "dep:tokio", "dep:nix", "dep:form_urlencoded"]
+
+[dependencies]
+joker-manifest = { path = "../joker-manifest" }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+axum = { version = "0.8.9", optional = true, default-features = false, features = ["http1", "json", "tokio"] }
+tokio = { version = "1.48", optional = true, features = ["net", "rt", "fs"] }
+form_urlencoded = { version = "1.2", optional = true }
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.31", optional = true, default-features = false, features = ["user"] }
+
+[lints]
+workspace = true

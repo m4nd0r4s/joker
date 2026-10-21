@@ -1,0 +1,147 @@
+schema = 1
+
+[suite]
+kind        = "core"
+id          = "envelope.rate"
+spec        = ["01 §7 step 5", "16 A7", "16 A8", "16 E2"]
+period      = "100ms"
+hosts       = ["linux", "mcu"]
+description = "Rate limit against the last applied value, ramps on every tick, safe without ramp unless safe_ramp, generations"
+
+[[outputs]]
+path  = "x.p_set"
+type  = "f64"
+unit  = "kW"
+range = ["-100 kW", "100 kW"]
+rate  = "10 kW/s"
+safe  = "0 kW"
+
+[[outputs]]
+path      = "y.p_set"
+type      = "f64"
+unit      = "kW"
+range     = ["-100 kW", "100 kW"]
+rate      = "100 kW/s"
+safe_ramp = "20 kW/s"
+safe      = "0 kW"
+
+[[outputs]]
+path  = "z.p_set"
+type  = "f64"
+unit  = "kW"
+range = ["-100 kW", "100 kW"]
+rate  = "10 kW/s"
+safe  = "5 kW"
+
+[[writers]]
+id    = "a"
+level = "optimizer:13"
+lease = "2s"
+kind  = "cycle"
+
+[[writers]]
+id    = "b"
+level = "optimizer:14"
+lease = "300ms"
+kind  = "cycle"
+
+[[case]]
+id   = "clamp_then_safe"
+name = "The example of 16 §8: first step limited from safe, safe after the lease"
+spec = ["16 §8", "ref/03 §2.6.5"]
+do   = [{ at = "0ms", propose = "x.p_set", writer = "a", value = "50 kW" }]
+expect = [
+  { at = "0ms",    output = "x.p_set", outcome = "clamped_rate", equals = "1 kW", level = "optimizer:13" },
+  { at = "2200ms", output = "x.p_set", outcome = "none",         equals = "0 kW", level = "none" },
+]
+
+[[case]]
+id   = "ramp_continues_without_proposals"
+name = "The effective value passes the envelope on every tick, so the ramp keeps advancing"
+spec = ["16 A7", "16 E2"]
+do   = [{ at = "0ms", propose = "x.p_set", writer = "a", value = "50 kW" }]
+expect = [
+  { at = "100ms",  output = "x.p_set", equals = "2 kW",  tolerance = "0.001 kW", level = "optimizer:13" },
+  { at = "500ms",  output = "x.p_set", equals = "6 kW",  tolerance = "0.001 kW", level = "optimizer:13" },
+  { at = "1900ms", output = "x.p_set", equals = "20 kW", tolerance = "0.001 kW", level = "optimizer:13" },
+]
+
+[[case]]
+id   = "ramp_settles_on_target"
+name = "The ramp stops at the effective value"
+spec = ["16 A7", "01 §7 step 5"]
+do   = [{ at = "0ms", propose = "x.p_set", writer = "a", value = "3 kW" }]
+expect = [
+  { at = "0ms",   output = "x.p_set", outcome = "clamped_rate", equals = "1 kW", level = "optimizer:13" },
+  { at = "100ms", output = "x.p_set", equals = "2 kW", tolerance = "0.001 kW" },
+  { during = "200ms .. 600ms", output = "x.p_set", equals = "3 kW", tolerance = "0.001 kW" },
+]
+
+[[case]]
+id   = "ramp_downwards"
+name = "The rate limits steps in the negative direction too"
+spec = ["01 §7 step 5", "16 E2"]
+do   = [{ at = "0ms", propose = "x.p_set", writer = "a", value = "-3 kW" }]
+expect = [
+  { at = "0ms",   output = "x.p_set", outcome = "clamped_rate", equals = "-1 kW", level = "optimizer:13" },
+  { at = "100ms", output = "x.p_set", equals = "-2 kW", tolerance = "0.001 kW" },
+]
+
+[[case]]
+id   = "reversal_measured_from_last_applied"
+name = "A reversal steps from the last applied value, not from the previous proposal"
+spec = ["16 E2"]
+do   = [
+  { at = "0ms",   propose = "x.p_set", writer = "a", value = "50 kW" },
+  { at = "300ms", propose = "x.p_set", writer = "a", value = "-50 kW" },
+]
+expect = [
+  { at = "200ms", output = "x.p_set", equals = "3 kW", tolerance = "0.001 kW" },
+  { at = "300ms", output = "x.p_set", outcome = "clamped_rate", equals = "2 kW", tolerance = "0.001 kW" },
+  { at = "500ms", output = "x.p_set", equals = "0 kW", tolerance = "0.001 kW", level = "optimizer:13" },
+]
+
+[[case]]
+id   = "first_step_from_nonzero_safe"
+name = "On the first tick of a generation the step is measured from safe"
+spec = ["16 A8", "16 E2"]
+do   = [{ at = "0ms", propose = "z.p_set", writer = "a", value = "50 kW" }]
+expect = [{ at = "0ms", output = "z.p_set", outcome = "clamped_rate", equals = "6 kW", tolerance = "0.001 kW", level = "optimizer:13" }]
+
+[[case]]
+id   = "lease_expiry_goes_to_safe_without_ramp"
+name = "Going to safe is immediate and not rate limited when safe_ramp is absent"
+spec = ["01 §7", "16 A2", "16 A6"]
+do   = [{ at = "0ms", propose = "x.p_set", writer = "a", value = "50 kW" }]
+expect = [
+  { at = "1900ms", output = "x.p_set", equals = "20 kW", tolerance = "0.001 kW", level = "optimizer:13" },
+  { at = "2000ms", output = "x.p_set", equals = "0 kW", level = "none" },
+]
+
+[[case]]
+id   = "safe_ramp_limits_return_to_safe"
+name = "With safe_ramp the output ramps to safe at that rate"
+spec = ["01 §7", "ref/01 §5.10"]
+do   = [{ at = "0ms", propose = "y.p_set", writer = "b", value = "9 kW" }]
+expect = [
+  { at = "0ms",   output = "y.p_set", outcome = "accepted", equals = "9 kW", level = "optimizer:14" },
+  { at = "200ms", output = "y.p_set", equals = "9 kW", level = "optimizer:14" },
+  { at = "300ms", output = "y.p_set", equals = "7 kW", tolerance = "0.001 kW", level = "none" },
+  { at = "500ms", output = "y.p_set", equals = "3 kW", tolerance = "0.001 kW", level = "none" },
+  { at = "600ms", output = "y.p_set", equals = "1 kW", tolerance = "0.001 kW", level = "none" },
+  { at = "700ms", output = "y.p_set", equals = "0 kW", tolerance = "0.001 kW", level = "none" },
+]
+
+[[case]]
+id   = "identical_generation_inherits_last_applied"
+name = "A new generation that keeps the output continues the ramp from the last applied value"
+spec = ["16 A8", "16 E2", "ref/03 §2.6.2"]
+do   = [
+  { at = "0ms",   propose = "x.p_set", writer = "a", value = "50 kW" },
+  { at = "300ms", generation = "same" },
+  { at = "300ms", propose = "x.p_set", writer = "a", value = "50 kW" },
+]
+expect = [
+  { at = "200ms", output = "x.p_set", equals = "3 kW", tolerance = "0.001 kW" },
+  { at = "300ms", output = "x.p_set", outcome = "clamped_rate", equals = "4 kW", tolerance = "0.001 kW", level = "optimizer:13" },
+]

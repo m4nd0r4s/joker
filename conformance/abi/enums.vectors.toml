@@ -1,0 +1,78 @@
+schema = 1
+
+[vectors]
+kind        = "abi.enum"
+id          = "abi.enums"
+spec        = ["ref/08 §2.5.2", "ref/00 §4.3", "ref/00 §4.4", "ref/00 §6"]
+hosts       = ["linux", "mcu"]
+description = "Numeric values of the shared enumerations as the C ABI, the trace and the Joker Link carry them"
+
+[[vector]]
+id      = "quality_code"
+op      = "enum"
+spec    = ["ref/00 §4.3", "ref/08 §2.5.2"]
+prefix  = "JK_QC_"
+values  = { good = 0, uncertain = 1, bad = 2 }
+
+[[vector]]
+id      = "quality_reason"
+op      = "enum"
+spec    = ["ref/00 §4.3", "ref/08 §2.5.2"]
+prefix  = "JK_QR_"
+values  = { none = 0, overridden = 1, local_override = 2, stale = 3, not_confirmed = 4, substituted = 5, out_of_distribution = 6, sensor_cal = 7, clock_unsynced = 8, initial = 9, frozen = 10, partial_write = 11, comm_failure = 12, device_fault = 13, out_of_range = 14, config_error = 15, not_connected = 16, nan = 17, tripped = 18, deadline = 19, private_first = 240 }
+
+[[vector]]
+id      = "outcome"
+op      = "enum"
+spec    = ["ref/00 §4.4", "ref/08 §2.5.2"]
+prefix  = "JK_OUTCOME_"
+values  = { none = 0, accepted = 1, clamped_range = 2, clamped_rate = 3, suppressed = 4, overridden = 5, deferred = 6, shadowed = 7, rejected = 8, tripped = 9 }
+
+[[vector]]
+id      = "reject"
+op      = "enum"
+spec    = ["ref/00 §4.4", "ref/08 §2.5.2"]
+prefix  = "JK_REJECT_"
+values  = { none = 0, wrong_type = 1, interlock = 2, quality = 3, range = 4, atomic_group = 5, not_owner = 6, clock_unsynced = 7, budget = 8 }
+
+[[vector]]
+id      = "type"
+op      = "enum"
+spec    = ["ref/00 §6", "ref/08 §2.5.2"]
+prefix  = "JK_TYPE_"
+values  = { bool = 0, i64 = 1, u64 = 2, f64 = 3, f32 = 4, enum = 5, bits = 6, string = 7, bytes = 8 }
+
+[[vector]]
+id      = "clock_quality"
+op      = "enum"
+spec    = ["ref/00 §6", "ref/08 §2.5.2"]
+prefix  = "JK_CLOCK_"
+values  = { synced = 0, holdover = 1, unsynced = 2 }
+
+[[vector]]
+id      = "alarm_state"
+op      = "enum"
+spec    = ["ref/00 §6", "ref/08 §2.5.2"]
+prefix  = "JK_ALARM_"
+values  = { normal = 0, active_unacked = 1, active_acked = 2, rtn_unacked = 3, unknown = 4 }
+
+[[vector]]
+id      = "severity"
+op      = "enum"
+spec    = ["ref/00 §6", "ref/08 §2.5.2"]
+prefix  = "JK_SEVERITY_"
+values  = { low = 0, medium = 1, high = 2, critical = 3 }
+
+[[vector]]
+id      = "role"
+op      = "enum"
+spec    = ["ref/00 §6", "ref/08 §2.5.2"]
+prefix  = "JK_ROLE_"
+values  = { viewer = 0, operator = 1, admin = 2 }
+
+[[vector]]
+id      = "session_mode"
+op      = "enum"
+spec    = ["ref/00 §6", "ref/08 §2.5.2"]
+prefix  = "JK_SESSION_"
+values  = { full = 0, observe = 1, maintenance = 2, refused = 3 }

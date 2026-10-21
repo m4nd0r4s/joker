@@ -83,7 +83,7 @@ Modbus RTU, 19200 baud, 8E1 (11 bits/char):
     profile allows it: 3 × (53+40)·11/19200 + … ≈ 3 × 68 ms = 204 ms → still 102%)
 ```
 
-This catches the most common mistake in Modbus RTU projects: asking 10 meters on one RS-485 for what only fits 3.
+This catches the most common mistake in Modbus RTU projects: asking 10 meters on one RS-485 for what only fits 3. `J0370` is raised above 100%; the 80% target gives the minimum poll of the help. The model for the other buses (I²C, SPI, CAN, shared Ethernet) is in ADR 0049.
 
 ---
 

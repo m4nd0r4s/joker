@@ -11,10 +11,21 @@ publish.workspace = true
 [features]
 default = []
 alloc = []
+zstd = ["alloc", "dep:zstd"]
 
 [dependencies]
 joker-units.workspace = true
 joker-expr.workspace = true
+portable-atomic.workspace = true
+zstd = { workspace = true, optional = true }
+
+[dev-dependencies]
+critical-section = { workspace = true, features = ["std"] }
+proptest = { version = "1.11", default-features = false, features = ["std"] }
+allocation-counter = "0.8"
+
+[target.'cfg(loom)'.dependencies]
+loom.workspace = true
 
 [lints]
 workspace = true

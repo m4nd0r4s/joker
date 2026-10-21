@@ -105,6 +105,8 @@ A `debounce` smaller than the `poll` of the signal is accepted and is equivalent
 | windows | maximum 15 min (`J0305` above it); the KPI of models has another grammar (document 06, §10.1) |
 | `own(x)` | is only valid inside class methods (document 17); outside them it is `J0306`. It is the caller's last proposal at its level (including the earlier ones of the same tick, 17 §4.1); **with no earlier proposal** (lease expired or first call), it returns the **applied value** of `x` |
 
+The cases this table does not settle (types, unit alignment, `J0304` and `J0307`, window sampling, the state of `held`, `rose`, `fell` and `hyst`) are in ADR 0034.
+
 ## 5. Units: the v1 catalog
 
 - **Base:** `s`, `m`, `g` (gram), `A`, `K`, `mol`, `cd`, and `1` (dimensionless).
@@ -113,7 +115,7 @@ A `debounce` smaller than the `poll` of the signal is accepted and is equivalent
 - **Compound:** products and quotients of the above (`kW/s`, `%/s`, `m3/h/%`, `°C/min`).
 - **Quantities** (quantity kinds that distinguish units of the same dimension): `active_power`, `reactive_power`, `apparent_power`, `energy`, `reactive_energy`, `temperature`, `temperature_difference`.
 
-A unit outside this catalog is `J0109`. Adding units is a patch change in `joker-units`.
+A unit outside this catalog is `J0109`. Adding units is a patch change in `joker-units`. The syntax of compounds, the quantity kinds of compounds and the codes of malformed literals are in ADR 0030.
 
 ## 6. Paths, aliases and instances
 
@@ -223,10 +225,10 @@ The subdivisions of these ranges, one per reference and without overlaps, are in
 
 | Topic | Where it is decided |
 |---|---|
-| exact formula of the RT admission (the 30% margin, what goes into the WCET) | ADR in task 17 of document 13 |
-| `dt()` after an `overrun = skip` (nominal or actual period) | ADR in task 8 |
+| exact formula of the RT admission (the 30% margin, what goes into the WCET) | **decided:** ADR 0048 |
+| `dt()` after an `overrun = skip` (nominal or actual period) | **decided:** ADR 0032 (whole periods since the previous executed tick) |
 | alarm transitions from `Unknown` | ADR in task 12 |
-| bus budget model beyond RTU | ADR in task 17 |
+| bus budget model beyond RTU | **decided:** ADR 0049 |
 | JSON schema of the manifest | **generated** from the types of `joker-manifest` (`ref/01` is the source; document 03 is the explanation) |
 
 **Already decided in this round:** the base of the `extends` paths (relative to the file that declares them, `ref/01` §7.1 and §7.5) and the exact definition of "only tighten" (`ref/01` §7.4). The tier 2 admission uses the measured **maximum**, and not the p99.9 (D15, `ref/05`); the formula for tier 1 apps remains in the ADR of task 17.

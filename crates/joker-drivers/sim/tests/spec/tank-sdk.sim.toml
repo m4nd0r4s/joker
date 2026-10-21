@@ -1,0 +1,12 @@
+schema = 1
+
+[signals]
+level     = { type = "f64", unit = "m", init = 1.0 }
+pump      = { type = "f64", unit = "%", direction = "output" }
+inflow    = { type = "f64", unit = "m3/h", gen = { kind = "sine", mean = 2.0, amp = 1.0, period = "10m" } }
+
+[dynamics]
+level = "integrate((inflow - 0.05 m3/h/% * pump) / 3.2 m2, min = 0 m, max = 3 m)"
+
+[faults]
+"level" = [{ at = "5m", quality = "bad(comm_failure)", for = "20s" }]

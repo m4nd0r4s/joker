@@ -1,0 +1,986 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://joker.dev/schema/joker-manifest-1.0.json",
+  "title": "joker.toml",
+  "type": "object",
+    "required": ["project"],
+    "properties": {
+      "extends": { "type": "array", "items": { "type": "string", "x-joker-format": "file" } },
+      "project": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string", "x-joker-format": "dns-name", "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$" },
+          "joker": { "type": "string" },
+          "mode": { "enum": ["dev", "prod"] }
+        },
+        "patternProperties": { "^x_": {} },
+        "additionalProperties": false
+      },
+      "target": {
+        "type": "object",
+        "properties": {
+          "board": { "type": "string" },
+          "arch": { "type": "string" },
+          "kernel": { "enum": ["preempt_rt", "standard"] },
+          "accept_unsafe_reset": { "allOf": [{ "type": "string" }], "x-joker-target": "micro" },
+          "capacity": { "allOf": [{
+            "type": "object",
+            "properties": {
+              "signals": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+              "paths": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+              "outputs": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+              "groups": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+              "tasks": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+              "writers": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+              "output_writers": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+              "atomic": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+              "programs": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+              "code_bytes": { "type": "string", "x-joker-format": "size", "pattern": "^[0-9]+(\\.[0-9]+)? ?(B|KiB|MiB|GiB|TiB)$" },
+              "consts": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+              "expr_state_bytes": { "type": "string", "x-joker-format": "size", "pattern": "^[0-9]+(\\.[0-9]+)? ?(B|KiB|MiB|GiB|TiB)$" },
+              "alarms": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+              "classes": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+              "members": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+              "instances": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+              "methods": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+              "actions": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+              "events": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+              "apps": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+              "app_ports": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+              "params": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+              "devices": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+              "links": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+              "strings_bytes": { "type": "string", "x-joker-format": "size", "pattern": "^[0-9]+(\\.[0-9]+)? ?(B|KiB|MiB|GiB|TiB)$" },
+              "blobs_bytes": { "type": "string", "x-joker-format": "size", "pattern": "^[0-9]+(\\.[0-9]+)? ?(B|KiB|MiB|GiB|TiB)$" },
+              "enums": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+              "variants": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+              "u32pool": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+              "image_entries": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+              "text_signals": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+              "inbox": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+              "method_queue": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+              "action_pending": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+              "event_queue": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+              "trace_bytes": { "type": "string", "x-joker-format": "size", "pattern": "^[0-9]+(\\.[0-9]+)? ?(B|KiB|MiB|GiB|TiB)$" },
+              "kv_bytes": { "type": "string", "x-joker-format": "size", "pattern": "^[0-9]+(\\.[0-9]+)? ?(B|KiB|MiB|GiB|TiB)$" },
+              "window_samples": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+              "manual_writes": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+              "app_state_bytes": { "type": "string", "x-joker-format": "size", "pattern": "^[0-9]+(\\.[0-9]+)? ?(B|KiB|MiB|GiB|TiB)$" },
+              "radio_heap_bytes": { "type": "string", "x-joker-format": "size", "pattern": "^[0-9]+(\\.[0-9]+)? ?(B|KiB|MiB|GiB|TiB)$" }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          }], "x-joker-target": "micro" },
+          "extern": { "allOf": [{
+            "type": "object",
+            "properties": {
+              "expose": { "type": "array", "uniqueItems": true, "items": { "type": "string", "x-joker-format": "selector" } }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          }], "x-joker-target": "micro" },
+          "micro": { "allOf": [{
+            "type": "object",
+            "properties": {
+              "service_deadline": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+              "freeze_on_trip": { "type": "boolean" },
+              "samples_ring": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+              "event_queue": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+              "confirm": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          }], "x-joker-target": "micro" }
+        },
+        "patternProperties": { "^x_": {} },
+        "additionalProperties": false
+      },
+      "resources": { "allOf": [{
+        "type": "object",
+        "properties": {
+          "rt": {
+            "type": "object",
+            "properties": {
+              "cpus": { "type": "array", "uniqueItems": true, "items": { "type": "integer", "minimum": 0, "maximum": 4095 } },
+              "memory": { "type": "string", "x-joker-format": "size", "pattern": "^[0-9]+(\\.[0-9]+)? ?(B|KiB|MiB|GiB|TiB)$" },
+              "accel": { "allOf": [{ "type": "array", "items": { "type": "string" } }], "x-joker-since": "1.1" }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          },
+          "io": {
+            "type": "object",
+            "properties": {
+              "cpus": { "type": "array", "uniqueItems": true, "items": { "type": "integer", "minimum": 0, "maximum": 4095 } },
+              "memory": { "type": "string", "x-joker-format": "size", "pattern": "^[0-9]+(\\.[0-9]+)? ?(B|KiB|MiB|GiB|TiB)$" },
+              "accel": { "allOf": [{ "type": "array", "items": { "type": "string" } }], "x-joker-since": "1.1" }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          },
+          "ml": {
+            "type": "object",
+            "properties": {
+              "cpus": { "type": "array", "uniqueItems": true, "items": { "type": "integer", "minimum": 0, "maximum": 4095 } },
+              "memory": { "type": "string", "x-joker-format": "size", "pattern": "^[0-9]+(\\.[0-9]+)? ?(B|KiB|MiB|GiB|TiB)$" },
+              "accel": { "allOf": [{ "type": "array", "items": { "type": "string" } }], "x-joker-since": "1.1" }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          },
+          "bg": {
+            "type": "object",
+            "properties": {
+              "cpus": { "type": "array", "uniqueItems": true, "items": { "type": "integer", "minimum": 0, "maximum": 4095 } },
+              "memory": { "type": "string", "x-joker-format": "size", "pattern": "^[0-9]+(\\.[0-9]+)? ?(B|KiB|MiB|GiB|TiB)$" },
+              "accel": { "allOf": [{ "type": "array", "items": { "type": "string" } }], "x-joker-since": "1.1" }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          }
+        },
+        "patternProperties": { "^x_": {} },
+        "additionalProperties": false
+      }], "x-joker-target": "linux" },
+      "clock": {
+        "type": "object",
+        "properties": {
+          "sync": { "enum": ["ntp", "ptp", "gnss", "link", "extern", "none"] },
+          "servers": { "type": "array", "items": { "type": "string" } },
+          "iface": { "type": "string" },
+          "max_holdover": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" }
+        },
+        "patternProperties": { "^x_": {} },
+        "additionalProperties": false
+      },
+      "buses": { "type": "object", "propertyNames": { "pattern": "^([a-z][a-z0-9_]{0,31}|x_.*)$" }, "additionalProperties": {
+        "type": "object",
+        "required": ["kind"],
+        "properties": {
+          "kind": { "enum": ["ethernet", "serial", "can", "ethercat", "i2c", "spi"] },
+          "iface": { "type": "string" },
+          "port": { "type": "string" },
+          "baud": { "type": "integer", "minimum": 300, "maximum": 4000000 },
+          "parity": { "enum": ["none", "even", "odd"] },
+          "stop": { "type": "integer", "minimum": 1, "maximum": 2 },
+          "data_bits": { "type": "integer", "minimum": 7, "maximum": 8 },
+          "turnaround": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+          "dtr": { "allOf": [{ "enum": ["keep", "low", "high"] }], "x-joker-target": "linux" },
+          "rts": { "allOf": [{ "enum": ["keep", "low", "high"] }], "x-joker-target": "linux" },
+          "duplex": { "enum": ["full", "half"] },
+          "bitrate": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+          "fd": { "type": "boolean" },
+          "data_bitrate": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+          "cycle": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+          "dc": { "type": "boolean" },
+          "dev": { "type": "string", "x-joker-format": "file" },
+          "mode": { "type": "integer", "minimum": 0, "maximum": 3 },
+          "speed": { "type": ["string", "number"], "x-joker-format": "quantity" }
+        },
+        "patternProperties": { "^x_": {} },
+        "additionalProperties": false
+      } },
+      "drivers": { "allOf": [{ "type": "object", "propertyNames": { "pattern": "^([a-z][a-z0-9-]{0,31}|x_.*)$" }, "additionalProperties": {
+        "type": "object",
+        "required": ["tier"],
+        "properties": {
+          "tier": { "enum": ["w", "x"] },
+          "source": { "type": "string" },
+          "digest": { "type": "string" },
+          "exec": { "type": "string", "x-joker-format": "file" },
+          "args": { "type": "array", "items": { "type": "string" } },
+          "launch": { "enum": ["systemd", "spawn", "external"] },
+          "user": { "type": "string" },
+          "groups": { "type": "array", "uniqueItems": true, "items": { "type": "string" } },
+          "memory": { "type": "string", "x-joker-format": "size", "pattern": "^[0-9]+(\\.[0-9]+)? ?(B|KiB|MiB|GiB|TiB)$" },
+          "cpu": { "type": "string", "x-joker-format": "percent", "pattern": "%$" },
+          "cpu_per_call": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+          "plan_fuel": { "type": "integer", "minimum": 1, "maximum": 10000000000 },
+          "isolation": { "enum": ["process", "per_device"] },
+          "net": { "type": "array", "uniqueItems": true, "items": { "type": "string" } },
+          "devices": { "type": "array", "uniqueItems": true, "items": { "type": "string", "x-joker-format": "file" } },
+          "raw_net": { "type": "boolean" },
+          "env": { "type": "object", "additionalProperties": { "type": "string" } },
+          "restart": {
+            "type": "object",
+            "properties": {
+              "min": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+              "max": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          }
+        },
+        "patternProperties": { "^x_": {} },
+        "additionalProperties": false
+      } }], "x-joker-target": "linux" },
+      "devices": { "type": "object", "propertyNames": { "pattern": "^([a-z][a-z0-9_]{0,31}|x_.*)$" }, "additionalProperties": {
+        "type": "object",
+        "required": ["driver"],
+        "properties": {
+          "driver": { "type": "string" },
+          "bus": { "type": "string", "x-joker-format": "name", "pattern": "^[a-z][a-z0-9_]{0,31}$" },
+          "profile": { "type": "string" },
+          "poll": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+          "timeout": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+          "retries": { "type": "integer", "minimum": 0, "maximum": 10 },
+          "align": { "type": "string", "x-joker-format": "name", "pattern": "^[a-z][a-z0-9_]{0,31}$" },
+          "discover": { "type": "boolean" },
+          "fallback": {
+            "type": "object",
+            "properties": {
+              "configure": { "type": "boolean" },
+              "keepalive": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          },
+          "signals": { "type": "object", "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "alias": { "oneOf": [{ "type": "string", "x-joker-format": "path", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$" }, { "type": "array", "uniqueItems": true, "items": { "type": "string", "x-joker-format": "path", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$" } }] },
+              "max_age": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+              "limits": { "type": "array", "items": { "type": ["string", "number"], "x-joker-format": "quantity" } },
+              "stuck_detect": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+              "deadband": { "type": ["string", "number"], "x-joker-format": "quantity" },
+              "debounce": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+              "scale": { "oneOf": [{ "type": "number" }, {
+                "type": "object",
+                "required": ["from", "to"],
+                "properties": {
+                  "from": { "type": "array", "items": { "type": ["string", "number"], "x-joker-format": "quantity" } },
+                  "to": { "type": "array", "items": { "type": ["string", "number"], "x-joker-format": "quantity" } }
+                },
+                "patternProperties": { "^x_": {} },
+                "additionalProperties": false
+              }] },
+              "offset": { "oneOf": [{ "type": "number" }, { "type": ["string", "number"], "x-joker-format": "quantity" }] },
+              "unit": { "type": "string" },
+              "type": { "type": "string" },
+              "direction": { "enum": ["input", "output", "param"] },
+              "poll": { "oneOf": [{ "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" }, { "enum": ["on_demand"] }] },
+              "record": {
+                "type": "object",
+                "properties": {
+                  "every": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+                  "on_change": { "type": "boolean" },
+                  "keep": { "type": "object", "additionalProperties": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" } },
+                  "blocks": { "allOf": [{ "oneOf": [{ "type": "boolean" }, { "enum": ["on_trigger"] }] }], "x-joker-since": "1.1" },
+                  "trigger": { "allOf": [{ "type": "string", "x-joker-format": "expression" }], "x-joker-since": "1.1" },
+                  "pre": { "allOf": [{ "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" }], "x-joker-since": "1.1" },
+                  "post": { "allOf": [{ "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" }], "x-joker-since": "1.1" }
+                },
+                "patternProperties": { "^x_": {} },
+                "additionalProperties": false
+              },
+              "kind": { "allOf": [{ "enum": ["scalar", "block"] }], "x-joker-since": "1.1" },
+              "block": { "allOf": [{ "type": "integer", "minimum": 1, "maximum": 4294967295 }], "x-joker-since": "1.1" }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": true
+          } },
+          "actions": { "type": "object", "propertyNames": { "pattern": "^([a-z][a-z0-9_]{0,31}|x_.*)$" }, "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "permit": { "type": "string", "x-joker-format": "expression" },
+              "role": { "enum": ["viewer", "operator", "admin"] },
+              "timeout": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+              "dedup_window": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          } }
+        },
+        "patternProperties": { "^x_": {} },
+        "additionalProperties": true
+      } },
+      "signals": { "type": "object", "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "debounce": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+          "deadband": { "type": ["string", "number"], "x-joker-format": "quantity" },
+          "max_age": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+          "limits": { "type": "array", "items": { "type": ["string", "number"], "x-joker-format": "quantity" } },
+          "stuck_detect": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+          "record": {
+            "type": "object",
+            "properties": {
+              "every": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+              "on_change": { "type": "boolean" },
+              "keep": { "type": "object", "additionalProperties": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" } },
+              "blocks": { "allOf": [{ "oneOf": [{ "type": "boolean" }, { "enum": ["on_trigger"] }] }], "x-joker-since": "1.1" },
+              "trigger": { "allOf": [{ "type": "string", "x-joker-format": "expression" }], "x-joker-since": "1.1" },
+              "pre": { "allOf": [{ "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" }], "x-joker-since": "1.1" },
+              "post": { "allOf": [{ "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" }], "x-joker-since": "1.1" }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          }
+        },
+        "patternProperties": { "^x_": {} },
+        "additionalProperties": false
+      } },
+      "outputs": { "type": "object", "additionalProperties": {
+        "type": "object",
+        "required": ["safe"],
+        "properties": {
+          "safe": { "type": ["string", "number", "integer", "boolean"], "x-joker-format": "value" },
+          "safer": { "enum": ["lower", "higher", "equal"] },
+          "safe_ramp": { "type": ["string", "number"], "x-joker-format": "rate" },
+          "interlock": { "type": "string", "x-joker-format": "expression" },
+          "permit_uncertain": { "type": "boolean" },
+          "on_interlock": { "enum": ["safe", "hold"] },
+          "requires_good": { "type": "array", "uniqueItems": true, "items": { "type": "string", "x-joker-format": "selector" } },
+          "grace": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+          "range": { "type": "array", "items": { "oneOf": [{ "type": ["string", "number"], "x-joker-format": "quantity" }, { "type": "string", "x-joker-format": "expression" }] } },
+          "on_range": { "enum": ["clamp", "reject", "trip"] },
+          "rate": { "type": ["string", "number"], "x-joker-format": "rate" },
+          "deadband": { "type": ["string", "number"], "x-joker-format": "quantity" },
+          "min_interval": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+          "max_actuations": { "type": "string", "x-joker-format": "budget", "pattern": "^[0-9]+/" },
+          "max_lease": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+          "max_manual": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+          "verify": {
+            "type": "object",
+            "required": ["readback"],
+            "properties": {
+              "readback": { "type": "string", "x-joker-format": "path", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$" },
+              "tolerance": { "type": ["string", "number"], "x-joker-format": "quantity" },
+              "within": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          },
+          "reset_when": { "type": "string", "x-joker-format": "expression" },
+          "group": { "type": "string", "x-joker-format": "name", "pattern": "^[a-z][a-z0-9_]{0,31}$" },
+          "keepalive": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+          "pulse": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+          "remote_levels": { "allOf": [{ "oneOf": [{ "type": "array", "uniqueItems": true, "items": { "type": "string", "x-joker-format": "level", "pattern": "^(safety|manual|supervisor|control|optimizer|schedule)(:[0-9]+)?$" } }, { "type": "string" }] }], "x-joker-target": "micro" },
+          "accept_missing_fallback": { "type": "string" },
+          "widen": { "oneOf": [{ "type": "string" }, { "type": "object", "additionalProperties": { "type": "string" } }] },
+          "schedule_depth": { "allOf": [{ "type": "integer", "minimum": 0, "maximum": 256 }], "x-joker-since": "1.1" },
+          "timed": { "allOf": [{ "type": "boolean" }], "x-joker-since": "1.1" },
+          "on_late": { "allOf": [{ "oneOf": [{ "enum": ["apply_now", "drop"] }, {
+            "type": "object",
+            "required": ["apply"],
+            "properties": {
+              "apply": { "type": ["string", "number", "integer", "boolean"], "x-joker-format": "value" }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          }] }], "x-joker-since": "1.1" },
+          "late_margin": { "allOf": [{ "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" }], "x-joker-since": "1.1" }
+        },
+        "patternProperties": { "^x_": {} },
+        "additionalProperties": false
+      } },
+      "cycles": { "type": "object", "propertyNames": { "pattern": "^([a-z][a-z0-9_]{0,31}|x_.*)$" }, "additionalProperties": {
+        "type": "object",
+        "required": ["period"],
+        "properties": {
+          "period": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+          "resources": { "enum": ["rt"] },
+          "overrun": { "enum": ["skip", "catch_up", "degrade", "trip"] },
+          "trip_after": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+          "alarm_after": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+          "recover_after": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+          "order": { "type": "array", "items": { "type": "string" } },
+          "trace": {
+            "type": "object",
+            "properties": {
+              "continuous": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+              "async": { "type": "boolean" }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          },
+          "cpu": { "type": "integer", "minimum": 0, "maximum": 4095 },
+          "priority": { "type": "integer", "minimum": 1, "maximum": 98 }
+        },
+        "patternProperties": { "^x_": {} },
+        "additionalProperties": false
+      } },
+      "apps": { "type": "object", "propertyNames": { "pattern": "^([a-z][a-z0-9_]{0,31}|x_.*)$" }, "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "source": { "type": "string", "x-joker-format": "reference", "pattern": ":" },
+          "path": { "type": "string", "x-joker-format": "file" },
+          "digest": { "type": "string" },
+          "kind": { "enum": ["wasm", "native", "extern"] },
+          "writer": {
+            "type": "object",
+            "properties": {
+              "level": { "type": "string", "x-joker-format": "level", "pattern": "^(safety|manual|supervisor|control|optimizer|schedule)(:[0-9]+)?$" },
+              "priority": { "type": "integer", "minimum": 1, "maximum": 16 },
+              "lease": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+              "kind": { "enum": ["direct", "proposal"] }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          },
+          "bind": { "type": "object", "propertyNames": { "pattern": "^([a-z][a-z0-9_]{0,31}|x_.*)$" }, "additionalProperties": { "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }, {
+            "type": "object",
+            "required": ["signal"],
+            "properties": {
+              "signal": { "type": "string", "x-joker-format": "path", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$" },
+              "as": { "enum": ["fraction", "percent"] },
+              "optional": { "type": "boolean" }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          }, {
+            "type": "object",
+            "required": ["each", "map"],
+            "properties": {
+              "each": { "type": "string", "x-joker-format": "selector" },
+              "map": { "type": "object", "propertyNames": { "pattern": "^([a-z][a-z0-9_]{0,31}|x_.*)$" }, "additionalProperties": { "type": "string" } }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          }] } },
+          "params": { "type": "object", "propertyNames": { "pattern": "^([a-z][a-z0-9_]{0,31}|x_.*)$" }, "additionalProperties": { "oneOf": [{ "type": ["string", "number", "integer", "boolean"], "x-joker-format": "value" }, {
+            "type": "object",
+            "required": ["value"],
+            "properties": {
+              "value": { "type": ["string", "number", "integer", "boolean"], "x-joker-format": "value" },
+              "runtime": { "type": "boolean" },
+              "persist": { "type": "boolean" }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          }] } },
+          "cycles": { "type": "object", "propertyNames": { "pattern": "^([a-z][a-z0-9_]{0,31}|x_.*)$" }, "additionalProperties": { "type": "string", "x-joker-format": "name", "pattern": "^[a-z][a-z0-9_]{0,31}$" } },
+          "period_tolerance": { "type": "string", "x-joker-format": "percent", "pattern": "%$" },
+          "resources": {
+            "type": "object",
+            "properties": {
+              "cycle": { "enum": ["rt"] },
+              "async": { "enum": ["rt", "io", "ml", "bg"] },
+              "memory": { "type": "string", "x-joker-format": "size", "pattern": "^[0-9]+(\\.[0-9]+)? ?(B|KiB|MiB|GiB|TiB)$" },
+              "cycle_memory": { "type": "string", "x-joker-format": "size", "pattern": "^[0-9]+(\\.[0-9]+)? ?(B|KiB|MiB|GiB|TiB)$" },
+              "async_memory": { "type": "string", "x-joker-format": "size", "pattern": "^[0-9]+(\\.[0-9]+)? ?(B|KiB|MiB|GiB|TiB)$" }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          },
+          "net": {
+            "type": "object",
+            "properties": {
+              "allow": { "type": "array", "uniqueItems": true, "items": { "type": "string" } }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          },
+          "secrets": { "type": "object", "propertyNames": { "pattern": "^([a-z][a-z0-9_]{0,31}|x_.*)$" }, "additionalProperties": { "type": "string", "x-joker-format": "secret", "pattern": "^secret:.+$" } },
+          "requires_clock": { "enum": ["any", "holdover", "synced"] },
+          "keep_previous": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+          "crashloop": {
+            "type": "object",
+            "properties": {
+              "traps": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+              "window": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+              "max_backoff": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          },
+          "shadow": {
+            "type": "object",
+            "required": ["of"],
+            "properties": {
+              "of": { "type": "string" },
+              "until": {
+                "type": "object",
+                "properties": {
+                  "duration": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+                  "max_divergence": { "type": "string" }
+                },
+                "patternProperties": { "^x_": {} },
+                "additionalProperties": false
+              },
+              "promote": {
+                "type": "object",
+                "properties": {
+                  "outputs": { "oneOf": [{ "type": "string", "x-joker-format": "selector" }, { "type": "array", "items": { "type": "string", "x-joker-format": "path", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$" } }] },
+                  "auto": { "type": "boolean" }
+                },
+                "patternProperties": { "^x_": {} },
+                "additionalProperties": false
+              }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          },
+          "writes": { "allOf": [{ "type": "array", "uniqueItems": true, "items": { "type": "string", "x-joker-format": "selector" } }], "x-joker-target": "micro" },
+          "reads": { "allOf": [{ "type": "array", "uniqueItems": true, "items": { "type": "string", "x-joker-format": "selector" } }], "x-joker-target": "micro" },
+          "fallback": { "allOf": [{
+            "type": "object",
+            "required": ["controller", "when"],
+            "properties": {
+              "controller": { "type": "string", "x-joker-format": "reference", "pattern": ":" },
+              "when": { "type": "string" }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          }], "x-joker-since": "1.1" }
+        },
+        "patternProperties": { "^x_": {} },
+        "additionalProperties": false
+      } },
+      "instances": { "type": "object", "propertyNames": { "pattern": "^([a-z][a-z0-9_]{0,31}|x_.*)$" }, "additionalProperties": {
+        "type": "object",
+        "required": ["class"],
+        "properties": {
+          "class": { "type": "string" },
+          "capabilities": { "type": "array", "uniqueItems": true, "items": { "type": "string", "x-joker-format": "name", "pattern": "^[a-z][a-z0-9_]{0,31}$" } },
+          "map": { "type": "object", "propertyNames": { "pattern": "^([a-z][a-z0-9_]{0,31}|x_.*)$" }, "additionalProperties": { "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }, {
+            "type": "object",
+            "properties": {
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": true
+          }] } },
+          "implemented_by": { "oneOf": [{ "type": "string" }, {
+            "type": "object",
+            "required": ["app"],
+            "properties": {
+              "app": { "type": "string", "x-joker-format": "name", "pattern": "^[a-z][a-z0-9_]{0,31}$" },
+              "bind": { "type": "object", "propertyNames": { "pattern": "^([a-z][a-z0-9_]{0,31}|x_.*)$" }, "additionalProperties": { "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }, {
+                "type": "object",
+                "required": ["signal"],
+                "properties": {
+                  "signal": { "type": "string", "x-joker-format": "path", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$" },
+                  "as": { "enum": ["fraction", "percent"] },
+                  "optional": { "type": "boolean" }
+                },
+                "patternProperties": { "^x_": {} },
+                "additionalProperties": false
+              }, {
+                "type": "object",
+                "required": ["each", "map"],
+                "properties": {
+                  "each": { "type": "string", "x-joker-format": "selector" },
+                  "map": { "type": "object", "propertyNames": { "pattern": "^([a-z][a-z0-9_]{0,31}|x_.*)$" }, "additionalProperties": { "type": "string" } }
+                },
+                "patternProperties": { "^x_": {} },
+                "additionalProperties": false
+              }] } },
+              "params": { "type": "object", "propertyNames": { "pattern": "^([a-z][a-z0-9_]{0,31}|x_.*)$" }, "additionalProperties": { "type": ["string", "number", "integer", "boolean"], "x-joker-format": "value" } }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          }] },
+          "sim": { "oneOf": [{ "type": "boolean" }, {
+            "type": "object",
+            "properties": {
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": true
+          }] },
+          "actions": { "type": "object", "propertyNames": { "pattern": "^([a-z][a-z0-9_]{0,31}|x_.*)$" }, "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "permit": { "type": "string", "x-joker-format": "expression" },
+              "role": { "enum": ["viewer", "operator", "admin"] },
+              "timeout": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+              "dedup_window": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          } }
+        },
+        "patternProperties": { "^x_": {} },
+        "additionalProperties": false
+      } },
+      "calc": { "type": "object", "propertyNames": { "pattern": "^([a-z][a-z0-9_]{0,31}|x_.*)$" }, "additionalProperties": { "oneOf": [{ "type": "string", "x-joker-format": "expression" }, {
+        "type": "object",
+        "required": ["expr"],
+        "properties": {
+          "expr": { "type": "string", "x-joker-format": "expression" },
+          "group": { "type": "string", "x-joker-format": "name", "pattern": "^[a-z][a-z0-9_]{0,31}$" }
+        },
+        "patternProperties": { "^x_": {} },
+        "additionalProperties": false
+      }] } },
+      "alarms": { "type": "object", "propertyNames": { "pattern": "^([a-z][a-z0-9_]{0,31}|x_.*)$" }, "additionalProperties": {
+        "type": "object",
+        "required": ["when", "severity"],
+        "properties": {
+          "when": { "type": "string", "x-joker-format": "expression" },
+          "severity": { "enum": ["low", "medium", "high", "critical"] },
+          "delay_on": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+          "delay_off": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+          "suppress_when": { "type": "string", "x-joker-format": "expression" },
+          "message": { "type": "string" },
+          "actions": {
+            "type": "object",
+            "properties": {
+              "trip": { "type": "array", "uniqueItems": true, "items": { "type": "string", "x-joker-format": "selector" } }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          },
+          "max_shelve": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+          "group": { "type": "string", "x-joker-format": "name", "pattern": "^[a-z][a-z0-9_]{0,31}$" }
+        },
+        "patternProperties": { "^x_": {} },
+        "additionalProperties": false
+      } },
+      "atomic": { "type": "object", "propertyNames": { "pattern": "^([a-z][a-z0-9_]{0,31}|x_.*)$" }, "additionalProperties": {
+        "type": "object",
+        "required": ["outputs"],
+        "properties": {
+          "outputs": { "type": "array", "uniqueItems": true, "items": { "type": "string", "x-joker-format": "path", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$" } },
+          "order": { "type": "array", "items": { "type": "string", "x-joker-format": "path", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$" } },
+          "on_rate": { "enum": ["independent", "proportional"] },
+          "commit": {
+            "type": "object",
+            "required": ["signal", "value"],
+            "properties": {
+              "signal": { "type": "string", "x-joker-format": "path", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$" },
+              "value": { "type": ["string", "number", "integer", "boolean"], "x-joker-format": "value" }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          }
+        },
+        "patternProperties": { "^x_": {} },
+        "additionalProperties": false
+      } },
+      "telemetry": {
+        "type": "object",
+        "properties": {
+          "record": { "allOf": [{ "type": "object", "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "every": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+              "on_change": { "type": "boolean" },
+              "keep": { "type": "object", "additionalProperties": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" } },
+              "blocks": { "allOf": [{ "oneOf": [{ "type": "boolean" }, { "enum": ["on_trigger"] }] }], "x-joker-since": "1.1" },
+              "trigger": { "allOf": [{ "type": "string", "x-joker-format": "expression" }], "x-joker-since": "1.1" },
+              "pre": { "allOf": [{ "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" }], "x-joker-since": "1.1" },
+              "post": { "allOf": [{ "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" }], "x-joker-since": "1.1" }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          } }], "x-joker-target": "linux" },
+          "store": { "allOf": [{
+            "type": "object",
+            "properties": {
+              "max_disk": { "type": "string", "x-joker-format": "size", "pattern": "^[0-9]+(\\.[0-9]+)? ?(B|KiB|MiB|GiB|TiB)$" },
+              "fsync": { "enum": ["batch", "always", "never"] },
+              "fsync_interval": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          }], "x-joker-target": "linux" },
+          "uplink": { "type": "object", "propertyNames": { "pattern": "^([a-z][a-z0-9_]{0,31}|x_.*)$" }, "additionalProperties": {
+            "type": "object",
+            "required": ["kind"],
+            "properties": {
+              "kind": { "enum": ["mqtt", "mqtt-sparkplug", "zenoh", "otlp", "http"] },
+              "classes": { "type": "object", "additionalProperties": { "oneOf": [{ "type": "string", "x-joker-format": "selector" }, { "type": "array", "items": { "type": "string", "x-joker-format": "selector" } }] } },
+              "budget": { "type": "string", "x-joker-format": "data-volume", "pattern": "/(day|month)$" },
+              "live": {
+                "type": "object",
+                "properties": {
+                  "every": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" }
+                },
+                "patternProperties": { "^x_": {} },
+                "additionalProperties": false
+              },
+              "history": {
+                "type": "object",
+                "properties": {
+                  "delivery": { "enum": ["at_least_once"] },
+                  "enabled": { "type": "boolean" }
+                },
+                "patternProperties": { "^x_": {} },
+                "additionalProperties": false
+              },
+              "username": { "type": "string" },
+              "password": { "type": "string", "x-joker-format": "secret", "pattern": "^secret:.+$" },
+              "token": { "type": "string", "x-joker-format": "secret", "pattern": "^secret:.+$" },
+              "broker": { "type": "string" },
+              "group_id": { "type": "string" },
+              "node_id": { "type": "string" },
+              "topic": { "type": "string" },
+              "encoding": { "enum": ["json", "cbor"] },
+              "qos": { "type": "integer", "minimum": 0, "maximum": 1 },
+              "endpoints": { "type": "array", "items": { "type": "string" } },
+              "key_prefix": { "type": "string" },
+              "mode": { "enum": ["client", "peer"] },
+              "endpoint": { "type": "string" },
+              "signals": { "type": "array", "items": { "enum": ["metrics", "logs", "traces"] } },
+              "every": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+              "url": { "type": "string" },
+              "events": { "type": "array", "items": { "enum": ["alarms", "events"] } }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          } }
+        },
+        "patternProperties": { "^x_": {} },
+        "additionalProperties": false
+      },
+      "bridges": { "allOf": [{ "type": "object", "propertyNames": { "pattern": "^([a-z][a-z0-9_]{0,31}|x_.*)$" }, "additionalProperties": {
+        "type": "object",
+        "required": ["kind"],
+        "properties": {
+          "kind": { "enum": ["opcua-server", "modbus-server", "zenoh-ros2"] },
+          "expose": { "oneOf": [{ "type": "array", "items": { "type": "string", "x-joker-format": "selector" } }, { "type": "object", "additionalProperties": { "oneOf": [{ "type": "string" }, {
+            "type": "object",
+            "properties": {
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": true
+          }] } }] },
+          "writer": {
+            "type": "object",
+            "properties": {
+              "level": { "type": "string", "x-joker-format": "level", "pattern": "^(safety|manual|supervisor|control|optimizer|schedule)(:[0-9]+)?$" },
+              "priority": { "type": "integer", "minimum": 1, "maximum": 16 },
+              "lease": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+              "writable": { "type": "array", "uniqueItems": true, "items": { "type": "string", "x-joker-format": "selector" } }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          },
+          "listen": { "type": "string" },
+          "security": {
+            "type": "object",
+            "properties": {
+              "policy": { "enum": ["None", "Basic256Sha256", "Aes128_Sha256_RsaOaep", "Aes256_Sha256_RsaPss"] },
+              "mode": { "enum": ["None", "Sign", "SignAndEncrypt"] },
+              "trust": { "type": "array", "items": { "type": "string", "x-joker-format": "file" } }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          },
+          "bus": { "type": "string", "x-joker-format": "name", "pattern": "^[a-z][a-z0-9_]{0,31}$" },
+          "unit_id": { "type": "integer", "minimum": 1, "maximum": 247 },
+          "profile": { "type": "string" },
+          "subscribe": { "type": "object", "additionalProperties": {
+            "type": "object",
+            "required": ["type", "to"],
+            "properties": {
+              "type": { "type": "string" },
+              "fields": { "type": "array", "items": { "type": "string" } },
+              "to": { "type": "array", "items": { "type": "string", "x-joker-format": "path", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$" } },
+              "max_age": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          } },
+          "endpoints": { "type": "array", "items": { "type": "string" } }
+        },
+        "patternProperties": { "^x_": {} },
+        "additionalProperties": false
+      } }], "x-joker-target": "linux" },
+      "security": {
+        "type": "object",
+        "properties": {
+          "trust": {
+            "type": "object",
+            "properties": {
+              "config": { "type": "array", "items": { "type": "string", "x-joker-format": "file" } },
+              "runtime": { "type": "array", "items": { "type": "string", "x-joker-format": "file" } },
+              "firmware": { "type": "array", "items": { "type": "string", "x-joker-format": "file" } },
+              "apps": { "type": "array", "items": { "type": "string", "x-joker-format": "file" } },
+              "drivers": { "type": "array", "items": { "type": "string", "x-joker-format": "file" } },
+              "profiles": { "type": "array", "items": { "type": "string", "x-joker-format": "file" } },
+              "boards": { "type": "array", "items": { "type": "string", "x-joker-format": "file" } },
+              "classes": { "type": "array", "items": { "type": "string", "x-joker-format": "file" } },
+              "secrets": { "type": "array", "items": { "type": "string", "x-joker-format": "file" } },
+              "deck": { "type": "array", "items": { "type": "string", "x-joker-format": "file" } },
+              "models": { "allOf": [{ "type": "array", "items": { "type": "string", "x-joker-format": "file" } }], "x-joker-since": "1.1" },
+              "revoked": { "type": "array", "uniqueItems": true, "items": { "type": "string" } }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": true
+          },
+          "api": { "allOf": [{
+            "type": "object",
+            "properties": {
+              "listen": { "type": "array", "uniqueItems": true, "items": { "type": "string" } }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          }], "x-joker-target": "linux" },
+          "roles": { "allOf": [{
+            "type": "object",
+            "properties": {
+              "viewer": { "type": "array", "items": { "type": "string" } },
+              "operator": { "type": "array", "items": { "type": "string" } },
+              "admin": { "type": "array", "items": { "type": "string" } }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          }], "x-joker-target": "linux" }
+        },
+        "patternProperties": { "^x_": {} },
+        "additionalProperties": false
+      },
+      "link": { "allOf": [{
+        "type": "object",
+        "properties": {
+          "bus": { "type": "string", "x-joker-format": "name", "pattern": "^[a-z][a-z0-9_]{0,31}$" },
+          "addr": { "type": "integer", "minimum": 0, "maximum": 253 },
+          "address": { "type": "string" },
+          "peer": { "type": "string" },
+          "auth": { "enum": ["required", "none"] }
+        },
+        "patternProperties": { "^x_": {} },
+        "additionalProperties": false
+      }], "x-joker-target": "micro" },
+      "net": { "allOf": [{
+        "type": "object",
+        "properties": {
+          "wifi": {
+            "type": "object",
+            "required": ["ssid", "country"],
+            "properties": {
+              "ssid": { "type": "string" },
+              "password": { "type": "string", "x-joker-format": "secret", "pattern": "^secret:.+$" },
+              "country": { "type": "string" },
+              "hostname": { "type": "string" }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          }
+        },
+        "patternProperties": { "^x_": {} },
+        "additionalProperties": false
+      }], "x-joker-target": "micro" },
+      "models": { "allOf": [{ "type": "object", "propertyNames": { "pattern": "^([a-z][a-z0-9_]{0,31}|x_.*)$" }, "additionalProperties": {
+        "type": "object",
+        "required": ["source", "backend", "deadline"],
+        "properties": {
+          "source": { "type": "string" },
+          "digest": { "type": "string" },
+          "backend": { "type": "array", "items": { "type": "string" } },
+          "resources": { "type": "string" },
+          "deadline": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+          "isolation": { "enum": ["thread", "process"] },
+          "warmup": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+          "max_inflight": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+          "batch": {
+            "type": "object",
+            "properties": {
+              "max": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+              "wait": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          },
+          "fallback_after": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+          "shadow": {
+            "type": "object",
+            "required": ["until", "promote_if"],
+            "properties": {
+              "candidate": { "type": "string" },
+              "auto": { "type": "boolean" },
+              "until": {
+                "type": "object",
+                "properties": {
+                },
+                "patternProperties": { "^x_": {} },
+                "additionalProperties": true
+              },
+              "promote_if": { "type": "array", "items": { "type": "string" } },
+              "kpi": { "type": "string" },
+              "on_regress": { "enum": ["demote", "keep"] },
+              "record_disagreements": { "type": "boolean" }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          }
+        },
+        "patternProperties": { "^x_": {} },
+        "additionalProperties": false
+      } }], "x-joker-since": "1.1" },
+      "streams": { "allOf": [{ "type": "object", "additionalProperties": {
+        "type": "object",
+        "required": ["pool"],
+        "properties": {
+          "pool": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+          "mode": { "type": "string" },
+          "record": { "type": "boolean" }
+        },
+        "patternProperties": { "^x_": {} },
+        "additionalProperties": false
+      } }], "x-joker-since": "1.1" },
+      "pipelines": { "allOf": [{ "type": "object", "propertyNames": { "pattern": "^([a-z][a-z0-9_]{0,31}|x_.*)$" }, "additionalProperties": {
+        "type": "object",
+        "required": ["from", "steps", "to"],
+        "properties": {
+          "from": { "oneOf": [{ "type": "string", "x-joker-format": "path", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$" }, { "type": "array", "items": { "type": "string", "x-joker-format": "path", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$" } }] },
+          "steps": { "type": "array", "items": {
+            "type": "object",
+            "required": ["op"],
+            "properties": {
+              "op": { "type": "string" }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": true
+          } },
+          "to": { "type": "string", "x-joker-format": "path", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$" },
+          "deadline": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" }
+        },
+        "patternProperties": { "^x_": {} },
+        "additionalProperties": false
+      } }], "x-joker-since": "1.1" },
+      "training": { "allOf": [{ "type": "object", "propertyNames": { "pattern": "^([a-z][a-z0-9_]{0,31}|x_.*)$" }, "additionalProperties": {
+        "type": "object",
+        "required": ["arch", "data", "schedule", "validate"],
+        "properties": {
+          "arch": { "type": "string" },
+          "from": { "type": "string", "x-joker-format": "file" },
+          "hyper": {
+            "type": "object",
+            "properties": {
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": true
+          },
+          "data": {
+            "type": "object",
+            "required": ["signals", "window"],
+            "properties": {
+              "signals": { "type": "array", "items": { "type": "string" } },
+              "window": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+              "where": { "type": "string", "x-joker-format": "expression" }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          },
+          "schedule": { "type": "string" },
+          "resources": { "type": "string" },
+          "priority": { "enum": ["idle", "normal"] },
+          "budget": {
+            "type": "object",
+            "properties": {
+              "max_time": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+              "max_memory": { "type": "string", "x-joker-format": "size", "pattern": "^[0-9]+(\\.[0-9]+)? ?(B|KiB|MiB|GiB|TiB)$" }
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": false
+          },
+          "checkpoint": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
+          "validate": {
+            "type": "object",
+            "properties": {
+            },
+            "patternProperties": { "^x_": {} },
+            "additionalProperties": true
+          },
+          "output": { "enum": ["candidate"] }
+        },
+        "patternProperties": { "^x_": {} },
+        "additionalProperties": false
+      } }], "x-joker-since": "1.1" }
+    },
+    "patternProperties": { "^x_": {} },
+    "additionalProperties": false
+  }

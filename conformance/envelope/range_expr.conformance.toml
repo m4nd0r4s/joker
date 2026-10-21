@@ -1,0 +1,119 @@
+schema = 1
+
+[suite]
+kind        = "core"
+id          = "envelope.range_expr"
+spec        = ["16 E6", "16 E3", "ref/01 §5.10"]
+period      = "100ms"
+hosts       = ["linux", "mcu"]
+description = "Range limits given by expressions, evaluated on every tick; a limit that is not Good fails the permissive step and applies on_interlock"
+
+[[signals]]
+path = "x.pmax"
+type = "f64"
+unit = "kW"
+
+[[outputs]]
+path  = "x.p_set"
+type  = "f64"
+unit  = "kW"
+range = ["-x.pmax", "x.pmax"]
+safe  = "0 kW"
+
+[[outputs]]
+path         = "x.h_set"
+type         = "f64"
+unit         = "kW"
+range        = ["-x.pmax", "x.pmax"]
+on_interlock = "hold"
+safe         = "0 kW"
+
+[[outputs]]
+path             = "x.u_set"
+type             = "f64"
+unit             = "kW"
+range            = ["-x.pmax", "x.pmax"]
+permit_uncertain = true
+safe             = "0 kW"
+
+[[writers]]
+id    = "a"
+level = "control:10"
+lease = "1s"
+kind  = "cycle"
+
+[[case]]
+id   = "expression_limit_clamps"
+name = "An expression upper limit clamps like a constant one"
+spec = ["16 E6", "01 §7 step 4"]
+do   = [
+  { at = "0ms", input = "x.pmax", value = "30 kW" },
+  { at = "0ms", propose = "x.p_set", writer = "a", value = "50 kW" },
+]
+expect = [{ at = "0ms", output = "x.p_set", outcome = "clamped_range", equals = "30 kW", level = "control:10" }]
+
+[[case]]
+id   = "expression_lower_limit_clamps"
+name = "An expression lower limit clamps negative proposals"
+spec = ["16 E6"]
+do   = [
+  { at = "0ms", input = "x.pmax", value = "30 kW" },
+  { at = "0ms", propose = "x.p_set", writer = "a", value = "-50 kW" },
+]
+expect = [{ at = "0ms", output = "x.p_set", outcome = "clamped_range", equals = "-30 kW" }]
+
+[[case]]
+id   = "limits_follow_the_signal"
+name = "The limits are evaluated on every tick"
+spec = ["16 E6", "16 A7"]
+do   = [
+  { at = "0ms",   input = "x.pmax", value = "30 kW" },
+  { at = "0ms",   propose = "x.p_set", writer = "a", value = "50 kW" },
+  { at = "100ms", input = "x.pmax", value = "40 kW" },
+]
+expect = [
+  { at = "0ms",   output = "x.p_set", equals = "30 kW" },
+  { at = "100ms", output = "x.p_set", equals = "40 kW", level = "control:10" },
+]
+
+[[case]]
+id   = "bad_limit_fails_permissive"
+name = "A Bad limit counts as a permissive failure: Rejected(Interlock) and safe"
+spec = ["16 E6", "16 E3"]
+do   = [
+  { at = "0ms", input = "x.pmax", quality = "bad(comm_failure)" },
+  { at = "0ms", propose = "x.p_set", writer = "a", value = "10 kW" },
+]
+expect = [{ at = "0ms", output = "x.p_set", outcome = "rejected(interlock)", equals = "0 kW", level = "control:10" }]
+
+[[case]]
+id   = "bad_limit_holds"
+name = "With on_interlock = hold, a Bad limit keeps the last applied value"
+spec = ["16 E6", "16 E3"]
+do   = [
+  { at = "0ms",   input = "x.pmax", value = "30 kW" },
+  { at = "0ms",   propose = "x.h_set", writer = "a", value = "10 kW" },
+  { at = "100ms", input = "x.pmax", quality = "bad(comm_failure)" },
+  { at = "100ms", propose = "x.h_set", writer = "a", value = "20 kW" },
+]
+expect = [{ at = "100ms", output = "x.h_set", outcome = "rejected(interlock)", equals = "10 kW" }]
+
+[[case]]
+id   = "uncertain_limit_fails_permissive"
+name = "An Uncertain limit also fails without permit_uncertain"
+spec = ["16 E6", "ref/01 §5.10"]
+do   = [
+  { at = "0ms", input = "x.pmax", value = "30 kW", quality = "uncertain(substituted)" },
+  { at = "0ms", propose = "x.p_set", writer = "a", value = "10 kW" },
+]
+expect = [{ at = "0ms", output = "x.p_set", outcome = "rejected(interlock)", equals = "0 kW" }]
+
+[[case]]
+id   = "permit_uncertain_accepts_uncertain_limit"
+name = "permit_uncertain also applies to expression limits"
+spec = ["ref/01 §5.10", "16 E6"]
+do   = [
+  { at = "0ms", input = "x.pmax", value = "30 kW", quality = "uncertain(substituted)" },
+  { at = "0ms", propose = "x.u_set", writer = "a", value = "50 kW" },
+]
+expect = [{ at = "0ms", output = "x.u_set", outcome = "clamped_range", equals = "30 kW" }]

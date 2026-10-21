@@ -1,0 +1,6 @@
+schema = 1
+
+[[known]]
+case   = "expressions.temporal.edges_false_on_bad"
+reason = "case vs ADR 0034 §12: rose/fell on a Bad input give false with Bad quality, which is no value (AGENTS.md rule 4); the case's `equals = false` needs a usable value, so it should check `quality = \"bad\"` (16 §3.2 says only \"give false\")"
+issue  = "AUR-218"

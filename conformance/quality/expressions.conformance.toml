@@ -1,0 +1,256 @@
+schema = 1
+
+[suite]
+kind        = "core"
+id          = "quality.expressions"
+spec        = ["16 §3.2", "16 §4", "02 §4", "ref/01 §5.14"]
+period      = "100ms"
+hosts       = ["linux", "mcu"]
+description = "Quality propagation in derived signals: worst quality, symmetric short-circuit, aggregations, if, NaN results and constants"
+
+[[signals]]
+path = "x.a"
+type = "bool"
+
+[[signals]]
+path = "x.b"
+type = "bool"
+
+[[signals]]
+path = "x.s1"
+type = "bool"
+
+[[signals]]
+path = "x.s2"
+type = "bool"
+
+[[signals]]
+path = "x.u"
+type = "f64"
+unit = "kW"
+
+[[signals]]
+path = "x.v"
+type = "f64"
+unit = "kW"
+
+[[calc]]
+path = "calc.and_ab"
+expr = "x.a && x.b"
+
+[[calc]]
+path = "calc.and_ba"
+expr = "x.b && x.a"
+
+[[calc]]
+path = "calc.or_ab"
+expr = "x.a || x.b"
+
+[[calc]]
+path = "calc.or_ba"
+expr = "x.b || x.a"
+
+[[calc]]
+path = "calc.sum_uv"
+expr = "x.u + x.v"
+
+[[calc]]
+path = "calc.ratio_uv"
+expr = "x.u / x.v"
+
+[[calc]]
+path = "calc.pick"
+expr = "if x.a then x.u else x.v"
+
+[[calc]]
+path = "calc.any_s"
+expr = "any(x.s*)"
+
+[[calc]]
+path = "calc.all_s"
+expr = "all(x.s*)"
+
+[[calc]]
+path = "calc.count_s"
+expr = "count(x.s*)"
+
+[[calc]]
+path = "calc.limit"
+expr = "400 kW"
+
+[[case]]
+id   = "false_and_bad_is_good_false"
+name = "A Good false decides && on either side, whatever the other operand's quality"
+spec = ["16 §3.2", "16 §4"]
+do   = [
+  { at = "0ms", input = "x.a", value = false },
+  { at = "0ms", input = "x.b", quality = "bad(comm_failure)" },
+]
+expect = [
+  { at = "0ms", signal = "calc.and_ab", equals = false, quality = "good" },
+  { at = "0ms", signal = "calc.and_ba", equals = false, quality = "good" },
+]
+
+[[case]]
+id   = "true_or_bad_is_good_true"
+name = "A Good true decides || on either side"
+spec = ["16 §3.2", "02 §4"]
+do   = [
+  { at = "0ms", input = "x.a", value = true },
+  { at = "0ms", input = "x.b", quality = "bad(comm_failure)" },
+]
+expect = [
+  { at = "0ms", signal = "calc.or_ab", equals = true, quality = "good" },
+  { at = "0ms", signal = "calc.or_ba", equals = true, quality = "good" },
+]
+
+[[case]]
+id   = "true_and_bad_is_bad"
+name = "Without a deciding operand, && takes the worst quality"
+spec = ["16 §3.2"]
+do   = [
+  { at = "0ms", input = "x.a", value = true },
+  { at = "0ms", input = "x.b", quality = "bad(comm_failure)" },
+]
+expect = [
+  { at = "0ms", signal = "calc.and_ab", quality = "bad" },
+  { at = "0ms", signal = "calc.and_ba", quality = "bad" },
+]
+
+[[case]]
+id   = "false_or_uncertain_is_uncertain"
+name = "A Good false does not decide ||: the result has the worst quality"
+spec = ["16 §3.2"]
+do   = [
+  { at = "0ms", input = "x.a", value = false },
+  { at = "0ms", input = "x.b", value = true, quality = "uncertain(substituted)" },
+]
+expect = [{ at = "0ms", signal = "calc.or_ab", equals = true, quality = "uncertain" }]
+
+[[case]]
+id   = "uncertain_false_does_not_decide_and"
+name = "Only a Good false short-circuits &&; an Uncertain false with a Bad operand is Bad"
+spec = ["16 §3.2"]
+do   = [
+  { at = "0ms", input = "x.a", value = false, quality = "uncertain(substituted)" },
+  { at = "0ms", input = "x.b", quality = "bad(comm_failure)" },
+]
+expect = [{ at = "0ms", signal = "calc.and_ab", quality = "bad" }]
+
+[[case]]
+id   = "arithmetic_takes_worst_quality"
+name = "Arithmetic on an Uncertain operand gives an Uncertain result"
+spec = ["16 §3.2", "02 §4"]
+do   = [
+  { at = "0ms", input = "x.u", value = "1 kW" },
+  { at = "0ms", input = "x.v", value = "2 kW", quality = "uncertain(substituted)" },
+]
+expect = [{ at = "0ms", signal = "calc.sum_uv", equals = "3 kW", quality = "uncertain" }]
+
+[[case]]
+id   = "arithmetic_with_bad_is_bad"
+name = "Arithmetic on a Bad operand gives a Bad result"
+spec = ["16 §3.2"]
+do   = [
+  { at = "0ms", input = "x.u", value = "1 kW" },
+  { at = "0ms", input = "x.v", quality = "bad(comm_failure)" },
+]
+expect = [{ at = "0ms", signal = "calc.sum_uv", quality = "bad" }]
+
+[[case]]
+id   = "good_arithmetic_is_good"
+name = "Arithmetic on Good operands is Good"
+spec = ["16 §3.2"]
+do   = [
+  { at = "0ms", input = "x.u", value = "1 kW" },
+  { at = "0ms", input = "x.v", value = "2 kW" },
+]
+expect = [{ at = "0ms", signal = "calc.sum_uv", equals = "3 kW", quality = "good" }]
+
+[[case]]
+id   = "division_by_zero_is_bad_nan"
+name = "Division by zero gives Bad(NaN)"
+spec = ["16 §4"]
+do   = [
+  { at = "0ms", input = "x.u", value = "1 kW" },
+  { at = "0ms", input = "x.v", value = "0 kW" },
+]
+expect = [{ at = "0ms", signal = "calc.ratio_uv", quality = "bad(nan)" }]
+
+[[case]]
+id   = "bad_condition_makes_if_bad"
+name = "if with a Bad condition is Bad"
+spec = ["16 §3.2"]
+do   = [
+  { at = "0ms", input = "x.a", quality = "bad(comm_failure)" },
+  { at = "0ms", input = "x.u", value = "5 kW" },
+  { at = "0ms", input = "x.v", value = "7 kW" },
+]
+expect = [{ at = "0ms", signal = "calc.pick", quality = "bad" }]
+
+[[case]]
+id   = "uncertain_condition_caps_if"
+name = "if with an Uncertain condition evaluates the branch and is at most Uncertain"
+spec = ["16 §3.2"]
+do   = [
+  { at = "0ms", input = "x.a", value = true, quality = "uncertain(substituted)" },
+  { at = "0ms", input = "x.u", value = "5 kW" },
+  { at = "0ms", input = "x.v", value = "7 kW" },
+]
+expect = [{ at = "0ms", signal = "calc.pick", equals = "5 kW", quality = "uncertain" }]
+
+[[case]]
+id   = "any_decided_by_good_true"
+name = "any is true (Good) if one element is a Good true"
+spec = ["16 §3.2"]
+do   = [
+  { at = "0ms", input = "x.s1", value = true },
+  { at = "0ms", input = "x.s2", quality = "bad(comm_failure)" },
+]
+expect = [{ at = "0ms", signal = "calc.any_s", equals = true, quality = "good" }]
+
+[[case]]
+id   = "all_decided_by_good_false"
+name = "all is false (Good) if one element is a Good false"
+spec = ["16 §3.2"]
+do   = [
+  { at = "0ms", input = "x.s1", value = false },
+  { at = "0ms", input = "x.s2", quality = "bad(comm_failure)" },
+]
+expect = [{ at = "0ms", signal = "calc.all_s", equals = false, quality = "good" }]
+
+[[case]]
+id   = "any_without_decider_is_worst"
+name = "any with no Good true takes the worst quality of the elements"
+spec = ["16 §3.2"]
+do   = [
+  { at = "0ms", input = "x.s1", value = false },
+  { at = "0ms", input = "x.s2", quality = "bad(comm_failure)" },
+]
+expect = [{ at = "0ms", signal = "calc.any_s", quality = "bad" }]
+
+[[case]]
+id   = "count_with_bad_element_is_bad"
+name = "count has no short-circuit: one Bad element makes it Bad"
+spec = ["16 §3.2"]
+do   = [
+  { at = "0ms", input = "x.s1", value = true },
+  { at = "0ms", input = "x.s2", quality = "bad(comm_failure)" },
+]
+expect = [{ at = "0ms", signal = "calc.count_s", quality = "bad" }]
+
+[[case]]
+id   = "count_of_good_elements"
+name = "count of Good elements counts the true ones"
+spec = ["02 §10", "16 §3.2"]
+do   = [
+  { at = "0ms", input = "x.s1", value = true },
+  { at = "0ms", input = "x.s2", value = false },
+]
+expect = [{ at = "0ms", signal = "calc.count_s", equals = 1, quality = "good" }]
+
+[[case]]
+id   = "constant_is_good"
+name = "A constant expression is a Good signal with the fixed value"
+spec = ["ref/01 §5.14"]
+expect = [{ during = "0ms .. 300ms", signal = "calc.limit", equals = "400 kW", quality = "good" }]

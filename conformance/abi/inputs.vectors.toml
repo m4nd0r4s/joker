@@ -1,0 +1,1096 @@
+schema = 1
+
+[vectors]
+kind        = "abi.input"
+id          = "abi.inputs"
+spec        = ["ref/08 §2.5.3", "ref/08 §2.5.4", "ref/08 §2.6.g", "02 §4"]
+hosts       = ["mcu", "linux"]
+description = "jk_set_input_*: the conversions accepted by each setter, values outside the domain, NaN as Bad(nan), the allowed code and reason combinations, and the direction check"
+
+[[signals]]
+path = "io.b"
+type = "bool"
+
+[[signals]]
+path = "io.i"
+type = "i64"
+
+[[signals]]
+path = "io.u"
+type = "u64"
+
+[[signals]]
+path = "io.f"
+type = "f64"
+unit = "1"
+
+[[signals]]
+path = "io.g"
+type = "f32"
+unit = "1"
+
+[[signals]]
+path = "io.s"
+type = "string"
+
+[[signals]]
+path = "io.y"
+type = "bytes"
+
+[[outputs]]
+path = "io.o"
+type = "f64"
+unit = "1"
+safe = 0.0
+
+[[vector]]
+id      = "bool_from_bool"
+op      = "set_input"
+spec    = ["ref/08 §2.5.4"]
+signal  = "io.b"
+setter  = "bool"
+value   = true
+quality = "good"
+status  = "JK_OK"
+read    = { value = true, quality = "good" }
+
+[[vector]]
+id      = "bool_from_i64_one"
+op      = "set_input"
+spec    = ["ref/08 §2.5.4"]
+signal  = "io.b"
+setter  = "i64"
+value   = 1
+quality = "good"
+status  = "JK_OK"
+read    = { value = true, quality = "good" }
+
+[[vector]]
+id      = "bool_from_i64_zero"
+op      = "set_input"
+spec    = ["ref/08 §2.5.4"]
+signal  = "io.b"
+setter  = "i64"
+value   = 0
+quality = "good"
+status  = "JK_OK"
+read    = { value = false, quality = "good" }
+
+[[vector]]
+id      = "bool_from_i64_two"
+op      = "set_input"
+spec    = ["ref/08 §2.5.4"]
+signal  = "io.b"
+setter  = "i64"
+value   = 2
+quality = "good"
+status  = "JK_E_VALUE"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "bool_from_u64_one"
+op      = "set_input"
+spec    = ["ref/08 §2.5.4"]
+signal  = "io.b"
+setter  = "u64"
+value   = 1
+quality = "good"
+status  = "JK_OK"
+read    = { value = true, quality = "good" }
+
+[[vector]]
+id      = "bool_from_f64"
+op      = "set_input"
+spec    = ["ref/08 §2.5.4"]
+signal  = "io.b"
+setter  = "f64"
+value   = 1.0
+quality = "good"
+status  = "JK_E_TYPE"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "bool_from_buf"
+op      = "set_input"
+spec    = ["ref/08 §2.5.4"]
+signal  = "io.b"
+setter  = "buf"
+value   = "01"
+quality = "good"
+status  = "JK_E_TYPE"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "i64_from_i64"
+op      = "set_input"
+spec    = ["ref/08 §2.5.4"]
+signal  = "io.i"
+setter  = "i64"
+value   = -5
+quality = "good"
+status  = "JK_OK"
+read    = { value = -5, quality = "good" }
+
+[[vector]]
+id      = "i64_from_u64"
+op      = "set_input"
+spec    = ["ref/08 §2.5.4"]
+signal  = "io.i"
+setter  = "u64"
+value   = 5
+quality = "good"
+status  = "JK_OK"
+read    = { value = 5, quality = "good" }
+
+[[vector]]
+id      = "i64_from_bool"
+op      = "set_input"
+spec    = ["ref/08 §2.5.4"]
+signal  = "io.i"
+setter  = "bool"
+value   = true
+quality = "good"
+status  = "JK_E_TYPE"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "i64_from_f64"
+op      = "set_input"
+spec    = ["ref/08 §2.5.4"]
+signal  = "io.i"
+setter  = "f64"
+value   = 5.0
+quality = "good"
+status  = "JK_E_TYPE"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "u64_from_u64"
+op      = "set_input"
+spec    = ["ref/08 §2.5.4"]
+signal  = "io.u"
+setter  = "u64"
+value   = 7
+quality = "good"
+status  = "JK_OK"
+read    = { value = 7, quality = "good" }
+
+[[vector]]
+id      = "u64_from_i64"
+op      = "set_input"
+spec    = ["ref/08 §2.5.4"]
+signal  = "io.u"
+setter  = "i64"
+value   = 7
+quality = "good"
+status  = "JK_OK"
+read    = { value = 7, quality = "good" }
+
+[[vector]]
+id      = "u64_from_f32"
+op      = "set_input"
+spec    = ["ref/08 §2.5.4"]
+signal  = "io.u"
+setter  = "f32"
+value   = 7.0
+quality = "good"
+status  = "JK_E_TYPE"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "f64_from_f64"
+op      = "set_input"
+spec    = ["ref/08 §2.5.4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.5
+quality = "good"
+status  = "JK_OK"
+read    = { value = 1.5, quality = "good" }
+
+[[vector]]
+id      = "f64_from_f32"
+op      = "set_input"
+spec    = ["ref/08 §2.5.4"]
+signal  = "io.f"
+setter  = "f32"
+value   = 1.5
+quality = "good"
+status  = "JK_OK"
+read    = { value = 1.5, quality = "good" }
+
+[[vector]]
+id      = "f64_from_i64"
+op      = "set_input"
+spec    = ["ref/08 §2.5.4"]
+signal  = "io.f"
+setter  = "i64"
+value   = -3
+quality = "good"
+status  = "JK_OK"
+read    = { value = -3.0, quality = "good" }
+
+[[vector]]
+id      = "f64_from_u64"
+op      = "set_input"
+spec    = ["ref/08 §2.5.4"]
+signal  = "io.f"
+setter  = "u64"
+value   = 3
+quality = "good"
+status  = "JK_OK"
+read    = { value = 3.0, quality = "good" }
+
+[[vector]]
+id      = "f64_from_bool"
+op      = "set_input"
+spec    = ["ref/08 §2.5.4"]
+signal  = "io.f"
+setter  = "bool"
+value   = true
+quality = "good"
+status  = "JK_E_TYPE"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "f64_nan_is_bad_nan"
+op      = "set_input"
+spec    = ["ref/08 §2.5.4", "16 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = nan
+quality = "good"
+status  = "JK_OK"
+read    = { quality = "bad(nan)" }
+
+[[vector]]
+id      = "f64_infinity_is_bad_nan"
+op      = "set_input"
+spec    = ["ref/08 §2.5.4", "16 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = inf
+quality = "good"
+status  = "JK_OK"
+read    = { quality = "bad(nan)" }
+
+[[vector]]
+id      = "f32_from_f64_rounds"
+op      = "set_input"
+spec    = ["ref/08 §2.5.4"]
+signal  = "io.g"
+setter  = "f64"
+value   = 0.1
+quality = "good"
+status  = "JK_OK"
+read    = { value = 0.10000000149011612, quality = "good" }
+
+[[vector]]
+id      = "f32_from_f32"
+op      = "set_input"
+spec    = ["ref/08 §2.5.4"]
+signal  = "io.g"
+setter  = "f32"
+value   = 0.5
+quality = "good"
+status  = "JK_OK"
+read    = { value = 0.5, quality = "good" }
+
+[[vector]]
+id      = "f32_from_buf"
+op      = "set_input"
+spec    = ["ref/08 §2.5.4"]
+signal  = "io.g"
+setter  = "buf"
+value   = "00"
+quality = "good"
+status  = "JK_E_TYPE"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "string_from_buf"
+op      = "set_input"
+spec    = ["ref/08 §2.5.4"]
+signal  = "io.s"
+setter  = "buf"
+value   = "68656c6c6f"
+quality = "good"
+status  = "JK_OK"
+read    = { value = "hello", quality = "good" }
+
+[[vector]]
+id      = "string_invalid_utf8"
+op      = "set_input"
+spec    = ["ref/08 §2.5.4"]
+signal  = "io.s"
+setter  = "buf"
+value   = "68ff6c"
+quality = "good"
+status  = "JK_E_VALUE"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "string_65_bytes"
+op      = "set_input"
+spec    = ["ref/08 §2.5.4"]
+signal  = "io.s"
+setter  = "buf"
+value   = "6161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161"
+quality = "good"
+status  = "JK_E_VALUE"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "string_64_bytes"
+op      = "set_input"
+spec    = ["ref/08 §2.5.4"]
+signal  = "io.s"
+setter  = "buf"
+value   = "61616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161"
+quality = "good"
+status  = "JK_OK"
+read    = { value = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", quality = "good" }
+
+[[vector]]
+id      = "string_from_i64"
+op      = "set_input"
+spec    = ["ref/08 §2.5.4"]
+signal  = "io.s"
+setter  = "i64"
+value   = 1
+quality = "good"
+status  = "JK_E_TYPE"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "bytes_64"
+op      = "set_input"
+spec    = ["ref/08 §2.5.4"]
+signal  = "io.y"
+setter  = "buf"
+value   = "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+quality = "good"
+status  = "JK_OK"
+read    = { value = "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000", quality = "good" }
+
+[[vector]]
+id      = "bytes_65"
+op      = "set_input"
+spec    = ["ref/08 §2.5.4"]
+signal  = "io.y"
+setter  = "buf"
+value   = "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+quality = "good"
+status  = "JK_E_VALUE"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "bytes_from_bool"
+op      = "set_input"
+spec    = ["ref/08 §2.5.4"]
+signal  = "io.y"
+setter  = "bool"
+value   = false
+quality = "good"
+status  = "JK_E_TYPE"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "output_is_wrong_direction"
+op      = "set_input"
+spec    = ["ref/08 §2.6.g"]
+signal  = "io.o"
+setter  = "f64"
+value   = 1.0
+quality = "good"
+status  = "JK_E_DIRECTION"
+
+[[vector]]
+id      = "quality_good_none"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "good"
+status  = "JK_OK"
+read    = { value = 1.0, quality = "good" }
+
+[[vector]]
+id      = "quality_good_overridden"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "good(overridden)"
+status  = "JK_OK"
+read    = { value = 1.0, quality = "good(overridden)" }
+
+[[vector]]
+id      = "quality_good_local_override"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "good(local_override)"
+status  = "JK_OK"
+read    = { value = 1.0, quality = "good(local_override)" }
+
+[[vector]]
+id      = "quality_good_stale"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "good(stale)"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_good_not_confirmed"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "good(not_confirmed)"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_good_substituted"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "good(substituted)"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_good_out_of_distribution"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "good(out_of_distribution)"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_good_sensor_cal"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "good(sensor_cal)"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_good_clock_unsynced"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "good(clock_unsynced)"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_good_initial"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "good(initial)"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_good_frozen"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "good(frozen)"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_good_partial_write"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "good(partial_write)"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_good_comm_failure"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "good(comm_failure)"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_good_device_fault"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "good(device_fault)"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_good_out_of_range"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "good(out_of_range)"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_good_config_error"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "good(config_error)"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_good_not_connected"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "good(not_connected)"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_good_nan"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "good(nan)"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_good_tripped"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "good(tripped)"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_good_deadline"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "good(deadline)"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_good_private_reason"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = 61440
+status  = "JK_OK"
+
+[[vector]]
+id      = "quality_uncertain_none"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "uncertain"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_uncertain_overridden"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "uncertain(overridden)"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_uncertain_local_override"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "uncertain(local_override)"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_uncertain_stale"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "uncertain(stale)"
+status  = "JK_OK"
+read    = { value = 1.0, quality = "uncertain(stale)" }
+
+[[vector]]
+id      = "quality_uncertain_not_confirmed"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "uncertain(not_confirmed)"
+status  = "JK_OK"
+read    = { value = 1.0, quality = "uncertain(not_confirmed)" }
+
+[[vector]]
+id      = "quality_uncertain_substituted"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "uncertain(substituted)"
+status  = "JK_OK"
+read    = { value = 1.0, quality = "uncertain(substituted)" }
+
+[[vector]]
+id      = "quality_uncertain_out_of_distribution"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "uncertain(out_of_distribution)"
+status  = "JK_OK"
+read    = { value = 1.0, quality = "uncertain(out_of_distribution)" }
+
+[[vector]]
+id      = "quality_uncertain_sensor_cal"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "uncertain(sensor_cal)"
+status  = "JK_OK"
+read    = { value = 1.0, quality = "uncertain(sensor_cal)" }
+
+[[vector]]
+id      = "quality_uncertain_clock_unsynced"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "uncertain(clock_unsynced)"
+status  = "JK_OK"
+read    = { value = 1.0, quality = "uncertain(clock_unsynced)" }
+
+[[vector]]
+id      = "quality_uncertain_initial"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "uncertain(initial)"
+status  = "JK_OK"
+read    = { value = 1.0, quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_uncertain_frozen"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "uncertain(frozen)"
+status  = "JK_OK"
+read    = { value = 1.0, quality = "uncertain(frozen)" }
+
+[[vector]]
+id      = "quality_uncertain_partial_write"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "uncertain(partial_write)"
+status  = "JK_OK"
+read    = { value = 1.0, quality = "uncertain(partial_write)" }
+
+[[vector]]
+id      = "quality_uncertain_comm_failure"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "uncertain(comm_failure)"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_uncertain_device_fault"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "uncertain(device_fault)"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_uncertain_out_of_range"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "uncertain(out_of_range)"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_uncertain_config_error"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "uncertain(config_error)"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_uncertain_not_connected"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "uncertain(not_connected)"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_uncertain_nan"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "uncertain(nan)"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_uncertain_tripped"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "uncertain(tripped)"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_uncertain_deadline"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "uncertain(deadline)"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_uncertain_private_reason"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = 61441
+status  = "JK_OK"
+
+[[vector]]
+id      = "quality_bad_none"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "bad"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_bad_overridden"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "bad(overridden)"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_bad_local_override"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "bad(local_override)"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_bad_stale"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "bad(stale)"
+status  = "JK_OK"
+read    = { value = 1.0, quality = "bad(stale)" }
+
+[[vector]]
+id      = "quality_bad_not_confirmed"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "bad(not_confirmed)"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_bad_substituted"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "bad(substituted)"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_bad_out_of_distribution"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "bad(out_of_distribution)"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_bad_sensor_cal"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "bad(sensor_cal)"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_bad_clock_unsynced"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "bad(clock_unsynced)"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_bad_initial"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "bad(initial)"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_bad_frozen"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "bad(frozen)"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_bad_partial_write"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "bad(partial_write)"
+status  = "JK_E_QUALITY"
+read    = { quality = "uncertain(initial)" }
+
+[[vector]]
+id      = "quality_bad_comm_failure"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "bad(comm_failure)"
+status  = "JK_OK"
+read    = { value = 1.0, quality = "bad(comm_failure)" }
+
+[[vector]]
+id      = "quality_bad_device_fault"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "bad(device_fault)"
+status  = "JK_OK"
+read    = { value = 1.0, quality = "bad(device_fault)" }
+
+[[vector]]
+id      = "quality_bad_out_of_range"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "bad(out_of_range)"
+status  = "JK_OK"
+read    = { value = 1.0, quality = "bad(out_of_range)" }
+
+[[vector]]
+id      = "quality_bad_config_error"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "bad(config_error)"
+status  = "JK_OK"
+read    = { value = 1.0, quality = "bad(config_error)" }
+
+[[vector]]
+id      = "quality_bad_not_connected"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "bad(not_connected)"
+status  = "JK_OK"
+read    = { value = 1.0, quality = "bad(not_connected)" }
+
+[[vector]]
+id      = "quality_bad_nan"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "bad(nan)"
+status  = "JK_OK"
+read    = { value = 1.0, quality = "bad(nan)" }
+
+[[vector]]
+id      = "quality_bad_tripped"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "bad(tripped)"
+status  = "JK_OK"
+read    = { value = 1.0, quality = "bad(tripped)" }
+
+[[vector]]
+id      = "quality_bad_deadline"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3", "02 §4"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = "bad(deadline)"
+status  = "JK_OK"
+read    = { value = 1.0, quality = "bad(deadline)" }
+
+[[vector]]
+id      = "quality_bad_private_reason"
+op      = "set_input"
+spec    = ["ref/08 §2.5.3"]
+signal  = "io.f"
+setter  = "f64"
+value   = 1.0
+quality = 61442
+status  = "JK_OK"

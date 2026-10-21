@@ -238,7 +238,7 @@ Because the member list comes from `joker:meta`, an app generated against `pump@
 ### 2.7 Clock, randomness and WASI
 
 - `now()` and `dt-ns()` of the cycle instance are those of the latch; replay is exact (02 §5).
-- **Randomness:** `random-u64` uses, per instance, a xoshiro256\*\* seeded with `seed` = the first 8 bytes (LE) of `SHA-256("joker-seed" ‖ generation-hash ‖ app ‖ kind ‖ implements)`. Deterministic, not recorded in the trace (it is reproduced from the generation) and **not cryptographic**.
+- **Randomness:** `random-u64` uses, per instance, a xoshiro256\*\* seeded with `seed` = the first 8 bytes (LE) of `SHA-256("joker-seed" ‖ generation-hash ‖ app ‖ kind ‖ implements)`, with `kind` the WIT case name (`cycle`, `task`) and `implements` the instance name or empty, in UTF-8 and with no separators; the 256-bit state is the first four outputs of SplitMix64 from `seed` (ADR 0052). Deterministic, not recorded in the trace (it is reproduced from the generation) and **not cryptographic**.
 - **WASI.** A Rust, TS or Python component almost always imports WASI interfaces (the `HashMap` of `std` asks for `wasi:random/insecure-seed`). The host satisfies these, in 0.2.x and 0.3.x, always virtualized:
 
 | WASI interface | Cycle | Async |
@@ -246,6 +246,7 @@ Because the member list comes from `joker:meta`, an app generated against `pump@
 | `wasi:clocks/monotonic-clock`, `wall-clock` | latch instant | current instant |
 | `wasi:random/random`, `insecure`, `insecure-seed` | the same generator as `random-u64` | same |
 | `wasi:cli/environment`, `stdin` | empty | empty |
+| `wasi:cli/terminal-input`, `terminal-output`, `terminal-stdin`, `terminal-stdout`, `terminal-stderr` | no terminal (`none`) | same (ADR 0052) |
 | `wasi:cli/stdout`, `stderr` | `log` `info` / `warn`, per line, truncated to 1 KiB | same |
 | `wasi:cli/exit` | trap `J-E0905` | trap `J-E0905` |
 | `wasi:filesystem` | no preopened directories | same |
@@ -1455,6 +1456,8 @@ Range of this document: `J-E0001`–`J-E0799` and `J-E0900`–`J-E0999`. All of 
 | `J-E0006` | error | component imports an interface that is not allowed | §2.7 |
 | `J-E0007` | error | app name in joker:meta does not match the manifest | also `jk check` |
 | `J-E0008` | error | init-context rejected by the SDK (layout mismatch) | §2.6.2 |
+| `J-E0009` | error | component is not a valid Wasm component or failed to compile | ADR 0052 |
+| `J-E0010` | error | no usable AOT artifact for this engine and component | `prod` without `.cwasm`; ADR 0052 |
 | `J-E0011` | error | app refused the new parameters | §4.3.4 |
 | `J-E0050` | error | the app returned an error | `Error::app` |
 | `J-E0101` | error | value unavailable: quality is not Good | `get()` |

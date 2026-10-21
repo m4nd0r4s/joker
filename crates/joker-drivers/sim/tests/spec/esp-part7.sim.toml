@@ -1,0 +1,30 @@
+schema = 1
+
+[model]
+description = "ESP32 with the bench firmware (document 23, §4)"
+
+[signals]
+led    = { type = "bool", direction = "output", panel = { label = "ESP32 LED", kind = "lamp" } }
+led_rb = { type = "bool" }
+button = { type = "bool", init = false, bounce = "5ms", panel = { label = "BOOT", kind = "momentary", key = "b" } }
+touch  = { type = "u64", init = 60, noise = 1, resolution = 1,
+           panel = { label = "Touch", kind = "slider", keys = ["down", "up"], step = 5, min = 0, max = 100 } }
+rssi   = { type = "i64", gen = { kind = "noise", mean = -55, std = 3 } }
+uptime = { type = "f64", unit = "s", init = 0 }
+fw     = { type = "u64", direction = "param", init = 1 }
+
+[dynamics]
+led_rb = "led"
+uptime = "integrate(1)"
+
+[faults]
+panel = { key = "d", disconnect = true }
+
+[implements."std/led@1"]
+map = { on = "led" }
+
+[implements."std/button@1"]
+map = { pressed = "button" }
+
+[implements."std/analog_in@1"]
+map = { value = { signal = "touch", scale = -0.01, offset = 1 } }

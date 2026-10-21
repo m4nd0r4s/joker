@@ -49,6 +49,18 @@ message = "init-context rejected by the SDK (layout mismatch)"
 doc = "ref/04 §7"
 
 [[code]]
+id = "J-E0009"
+severity = "error"
+message = "component is not a valid Wasm component or failed to compile"
+doc = "ref/04 §7"
+
+[[code]]
+id = "J-E0010"
+severity = "error"
+message = "no usable AOT artifact for this engine and component"
+doc = "ref/04 §7"
+
+[[code]]
 id = "J-E0011"
 severity = "error"
 message = "app refused the new parameters"
@@ -2822,7 +2834,7 @@ id = "J0240"
 severity = "error"
 message = "invalid `[net.wifi]`: `ssid` empty or longer than 32 B, `country` outside ISO 3166-1 alpha-2, or `hostname` outside the grammar"
 doc = "ref/01 §10.2"
-also = ["ref/01 §5.22", "ref/08 §2.17"]
+also = ["ref/01 §5.22"]
 
 [[code]]
 id = "J0241"
@@ -2843,7 +2855,7 @@ id = "J0243"
 severity = "warning"
 message = "the board has no Wasm engine for the architecture: native apps only"
 doc = "ref/01 §10.2"
-also = ["01 §22", "23 §5.2"]
+also = ["01 §22"]
 
 [[code]]
 id = "J0250"
@@ -3075,6 +3087,13 @@ message = "enum without that variant"
 doc = "ref/01 §10.1"
 
 [[code]]
+id = "J0304"
+severity = "error"
+message = "expression with incompatible types (operand, enum of another type, unreadable signal, wrong result type)"
+doc = "ref/01 §10.1"
+also = ["ADR 0034"]
+
+[[code]]
 id = "J0305"
 severity = "error"
 message = "window above the maximum (15 min)"
@@ -3086,6 +3105,13 @@ id = "J0306"
 severity = "error"
 message = "`own()` outside a class method"
 doc = "ref/01 §10.1"
+
+[[code]]
+id = "J0307"
+severity = "error"
+message = "unknown function, wrong number of arguments, or an argument that must be a path, a duration or a constant"
+doc = "ref/01 §10.1"
+also = ["ADR 0034"]
 
 [[code]]
 id = "J0350"
@@ -3134,7 +3160,7 @@ id = "J0381"
 severity = "warning"
 message = "projected or measured write load above what the board's storage medium (`storage`) can sustain"
 doc = "ref/01 §10.1"
-also = ["ref/03 §2.3.1", "01 §12", "01 §19"]
+also = ["ref/03 §2.3.1", "01 §12"]
 
 [[code]]
 id = "J0401"
@@ -3372,7 +3398,7 @@ id = "J0650"
 severity = "error"
 message = "class member bound to a name that is not an instance"
 doc = "03 §15"
-also = ["ref/01 §5.13", "ref/03 §2.2.14", "ref/07 §8.3"]
+also = ["ref/01 §5.13", "ref/07 §8.3"]
 
 [[code]]
 id = "J0651"
@@ -3386,7 +3412,7 @@ id = "J0652"
 severity = "error"
 message = "instance bound to a class member without the capabilities the member requires (`@requires`)"
 doc = "03 §15"
-also = ["ref/01 §5.13", "17 §3.2"]
+also = ["ref/01 §5.13"]
 
 [[code]]
 id = "J0653"

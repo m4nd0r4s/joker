@@ -1,0 +1,73 @@
+schema = 1
+
+[suite]
+kind        = "core"
+id          = "arbiter.period"
+spec        = ["16 A2", "16 A9", "01 §7 step 5"]
+period      = "50ms"
+hosts       = ["linux", "mcu"]
+description = "Period-dependent rules on a 50 ms group: default lease, lease boundary and rate step scale with the period; boolean outputs"
+
+[[outputs]]
+path  = "x.p_set"
+type  = "f64"
+unit  = "kW"
+range = ["-100 kW", "100 kW"]
+rate  = "10 kW/s"
+safe  = "0 kW"
+
+[[outputs]]
+path = "x.run"
+type = "bool"
+safe = false
+
+[[writers]]
+id    = "d"
+level = "control:12"
+kind  = "cycle"
+
+[[writers]]
+id    = "a"
+level = "optimizer:13"
+lease = "125ms"
+kind  = "cycle"
+
+[[case]]
+id   = "default_lease_scales_with_period"
+name = "The default lease is 3 x 50 ms"
+spec = ["16 A9"]
+do   = [{ at = "0ms", propose = "x.run", writer = "d", value = true }]
+expect = [
+  { at = "100ms", output = "x.run", equals = true, level = "control:12" },
+  { at = "150ms", output = "x.run", equals = false, level = "none" },
+]
+
+[[case]]
+id   = "lease_between_ticks_expires_on_next_latch"
+name = "A lease ending between two ticks expires on the first latch at or after lease_until"
+spec = ["16 A2"]
+do   = [{ at = "0ms", propose = "x.run", writer = "a", value = true }]
+expect = [
+  { at = "100ms", output = "x.run", equals = true, level = "optimizer:13" },
+  { at = "150ms", output = "x.run", equals = false, level = "none" },
+]
+
+[[case]]
+id   = "rate_step_scales_with_period"
+name = "10 kW/s on a 50 ms group allows 0.5 kW per tick"
+spec = ["01 §7 step 5", "16 E2"]
+do   = [{ at = "0ms", propose = "x.p_set", writer = "d", value = "5 kW" }]
+expect = [
+  { at = "0ms",  output = "x.p_set", outcome = "clamped_rate", equals = "0.5 kW", tolerance = "0.001 kW" },
+  { at = "50ms", output = "x.p_set", equals = "1 kW", tolerance = "0.001 kW" },
+]
+
+[[case]]
+id   = "bool_output_accepts_and_returns_to_safe"
+name = "A boolean output takes the proposed value and returns to safe when the lease ends"
+spec = ["16 A2", "16 A6", "ref/01 §3.6"]
+do   = [{ at = "0ms", propose = "x.run", writer = "d", value = true }]
+expect = [
+  { at = "0ms",   output = "x.run", outcome = "accepted", equals = true, level = "control:12" },
+  { at = "200ms", output = "x.run", outcome = "none", equals = false, level = "none" },
+]
