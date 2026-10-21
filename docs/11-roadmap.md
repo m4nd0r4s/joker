@@ -1,5 +1,7 @@
 # 11 — Roadmap
 
+> **Scope note.** The scope of 1.0 is the cut of [document 26, §5](26-final-review.md#5-the-scope-against-the-team) (ADR 0028, stable = implemented), not the plan below. Where this document puts in a phase before 1.0 something that the cut moves (the C library of Joker Micro, the ESP32-C6 and STM32 targets, CAN and CANopen, the 1.0.x drivers, Joker Link over CAN, USB or RS-485 with turn-taking, the bridges, class simulators, app shadow, uplink budgets, OTLP and Zenoh, orchestrated MCU OTA, the standalone MCU profile, the tier W and X hosts, the TypeScript SDK and client), the cut wins and the surface is reserved in the references. [ADR 0035](adr/0035-reconcile-the-references-with-the-1-0-cut.md) records the decisions that reconcile the two and lists the contradictions. The new baseline of this plan (schedule, pilot gates at bench scale, the Deck and the Hub off the critical path) is still to be written.
+
 **v1 is the wildcard runtime that talks to devices, on Linux and on microcontrollers, with a manageable fleet.** Machine learning is **1.1**, and v1 is built ready for it (ADR 0019). Microcontrollers are in v1 (ADR 0020), and with them the core is `no_std` from day one.
 
 Four phases up to v1.0, with measurable exit gates and a decision point after Phase 1. The durations are estimates for a team of 3–4 people with experience in Rust and automation, plus one person on the Deck from Phase 3. The ordering rule still holds: **first what makes the system safe, then what makes it useful, and finally what makes it scalable.**
