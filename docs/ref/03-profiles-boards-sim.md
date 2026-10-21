@@ -1413,7 +1413,7 @@ schema = 1
 | `do` | list of actions | no | `[]` | §2.6.2 and §2.6.3 |
 | `expect` | list of expectations | yes | — | §2.6.4 |
 
-Each case starts in a clean state: new generation, all outputs at `safe` (A8), no active writer, alarms in `normal`.
+Each case starts in a clean state: new generation, all outputs at `safe` (A8), no active writer, alarms in `normal`, clock `synced` (ADR 0042).
 
 #### 2.6.2 Core fixture and actions
 
@@ -1440,6 +1440,8 @@ The fixture uses the **manifest syntax** (ref/01), in lists:
 | reset | `{ at, reset = "<output>" }` | end of trip (E7) |
 | clock | `{ at, clock = "<clock_quality>" }` | |
 | generation | `{ at, generation = "same" }` | swap to an identical generation at that tick boundary (A8) |
+
+The proposals and releases of `async`, `manual` and `bridge` writers enter at step 2; those of `cycle` and `impl` writers, at step 4; within each step, in the order of the case. At a tick boundary: the generation swap, the `clock` actions, the `input` samples, the `reset` actions, and only then the latch. The new generation starts with no active levels and inherits the last applied value (A8); the input samples are kept (ADR 0042).
 
 Unknown writer, output, instance or method: `J0844`.
 
