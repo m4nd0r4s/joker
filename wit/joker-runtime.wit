@@ -120,6 +120,7 @@ interface types {
         /// The active level that won (1–16).
         overridden(level),
         deferred,
+        /// Only produced from 1.1, with app shadow (M16; ADR 0035); a 1.0 host never returns it.
         shadowed,
         rejected(reject-reason),
         tripped,
@@ -371,6 +372,7 @@ interface guest {
         period-ns: u64,
     }
 
+    /// `shadow` is only set from 1.1, with app shadow (M16; ADR 0035); a 1.0 host never sets it.
     enum run-mode { normal, shadow, replay, test }
 
     record init-context {

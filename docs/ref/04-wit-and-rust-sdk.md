@@ -102,7 +102,7 @@ Tier 2 apps (TypeScript, Python) also have cycle tasks, with minimum periods of 
 | `suppressed` | 4 | `"suppressed"` | `Suppressed` |
 | `overridden(level)` | 5 | `"overridden"` + `level` | `Overridden { level }` |
 | `deferred` | 6 | `"deferred"` | `Deferred` |
-| `shadowed` | 7 | `"shadowed"` | `Shadowed` |
+| `shadowed` | 7 | `"shadowed"` | `Shadowed` (only produced from 1.1, with app shadow; ADR 0035) |
 | `rejected(reason)` | 8 | `"rejected"` + `reason` | `Rejected(RejectReason)` |
 | `tripped` | 9 | `"tripped"` | `Tripped` |
 
@@ -214,7 +214,7 @@ The interface is **self-contained** (it does not use `types`) on purpose: `joker
 | Field | Content |
 |---|---|
 | `kind` | `cycle` or `task` |
-| `mode` | `normal`, `shadow` (M16: the writes come out `shadowed`), `replay`, `test` |
+| `mode` | `normal`, `shadow` (M16: the writes come out `shadowed`; app shadow is 1.1, and a 1.0 host never sets it, ADR 0035), `replay`, `test` |
 | `app`, `app-version`, `node` | identity |
 | `served-world` | world served after the adapter (§2.8) |
 | `generation`, `generation-hash` | generation (ref/00 §5) |
@@ -1676,6 +1676,7 @@ Mentions outside blocks: `#[joker::state(persist)]` (§4.12), `Mailbox<T, N>` (�
 | virtual instances, `#[implements]`, `on-action`, `on_action` | 1.0 (Phase 2) |
 | `joker-test`, except `Series::replay` of `.jktrace` with ML | 1.0 (Phase 0 for the harness; Phase 1 for the component) |
 | `ml`, `frames`, `blocks`, `write-at`, `propose`, `AT` flag, `#[model]`, `Tensor` | **1.1**, reserved with `@unstable` |
+| app shadow (M16): `run-mode.shadow`, the `SHADOW` flag of the cycle ABI and the `shadowed` outcome | **1.1** (document 26, §5; ADR 0035). They are cases of enums and bits that the 1.0 world already carries, so they are not gated with `@unstable`: a 1.0 host never produces them, and the SDK keeps them so that an app built against 1.0 runs unchanged under a 1.1 shadow |
 | world `app-blocking` (tier 2 plan B, §2.11) | reserved; only with an ADR in Phase 3 |
 | Wasm on Joker Micro (`wasmi`) | 1.4 (document 21): the cycle ABI does not change |
 | WIT world 2 | 2.0 (ADR 0022) |
