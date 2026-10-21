@@ -113,6 +113,16 @@ fn subject_info<'s>(suite: &'s Suite, subject: &Subject) -> (&'s str, &'s str) {
             .signals
             .get(*i)
             .map_or(("?", ""), |s| pick(&s.path, &s.unit)),
+        Subject::Calc(i) => suite
+            .calcs
+            .get(*i)
+            .map_or(("?", ""), |c| pick(&c.path, &c.unit)),
+        Subject::Alarm(i) => suite.alarms.get(*i).map_or(("?", ""), |a| pick(&a.id, "")),
+        Subject::Commit(i) => suite
+            .atomic
+            .get(*i)
+            .and_then(|g| g.commit.as_ref())
+            .map_or(("?", ""), |c| pick(&c.0, "")),
     }
 }
 
@@ -147,10 +157,26 @@ fn describe_expected(p: &Predicates, unit: &str) -> String {
     if let Some(l) = p.level {
         parts.push(format!("level {}", level_text(l)));
     }
+    if let Some(s) = p.state {
+        parts.push(format!("state {}", state_text(s)));
+    }
+    if let Some(a) = p.active {
+        parts.push(format!("active {a}"));
+    }
     parts.join(", ")
 }
 
+fn state_text(state: u8) -> &'static str {
+    literal::ALARM_STATES
+        .get(usize::from(state))
+        .copied()
+        .unwrap_or("unknown")
+}
+
 fn describe_actual(p: &Predicates, v: &View<'_>, unit: &str) -> String {
+    if let Some(a) = v.alarm {
+        return format!("state {}, active {}", state_text(a.state), a.active);
+    }
     let mut parts = Vec::new();
     if p.equals.is_some() || p.min.is_some() || p.max.is_some() || v.output.is_some() {
         let key = if v.output.is_some() {

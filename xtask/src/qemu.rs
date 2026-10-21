@@ -19,8 +19,11 @@ use std::time::{Duration, Instant};
 use joker_core::ValueType;
 use joker_core::output::{ClockRequirement, OnRange, WriterKind};
 
+use joker_case_runner::Needs;
+
 use crate::conformance::model::{
-    Action, ActionKind, Case, Diagnostic, Expected, Node, Predicates, SafeDef, Subject, Suite, When,
+    Action, ActionKind, Case, Diagnostic, Expected, Item, LimitSpec, Link, Node, Predicates,
+    SafeDef, Subject, Suite, When,
 };
 use crate::conformance::report::{CaseReport, Report, Status, SuiteReport};
 use crate::conformance::{self, load};
@@ -139,6 +142,9 @@ fn subject_lit(subject: Subject) -> String {
         Subject::Output(i) => format!("m::Subject::Output({i})"),
         Subject::Input(i) => format!("m::Subject::Input({i})"),
         Subject::OutputSignal(i) => format!("m::Subject::OutputSignal({i})"),
+        Subject::Calc(i) => format!("m::Subject::Calc({i})"),
+        Subject::Alarm(i) => format!("m::Subject::Alarm({i})"),
+        Subject::Commit(i) => format!("m::Subject::Commit({i})"),
     }
 }
 
@@ -151,7 +157,7 @@ fn when_lit(when: When) -> String {
 
 fn predicates_lit(p: &Predicates) -> String {
     format!(
-        "m::Predicates {{ equals: {}, min: {}, max: {}, tolerance: {}, quality: {}, outcome: {}, level: {} }}",
+        "m::Predicates {{ equals: {}, min: {}, max: {}, tolerance: {}, quality: {}, outcome: {}, level: {}, state: {}, active: {} }}",
         opt(p.equals, expected_lit),
         opt(p.min, f64_lit),
         opt(p.max, f64_lit),
@@ -163,6 +169,8 @@ fn predicates_lit(p: &Predicates) -> String {
             opt(o.detail, |d| d.to_string())
         )),
         opt(p.level, |l| opt(l, |n| n.to_string())),
+        opt(p.state, |s| s.to_string()),
+        opt(p.active, |a| a.to_string()),
     )
 }
 
@@ -210,14 +218,37 @@ fn action_lit(action: &Action) -> String {
     format!("m::Action {{ tick: {}, kind: {kind} }}", action.tick)
 }
 
+fn limit_lit(limit: LimitSpec<'_>) -> String {
+    match limit {
+        LimitSpec::Const(x) => format!("m::LimitSpec::Const({})", f64_lit(x)),
+        LimitSpec::Expr(src) => format!("m::LimitSpec::Expr({src:?})"),
+    }
+}
+
+fn links_lit(links: &[Link<'_>]) -> String {
+    let items: Vec<String> = links
+        .iter()
+        .map(|l| {
+            let item = match l.item {
+                Item::Path(p) => format!("m::Item::Path({p:?})"),
+                Item::Output(o) => format!("m::Item::Output({o})"),
+            };
+            format!("m::Link {{ owner: {}, item: {item} }}", l.owner)
+        })
+        .collect();
+    format!("&[{}]", items.join(", "))
+}
+
 fn fixture_lit(suite: &Suite) -> String {
+    let view = suite.view();
+    let fixture = view.fixture();
     let mut out = String::new();
     let _ = write!(
         out,
         "m::Fixture {{\n    period_ns: {},\n    signals: &[\n",
-        suite.period_ns
+        fixture.period_ns
     );
-    for s in &suite.signals {
+    for s in fixture.signals {
         let _ = writeln!(
             out,
             "        m::SignalSpec {{ path: {:?}, ty: {}, unit: {:?}, max_age_ns: {} }},",
@@ -228,41 +259,96 @@ fn fixture_lit(suite: &Suite) -> String {
         );
     }
     out.push_str("    ],\n    outputs: &[\n");
-    for o in &suite.outputs {
+    for o in fixture.outputs {
         let safe = match o.safe {
             SafeDef::Value(bits) => format!("m::SafeDef::Value(0x{bits:016x})"),
             SafeDef::Relinquish => "m::SafeDef::Relinquish".to_string(),
         };
         let _ = writeln!(
             out,
-            "        m::OutputSpec {{ path: {:?}, ty: {}, unit: {:?}, safe: {safe}, safe_ramp: {}, range: {}, on_range: {}, rate: {}, max_lease_ns: {}, max_manual_ns: {} }},",
+            "        m::OutputSpec {{ path: {:?}, ty: {}, unit: {:?}, safe: {safe}, safe_ramp: {}, range: {}, on_range: {}, rate: {}, max_lease_ns: {}, max_manual_ns: {}, interlock: {}, permit_uncertain: {}, on_interlock: c::output::OnInterlock::{:?}, grace_ns: {}, reset_when: {}, deadband: {}, min_interval_ns: {}, max_actuations: {} }},",
             o.path,
             ty_lit(o.ty),
             o.unit,
             opt(o.safe_ramp, f64_lit),
             opt(o.range, |(a, b)| format!(
                 "({}, {})",
-                f64_lit(a),
-                f64_lit(b)
+                limit_lit(a),
+                limit_lit(b)
             )),
             on_range_lit(o.on_range),
             opt(o.rate, f64_lit),
             opt(o.max_lease_ns, |n| n.to_string()),
             opt(o.max_manual_ns, |n| n.to_string()),
+            opt(o.interlock, |s| format!("{s:?}")),
+            o.permit_uncertain,
+            o.on_interlock,
+            o.grace_ns,
+            opt(o.reset_when, |s| format!("{s:?}")),
+            opt(o.deadband, f64_lit),
+            o.min_interval_ns,
+            opt(o.max_actuations, |(n, w)| format!("({n}, {w})")),
         );
     }
     out.push_str("    ],\n    writers: &[\n");
-    for w in &suite.writers {
+    for w in fixture.writers {
         let _ = writeln!(
             out,
             "        m::WriterSpec {{ level: {}, kind: {}, lease_ns: {}, requires_clock: {} }},",
-            w.level.get(),
+            w.level,
             kind_lit(w.kind),
             opt(w.lease_ns, |n| n.to_string()),
             clock_requirement_lit(w.requires_clock),
         );
     }
-    out.push_str("    ],\n}");
+    out.push_str("    ],\n    calcs: &[\n");
+    for c in fixture.calcs {
+        let _ = writeln!(
+            out,
+            "        m::CalcSpec {{ path: {:?}, expr: {:?}, ty: {}, unit: {:?} }},",
+            c.path,
+            c.expr,
+            ty_lit(c.ty),
+            c.unit
+        );
+    }
+    out.push_str("    ],\n    alarms: &[\n");
+    for a in fixture.alarms {
+        let _ = writeln!(
+            out,
+            "        m::AlarmSpec {{ state_path: {:?}, active_path: {:?}, when: {:?}, suppress_when: {}, severity: c::alarm::Severity::{:?}, delay_on_ns: {}, delay_off_ns: {}, max_shelve_ns: {} }},",
+            a.state_path,
+            a.active_path,
+            a.when,
+            opt(a.suppress_when, |s| format!("{s:?}")),
+            a.severity,
+            a.delay_on_ns,
+            a.delay_off_ns,
+            opt(a.max_shelve_ns, |n| n.to_string()),
+        );
+    }
+    out.push_str("    ],\n    atomic: &[\n");
+    for g in fixture.atomic {
+        let _ = writeln!(
+            out,
+            "        m::AtomicSpec {{ on_rate: c::output::OnRate::{:?}, commit: {} }},",
+            g.on_rate,
+            opt(g.commit, |c| format!(
+                "m::CommitSpec {{ path: {:?}, ty: {}, value: 0x{:016x} }}",
+                c.path,
+                ty_lit(c.ty),
+                c.value
+            )),
+        );
+    }
+    let _ = write!(
+        out,
+        "    ],\n    requires_good: {},\n    trips: {},\n    members: {},\n    order: {},\n}}",
+        links_lit(fixture.requires_good),
+        links_lit(fixture.trips),
+        links_lit(fixture.members),
+        links_lit(fixture.order),
+    );
     out
 }
 
@@ -283,8 +369,21 @@ pub fn emit(cases: &[(usize, &Suite, &Case)], suites: &[&Suite]) -> String {
     let signals = used
         .iter()
         .filter_map(|i| suites.get(*i))
-        .map(|s| s.signals.len() + s.outputs.len())
+        .map(|s| {
+            s.signals.len()
+                + s.outputs.len()
+                + s.calcs.len()
+                + 2 * s.alarms.len()
+                + s.atomic.iter().filter(|g| g.commit.is_some()).count()
+        })
         .max();
+    let needs: Vec<Needs> = used
+        .iter()
+        .filter_map(|i| suites.get(*i))
+        .filter_map(|s| joker_case_runner::needs(&s.view().fixture()).ok())
+        .collect();
+    let programs = needs.iter().map(|n| n.programs).max();
+    let arena = needs.iter().map(|n| n.arena).max();
     let outputs = used
         .iter()
         .filter_map(|i| suites.get(*i))
@@ -302,6 +401,8 @@ pub fn emit(cases: &[(usize, &Suite, &Case)], suites: &[&Suite]) -> String {
         ("OUTPUTS", outputs),
         ("WRITERS", writers),
         ("NODES", nodes),
+        ("PROGRAMS", programs),
+        ("ARENA", arena),
     ] {
         let _ = writeln!(
             out,

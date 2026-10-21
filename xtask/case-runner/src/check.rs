@@ -4,7 +4,7 @@
 
 use joker_core::{Applied, Sample, ValueType};
 
-use crate::exec::{OutputTick, TickView};
+use crate::exec::{AlarmTick, OutputTick, TickView};
 use crate::model::{Expected, Fixture, Node, Predicates, Subject};
 
 /// A decoded value of a signal.
@@ -59,7 +59,12 @@ pub struct View<'a> {
     pub sample: &'a Sample,
     /// The result of the output, when the subject is an output.
     pub output: Option<&'a OutputTick>,
+    /// The state of the alarm, when the subject is an alarm.
+    pub alarm: Option<&'a AlarmTick>,
 }
+
+/// The sample an alarm subject carries: alarms are checked by state.
+static NO_SAMPLE: Sample = Sample::INITIAL;
 
 /// The view of `subject` in a tick, or `None` when the tick has no record
 /// for it.
@@ -75,24 +80,34 @@ pub fn view<'a>(fixture: &Fixture<'_>, subject: Subject, tick: &TickView<'a>) ->
                 seen,
                 sample: &o.sample,
                 output: Some(o),
+                alarm: None,
             })
         }
         Subject::OutputSignal(i) => {
             let o = tick.outputs.get(i)?;
-            Some(View {
-                seen: sample_value(&o.sample, fixture.outputs.get(i)?.ty),
-                sample: &o.sample,
-                output: None,
-            })
+            Some(signal_view(&o.sample, fixture.outputs.get(i)?.ty))
         }
-        Subject::Input(i) => {
-            let s = tick.inputs.get(i)?;
-            Some(View {
-                seen: sample_value(s, fixture.signals.get(i)?.ty),
-                sample: s,
-                output: None,
-            })
-        }
+        Subject::Input(i) => Some(signal_view(tick.inputs.get(i)?, fixture.signals.get(i)?.ty)),
+        Subject::Calc(i) => Some(signal_view(tick.calcs.get(i)?, fixture.calcs.get(i)?.ty)),
+        Subject::Commit(i) => Some(signal_view(
+            tick.commits.get(i)?,
+            fixture.atomic.get(i)?.commit?.ty,
+        )),
+        Subject::Alarm(i) => Some(View {
+            seen: Seen::NoValue,
+            sample: &NO_SAMPLE,
+            output: None,
+            alarm: Some(tick.alarms.get(i)?),
+        }),
+    }
+}
+
+fn signal_view(sample: &Sample, ty: ValueType) -> View<'_> {
+    View {
+        seen: sample_value(sample, ty),
+        sample,
+        output: None,
+        alarm: None,
     }
 }
 
@@ -159,6 +174,15 @@ pub fn holds(p: &Predicates, v: &View<'_>) -> bool {
             return false;
         };
         if out.result.level.map(|l| l.get()) != level {
+            return false;
+        }
+    }
+    if p.state.is_some() || p.active.is_some() {
+        let Some(alarm) = v.alarm else {
+            return false;
+        };
+        if p.state.is_some_and(|s| s != alarm.state) || p.active.is_some_and(|a| a != alarm.active)
+        {
             return false;
         }
     }

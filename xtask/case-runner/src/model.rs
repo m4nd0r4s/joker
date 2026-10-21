@@ -7,7 +7,8 @@
 //! over the suites it reads.
 
 use joker_core::ValueType;
-use joker_core::output::{ClockRequirement, OnRange, WriterKind};
+use joker_core::alarm::Severity;
+use joker_core::output::{ClockRequirement, OnInterlock, OnRange, OnRate, WriterKind};
 use joker_core::time::ClockQuality;
 
 /// An input of the fixture (`[[signals]]`).
@@ -32,8 +33,17 @@ pub enum SafeDef {
     Relinquish,
 }
 
-/// An output of the fixture (`[[outputs]]`) with the envelope keys the M0
-/// core implements.
+/// One limit of a `range` (16 E6).
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum LimitSpec<'a> {
+    /// A constant, in the unit of the output.
+    Const(f64),
+    /// An expression evaluated in every tick, in the unit of the output.
+    Expr(&'a str),
+}
+
+/// An output of the fixture (`[[outputs]]`) with the envelope keys the
+/// core implements (ref/01 §5.10).
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct OutputSpec<'a> {
     /// Signal path.
@@ -46,8 +56,9 @@ pub struct OutputSpec<'a> {
     pub safe: SafeDef,
     /// `safe_ramp`, in unit per second.
     pub safe_ramp: Option<f64>,
-    /// Constant `range`, in the unit of the output.
-    pub range: Option<(f64, f64)>,
+    /// `range`: two constants, or limits of which at least one is an
+    /// expression (16 E6).
+    pub range: Option<(LimitSpec<'a>, LimitSpec<'a>)>,
     /// `on_range`.
     pub on_range: OnRange,
     /// `rate`, in unit per second.
@@ -56,6 +67,96 @@ pub struct OutputSpec<'a> {
     pub max_lease_ns: Option<u64>,
     /// `max_manual` in nanoseconds.
     pub max_manual_ns: Option<u64>,
+    /// `interlock`, the permissive of step 2.
+    pub interlock: Option<&'a str>,
+    /// `permit_uncertain`.
+    pub permit_uncertain: bool,
+    /// `on_interlock` (16 E3).
+    pub on_interlock: OnInterlock,
+    /// `grace` of `requires_good`, in nanoseconds (16 E4).
+    pub grace_ns: u64,
+    /// `reset_when` (16 E7).
+    pub reset_when: Option<&'a str>,
+    /// `deadband`, a difference in the unit of the output.
+    pub deadband: Option<f64>,
+    /// `min_interval` in nanoseconds.
+    pub min_interval_ns: u64,
+    /// `max_actuations`: the count and the window in nanoseconds.
+    pub max_actuations: Option<(u32, u64)>,
+}
+
+/// A derived signal (`[[calc]]`, ref/01 §5.14), with the type and unit the
+/// loader inferred from its expression.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct CalcSpec<'a> {
+    /// Signal path (`calc.<name>`).
+    pub path: &'a str,
+    /// The expression.
+    pub expr: &'a str,
+    /// The inferred type.
+    pub ty: ValueType,
+    /// The inferred unit (`"1"` when dimensionless).
+    pub unit: &'a str,
+}
+
+/// An alarm (`[[alarms]]`, ref/01 §5.15).
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct AlarmSpec<'a> {
+    /// The path of its `state` signal (`alarm.<id>.state`).
+    pub state_path: &'a str,
+    /// The path of its `active` signal (`alarm.<id>.active`).
+    pub active_path: &'a str,
+    /// `when`.
+    pub when: &'a str,
+    /// `suppress_when`.
+    pub suppress_when: Option<&'a str>,
+    /// `severity`.
+    pub severity: Severity,
+    /// `delay_on` in nanoseconds.
+    pub delay_on_ns: u64,
+    /// `delay_off` in nanoseconds.
+    pub delay_off_ns: u64,
+    /// `max_shelve` in nanoseconds.
+    pub max_shelve_ns: Option<u64>,
+}
+
+/// The commit register of an atomic group (ref/01 §5.16).
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct CommitSpec<'a> {
+    /// Signal path.
+    pub path: &'a str,
+    /// Its type.
+    pub ty: ValueType,
+    /// The bits written after the writes of the group.
+    pub value: u64,
+}
+
+/// An atomic group (`[[atomic]]`, ref/01 §5.16); its members are in
+/// [`Fixture::members`].
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct AtomicSpec<'a> {
+    /// `on_rate`.
+    pub on_rate: OnRate,
+    /// `commit`.
+    pub commit: Option<CommitSpec<'a>>,
+}
+
+/// A pair of indices that links two lists of the fixture: (owner, item).
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct Link<'a> {
+    /// Index of the owner: an output, an alarm or an atomic group.
+    pub owner: usize,
+    /// The item: a path (`requires_good`) or an output index.
+    pub item: Item<'a>,
+}
+
+/// The item of a [`Link`].
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum Item<'a> {
+    /// A path or a selector.
+    Path(&'a str),
+    /// An index in [`Fixture::outputs`].
+    Output(usize),
 }
 
 /// A writer of the fixture (`[[writers]]`), in the order of the file: its
@@ -94,6 +195,20 @@ pub struct Fixture<'a> {
     pub outputs: &'a [OutputSpec<'a>],
     /// Writers.
     pub writers: &'a [WriterSpec],
+    /// Derived signals, in evaluation order (dependencies first).
+    pub calcs: &'a [CalcSpec<'a>],
+    /// Alarms.
+    pub alarms: &'a [AlarmSpec<'a>],
+    /// Atomic groups.
+    pub atomic: &'a [AtomicSpec<'a>],
+    /// `requires_good` of each output: (output, path or selector).
+    pub requires_good: &'a [Link<'a>],
+    /// `actions.trip` of each alarm: (alarm, output).
+    pub trips: &'a [Link<'a>],
+    /// Members of each atomic group, in `outputs` order: (group, output).
+    pub members: &'a [Link<'a>],
+    /// `order` of each atomic group that declares one: (group, output).
+    pub order: &'a [Link<'a>],
 }
 
 /// A quality literal: the code, and the reason when one is given.
@@ -205,6 +320,13 @@ pub enum Subject {
     Input(usize),
     /// An output read as a signal (its slot).
     OutputSignal(usize),
+    /// A derived signal, by index in [`Fixture::calcs`].
+    Calc(usize),
+    /// An alarm, by index in [`Fixture::alarms`].
+    Alarm(usize),
+    /// The commit register of an atomic group, by index in
+    /// [`Fixture::atomic`].
+    Commit(usize),
 }
 
 /// The predicates of an expectation (ref/03 §2.5.4, §2.6.4).
@@ -224,6 +346,10 @@ pub struct Predicates {
     pub outcome: Option<OutcomeLit>,
     /// `level`: `Some(None)` is `"none"`.
     pub level: Option<Option<u8>>,
+    /// `state` of an alarm, as its code (ref/00 §6).
+    pub state: Option<u8>,
+    /// `active` of an alarm.
+    pub active: Option<bool>,
 }
 
 /// One node of the expectations of a case, in prefix order: a combinator is

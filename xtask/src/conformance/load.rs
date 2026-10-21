@@ -4,14 +4,19 @@
 use std::path::Path;
 
 use joker_core::ValueType;
-use joker_core::output::{ClockRequirement, Level, OnRange, WriterKind};
+use joker_core::alarm::Severity;
+use joker_core::output::{ClockRequirement, Level, OnInterlock, OnRange, OnRate, WriterKind};
 use joker_core::time::ClockQuality;
+use joker_expr::Ty;
+use joker_units::Unit;
 use toml::{Table, Value};
 
+use super::expr::{self, Signals};
 use super::literal::{self, LiteralError, QualityLit};
 use super::model::{
-    Action, ActionKind, Case, Diagnostic, Expect, ExpectEntry, Expected, Feature, OutputDef,
-    Predicates, SafeDef, SignalDef, Subject, Suite, When, WriterDef,
+    Action, ActionKind, AlarmDef, AtomicDef, CalcDef, Case, Diagnostic, Expect, ExpectEntry,
+    Expected, Feature, Limit, OutputDef, Predicates, SafeDef, SignalDef, Subject, Suite, When,
+    WriterDef,
 };
 
 /// The suffix of a conformance suite file (ref/00, ADR 0026).
@@ -49,7 +54,7 @@ const SUITE_KEYS: [&str; 10] = [
 
 const SIGNAL_KEYS: [&str; 6] = ["path", "type", "unit", "quantity", "enum", "max_age"];
 
-const OUTPUT_SUPPORTED: [&str; 15] = [
+const OUTPUT_SUPPORTED: [&str; 21] = [
     "path",
     "type",
     "unit",
@@ -65,21 +70,15 @@ const OUTPUT_SUPPORTED: [&str; 15] = [
     "on_interlock",
     "permit_uncertain",
     "grace",
+    "interlock",
+    "requires_good",
+    "deadband",
+    "min_interval",
+    "max_actuations",
+    "reset_when",
 ];
 
-const OUTPUT_MISSING: [(&str, Feature); 12] = [
-    ("interlock", feature("interlock", "01 §7 step 2")),
-    (
-        "requires_good",
-        feature("requires_good", "01 §7 step 3, 16 E4"),
-    ),
-    ("deadband", feature("deadband", "01 §7 step 6, 16 E8")),
-    (
-        "min_interval",
-        feature("min_interval", "01 §7 step 6, 16 E8"),
-    ),
-    ("max_actuations", feature("max_actuations", "01 §7 step 6")),
-    ("reset_when", feature("reset_when", "16 E7")),
+const OUTPUT_MISSING: [(&str, Feature); 6] = [
     ("verify", feature("verify", "ref/01 §5.10")),
     ("safer", feature("safer", "ref/01 §5.10")),
     ("keepalive", feature("keepalive", "01 §8")),
@@ -96,7 +95,20 @@ const WRITER_KEYS: [&str; 6] = ["id", "level", "lease", "kind", "ttl", "requires
 
 const ATOMIC_KEYS: [&str; 5] = ["id", "outputs", "order", "commit", "on_rate"];
 
-const CALC_KEYS: [&str; 2] = ["path", "expr"];
+const CALC_KEYS: [&str; 3] = ["path", "expr", "group"];
+
+const ALARM_KEYS: [&str; 10] = [
+    "id",
+    "when",
+    "severity",
+    "delay_on",
+    "delay_off",
+    "suppress_when",
+    "message",
+    "actions",
+    "max_shelve",
+    "group",
+];
 
 const INSTANCE_KEYS: [&str; 4] = ["name", "class", "map", "capabilities"];
 
@@ -128,11 +140,7 @@ const fn feature(name: &'static str, spec: &'static str) -> Feature {
     Feature { name, spec }
 }
 
-const CALC: Feature = feature("expressions (calc)", "02 §10, 16 §4");
-const ALARMS: Feature = feature("alarms", "02 §11, ref/01 §5.15");
-const ATOMIC: Feature = feature("atomic groups", "01 §7 step 7, 02 §7.3");
-const ALARM_TRIP: Feature = feature("alarm trip actions", "ref/01 §5.15");
-const RANGE_EXPR: Feature = feature("range expressions", "16 E6");
+const GROUPS: Feature = feature("cycle groups", "16 A11");
 const METHODS: Feature = feature("methods", "17 §4.1, ref/03 §2.6.2");
 const SELECTORS: Feature = feature("selectors in cases", "ref/03 §2.1.4");
 const SIGNAL_ENUM: Feature = feature("enum signals", "02 §2");
@@ -386,6 +394,7 @@ pub fn load(path: &Path, text: &str) -> Result<Suite, Vec<Diagnostic>> {
         return Err(sink.diagnostics);
     };
     let mut fixture = Fixture::read(&mut sink, &root);
+    fixture.check_expressions(&mut sink, header.period_ns);
     let cases = tables(&mut sink, &root, "case");
     if cases.is_empty() {
         sink.push("J0142", "case", "a suite has one or more `[[case]]`");
@@ -424,6 +433,9 @@ pub fn load(path: &Path, text: &str) -> Result<Suite, Vec<Diagnostic>> {
         signals: fixture.signals,
         outputs: fixture.outputs,
         writers: fixture.writers,
+        calcs: fixture.calcs,
+        alarms: fixture.alarms,
+        atomic: fixture.atomic,
         cases: out,
     })
 }
@@ -531,9 +543,12 @@ struct Fixture {
     signals: Vec<SignalDef>,
     outputs: Vec<OutputDef>,
     writers: Vec<WriterDef>,
-    calcs: Vec<String>,
-    alarms: Vec<String>,
+    raw_calcs: Vec<(String, String, String)>,
+    calcs: Vec<CalcDef>,
+    alarms: Vec<AlarmDef>,
+    atomic: Vec<AtomicDef>,
     instances: Vec<String>,
+    missing: Vec<Feature>,
 }
 
 impl Fixture {
@@ -565,35 +580,32 @@ impl Fixture {
         for (i, t) in tables(sink, root, "calc").into_iter().enumerate() {
             let location = format!("calc[{i}]");
             check_keys(sink, t, &CALC_KEYS, &location);
-            require_str(sink, t, "expr", &location);
-            if let Some(path) = require_str(sink, t, "path", &location) {
-                f.calcs.push(path.to_string());
+            if t.contains_key("group") {
+                add_feature(&mut f.missing, GROUPS);
+            }
+            let expr = require_str(sink, t, "expr", &location);
+            if let (Some(path), Some(expr)) = (require_str(sink, t, "path", &location), expr) {
+                f.raw_calcs
+                    .push((path.to_string(), expr.to_string(), location));
             }
         }
         for (i, t) in tables(sink, root, "alarms").into_iter().enumerate() {
             let location = format!("alarms[{i}]");
-            if let Some(id) = require_str(sink, t, "id", &location) {
-                f.alarms.push(id.to_string());
-            }
-            let mut targets = Vec::new();
-            if let Some(actions) = t.get("actions") {
-                strings_in(actions, &mut targets);
-            }
-            for o in &mut f.outputs {
-                if targets.contains(&o.path) {
-                    add_feature(&mut o.missing, ALARM_TRIP);
+            if let Some(alarm) = f.read_alarm(sink, t, &location) {
+                if f.alarms.iter().any(|a| a.id == alarm.id) {
+                    sink.push(
+                        "J0805",
+                        &location,
+                        format!("alarm id `{}` is repeated", alarm.id),
+                    );
                 }
+                f.alarms.push(alarm);
             }
         }
         for (i, t) in tables(sink, root, "atomic").into_iter().enumerate() {
             let location = format!("atomic[{i}]");
-            check_keys(sink, t, &ATOMIC_KEYS, &location);
-            require_str(sink, t, "id", &location);
-            for path in str_list(sink, t, "outputs", &location) {
-                match f.outputs.iter_mut().find(|o| o.path == path) {
-                    Some(o) => add_feature(&mut o.missing, ATOMIC),
-                    None => sink.push("J0844", &location, format!("unknown output `{path}`")),
-                }
+            if let Some(group) = f.read_atomic(sink, t, &location) {
+                f.atomic.push(group);
             }
         }
         for (i, t) in tables(sink, root, "instances").into_iter().enumerate() {
@@ -608,7 +620,12 @@ impl Fixture {
             .iter()
             .map(|s| s.path.as_str())
             .chain(f.outputs.iter().map(|o| o.path.as_str()))
-            .chain(f.calcs.iter().map(String::as_str))
+            .chain(f.raw_calcs.iter().map(|c| c.0.as_str()))
+            .chain(
+                f.atomic
+                    .iter()
+                    .filter_map(|a| a.commit.as_ref().map(|c| c.0.as_str())),
+            )
             .collect();
         paths.sort_unstable();
         for pair in paths.windows(2) {
@@ -622,14 +639,253 @@ impl Fixture {
         }
         f
     }
-}
 
-fn strings_in(value: &Value, out: &mut Vec<String>) {
-    match value {
-        Value::String(s) => out.push(s.clone()),
-        Value::Array(items) => items.iter().for_each(|v| strings_in(v, out)),
-        Value::Table(t) => t.values().for_each(|v| strings_in(v, out)),
-        _ => {}
+    fn output_index(&self, sink: &mut Sink, path: &str, location: &str) -> Option<usize> {
+        let found = self.outputs.iter().position(|o| o.path == path);
+        if found.is_none() {
+            sink.push("J0844", location, format!("unknown output `{path}`"));
+        }
+        found
+    }
+
+    fn read_alarm(&mut self, sink: &mut Sink, t: &Table, location: &str) -> Option<AlarmDef> {
+        check_keys(sink, t, &ALARM_KEYS, location);
+        if t.contains_key("group") {
+            add_feature(&mut self.missing, GROUPS);
+        }
+        let id = require_str(sink, t, "id", location)?.to_string();
+        if !literal::is_valid_id(&id) || id.contains('.') {
+            sink.push("J0805", location, format!("invalid alarm id {id:?}"));
+        }
+        let when = require_str(sink, t, "when", location)?.to_string();
+        let severity = match require_str(sink, t, "severity", location)? {
+            "low" => Severity::Low,
+            "medium" => Severity::Medium,
+            "high" => Severity::High,
+            "critical" => Severity::Critical,
+            other => {
+                sink.push("J0144", location, format!("unknown severity `{other}`"));
+                return None;
+            }
+        };
+        let mut trip = Vec::new();
+        match t.get("actions") {
+            None => {}
+            Some(Value::Table(actions)) => {
+                let at = format!("{location}.actions");
+                check_keys(sink, actions, &["trip"], &at);
+                for path in str_list(sink, actions, "trip", &at) {
+                    if let Some(o) = self.output_index(sink, &path, &at)
+                        && !trip.contains(&o)
+                    {
+                        trip.push(o);
+                    }
+                }
+            }
+            Some(_) => sink.push("J0143", location, "`actions` must be a table"),
+        }
+        let mut alarm = AlarmDef::new(id, when, severity);
+        alarm.suppress_when = get_str(sink, t, "suppress_when", location).map(str::to_string);
+        alarm.delay_on_ns = duration_key(sink, t, "delay_on", location).unwrap_or(0);
+        alarm.delay_off_ns = duration_key(sink, t, "delay_off", location).unwrap_or(0);
+        alarm.max_shelve_ns = duration_key(sink, t, "max_shelve", location);
+        alarm.trip = trip;
+        Some(alarm)
+    }
+
+    fn read_atomic(&self, sink: &mut Sink, t: &Table, location: &str) -> Option<AtomicDef> {
+        check_keys(sink, t, &ATOMIC_KEYS, location);
+        require_str(sink, t, "id", location)?;
+        let resolve = |sink: &mut Sink, key: &str| -> Vec<usize> {
+            str_list(sink, t, key, location)
+                .iter()
+                .filter_map(|p| self.output_index(sink, p, location))
+                .collect()
+        };
+        let outputs = resolve(sink, "outputs");
+        let order = resolve(sink, "order");
+        let on_rate = match get_str(sink, t, "on_rate", location) {
+            None | Some("independent") => OnRate::Independent,
+            Some("proportional") => OnRate::Proportional,
+            Some(other) => {
+                sink.push("J0144", location, format!("unknown on_rate `{other}`"));
+                OnRate::Independent
+            }
+        };
+        let commit = match t.get("commit") {
+            None => None,
+            Some(Value::Table(c)) => {
+                let at = format!("{location}.commit");
+                check_keys(sink, c, &["signal", "value"], &at);
+                let signal = require_str(sink, c, "signal", &at).map(str::to_string);
+                let value = match c.get("value") {
+                    Some(Value::Boolean(b)) => Some((ValueType::Bool, u64::from(*b))),
+                    Some(Value::Integer(i)) if *i >= 0 => Some((ValueType::U64, *i as u64)),
+                    Some(_) => {
+                        sink.push("J0143", &at, "`commit.value` is a boolean or an integer");
+                        None
+                    }
+                    None => {
+                        sink.push("J0142", &at, "missing required key `value`");
+                        None
+                    }
+                };
+                signal.zip(value).map(|(s, (ty, bits))| (s, ty, bits))
+            }
+            Some(_) => {
+                sink.push("J0143", location, "`commit` must be a table");
+                None
+            }
+        };
+        Some(AtomicDef {
+            outputs,
+            order,
+            on_rate,
+            commit,
+        })
+    }
+
+    /// The signals expressions may read, with placeholder ids. `calcs`
+    /// says how many of the inferred derived signals to include.
+    fn signals(&self, calcs: usize) -> Signals {
+        let mut env = Signals::default();
+        let mut id = 0u32;
+        let mut add = |path: &str, ty: ValueType, unit: Unit| {
+            env.insert(path, ty, unit, id);
+            id += 1;
+        };
+        for s in &self.signals {
+            add(&s.path, s.ty, literal::unit(&s.unit).unwrap_or(Unit::ONE));
+        }
+        for o in &self.outputs {
+            add(&o.path, o.ty, literal::unit(&o.unit).unwrap_or(Unit::ONE));
+        }
+        for c in self.calcs.iter().take(calcs) {
+            add(&c.path, c.ty, literal::unit(&c.unit).unwrap_or(Unit::ONE));
+        }
+        for a in &self.alarms {
+            add(&a.state_path, ValueType::Enum, Unit::ONE);
+            add(&a.active_path, ValueType::Bool, Unit::ONE);
+        }
+        for g in &self.atomic {
+            if let Some((path, ty, _)) = &g.commit {
+                add(path, *ty, Unit::ONE);
+            }
+        }
+        env
+    }
+
+    /// Types the derived signals, in dependency order, and checks every
+    /// other expression of the fixture against them (ref/01 §5.10, §5.14,
+    /// §5.15).
+    fn check_expressions(&mut self, sink: &mut Sink, period_ns: u64) {
+        for (i, s) in self.signals.iter().enumerate() {
+            if let Err(e) = literal::unit(&s.unit) {
+                sink.literal(&format!("signals[{i}].unit"), e);
+            }
+        }
+        for (i, o) in self.outputs.iter().enumerate() {
+            if let Err(e) = literal::unit(&o.unit) {
+                sink.literal(&format!("outputs[{i}].unit"), e);
+            }
+        }
+        let mut pending = core::mem::take(&mut self.raw_calcs);
+        loop {
+            let env = self.signals(self.calcs.len());
+            let before = pending.len();
+            let mut rest = Vec::new();
+            for (path, src, location) in pending {
+                match env.type_of(&src, period_ns) {
+                    Ok(ty) => {
+                        let unit = ty.unit().unwrap_or(Unit::ONE);
+                        let unit = if unit.is_dimensionless() {
+                            "1".to_string()
+                        } else {
+                            unit.symbol().to_string()
+                        };
+                        self.calcs.push(CalcDef {
+                            path,
+                            expr: src,
+                            ty: expr::value_type(ty),
+                            unit,
+                        });
+                    }
+                    Err(_) => rest.push((path, src, location)),
+                }
+            }
+            pending = rest;
+            if pending.is_empty() || pending.len() == before {
+                break;
+            }
+        }
+        let env = self.signals(self.calcs.len());
+        for (path, src, location) in &pending {
+            let waits = pending
+                .iter()
+                .any(|(other, _, _)| src.contains(other.as_str()));
+            match env.type_of(src, period_ns) {
+                Err(_) if waits => sink.push(
+                    "J0190",
+                    location,
+                    format!("`{path}` depends on itself through other `calc`"),
+                ),
+                Err(e) => sink.push(e.code(), location, format!("`{path}`: {:?}", e.kind)),
+                Ok(_) => {}
+            }
+        }
+        let check = |sink: &mut Sink, src: &str, location: &str, want: Option<&Unit>| match env
+            .type_of(src, period_ns)
+        {
+            Err(e) => sink.push(e.code(), location, format!("{src:?}: {:?}", e.kind)),
+            Ok(Ty::Bool) if want.is_none() => {}
+            Ok(Ty::Number { unit, .. }) if let Some(want) = want => {
+                match unit.conversion_to(want) {
+                    Ok(c) if c.is_identity() => {}
+                    Ok(_) => sink.push(
+                        "J0107",
+                        location,
+                        format!("{src:?} is in `{unit}`, not in the unit of the output"),
+                    ),
+                    Err(e) => sink.push(e.code(), location, format!("{src:?}: {e}")),
+                }
+            }
+            Ok(ty) => sink.push("J0304", location, format!("{src:?} has type {ty}")),
+        };
+        for (i, o) in self.outputs.iter().enumerate() {
+            let location = format!("outputs[{i}]");
+            let unit = literal::unit(&o.unit).unwrap_or(Unit::ONE);
+            if let Some(src) = &o.interlock {
+                check(sink, src, &format!("{location}.interlock"), None);
+            }
+            if let Some(src) = &o.reset_when {
+                check(sink, src, &format!("{location}.reset_when"), None);
+            }
+            if let Some((low, high)) = &o.range {
+                for limit in [low, high] {
+                    if let Limit::Expr(src) = limit {
+                        check(sink, src, &format!("{location}.range"), Some(&unit));
+                    }
+                }
+            }
+            for path in &o.requires_good {
+                let mut any = false;
+                joker_expr::Env::select(&env, path, &mut |_| any = true);
+                if !any && joker_expr::Env::signal(&env, path).is_none() {
+                    sink.push(
+                        "J0101",
+                        &format!("{location}.requires_good"),
+                        format!("unknown path `{path}`"),
+                    );
+                }
+            }
+        }
+        for (i, a) in self.alarms.iter().enumerate() {
+            let location = format!("alarms[{i}]");
+            check(sink, &a.when, &format!("{location}.when"), None);
+            if let Some(src) = &a.suppress_when {
+                check(sink, src, &format!("{location}.suppress_when"), None);
+            }
+        }
     }
 }
 
@@ -730,18 +986,19 @@ fn read_output(sink: &mut Sink, t: &Table, location: &str) -> Option<OutputDef> 
     let range = match t.get("range") {
         None => None,
         Some(Value::Array(items)) if items.len() == 2 => {
-            let limits: Vec<_> = items.iter().map(|v| number_in(v, &unit, false)).collect();
-            match (&limits[0], &limits[1]) {
-                (Ok(low), Ok(high)) => Some((*low, *high)),
-                _ if items.iter().any(is_expression) => {
-                    add_feature(&mut missing, RANGE_EXPR);
-                    None
-                }
-                (Err(e), _) | (_, Err(e)) => {
-                    sink.literal(&format!("{location}.range"), e.clone());
-                    None
-                }
-            }
+            let limit = |sink: &mut Sink, v: &Value| match v {
+                Value::String(src) if is_expression(v) => Some(Limit::Expr(src.clone())),
+                _ => match number_in(v, &unit, false) {
+                    Ok(x) => Some(Limit::Const(x)),
+                    Err(e) => {
+                        sink.literal(&format!("{location}.range"), e);
+                        None
+                    }
+                },
+            };
+            let low = limit(sink, &items[0]);
+            let high = limit(sink, &items[1]);
+            low.zip(high)
         }
         Some(_) => {
             sink.push("J0230", location, "`range` has two limits");
@@ -757,15 +1014,33 @@ fn read_output(sink: &mut Sink, t: &Table, location: &str) -> Option<OutputDef> 
             OnRange::Clamp
         }
     };
-    if let Some(v) = get_str(sink, t, "on_interlock", location)
-        && v != "safe"
-        && v != "hold"
-    {
-        sink.push("J0144", location, format!("unknown on_interlock `{v}`"));
-    }
-    let max_lease_ns = duration_key(sink, t, "max_lease", location);
-    let max_manual_ns = duration_key(sink, t, "max_manual", location);
-    duration_key(sink, t, "grace", location);
+    let on_interlock = match get_str(sink, t, "on_interlock", location) {
+        None | Some("safe") => OnInterlock::Safe,
+        Some("hold") => OnInterlock::Hold,
+        Some(v) => {
+            sink.push("J0144", location, format!("unknown on_interlock `{v}`"));
+            OnInterlock::Safe
+        }
+    };
+    let permit_uncertain = match t.get("permit_uncertain") {
+        None => false,
+        Some(Value::Boolean(b)) => *b,
+        Some(_) => {
+            sink.push("J0143", location, "`permit_uncertain` must be a boolean");
+            false
+        }
+    };
+    let deadband = match t.get("deadband") {
+        None => None,
+        Some(v) => number_in(v, &unit, true)
+            .map_err(|e| sink.literal(&format!("{location}.deadband"), e))
+            .ok(),
+    };
+    let max_actuations = get_str(sink, t, "max_actuations", location).and_then(|text| {
+        budget(text)
+            .map_err(|e| sink.literal(&format!("{location}.max_actuations"), e))
+            .ok()
+    });
     Some(OutputDef {
         path,
         ty,
@@ -775,10 +1050,36 @@ fn read_output(sink: &mut Sink, t: &Table, location: &str) -> Option<OutputDef> 
         range,
         on_range,
         rate,
-        max_lease_ns,
-        max_manual_ns,
+        max_lease_ns: duration_key(sink, t, "max_lease", location),
+        max_manual_ns: duration_key(sink, t, "max_manual", location),
+        interlock: get_str(sink, t, "interlock", location).map(str::to_string),
+        permit_uncertain,
+        on_interlock,
+        requires_good: str_list(sink, t, "requires_good", location),
+        grace_ns: duration_key(sink, t, "grace", location).unwrap_or(0),
+        reset_when: get_str(sink, t, "reset_when", location).map(str::to_string),
+        deadband,
+        min_interval_ns: duration_key(sink, t, "min_interval", location).unwrap_or(0),
+        max_actuations,
         missing,
     })
+}
+
+/// Parses an actuation budget (`"2/10s"`, `"120/h"`): a count and a
+/// window, a duration or a bare time unit (ref/01 §5.10, `J0159`).
+pub(super) fn budget(text: &str) -> Result<(u32, u64), LiteralError> {
+    let err = || LiteralError {
+        code: "J0159",
+        message: format!("malformed budget {text:?} (`<count>/<window>`)"),
+    };
+    let (count, window) = text.split_once('/').ok_or_else(err)?;
+    let count: u32 = count.trim().parse().map_err(|_| err())?;
+    let window = window.trim();
+    let window_ns = match window.starts_with(|c: char| c.is_ascii_digit()) {
+        true => literal::duration_ns(window).map_err(|_| err())?,
+        false => literal::duration_ns(&format!("1{window}")).map_err(|_| err())?,
+    };
+    Ok((count, window_ns))
 }
 
 fn is_expression(value: &Value) -> bool {
@@ -951,7 +1252,13 @@ fn read_case(fixture: &mut Fixture, period_ns: u64, index: usize, t: &Table) -> 
         ticks,
         actions,
         expects,
-        missing: ctx.missing,
+        missing: {
+            let mut missing = ctx.missing;
+            for f in ctx.fixture.missing.clone() {
+                add_feature(&mut missing, f);
+            }
+            missing
+        },
         errors: ctx.sink.diagnostics,
     }
 }
@@ -1350,18 +1657,40 @@ impl CaseCtx<'_> {
                 );
                 return None;
             }
-            if let Some(state) = get_str(&mut self.sink, e, "state", location)
-                && let Err(err) = literal::alarm_state(state)
-            {
-                self.sink.literal(&format!("{location}.state"), err);
+            let mut p = Predicates::default();
+            if let Some(state) = get_str(&mut self.sink, e, "state", location) {
+                match literal::alarm_state(state) {
+                    Ok(name) => {
+                        p.state = literal::ALARM_STATES
+                            .iter()
+                            .position(|s| *s == name)
+                            .and_then(|i| u8::try_from(i).ok());
+                    }
+                    Err(err) => {
+                        self.sink.literal(&format!("{location}.state"), err);
+                        return None;
+                    }
+                }
             }
-            if !self.fixture.alarms.iter().any(|a| a == target) {
+            match e.get("active") {
+                None => {}
+                Some(Value::Boolean(b)) => p.active = Some(*b),
+                Some(_) => {
+                    self.sink
+                        .push("J0143", location, "`active` must be a boolean");
+                    return None;
+                }
+            }
+            let Some(alarm) = self.fixture.alarms.iter().position(|a| a.id == target) else {
                 self.sink
                     .push("J0844", location, format!("unknown alarm `{target}`"));
                 return None;
-            }
-            add_feature(&mut self.missing, ALARMS);
-            return None;
+            };
+            return Some(Expect::Check {
+                when,
+                subject: Subject::Alarm(alarm),
+                predicates: p,
+            });
         }
         if has("state") || has("active") {
             self.sink
@@ -1390,6 +1719,15 @@ impl CaseCtx<'_> {
                 let s = &self.fixture.signals[*i];
                 (s.ty, s.unit.clone())
             }
+            Subject::Calc(i) => {
+                let c = &self.fixture.calcs[*i];
+                (c.ty, c.unit.clone())
+            }
+            Subject::Commit(i) => match &self.fixture.atomic[*i].commit {
+                Some((_, ty, _)) => (*ty, "1".to_string()),
+                None => return None,
+            },
+            Subject::Alarm(_) => return None,
         };
         let mut p = Predicates::default();
         let mut bad = false;
@@ -1469,9 +1807,16 @@ impl CaseCtx<'_> {
             add_feature(&mut self.missing, SELECTORS);
             return None;
         }
-        if self.fixture.calcs.iter().any(|c| c == path) {
-            add_feature(&mut self.missing, CALC);
-            return None;
+        if let Some(i) = self.fixture.calcs.iter().position(|c| c.path == path) {
+            return Some(Subject::Calc(i));
+        }
+        if let Some(i) = self
+            .fixture
+            .atomic
+            .iter()
+            .position(|g| g.commit.as_ref().is_some_and(|c| c.0 == path))
+        {
+            return Some(Subject::Commit(i));
         }
         if self.fixture.signals.iter().any(|s| s.path == path) {
             return self.input(path, location).map(Subject::Input);

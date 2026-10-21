@@ -188,6 +188,8 @@ version = "0.0.0"
 dependencies = [
  "critical-section",
  "joker-core",
+ "joker-expr",
+ "joker-units",
 ]
 
 [[package]]
@@ -734,6 +736,7 @@ dependencies = [
  "critical-section",
  "joker-case-runner",
  "joker-core",
+ "joker-expr",
  "joker-units",
  "serde_json",
  "toml",

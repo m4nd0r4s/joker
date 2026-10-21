@@ -18,7 +18,7 @@ pub enum Status {
     Pass,
     /// At least one expectation failed (`J0842`).
     Fail,
-    /// The case needs a feature the M0 core lacks.
+    /// The case needs a feature the core lacks or this runner does not drive.
     Skip,
     /// The case is malformed or its fixture does not build.
     Error,
@@ -49,7 +49,7 @@ pub struct CaseReport {
     pub status: Status,
     /// The triage of a known failure.
     pub known: Option<Known>,
-    /// Features the M0 core lacks.
+    /// Features the core lacks or this runner does not drive.
     pub missing: Vec<Feature>,
     /// Problems in the case.
     pub diagnostics: Vec<Diagnostic>,
@@ -240,7 +240,7 @@ impl Report {
                 if case.status == Status::Skip {
                     let _ = writeln!(
                         out,
-                        "        skipped (not in M0): {}",
+                        "        skipped (not in the core): {}",
                         features(&case.missing)
                     );
                 }
@@ -297,7 +297,7 @@ impl Report {
                             "known": c.known.as_ref().map(|k| json!({"reason": k.reason, "issue": k.issue})),
                             "skipped": if c.status == Status::Skip {
                                 Some(json!({
-                                    "reason": "not in M0",
+                                    "reason": "not in the core",
                                     "features": c.missing.iter().map(|f| json!({"name": f.name, "spec": f.spec})).collect::<Vec<_>>(),
                                 }))
                             } else {
@@ -348,7 +348,10 @@ impl Report {
     /// The Markdown summary: counts per suite and a table of failures.
     pub fn markdown(&self) -> String {
         let mut out = String::new();
-        let _ = writeln!(out, "| Suite | Pass | Fail | Skip (not in M0) | Error |");
+        let _ = writeln!(
+            out,
+            "| Suite | Pass | Fail | Skip (not in the core) | Error |"
+        );
         let _ = writeln!(out, "|---|---:|---:|---:|---:|");
         for s in &self.suites {
             let c = suite_counts(s);
@@ -405,7 +408,11 @@ impl Report {
         for c in &skipped {
             *by_feature.entry(features(&c.missing)).or_default() += 1;
         }
-        let _ = writeln!(out, "\n| Skipped (not in M0): needs | Cases |");
+        if by_feature.is_empty() {
+            let _ = writeln!(out, "\nNo skipped case.");
+            return out;
+        }
+        let _ = writeln!(out, "\n| Skipped (not in the core): needs | Cases |");
         let _ = writeln!(out, "|---|---:|");
         for (f, n) in by_feature {
             let _ = writeln!(out, "| {} | {n} |", md(&f));

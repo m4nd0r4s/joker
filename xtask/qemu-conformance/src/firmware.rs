@@ -4,7 +4,7 @@
 use joker_qemu_sys as _;
 
 use joker_case_runner::{
-    Fixture, Observer, STAGING, Script, SequenceDigest, TickView, Unguarded, Verdict,
+    Fixture, Observer, Program, STAGING, Script, SequenceDigest, TickView, Unguarded, Verdict,
 };
 
 /// A case of the embedded corpus, over the fixture of its suite.
@@ -18,15 +18,16 @@ pub struct Case {
 
 mod cases {
     //! The cases written by `cargo xtask qemu`: `CASES`, in the order of the
-    //! host report, and the capacities `SIGNALS`, `OUTPUTS`, `WRITERS` and
-    //! `NODES`, the largest of the corpus.
+    //! host report, and the capacities `SIGNALS`, `OUTPUTS`, `WRITERS`,
+    //! `NODES`, `PROGRAMS` (compiled expressions) and `ARENA` (words of
+    //! expression state), the largest of the corpus.
 
     use super::Case;
 
     include!(env!("JOKER_CONFORMANCE_CASES"));
 }
 
-use cases::{CASES, NODES, OUTPUTS, SIGNALS, WRITERS};
+use cases::{ARENA, CASES, NODES, OUTPUTS, PROGRAMS, SIGNALS, WRITERS};
 
 struct Run<'a> {
     fixture: &'a Fixture<'a>,
@@ -52,9 +53,13 @@ fn run(index: usize, case: &Case) {
         digest: SequenceDigest::new(),
         verdict,
     };
+    let mut programs: [Option<Program>; PROGRAMS] = core::array::from_fn(|_| None);
+    let mut arena = [0u64; ARENA];
     let result = joker_case_runner::run::<SIGNALS, OUTPUTS, WRITERS, STAGING>(
         case.fixture,
         &case.script,
+        &mut programs,
+        &mut arena,
         &Unguarded,
         &mut run,
     );

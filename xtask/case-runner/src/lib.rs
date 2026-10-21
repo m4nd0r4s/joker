@@ -5,7 +5,8 @@
 //! host runner (`cargo xtask conformance`) reads the suites and reports with
 //! `std`, and the QEMU firmware of `thumbv8m.main-none-eabihf` and
 //! `riscv32imac-unknown-none-elf` embeds the same cases as static data. Both
-//! drive the core through [`exec::run`], check the expectations with
+//! size the expression and state storage with [`exec::needs`], drive the
+//! core through [`exec::run`], check the expectations with
 //! [`check`] and hash the per-tick results with [`digest::SequenceDigest`],
 //! so the digests they report are comparable byte for byte (docs/11 Phase 0
 //! gate 2, docs/16 §7).
@@ -13,16 +14,23 @@
 //! The crate is `no_std` and never allocates (AGENTS.md §2 rule 2).
 
 #![no_std]
+#![allow(clippy::result_large_err)]
 
 pub mod check;
 pub mod digest;
+pub mod env;
 pub mod exec;
 pub mod model;
 
 pub use check::{Verdict, holds};
 pub use digest::SequenceDigest;
-pub use exec::{Observer, OutputTick, STAGING, SetupError, TickGuard, TickView, Unguarded, run};
+pub use exec::{
+    AlarmTick, Needs, Observer, OutputTick, STAGING, SetupError, TickGuard, TickView, Unguarded,
+    needs, run,
+};
+pub use joker_expr::Program;
 pub use model::{
-    Action, ActionKind, Expected, Fixture, Node, OutcomeLit, OutputSpec, Predicates, QualityLit,
-    SafeDef, Script, SignalSpec, Subject, When, WriterSpec,
+    Action, ActionKind, AlarmSpec, AtomicSpec, CalcSpec, CommitSpec, Expected, Fixture, Item,
+    LimitSpec, Link, Node, OutcomeLit, OutputSpec, Predicates, QualityLit, SafeDef, Script,
+    SignalSpec, Subject, When, WriterSpec,
 };

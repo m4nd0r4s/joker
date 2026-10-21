@@ -266,16 +266,67 @@ fn core_config_errors_reach_the_report() {
 }
 
 #[test]
-fn features_outside_m0_are_skipped_with_their_paragraph() {
-    let text = DOCS16_EXAMPLE.replace(
-        "safe  = \"0 kW\"",
-        "safe  = \"0 kW\"\ninterlock = \"x.f > 1 Hz\"",
-    );
+fn features_outside_the_core_are_skipped_with_their_paragraph() {
+    let text = DOCS16_EXAMPLE.replace("safe  = \"0 kW\"", "safe  = \"0 kW\"\nkeepalive = \"1s\"");
     let report = suite(&text);
     let case = &report.cases[0];
     assert_eq!(case.status, Status::Skip);
-    assert_eq!(case.missing[0].name, "interlock");
-    assert_eq!(case.missing[0].spec, "01 §7 step 2");
+    assert_eq!(case.missing[0].name, "keepalive");
+    assert_eq!(case.missing[0].spec, "01 §8");
+}
+
+const SIGNAL_X_F: &str =
+    "[[signals]]\npath = \"x.f\"\ntype = \"f64\"\nunit = \"Hz\"\n\n[[outputs]]";
+
+#[test]
+fn an_interlock_runs_in_the_core() {
+    let text = DOCS16_EXAMPLE
+        .replace("[[outputs]]", SIGNAL_X_F)
+        .replace(
+            "safe  = \"0 kW\"",
+            "safe  = \"0 kW\"\ninterlock = \"x.f > 49.8 Hz\"",
+        )
+        .replace(
+            "outcome = \"clamped_rate\", equals = \"1 kW\"",
+            "outcome = \"rejected(interlock)\", equals = \"0 kW\"",
+        );
+    assert_eq!(statuses(&text), [Status::Pass]);
+}
+
+#[test]
+fn an_expression_that_does_not_check_stops_the_suite() {
+    let text = DOCS16_EXAMPLE.replace(
+        "safe  = \"0 kW\"",
+        "safe  = \"0 kW\"\ninterlock = \"x.nope > 1 Hz\"",
+    );
+    assert_eq!(suite_codes(&text), ["J0302"]);
+}
+
+#[test]
+fn derived_signals_and_alarms_are_subjects() {
+    let text = DOCS16_EXAMPLE
+        .replace("[[outputs]]", SIGNAL_X_F)
+        .replace(
+            "[[writers]]",
+            "[[calc]]\npath = \"calc.hi\"\nexpr = \"x.f > 50 Hz\"\n\n[[alarms]]\nid = \"hi\"\nwhen = \"calc.hi\"\nseverity = \"low\"\n\n[[writers]]",
+        )
+        .replace(
+            "do = [{",
+            "do = [{ at = \"0ms\", input = \"x.f\", value = \"51 Hz\" }, {",
+        )
+        .replace(
+            "expect = [",
+            "expect = [\n  { at = \"0ms\", signal = \"calc.hi\", equals = true, quality = \"good\" },\n  { at = \"100ms\", alarm = \"hi\", state = \"active_unacked\", active = true },",
+        );
+    assert_eq!(statuses(&text), [Status::Pass]);
+}
+
+#[test]
+fn budgets_follow_ref01_5_10() {
+    assert_eq!(super::load::budget("2/10s"), Ok((2, 10_000_000_000)));
+    assert_eq!(super::load::budget("120/h"), Ok((120, 3_600_000_000_000)));
+    assert!(super::load::budget("2").is_err());
+    assert!(super::load::budget("x/1s").is_err());
 }
 
 #[test]

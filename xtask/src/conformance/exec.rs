@@ -5,7 +5,9 @@
 
 use alloc::vec::Vec;
 
-use joker_case_runner::{Observer, Script, TickView};
+use alloc::vec;
+
+use joker_case_runner::{AlarmTick, Observer, Program, Script, TickView};
 use joker_core::Sample;
 
 pub use joker_case_runner::{OutputTick, STAGING, SetupError, TickGuard};
@@ -26,6 +28,13 @@ pub struct TickRecord {
     pub outputs: Vec<OutputTick>,
     /// Per input, the latched sample, in the order of [`Suite::signals`].
     pub inputs: Vec<Sample>,
+    /// Per derived signal, its sample, in the order of [`Suite::calcs`].
+    pub calcs: Vec<Sample>,
+    /// Per alarm, its state, in the order of [`Suite::alarms`].
+    pub alarms: Vec<AlarmTick>,
+    /// Per atomic group, its commit register, in the order of
+    /// [`Suite::atomic`].
+    pub commits: Vec<Sample>,
 }
 
 impl TickRecord {
@@ -34,6 +43,9 @@ impl TickRecord {
         TickView {
             outputs: &self.outputs,
             inputs: &self.inputs,
+            calcs: &self.calcs,
+            alarms: &self.alarms,
+            commits: &self.commits,
         }
     }
 }
@@ -50,6 +62,9 @@ impl Observer for Timeline {
         self.ticks.push(TickRecord {
             outputs: view.outputs.to_vec(),
             inputs: view.inputs.to_vec(),
+            calcs: view.calcs.to_vec(),
+            alarms: view.alarms.to_vec(),
+            commits: view.commits.to_vec(),
         });
     }
 }
@@ -66,9 +81,15 @@ pub fn run(suite: &Suite, case: &Case, guard: &impl TickGuard) -> Result<Timelin
     let mut timeline = Timeline {
         ticks: Vec::with_capacity(usize::try_from(case.ticks).unwrap_or(0)),
     };
+    let fixture = view.fixture();
+    let needs = joker_case_runner::needs(&fixture)?;
+    let mut programs: Vec<Option<Program>> = vec![None; needs.programs];
+    let mut arena = vec![0u64; needs.arena];
     joker_case_runner::run::<SIGNALS, OUTPUTS, WRITERS, STAGING>(
-        &view.fixture(),
+        &fixture,
         &script,
+        &mut programs,
+        &mut arena,
         guard,
         &mut timeline,
     )?;

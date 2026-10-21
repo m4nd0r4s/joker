@@ -4,6 +4,7 @@
 
 pub mod eval;
 pub mod exec;
+pub mod expr;
 pub mod literal;
 pub mod load;
 pub mod model;
@@ -96,7 +97,7 @@ pub fn selected(id: &str, filters: &[String]) -> bool {
 }
 
 /// The report of a case before it runs: `skip` when it needs a feature the
-/// M0 core lacks, `error` when it does not resolve, and `pass` when it is
+/// core lacks or this runner does not drive, `error` when it does not resolve, and `pass` when it is
 /// ready to run.
 pub fn prepare(suite: &Suite, case: &Case) -> CaseReport {
     let mut spec = case.spec.clone();
@@ -125,7 +126,7 @@ pub fn prepare(suite: &Suite, case: &Case) -> CaseReport {
     report
 }
 
-/// Whether a case is ready to run: it needs nothing the M0 core lacks and
+/// Whether a case is ready to run: it needs nothing the core lacks or this runner does not drive and
 /// it resolves.
 pub fn runnable(case: &Case) -> bool {
     case.missing.is_empty() && case.errors.is_empty()
