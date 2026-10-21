@@ -6,6 +6,7 @@
 //! and merge the layers, decode the effective manifest, check it against a
 //! [`Context`], and hash it.
 
+pub mod admission;
 pub mod check;
 pub mod codes;
 pub mod context;

@@ -27,6 +27,11 @@ pub struct Context {
     pub apps: BTreeMap<String, AppInterface>,
     /// The class contracts, by full reference (`"std/pump@1"`, docs/17).
     pub classes: BTreeMap<String, ClassInfo>,
+    /// The measured WCET of each cycle task (`"<app>.<task>"`), from the
+    /// valid `[wcet]` entries of the lock (ref/02 §2.1.13).
+    pub measured: BTreeMap<String, Measured>,
+    /// The read batches of each device, from the driver planners (ADR 0049).
+    pub loads: BTreeMap<String, Vec<Batch>>,
     /// With `true`, a profile, board, class, driver or app that the context
     /// does not know is assumed to exist and its dependent checks are
     /// skipped: the mode for checking documentation examples.
@@ -42,6 +47,8 @@ impl Default for Context {
             boards: BTreeMap::new(),
             apps: BTreeMap::new(),
             classes: BTreeMap::new(),
+            measured: BTreeMap::new(),
+            loads: BTreeMap::new(),
             open_world: false,
         }
     }
@@ -132,6 +139,42 @@ pub struct ClassMember {
     pub requires: Vec<String>,
 }
 
+/// A measured WCET (ref/02 §2.1.13).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Measured {
+    /// The 99.9th percentile.
+    pub p999: Duration,
+    /// The maximum observed.
+    pub max: Duration,
+}
+
+/// One read batch of a device, as the driver planner gives it (ADR 0049).
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Batch {
+    /// Request bytes on the wire.
+    pub request: u32,
+    /// Response bytes on the wire.
+    pub response: u32,
+    /// The batch's own period, when it differs from the device `poll`.
+    pub poll: Option<Duration>,
+    /// The cost the plan gives (`cost-ns`), which wins over the formula.
+    pub cost: Option<Duration>,
+    /// CAN frames per poll.
+    pub frames: u32,
+}
+
+/// The language tier of an app (ref/05 §19).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Tier {
+    /// Rust (tier 1).
+    #[default]
+    Rust,
+    /// TypeScript (tier 2).
+    TypeScript,
+    /// Python (tier 2).
+    Python,
+}
+
 /// A driver descriptor, as far as the manifest is concerned (ref/06 §2.3).
 #[derive(Debug, Clone, Default)]
 pub struct DriverInfo {
@@ -163,6 +206,8 @@ pub struct ProfileInfo {
     pub configurable: bool,
     /// The `timeout` of the profile's `[fallback]`.
     pub fallback_timeout: Option<Duration>,
+    /// `quirks.latency`: the slave response latency (ref/03 §2.2.6).
+    pub latency: Option<Duration>,
     /// `[defaults] poll`.
     pub poll: Option<Duration>,
     /// `[defaults] timeout`.
@@ -181,6 +226,8 @@ pub struct BoardInfo {
     pub micro: bool,
     /// The CPU cores, when known.
     pub cpus: Option<u32>,
+    /// The RAM, in bytes (`memory`, ref/03 §2.3.1).
+    pub memory: Option<u64>,
     /// The runtime has no Wasm engine for the board's architecture
     /// (neither Cranelift nor Pulley, docs/01 §22).
     pub no_wasm: bool,
@@ -270,6 +317,12 @@ pub struct AppInterface {
     pub optional_tasks: BTreeSet<String>,
     /// The classes the app implements (`#[implements]`), by full reference.
     pub implements: Vec<String>,
+    /// The language tier.
+    pub tier: Tier,
+    /// The WCET each cycle task declares in `joker:meta`.
+    pub wcet: BTreeMap<String, Duration>,
+    /// The memory suggestions of `joker:meta` (cycle, async), in bytes.
+    pub memory: Option<(u64, u64)>,
 }
 
 /// The kind of a port.

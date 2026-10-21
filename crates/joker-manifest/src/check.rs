@@ -113,6 +113,9 @@ pub fn check(
     checker.apps();
     checker.writers_and_groups();
     checker.app_and_device_rules();
+    checker.admission();
+    checker.memory_estimate();
+    checker.bus_budget();
     checker.paths
 }
 

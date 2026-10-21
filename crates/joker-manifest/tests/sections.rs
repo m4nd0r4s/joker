@@ -390,12 +390,11 @@ fn every_1_1_case_reports_its_code() {
 
 #[test]
 fn every_ref01_code_is_emitted_or_deferred() {
-    let deferred: [(&str, &str); 9] = [
-        ("J0283", "AUR-225: rate-monotonic priorities"),
-        ("J0350", "AUR-225: RT admission"),
-        ("J0370", "AUR-225: bus budget"),
-        ("J0380", "AUR-225: memory estimate"),
-        ("J0381", "AUR-225: storage write load"),
+    let deferred: [(&str, &str); 5] = [
+        (
+            "J0381",
+            "storage write load: no endurance model yet (ADR 0048)",
+        ),
         ("J0185", "needs the node vault (`jk check --node`)"),
         ("J0292", "needs the node trust bundle (`jk check --node`)"),
         ("J0291", "retired: the key gives J0140"),
