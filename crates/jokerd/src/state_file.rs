@@ -29,6 +29,23 @@ pub fn read(state_dir: &Path, name: &str) -> io::Result<Option<Vec<u8>>> {
     }
 }
 
+/// Reads `<state_dir>/<name>` as a decimal `u64` (0 if missing or
+/// unreadable), persists it incremented by one, and returns the new
+/// value — the daemon's own boot counter (docs/01 §20's "startup
+/// counter"), bumped once per `Node::new`. Best-effort: a write failure
+/// still returns the incremented value for this run, just unpersisted.
+pub fn bump_counter(state_dir: &Path, name: &str) -> u64 {
+    let current = read(state_dir, name)
+        .ok()
+        .flatten()
+        .and_then(|b| String::from_utf8(b).ok())
+        .and_then(|s| s.trim().parse::<u64>().ok())
+        .unwrap_or(0);
+    let next = current.saturating_add(1);
+    let _ = write_atomic(state_dir, name, next.to_string().as_bytes());
+    next
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -59,5 +76,20 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         write_atomic(dir.path(), "trips", b"x").unwrap();
         assert!(!dir.path().join("trips.tmp").exists());
+    }
+
+    #[test]
+    fn a_missing_counter_starts_at_one() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(bump_counter(dir.path(), "boot_count"), 1);
+    }
+
+    #[test]
+    fn a_counter_increments_and_persists_across_loads() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(bump_counter(dir.path(), "boot_count"), 1);
+        assert_eq!(bump_counter(dir.path(), "boot_count"), 2);
+        assert_eq!(bump_counter(dir.path(), "boot_count"), 3);
+        assert_eq!(read(dir.path(), "boot_count").unwrap(), Some(b"3".to_vec()));
     }
 }
