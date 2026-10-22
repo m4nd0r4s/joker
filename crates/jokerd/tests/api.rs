@@ -975,6 +975,59 @@ async fn a_manual_write_survives_a_jokerd_restart_within_its_ttl() {
     let _ = stop2.send(());
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_trip_survives_a_jokerd_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let manifest = effective_with_trippable_output();
+
+    let (http, stop) = boot_at(dir.path(), &manifest).await;
+    let write = http
+        .send(
+            "POST",
+            "/v1/outputs/pi.p_set/manual",
+            &[],
+            Some(&json!({"value": 150, "ttl": "30s", "reason": "force a trip", "wait": true})),
+        )
+        .await;
+    assert_eq!(write.status, 200, "{}", write.json());
+    assert_eq!(write.json()["outcome"]["outcome"], "tripped");
+    // Release the out-of-range write: the manual level (A14) no longer
+    // has a cause that would re-trip the output on its own, isolating
+    // this test to the trip's own persistence, not A14's.
+    let released = http
+        .send(
+            "POST",
+            "/v1/outputs/pi.p_set/release",
+            &[],
+            Some(&json!({})),
+        )
+        .await;
+    assert_eq!(released.status, 200, "{}", released.json());
+    let still_tripped = http.send("GET", "/v1/outputs/pi.p_set", &[], None).await;
+    assert_eq!(
+        still_tripped.json()["tripped"],
+        true,
+        "{}",
+        still_tripped.json()
+    );
+    let _ = stop.send(());
+
+    // A new daemon process over the same state directory: the trip must
+    // come back, both in the API's own bookkeeping and in the real
+    // arbiter (docs/01 §7).
+    let (http2, stop2) = boot_at(dir.path(), &manifest).await;
+    let out = http2.send("GET", "/v1/outputs/pi.p_set", &[], None).await;
+    assert_eq!(out.json()["tripped"], true, "{}", out.json());
+    let trips = http2.send("GET", "/v1/trips", &[], None).await;
+    assert_eq!(
+        trips.json()["items"][0]["output"],
+        "pi.p_set",
+        "{}",
+        trips.json()
+    );
+    let _ = stop2.send(());
+}
+
 #[test]
 #[should_panic(expected = "get /v1/info 200")]
 fn the_contract_check_rejects_a_bad_body() {
