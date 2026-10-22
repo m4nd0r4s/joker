@@ -27,6 +27,7 @@ use crate::plan::{OutputPlan, Plan};
 use crate::runner::Running;
 use crate::shared::Shared;
 use crate::traces::{Source, TraceEntry, TraceState, Traces, record};
+use crate::trips::TripTable;
 use crate::wire::{self, duration, input_bits, parse_duration, timestamp, utc_now_ns};
 
 /// The longest a write waits for its tick.
@@ -43,6 +44,7 @@ pub struct Node {
     state_dir: PathBuf,
     tickets: TicketBook,
     manual: ManualTable,
+    trips: TripTable,
     traces: Arc<Traces>,
 }
 
@@ -126,7 +128,22 @@ impl Node {
         state_dir: &Path,
     ) -> std::io::Result<Self> {
         let now_mono_ns = clock.now_ns();
-        let manual = ManualTable::load(state_dir.join("manual.json"), utc_now_ns(), now_mono_ns);
+        let clock_synced =
+            crate::pacer::SystemPacer::host_clock_quality() == joker_core::ClockQuality::Synced;
+        let (manual, restored) = ManualTable::load(
+            state_dir.to_owned(),
+            utc_now_ns(),
+            now_mono_ns,
+            clock_synced,
+        );
+        if !restored.degraded.is_empty() {
+            eprintln!(
+                "jokerd: restored {} manual level(s) without a synced clock (A14): {:?}",
+                restored.degraded.len(),
+                restored.degraded
+            );
+        }
+        let (trips, restored_trips) = TripTable::load(state_dir.to_owned());
         let node = Self {
             controller,
             clock,
@@ -137,10 +154,55 @@ impl Node {
             state_dir: state_dir.to_owned(),
             tickets: TicketBook::default(),
             manual,
+            trips,
             traces: Arc::new(Traces::open(&state_dir.join("traces"))?),
         };
         node.restore_manual(now_mono_ns);
+        node.restore_trips(&restored_trips);
         Ok(node)
+    }
+
+    /// Re-injects every trip loaded by [`TripTable::load`] into the
+    /// running generation's arbiter (docs/01 §7): a persisted trip
+    /// survives a `jokerd` restart. An output that no longer exists in
+    /// the active plan is silently dropped.
+    fn restore_trips(&self, paths: &[String]) {
+        let Some(v) = self.view() else { return };
+        for path in paths {
+            let Some(o) = v.plan.output(path) else {
+                continue;
+            };
+            let Some(signal) = v.plan.id(&o.path) else {
+                continue;
+            };
+            let Some(group_index) = v.plan.groups.iter().position(|g| g.name == o.group) else {
+                continue;
+            };
+            let Some(trips) = v.shared.trips.get(group_index) else {
+                continue;
+            };
+            let _ = trips.push(crate::shared::TripRequest { signal });
+        }
+    }
+
+    /// Syncs [`TripTable`] with the live arbiter state of every output
+    /// (docs/01 §7): called from the handlers that already compute a
+    /// `View` and observe trip status, so a real transition persists
+    /// promptly without a dedicated background thread on the hot cycle
+    /// path.
+    fn sync_trips(&self, v: &View) {
+        for o in &v.plan.outputs {
+            let Some(signal) = v.plan.id(&o.path) else {
+                continue;
+            };
+            match v.shared.trip_since(signal) {
+                Some(since_mono_ns) => {
+                    let since_utc_ns = self.utc_origin_ns.saturating_add(since_mono_ns as i64);
+                    self.trips.set_tripped(&o.path, since_utc_ns);
+                }
+                None => self.trips.clear_tripped(&o.path),
+            }
+        }
     }
 
     /// Re-injects every manual level loaded by [`ManualTable::load`] into
@@ -375,6 +437,14 @@ impl Node {
             }
             None => (safe.clone(), 0, None, false),
         };
+        if tripped {
+            if let Some(since_mono_ns) = id.and_then(|id| v.shared.trip_since(id)) {
+                let since_utc_ns = self.utc_origin_ns.saturating_add(since_mono_ns as i64);
+                self.trips.set_tripped(&o.path, since_utc_ns);
+            }
+        } else {
+            self.trips.clear_tripped(&o.path);
+        }
         let active_level = Level::new(level).map_or(json!("none"), |l| json!(l.to_string()));
         let now = self.now_mono();
         let mut levels = Vec::new();
@@ -512,7 +582,10 @@ impl Node {
             .wait_reset(&v.shared, ticket, Duration::from_secs(5))
         {
             Some(outcome) => Ok(match outcome.kind {
-                crate::shared::ResetKind::Cleared => "cleared",
+                crate::shared::ResetKind::Cleared => {
+                    self.trips.clear_tripped(path);
+                    "cleared"
+                }
                 crate::shared::ResetKind::Retripped => "retripped",
                 crate::shared::ResetKind::NotTripped => "not_tripped",
             }),
@@ -980,6 +1053,7 @@ impl Backend for Node {
                 until_mono_ns: now.saturating_add(ttl),
                 reason: reason.clone(),
             },
+            now,
         );
         let id = joker_api::server::ulid(u128::try_from(since).unwrap_or(0));
         let mut ticket = json!({
@@ -1005,6 +1079,15 @@ impl Backend for Node {
                 joker_core::envelope::Applied::Relinquish => json!("relinquish"),
                 joker_core::envelope::Applied::Value(b) => wire::value(&signal, b),
             };
+            if r.outcome == Outcome::Tripped
+                && let Some(since_mono_ns) =
+                    v.plan.id(&o.path).and_then(|id| v.shared.trip_since(id))
+            {
+                self.trips.set_tripped(
+                    &o.path,
+                    self.utc_origin_ns.saturating_add(since_mono_ns as i64),
+                );
+            }
             ticket["outcome"] = outcome_json(r.outcome, Some(applied));
             ticket["tick"] = json!({"group": o.group, "seq": r.tick});
         }
@@ -1075,7 +1158,7 @@ impl Backend for Node {
             }],
             &o.group,
         )?;
-        self.manual.remove(&o.path, level);
+        self.manual.remove(&o.path, level, now);
         let id = joker_api::server::ulid(u128::try_from(utc_now_ns()).unwrap_or(0));
         let mut ticket = json!({
             "id": id,
@@ -1118,6 +1201,7 @@ impl Backend for Node {
 
     fn trips(&self, query: &Query) -> Result<Reply, Problem> {
         let v = self.need_view()?;
+        self.sync_trips(&v);
         let sel = values_of(query, "sel");
         let items: Vec<Value> = v
             .plan
@@ -1384,7 +1468,7 @@ impl Backend for Node {
         let switched = lock_controller(&self.controller)
             .activate(g.number, window, Some(user(who)))
             .map_err(problem)?;
-        self.manual.clear();
+        self.manual.clear(self.now_mono());
         Ok(Reply::ok(self.generation_json(&switched.generation)))
     }
 
@@ -1426,7 +1510,7 @@ impl Backend for Node {
         let switched = lock_controller(&self.controller)
             .rollback(to, Some(user(who)), Some(req.reason))
             .map_err(problem)?;
-        self.manual.clear();
+        self.manual.clear(self.now_mono());
         Ok(Reply::ok(self.generation_json(&switched.generation)))
     }
 

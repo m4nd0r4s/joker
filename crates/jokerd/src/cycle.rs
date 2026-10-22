@@ -348,6 +348,11 @@ fn tick(
             }
         }
     }
+    if let Some(trips) = shared.trips.get(g.index) {
+        while let Some(req) = trips.pop() {
+            outputs.trip(req.signal);
+        }
+    }
     for (writer, task) in &mut g.tasks {
         let mut cx = TaskContext::new(&mut g.image, outputs, *writer);
         if task.run(&mut cx).is_err() {

@@ -23,6 +23,9 @@ pub const DECISION_CAPACITY: usize = 16_384;
 pub const RESULT_CAPACITY: usize = 4_096;
 /// Capacity of each group's reset-request queue (`jk reset`, docs/16 E7).
 pub const RESET_CAPACITY: usize = 16;
+/// Capacity of each group's trip-injection queue (persisted-trip restore
+/// at boot, docs/01 §7).
+pub const TRIP_CAPACITY: usize = 16;
 /// State exports in flight (apps per request).
 pub const EXPORT_CAPACITY: usize = 256;
 /// Trace buffers in flight between the cycle thread and the trace ring.
@@ -39,6 +42,17 @@ pub struct ResetRequest {
     pub signal: SignalId,
     /// Matches the [`ResetOutcome`] this request resolves to.
     pub ticket: u32,
+}
+
+/// A request to put an output in trip, with no reply (persisted-trip
+/// restore at boot, docs/01 §7): pushed once by [`crate::api::Node`] into
+/// the owning group's own queue, consumed by that group's next tick, the
+/// same reasoning as [`ResetRequest`] — the cycle thread is the only one
+/// that may call `Outputs::trip`.
+#[derive(Debug, Clone, Copy)]
+pub struct TripRequest {
+    /// The output to trip.
+    pub signal: SignalId,
 }
 
 /// What ending a trip resolved to (ref/09 §5.7's `ResetResult.result`).
@@ -225,6 +239,9 @@ pub struct Shared {
     pub inboxes: Box<[ArrayQueue<Proposal>]>,
     /// One reset-request queue per group, by group index (`jk reset`).
     pub resets: Box<[ArrayQueue<ResetRequest>]>,
+    /// One trip-injection queue per group, by group index (persisted-trip
+    /// restore at boot).
+    pub trips: Box<[ArrayQueue<TripRequest>]>,
     /// Resolutions of reset requests, by ticket.
     pub reset_results: ArrayQueue<ResetOutcome>,
     /// Reset resolutions dropped by a full queue.
@@ -340,6 +357,9 @@ impl Shared {
                 .collect(),
             resets: (0..plan.groups.len())
                 .map(|_| ArrayQueue::new(RESET_CAPACITY))
+                .collect(),
+            trips: (0..plan.groups.len())
+                .map(|_| ArrayQueue::new(TRIP_CAPACITY))
                 .collect(),
             reset_results: ArrayQueue::new(RESULT_CAPACITY),
             reset_results_dropped: Counter::default(),
