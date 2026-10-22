@@ -32,6 +32,8 @@ jsonschema = { version = "0.33", default-features = false }
 yaml-rust2 = "0.10"
 tempfile = "3.23"
 tokio = { version = "1.48", features = ["rt-multi-thread", "macros", "net", "io-util", "time"] }
+joker-hal = { path = "../joker-hal", features = ["testing"] }
+joker-driver-gpio = { path = "../joker-drivers/gpio" }
 
 [lints]
 workspace = true
