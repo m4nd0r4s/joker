@@ -58,6 +58,55 @@ pub fn drivers() -> BTreeMap<String, DriverInfo> {
             ..DriverInfo::default()
         },
     );
+    d.insert(
+        "modbus-tcp".to_owned(),
+        DriverInfo {
+            buses: vec![BusKind::Ethernet],
+            bus_required: false,
+            profile_required: true,
+            // ADR 0049: a TCP device without a shared bus is not budgeted
+            // and needs no declared bus; `host`/`port` give the endpoint
+            // directly (no appendix A to confirm against; `port` default
+            // 502 per ref/03 §2.2.20's URI table).
+            config: ["unit_id".to_owned(), "host".to_owned(), "port".to_owned()]
+                .into_iter()
+                .collect(),
+            ..DriverInfo::default()
+        },
+    );
+    d.insert(
+        "gpio".to_owned(),
+        DriverInfo {
+            profile_required: false,
+            config: ["chip".to_owned()].into_iter().collect(),
+            address: [
+                ("line".to_owned(), None),
+                ("active_low".to_owned(), None),
+                ("bias".to_owned(), None),
+                ("drive".to_owned(), None),
+            ]
+            .into_iter()
+            .collect(),
+            ..DriverInfo::default()
+        },
+    );
+    d.insert(
+        "i2c".to_owned(),
+        DriverInfo {
+            buses: vec![BusKind::I2c],
+            bus_required: true,
+            profile_required: false,
+            config: ["address".to_owned()].into_iter().collect(),
+            address: [
+                ("reg".to_owned(), None),
+                ("len".to_owned(), None),
+                ("byte_order".to_owned(), None),
+            ]
+            .into_iter()
+            .collect(),
+            ..DriverInfo::default()
+        },
+    );
     d
 }
 
