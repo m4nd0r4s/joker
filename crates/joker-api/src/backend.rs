@@ -4,8 +4,8 @@
 use serde_json::Value;
 
 use crate::model::{
-    ActivateRequest, GenerationProposal, ManualWriteRequest, ReasonBody, ReleaseRequest,
-    RollbackRequest, TraceRequest,
+    ActivateRequest, GenerationProposal, InvokeActionRequest, ManualWriteRequest, ReasonBody,
+    ReleaseRequest, RollbackRequest, TraceRequest,
 };
 use crate::problem::Problem;
 
@@ -137,4 +137,14 @@ pub trait Backend: Send + Sync + 'static {
     fn trace(&self, id: &str) -> Result<Reply>;
     /// `GET /v1/traces/{trace}/file`: the bytes of a ready trace.
     fn trace_file(&self, id: &str) -> Result<Vec<u8>>;
+    /// `POST /v1/actions/{target}/{action}` (ref/09 §5.10): `idempotency_key`
+    /// is the required `Idempotency-Key` header (`J-E1023` without it).
+    fn invoke_action(
+        &self,
+        who: &Principal,
+        target: &str,
+        action: &str,
+        idempotency_key: Option<&str>,
+        request: InvokeActionRequest,
+    ) -> Result<Reply>;
 }

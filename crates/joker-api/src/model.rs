@@ -3,7 +3,7 @@
 //! which the server drops before decoding.
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 /// `ManualWriteRequest` (ref/09 §5.6).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -183,4 +183,28 @@ pub struct TraceRequest {
     /// Free label.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+}
+
+/// `InvokeRequest` (ref/09 §5.10, `openapi` schema `InvokeRequest`): the
+/// body of `POST /v1/actions/{target}/{action}`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InvokeActionRequest {
+    /// The action's declared arguments, by name. `$arg` substitution in
+    /// a compiled step isn't wired yet (AUR-405's own flagged gap), so
+    /// these are accepted and recorded but not yet applied to any step.
+    #[serde(default)]
+    pub args: Map<String, Value>,
+    /// May shorten, never lengthen, the action's configured timeout.
+    /// Accepted for contract compatibility; not applied yet (the
+    /// device's own `timeout_ns` is always used, see `jokerd::drivers`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout: Option<String>,
+    /// Free-text reason, for the decision log. Not recorded yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// Wait for the result. Always true in this build: there is no
+    /// long-running/async action path yet, only short ones.
+    #[serde(default = "yes")]
+    pub wait: bool,
 }

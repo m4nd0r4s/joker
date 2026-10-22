@@ -6,8 +6,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use joker_api::model::{
-    ActivateRequest, GenerationProposal, ManualWriteRequest, ReasonBody, ReleaseRequest,
-    RollbackRequest, TraceRequest,
+    ActivateRequest, GenerationProposal, InvokeActionRequest, ManualWriteRequest, ReasonBody,
+    ReleaseRequest, RollbackRequest, TraceRequest,
 };
 use joker_api::{Backend, Headers, Principal, Problem, Query, Reply};
 use joker_core::image::{Intent, NO_TASK, Proposal, RELINQUISH, Source as ProposalSource};
@@ -16,7 +16,8 @@ use joker_core::output::Band;
 use joker_core::{Level, WriterKind};
 use serde_json::{Map, Value, json};
 
-use crate::control::ControlError;
+use crate::actions::Rejected;
+use crate::control::{ActionResult, ControlError, Invoked};
 use crate::daemon::{SharedController, lock_controller};
 use crate::decisions::DecisionLog;
 use crate::generations::{Activation, GenState, Generation, Origin};
@@ -447,6 +448,40 @@ fn kind_name(kind: WriterKind) -> &'static str {
         WriterKind::Bridge => "bridge",
         WriterKind::Impl => "impl",
     }
+}
+
+/// An `Invocation` (openapi `#/components/schemas/Invocation`, ref/09
+/// §5.10): `error` is `(kind, code, message)` on failure, `None` on
+/// success.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "each parameter is a distinct required or near-required field of the openapi Invocation schema; a wrapper struct would only rename this list"
+)]
+fn invocation_json(
+    target: &str,
+    action: &str,
+    key: &str,
+    principal: &str,
+    created_at: &str,
+    replay: bool,
+    state: &str,
+    error: Option<(&str, &str, &str)>,
+) -> Value {
+    let id = joker_api::server::ulid(u128::try_from(utc_now_ns()).unwrap_or(0));
+    json!({
+        "id": id,
+        "target": target,
+        "action": action,
+        "key": key,
+        "state": state,
+        "principal": principal,
+        "created_at": created_at,
+        "replay": replay,
+        "result": if error.is_none() { json!({}) } else { Value::Null },
+        "error": error.map_or(Value::Null, |(kind, code, message)| {
+            json!({"kind": kind, "code": code, "message": message})
+        }),
+    })
 }
 
 fn outcome_json(outcome: Outcome, applied: Option<Value>) -> Value {
@@ -951,6 +986,68 @@ impl Backend for Node {
             .get(id)
             .map(|t| Reply::ok(t.body))
             .ok_or_else(|| Problem::new("J-E1110", 404, format!("unknown write `{id}`")))
+    }
+
+    fn invoke_action(
+        &self,
+        who: &Principal,
+        target: &str,
+        action: &str,
+        idempotency_key: Option<&str>,
+        _request: InvokeActionRequest,
+    ) -> Result<Reply, Problem> {
+        let key = idempotency_key
+            .ok_or_else(|| Problem::new("J-E1023", 400, "`Idempotency-Key` is required"))?;
+        let now = self.now_mono();
+        let principal = user(who);
+        let outcome = lock_controller(&self.controller)
+            .invoke_action(target, action, key, now, &principal, true);
+        let created_at = timestamp(utc_now_ns());
+        let invocation = |replay: bool, state: &str, error: Option<(&str, &str, &str)>| {
+            invocation_json(
+                target,
+                action,
+                key,
+                &principal,
+                &created_at,
+                replay,
+                state,
+                error,
+            )
+        };
+        match outcome {
+            Ok(Invoked::Ran(ActionResult::Succeeded)) => {
+                Ok(Reply::ok(invocation(false, "succeeded", None)))
+            }
+            Ok(Invoked::Ran(ActionResult::Failed(msg))) => Ok(Reply::ok(invocation(
+                false,
+                "failed",
+                Some(("device", "J-E1408", &msg)),
+            ))),
+            Ok(Invoked::Duplicate(ActionResult::Succeeded)) => {
+                Ok(Reply::ok(invocation(true, "succeeded", None)))
+            }
+            Ok(Invoked::Duplicate(ActionResult::Failed(msg))) => Ok(Reply::ok(invocation(
+                true,
+                "failed",
+                Some(("device", "J-E1408", &msg)),
+            ))),
+            Ok(Invoked::Rejected(Rejected::Busy)) => {
+                Err(Problem::new("J-E1403", 503, "device action queue full"))
+            }
+            Ok(Invoked::Rejected(Rejected::NotPermitted)) => {
+                Err(Problem::new("J-E1402", 409, "action permissive false"))
+            }
+            // The device not being connected is one of the action's own
+            // result outcomes (ref/09 §5.10's `error.kind = "device"`),
+            // not an HTTP-level failure of the request itself.
+            Err(e) if e.code == "J-E1415" => Ok(Reply::ok(invocation(
+                false,
+                "failed",
+                Some(("device", "J-E1415", &e.detail)),
+            ))),
+            Err(e) => Err(problem(e)),
+        }
     }
 
     fn decisions(&self, query: &Query) -> Result<Reply, Problem> {
