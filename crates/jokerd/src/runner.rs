@@ -106,6 +106,13 @@ impl Running {
         self.cycle.as_ref().is_some_and(|h| !h.is_finished())
     }
 
+    /// Whether this generation's `rt/supervisor` has ever found a stale
+    /// group (AUR-274 phase 4: the hardware-watchdog feed stops the
+    /// moment this turns true).
+    pub fn is_stale(&self) -> bool {
+        self.supervisor.as_ref().is_some_and(Supervisor::is_stale)
+    }
+
     /// Stops after the current tick, drains the services and returns the
     /// last applied values.
     pub fn stop(mut self) -> Result<CycleExit, CycleError> {
