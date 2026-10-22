@@ -146,6 +146,17 @@ enum Command {
         #[arg(long)]
         diff: bool,
     },
+    /// Invokes an action of a device (ref/09 §5.10).
+    Action {
+        /// `<target>.<action>`.
+        target_action: String,
+        /// Arguments, as `name=value` (bool/number/string).
+        args: Vec<String>,
+        /// Idempotency key: a reinvocation with the same key, within the
+        /// action's `dedup_window`, replays its earlier result.
+        #[arg(long)]
+        key: String,
+    },
     /// The decision log.
     Decisions {
         /// Only these outputs (selectors).
@@ -307,6 +318,11 @@ fn run(cli: Cli) -> Result<u8, Failure> {
             level,
             force,
         } => node()?.release(&output, level.as_deref(), force),
+        Command::Action {
+            target_action,
+            args,
+            key,
+        } => node()?.action(&target_action, &args, &key),
         Command::Decisions { output, limit } => node()?.decisions(&output, limit),
         Command::Record {
             duration,
