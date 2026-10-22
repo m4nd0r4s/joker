@@ -39,13 +39,22 @@ pub struct ActionCall {
     pub reply: tokio::sync::oneshot::Sender<ActionOutcome>,
 }
 
-/// What an action invocation produced.
+/// What an action invocation produced. Distinguishes the two causes the
+/// API maps to their own documented code (ref/04 §7.1): a timeout
+/// (`J-E1406`) and an equipment/comm failure (`J-E1407`), from every
+/// other interpreter failure (`J-E1408`, the catch-all).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ActionOutcome {
     /// Every step completed.
     Ok,
-    /// A step failed; the message is `joker_hal::interpreter::Failure`'s
-    /// own `Debug` rendering.
+    /// An `until` step never saw its target before its own `timeout`
+    /// (`joker_hal::interpreter::Failure::TimedOut`, ref/06 §2.10).
+    TimedOut,
+    /// The driver reported a communication failure
+    /// (`Failure::Device`); the message is its `Debug` rendering.
+    Device(String),
+    /// Any other interpreter failure (`FailedCondition`/`Unsupported`);
+    /// the message is `Failure`'s own `Debug` rendering.
     Failed(String),
 }
 
@@ -195,6 +204,10 @@ pub async fn run_driver<D: Driver>(
                     let result = joker_hal::interpreter::run(&mut driver, &mut acx, 0, &views).await;
                     let _ = call.reply.send(match result {
                         Ok(()) => ActionOutcome::Ok,
+                        Err(joker_hal::interpreter::Failure::TimedOut) => ActionOutcome::TimedOut,
+                        Err(e @ joker_hal::interpreter::Failure::Device(_)) => {
+                            ActionOutcome::Device(format!("{e:?}"))
+                        }
                         Err(e) => ActionOutcome::Failed(format!("{e:?}")),
                     });
                 }
