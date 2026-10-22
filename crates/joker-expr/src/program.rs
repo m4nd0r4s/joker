@@ -157,7 +157,7 @@ pub struct CompileOptions {
 /// A compiled expression: straight-line bytecode with fixed-capacity
 /// tables. It is self-contained, and evaluating it never
 /// allocates.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Program {
     pub(crate) code: [Op; MAX_CODE],
     pub(crate) code_len: u16,

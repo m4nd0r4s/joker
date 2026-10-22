@@ -371,6 +371,57 @@ role = "viewer"
         assert_eq!(plan.actions[0].role, "operator", "J0298's own floor rule");
     }
 
+    const JOKER_TOML_WITH_PERMIT: &str = r#"
+[project]
+name  = "bridge-test"
+joker = "1.0"
+mode  = "dev"
+
+[buses.line0]
+kind = "serial"
+port = "/dev/ttyUSB0"
+baud = 9600
+
+[devices.pcs]
+driver  = "modbus-rtu"
+bus     = "line0"
+profile = "acme/pcs@1"
+timeout = "1s"
+unit_id = 1
+
+[devices.pcs.actions.reset_fault]
+permit = "pcs.p_ac > 0 kW"
+"#;
+
+    #[test]
+    fn a_devices_permit_compiles_against_the_plans_own_signals() {
+        let dir = project(&[
+            ("joker.toml", JOKER_TOML_WITH_PERMIT),
+            ("profiles/acme/pcs@1.profile.toml", PROFILE_WITH_ACTION_TOML),
+        ]);
+        let loaded = load(&OsFileSystem, &dir.path().join("joker.toml"), &NativeTasks)
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert!(!loaded.report.has_errors(), "{}", loaded.report.render());
+        assert!(
+            loaded
+                .plan
+                .permits
+                .contains_key(&("pcs".to_owned(), "reset_fault".to_owned())),
+            "a declared `permit` must compile into Plan::permits"
+        );
+    }
+
+    #[test]
+    fn an_action_with_no_permit_has_no_entry() {
+        let dir = project(&[
+            ("joker.toml", JOKER_TOML),
+            ("profiles/acme/pcs@1.profile.toml", PROFILE_WITH_ACTION_TOML),
+        ]);
+        let loaded = load(&OsFileSystem, &dir.path().join("joker.toml"), &NativeTasks)
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert!(loaded.plan.permits.is_empty());
+    }
+
     const GPIO_JOKER_TOML: &str = r#"
 [project]
 name  = "bridge-test-gpio"

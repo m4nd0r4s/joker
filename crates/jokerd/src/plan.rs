@@ -170,6 +170,17 @@ pub struct Plan {
     /// not know how to run for real stay here regardless: `Shared::new`
     /// and the device dispatcher decide what to do with each one.
     pub devices: Vec<crate::bridge::DevicePlan>,
+    /// Every device action's compiled `permit` expression, by `(device,
+    /// action)` name (ref/01 §5.8.2, AUR-416/AUR-417). Populated by
+    /// [`crate::load::load`] once this `Plan`'s own `ids` exist — not
+    /// here in [`Plan::new`], since compiling against [`PlanEnv`]
+    /// (`crate::expr_plan`) needs a finished registry to source ids
+    /// from. An action with no declared `permit` has no entry here, not
+    /// a trivially-true one; `Controller::invoke_action` treats a
+    /// missing entry as always permitted.
+    ///
+    /// [`PlanEnv`]: crate::expr_plan::PlanEnv
+    pub permits: BTreeMap<(String, String), joker_expr::Program>,
 }
 
 /// The borrowed core tables of a plan.
@@ -476,6 +487,7 @@ impl Plan {
             ids: BTreeMap::new(),
             registry_hash: [0; 32],
             devices,
+            permits: BTreeMap::new(),
         };
         let (ids, hash) = {
             let tables = plan.tables()?;
