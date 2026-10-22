@@ -89,6 +89,7 @@ pub fn check_and_respond(
 #[derive(Debug)]
 pub struct Supervisor {
     stop: Arc<AtomicBool>,
+    stale: Arc<AtomicBool>,
     handle: Option<JoinHandle<()>>,
 }
 
@@ -103,7 +104,9 @@ impl Supervisor {
         let clock = crate::pacer::Monotonic::start();
         let group_boxes = group_boxes(&plan, &shared);
         let stop = Arc::new(AtomicBool::new(false));
+        let stale = Arc::new(AtomicBool::new(false));
         let flag = Arc::clone(&stop);
+        let stale_flag = Arc::clone(&stale);
         let handle = std::thread::Builder::new()
             .name("rt/supervisor".into())
             .spawn(move || {
@@ -113,20 +116,36 @@ impl Supervisor {
                 let mut was_stale = false;
                 while !flag.load(Ordering::Acquire) {
                     let now_mono_ns = clock.now_ns();
-                    let stale = check_and_respond(&plan, &shared, &group_boxes, now_mono_ns);
-                    if stale && !was_stale {
+                    let found_stale = check_and_respond(&plan, &shared, &group_boxes, now_mono_ns);
+                    if found_stale && !was_stale {
                         eprintln!(
                             "jokerd: rt/supervisor: a group has not ticked in over {}x its \
                              period; forcing every output to safe (AUR-274)",
                             STALE_FACTOR
                         );
                     }
-                    was_stale = stale;
+                    was_stale = found_stale;
+                    if found_stale {
+                        stale_flag.store(true, Ordering::Release);
+                    }
                     std::thread::sleep(POLL_INTERVAL);
                 }
             })
             .ok();
-        Self { stop, handle }
+        Self {
+            stop,
+            stale,
+            handle,
+        }
+    }
+
+    /// Whether the supervisor has ever found a stale group in this
+    /// generation (sticky: it does not clear once a group recovers —
+    /// forcing `safe` is meant to hold until a restart, not toggle with
+    /// the hang, docs/01 §8). The hardware-watchdog feed (AUR-274 phase
+    /// 4) stops the moment this turns true.
+    pub fn is_stale(&self) -> bool {
+        self.stale.load(Ordering::Acquire)
     }
 
     /// Stops the supervisor and waits for its thread to end.
