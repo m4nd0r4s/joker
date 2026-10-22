@@ -104,20 +104,25 @@ fn load(table: &Table, file: FileId, diagnostics: &mut Diagnostics) -> Option<Pr
     let (poll, timeout) = defaults_of(table);
     let (fallback, configurable, fallback_timeout) = fallback_of(table, diagnostics);
     let actions = actions_of(table, diagnostics);
-    let latency = table
+    let quirks_table = table
         .get("profile")
         .and_then(|e| e.node.as_table())
         .and_then(|t| t.get("quirks"))
-        .and_then(|e| e.node.as_table())
+        .and_then(|e| e.node.as_table());
+    let latency = quirks_table
         .and_then(|t| t.get("latency"))
         .and_then(|e| e.node.as_str())
         .and_then(|s| Duration::parse(s).ok());
+    let quirks = quirks_table
+        .map(|t| t.iter().map(|(k, e)| (k.clone(), e.node.clone())).collect())
+        .unwrap_or_default();
     Some(ProfileInfo {
         signals,
         fallback,
         configurable,
         fallback_timeout,
         latency,
+        quirks,
         poll,
         timeout,
         actions,
@@ -160,6 +165,38 @@ fn raw_type(
     }
 }
 
+/// Generic point keys (ref/03 §2.2.4): the acquisition stage consumes
+/// these, a driver's address schema never sees them. Everything else in a
+/// signal's table is address-family-specific (ref/03 §2.2.5), kept in
+/// [`SignalInfo::raw`] as given.
+pub const GENERIC_SIGNAL_KEYS: [&str; 25] = [
+    "type",
+    "signal_type",
+    "direction",
+    "unit",
+    "quantity",
+    "scale",
+    "offset",
+    "scale_factor",
+    "enum",
+    "bits",
+    "invert",
+    "encoding",
+    "invalid",
+    "poll",
+    "max_age",
+    "limits",
+    "stuck_detect",
+    "deadband",
+    "monotonic",
+    "readback",
+    "safe_hint",
+    "range_hint",
+    "label",
+    "description",
+    "kind",
+];
+
 fn signals_of(
     table: &Table,
     enums: &BTreeMap<String, Vec<String>>,
@@ -201,6 +238,12 @@ fn signals_of(
             _ => Direction::Input,
         };
         let mut info = SignalInfo::new(ty, direction);
+        info.type_name = Some(type_name.to_owned());
+        info.raw = point
+            .iter()
+            .filter(|(k, _)| !GENERIC_SIGNAL_KEYS.contains(&k.as_str()))
+            .map(|(k, e)| (k.clone(), e.node.clone()))
+            .collect();
         if let Some(unit) = point.get("unit").and_then(|e| e.node.as_str()) {
             match Unit::parse(unit) {
                 Ok(u) => info = info.with_unit(u),

@@ -38,6 +38,27 @@ fn a_minimal_profile_with_one_output_signal() {
     assert_eq!(s.direction, Direction::Output);
 }
 
+#[test]
+fn a_signal_keeps_its_raw_address_keys_and_type_name_for_the_driver() {
+    let p = ok(&format!(
+        "{HEADER}[signals.led]\nat = 0\nfc = 5\ntype = \"bool\"\ndirection = \"output\"\nlabel = \"LED\"\n"
+    ));
+    let s = p.signals.get("led").expect("led");
+    assert_eq!(s.type_name.as_deref(), Some("bool"));
+    assert!(
+        s.raw.contains_key("at"),
+        "{:?}",
+        s.raw.keys().collect::<Vec<_>>()
+    );
+    assert!(s.raw.contains_key("fc"));
+    assert!(
+        !s.raw.contains_key("label"),
+        "generic keys do not reach the driver"
+    );
+    assert!(!s.raw.contains_key("type"));
+    assert!(!s.raw.contains_key("direction"));
+}
+
 /// A case: the code a malformed profile reports, the file and what it
 /// shows.
 type Case = (&'static str, String, &'static str);
@@ -176,6 +197,13 @@ fn an_action_default_timeout_sums_the_waits_plus_a_second_per_step() {
 
 #[test]
 fn quirks_latency() {
-    let p = ok(&format!("{HEADER}\n[profile.quirks]\nlatency = \"15ms\"\n"));
+    let p = ok(&format!(
+        "{HEADER}\n[profile.quirks]\nlatency = \"15ms\"\nmax_regs = 125\n"
+    ));
     assert_eq!(p.latency, Some(joker_units::Duration::from_millis(15)));
+    assert!(p.quirks.contains_key("latency"));
+    assert!(
+        p.quirks.contains_key("max_regs"),
+        "the raw table keeps every key"
+    );
 }
