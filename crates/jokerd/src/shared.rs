@@ -21,10 +21,49 @@ pub const STAGING_CAPACITY: usize = 512;
 pub const DECISION_CAPACITY: usize = 16_384;
 /// Capacity of the write result queue (tickets of async writes).
 pub const RESULT_CAPACITY: usize = 4_096;
+/// Capacity of each group's reset-request queue (`jk reset`, docs/16 E7).
+pub const RESET_CAPACITY: usize = 16;
 /// State exports in flight (apps per request).
 pub const EXPORT_CAPACITY: usize = 256;
 /// Trace buffers in flight between the cycle thread and the trace ring.
 pub const TRACE_BUFFERS: usize = 512;
+
+/// A request to end a trip (`jk reset`, docs/16 E7, ref/09 §5.7): pushed
+/// by the API into the owning group's own queue, consumed by that
+/// group's own next tick (same reasoning as [`Shared::inboxes`] for
+/// proposals — the cycle thread is the only one that may call
+/// `Outputs::reset`).
+#[derive(Debug, Clone, Copy)]
+pub struct ResetRequest {
+    /// The output to reset.
+    pub signal: SignalId,
+    /// Matches the [`ResetOutcome`] this request resolves to.
+    pub ticket: u32,
+}
+
+/// What ending a trip resolved to (ref/09 §5.7's `ResetResult.result`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResetKind {
+    /// The output left trip and stayed clear this tick.
+    Cleared,
+    /// The output left trip but the same condition tripped it again,
+    /// in the same tick (docs/16 E7).
+    Retripped,
+    /// The request named an unknown signal, or one not currently
+    /// tripped; resolved immediately, without waiting for a tick.
+    NotTripped,
+}
+
+/// The resolution of one [`ResetRequest`], by its `ticket`.
+#[derive(Debug, Clone, Copy)]
+pub struct ResetOutcome {
+    /// Matches the request's `ticket`.
+    pub ticket: u32,
+    /// The output that was reset.
+    pub signal: SignalId,
+    /// The result.
+    pub kind: ResetKind,
+}
 
 /// A counter that the cycle thread increments and others read.
 #[derive(Debug, Default)]
@@ -184,6 +223,12 @@ pub struct Shared {
     pub slots: Box<[Slot]>,
     /// One async inbox per group, by group index.
     pub inboxes: Box<[ArrayQueue<Proposal>]>,
+    /// One reset-request queue per group, by group index (`jk reset`).
+    pub resets: Box<[ArrayQueue<ResetRequest>]>,
+    /// Resolutions of reset requests, by ticket.
+    pub reset_results: ArrayQueue<ResetOutcome>,
+    /// Reset resolutions dropped by a full queue.
+    pub reset_results_dropped: Counter,
     /// Decision records for the decision log.
     pub decisions: ArrayQueue<DecisionRecord>,
     /// Decision records dropped by a full queue.
@@ -288,6 +333,11 @@ impl Shared {
             inboxes: (0..plan.groups.len())
                 .map(|_| ArrayQueue::new(INBOX_CAPACITY))
                 .collect(),
+            resets: (0..plan.groups.len())
+                .map(|_| ArrayQueue::new(RESET_CAPACITY))
+                .collect(),
+            reset_results: ArrayQueue::new(RESULT_CAPACITY),
+            reset_results_dropped: Counter::default(),
             decisions: ArrayQueue::new(DECISION_CAPACITY),
             decisions_dropped: Counter::default(),
             results: ArrayQueue::new(RESULT_CAPACITY),

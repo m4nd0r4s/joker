@@ -416,6 +416,29 @@ impl Node {
         Ok(0)
     }
 
+    /// `jk reset <output>`: ends a trip (docs/16 E7, ref/09 §5.7).
+    pub fn reset(&self, output: &str, reason: &str) -> Result<u8, Failure> {
+        let body = json!({"reason": reason, "wait": true});
+        let t = checked(
+            self.client
+                .post(&format!("/v1/outputs/{output}/reset"), &body, &[])?,
+        )?
+        .json();
+        if self.json {
+            print_json(&t);
+        } else {
+            println!("{}", self.header()?);
+            println!(
+                "{output}: {}",
+                t["result"].as_str().unwrap_or("?").replace('_', " ")
+            );
+        }
+        Ok(match t["result"].as_str() {
+            Some("cleared") | Some("not_tripped") => 0,
+            _ => 3,
+        })
+    }
+
     /// `jk explain <output>`: the arbiter state of an output (docs/07) —
     /// owning group, occupied levels, active level, envelope and last
     /// result. The other forms docs/07 lists (a manifest key's origin,

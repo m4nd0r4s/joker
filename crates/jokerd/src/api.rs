@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use joker_api::model::{
     ActivateRequest, GenerationProposal, InvokeActionRequest, ManualWriteRequest, ReasonBody,
-    ReleaseRequest, RollbackRequest, TraceRequest,
+    ReleaseRequest, ResetTripRequest, RollbackRequest, TraceRequest,
 };
 use joker_api::{Backend, Headers, Principal, Problem, Query, Reply};
 use joker_core::image::{Intent, NO_TASK, Proposal, RELINQUISH, Source as ProposalSource};
@@ -986,6 +986,55 @@ impl Backend for Node {
         }
         self.tickets.put(&id, ticket.clone());
         Ok(Reply::ok(ticket))
+    }
+
+    fn reset_trip(
+        &self,
+        _who: &Principal,
+        path: &str,
+        req: ResetTripRequest,
+    ) -> Result<Reply, Problem> {
+        if req.reason.is_empty() {
+            return Err(bad("J-E1106", "a reset needs a reason").with("pointer", json!("/reason")));
+        }
+        let v = self.need_view()?;
+        let o = v
+            .plan
+            .output(path)
+            .ok_or_else(|| Problem::new("J-E1100", 404, format!("`{path}` is not an output")))?
+            .clone();
+        let signal = v
+            .plan
+            .id(&o.path)
+            .ok_or_else(|| Problem::new("J-E1000", 500, "output without signal"))?;
+        let group_index = v
+            .plan
+            .groups
+            .iter()
+            .position(|g| g.name == o.group)
+            .ok_or_else(|| Problem::new("J-E1000", 500, "output's group not found"))?;
+        let resets = v
+            .shared
+            .resets
+            .get(group_index)
+            .ok_or_else(|| Problem::new("J-E1000", 500, "output's group has no reset queue"))?;
+        let ticket = self.tickets.number();
+        resets
+            .push(crate::shared::ResetRequest { signal, ticket })
+            .map_err(|_| Problem::new("J-E1014", 503, "the reset queue is full"))?;
+        let mut result = json!({"output": o.path, "result": "queued"});
+        if req.wait
+            && let Some(outcome) =
+                self.tickets
+                    .wait_reset(&v.shared, ticket, Duration::from_secs(5))
+        {
+            result["result"] = json!(match outcome.kind {
+                crate::shared::ResetKind::Cleared => "cleared",
+                crate::shared::ResetKind::Retripped => "retripped",
+                crate::shared::ResetKind::NotTripped => "not_tripped",
+            });
+        }
+        Ok(Reply::ok(result))
     }
 
     fn manual(&self, query: &Query) -> Result<Reply, Problem> {

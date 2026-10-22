@@ -19,7 +19,7 @@ use joker_core::{GroupId, Outputs, OutputsStorage, Sample, SignalId, WriterId};
 
 use crate::pacer::Pacer;
 use crate::plan::Plan;
-use crate::shared::{OutputMeta, STAGING_CAPACITY, Shared, TraceChunk};
+use crate::shared::{OutputMeta, ResetKind, ResetOutcome, STAGING_CAPACITY, Shared, TraceChunk};
 use crate::task::{CycleTask, Prepare, TaskContext};
 
 /// Why the cycle thread could not start.
@@ -64,6 +64,10 @@ struct Sink<'s> {
     results: &'s mut Vec<TraceResult>,
     tick: u64,
     at_mono_ns: u64,
+    /// Reset requests admitted this tick (`Outputs::reset` returned
+    /// true), by signal, awaiting this same tick's own `output()` to
+    /// learn whether the output cleared or retripped (docs/16 E7).
+    pending_resets: &'s mut BTreeMap<SignalId, u32>,
 }
 
 impl CommitSink for Sink<'_> {
@@ -90,6 +94,21 @@ impl CommitSink for Sink<'_> {
                 self.tick,
                 self.at_mono_ns,
             );
+        }
+        if let Some(ticket) = self.pending_resets.remove(&result.signal) {
+            let kind = if result.tripped {
+                ResetKind::Retripped
+            } else {
+                ResetKind::Cleared
+            };
+            let outcome = ResetOutcome {
+                ticket,
+                signal: result.signal,
+                kind,
+            };
+            if self.shared.reset_results.push(outcome).is_err() {
+                self.shared.reset_results_dropped.bump();
+            }
         }
     }
 
@@ -302,6 +321,23 @@ fn tick(
             }
         }
     }
+    let mut pending_resets: BTreeMap<SignalId, u32> = BTreeMap::new();
+    if let Some(resets) = shared.resets.get(g.index) {
+        while let Some(req) = resets.pop() {
+            if outputs.reset(req.signal) {
+                pending_resets.insert(req.signal, req.ticket);
+            } else {
+                let outcome = ResetOutcome {
+                    ticket: req.ticket,
+                    signal: req.signal,
+                    kind: crate::shared::ResetKind::NotTripped,
+                };
+                if shared.reset_results.push(outcome).is_err() {
+                    shared.reset_results_dropped.bump();
+                }
+            }
+        }
+    }
     for (writer, task) in &mut g.tasks {
         let mut cx = TaskContext::new(&mut g.image, outputs, *writer);
         if task.run(&mut cx).is_err() {
@@ -315,6 +351,7 @@ fn tick(
         results: &mut g.results,
         tick: index,
         at_mono_ns: at.mono_ns,
+        pending_resets: &mut pending_resets,
     };
     if outputs.commit(&g.image, &shared.slots, &mut sink).is_err() {
         stats.task_errors.bump();

@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use joker_core::commit::WriteResult;
 
-use crate::shared::Shared;
+use crate::shared::{ResetOutcome, Shared};
 
 /// Who holds a manual level of an output.
 #[derive(Debug, Clone, PartialEq)]
@@ -98,6 +98,7 @@ pub const TICKET_RETENTION: Duration = Duration::from_secs(600);
 pub struct TicketBook {
     next: Mutex<u32>,
     results: Mutex<HashMap<u32, WriteResult>>,
+    reset_results: Mutex<HashMap<u32, ResetOutcome>>,
     tickets: Mutex<BTreeMap<String, Ticket>>,
 }
 
@@ -124,6 +125,31 @@ impl TicketBook {
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
                 while let Some(r) = shared.results.pop() {
                     results.insert(r.proposal.ticket, r);
+                }
+                if let Some(r) = results.remove(&n) {
+                    return Some(r);
+                }
+            }
+            if start.elapsed() >= timeout {
+                return None;
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    }
+
+    /// Waits for the resolution of reset ticket `n` (`jk reset`, docs/16
+    /// E7), draining the generation's reset-result queue meanwhile;
+    /// `None` after `timeout`.
+    pub fn wait_reset(&self, shared: &Shared, n: u32, timeout: Duration) -> Option<ResetOutcome> {
+        let start = Instant::now();
+        loop {
+            {
+                let mut results = self
+                    .reset_results
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                while let Some(r) = shared.reset_results.pop() {
+                    results.insert(r.ticket, r);
                 }
                 if let Some(r) = results.remove(&n) {
                     return Some(r);
