@@ -196,6 +196,147 @@ fn an_action_default_timeout_sums_the_waits_plus_a_second_per_step() {
 }
 
 #[test]
+fn a_write_step_keeps_its_raw_address_and_a_literal_value() {
+    use joker_manifest::context::{ActionStep, ActionValue};
+    use joker_manifest::value::Value;
+
+    let p = ok(&format!(
+        "{HEADER}[actions.reset]\nsteps = [{{ write = {{ at = 40300, fc = 6, value = 1 }} }}]\n"
+    ));
+    let steps = p.action_steps.get("reset").expect("reset steps");
+    assert_eq!(steps.len(), 1);
+    let ActionStep::Write {
+        addr,
+        type_name,
+        value,
+    } = &steps[0]
+    else {
+        panic!("expected a write step, got {:?}", steps[0]);
+    };
+    assert!(addr.contains_key("at"));
+    assert!(addr.contains_key("fc"));
+    assert!(
+        !addr.contains_key("value"),
+        "step-kind keys do not leak into the address"
+    );
+    assert!(type_name.is_none());
+    assert_eq!(*value, ActionValue::Literal(Value::Integer(1)));
+}
+
+#[test]
+fn a_write_step_with_an_arg_reference() {
+    use joker_manifest::context::{ActionStep, ActionValue};
+
+    let p = ok(&format!(
+        "{HEADER}[actions.set_speed]\nargs = {{ level = \"f64\" }}\nsteps = [{{ write = {{ at = 1, type = \"u16\", value = \"$level\" }} }}]\n"
+    ));
+    let steps = p.action_steps.get("set_speed").expect("set_speed steps");
+    let ActionStep::Write {
+        type_name, value, ..
+    } = &steps[0]
+    else {
+        panic!("expected a write step, got {:?}", steps[0]);
+    };
+    assert_eq!(type_name.as_deref(), Some("u16"));
+    assert_eq!(*value, ActionValue::Arg("level".to_owned()));
+}
+
+#[test]
+fn a_wait_step() {
+    use joker_manifest::context::ActionStep;
+
+    let p = ok(&format!(
+        "{HEADER}[actions.reset]\nsteps = [{{ wait = \"500ms\" }}]\n"
+    ));
+    let steps = p.action_steps.get("reset").expect("reset steps");
+    assert_eq!(
+        steps[0],
+        ActionStep::Wait(joker_units::Duration::from_millis(500))
+    );
+}
+
+#[test]
+fn a_read_step_with_into() {
+    use joker_manifest::context::ActionStep;
+
+    let p = ok(&format!(
+        "{HEADER}[actions.get_status]\nresult = {{ running = \"bool\" }}\nsteps = [{{ read = {{ at = 2, type = \"bool\", into = \"running\" }} }}]\n"
+    ));
+    let steps = p.action_steps.get("get_status").expect("get_status steps");
+    let ActionStep::Read {
+        addr,
+        type_name,
+        into,
+    } = &steps[0]
+    else {
+        panic!("expected a read step, got {:?}", steps[0]);
+    };
+    assert!(addr.contains_key("at"));
+    assert_eq!(type_name.as_deref(), Some("bool"));
+    assert_eq!(into, "running");
+}
+
+#[test]
+fn an_until_step_with_equals_and_timeout() {
+    use joker_manifest::context::ActionStep;
+    use joker_manifest::value::Value;
+
+    let p = ok(&format!(
+        "{HEADER}[actions.reset]\nsteps = [{{ until = {{ at = 2, type = \"bool\", equals = true, timeout = \"2s\" }} }}]\n"
+    ));
+    let steps = p.action_steps.get("reset").expect("reset steps");
+    let ActionStep::Until {
+        addr,
+        type_name,
+        equals,
+        timeout,
+    } = &steps[0]
+    else {
+        panic!("expected an until step, got {:?}", steps[0]);
+    };
+    assert!(addr.contains_key("at"));
+    assert_eq!(type_name.as_deref(), Some("bool"));
+    assert_eq!(*equals, Value::Bool(true));
+    assert_eq!(*timeout, joker_units::Duration::from_secs(2));
+}
+
+#[test]
+fn a_fail_if_step_with_a_message() {
+    use joker_manifest::context::ActionStep;
+    use joker_manifest::value::Value;
+
+    let p = ok(&format!(
+        "{HEADER}[actions.reset]\nsteps = [{{ fail_if = {{ at = 3, type = \"bool\", equals = true, message = \"fault\" }} }}]\n"
+    ));
+    let steps = p.action_steps.get("reset").expect("reset steps");
+    let ActionStep::FailIf {
+        addr,
+        type_name,
+        equals,
+        message,
+    } = &steps[0]
+    else {
+        panic!("expected a fail_if step, got {:?}", steps[0]);
+    };
+    assert!(addr.contains_key("at"));
+    assert_eq!(type_name.as_deref(), Some("bool"));
+    assert_eq!(*equals, Value::Bool(true));
+    assert_eq!(message, "fault");
+}
+
+#[test]
+fn an_action_default_timeout_now_also_counts_until_budgets() {
+    let p = ok(&format!(
+        "{HEADER}[actions.reset]\nsteps = [{{ until = {{ at = 2, type = \"bool\", equals = true, timeout = \"2s\" }} }}]\n"
+    ));
+    // 1 step x 1s + the 2s until budget.
+    assert_eq!(
+        p.actions.get("reset"),
+        Some(&Some(joker_units::Duration::from_secs(3)))
+    );
+}
+
+#[test]
 fn quirks_latency() {
     let p = ok(&format!(
         "{HEADER}\n[profile.quirks]\nlatency = \"15ms\"\nmax_regs = 125\n"

@@ -4,14 +4,18 @@
 //! Scoped deliberately to what `ProfileInfo` models: `[profile]` presence,
 //! `[signals]` (`type`/`signal_type`/`direction`/`unit`, through `[enums]`),
 //! `[defaults]` (`poll`/`timeout`), `[fallback]` (presence, `configurable`,
-//! a fixed `timeout`) and `[actions]` (an explicit `timeout`, or derived
-//! from `steps`' `wait` budgets the same way ref/03 §2.2.12 does: the sum
-//! of the waits plus one second per step). Address schemas (driver-specific,
-//! ref/03 §2.2.5), `[coherent]`, `[connect]`, `[relinquish]`, `[events]`,
-//! `[implements]`, `[discovery]`, per-signal acquisition keys (`scale`,
-//! `limits`, …) and the fallback's register forms
-//! (`timeout_register`/`value_register`/`values`/`applies_to`) are not
-//! parsed here (AUR-414).
+//! a fixed `timeout`) and `[actions]`: an explicit `timeout`, or one
+//! derived from `steps`' `wait`/`until` budgets (ref/03 §2.2.12), and the
+//! `steps` themselves compiled into [`crate::context::ActionStep`] — still
+//! address-agnostic (each step's address is whatever keys its own table
+//! declares beyond its kind's keys, left raw for a driver family to
+//! compile into CBOR, same treatment as a signal's [`SignalInfo::raw`]).
+//! `native` actions, `args`/`result` type tables, address schemas
+//! (driver-specific, ref/03 §2.2.5), `[coherent]`, `[connect]`,
+//! `[relinquish]`, `[events]`, `[implements]`, `[discovery]`, per-signal
+//! acquisition keys (`scale`, `limits`, …) and the fallback's register
+//! forms (`timeout_register`/`value_register`/`values`/`applies_to`) are
+//! not parsed here (AUR-414/405).
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -103,7 +107,8 @@ fn load(table: &Table, file: FileId, diagnostics: &mut Diagnostics) -> Option<Pr
     let signals = signals_of(table, &enums, diagnostics)?;
     let (poll, timeout) = defaults_of(table);
     let (fallback, configurable, fallback_timeout) = fallback_of(table, diagnostics);
-    let actions = actions_of(table, diagnostics);
+    let action_steps = action_steps_of(table);
+    let actions = actions_of(table, &action_steps, diagnostics);
     let quirks_table = table
         .get("profile")
         .and_then(|e| e.node.as_table())
@@ -126,6 +131,7 @@ fn load(table: &Table, file: FileId, diagnostics: &mut Diagnostics) -> Option<Pr
         poll,
         timeout,
         actions,
+        action_steps,
     })
 }
 
@@ -299,24 +305,148 @@ fn fallback_of(table: &Table, diagnostics: &mut Diagnostics) -> (bool, bool, Opt
 }
 
 /// ref/03 §2.2.12: an action's default `timeout` is the sum of its `wait`
-/// budgets plus one second per step.
-fn steps_default_timeout(steps: &[Node]) -> Duration {
+/// and `until` budgets plus one second per step.
+fn steps_default_timeout(steps: &[crate::context::ActionStep]) -> Duration {
+    use crate::context::ActionStep;
     let mut nanos: u64 = 0;
     for step in steps {
         nanos += Duration::from_secs(1).as_nanos();
-        if let Some(wait) = step
-            .as_table()
-            .and_then(|t| t.get("wait"))
-            .and_then(|e| e.node.as_str())
-            .and_then(|s| Duration::parse(s).ok())
-        {
-            nanos += wait.as_nanos();
-        }
+        nanos += match step {
+            ActionStep::Wait(d) => d.as_nanos(),
+            ActionStep::Until { timeout, .. } => timeout.as_nanos(),
+            ActionStep::Write { .. } | ActionStep::Read { .. } | ActionStep::FailIf { .. } => 0,
+        };
     }
     Duration::from_nanos(nanos)
 }
 
-fn actions_of(table: &Table, diagnostics: &mut Diagnostics) -> BTreeMap<String, Option<Duration>> {
+/// Keys a step's kind reserves for itself: the rest of the step's table is
+/// its address (driver-specific, compiled into CBOR per family in
+/// `jokerd::bridge`, same treatment as a signal's own address keys in
+/// [`signals_of`]).
+const STEP_KEYS: [&str; 6] = ["type", "value", "into", "equals", "timeout", "message"];
+
+fn step_addr(step: &Table) -> BTreeMap<String, Node> {
+    step.iter()
+        .filter(|(k, _)| !STEP_KEYS.contains(&k.as_str()))
+        .map(|(k, e)| (k.clone(), e.node.clone()))
+        .collect()
+}
+
+fn action_value_of(node: &Node) -> crate::context::ActionValue {
+    use crate::context::ActionValue;
+    match node.as_str() {
+        Some(s) if s.starts_with('$') => ActionValue::Arg(s[1..].to_owned()),
+        _ => ActionValue::Literal(node.value.clone()),
+    }
+}
+
+fn action_steps_of(table: &Table) -> BTreeMap<String, Vec<crate::context::ActionStep>> {
+    use crate::context::ActionStep;
+    let Some(actions) = table.get("actions").and_then(|e| e.node.as_table()) else {
+        return BTreeMap::new();
+    };
+    let mut out = BTreeMap::new();
+    for (name, entry) in actions {
+        let Some(action) = entry.node.as_table() else {
+            continue;
+        };
+        let Some(steps) = action.get("steps").and_then(|e| match &e.node.value {
+            Value::Array(items) => Some(items),
+            _ => None,
+        }) else {
+            continue;
+        };
+        let mut compiled = Vec::with_capacity(steps.len());
+        for step in steps {
+            let Some(step_table) = step.as_table() else {
+                continue;
+            };
+            if let Some(entry) = step_table.get("write")
+                && let Some(t) = entry.node.as_table()
+            {
+                let Some(value) = t.get("value").map(|e| action_value_of(&e.node)) else {
+                    continue;
+                };
+                compiled.push(ActionStep::Write {
+                    addr: step_addr(t),
+                    type_name: t
+                        .get("type")
+                        .and_then(|e| e.node.as_str())
+                        .map(str::to_owned),
+                    value,
+                });
+            } else if let Some(entry) = step_table.get("read")
+                && let Some(t) = entry.node.as_table()
+            {
+                let Some(into) = t.get("into").and_then(|e| e.node.as_str()) else {
+                    continue;
+                };
+                compiled.push(ActionStep::Read {
+                    addr: step_addr(t),
+                    type_name: t
+                        .get("type")
+                        .and_then(|e| e.node.as_str())
+                        .map(str::to_owned),
+                    into: into.to_owned(),
+                });
+            } else if let Some(entry) = step_table.get("wait") {
+                let Some(d) = entry.node.as_str().and_then(|s| Duration::parse(s).ok()) else {
+                    continue;
+                };
+                compiled.push(ActionStep::Wait(d));
+            } else if let Some(entry) = step_table.get("until")
+                && let Some(t) = entry.node.as_table()
+            {
+                let Some(equals) = t.get("equals").map(|e| e.node.value.clone()) else {
+                    continue;
+                };
+                let Some(timeout) = t
+                    .get("timeout")
+                    .and_then(|e| e.node.as_str())
+                    .and_then(|s| Duration::parse(s).ok())
+                else {
+                    continue;
+                };
+                compiled.push(ActionStep::Until {
+                    addr: step_addr(t),
+                    type_name: t
+                        .get("type")
+                        .and_then(|e| e.node.as_str())
+                        .map(str::to_owned),
+                    equals,
+                    timeout,
+                });
+            } else if let Some(entry) = step_table.get("fail_if")
+                && let Some(t) = entry.node.as_table()
+            {
+                let Some(equals) = t.get("equals").map(|e| e.node.value.clone()) else {
+                    continue;
+                };
+                let Some(message) = t.get("message").and_then(|e| e.node.as_str()) else {
+                    continue;
+                };
+                compiled.push(ActionStep::FailIf {
+                    addr: step_addr(t),
+                    type_name: t
+                        .get("type")
+                        .and_then(|e| e.node.as_str())
+                        .map(str::to_owned),
+                    equals,
+                    message: message.to_owned(),
+                });
+            }
+        }
+        out.insert(name.clone(), compiled);
+    }
+    out
+}
+
+fn actions_of(
+    table: &Table,
+    action_steps: &BTreeMap<String, Vec<crate::context::ActionStep>>,
+    diagnostics: &mut Diagnostics,
+) -> BTreeMap<String, Option<Duration>> {
     let Some(actions) = table.get("actions").and_then(|e| e.node.as_table()) else {
         return BTreeMap::new();
     };
@@ -340,17 +470,13 @@ fn actions_of(table: &Table, diagnostics: &mut Diagnostics) -> BTreeMap<String, 
                 }
             }
         }
-        let steps = action
-            .get("steps")
-            .and_then(|e| match &e.node.value {
-                Value::Array(items) => Some(items.clone()),
-                _ => None,
-            })
-            .unwrap_or_default();
-        if steps.is_empty() {
-            out.insert(name.clone(), None);
-        } else {
-            out.insert(name.clone(), Some(steps_default_timeout(&steps)));
+        match action_steps.get(name) {
+            Some(steps) if !steps.is_empty() => {
+                out.insert(name.clone(), Some(steps_default_timeout(steps)));
+            }
+            _ => {
+                out.insert(name.clone(), None);
+            }
         }
     }
     out

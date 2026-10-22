@@ -219,6 +219,70 @@ pub struct ProfileInfo {
     /// (explicit `timeout`, or derived from its steps); `None` when the
     /// profile declares the action without a default (ref/03 §2.2.12).
     pub actions: BTreeMap<String, Option<Duration>>,
+    /// `[actions.<a>].steps`, by name, still in raw manifest form: an
+    /// address is whatever keys a step's own table declares beyond its
+    /// kind's own keys (driver-specific, compiled into CBOR per family in
+    /// `jokerd::bridge`, not here). An action using `native` instead of
+    /// `steps` has no entry here.
+    pub action_steps: BTreeMap<String, Vec<ActionStep>>,
+}
+
+/// One step of a profile action's `steps` program (ref/03 §2.2.12).
+#[derive(Debug, Clone, PartialEq)]
+pub enum ActionStep {
+    /// Writes a raw value, or (with `value = "$name"`) an argument.
+    Write {
+        /// The step's own table, minus `type`/`value`.
+        addr: BTreeMap<String, crate::value::Node>,
+        /// The driver's `type` for this address, when given.
+        type_name: Option<String>,
+        /// What to write.
+        value: ActionValue,
+    },
+    /// Reads and stores the result under `into`.
+    Read {
+        /// The step's own table, minus `type`/`into`.
+        addr: BTreeMap<String, crate::value::Node>,
+        /// The driver's `type` for this address, when given.
+        type_name: Option<String>,
+        /// The result field this fills.
+        into: String,
+    },
+    /// Waits before the next step.
+    Wait(Duration),
+    /// Reads until the value matches `equals`, or fails with `timeout`
+    /// once `timeout` elapses.
+    Until {
+        /// The step's own table, minus `type`/`equals`/`timeout`.
+        addr: BTreeMap<String, crate::value::Node>,
+        /// The driver's `type` for this address, when given.
+        type_name: Option<String>,
+        /// What it waits to see.
+        equals: crate::value::Value,
+        /// How long it waits.
+        timeout: Duration,
+    },
+    /// Ends the action with `message` if the value matches `equals`.
+    FailIf {
+        /// The step's own table, minus `type`/`equals`/`message`.
+        addr: BTreeMap<String, crate::value::Node>,
+        /// The driver's `type` for this address, when given.
+        type_name: Option<String>,
+        /// What ends the action.
+        equals: crate::value::Value,
+        /// Why.
+        message: String,
+    },
+}
+
+/// A step's literal value, or a named argument substituted at invocation
+/// (`"$name"`, ref/03 §2.2.12).
+#[derive(Debug, Clone, PartialEq)]
+pub enum ActionValue {
+    /// A literal value.
+    Literal(crate::value::Value),
+    /// `"$name"`: the value of that argument.
+    Arg(String),
 }
 
 /// A known board.
