@@ -1189,3 +1189,208 @@ mod action_tests {
         assert_eq!(action_entries[0]["outcome"], "failed");
     }
 }
+
+/// Runs `conformance/actions/*.action.toml` (AUR-418): M19 action cases
+/// against a real `Controller::invoke_action`, loaded through a real
+/// manifest and profile file, with a double only at the driver
+/// boundary (ref/06 §2.10 delegates the wire protocol to the driver;
+/// this suite is about the dispatch/decision-log mechanics above it).
+/// Lives here, not as a `tests/*.rs` integration test, because it
+/// needs `Active`/`Controller::active`, both private — see
+/// `conformance/README.md`'s "Device actions" section for the file
+/// format and why `cargo xtask conformance`'s core-only engine does
+/// not run these (same reasoning as `link/`'s and `abi/`'s own
+/// special-cased formats).
+#[cfg(test)]
+mod conformance_actions {
+    use std::path::Path;
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use joker_manifest::OsFileSystem;
+    use toml::{Table, Value as Toml};
+
+    use super::*;
+    use crate::decisions::DecisionLog;
+    use crate::devices::{DeviceSet, NoDevices};
+    use crate::drivers::{ActionCall, ActionOutcome};
+    use crate::native::NativeTasks;
+    use crate::pacer::{Monotonic, SystemPacer};
+    use crate::runner::{Running, Start};
+
+    struct FakeDeviceSet {
+        sender: tokio::sync::mpsc::Sender<ActionCall>,
+    }
+
+    impl DeviceSet for FakeDeviceSet {
+        fn stop(self: Box<Self>) {}
+
+        fn action_sender(&self, _device: &str) -> Option<tokio::sync::mpsc::Sender<ActionCall>> {
+            Some(self.sender.clone())
+        }
+    }
+
+    /// A background "driver": answers every `ActionCall` with `Ok`,
+    /// unless `should_fail` is set, in which case it answers `Failed`.
+    fn spawn_driver() -> (tokio::sync::mpsc::Sender<ActionCall>, Arc<AtomicBool>) {
+        let should_fail = Arc::new(AtomicBool::new(false));
+        let flag = Arc::clone(&should_fail);
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<ActionCall>(4);
+        std::thread::spawn(move || {
+            while let Some(call) = rx.blocking_recv() {
+                let outcome = if flag.load(Ordering::SeqCst) {
+                    ActionOutcome::Failed("the double refused the write".to_owned())
+                } else {
+                    ActionOutcome::Ok
+                };
+                let _ = call.reply.send(outcome);
+            }
+        });
+        (tx, should_fail)
+    }
+
+    fn toml_str<'a>(t: &'a Toml, key: &str) -> &'a str {
+        t.get(key)
+            .and_then(Toml::as_str)
+            .unwrap_or_else(|| panic!("missing or non-string `{key}`"))
+    }
+
+    /// Runs every `[[case]]` of one suite file in order, against one
+    /// `Controller` (so `after` — a later case replaying an earlier
+    /// one's key — shares the same dispatcher and decision log).
+    fn run_suite(path: &Path) {
+        let text =
+            std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        let doc: Table = text
+            .parse()
+            .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        let fixture = doc.get("fixture").expect("suite has a [fixture]");
+        let joker_toml = toml_str(fixture, "joker_toml");
+        let profile_toml = toml_str(fixture, "profile_toml");
+
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("joker.toml"), joker_toml).unwrap();
+        std::fs::create_dir_all(dir.path().join("profiles/acme")).unwrap();
+        std::fs::write(
+            dir.path().join("profiles/acme/pcs@1.profile.toml"),
+            profile_toml,
+        )
+        .unwrap();
+
+        let log = Arc::new(Mutex::new(
+            DecisionLog::open(&dir.path().join("decisions.jsonl")).unwrap(),
+        ));
+        let clock = Monotonic::start();
+        let mut c = Controller::new(
+            dir.path(),
+            Arc::clone(&log),
+            Arc::new(NativeTasks),
+            Arc::new(NoDevices),
+            Box::new(move || Box::new(SystemPacer::new(clock, joker_core::ClockQuality::Unsynced))),
+            Config::default(),
+        )
+        .unwrap();
+
+        let loaded = load(&OsFileSystem, &dir.path().join("joker.toml"), &NativeTasks)
+            .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        assert!(
+            !loaded.report.has_errors(),
+            "{}: {}",
+            path.display(),
+            loaded.report.render()
+        );
+        let plan = Arc::new(loaded.plan);
+        let running = Running::start(
+            Arc::clone(&plan),
+            Vec::new(),
+            Box::new(SystemPacer::new(clock, joker_core::ClockQuality::Unsynced)),
+            Arc::clone(&log),
+            Start {
+                generation: 1,
+                inherit: Default::default(),
+                retention: Duration::from_secs(60),
+                max_ticks: None,
+                utc_origin_ns: 0,
+                cpus: Vec::new(),
+            },
+        )
+        .unwrap();
+
+        let (tx, should_fail) = spawn_driver();
+        c.active = Some(Active {
+            number: 1,
+            hash: "sha256:conformance".into(),
+            running,
+            devices: Box::new(FakeDeviceSet { sender: tx }),
+        });
+
+        let cases = doc
+            .get("case")
+            .and_then(Toml::as_array)
+            .unwrap_or_else(|| panic!("{}: no [[case]] entries", path.display()));
+        for (i, case) in cases.iter().enumerate() {
+            let name = toml_str(case, "name");
+            let device = toml_str(case, "device");
+            let action = toml_str(case, "action");
+            let key = toml_str(case, "key");
+            let driver = toml_str(case, "driver");
+            should_fail.store(driver == "fails", Ordering::SeqCst);
+
+            let result = c
+                .invoke_action(device, action, key, i as u64, "user:conformance")
+                .unwrap_or_else(|e| panic!("{}/{name}: {e}", path.display()));
+
+            let expect = case.get("expect").expect("case has [case.expect]");
+            let expected_state = toml_str(expect, "state");
+            let actual_state = match &result {
+                Invoked::Ran(ActionResult::Succeeded)
+                | Invoked::Duplicate(ActionResult::Succeeded) => "succeeded",
+                Invoked::Ran(ActionResult::Failed(_))
+                | Invoked::Duplicate(ActionResult::Failed(_)) => "failed",
+                Invoked::Rejected(_) => "rejected",
+            };
+            assert_eq!(
+                actual_state,
+                expected_state,
+                "{}/{name}: expected state `{expected_state}`, got `{actual_state}`",
+                path.display()
+            );
+            if expect.get("replay").and_then(Toml::as_bool) == Some(true) {
+                assert!(
+                    matches!(result, Invoked::Duplicate(_)),
+                    "{}/{name}: expected a dedup replay, got {result:?}",
+                    path.display()
+                );
+            }
+        }
+
+        let entries =
+            DecisionLog::read_all(&dir.path().join("decisions.jsonl")).unwrap_or_default();
+        let action_entries: Vec<_> = entries.iter().filter(|e| e["record"] == "action").collect();
+        assert_eq!(
+            action_entries.len(),
+            cases.len(),
+            "{}: every invocation must enter the decision log exactly once (invariant 8)",
+            path.display()
+        );
+        for (case, entry) in cases.iter().zip(&action_entries) {
+            let expect = case.get("expect").unwrap();
+            assert_eq!(entry["record"], toml_str(expect, "decision_kind"));
+            assert_eq!(entry["outcome"], toml_str(expect, "outcome"));
+        }
+    }
+
+    #[test]
+    fn conformance_action_cases_pass() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../conformance/actions");
+        let mut ran = 0;
+        for entry in std::fs::read_dir(&dir).unwrap_or_else(|e| panic!("{}: {e}", dir.display())) {
+            let path = entry.unwrap().path();
+            if path.extension().and_then(|e| e.to_str()) == Some("toml") {
+                run_suite(&path);
+                ran += 1;
+            }
+        }
+        assert!(ran > 0, "no conformance/actions/*.toml suite found");
+    }
+}
