@@ -18,6 +18,7 @@ pub mod manual;
 pub mod native;
 pub mod pacer;
 pub mod plan;
+pub mod real_devices;
 pub mod replay;
 pub mod resources;
 pub mod runner;

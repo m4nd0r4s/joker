@@ -37,6 +37,31 @@ impl Devices for NoDevices {
     }
 }
 
+/// Two [`Devices`] started together: `driver = "sim"` through one (the
+/// simulated path, keyed off `plan.signals`), every other device through
+/// the other (real drivers, keyed off `plan.devices` — `bridge::device_plans`
+/// already skips `sim`, so the two never compete for the same device).
+#[derive(Debug)]
+pub struct Combined<A, B>(pub A, pub B);
+
+struct CombinedSet(Box<dyn DeviceSet>, Box<dyn DeviceSet>);
+
+impl DeviceSet for CombinedSet {
+    fn stop(self: Box<Self>) {
+        self.0.stop();
+        self.1.stop();
+    }
+}
+
+impl<A: Devices, B: Devices> Devices for Combined<A, B> {
+    fn start(&self, plan: &Arc<Plan>, shared: &Arc<Shared>) -> Box<dyn DeviceSet> {
+        Box::new(CombinedSet(
+            self.0.start(plan, shared),
+            self.1.start(plan, shared),
+        ))
+    }
+}
+
 /// Every device as a simulated device on a tokio runtime.
 #[derive(Clone)]
 pub struct SimDevices {

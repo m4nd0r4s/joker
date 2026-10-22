@@ -7,8 +7,9 @@ use std::sync::{Arc, Mutex};
 
 use crate::control::{Config, Controller};
 use crate::decisions::DecisionLog;
-use crate::devices::{Devices, SimDevices};
+use crate::devices::{Combined, Devices, SimDevices};
 use crate::pacer::{Monotonic, SystemPacer};
+use crate::real_devices::RealDevices;
 use crate::task::TaskProvider;
 
 /// Command-line options of `jokerd`.
@@ -142,10 +143,13 @@ pub fn run(options: Options, tasks: Arc<dyn TaskProvider>) -> Result<(), String>
         .enable_all()
         .build()
         .map_err(|e| format!("tokio: {e}"))?;
-    let devices = Arc::new(SimDevices::new(
-        runtime.handle().clone(),
-        clock,
-        std::time::Duration::from_millis(10),
+    let devices = Arc::new(Combined(
+        SimDevices::new(
+            runtime.handle().clone(),
+            clock,
+            std::time::Duration::from_millis(10),
+        ),
+        RealDevices::new(runtime.handle().clone()),
     ));
     let utc_origin_ns = crate::wire::utc_now_ns().saturating_sub(clock.now_ns() as i64);
     let controller: SharedController = Arc::new(Mutex::new(controller(

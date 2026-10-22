@@ -13,6 +13,8 @@ joker-core = { workspace = true, features = ["alloc"] }
 joker-units = { workspace = true, features = ["alloc"] }
 joker-manifest = { path = "../joker-manifest" }
 joker-hal = { path = "../joker-hal", features = ["std", "plan"] }
+joker-driver-sysfs = { path = "../joker-drivers/sysfs" }
+joker-driver-modbus = { path = "../joker-drivers/modbus" }
 joker-api = { path = "../joker-api" }
 joker-host.workspace = true
 humantime = "2.3"
