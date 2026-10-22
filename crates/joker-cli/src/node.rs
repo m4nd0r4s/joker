@@ -416,6 +416,38 @@ impl Node {
         Ok(0)
     }
 
+    /// `jk action`.
+    pub fn action(&self, target_action: &str, args: &[String], key: &str) -> Result<u8, Failure> {
+        let (target, action) = split_target_action(target_action)?;
+        let body = json!({"args": parse_args(args)?});
+        let invocation = checked(self.client.send(
+            "POST",
+            &format!("/v1/actions/{target}/{action}"),
+            &[("idempotency-key", key)],
+            Some(&body),
+        )?)?
+        .json();
+        if self.json {
+            print_json(&invocation);
+        } else {
+            println!("{}", self.header()?);
+            match invocation["state"].as_str().unwrap_or("?") {
+                "succeeded" => println!("{target_action}: succeeded"),
+                "failed" => println!(
+                    "{target_action}: failed · {} ({})",
+                    invocation["error"]["message"].as_str().unwrap_or(""),
+                    invocation["error"]["code"].as_str().unwrap_or(""),
+                ),
+                other => println!("{target_action}: {other}"),
+            }
+        }
+        Ok(match invocation["state"].as_str() {
+            Some("succeeded") => 0,
+            Some("failed") => 3,
+            _ => 0,
+        })
+    }
+
     /// `jk decisions`.
     pub fn decisions(&self, outputs: &[String], limit: u32) -> Result<u8, Failure> {
         let mut q = vec![format!("limit={limit}")];
@@ -517,5 +549,72 @@ impl Node {
         }
         let created = checked(self.client.post("/v1/traces", &body, &[])?)?.json();
         self.download(created, Duration::from_secs(30), out)
+    }
+}
+
+/// `<target>.<action>` (docs/07, ref/09 §5.10), split on the first `.`.
+fn split_target_action(s: &str) -> Result<(&str, &str), Failure> {
+    s.split_once('.')
+        .filter(|(t, a)| !t.is_empty() && !a.is_empty())
+        .ok_or_else(|| Failure::usage(format!("`{s}` must be `<target>.<action>`")))
+}
+
+/// `name=value` positional args into the `InvokeRequest.args` object
+/// (ref/09 §5.10), with `jk write`'s own bool/number/string fallback.
+fn parse_args(pairs: &[String]) -> Result<Value, Failure> {
+    let mut map = serde_json::Map::new();
+    for pair in pairs {
+        let (name, value) = pair
+            .split_once('=')
+            .ok_or_else(|| Failure::usage(format!("`{pair}` must be `name=value`")))?;
+        let value = match value {
+            "true" => json!(true),
+            "false" => json!(false),
+            v => v.parse::<f64>().map_or_else(|_| json!(v), |n| json!(n)),
+        };
+        map.insert(name.to_owned(), value);
+    }
+    Ok(Value::Object(map))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn target_and_action_split_on_the_first_dot() {
+        assert_eq!(
+            split_target_action("pcs.reset_fault").unwrap(),
+            ("pcs", "reset_fault")
+        );
+    }
+
+    #[test]
+    fn a_missing_dot_is_a_usage_error() {
+        assert!(split_target_action("pcs").is_err());
+    }
+
+    #[test]
+    fn an_empty_target_or_action_is_a_usage_error() {
+        assert!(split_target_action(".reset").is_err());
+        assert!(split_target_action("pcs.").is_err());
+    }
+
+    #[test]
+    fn args_parse_bools_numbers_and_strings() {
+        let args = parse_args(&[
+            "enabled=true".to_owned(),
+            "retries=3".to_owned(),
+            "label=hello".to_owned(),
+        ])
+        .unwrap();
+        assert_eq!(args["enabled"], json!(true));
+        assert_eq!(args["retries"], json!(3.0));
+        assert_eq!(args["label"], json!("hello"));
+    }
+
+    #[test]
+    fn an_arg_without_equals_is_a_usage_error() {
+        assert!(parse_args(&["nope".to_owned()]).is_err());
     }
 }
