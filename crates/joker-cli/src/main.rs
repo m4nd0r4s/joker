@@ -78,6 +78,8 @@ enum Command {
     Generations,
     /// A summary of the node.
     Status,
+    /// A live view of the runtime's own metrics, redrawn once a second.
+    Top,
     /// Read signals with quality and age.
     Read {
         /// Selectors (`pi.**`, `inv*.ac.p`).
@@ -322,6 +324,7 @@ fn run(cli: Cli) -> Result<u8, Failure> {
         }
         Command::Generations => node()?.generations(),
         Command::Status => node()?.status(),
+        Command::Top => node()?.top(),
         Command::Read { selectors, watch } => {
             if watch {
                 node()?.read_watch(&selectors)
