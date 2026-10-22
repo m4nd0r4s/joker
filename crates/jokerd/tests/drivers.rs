@@ -102,6 +102,7 @@ fn run_driver_reads_and_writes_through_the_real_commit_channel() {
         &shared,
         0,
         None,
+        tokio::sync::mpsc::channel(1).1,
         move || host_for_stop.mono() >= stop_at,
     ));
     assert!(result.is_ok(), "the loop must end via stop(), not stall");

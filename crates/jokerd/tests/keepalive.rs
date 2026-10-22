@@ -124,6 +124,7 @@ fn a_keepalive_interval_resends_without_a_new_commit() {
         &shared,
         0,
         Some(50_000_000),
+        tokio::sync::mpsc::channel(1).1,
         move || host_for_stop.mono() >= stop_at,
     ))
     .unwrap();

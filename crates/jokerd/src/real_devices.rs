@@ -75,6 +75,14 @@ async fn run_sysfs(
         &shared,
         device_index,
         device.fallback_keepalive_ns,
+        {
+            // The sender half is not reachable from the API yet (no
+            // device-name registry to look it up by): an empty channel
+            // for now, so `run_driver`'s action path is exercised only
+            // by its own direct tests until that registry exists.
+            let (_tx, rx) = tokio::sync::mpsc::channel(1);
+            rx
+        },
         move || *stop.borrow_and_update(),
     )
     .await;
@@ -116,6 +124,14 @@ async fn run_modbus_rtu(
         &shared,
         device_index,
         device.fallback_keepalive_ns,
+        {
+            // The sender half is not reachable from the API yet (no
+            // device-name registry to look it up by): an empty channel
+            // for now, so `run_driver`'s action path is exercised only
+            // by its own direct tests until that registry exists.
+            let (_tx, rx) = tokio::sync::mpsc::channel(1);
+            rx
+        },
         move || *stop.borrow_and_update(),
     )
     .await;
@@ -155,6 +171,14 @@ async fn run_modbus_tcp(
         &shared,
         device_index,
         device.fallback_keepalive_ns,
+        {
+            // The sender half is not reachable from the API yet (no
+            // device-name registry to look it up by): an empty channel
+            // for now, so `run_driver`'s action path is exercised only
+            // by its own direct tests until that registry exists.
+            let (_tx, rx) = tokio::sync::mpsc::channel(1);
+            rx
+        },
         move || *stop.borrow_and_update(),
     )
     .await;

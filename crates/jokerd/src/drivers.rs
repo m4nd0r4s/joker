@@ -23,8 +23,31 @@ use joker_hal::spec::PlanRequest;
 use joker_hal::types::BatchKind;
 use joker_hal::{CommitRx, Cx, RxState};
 
+use crate::bridge::DeviceStep;
 use crate::plan::Plan;
 use crate::shared::Shared;
+
+/// A request to run a device action's compiled program against the
+/// device's real driver, from inside the io-domain task's own loop — the
+/// only place that owns the driver instance (ref/06 §2.10, ADR 0058).
+#[derive(Debug)]
+pub struct ActionCall {
+    /// The action's compiled steps (`jokerd::bridge::DeviceStep`).
+    pub steps: Vec<DeviceStep>,
+    /// Where the outcome goes; dropped silently if the caller stopped
+    /// waiting.
+    pub reply: tokio::sync::oneshot::Sender<ActionOutcome>,
+}
+
+/// What an action invocation produced.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ActionOutcome {
+    /// Every step completed.
+    Ok,
+    /// A step failed; the message is `joker_hal::interpreter::Failure`'s
+    /// own `Debug` rendering.
+    Failed(String),
+}
 
 /// The core's transport bits for a settled scalar raw value, or `None`
 /// when `value`'s kind cannot become `ty` without scale/word decoding
@@ -103,6 +126,7 @@ pub async fn run_driver<D: Driver>(
     shared: &Arc<Shared>,
     device_index: usize,
     fallback_keepalive_ns: Option<u64>,
+    mut action_rx: tokio::sync::mpsc::Receiver<ActionCall>,
     mut stop: impl FnMut() -> bool,
 ) {
     let deadline = host.now().mono_ns + timeout_ns;
@@ -161,7 +185,22 @@ pub async fn run_driver<D: Driver>(
             .chain(next_keepalive)
             .min()
             .unwrap_or(host.now().mono_ns + IDLE_NS);
-        core::future::poll_fn(|task_cx| host.poll_sleep(next, task_cx)).await;
+        tokio::select! {
+            () = core::future::poll_fn(|task_cx| host.poll_sleep(next, task_cx)) => {}
+            call = action_rx.recv() => {
+                if let Some(call) = call {
+                    let views: Vec<_> = call.steps.iter().map(DeviceStep::view).collect();
+                    let deadline = host.now().mono_ns + timeout_ns;
+                    let mut acx = Cx::new(host, deadline);
+                    let result = joker_hal::interpreter::run(&mut driver, &mut acx, 0, &views).await;
+                    let _ = call.reply.send(match result {
+                        Ok(()) => ActionOutcome::Ok,
+                        Err(e) => ActionOutcome::Failed(format!("{e:?}")),
+                    });
+                }
+                continue;
+            }
+        }
         if host.now().mono_ns < next {
             continue;
         }
