@@ -38,6 +38,8 @@ tempfile = "3.23"
 tokio = { version = "1.48", features = ["rt-multi-thread", "macros", "net", "io-util", "time"] }
 joker-hal = { path = "../joker-hal", features = ["testing"] }
 joker-driver-gpio = { path = "../joker-drivers/gpio" }
+tokio-tungstenite = "0.29"
+futures-util = { version = "0.3", default-features = false, features = ["async-await", "sink", "std"] }
 
 [lints]
 workspace = true

@@ -18,6 +18,7 @@ use tokio::net::UnixListener;
 
 use crate::backend::{Backend, Principal, Query, Reply};
 use crate::problem::{PROBLEM_JSON, Problem};
+use crate::ws;
 
 /// The API version this server implements.
 pub const API_VERSION: &str = "1.0.0";
@@ -40,7 +41,7 @@ impl Connected<IncomingStream<'_, UnixListener>> for Peer {
     }
 }
 
-fn principal(peer: Peer) -> Principal {
+pub(crate) fn principal(peer: Peer) -> Principal {
     let name = peer.uid.map(user_name).unwrap_or_else(|| "unknown".into());
     Principal {
         id: format!("unix:{name}"),
@@ -62,7 +63,7 @@ fn user_name(uid: u32) -> String {
     uid.to_string()
 }
 
-type Shared = Arc<dyn Backend>;
+pub(crate) type Shared = Arc<dyn Backend>;
 
 fn request_id() -> String {
     let nanos = std::time::SystemTime::now()
@@ -478,6 +479,8 @@ pub fn router(backend: Arc<dyn Backend>) -> Router {
         .route("/v1/traces", get(traces).post(create_trace))
         .route("/v1/traces/{trace}", get(trace))
         .route("/v1/traces/{trace}/file", get(trace_file))
+        .route("/v1/ws", get(ws::ws_handler))
+        .route("/v1/stream", get(ws::sse_handler))
         .fallback(not_found)
         .with_state(backend)
 }
