@@ -701,6 +701,15 @@ async fn traces_are_cut_from_the_ring() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_action_catalog_follows_the_contract() {
+    let f = start().await;
+    let catalog = f.call("GET", "/v1/actions", "/v1/actions", None).await;
+    assert_eq!(catalog.status, 200, "{}", catalog.json());
+    // The fixture's only device is `sim`, which declares no actions.
+    assert_eq!(catalog.json()["items"].as_array().unwrap().len(), 0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn invoking_an_action_follows_the_contract() {
     let f = start().await;
     let no_key = f

@@ -450,6 +450,27 @@ fn kind_name(kind: WriterKind) -> &'static str {
     }
 }
 
+/// An `ActionDecl` (openapi `#/components/schemas/ActionDecl`, ref/09
+/// §5.10): the catalog entry `GET /v1/actions` lists. `args`/`result`/
+/// `permit`/`permit_now` are omitted (optional in the schema): no
+/// declared-argument schema is carried through `DeviceActionPlan` yet,
+/// and `permit` is neither stored nor evaluated here (see
+/// `Controller::invoke_action`'s own doc comment).
+fn action_decl_json(target: &str, decl: &crate::bridge::DeviceActionPlan) -> Value {
+    let mut m = json!({
+        "target": target,
+        "target_kind": "device",
+        "action": decl.name,
+        "role": decl.role,
+        "timeout": duration(decl.timeout_ns),
+        "long": false,
+    });
+    if let Some(ns) = decl.dedup_window_ns {
+        m["dedup_window"] = json!(duration(ns));
+    }
+    m
+}
+
 /// An `Invocation` (openapi `#/components/schemas/Invocation`, ref/09
 /// §5.10): `error` is `(kind, code, message)` on failure, `None` on
 /// success.
@@ -988,6 +1009,19 @@ impl Backend for Node {
             .ok_or_else(|| Problem::new("J-E1110", 404, format!("unknown write `{id}`")))
     }
 
+    fn actions(&self, query: &Query) -> Result<Reply, Problem> {
+        let v = self.need_view()?;
+        let target = one(query, "target");
+        let items: Vec<Value> = v
+            .plan
+            .devices
+            .iter()
+            .filter(|d| target.as_deref().is_none_or(|t| t == d.name))
+            .flat_map(|d| d.actions.iter().map(move |a| action_decl_json(&d.name, a)))
+            .collect();
+        Ok(Reply::ok(json!({"items": items})))
+    }
+
     fn invoke_action(
         &self,
         who: &Principal,
@@ -1494,4 +1528,43 @@ fn decision_json(e: &Value, hashes: &std::collections::BTreeMap<u64, String>) ->
         m.insert("repeats".into(), json!(r));
     }
     Some(Value::Object(m))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bridge::DeviceActionPlan;
+
+    #[test]
+    fn an_action_decl_carries_its_role_and_timeout_but_omits_an_undeclared_dedup_window() {
+        let decl = DeviceActionPlan {
+            name: "reset_fault".into(),
+            timeout_ns: 1_000_000_000,
+            dedup_window_ns: None,
+            role: "operator".into(),
+            steps: Vec::new(),
+        };
+        let json = action_decl_json("pcs", &decl);
+        assert_eq!(json["target"], "pcs");
+        assert_eq!(json["target_kind"], "device");
+        assert_eq!(json["action"], "reset_fault");
+        assert_eq!(json["role"], "operator");
+        assert_eq!(json["timeout"], "1s");
+        assert_eq!(json["long"], false);
+        assert!(json.get("dedup_window").is_none());
+    }
+
+    #[test]
+    fn a_declared_dedup_window_is_rendered_as_a_duration() {
+        let decl = DeviceActionPlan {
+            name: "reset_fault".into(),
+            timeout_ns: 1_000_000_000,
+            dedup_window_ns: Some(30_000_000_000),
+            role: "admin".into(),
+            steps: Vec::new(),
+        };
+        let json = action_decl_json("pcs", &decl);
+        assert_eq!(json["role"], "admin");
+        assert_eq!(json["dedup_window"], "30s");
+    }
 }

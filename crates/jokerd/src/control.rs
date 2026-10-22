@@ -619,11 +619,16 @@ impl Controller {
     /// (`crate::actions`), then — on `Admit` — runs the action's compiled
     /// steps against the device's real driver instance over its own
     /// action channel (`DeviceSet::action_sender`, AUR-405) and logs the
-    /// outcome either way (invariant 8). `permitted` is the caller's
-    /// evaluation of the action's `permit` expression: evaluating it is
-    /// not wired here yet (the manifest's `dedup_window` isn't carried
-    /// into `DeviceActionPlan` either, so a fixed 60 s default is used),
-    /// same scope gap AUR-405 already flags for `$arg` substitution.
+    /// outcome either way (invariant 8). The manifest's own
+    /// `dedup_window` override (`DeviceActionPlan::dedup_window_ns`) is
+    /// used when declared, ref/09 §5.10's 60s default otherwise.
+    /// `permitted` is the caller's evaluation of the action's `permit`
+    /// expression: evaluating it is not wired here yet — `joker_expr`'s
+    /// compile+eval pipeline is only reachable from inside `joker-core`'s
+    /// own tick-building today, not from a daemon-side, out-of-tick
+    /// caller; wiring it needs its own design pass, not a quick patch
+    /// here. Same scope gap AUR-405 already flags for `$arg`
+    /// substitution.
     ///
     /// [`Dispatcher`]: crate::actions::Dispatcher
     pub fn invoke_action(
@@ -635,19 +640,21 @@ impl Controller {
         writer: &str,
         permitted: bool,
     ) -> Result<Invoked, ControlError> {
-        let (generation, steps, sender) = {
+        // ref/09 §5.10's own documented default when the manifest
+        // declares no `dedup_window` override.
+        const DEFAULT_DEDUP_WINDOW_NS: u64 = 60_000_000_000;
+        let (generation, steps, dedup_window_ns, sender) = {
             let active = self
                 .active
                 .as_ref()
                 .ok_or_else(|| ControlError::new("J-E1015", 503, "no generation is running"))?;
-            let Some(steps) = active
+            let Some(decl) = active
                 .running
                 .plan
                 .devices
                 .iter()
                 .find(|d| d.name == device)
                 .and_then(|d| d.actions.iter().find(|a| a.name == action))
-                .map(|a| a.steps.clone())
             else {
                 return Err(ControlError::new(
                     "J-E1400",
@@ -657,14 +664,14 @@ impl Controller {
             };
             (
                 active.running.generation,
-                steps,
+                decl.steps.clone(),
+                decl.dedup_window_ns.unwrap_or(DEFAULT_DEDUP_WINDOW_NS),
                 active.devices.action_sender(device),
             )
         };
-        const DEDUP_WINDOW_NS: u64 = 60_000_000_000;
         let decision =
             self.actions
-                .begin(device, action, key, now_mono_ns, DEDUP_WINDOW_NS, permitted);
+                .begin(device, action, key, now_mono_ns, dedup_window_ns, permitted);
         match decision {
             crate::actions::Decision::Rejected(r) => {
                 let tag = match r {
@@ -845,6 +852,8 @@ mod action_tests {
             actions: vec![DeviceActionPlan {
                 name: "reset_fault".into(),
                 timeout_ns: 1_000_000_000,
+                dedup_window_ns: None,
+                role: "operator".into(),
                 steps: Vec::new(),
             }],
         });

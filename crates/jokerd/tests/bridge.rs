@@ -258,6 +258,14 @@ steps = [
         assert_eq!(action.name, "reset_fault");
         // 3 steps x 1s + the 500ms wait.
         assert_eq!(action.timeout_ns, 3_500_000_000);
+        assert_eq!(
+            action.dedup_window_ns, None,
+            "no device override means no dedup_window"
+        );
+        assert_eq!(
+            action.role, "operator",
+            "no role declared falls back to the API's own floor"
+        );
         assert_eq!(action.steps.len(), 3);
 
         use jokerd::bridge::{DeviceStep, DeviceStepValue};
@@ -282,6 +290,85 @@ steps = [
             action.steps[1],
             DeviceStep::Wait(joker_units::Duration::from_millis(500))
         );
+    }
+
+    const JOKER_TOML_WITH_DEDUP_OVERRIDE: &str = r#"
+[project]
+name  = "bridge-test"
+joker = "1.0"
+mode  = "dev"
+
+[buses.line0]
+kind = "serial"
+port = "/dev/ttyUSB0"
+baud = 9600
+
+[devices.pcs]
+driver  = "modbus-rtu"
+bus     = "line0"
+profile = "acme/pcs@1"
+timeout = "1s"
+unit_id = 1
+
+[devices.pcs.actions.reset_fault]
+dedup_window = "30s"
+role         = "admin"
+"#;
+
+    const JOKER_TOML_WITH_VIEWER_ROLE: &str = r#"
+[project]
+name  = "bridge-test"
+joker = "1.0"
+mode  = "dev"
+
+[buses.line0]
+kind = "serial"
+port = "/dev/ttyUSB0"
+baud = 9600
+
+[devices.pcs]
+driver  = "modbus-rtu"
+bus     = "line0"
+profile = "acme/pcs@1"
+timeout = "1s"
+unit_id = 1
+
+[devices.pcs.actions.reset_fault]
+role = "viewer"
+"#;
+
+    #[test]
+    fn a_device_can_override_an_action_s_dedup_window_and_role() {
+        let dir = project(&[
+            ("joker.toml", JOKER_TOML_WITH_DEDUP_OVERRIDE),
+            ("profiles/acme/pcs@1.profile.toml", PROFILE_WITH_ACTION_TOML),
+        ]);
+        let loaded = load(&OsFileSystem, &dir.path().join("joker.toml"), &NativeTasks)
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert!(!loaded.report.has_errors(), "{}", loaded.report.render());
+        let (context, errors) = jokerd::catalog::context_for_project(&NativeTasks, dir.path());
+        assert!(errors.is_empty(), "{errors:?}");
+        let device = &loaded.manifest.devices["pcs"];
+        let plan = jokerd::bridge::device_plan("pcs", device, &loaded.manifest, &context).unwrap();
+        assert_eq!(plan.actions.len(), 1);
+        assert_eq!(plan.actions[0].dedup_window_ns, Some(30_000_000_000));
+        assert_eq!(plan.actions[0].role, "admin");
+    }
+
+    #[test]
+    fn a_viewer_role_is_floored_to_operator() {
+        let dir = project(&[
+            ("joker.toml", JOKER_TOML_WITH_VIEWER_ROLE),
+            ("profiles/acme/pcs@1.profile.toml", PROFILE_WITH_ACTION_TOML),
+        ]);
+        let loaded = load(&OsFileSystem, &dir.path().join("joker.toml"), &NativeTasks)
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert!(!loaded.report.has_errors(), "{}", loaded.report.render());
+        let (context, errors) = jokerd::catalog::context_for_project(&NativeTasks, dir.path());
+        assert!(errors.is_empty(), "{errors:?}");
+        let device = &loaded.manifest.devices["pcs"];
+        let plan = jokerd::bridge::device_plan("pcs", device, &loaded.manifest, &context).unwrap();
+        assert_eq!(plan.actions[0].role, "operator", "J0298's own floor rule");
     }
 
     const GPIO_JOKER_TOML: &str = r#"
