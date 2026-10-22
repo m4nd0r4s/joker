@@ -269,6 +269,7 @@ pub fn run(
         pacer.wait_until(deadline);
         let started = pacer.now();
         let stats = &shared.groups[g.index];
+        stats.last_tick_mono_ns.set(started.mono_ns);
         let late = started.mono_ns.saturating_sub(deadline);
         stats.max_late_ns.max(late);
         let mut index = g.next_index;

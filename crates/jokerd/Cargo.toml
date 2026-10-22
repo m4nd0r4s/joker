@@ -29,6 +29,7 @@ zstd.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 nix = { version = "0.31", default-features = false, features = ["mman", "sched"] }
+thread-priority = "3.1.1"
 
 [dev-dependencies]
 jsonschema = { version = "0.33", default-features = false }
