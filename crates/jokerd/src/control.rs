@@ -117,13 +117,21 @@ pub struct Controller {
     actions: crate::actions::Dispatcher<ActionResult>,
 }
 
-/// What invoking an action produced (ref/09 §5.10, ADR 0058).
+/// What invoking an action produced (ref/09 §5.10, ADR 0058). Mirrors
+/// [`crate::drivers::ActionOutcome`] (same distinction, same reason: a
+/// timeout and an equipment failure each have their own documented API
+/// code, ref/04 §7.1).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ActionResult {
     /// Every step completed.
     Succeeded,
-    /// A step failed; the message is the interpreter's own failure
-    /// rendering (`joker_hal::interpreter::Failure`'s `Debug` form).
+    /// An `until` step never saw its target before its own `timeout`.
+    TimedOut,
+    /// The driver reported a communication failure; the message is its
+    /// `Debug` rendering.
+    Device(String),
+    /// Any other interpreter failure; the message is its `Debug`
+    /// rendering.
     Failed(String),
 }
 
@@ -143,7 +151,8 @@ pub enum Invoked {
 fn outcome_tag(result: &ActionResult) -> (&'static str, Option<&str>) {
     match result {
         ActionResult::Succeeded => ("ok", None),
-        ActionResult::Failed(m) => ("failed", Some(m.as_str())),
+        ActionResult::TimedOut => ("failed", None),
+        ActionResult::Device(m) | ActionResult::Failed(m) => ("failed", Some(m.as_str())),
     }
 }
 
@@ -758,6 +767,8 @@ impl Controller {
                 } else {
                     match reply_rx.blocking_recv() {
                         Ok(crate::drivers::ActionOutcome::Ok) => ActionResult::Succeeded,
+                        Ok(crate::drivers::ActionOutcome::TimedOut) => ActionResult::TimedOut,
+                        Ok(crate::drivers::ActionOutcome::Device(msg)) => ActionResult::Device(msg),
                         Ok(crate::drivers::ActionOutcome::Failed(msg)) => ActionResult::Failed(msg),
                         Err(_) => ActionResult::Failed(
                             "the driver task ended before answering".to_owned(),
@@ -1345,8 +1356,12 @@ mod conformance_actions {
             let actual_state = match &result {
                 Invoked::Ran(ActionResult::Succeeded)
                 | Invoked::Duplicate(ActionResult::Succeeded) => "succeeded",
-                Invoked::Ran(ActionResult::Failed(_))
-                | Invoked::Duplicate(ActionResult::Failed(_)) => "failed",
+                Invoked::Ran(
+                    ActionResult::TimedOut | ActionResult::Device(_) | ActionResult::Failed(_),
+                )
+                | Invoked::Duplicate(
+                    ActionResult::TimedOut | ActionResult::Device(_) | ActionResult::Failed(_),
+                ) => "failed",
                 Invoked::Rejected(_) => "rejected",
             };
             assert_eq!(

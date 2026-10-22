@@ -563,6 +563,23 @@ fn action_decl_json(target: &str, decl: &crate::bridge::DeviceActionPlan) -> Val
     m
 }
 
+/// An action result's `error.kind`/`code`, or `None` on success
+/// (ref/04 §7.1's table: `TimedOut` → `timeout`/`J-E1406`, `Device` →
+/// `device`/`J-E1407`, anything else the interpreter failed on →
+/// `device`/`J-E1408`, the catch-all).
+fn action_error(result: &ActionResult) -> Option<(&'static str, &'static str, String)> {
+    match result {
+        ActionResult::Succeeded => None,
+        ActionResult::TimedOut => Some((
+            "timeout",
+            "J-E1406",
+            "the action exceeded its timeout".to_owned(),
+        )),
+        ActionResult::Device(m) => Some(("device", "J-E1407", m.clone())),
+        ActionResult::Failed(m) => Some(("device", "J-E1408", m.clone())),
+    }
+}
+
 /// An `Invocation` (openapi `#/components/schemas/Invocation`, ref/09
 /// §5.10): `error` is `(kind, code, message)` on failure, `None` on
 /// success.
@@ -1213,22 +1230,14 @@ impl Backend for Node {
             )
         };
         match outcome {
-            Ok(Invoked::Ran(ActionResult::Succeeded)) => {
-                Ok(Reply::ok(invocation(false, "succeeded", None)))
-            }
-            Ok(Invoked::Ran(ActionResult::Failed(msg))) => Ok(Reply::ok(invocation(
-                false,
-                "failed",
-                Some(("device", "J-E1408", &msg)),
-            ))),
-            Ok(Invoked::Duplicate(ActionResult::Succeeded)) => {
-                Ok(Reply::ok(invocation(true, "succeeded", None)))
-            }
-            Ok(Invoked::Duplicate(ActionResult::Failed(msg))) => Ok(Reply::ok(invocation(
-                true,
-                "failed",
-                Some(("device", "J-E1408", &msg)),
-            ))),
+            Ok(Invoked::Ran(result)) => Ok(Reply::ok(match action_error(&result) {
+                None => invocation(false, "succeeded", None),
+                Some((kind, code, msg)) => invocation(false, "failed", Some((kind, code, &msg))),
+            })),
+            Ok(Invoked::Duplicate(result)) => Ok(Reply::ok(match action_error(&result) {
+                None => invocation(true, "succeeded", None),
+                Some((kind, code, msg)) => invocation(true, "failed", Some((kind, code, &msg))),
+            })),
             Ok(Invoked::Rejected(Rejected::Busy)) => {
                 Err(Problem::new("J-E1403", 503, "device action queue full"))
             }
@@ -1729,5 +1738,21 @@ mod tests {
         let json = action_decl_json("pcs", &decl);
         assert_eq!(json["role"], "admin");
         assert_eq!(json["dedup_window"], "30s");
+    }
+
+    /// Each `ActionResult` failure cause gets its own documented code
+    /// (ref/04 §7.1): a timeout is `J-E1406`/`kind=timeout`, a driver's
+    /// own comm failure is `J-E1407`/`kind=device`, and anything else
+    /// the interpreter failed on falls back to `J-E1408`/`kind=device`
+    /// — never the same code for all three (AUR-265).
+    #[test]
+    fn action_error_maps_each_failure_cause_to_its_own_code() {
+        assert_eq!(action_error(&ActionResult::Succeeded), None);
+        let (kind, code, _) = action_error(&ActionResult::TimedOut).unwrap();
+        assert_eq!((kind, code), ("timeout", "J-E1406"));
+        let (kind, code, msg) = action_error(&ActionResult::Device("comm".into())).unwrap();
+        assert_eq!((kind, code, msg.as_str()), ("device", "J-E1407", "comm"));
+        let (kind, code, msg) = action_error(&ActionResult::Failed("trapped".into())).unwrap();
+        assert_eq!((kind, code, msg.as_str()), ("device", "J-E1408", "trapped"));
     }
 }
