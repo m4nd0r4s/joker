@@ -10,6 +10,7 @@ pub mod cycle;
 pub mod daemon;
 pub mod decisions;
 pub mod devices;
+pub mod drivers;
 pub mod generations;
 pub mod io;
 pub mod load;

@@ -161,15 +161,25 @@ fn point_shape(driver: &str, type_name: &str, addr_len: Option<u8>) -> Option<(R
     }
 }
 
-/// The CBOR a driver's `plan()` reads from a `[buses.<b>]` declaration
-/// (ref/01 §5.6). Scoped to the one key an existing driver's `plan()`
-/// actually reads today: modbus-rtu's `baud`; the other bus kinds' own
-/// keys are not forwarded yet (no driver asks for them).
+/// The CBOR a driver's `plan()`, or the host's own `Link` construction,
+/// reads from a `[buses.<b>]` declaration (ref/01 §5.6). Scoped to the
+/// serial keys `joker_hal::std_host::SerialConfig::from_params` reads
+/// (`port`, `baud`, `parity`, `stop`, `data_bits`, `dtr`, `rts`); the
+/// other bus kinds' own keys are not forwarded yet (no driver or host
+/// construction asks for them).
 fn bus_params_cbor(bus: &joker_manifest::model::Bus) -> Vec<u8> {
     let mut entries = Vec::new();
+    if let Some(port) = &bus.port {
+        entries.push(("port".to_owned(), Cbor::Text(port.value.clone())));
+    }
     if let Some(baud) = bus.baud {
         entries.push(("baud".to_owned(), Cbor::Int(baud.value)));
     }
+    entries.push(("parity".to_owned(), Cbor::Text(bus.parity.clone())));
+    entries.push(("stop".to_owned(), Cbor::Int(bus.stop)));
+    entries.push(("data_bits".to_owned(), Cbor::Int(bus.data_bits)));
+    entries.push(("dtr".to_owned(), Cbor::Text(bus.dtr.clone())));
+    entries.push(("rts".to_owned(), Cbor::Text(bus.rts.clone())));
     Cbor::Map(entries).encode()
 }
 
