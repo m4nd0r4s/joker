@@ -22,10 +22,13 @@ joker-core = { workspace = true, features = ["alloc"] }
 clap = { version = "4.5", features = ["derive", "env"] }
 serde_json = "1.0.145"
 toml = { version = "1.1.8", default-features = false, features = ["parse", "display", "serde", "std"] }
-tokio = { version = "1.48", features = ["rt-multi-thread", "signal", "time", "macros"] }
+tokio = { version = "1.48", features = ["rt-multi-thread", "signal", "time", "macros", "net"] }
+tokio-tungstenite = "0.29"
+futures-util = { version = "0.3", default-features = false, features = ["async-await", "sink", "std"] }
 
 [dev-dependencies]
 tempfile = "3.23"
+jokerd = { path = "../jokerd" }
 
 [lints]
 workspace = true

@@ -83,6 +83,10 @@ enum Command {
         /// Selectors (`pi.**`, `inv*.ac.p`).
         #[arg(required = true)]
         selectors: Vec<String>,
+        /// Keep printing updates over the node's live subscription
+        /// (`GET /v1/ws`, ref/09 §6), instead of one read.
+        #[arg(long)]
+        watch: bool,
     },
     /// Write an output as a person, at a manual level, for a while.
     Write {
@@ -318,7 +322,13 @@ fn run(cli: Cli) -> Result<u8, Failure> {
         }
         Command::Generations => node()?.generations(),
         Command::Status => node()?.status(),
-        Command::Read { selectors } => node()?.read(&selectors),
+        Command::Read { selectors, watch } => {
+            if watch {
+                node()?.read_watch(&selectors)
+            } else {
+                node()?.read(&selectors)
+            }
+        }
         Command::Write {
             output,
             value,
