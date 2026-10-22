@@ -4,8 +4,8 @@
 use serde_json::Value;
 
 use crate::model::{
-    ActivateRequest, GenerationProposal, InvokeActionRequest, ManualWriteRequest, ReasonBody,
-    ReleaseRequest, ResetTripRequest, RollbackRequest, TraceRequest,
+    ActivateRequest, BulkResetRequest, GenerationProposal, InvokeActionRequest, ManualWriteRequest,
+    ReasonBody, ReleaseRequest, ResetTripRequest, RollbackRequest, TraceRequest,
 };
 use crate::problem::Problem;
 
@@ -97,6 +97,10 @@ pub trait Backend: Send + Sync + 'static {
     fn release(&self, who: &Principal, path: &str, request: ReleaseRequest) -> Result<Reply>;
     /// `POST /v1/outputs/{path}/reset` (ref/09 §5.7, docs/16 E7).
     fn reset_trip(&self, who: &Principal, path: &str, request: ResetTripRequest) -> Result<Reply>;
+    /// `GET /v1/trips` (ref/09 §5.7, `jk trips`).
+    fn trips(&self, query: &Query) -> Result<Reply>;
+    /// `POST /v1/trips/reset` (ref/09 §5.7).
+    fn reset_trips(&self, who: &Principal, request: BulkResetRequest) -> Result<Reply>;
     /// `GET /v1/manual`.
     fn manual(&self, query: &Query) -> Result<Reply>;
     /// `GET /v1/writes/{write}`.

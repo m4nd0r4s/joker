@@ -81,6 +81,16 @@ impl CommitSink for Sink<'_> {
         if self.results.len() < self.results.capacity() {
             self.results.push(TraceResult::from(result));
         }
+        let was_tripped = self
+            .shared
+            .output(result.signal)
+            .and_then(|s| s.read())
+            .is_some_and(|(_, meta, _)| meta.tripped);
+        if result.tripped && !was_tripped {
+            self.shared.set_trip_since(result.signal, self.at_mono_ns);
+        } else if !result.tripped {
+            self.shared.set_trip_since(result.signal, 0);
+        }
         if let Some(status) = self.shared.output(result.signal) {
             status.publish(
                 result.applied.bits(),
