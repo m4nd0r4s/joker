@@ -322,6 +322,56 @@ impl Drop for Fixture {
     }
 }
 
+/// Boots a daemon over `dir` the way `jokerd::daemon::run` does (`boot()`
+/// reactivates a confirmed generation if one is stored, else `manifest`
+/// is proposed and activated fresh) — used to simulate a process restart
+/// over the same state directory (A14).
+async fn boot_at(dir: &Path, manifest: &str) -> (Http, tokio::sync::oneshot::Sender<()>) {
+    let clock = Monotonic::start();
+    let log = Arc::new(Mutex::new(
+        DecisionLog::open(&dir.join("decisions.jsonl")).unwrap(),
+    ));
+    let mut c = Controller::new(
+        dir,
+        log,
+        Arc::new(NativeTasks),
+        Arc::new(NoDevices),
+        Box::new(move || Box::new(SystemPacer::new(clock, ClockQuality::Unsynced))),
+        Config {
+            min_window: Duration::from_millis(100),
+            ..Config::default()
+        },
+    )
+    .unwrap();
+    if c.boot().unwrap().is_none() {
+        let g = c
+            .propose(manifest, "", Some("bench".into()), false)
+            .unwrap();
+        c.activate(g.number, None, None).unwrap();
+    }
+    let controller = Arc::new(Mutex::new(c));
+    let node = Node::new(controller, clock, 0, dir).unwrap();
+    let socket = dir.join("api.sock");
+    let _ = std::fs::remove_file(&socket);
+    let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+    let path = socket.clone();
+    tokio::spawn(async move {
+        joker_api::server::serve_unix(&path, Arc::new(node), async {
+            let _ = rx.await;
+        })
+        .await
+        .unwrap();
+    });
+    for _ in 0..100 {
+        if socket.exists() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    (Http { socket }, tx)
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn meta_signals_and_values_follow_the_contract() {
     let f = start().await;
@@ -889,6 +939,40 @@ async fn invoking_an_action_follows_the_contract() {
         .await;
     assert_eq!(unknown.status, 404, "{}", unknown.json());
     assert_eq!(unknown.json()["code"], "J-E1400");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_manual_write_survives_a_jokerd_restart_within_its_ttl() {
+    let dir = tempfile::tempdir().unwrap();
+    let manifest = effective();
+
+    let (http, stop) = boot_at(dir.path(), &manifest).await;
+    let write = http
+        .send(
+            "POST",
+            "/v1/outputs/pi.act_led/manual",
+            &[],
+            Some(&json!({"value": true, "ttl": "30s", "reason": "restart test", "wait": true})),
+        )
+        .await;
+    assert_eq!(write.status, 200, "{}", write.json());
+    assert_eq!(write.json()["outcome"]["outcome"], "accepted");
+    let _ = stop.send(());
+
+    // A new daemon process over the same state directory: the manual
+    // level and its real arbiter occupancy must both come back (A14).
+    let (http2, stop2) = boot_at(dir.path(), &manifest).await;
+    let out = http2.send("GET", "/v1/outputs/pi.act_led", &[], None).await;
+    assert_eq!(out.json()["active_level"], "manual:4", "{}", out.json());
+    assert_eq!(out.json()["applied"], true);
+    let list = http2.send("GET", "/v1/manual", &[], None).await;
+    assert_eq!(
+        list.json()["items"][0]["reason"],
+        "restart test",
+        "{}",
+        list.json()
+    );
+    let _ = stop2.send(());
 }
 
 #[test]
