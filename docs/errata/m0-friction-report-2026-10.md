@@ -16,10 +16,10 @@ Each entry has a status:
 | 2 | ESP32 cable unplugged → `bad(comm_failure)`, LED off via firmware, app sees `Err` | **Open (hardware)** | `unplugged_cable_gives_comm_failure_within_poll_plus_timeout` (`crates/joker-drivers/modbus/tests/bench_esp32.rs`) proves the logic against a serial double; no run against the real ESP32 bench firmware — see F-1 |
 | 3 | Manual write with TTL beats the app and expires by itself | **Fixed** | `joker-core` arbiter unit tests (A1–A13) and `conformance/arbiter/*` (22 cases) pass |
 | 4 | Generation that breaks the bus reverts if not confirmed | **Fixed** | `an_unconfirmed_generation_is_rolled_back`, `a_crash_while_confirming_boots_the_previous_generation` (`crates/jokerd/tests/generations.rs`) |
-| 5 | 10 minutes recorded on the Pi 3 replay on the laptop with the same bytes, 100 times | **Open (hardware)** | `crates/jokerd/tests/replay.rs` and `bench_example.rs` prove byte-identical record→replay on this machine, once, not on the Pi 3 and not 100 times — see F-1 |
+| 5 | 10 minutes recorded on the Pi 3 replay on the laptop with the same bytes, 100 times | **Fixed (2026-10-22)** | 10 minutes recorded live on a real Pi 3 B+ (`jk record --for 10m` over `ssh://`), replayed 100 times on the dev laptop (`jk replay`): all 100 runs byte-identical (single md5 across all 100 JSON reports), 0 divergences, 29999/29999 ticks, state restored from the recording (not `init`) — see the 2026-10-22 update below |
 | 6 | 30+ conformance cases from the spec only pass on x86_64 and aarch64; core compiles for `thumbv8m` and `xtensa-esp32` | **Fixed** | 152 cases (`conformance/`), CI green on x86_64, aarch64, QEMU thumbv8m/riscv32; Xtensa build green (non-blocking job, as designed) |
 | 7 | `jk check` unit error comes out as in document 00 | **Fixed** | `joker-manifest` snapshot tests against the registry messages (`J0107` and siblings) |
-| 8 | First real figures (jitter on Pi 3, size, RSS, startup, Wasm call cost, build time) | **Partial — x86_64 only** | See the table below. The Pi 3 and Cortex-M33 figures are the ones the gate actually asks for; this environment has no such hardware — see F-2 |
+| 8 | First real figures (jitter on Pi 3, size, RSS, startup, Wasm call cost, build time) | **Partial — x86_64 and Pi 3** | See the table below and the 2026-10-22 update. Pi 3 B+ figures now measured for real (jitter, binary size, RSS, startup); Cortex-M33 and the Wasm call cost on Pi 3 are still open — see F-2 |
 | 9 | Friction report | **Fixed** | this document |
 
 ## F-1 — Physical bench validation never ran (gates 1, 2, 5)
@@ -54,6 +54,45 @@ Each entry has a status:
 **Reading it.** The p50 cost per output and the Wasm call overhead are already inside their 1.0 targets even on a noisy shared VM. The p99.9 cost (886 ns isolated) is still over the 300 ns target, and jitter at p99.9 is over target even with the machine otherwise idle — expected on a non-PREEMPT_RT kernel with no core isolation, and not informative about the real target (Cortex-M33 at 150 MHz, PREEMPT_RT CM4/CM5). RSS and cold-start time were not measured in this pass — `jk dev` did not print readiness output under scripted polling on this machine and needs a person at a terminal, or a `--json`/health-check path added to `jk status` for scripted use (worth a small follow-up, not a blocker).
 
 **Resolution.** Not resolved yet. Folds into F-1: once the Pi 3 and the bench ESP32 are reachable, rerun `cargo xtask rt-bench` on both the dev machine (already done, this table) and the Pi 3, publish both, and open an erratum if the Cortex-M33/CM4 PREEMPT_RT figures diverge from the docs/01 §21 targets by a wide margin.
+
+## 2026-10-22 update — real Raspberry Pi 3 B+ results (gates 5 and 8)
+
+Evidence gathered on 2026-10-22 against a real Raspberry Pi 3 B+ (the owner's own bench unit, not CI), reachable over SSH, running `jokerd` cross-built for `arm-unknown-linux-musleabihf` (a static musl binary targeting ARMv6 hardfloat, which runs unmodified on the Pi 3's ARMv7 core — ARMv6 code is a strict subset). OS: Raspbian GNU/Linux 9 (stretch), kernel `4.19.66-v7+`, stock (no PREEMPT_RT, no `isolcpus`). The bench ESP32 was not powered on in this pass (gates 1's Wasm leg and gate 2 are still open — see F-1); this update closes gate 5 and the Pi 3 half of gate 8.
+
+**Gate 5 (record → replay, byte-identical, 100 times).** `jk record --for 10m --out trace.bin` against the live Pi 3 node over `ssh://pi@<host>` (the client's existing `-L` unix-socket forwarding, ADR-free — no code change needed), then `jk replay trace.bin` **100 times** on the dev laptop:
+
+| Figure | Result |
+|---|---|
+| Ticks replayed | 29999 / 29999 (10 min @ 20 ms) |
+| Divergences | 0, on every one of the 100 runs |
+| App state | restored from the recording (`"restored": ["light"]`, not `from_init`) |
+| Byte-identical across 100 runs | Yes — `md5sum` of all 100 `jk replay --json` outputs collapses to a single hash |
+
+Workload: the `light` app (native stand-in, see the note on gate 1 below) bound to a real `sysfs` output (the Pi's own ACT LED, `led0`), blinking at a 500 ms half-period, 20 ms cycle.
+
+**Gate 8, Pi 3 half.** `cargo xtask rt-bench` cross-built and run directly on the Pi 3 (release, stripped):
+
+| Figure | 1 ms period | 100 ms period | Target (docs/01 §21) |
+|---|---|---|---|
+| Envelope + arbiter per output, p50 | 9.44 µs | 9.22 µs | ≤ 300 ns |
+| Envelope + arbiter per output, p99.9 | 13.85 µs | 13.61 µs | ≤ 300 ns |
+| Tick jitter, p50 | 75.3 µs | 88.5 µs | — |
+| Tick jitter, p99.9 | 109.8 µs | 3524.3 µs | ≤ 2 ms (no RT, 100 ms group) |
+| Tick jitter, max | 241.1 µs | 3524.3 µs | — |
+| Overruns | 7 / 10000 | 0 / 600 | — |
+
+| Figure | Value | Target |
+|---|---|---|
+| `jokerd` binary size (release, stripped, musl static) | 5.0 MB (5,225,368 B) | ≤ 20 MB minimal (aarch64 target; not directly comparable arch) |
+| Idle RSS (1 signal, 1 app, no historian) | ~30 MB | ≤ 60 MB (measured under a much lighter load than the target's own condition — 1 output vs. 1,000 signals/3 apps/8 MB historian cache, so not apples to apples) |
+| Startup to first tick (`--manifest`, cold) | 332 ms | ≤ 2 s |
+| Cross-build time, `jokerd` release (`arm-unknown-linux-musleabihf`, on the dev x86_64 machine, 4 cores busy) | 2 min 10 s | — |
+| Cross-build time, `xtask` release (same target) | 10.9 s | — |
+| Wasm call cost on Pi 3 | **not measured** | `joker-host` (wasmtime/Cranelift) was not cross-built for this target: Cranelift has no stable ARMv6/v7 (32-bit) backend (docs/01 §22 already notes armv7 needs Pulley, not Cranelift, and ARMv6 wasmtime support is unconfirmed); `joker-host` is also not wired into `jokerd` yet regardless (see `jokerd::native::NativeTasks`'s own doc comment) |
+
+**Reading it.** The per-output envelope+arbiter cost (9–14 µs) is roughly 30–45× the ≤300 ns target — expected on a 2015-era Cortex-A53 at 1.4 GHz with no atomic-group fast path yet, and not the hardware the target line is calibrated for (CM4/CM5). The 100 ms jitter p99.9 (3.52 ms) is over the ≤2 ms non-RT target, but **this run was not isolated**: the SSH session used to launch it and poll results was active on the same machine throughout, the same confound F-2's x86_64 numbers already called out. A clean rerun (nothing else connected, ideally via a serial console or a fire-and-forget `nohup` with no polling) is needed before treating this as a real divergence worth an erratum. Startup time, binary size and RSS are all comfortably inside target even on this older, weaker board.
+
+**Resolution.** Gate 5: resolved. Gate 8: still partial — the Cortex-M33 figures and a clean (unloaded) Pi 3 jitter run are open; the Wasm call cost needs either a Pulley backend build for `arm-unknown-linux-musleabihf` or waiting for a 64-bit (`aarch64`) Pi image, which is also the planned fix for AUR-401's real GPIO/I²C adapter (the chardev v2 ioctls it needs are Linux ≥5.10 only; this Pi's stock kernel is 4.19). Gates 1 (the Wasm leg specifically — this pass used the native `light` stand-in, not an actual `.wasm` component) and 2 remain open, blocked on the bench ESP32 being wired and powered per document 23 §4–§7.
 
 ## Other observations (non-blocking)
 
