@@ -601,6 +601,8 @@ impl Checker<'_> {
                     } else {
                         Direction::Input
                     },
+                    type_name: None,
+                    raw: BTreeMap::new(),
                 };
                 for (member_name, member) in &info.members {
                     if !matches!(

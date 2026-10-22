@@ -86,6 +86,7 @@ pub fn profiles() -> BTreeMap<String, ProfileInfo> {
             configurable: false,
             fallback_timeout: Some(Duration::from_secs(2)),
             latency: None,
+            quirks: BTreeMap::new(),
             poll: Some(Duration::from_millis(100)),
             timeout: None,
             actions: BTreeMap::new(),

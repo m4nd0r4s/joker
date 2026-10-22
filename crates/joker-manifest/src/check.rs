@@ -1470,6 +1470,8 @@ impl Checker<'_> {
                         ty: param.ty.clone(),
                         unit: param.unit,
                         direction: Direction::Param,
+                        type_name: None,
+                        raw: BTreeMap::new(),
                     };
                     self.constant(
                         &format!("parameter `{name}`"),

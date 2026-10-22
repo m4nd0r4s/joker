@@ -208,6 +208,9 @@ pub struct ProfileInfo {
     pub fallback_timeout: Option<Duration>,
     /// `quirks.latency`: the slave response latency (ref/03 §2.2.6).
     pub latency: Option<Duration>,
+    /// `[profile.quirks]`, as written: entirely driver-specific (ref/03
+    /// §2.2.6), so this crate does not interpret it beyond `latency`.
+    pub quirks: BTreeMap<String, crate::value::Node>,
     /// `[defaults] poll`.
     pub poll: Option<Duration>,
     /// `[defaults] timeout`.
@@ -288,6 +291,15 @@ pub struct SignalInfo {
     pub unit: Option<Unit>,
     /// The direction.
     pub direction: Direction,
+    /// The profile's raw `type` key (`"u16"`, `"bool"`, …), when this
+    /// signal came from a profile (ref/03 §2.2.4). A driver's address
+    /// schema needs this string as given, not the derived [`SignalType`].
+    pub type_name: Option<String>,
+    /// The signal's own table keys, minus the generic ones of ref/03
+    /// §2.2.4 (`type`, `direction`, `unit`, `scale`, `poll`, `label`, …):
+    /// what a driver's own address schema validates (ref/03 §2.2.5).
+    /// Empty for signals this crate itself builds (classes, parameters).
+    pub raw: BTreeMap<String, crate::value::Node>,
 }
 
 impl SignalInfo {
@@ -297,6 +309,8 @@ impl SignalInfo {
             ty,
             unit: None,
             direction,
+            type_name: None,
+            raw: BTreeMap::new(),
         }
     }
 
