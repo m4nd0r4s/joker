@@ -131,6 +131,57 @@ type = "f32"
 unit = "kW"
 "#;
 
+    const PROFILE_WITH_FALLBACK_TOML: &str = r#"
+schema = 1
+
+[profile]
+name    = "acme/pcs"
+version = "1.0.0"
+driver  = "modbus"
+
+[signals.p_ac]
+at   = 0
+fc   = 4
+type = "f32"
+unit = "kW"
+
+[fallback]
+timeout = "10s"
+"#;
+
+    #[test]
+    fn a_declared_fallback_gives_a_default_keepalive_of_a_fifth_the_timeout() {
+        let dir = project(&[
+            ("joker.toml", JOKER_TOML),
+            (
+                "profiles/acme/pcs@1.profile.toml",
+                PROFILE_WITH_FALLBACK_TOML,
+            ),
+        ]);
+        let loaded = load(&OsFileSystem, &dir.path().join("joker.toml"), &NativeTasks)
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert!(!loaded.report.has_errors(), "{}", loaded.report.render());
+        let (context, errors) = jokerd::catalog::context_for_project(&NativeTasks, dir.path());
+        assert!(errors.is_empty(), "{errors:?}");
+        let device = &loaded.manifest.devices["pcs"];
+        let plan = jokerd::bridge::device_plan("pcs", device, &loaded.manifest, &context).unwrap();
+        assert_eq!(plan.fallback_keepalive_ns, Some(2_000_000_000));
+    }
+
+    #[test]
+    fn no_fallback_means_no_keepalive() {
+        let dir = project(&[
+            ("joker.toml", JOKER_TOML),
+            ("profiles/acme/pcs@1.profile.toml", PROFILE_TOML),
+        ]);
+        let loaded = load(&OsFileSystem, &dir.path().join("joker.toml"), &NativeTasks)
+            .unwrap_or_else(|e| panic!("{e}"));
+        let (context, _) = jokerd::catalog::context_for_project(&NativeTasks, dir.path());
+        let device = &loaded.manifest.devices["pcs"];
+        let plan = jokerd::bridge::device_plan("pcs", device, &loaded.manifest, &context).unwrap();
+        assert_eq!(plan.fallback_keepalive_ns, None);
+    }
+
     #[test]
     fn a_profile_backed_device_resolves_its_point_address_and_shape() {
         let dir = project(&[

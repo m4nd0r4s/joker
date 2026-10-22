@@ -74,6 +74,7 @@ async fn run_sysfs(
         &targets,
         &shared,
         device_index,
+        device.fallback_keepalive_ns,
         move || *stop.borrow_and_update(),
     )
     .await;
@@ -114,6 +115,7 @@ async fn run_modbus_rtu(
         &targets,
         &shared,
         device_index,
+        device.fallback_keepalive_ns,
         move || *stop.borrow_and_update(),
     )
     .await;
@@ -152,6 +154,7 @@ async fn run_modbus_tcp(
         &targets,
         &shared,
         device_index,
+        device.fallback_keepalive_ns,
         move || *stop.borrow_and_update(),
     )
     .await;

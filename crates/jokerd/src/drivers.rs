@@ -102,6 +102,7 @@ pub async fn run_driver<D: Driver>(
     targets: &[PointTarget],
     shared: &Arc<Shared>,
     device_index: usize,
+    fallback_keepalive_ns: Option<u64>,
     mut stop: impl FnMut() -> bool,
 ) {
     let deadline = host.now().mono_ns + timeout_ns;
@@ -128,7 +129,20 @@ pub async fn run_driver<D: Driver>(
     let mut due: Vec<u64> = vec![host.now().mono_ns; plan.len()];
     let mut buf = SampleBuffer::with_capacity(4096);
     const IDLE_NS: u64 = 100_000_000;
+    // docs/01 §8, M1: the device fallback keepalive is renewed regardless
+    // of whether the applied value changed; `applies_to` (which outputs
+    // it actually covers, ref/03 §2.2.11) is not resolved, so every
+    // binding of this device is marked due, same as `resync`.
+    let mut next_keepalive = fallback_keepalive_ns.map(|ns| host.now().mono_ns + ns);
     while !stop() {
+        if let (Some(ns), Some(next)) = (fallback_keepalive_ns, next_keepalive)
+            && host.now().mono_ns >= next
+        {
+            for i in 0..bindings.len() {
+                rx.keepalive(i);
+            }
+            next_keepalive = Some(host.now().mono_ns + ns);
+        }
         let mut writes = Vec::new();
         rx.drain_into(&mut writes);
         if !writes.is_empty() {
@@ -144,6 +158,7 @@ pub async fn run_driver<D: Driver>(
             .iter()
             .filter(|b| b.head.kind == BatchKind::Poll)
             .map(|b| due[b.head.id as usize])
+            .chain(next_keepalive)
             .min()
             .unwrap_or(host.now().mono_ns + IDLE_NS);
         core::future::poll_fn(|task_cx| host.poll_sleep(next, task_cx)).await;

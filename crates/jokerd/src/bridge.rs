@@ -90,6 +90,14 @@ pub struct DevicePlan {
     pub quirks: Vec<u8>,
     /// Deadline of a call on this device.
     pub timeout_ns: u64,
+    /// How often to renew the device fallback's keepalive (docs/01 §8,
+    /// M1), if the profile declares one: the manifest's own
+    /// `fallback.keepalive` override, or the profile's `fallback_timeout`
+    /// / 5 default. `None` without a declared fallback. Applies to every
+    /// output of this device for now — `applies_to`/`values` (ref/03
+    /// §2.2.11, which output a fallback actually covers) is not resolved
+    /// here yet.
+    pub fallback_keepalive_ns: Option<u64>,
     /// The device's points.
     pub points: Vec<DevicePointPlan>,
 }
@@ -254,6 +262,12 @@ pub fn device_plan(
         .map(|t| t.value.as_nanos())
         .or_else(|| profile.and_then(|p| p.timeout).map(Duration::as_nanos))
         .unwrap_or(1_000_000_000);
+    let fallback_keepalive_ns = profile.filter(|p| p.fallback).and_then(|p| {
+        device
+            .fallback_keepalive
+            .map(|k| k.value.as_nanos())
+            .or_else(|| p.fallback_timeout.map(|t| t.as_nanos() / 5))
+    });
 
     let mut points = Vec::new();
     if let Some(profile) = profile {
@@ -311,6 +325,7 @@ pub fn device_plan(
         config,
         quirks,
         timeout_ns,
+        fallback_keepalive_ns,
         points,
     })
 }
