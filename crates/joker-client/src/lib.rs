@@ -318,6 +318,16 @@ impl Client {
     }
 
     /// The node this client talks to.
+    /// The local Unix socket of this connection: for [`Target::Unix`],
+    /// the node's own socket; for [`Target::Ssh`], the local end of the
+    /// forwarding tunnel. Either way, a plain Unix socket a caller can
+    /// speak a different protocol over directly (`jk read --watch`'s
+    /// WebSocket upgrade, ref/09 §6, does not go through [`Client::get`]
+    /// at all).
+    pub fn socket(&self) -> &Path {
+        &self.socket
+    }
+
     pub fn target(&self) -> &Target {
         &self.target
     }

@@ -1,6 +1,7 @@
 //! The commands that talk to a node (docs/07 §3–§4, ref/09 §9.1).
 
 use std::io::{BufRead, Write};
+use std::path::Path;
 use std::time::Duration;
 
 use joker_client::{Client, Response, Target};
@@ -320,6 +321,22 @@ impl Node {
             );
         }
         Ok(0)
+    }
+
+    /// `jk read --watch`: `GET /v1/ws`'s `signals` topic (ref/09 §6),
+    /// printing every `resync`/`data` as it arrives instead of reading
+    /// once. Runs its own small tokio runtime; `jk`'s other commands
+    /// are synchronous on purpose, and this is the one that genuinely
+    /// needs to wait on a socket indefinitely.
+    pub fn read_watch(&self, selectors: &[String]) -> Result<u8, Failure> {
+        let socket = self.client.socket().to_owned();
+        let sel: Vec<String> = selectors.to_vec();
+        let json_mode = self.json;
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| Failure::usage(format!("tokio: {e}")))?;
+        runtime.block_on(watch_signals(&socket, &sel, json_mode))
     }
 
     /// `jk write`.
@@ -677,6 +694,79 @@ fn parse_args(pairs: &[String]) -> Result<Value, Failure> {
         map.insert(name.to_owned(), value);
     }
     Ok(Value::Object(map))
+}
+
+async fn watch_signals(socket: &Path, sel: &[String], json_mode: bool) -> Result<u8, Failure> {
+    use futures_util::{SinkExt, StreamExt};
+    use tokio_tungstenite::tungstenite::Message;
+    use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+    use tokio_tungstenite::tungstenite::http::HeaderValue;
+
+    let stream = tokio::net::UnixStream::connect(socket)
+        .await
+        .map_err(|e| Failure::usage(format!("{}: {e}", socket.display())))?;
+    let mut request = "ws://joker/v1/ws"
+        .into_client_request()
+        .map_err(|e| Failure::usage(e.to_string()))?;
+    request.headers_mut().insert(
+        "Sec-WebSocket-Protocol",
+        HeaderValue::from_static("joker.v1"),
+    );
+    let (mut ws, _) = tokio_tungstenite::client_async(request, stream)
+        .await
+        .map_err(|e| Failure::usage(format!("connecting: {e}")))?;
+
+    // The `welcome` message; nothing to do with it here.
+    let _ = ws.next().await;
+
+    ws.send(Message::Text(
+        json!({"op": "subscribe", "id": "watch", "topic": "signals", "sel": sel})
+            .to_string()
+            .into(),
+    ))
+    .await
+    .map_err(|e| Failure::usage(e.to_string()))?;
+
+    while let Some(msg) = ws.next().await {
+        let Ok(Message::Text(text)) = msg else {
+            continue;
+        };
+        let Ok(v) = serde_json::from_str::<Value>(&text) else {
+            continue;
+        };
+        match v["op"].as_str() {
+            Some("error") => {
+                return Err(Failure::usage(
+                    v["problem"]["detail"]
+                        .as_str()
+                        .unwrap_or("error")
+                        .to_owned(),
+                ));
+            }
+            Some("data") | Some("resync") => {
+                if json_mode {
+                    print_json(&v["items"]);
+                    continue;
+                }
+                for s in v["items"].as_array().cloned().unwrap_or_default() {
+                    let quality = match s["reason"].as_str() {
+                        Some("none") | None => s["quality"].as_str().unwrap_or("").to_owned(),
+                        Some(r) => format!("{}({r})", s["quality"].as_str().unwrap_or("")),
+                    };
+                    println!(
+                        "{:<32} {:>12} {:<6} {:<20} age {}",
+                        s["path"].as_str().unwrap_or(""),
+                        s["value"].to_string(),
+                        s["unit"].as_str().unwrap_or(""),
+                        quality,
+                        s["age"].as_str().unwrap_or("")
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(0)
 }
 
 #[cfg(test)]
