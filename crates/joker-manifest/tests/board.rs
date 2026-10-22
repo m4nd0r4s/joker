@@ -154,3 +154,92 @@ fn every_case_reports_its_code() {
         );
     }
 }
+
+/// The real `rpi5.board.toml` (ref/03 §2.3.4) exercises `storage`,
+/// `[watchdog]`, `[gpio]`, `[i2c]` and `[serial]` (`jk board show`,
+/// AUR-279).
+#[test]
+fn the_real_rpi5_board_s_peripherals_parse() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../boards/rpi5.board.toml");
+    let text = std::fs::read_to_string(&path).unwrap();
+    let report = parse(&path, &text);
+    let p = report.peripherals;
+    assert_eq!(p.storage, Some("ssd".to_owned()));
+    let w = p.watchdog.expect("watchdog");
+    assert_eq!(w.device, Some("/dev/watchdog0".to_owned()));
+    assert_eq!(w.timeout, Some("15s".to_owned()));
+    let g = p.gpio.expect("gpio");
+    assert_eq!(g.chip, Some("pinctrl-rp1".to_owned()));
+    assert_eq!(p.i2c.get("i2c1"), Some(&"/dev/i2c-1".to_owned()));
+    let serial = p.serial.get("uart0").expect("uart0");
+    assert_eq!(serial.path, "/dev/ttyAMA0");
+    assert!(!serial.rs485);
+}
+
+/// `[io.<name>]` (ref/03 §2.3.2): `driver`/`direction`/`fallback` are
+/// pulled out, everything else (the driver family's own address) is
+/// kept in `extra`.
+#[test]
+fn an_io_point_carries_its_family_address_in_extra() {
+    let text = concat!(
+        "[board]\n",
+        "name    = \"x\"\n",
+        "version = \"1.0.0\"\n",
+        "arch    = \"aarch64\"\n",
+        "\n",
+        "[io.act_led]\n",
+        "driver    = \"gpio\"\n",
+        "direction = \"output\"\n",
+        "fallback  = \"false\"\n",
+        "line      = 17\n",
+    );
+    let report = parse(Path::new("x.board.toml"), text);
+    let led = report.peripherals.io.get("act_led").expect("act_led");
+    assert_eq!(led.driver, Some("gpio".to_owned()));
+    assert_eq!(led.direction, Some("output".to_owned()));
+    assert_eq!(led.fallback, Some("false".to_owned()));
+    assert_eq!(led.extra.get("line"), Some(&"17".to_owned()));
+    assert!(!led.extra.contains_key("driver"));
+    assert_eq!(led.extra.len(), 1);
+}
+
+/// `[serial]` also accepts the `{ path, rs485, max_baud }` table form
+/// (ref/03 §2.3.2), not just a bare path.
+#[test]
+fn a_serial_port_may_be_a_table_with_rs485_and_max_baud() {
+    let text = concat!(
+        "[board]\n",
+        "name    = \"x\"\n",
+        "version = \"1.0.0\"\n",
+        "arch    = \"aarch64\"\n",
+        "\n",
+        "[serial]\n",
+        "rs485-0 = { path = \"/dev/ttyRS485-0\", rs485 = true, max_baud = 115200 }\n",
+    );
+    let report = parse(Path::new("x.board.toml"), text);
+    let port = report.peripherals.serial.get("rs485-0").expect("rs485-0");
+    assert_eq!(port.path, "/dev/ttyRS485-0");
+    assert!(port.rs485);
+    assert_eq!(port.max_baud, Some(115_200));
+}
+
+/// `[gpio] lines` names offsets explicitly (ref/03 §2.3.2), instead of
+/// falling back to the kernel's own names.
+#[test]
+fn gpio_lines_name_offsets() {
+    let text = concat!(
+        "[board]\n",
+        "name    = \"x\"\n",
+        "version = \"1.0.0\"\n",
+        "arch    = \"aarch64\"\n",
+        "\n",
+        "[gpio]\n",
+        "chip = \"pinctrl-rp1\"\n",
+        "\n",
+        "[gpio.lines]\n",
+        "led_a1 = 17\n",
+    );
+    let report = parse(Path::new("x.board.toml"), text);
+    let gpio = report.peripherals.gpio.expect("gpio");
+    assert_eq!(gpio.lines.get("led_a1"), Some(&17));
+}
