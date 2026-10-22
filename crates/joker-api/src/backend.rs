@@ -76,6 +76,8 @@ pub trait Backend: Send + Sync + 'static {
     fn health(&self, query: &Query) -> Result<Reply>;
     /// `GET /v1/status`.
     fn status(&self) -> Result<Reply>;
+    /// `GET /v1/metrics` (ref/09 §5.2).
+    fn metrics(&self) -> Result<Reply>;
     /// `GET /v1/signals`.
     fn signals(&self, query: &Query) -> Result<Reply>;
     /// `GET /v1/signals/{path}`.

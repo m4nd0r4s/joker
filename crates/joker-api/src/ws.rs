@@ -9,12 +9,18 @@
 //! `outputs` state topics, and `decisions` (treated as sampled too,
 //! for lack of a push-capable event queue reaching this layer — a
 //! simplification from §6.5's "each item is delivered, or its drop is
-//! declared", noted where it matters below). The other ref/09 §6.4
-//! topics (`status`, `metrics`, `signal_trace`, `alarms`, `events`,
-//! `manual`, `intents`, `jobs`, `invocations`, `generations`, `audit`,
-//! `logs`) have no backing data source in this build; `subscribe`
-//! refuses them with `J-E1902`, the same code an unknown topic gets,
-//! rather than accepting and never feeding them.
+//! declared", noted where it matters below). `status` and `metrics`
+//! now have real data too (`GET /v1/status`/`GET /v1/metrics`), but
+//! are *not* wired in here yet: both are single-object snapshots, not
+//! a list, so `data`/`resync`'s shared `items: [...]` shape (built for
+//! `signals`/`outputs`/`decisions`, each naturally a collection) does
+//! not fit them without its own branch — left for that follow-up
+//! rather than forced into a shape that does not match. The other
+//! ref/09 §6.4 topics (`signal_trace`, `alarms`, `events`, `manual`,
+//! `intents`, `jobs`, `invocations`, `generations`, `audit`, `logs`)
+//! have no backing data source in this build at all. Every topic not
+//! listed in [`KNOWN_TOPICS`] is refused with `J-E1902`, the same code
+//! an unknown topic gets, rather than accepted and never fed.
 //!
 //! **Also not built**: resumption after a reconnection (§6.7 — no
 //! session store), the generation-swap `resolved` notice (§6.9), and
