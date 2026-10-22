@@ -25,6 +25,7 @@ pub mod resources;
 pub mod runner;
 pub mod shared;
 pub mod state_file;
+pub mod supervisor;
 pub mod task;
 pub mod trace_ring;
 pub mod traces;

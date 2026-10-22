@@ -127,6 +127,10 @@ pub struct GroupStats {
     pub task_errors: Counter,
     /// Proposals dropped by a full inbox or staging buffer.
     pub dropped_proposals: Counter,
+    /// Monotonic instant this group's tick last *started* (`rt/supervisor`,
+    /// AUR-274): a hang anywhere in the cycle thread stops this from
+    /// advancing, which is exactly the staleness the supervisor watches.
+    pub last_tick_mono_ns: Counter,
 }
 
 /// One tick of one group, encoded as a trace segment of one tick.

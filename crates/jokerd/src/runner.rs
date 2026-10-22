@@ -12,6 +12,7 @@ use crate::decisions::{DecisionWriter, SharedLog};
 use crate::pacer::Pacer;
 use crate::plan::Plan;
 use crate::shared::Shared;
+use crate::supervisor::Supervisor;
 use crate::trace_ring::{RingFeeder, SharedRing, TraceRing};
 
 /// What a generation needs to start.
@@ -46,6 +47,7 @@ pub struct Running {
     cycle: Option<JoinHandle<Result<CycleExit, CycleError>>>,
     decisions: Option<DecisionWriter>,
     feeder: Option<RingFeeder>,
+    supervisor: Option<Supervisor>,
 }
 
 impl Running {
@@ -67,6 +69,7 @@ impl Running {
             start.utc_origin_ns,
         );
         let feeder = RingFeeder::spawn(&plan, Arc::clone(&shared), Arc::clone(&ring));
+        let supervisor = Supervisor::spawn(Arc::clone(&plan), Arc::clone(&shared));
         let cycle = {
             let plan = Arc::clone(&plan);
             let shared = Arc::clone(&shared);
@@ -94,6 +97,7 @@ impl Running {
             cycle: Some(cycle),
             decisions: Some(decisions),
             feeder: Some(feeder),
+            supervisor: Some(supervisor),
         })
     }
 
@@ -111,6 +115,9 @@ impl Running {
             Some(Err(_)) => Err(CycleError("the cycle thread panicked".into())),
             None => Err(CycleError("not started".into())),
         };
+        if let Some(s) = self.supervisor.take() {
+            s.stop();
+        }
         if let Some(f) = self.feeder.take() {
             f.stop();
         }
@@ -129,6 +136,9 @@ impl Running {
             Some(Err(_)) => Err(CycleError("the cycle thread panicked".into())),
             None => Err(CycleError("not started".into())),
         };
+        if let Some(s) = self.supervisor.take() {
+            s.stop();
+        }
         if let Some(f) = self.feeder.take() {
             f.stop();
         }
@@ -146,6 +156,9 @@ impl Drop for Running {
         self.shared.request_stop();
         if let Some(h) = self.cycle.take() {
             let _ = h.join();
+        }
+        if let Some(s) = self.supervisor.take() {
+            s.stop();
         }
         if let Some(f) = self.feeder.take() {
             f.stop();
