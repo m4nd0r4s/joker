@@ -294,6 +294,39 @@ impl Node {
         Ok(0)
     }
 
+    /// `jk top` (ref/09 §5.2, `x-joker-cli: [jk top]`): a live view of
+    /// `GET /v1/metrics`, redrawn every second until Ctrl-C. Composes
+    /// from the existing endpoint; no new node API.
+    pub fn top(&self) -> Result<u8, Failure> {
+        loop {
+            let m = checked(self.client.get("/v1/metrics")?)?.json();
+            if self.json {
+                print_json(&m);
+                return Ok(0); // a live JSON stream belongs to `--watch`,
+                // not `--json`: one snapshot is the honest contract here.
+            }
+            print!("\x1B[2J\x1B[H"); // clear screen, home cursor
+            println!("{}", self.header()?);
+            println!("at {}", m["at"].as_str().unwrap_or("?"));
+            println!(
+                "{:<16} {:>10} {:>10} {:>14} {:>14}",
+                "group", "ticks", "overruns", "jitter(max)", "duration(max)"
+            );
+            for g in m["groups"].as_array().cloned().unwrap_or_default() {
+                println!(
+                    "{:<16} {:>10} {:>10} {:>14} {:>14}",
+                    g["group"].as_str().unwrap_or(""),
+                    g["ticks"],
+                    g["overruns"],
+                    g["jitter"]["max"].as_str().unwrap_or("-"),
+                    g["duration"]["max"].as_str().unwrap_or("-"),
+                );
+            }
+            std::io::stdout().flush().ok();
+            std::thread::sleep(Duration::from_secs(1));
+        }
+    }
+
     /// `jk read`.
     pub fn read(&self, selectors: &[String]) -> Result<u8, Failure> {
         let query: Vec<String> = selectors.iter().map(|s| format!("sel={s}")).collect();
