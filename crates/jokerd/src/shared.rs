@@ -8,7 +8,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use crossbeam_queue::ArrayQueue;
 use joker_core::commit::{DecisionRecord, WriteResult};
 use joker_core::image::Proposal;
-use joker_core::{Quality, SignalId, Slot};
+use joker_core::{Quality, SignalId, Slot, ValueType};
+use joker_hal::{CommitBox, OutputBinding, RawEncoding};
 
 use crate::plan::Plan;
 
@@ -211,6 +212,59 @@ pub struct Shared {
     pub stop: AtomicBool,
     /// The cycle thread has started ticking.
     pub running: AtomicBool,
+    /// Per real-driver device (`plan.devices` order): the output bindings
+    /// of its own write points, for a `CommitTx`/`CommitRx` pair the cycle
+    /// thread and that device's io task share (ref/06 §2.9). Empty for a
+    /// device with no output points, or whose driver this build does not
+    /// resolve a point shape for.
+    pub commit_bindings: Vec<Vec<OutputBinding>>,
+    /// The boxes matching [`Shared::commit_bindings`], one per device.
+    pub commit_boxes: Vec<Vec<CommitBox>>,
+}
+
+fn raw_encoding_of(ty: ValueType) -> Option<RawEncoding> {
+    match ty {
+        ValueType::Bool => Some(RawEncoding::Bool),
+        ValueType::I64 => Some(RawEncoding::Int),
+        ValueType::U64 | ValueType::Enum | ValueType::Bits => Some(RawEncoding::Uint),
+        ValueType::F64 | ValueType::F32 => Some(RawEncoding::Float),
+        _ => None,
+    }
+}
+
+fn commit_channels(plan: &Plan) -> (Vec<Vec<OutputBinding>>, Vec<Vec<CommitBox>>) {
+    let mut bindings = Vec::with_capacity(plan.devices.len());
+    let mut boxes = Vec::with_capacity(plan.devices.len());
+    for device in &plan.devices {
+        let mut device_bindings = Vec::new();
+        let mut device_boxes = Vec::new();
+        for (i, point) in device.points.iter().enumerate() {
+            if point.direction != joker_hal::Direction::Output {
+                continue;
+            }
+            let Some(signal) = plan.id(&point.path) else {
+                continue;
+            };
+            let Some(sig_plan) = plan.signals.iter().find(|s| s.path == point.path) else {
+                continue;
+            };
+            let Some(encoding) = raw_encoding_of(sig_plan.ty) else {
+                continue;
+            };
+            let Ok(point_id) = u32::try_from(i) else {
+                continue;
+            };
+            device_bindings.push(OutputBinding {
+                signal,
+                point: point_id,
+                encoding,
+            });
+            device_boxes.push(CommitBox::new());
+        }
+        bindings.push(device_bindings);
+        boxes.push(device_boxes);
+    }
+    (bindings, boxes)
 }
 
 impl Shared {
@@ -228,6 +282,7 @@ impl Shared {
         for _ in 0..TRACE_BUFFERS {
             let _ = trace_free.push(Vec::with_capacity(trace_len));
         }
+        let (commit_bindings, commit_boxes) = commit_channels(plan);
         Self {
             slots,
             inboxes: (0..plan.groups.len())
@@ -247,6 +302,8 @@ impl Shared {
             exports: ArrayQueue::new(EXPORT_CAPACITY),
             stop: AtomicBool::new(false),
             running: AtomicBool::new(false),
+            commit_bindings,
+            commit_boxes,
         }
     }
 

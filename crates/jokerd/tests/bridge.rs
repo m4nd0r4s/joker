@@ -214,6 +214,33 @@ button = { type = "bool", direction = "input", line = 17, active_low = true }
     }
 
     #[test]
+    fn plan_new_resolves_real_devices_and_skips_sim() {
+        let dir = project(&[
+            ("joker.toml", JOKER_TOML),
+            ("profiles/acme/pcs@1.profile.toml", PROFILE_TOML),
+        ]);
+        let loaded = load(&OsFileSystem, &dir.path().join("joker.toml"), &NativeTasks)
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(loaded.plan.devices.len(), 1);
+        assert_eq!(loaded.plan.devices[0].name, "pcs");
+
+        let sim_dir = project(&[(
+            "joker.toml",
+            "[project]\nname=\"s\"\njoker=\"1.0\"\nmode=\"dev\"\n[devices.pi]\ndriver=\"sim\"\n[devices.pi.signals]\nact_led={type=\"bool\",direction=\"output\"}\n[outputs.\"pi.act_led\"]\nsafe=false\n",
+        )]);
+        let sim_loaded = load(
+            &OsFileSystem,
+            &sim_dir.path().join("joker.toml"),
+            &NativeTasks,
+        )
+        .unwrap_or_else(|e| panic!("{e}"));
+        assert!(
+            sim_loaded.plan.devices.is_empty(),
+            "sim devices are not resolved into DevicePlan"
+        );
+    }
+
+    #[test]
     fn owned_request_carries_the_bus_device_and_point_shapes() {
         let dir = project(&[
             ("joker.toml", JOKER_TOML),

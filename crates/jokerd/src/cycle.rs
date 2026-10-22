@@ -143,6 +143,25 @@ pub fn run(
         }
     }
 
+    // One `CommitTx` per real-driver device (ref/06 §2.9, step 7): after
+    // each group's commit, publishes every output that device owns and
+    // that changed, for that device's io task to drain through a matching
+    // `CommitRx` on the same boxes. A device with no output bindings (no
+    // real driver, or no output points) gets an empty, harmless `CommitTx`.
+    let mut commit_last: Vec<Vec<Option<Applied>>> = shared
+        .commit_bindings
+        .iter()
+        .map(|b| vec![None; b.len()])
+        .collect();
+    let mut commit_tx: Vec<joker_hal::CommitTx<'_>> = shared
+        .commit_bindings
+        .iter()
+        .zip(&shared.commit_boxes)
+        .zip(&mut commit_last)
+        .map(|((bindings, boxes), last)| joker_hal::CommitTx::new(&outputs, bindings, boxes, last))
+        .collect::<Result<_, _>>()
+        .map_err(|e| CycleError(format!("commit channel: {e:?}")))?;
+
     if tasks.len() != plan.groups.len() {
         return Err(CycleError("one task list per group is required".into()));
     }
@@ -230,7 +249,15 @@ pub fn run(
             index = current;
         }
         g.next_index = index + 1;
-        tick(g, index, started, shared, &registry, &mut outputs);
+        tick(
+            g,
+            index,
+            started,
+            shared,
+            &registry,
+            &mut outputs,
+            &mut commit_tx,
+        );
         export_state(g, plan, shared);
         let ended = pacer.now().mono_ns;
         stats
@@ -261,6 +288,7 @@ fn tick(
     shared: &Shared,
     registry: &joker_core::Registry<'_>,
     outputs: &mut Outputs<'_>,
+    commit_tx: &mut [joker_hal::CommitTx<'_>],
 ) {
     let stats = &shared.groups[g.index];
     if g.image.latch(index, at, &shared.slots, registry).is_err() {
@@ -290,6 +318,9 @@ fn tick(
     };
     if outputs.commit(&g.image, &shared.slots, &mut sink).is_err() {
         stats.task_errors.bump();
+    }
+    for tx in commit_tx.iter_mut() {
+        tx.publish(outputs);
     }
     trace(g, index, at, shared);
     let _ = g.image.end_tick();
