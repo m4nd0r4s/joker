@@ -621,14 +621,13 @@ impl Controller {
     /// action channel (`DeviceSet::action_sender`, AUR-405) and logs the
     /// outcome either way (invariant 8). The manifest's own
     /// `dedup_window` override (`DeviceActionPlan::dedup_window_ns`) is
-    /// used when declared, ref/09 §5.10's 60s default otherwise.
-    /// `permitted` is the caller's evaluation of the action's `permit`
-    /// expression: evaluating it is not wired here yet — `joker_expr`'s
-    /// compile+eval pipeline is only reachable from inside `joker-core`'s
-    /// own tick-building today, not from a daemon-side, out-of-tick
-    /// caller; wiring it needs its own design pass, not a quick patch
-    /// here. Same scope gap AUR-405 already flags for `$arg`
-    /// substitution.
+    /// used when declared, ref/09 §5.10's 60s default otherwise. The
+    /// action's own declared `permit` (`Plan::permits`, AUR-416/
+    /// AUR-417) is evaluated for real against live `Shared.slots`
+    /// values; an action with none declared is always permitted, and
+    /// an evaluation failure fails safe (not permitted), never silently
+    /// `true`. `$arg` substitution into a step's value is still a
+    /// flagged, separate gap (AUR-405).
     ///
     /// [`Dispatcher`]: crate::actions::Dispatcher
     pub fn invoke_action(
@@ -638,12 +637,11 @@ impl Controller {
         key: &str,
         now_mono_ns: u64,
         writer: &str,
-        permitted: bool,
     ) -> Result<Invoked, ControlError> {
         // ref/09 §5.10's own documented default when the manifest
         // declares no `dedup_window` override.
         const DEFAULT_DEDUP_WINDOW_NS: u64 = 60_000_000_000;
-        let (generation, steps, dedup_window_ns, sender) = {
+        let (generation, steps, dedup_window_ns, permitted, sender) = {
             let active = self
                 .active
                 .as_ref()
@@ -662,10 +660,31 @@ impl Controller {
                     format!("unknown action `{device}.{action}`"),
                 ));
             };
+            // No declared `permit` means always permitted (ref/01
+            // §5.8.2: `permit` is optional). Actions have no
+            // `permit_uncertain` override key (unlike an output's own
+            // `interlock`, docs/02 §4), so `Uncertain` quality always
+            // fails the permit, with no way to relax that.
+            let permitted = match active
+                .running
+                .plan
+                .permits
+                .get(&(device.to_owned(), action.to_owned()))
+            {
+                Some(program) => {
+                    match crate::expr_plan::eval_bool(program, &active.running.shared, now_mono_ns)
+                    {
+                        Ok(output) => output.permits(false),
+                        Err(_) => false,
+                    }
+                }
+                None => true,
+            };
             (
                 active.running.generation,
                 decl.steps.clone(),
                 decl.dedup_window_ns.unwrap_or(DEFAULT_DEDUP_WINDOW_NS),
+                permitted,
                 active.devices.action_sender(device),
             )
         };
@@ -924,6 +943,133 @@ mod action_tests {
         c
     }
 
+    /// Like [`plan_with_one_action`], but the manifest also declares a
+    /// real `pi.act_led` bool signal, and `reset_fault`'s `permit` is
+    /// wired to reference it directly (`Plan::permits`) — for proving
+    /// `invoke_action` evaluates a real `permit` rather than defaulting
+    /// to always-permitted.
+    fn plan_with_permit_on_act_led() -> Plan {
+        let mut fs = MemoryFileSystem::default();
+        fs.file(
+            "joker.toml",
+            "[project]\nname = \"t\"\njoker = \"1.0\"\nmode = \"dev\"\n\n\
+             [outputs.\"pi.act_led\"]\nsafe = false\n\n\
+             [devices.pi]\ndriver = \"sim\"\n\n\
+             [devices.pi.signals]\nact_led = { type = \"bool\", direction = \"output\" }\n",
+        );
+        let loaded =
+            load(&fs, Path::new("joker.toml"), &NativeTasks).unwrap_or_else(|e| panic!("{e}"));
+        let mut plan = loaded.plan;
+        plan.devices.push(crate::bridge::DevicePlan {
+            name: "pcs".into(),
+            driver: "modbus-rtu".into(),
+            bus: None,
+            bus_kind: None,
+            bus_params: Vec::new(),
+            config: Vec::new(),
+            quirks: Vec::new(),
+            timeout_ns: 1_000_000_000,
+            fallback_keepalive_ns: None,
+            points: Vec::new(),
+            actions: vec![DeviceActionPlan {
+                name: "reset_fault".into(),
+                timeout_ns: 1_000_000_000,
+                dedup_window_ns: None,
+                role: "operator".into(),
+                steps: Vec::new(),
+            }],
+        });
+        let program = crate::expr_plan::compile_bool(
+            "pi.act_led",
+            &plan,
+            joker_units::Duration::from_millis(20),
+        )
+        .unwrap_or_else(|e| panic!("{e:?}"));
+        plan.permits
+            .insert(("pcs".to_owned(), "reset_fault".to_owned()), program);
+        plan
+    }
+
+    /// A controller with an `Active` generation whose `pcs.reset_fault`
+    /// has a real, compiled `permit` referencing `pi.act_led`, already
+    /// set to `write_led`.
+    fn controller_with_permit(dir: &std::path::Path, write_led: bool) -> Controller {
+        let log = Arc::new(Mutex::new(
+            DecisionLog::open(&dir.join("decisions.jsonl")).unwrap(),
+        ));
+        let clock = Monotonic::start();
+        let mut c = Controller::new(
+            dir,
+            Arc::clone(&log),
+            Arc::new(NativeTasks),
+            Arc::new(NoDevices),
+            Box::new(move || Box::new(SystemPacer::new(clock, joker_core::ClockQuality::Unsynced))),
+            Config::default(),
+        )
+        .unwrap();
+
+        let plan = Arc::new(plan_with_permit_on_act_led());
+        let running = Running::start(
+            Arc::clone(&plan),
+            Vec::new(),
+            Box::new(SystemPacer::new(clock, joker_core::ClockQuality::Unsynced)),
+            Arc::clone(&log),
+            Start {
+                generation: 1,
+                inherit: Default::default(),
+                retention: Duration::from_secs(60),
+                max_ticks: None,
+                utc_origin_ns: 0,
+                cpus: Vec::new(),
+            },
+        )
+        .unwrap();
+        let id = plan.id("pi.act_led").unwrap();
+        running.shared.slots[id.index()].write(
+            u64::from(write_led),
+            joker_core::Quality::GOOD,
+            joker_core::value::NO_TS_SRC,
+            0,
+        );
+
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<crate::drivers::ActionCall>(4);
+        std::thread::spawn(move || {
+            while let Some(call) = rx.blocking_recv() {
+                let _ = call.reply.send(crate::drivers::ActionOutcome::Ok);
+            }
+        });
+        c.active = Some(Active {
+            number: 1,
+            hash: "sha256:test".into(),
+            running,
+            devices: Box::new(FakeDeviceSet { sender: tx }),
+        });
+        c
+    }
+
+    #[test]
+    fn a_true_permit_admits_the_invocation() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut c = controller_with_permit(dir.path(), true);
+        let result = c
+            .invoke_action("pcs", "reset_fault", "k1", 0, "user:test")
+            .unwrap();
+        assert_eq!(result, Invoked::Ran(ActionResult::Succeeded));
+    }
+
+    #[test]
+    fn a_false_permit_rejects_the_invocation_without_running_anything() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut c = controller_with_permit(dir.path(), false);
+        let result = c
+            .invoke_action("pcs", "reset_fault", "k1", 0, "user:test")
+            .unwrap();
+        assert_eq!(
+            result,
+            Invoked::Rejected(crate::actions::Rejected::NotPermitted)
+        );
+    }
+
     #[test]
     fn invoking_an_action_with_no_generation_running_is_rejected() {
         let dir = tempfile::tempdir().unwrap();
@@ -941,7 +1087,7 @@ mod action_tests {
         )
         .unwrap();
         let err = c
-            .invoke_action("pcs", "reset_fault", "k1", 0, "user:test", true)
+            .invoke_action("pcs", "reset_fault", "k1", 0, "user:test")
             .unwrap_err();
         assert_eq!(err.code, "J-E1015");
     }
@@ -951,11 +1097,11 @@ mod action_tests {
         let dir = tempfile::tempdir().unwrap();
         let mut c = controller_with_action(dir.path());
         let err = c
-            .invoke_action("nope", "reset_fault", "k1", 0, "user:test", true)
+            .invoke_action("nope", "reset_fault", "k1", 0, "user:test")
             .unwrap_err();
         assert_eq!(err.code, "J-E1400");
         let err = c
-            .invoke_action("pcs", "nope", "k1", 0, "user:test", true)
+            .invoke_action("pcs", "nope", "k1", 0, "user:test")
             .unwrap_err();
         assert_eq!(err.code, "J-E1400");
     }
@@ -966,20 +1112,20 @@ mod action_tests {
         let mut c = controller_with_action(dir.path());
 
         let result = c
-            .invoke_action("pcs", "reset_fault", "k1", 0, "user:test", true)
+            .invoke_action("pcs", "reset_fault", "k1", 0, "user:test")
             .unwrap();
         assert_eq!(result, Invoked::Ran(ActionResult::Succeeded));
 
         // A second, differently-keyed call admits and runs again.
         let result = c
-            .invoke_action("pcs", "reset_fault", "k2", 1, "user:test", true)
+            .invoke_action("pcs", "reset_fault", "k2", 1, "user:test")
             .unwrap();
         assert_eq!(result, Invoked::Ran(ActionResult::Succeeded));
 
         // The same key, still inside the dedup window, is served from
         // cache and does not run again.
         let result = c
-            .invoke_action("pcs", "reset_fault", "k1", 2, "user:test", true)
+            .invoke_action("pcs", "reset_fault", "k1", 2, "user:test")
             .unwrap();
         assert_eq!(result, Invoked::Duplicate(ActionResult::Succeeded));
 
@@ -1032,7 +1178,7 @@ mod action_tests {
         });
 
         let err = c
-            .invoke_action("pcs", "reset_fault", "k1", 0, "user:test", true)
+            .invoke_action("pcs", "reset_fault", "k1", 0, "user:test")
             .unwrap_err();
         assert_eq!(err.code, "J-E1415");
 

@@ -1034,8 +1034,8 @@ impl Backend for Node {
             .ok_or_else(|| Problem::new("J-E1023", 400, "`Idempotency-Key` is required"))?;
         let now = self.now_mono();
         let principal = user(who);
-        let outcome = lock_controller(&self.controller)
-            .invoke_action(target, action, key, now, &principal, true);
+        let outcome =
+            lock_controller(&self.controller).invoke_action(target, action, key, now, &principal);
         let created_at = timestamp(utc_now_ns());
         let invocation = |replay: bool, state: &str, error: Option<(&str, &str, &str)>| {
             invocation_json(
