@@ -146,6 +146,13 @@ enum Command {
         #[arg(long)]
         diff: bool,
     },
+    /// The arbiter state of an output: owning group, levels, active
+    /// level, last result (docs/07; `jk explain <key|code|pipeline>` is
+    /// not built yet — this only reads an output path).
+    Explain {
+        /// The output path.
+        target: String,
+    },
     /// Invokes an action of a device (ref/09 §5.10).
     Action {
         /// `<target>.<action>`.
@@ -318,6 +325,7 @@ fn run(cli: Cli) -> Result<u8, Failure> {
             level,
             force,
         } => node()?.release(&output, level.as_deref(), force),
+        Command::Explain { target } => node()?.explain(&target),
         Command::Action {
             target_action,
             args,

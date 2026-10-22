@@ -416,6 +416,22 @@ impl Node {
         Ok(0)
     }
 
+    /// `jk explain <output>`: the arbiter state of an output (docs/07) —
+    /// owning group, occupied levels, active level, envelope and last
+    /// result. The other forms docs/07 lists (a manifest key's origin,
+    /// an error code's full page, a pipeline's plan) are not built yet;
+    /// an argument is always read as an output path here.
+    pub fn explain(&self, target: &str) -> Result<u8, Failure> {
+        let state = checked(self.client.get(&format!("/v1/outputs/{target}"))?)?.json();
+        if self.json {
+            print_json(&state);
+            return Ok(0);
+        }
+        println!("{}", self.header()?);
+        print!("{}", render_output_explain(target, &state));
+        Ok(0)
+    }
+
     /// `jk action`.
     pub fn action(&self, target_action: &str, args: &[String], key: &str) -> Result<u8, Failure> {
         let (target, action) = split_target_action(target_action)?;
@@ -552,6 +568,46 @@ impl Node {
     }
 }
 
+/// Renders an `OutputState` (ref/09 §5.6) as `jk explain <output>`'s
+/// human-readable output.
+fn render_output_explain(target: &str, state: &Value) -> String {
+    use std::fmt::Write;
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "{target}  group {}",
+        state["group"].as_str().unwrap_or("?")
+    );
+    let _ = writeln!(out, "  safe        {}", state["safe"]);
+    let _ = writeln!(out, "  effective   {}", state["effective"]);
+    let _ = writeln!(out, "  applied     {}", state["applied"]);
+    let _ = writeln!(
+        out,
+        "  active      {}",
+        state["active_level"].as_str().unwrap_or("none")
+    );
+    if let Some(outcome) = state.get("last_outcome").filter(|v| !v.is_null()) {
+        let _ = writeln!(
+            out,
+            "  last result {}",
+            outcome["outcome"].as_str().unwrap_or("?")
+        );
+    }
+    let _ = writeln!(out, "  tripped     {}", state["tripped"]);
+    for level in state["levels"].as_array().cloned().unwrap_or_default() {
+        let value = level.get("value").cloned().unwrap_or(Value::Null);
+        let active = level["active"].as_bool().unwrap_or(false);
+        let _ = writeln!(
+            out,
+            "  {:<12} {:<20} {value} {}",
+            level["level"].as_str().unwrap_or("?"),
+            level["writer"].as_str().unwrap_or("?"),
+            if active { "(active)" } else { "" },
+        );
+    }
+    out
+}
+
 /// `<target>.<action>` (docs/07, ref/09 §5.10), split on the first `.`.
 fn split_target_action(s: &str) -> Result<(&str, &str), Failure> {
     s.split_once('.')
@@ -616,5 +672,49 @@ mod tests {
     #[test]
     fn an_arg_without_equals_is_a_usage_error() {
         assert!(parse_args(&["nope".to_owned()]).is_err());
+    }
+
+    #[test]
+    fn render_output_explain_includes_group_levels_and_active_state() {
+        let state = json!({
+            "group": "main",
+            "safe": false,
+            "effective": true,
+            "applied": true,
+            "active_level": "app:light",
+            "last_outcome": {"outcome": "accepted"},
+            "tripped": false,
+            "levels": [
+                {
+                    "level": "app:light",
+                    "writer": "app:light",
+                    "kind": "cycle",
+                    "value": true,
+                    "active": true,
+                }
+            ],
+        });
+        let rendered = render_output_explain("pi.act_led", &state);
+        assert!(rendered.contains("pi.act_led"));
+        assert!(rendered.contains("group main"));
+        assert!(rendered.contains("active      app:light"));
+        assert!(rendered.contains("accepted"));
+        assert!(rendered.contains("(active)"));
+    }
+
+    #[test]
+    fn render_output_explain_omits_last_result_when_there_is_none() {
+        let state = json!({
+            "group": "main",
+            "safe": false,
+            "effective": false,
+            "applied": false,
+            "active_level": "none",
+            "last_outcome": null,
+            "tripped": false,
+            "levels": [],
+        });
+        let rendered = render_output_explain("pi.act_led", &state);
+        assert!(!rendered.contains("last result"));
     }
 }
