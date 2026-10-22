@@ -367,14 +367,25 @@ pub fn owned_request(plan: &DevicePlan) -> joker_hal::spec::owned::OwnedRequest 
     }
 }
 
-/// Builds the [`DevicePlan`] of every device in `manifest`.
-pub fn device_plans(
-    manifest: &Manifest,
-    context: &Context,
-) -> Result<Vec<DevicePlan>, BridgeError> {
-    manifest
-        .devices
-        .iter()
-        .map(|(name, device)| device_plan(name, device, manifest, context))
-        .collect()
+/// Builds the [`DevicePlan`] of every device in `manifest` this bridge
+/// knows how to resolve. `driver = "sim"` is skipped on purpose: it never
+/// goes through a real `Driver`, `devices.rs`'s own simulated path covers
+/// it. A device whose driver this build cannot yet resolve into a shape
+/// (a family `point_shape` has no arm for, or a bad config) is reported in
+/// the second element and otherwise skipped, the same leniency
+/// `catalog::profiles_from_dir` uses for a broken profile file: one
+/// device's gap does not stop the rest of the generation from planning.
+pub fn device_plans(manifest: &Manifest, context: &Context) -> (Vec<DevicePlan>, Vec<String>) {
+    let mut plans = Vec::new();
+    let mut errors = Vec::new();
+    for (name, device) in &manifest.devices {
+        if device.driver.as_ref().is_some_and(|d| d.value == "sim") {
+            continue;
+        }
+        match device_plan(name, device, manifest, context) {
+            Ok(plan) => plans.push(plan),
+            Err(e) => errors.push(format!("device `{name}`: {e}")),
+        }
+    }
+    (plans, errors)
 }

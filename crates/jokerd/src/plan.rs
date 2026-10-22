@@ -165,6 +165,11 @@ pub struct Plan {
     pub ids: BTreeMap<String, SignalId>,
     /// Hash of the registry (ADR 0031).
     pub registry_hash: [u8; 32],
+    /// Every device, resolved into what a driver's `Planner`/`Driver`
+    /// needs (`bridge::device_plan`). Devices whose driver this build does
+    /// not know how to run for real stay here regardless: `Shared::new`
+    /// and the device dispatcher decide what to do with each one.
+    pub devices: Vec<crate::bridge::DevicePlan>,
 }
 
 /// The borrowed core tables of a plan.
@@ -456,6 +461,10 @@ impl Plan {
             }
         }
 
+        let (devices, device_errors) = crate::bridge::device_plans(manifest, context);
+        for e in &device_errors {
+            eprintln!("warning: {e}");
+        }
         let mut plan = Plan {
             manifest_hash: manifest_hash.to_owned(),
             dev: manifest.project.mode == joker_manifest::Mode::Dev,
@@ -466,6 +475,7 @@ impl Plan {
             writers,
             ids: BTreeMap::new(),
             registry_hash: [0; 32],
+            devices,
         };
         let (ids, hash) = {
             let tables = plan.tables()?;
