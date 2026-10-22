@@ -1,6 +1,8 @@
 //! `jokerd::bridge`: turning manifest/profile TOML data into the CBOR a
 //! driver's `plan()` expects.
 
+#![allow(clippy::unwrap_used)]
+
 use joker_manifest::source::{Sources, Span};
 use joker_manifest::value::{Entry, Node, Table, Value};
 use jokerd::bridge::{node_to_cbor, table_to_cbor};
@@ -78,4 +80,162 @@ fn table_to_cbor_wraps_a_plain_node_map() {
     let bytes = table_to_cbor(&map);
     let cbor = joker_hal::cbor::Cbor::new(&bytes);
     assert_eq!(cbor.get("unit_id").unwrap().unwrap().as_u64(), Ok(1));
+}
+
+mod device_plan {
+    use joker_manifest::OsFileSystem;
+    use jokerd::load::load;
+    use jokerd::native::NativeTasks;
+
+    fn project(files: &[(&str, &str)]) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        for (path, text) in files {
+            let full = dir.path().join(path);
+            std::fs::create_dir_all(full.parent().unwrap()).unwrap();
+            std::fs::write(full, text).unwrap();
+        }
+        dir
+    }
+
+    const JOKER_TOML: &str = r#"
+[project]
+name  = "bridge-test"
+joker = "1.0"
+mode  = "dev"
+
+[buses.line0]
+kind = "serial"
+port = "/dev/ttyUSB0"
+baud = 9600
+
+[devices.pcs]
+driver  = "modbus-rtu"
+bus     = "line0"
+profile = "acme/pcs@1"
+timeout = "1s"
+unit_id = 1
+"#;
+
+    const PROFILE_TOML: &str = r#"
+schema = 1
+
+[profile]
+name    = "acme/pcs"
+version = "1.0.0"
+driver  = "modbus"
+
+[signals.p_ac]
+at   = 0
+fc   = 4
+type = "f32"
+unit = "kW"
+"#;
+
+    #[test]
+    fn a_profile_backed_device_resolves_its_point_address_and_shape() {
+        let dir = project(&[
+            ("joker.toml", JOKER_TOML),
+            ("profiles/acme/pcs@1.profile.toml", PROFILE_TOML),
+        ]);
+        let loaded = load(&OsFileSystem, &dir.path().join("joker.toml"), &NativeTasks)
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert!(
+            loaded.report.codes().is_empty(),
+            "{}",
+            loaded.report.render()
+        );
+        let (context, errors) = jokerd::catalog::context_for_project(&NativeTasks, dir.path());
+        assert!(errors.is_empty(), "{errors:?}");
+        let device = &loaded.manifest.devices["pcs"];
+        let plan = jokerd::bridge::device_plan("pcs", device, &loaded.manifest, &context).unwrap();
+        assert_eq!(plan.driver, "modbus-rtu");
+        assert_eq!(plan.bus.as_deref(), Some("line0"));
+        assert_eq!(plan.bus_kind, Some(joker_manifest::model::BusKind::Serial));
+        let bus_params = joker_hal::cbor::Cbor::new(&plan.bus_params);
+        assert_eq!(bus_params.get("baud").unwrap().unwrap().as_u64(), Ok(9600));
+        assert_eq!(plan.timeout_ns, 1_000_000_000);
+        let cbor = joker_hal::cbor::Cbor::new(&plan.config);
+        assert_eq!(cbor.get("unit_id").unwrap().unwrap().as_u64(), Ok(1));
+        assert_eq!(plan.points.len(), 1);
+        let p = &plan.points[0];
+        assert_eq!(p.path, "pcs.p_ac");
+        assert_eq!(p.type_name, "f32");
+        assert_eq!(p.expect, joker_hal::RawKind::Regs);
+        assert_eq!(p.width, 2);
+        let addr = joker_hal::cbor::Cbor::new(&p.addr);
+        assert_eq!(addr.get("at").unwrap().unwrap().as_u64(), Ok(0));
+        assert_eq!(addr.get("fc").unwrap().unwrap().as_u64(), Ok(4));
+    }
+
+    const GPIO_JOKER_TOML: &str = r#"
+[project]
+name  = "bridge-test-gpio"
+joker = "1.0"
+mode  = "dev"
+
+[devices.io]
+driver = "gpio"
+chip   = "gpiochip0"
+
+[devices.io.signals]
+button = { type = "bool", direction = "input", line = 17, active_low = true }
+"#;
+
+    #[test]
+    fn a_profile_less_device_resolves_points_from_its_own_signal_table() {
+        let dir = project(&[("joker.toml", GPIO_JOKER_TOML)]);
+        let loaded = load(&OsFileSystem, &dir.path().join("joker.toml"), &NativeTasks)
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert!(
+            loaded.report.codes().is_empty(),
+            "{}",
+            loaded.report.render()
+        );
+        let (context, errors) = jokerd::catalog::context_for_project(&NativeTasks, dir.path());
+        assert!(errors.is_empty(), "{errors:?}");
+        let device = &loaded.manifest.devices["io"];
+        let plan = jokerd::bridge::device_plan("io", device, &loaded.manifest, &context).unwrap();
+        assert_eq!(plan.driver, "gpio");
+        assert!(plan.bus.is_none());
+        let cbor = joker_hal::cbor::Cbor::new(&plan.config);
+        assert_eq!(cbor.get("chip").unwrap().unwrap().as_str(), Ok("gpiochip0"));
+        assert_eq!(plan.points.len(), 1);
+        let p = &plan.points[0];
+        assert_eq!(p.path, "io.button");
+        assert_eq!(p.expect, joker_hal::RawKind::Bool);
+        assert_eq!(p.width, 0);
+        let addr = joker_hal::cbor::Cbor::new(&p.addr);
+        assert_eq!(addr.get("line").unwrap().unwrap().as_u64(), Ok(17));
+        assert_eq!(addr.get("active_low").unwrap().unwrap().as_bool(), Ok(true));
+        assert!(
+            addr.get("type").unwrap().is_none(),
+            "generic keys are not in the address"
+        );
+    }
+
+    #[test]
+    fn owned_request_carries_the_bus_device_and_point_shapes() {
+        let dir = project(&[
+            ("joker.toml", JOKER_TOML),
+            ("profiles/acme/pcs@1.profile.toml", PROFILE_TOML),
+        ]);
+        let loaded = load(&OsFileSystem, &dir.path().join("joker.toml"), &NativeTasks)
+            .unwrap_or_else(|e| panic!("{e}"));
+        let (context, _) = jokerd::catalog::context_for_project(&NativeTasks, dir.path());
+        let device = &loaded.manifest.devices["pcs"];
+        let plan = jokerd::bridge::device_plan("pcs", device, &loaded.manifest, &context).unwrap();
+        let owned = jokerd::bridge::owned_request(&plan);
+        let views = owned.views();
+        let req = views.request();
+        let bus = req.bus.expect("a serial bus");
+        assert_eq!(bus.kind, joker_hal::BusKind::Serial);
+        assert_eq!(bus.params.get("baud").unwrap().unwrap().as_u64(), Ok(9600));
+        assert_eq!(req.devices.len(), 1);
+        assert_eq!(req.devices[0].name, "pcs");
+        assert_eq!(req.points.len(), 1);
+        assert_eq!(req.points[0].path, "pcs.p_ac");
+        assert_eq!(req.points[0].expect, joker_hal::RawKind::Regs);
+        assert_eq!(req.points[0].width, 2);
+        assert_eq!(req.points[0].direction, joker_hal::Direction::Input);
+    }
 }
