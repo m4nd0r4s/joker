@@ -26,6 +26,7 @@ use crate::pacer::Monotonic;
 use crate::plan::{OutputPlan, Plan};
 use crate::runner::Running;
 use crate::shared::Shared;
+use crate::state_file;
 use crate::traces::{Source, TraceEntry, TraceState, Traces, record};
 use crate::trips::TripTable;
 use crate::wire::{self, duration, input_bits, parse_duration, timestamp, utc_now_ns};
@@ -39,6 +40,7 @@ pub struct Node {
     clock: Monotonic,
     utc_origin_ns: i64,
     boot_id: String,
+    boot_count: u64,
     started_utc_ns: i64,
     name: String,
     state_dir: PathBuf,
@@ -144,11 +146,13 @@ impl Node {
             );
         }
         let (trips, restored_trips) = TripTable::load(state_dir.to_owned());
+        let boot_count = state_file::bump_counter(state_dir, "boot_count");
         let node = Self {
             controller,
             clock,
             utc_origin_ns,
             boot_id: joker_api::server::ulid(u128::try_from(utc_now_ns()).unwrap_or(0)),
+            boot_count,
             started_utc_ns: utc_now_ns(),
             name: host_name(),
             state_dir: state_dir.to_owned(),
@@ -724,6 +728,12 @@ impl Backend for Node {
             json!({
                 "version": env!("CARGO_PKG_VERSION"),
                 "boot_id": self.boot_id,
+                // Not in the OpenAPI schema yet (ref/09): docs/01 §20's
+                // "startup counter" for the dead-jokerd failure mode,
+                // persisted in state/boot_count. The schema has no
+                // `additionalProperties: false` on this object, so this
+                // is additive, not a contract break.
+                "boot_count": self.boot_count,
                 "started_at": timestamp(self.started_utc_ns),
             }),
         );

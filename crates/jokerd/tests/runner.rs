@@ -198,3 +198,102 @@ fn real_time_ticks_and_overruns() {
         shared.groups[0].overruns.get()
     );
 }
+
+/// Blocks the whole tick well past `supervisor::STALE_FACTOR` periods,
+/// once: a stand-in for a genuine host-level hang (a blocking driver
+/// call, a deadlock) that epoch interruption does not cover, since it
+/// never touches Wasm at all.
+struct Frozen;
+
+impl CycleTask for Frozen {
+    fn run(&mut self, _cx: &mut TaskContext<'_, '_, '_>) -> Result<(), TaskError> {
+        // No task writes "pcs.a", so it falls into the implicit
+        // `default` group (docs/16 A11, period 100ms) — the only group
+        // of this plan, so one task list suffices. 3x its period is
+        // 300ms; sleep well past that.
+        std::thread::sleep(Duration::from_millis(350));
+        Ok(())
+    }
+}
+
+/// A plan with one output bound to a real (non-`sim`) driver's point:
+/// `driver = "sim"` never goes through `joker_hal::CommitRx`
+/// (`bridge::device_plans` skips it on purpose), so `force_safe` would
+/// have nothing to act on with a simulated device. Mirrors
+/// `jokerd::supervisor`'s own test fixture.
+fn plan_with_one_bound_output() -> jokerd::plan::Plan {
+    use joker_manifest::MemoryFileSystem;
+    let mut fs = MemoryFileSystem::default();
+    fs.file(
+        "joker.toml",
+        "[project]\nname = \"t\"\njoker = \"1.0\"\nmode = \"dev\"\n\n\
+         [outputs.\"pcs.a\"]\nsafe = false\n\n\
+         [devices.pcs]\ndriver = \"sim\"\n\n\
+         [devices.pcs.signals]\na = { type = \"bool\", direction = \"output\" }\n",
+    );
+    let loaded = jokerd::load::load(&fs, std::path::Path::new("joker.toml"), &NativeTasks)
+        .unwrap_or_else(|e| panic!("{e}"));
+    let mut plan = loaded.plan;
+    plan.devices.push(jokerd::bridge::DevicePlan {
+        name: "pcs".into(),
+        driver: "modbus-rtu".into(),
+        bus: None,
+        bus_kind: None,
+        bus_params: Vec::new(),
+        config: Vec::new(),
+        quirks: Vec::new(),
+        timeout_ns: 1_000_000_000,
+        fallback_keepalive_ns: None,
+        points: vec![jokerd::bridge::DevicePointPlan {
+            path: "pcs.a".into(),
+            addr: Vec::new(),
+            type_name: "bool".into(),
+            direction: joker_hal::types::Direction::Output,
+            poll_ns: None,
+            expect: joker_hal::types::RawKind::Bool,
+            width: 0,
+        }],
+        actions: Vec::new(),
+    });
+    plan
+}
+
+/// A real hang (not a fake one calling `check_and_respond` directly):
+/// `Running::start`'s own `rt/supervisor` thread, polling in the
+/// background on a real wall clock, must notice a tick that blocks
+/// past `STALE_FACTOR` periods and force every output's `force_safe`
+/// bit on its own, with nobody driving it from the test (AUR-274).
+#[test]
+fn a_real_hang_is_caught_by_the_background_supervisor_thread() {
+    let plan = Arc::new(plan_with_one_bound_output());
+    let dir = tempfile::tempdir().unwrap();
+    let clock = Monotonic::start();
+    let pacer = Box::new(SystemPacer::new(clock, ClockQuality::Unsynced));
+    let tasks: Vec<GroupTasks> = vec![vec![(
+        joker_core::WriterId(0),
+        Box::new(Frozen) as Box<dyn CycleTask>,
+    )]];
+    let running =
+        Running::start(Arc::clone(&plan), tasks, pacer, log(&dir), start(Some(1))).unwrap();
+    let shared = Arc::clone(&running.shared);
+    running.join().unwrap();
+
+    let mut any_forced = false;
+    for (bindings, boxes) in shared
+        .commit_bindings
+        .iter()
+        .zip(shared.commit_boxes.iter())
+    {
+        if bindings.is_empty() {
+            continue;
+        }
+        let mut state = vec![joker_hal::commit::RxState::default(); bindings.len()];
+        let mut rx = joker_hal::commit::CommitRx::new(bindings, boxes, &mut state).unwrap();
+        for _ in 0..bindings.len() {
+            let write = rx.take().expect("a forced box yields a write");
+            assert_eq!(write.kind, joker_hal::types::WriteKind::ForceSafe);
+            any_forced = true;
+        }
+    }
+    assert!(any_forced, "the supervisor never forced any output safe");
+}

@@ -1028,6 +1028,27 @@ async fn a_trip_survives_a_jokerd_restart() {
     let _ = stop2.send(());
 }
 
+/// A dead-`jokerd`-and-restart cycle bumps the startup counter
+/// (docs/01 §20's "startup counter"), persisted so it survives rather
+/// than resetting with the process.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_boot_counter_persists_and_increments_across_restarts() {
+    let dir = tempfile::tempdir().unwrap();
+    let manifest = effective();
+
+    let (http, stop) = boot_at(dir.path(), &manifest).await;
+    let first = http.send("GET", "/v1/info", &[], None).await;
+    let first_count = first.json()["runtime"]["boot_count"].as_u64().unwrap();
+    assert!(first_count >= 1, "{}", first.json());
+    let _ = stop.send(());
+
+    let (http2, stop2) = boot_at(dir.path(), &manifest).await;
+    let second = http2.send("GET", "/v1/info", &[], None).await;
+    let second_count = second.json()["runtime"]["boot_count"].as_u64().unwrap();
+    assert_eq!(second_count, first_count + 1, "{}", second.json());
+    let _ = stop2.send(());
+}
+
 #[test]
 #[should_panic(expected = "get /v1/info 200")]
 fn the_contract_check_rejects_a_bad_body() {
