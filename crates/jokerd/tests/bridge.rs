@@ -149,6 +149,28 @@ unit = "kW"
 timeout = "10s"
 "#;
 
+    const PROFILE_WITH_ACTION_TOML: &str = r#"
+schema = 1
+
+[profile]
+name    = "acme/pcs"
+version = "1.0.0"
+driver  = "modbus"
+
+[signals.p_ac]
+at   = 0
+fc   = 4
+type = "f32"
+unit = "kW"
+
+[actions.reset_fault]
+steps = [
+    { write = { at = 40300, fc = 6, type = "u16", value = 1 } },
+    { wait = "500ms" },
+    { write = { at = 40300, fc = 6, type = "u16", value = 0 } },
+]
+"#;
+
     #[test]
     fn a_declared_fallback_gives_a_default_keepalive_of_a_fifth_the_timeout() {
         let dir = project(&[
@@ -216,6 +238,50 @@ timeout = "10s"
         let addr = joker_hal::cbor::Cbor::new(&p.addr);
         assert_eq!(addr.get("at").unwrap().unwrap().as_u64(), Ok(0));
         assert_eq!(addr.get("fc").unwrap().unwrap().as_u64(), Ok(4));
+    }
+
+    #[test]
+    fn a_profile_action_compiles_its_steps_with_addressed_cbor() {
+        let dir = project(&[
+            ("joker.toml", JOKER_TOML),
+            ("profiles/acme/pcs@1.profile.toml", PROFILE_WITH_ACTION_TOML),
+        ]);
+        let loaded = load(&OsFileSystem, &dir.path().join("joker.toml"), &NativeTasks)
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert!(!loaded.report.has_errors(), "{}", loaded.report.render());
+        let (context, errors) = jokerd::catalog::context_for_project(&NativeTasks, dir.path());
+        assert!(errors.is_empty(), "{errors:?}");
+        let device = &loaded.manifest.devices["pcs"];
+        let plan = jokerd::bridge::device_plan("pcs", device, &loaded.manifest, &context).unwrap();
+        assert_eq!(plan.actions.len(), 1);
+        let action = &plan.actions[0];
+        assert_eq!(action.name, "reset_fault");
+        // 3 steps x 1s + the 500ms wait.
+        assert_eq!(action.timeout_ns, 3_500_000_000);
+        assert_eq!(action.steps.len(), 3);
+
+        use jokerd::bridge::{DeviceStep, DeviceStepValue};
+        let DeviceStep::Write {
+            addr,
+            type_name,
+            value,
+        } = &action.steps[0]
+        else {
+            panic!("expected a write step, got {:?}", action.steps[0]);
+        };
+        let addr = joker_hal::cbor::Cbor::new(addr);
+        assert_eq!(addr.get("at").unwrap().unwrap().as_u64(), Ok(40300));
+        assert_eq!(addr.get("fc").unwrap().unwrap().as_u64(), Ok(6));
+        assert_eq!(type_name.as_deref(), Some("u16"));
+        assert_eq!(
+            *value,
+            DeviceStepValue::Literal(joker_hal::acquire::OwnedRaw::Int(1))
+        );
+
+        assert_eq!(
+            action.steps[1],
+            DeviceStep::Wait(joker_units::Duration::from_millis(500))
+        );
     }
 
     const GPIO_JOKER_TOML: &str = r#"
