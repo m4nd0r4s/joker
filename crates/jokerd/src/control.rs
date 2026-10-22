@@ -114,6 +114,37 @@ pub struct Controller {
     config: Config,
     active: Option<Active>,
     confirming: Option<Confirming>,
+    actions: crate::actions::Dispatcher<ActionResult>,
+}
+
+/// What invoking an action produced (ref/09 §5.10, ADR 0058).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ActionResult {
+    /// Every step completed.
+    Succeeded,
+    /// A step failed; the message is the interpreter's own failure
+    /// rendering (`joker_hal::interpreter::Failure`'s `Debug` form).
+    Failed(String),
+}
+
+/// What [`Controller::invoke_action`] decided, and what it ran if
+/// admitted (docs/02 §8, ADR 0058).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Invoked {
+    /// Ran now.
+    Ran(ActionResult),
+    /// Served from the dispatcher's dedup cache, within the action's own
+    /// `dedup_window`; nothing ran again.
+    Duplicate(ActionResult),
+    /// Not run, and why.
+    Rejected(crate::actions::Rejected),
+}
+
+fn outcome_tag(result: &ActionResult) -> (&'static str, Option<&str>) {
+    match result {
+        ActionResult::Succeeded => ("ok", None),
+        ActionResult::Failed(m) => ("failed", Some(m.as_str())),
+    }
 }
 
 impl fmt::Debug for Controller {
@@ -221,6 +252,7 @@ impl Controller {
             config,
             active: None,
             confirming: None,
+            actions: crate::actions::Dispatcher::new(),
         })
     }
 
@@ -581,6 +613,180 @@ impl Controller {
         m.insert("ts".into(), json!(crate::wire::timestamp(utc_now_ns())));
         let _ = lock(&self.log).append(m, true);
     }
+
+    /// Invokes `device`'s `action` (ref/09 §5.10, ADR 0058): serializes
+    /// per device and deduplicates by `key` through [`Dispatcher`]
+    /// (`crate::actions`), then — on `Admit` — runs the action's compiled
+    /// steps against the device's real driver instance over its own
+    /// action channel (`DeviceSet::action_sender`, AUR-405) and logs the
+    /// outcome either way (invariant 8). `permitted` is the caller's
+    /// evaluation of the action's `permit` expression: evaluating it is
+    /// not wired here yet (the manifest's `dedup_window` isn't carried
+    /// into `DeviceActionPlan` either, so a fixed 60 s default is used),
+    /// same scope gap AUR-405 already flags for `$arg` substitution.
+    ///
+    /// [`Dispatcher`]: crate::actions::Dispatcher
+    pub fn invoke_action(
+        &mut self,
+        device: &str,
+        action: &str,
+        key: &str,
+        now_mono_ns: u64,
+        writer: &str,
+        permitted: bool,
+    ) -> Result<Invoked, ControlError> {
+        let (generation, steps, sender) = {
+            let active = self
+                .active
+                .as_ref()
+                .ok_or_else(|| ControlError::new("J-E1015", 503, "no generation is running"))?;
+            let Some(steps) = active
+                .running
+                .plan
+                .devices
+                .iter()
+                .find(|d| d.name == device)
+                .and_then(|d| d.actions.iter().find(|a| a.name == action))
+                .map(|a| a.steps.clone())
+            else {
+                return Err(ControlError::new(
+                    "J-E1400",
+                    404,
+                    format!("unknown action `{device}.{action}`"),
+                ));
+            };
+            (
+                active.running.generation,
+                steps,
+                active.devices.action_sender(device),
+            )
+        };
+        const DEDUP_WINDOW_NS: u64 = 60_000_000_000;
+        let decision =
+            self.actions
+                .begin(device, action, key, now_mono_ns, DEDUP_WINDOW_NS, permitted);
+        match decision {
+            crate::actions::Decision::Rejected(r) => {
+                let tag = match r {
+                    crate::actions::Rejected::Busy => "rejected_busy",
+                    crate::actions::Rejected::NotPermitted => "rejected_not_permitted",
+                };
+                self.log_action(
+                    generation,
+                    device,
+                    action,
+                    key,
+                    now_mono_ns,
+                    writer,
+                    tag,
+                    None,
+                );
+                Ok(Invoked::Rejected(r))
+            }
+            crate::actions::Decision::Duplicate(result) => {
+                let (tag, failure) = outcome_tag(&result);
+                self.log_action(
+                    generation,
+                    device,
+                    action,
+                    key,
+                    now_mono_ns,
+                    writer,
+                    tag,
+                    failure,
+                );
+                Ok(Invoked::Duplicate(result))
+            }
+            crate::actions::Decision::Admit => {
+                let Some(sender) = sender else {
+                    let result =
+                        ActionResult::Failed(format!("device `{device}` is not connected"));
+                    self.actions
+                        .finish(device, action, key, now_mono_ns, result.clone());
+                    let (tag, failure) = outcome_tag(&result);
+                    self.log_action(
+                        generation,
+                        device,
+                        action,
+                        key,
+                        now_mono_ns,
+                        writer,
+                        tag,
+                        failure,
+                    );
+                    return Err(ControlError::new(
+                        "J-E1415",
+                        503,
+                        format!("device `{device}` is not connected"),
+                    ));
+                };
+                let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+                let result = if sender
+                    .blocking_send(crate::drivers::ActionCall {
+                        steps,
+                        reply: reply_tx,
+                    })
+                    .is_err()
+                {
+                    ActionResult::Failed(format!("device `{device}`'s action queue is full"))
+                } else {
+                    match reply_rx.blocking_recv() {
+                        Ok(crate::drivers::ActionOutcome::Ok) => ActionResult::Succeeded,
+                        Ok(crate::drivers::ActionOutcome::Failed(msg)) => ActionResult::Failed(msg),
+                        Err(_) => ActionResult::Failed(
+                            "the driver task ended before answering".to_owned(),
+                        ),
+                    }
+                };
+                self.actions
+                    .finish(device, action, key, now_mono_ns, result.clone());
+                let (tag, failure) = outcome_tag(&result);
+                self.log_action(
+                    generation,
+                    device,
+                    action,
+                    key,
+                    now_mono_ns,
+                    writer,
+                    tag,
+                    failure,
+                );
+                Ok(Invoked::Ran(result))
+            }
+        }
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "each parameter is a distinct field of ADR 0058's `action` decision-log record; a wrapper struct would only rename this list"
+    )]
+    fn log_action(
+        &self,
+        generation: u64,
+        device: &str,
+        action: &str,
+        key: &str,
+        at_mono_ns: u64,
+        writer: &str,
+        outcome: &str,
+        failure: Option<&str>,
+    ) {
+        let mut m = Map::new();
+        m.insert("gen".into(), json!(generation));
+        m.insert("record".into(), json!("action"));
+        m.insert("device".into(), json!(device));
+        m.insert("action".into(), json!(action));
+        m.insert("key".into(), json!(key));
+        m.insert("at_mono_ns".into(), json!(at_mono_ns));
+        m.insert("writer".into(), json!(writer));
+        m.insert("outcome".into(), json!(outcome));
+        if let Some(f) = failure {
+            m.insert("failure".into(), json!(f));
+        }
+        m.insert("durability".into(), json!("immediate"));
+        m.insert("ts".into(), json!(crate::wire::timestamp(utc_now_ns())));
+        let _ = lock(&self.log).append(m, true);
+    }
 }
 
 fn utc_now_ns() -> i64 {
@@ -599,4 +805,232 @@ impl Drop for Controller {
 /// The plan of the running generation, for readers.
 pub fn plan_of(c: &Controller) -> Option<Arc<Plan>> {
     c.current().map(|(_, _, r)| Arc::clone(&r.plan))
+}
+
+#[cfg(test)]
+mod action_tests {
+    use super::*;
+    use crate::bridge::DeviceActionPlan;
+    use crate::decisions::DecisionLog;
+    use crate::devices::NoDevices;
+    use crate::native::NativeTasks;
+    use crate::pacer::{Monotonic, SystemPacer};
+    use std::sync::Mutex;
+
+    /// A device plan with one `reset_fault` action (no profile file
+    /// needed: `Controller::switch`'s own catalog lookup is CWD-relative
+    /// and cannot see a test's tempdir, so the device-with-action plan is
+    /// built directly here, the same shape `bridge::device_plan` already
+    /// produces from a real profile — see `tests/bridge.rs`).
+    fn plan_with_one_action() -> Plan {
+        let mut fs = MemoryFileSystem::default();
+        fs.file(
+            "joker.toml",
+            "[project]\nname = \"t\"\njoker = \"1.0\"\nmode = \"dev\"\n",
+        );
+        let loaded =
+            load(&fs, Path::new("joker.toml"), &NativeTasks).unwrap_or_else(|e| panic!("{e}"));
+        let mut plan = loaded.plan;
+        plan.devices.push(crate::bridge::DevicePlan {
+            name: "pcs".into(),
+            driver: "modbus-rtu".into(),
+            bus: None,
+            bus_kind: None,
+            bus_params: Vec::new(),
+            config: Vec::new(),
+            quirks: Vec::new(),
+            timeout_ns: 1_000_000_000,
+            fallback_keepalive_ns: None,
+            points: Vec::new(),
+            actions: vec![DeviceActionPlan {
+                name: "reset_fault".into(),
+                timeout_ns: 1_000_000_000,
+                steps: Vec::new(),
+            }],
+        });
+        plan
+    }
+
+    struct FakeDeviceSet {
+        sender: tokio::sync::mpsc::Sender<crate::drivers::ActionCall>,
+    }
+
+    impl DeviceSet for FakeDeviceSet {
+        fn stop(self: Box<Self>) {}
+
+        fn action_sender(
+            &self,
+            device: &str,
+        ) -> Option<tokio::sync::mpsc::Sender<crate::drivers::ActionCall>> {
+            (device == "pcs").then(|| self.sender.clone())
+        }
+    }
+
+    /// A controller with an `Active` generation whose device has a
+    /// declared action and a real (thread-backed) action channel.
+    fn controller_with_action(dir: &std::path::Path) -> Controller {
+        let log = Arc::new(Mutex::new(
+            DecisionLog::open(&dir.join("decisions.jsonl")).unwrap(),
+        ));
+        let clock = Monotonic::start();
+        let mut c = Controller::new(
+            dir,
+            Arc::clone(&log),
+            Arc::new(NativeTasks),
+            Arc::new(NoDevices),
+            Box::new(move || Box::new(SystemPacer::new(clock, joker_core::ClockQuality::Unsynced))),
+            Config::default(),
+        )
+        .unwrap();
+
+        let plan = Arc::new(plan_with_one_action());
+        let running = Running::start(
+            Arc::clone(&plan),
+            Vec::new(),
+            Box::new(SystemPacer::new(clock, joker_core::ClockQuality::Unsynced)),
+            Arc::clone(&log),
+            Start {
+                generation: 1,
+                inherit: Default::default(),
+                retention: Duration::from_secs(60),
+                max_ticks: None,
+                utc_origin_ns: 0,
+                cpus: Vec::new(),
+            },
+        )
+        .unwrap();
+
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<crate::drivers::ActionCall>(4);
+        std::thread::spawn(move || {
+            while let Some(call) = rx.blocking_recv() {
+                let _ = call.reply.send(crate::drivers::ActionOutcome::Ok);
+            }
+        });
+        c.active = Some(Active {
+            number: 1,
+            hash: "sha256:test".into(),
+            running,
+            devices: Box::new(FakeDeviceSet { sender: tx }),
+        });
+        c
+    }
+
+    #[test]
+    fn invoking_an_action_with_no_generation_running_is_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = Arc::new(Mutex::new(
+            DecisionLog::open(&dir.path().join("decisions.jsonl")).unwrap(),
+        ));
+        let clock = Monotonic::start();
+        let mut c = Controller::new(
+            dir.path(),
+            log,
+            Arc::new(NativeTasks),
+            Arc::new(NoDevices),
+            Box::new(move || Box::new(SystemPacer::new(clock, joker_core::ClockQuality::Unsynced))),
+            Config::default(),
+        )
+        .unwrap();
+        let err = c
+            .invoke_action("pcs", "reset_fault", "k1", 0, "user:test", true)
+            .unwrap_err();
+        assert_eq!(err.code, "J-E1015");
+    }
+
+    #[test]
+    fn invoking_an_unknown_device_or_action_is_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut c = controller_with_action(dir.path());
+        let err = c
+            .invoke_action("nope", "reset_fault", "k1", 0, "user:test", true)
+            .unwrap_err();
+        assert_eq!(err.code, "J-E1400");
+        let err = c
+            .invoke_action("pcs", "nope", "k1", 0, "user:test", true)
+            .unwrap_err();
+        assert_eq!(err.code, "J-E1400");
+    }
+
+    #[test]
+    fn an_admitted_action_runs_against_the_registered_driver_and_is_logged() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut c = controller_with_action(dir.path());
+
+        let result = c
+            .invoke_action("pcs", "reset_fault", "k1", 0, "user:test", true)
+            .unwrap();
+        assert_eq!(result, Invoked::Ran(ActionResult::Succeeded));
+
+        // A second, differently-keyed call admits and runs again.
+        let result = c
+            .invoke_action("pcs", "reset_fault", "k2", 1, "user:test", true)
+            .unwrap();
+        assert_eq!(result, Invoked::Ran(ActionResult::Succeeded));
+
+        // The same key, still inside the dedup window, is served from
+        // cache and does not run again.
+        let result = c
+            .invoke_action("pcs", "reset_fault", "k1", 2, "user:test", true)
+            .unwrap();
+        assert_eq!(result, Invoked::Duplicate(ActionResult::Succeeded));
+
+        let entries =
+            DecisionLog::read_all(&dir.path().join("decisions.jsonl")).unwrap_or_default();
+        let action_entries: Vec<_> = entries.iter().filter(|e| e["record"] == "action").collect();
+        assert_eq!(action_entries.len(), 3);
+        assert_eq!(action_entries[0]["outcome"], "ok");
+        assert_eq!(action_entries[0]["device"], "pcs");
+        assert_eq!(action_entries[0]["key"], "k1");
+    }
+
+    #[test]
+    fn a_disconnected_device_fails_the_action_and_logs_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = Arc::new(Mutex::new(
+            DecisionLog::open(&dir.path().join("decisions.jsonl")).unwrap(),
+        ));
+        let clock = Monotonic::start();
+        let mut c = Controller::new(
+            dir.path(),
+            Arc::clone(&log),
+            Arc::new(NativeTasks),
+            Arc::new(NoDevices),
+            Box::new(move || Box::new(SystemPacer::new(clock, joker_core::ClockQuality::Unsynced))),
+            Config::default(),
+        )
+        .unwrap();
+        let plan = Arc::new(plan_with_one_action());
+        let running = Running::start(
+            Arc::clone(&plan),
+            Vec::new(),
+            Box::new(SystemPacer::new(clock, joker_core::ClockQuality::Unsynced)),
+            Arc::clone(&log),
+            Start {
+                generation: 1,
+                inherit: Default::default(),
+                retention: Duration::from_secs(60),
+                max_ticks: None,
+                utc_origin_ns: 0,
+                cpus: Vec::new(),
+            },
+        )
+        .unwrap();
+        c.active = Some(Active {
+            number: 1,
+            hash: "sha256:test".into(),
+            running,
+            devices: Box::new(NoDevices),
+        });
+
+        let err = c
+            .invoke_action("pcs", "reset_fault", "k1", 0, "user:test", true)
+            .unwrap_err();
+        assert_eq!(err.code, "J-E1415");
+
+        let entries =
+            DecisionLog::read_all(&dir.path().join("decisions.jsonl")).unwrap_or_default();
+        let action_entries: Vec<_> = entries.iter().filter(|e| e["record"] == "action").collect();
+        assert_eq!(action_entries.len(), 1);
+        assert_eq!(action_entries[0]["outcome"], "failed");
+    }
 }

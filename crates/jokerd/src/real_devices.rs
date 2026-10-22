@@ -7,6 +7,7 @@
 //! ioctl) is not implemented (AUR-401). A device declaring one of those
 //! is reported, not silently ignored.
 
+use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -20,7 +21,7 @@ use tokio::sync::watch;
 
 use crate::bridge::{DevicePlan, owned_request};
 use crate::devices::{DeviceSet, Devices};
-use crate::drivers::{point_targets, run_driver};
+use crate::drivers::{ActionCall, point_targets, run_driver};
 use crate::plan::Plan;
 use crate::shared::Shared;
 
@@ -37,6 +38,10 @@ fn tcp_addr(config: &[u8]) -> Option<SocketAddr> {
     format!("{host}:{port}").parse().ok()
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "each parameter is a distinct, independently-sourced piece of one device's dispatch (plan, index, shared state, clock, stop signal, sysfs root, action channel); a wrapper struct would only rename this list, not shrink it, matching run_driver's own allow"
+)]
 async fn run_sysfs(
     device: DevicePlan,
     plan: Arc<Plan>,
@@ -45,6 +50,7 @@ async fn run_sysfs(
     host: Arc<TokioHost>,
     mut stop: watch::Receiver<bool>,
     sysfs_root: Arc<str>,
+    action_rx: tokio::sync::mpsc::Receiver<ActionCall>,
 ) {
     let owned = owned_request(&device);
     let views = owned.views();
@@ -75,14 +81,7 @@ async fn run_sysfs(
         &shared,
         device_index,
         device.fallback_keepalive_ns,
-        {
-            // The sender half is not reachable from the API yet (no
-            // device-name registry to look it up by): an empty channel
-            // for now, so `run_driver`'s action path is exercised only
-            // by its own direct tests until that registry exists.
-            let (_tx, rx) = tokio::sync::mpsc::channel(1);
-            rx
-        },
+        action_rx,
         move || *stop.borrow_and_update(),
     )
     .await;
@@ -95,6 +94,7 @@ async fn run_modbus_rtu(
     shared: Arc<Shared>,
     host: Arc<TokioHost>,
     mut stop: watch::Receiver<bool>,
+    action_rx: tokio::sync::mpsc::Receiver<ActionCall>,
 ) {
     let owned = owned_request(&device);
     let views = owned.views();
@@ -124,14 +124,7 @@ async fn run_modbus_rtu(
         &shared,
         device_index,
         device.fallback_keepalive_ns,
-        {
-            // The sender half is not reachable from the API yet (no
-            // device-name registry to look it up by): an empty channel
-            // for now, so `run_driver`'s action path is exercised only
-            // by its own direct tests until that registry exists.
-            let (_tx, rx) = tokio::sync::mpsc::channel(1);
-            rx
-        },
+        action_rx,
         move || *stop.borrow_and_update(),
     )
     .await;
@@ -144,6 +137,7 @@ async fn run_modbus_tcp(
     shared: Arc<Shared>,
     host: Arc<TokioHost>,
     mut stop: watch::Receiver<bool>,
+    action_rx: tokio::sync::mpsc::Receiver<ActionCall>,
 ) {
     let owned = owned_request(&device);
     let views = owned.views();
@@ -171,18 +165,15 @@ async fn run_modbus_tcp(
         &shared,
         device_index,
         device.fallback_keepalive_ns,
-        {
-            // The sender half is not reachable from the API yet (no
-            // device-name registry to look it up by): an empty channel
-            // for now, so `run_driver`'s action path is exercised only
-            // by its own direct tests until that registry exists.
-            let (_tx, rx) = tokio::sync::mpsc::channel(1);
-            rx
-        },
+        action_rx,
         move || *stop.borrow_and_update(),
     )
     .await;
 }
+
+/// How many pending action calls a device's channel buffers before a
+/// caller sees the device's queue as full (`J-E1403`).
+const ACTION_CHANNEL_CAPACITY: usize = 4;
 
 /// Every real device as its real driver, on a tokio runtime.
 #[derive(Clone)]
@@ -220,11 +211,19 @@ impl RealDevices {
 
 struct RealSet {
     stop: watch::Sender<bool>,
+    /// Every dispatched device's action-invocation channel, by name
+    /// (AUR-405): the registry `Controller::invoke_action` looks up to
+    /// find where to send an `ActionCall` for a given device.
+    actions: BTreeMap<String, tokio::sync::mpsc::Sender<ActionCall>>,
 }
 
 impl DeviceSet for RealSet {
     fn stop(self: Box<Self>) {
         let _ = self.stop.send(true);
+    }
+
+    fn action_sender(&self, device: &str) -> Option<tokio::sync::mpsc::Sender<ActionCall>> {
+        self.actions.get(device).cloned()
     }
 }
 
@@ -232,34 +231,47 @@ impl Devices for RealDevices {
     fn start(&self, plan: &Arc<Plan>, shared: &Arc<Shared>) -> Box<dyn DeviceSet> {
         let (tx, rx) = watch::channel(false);
         let host = Arc::new(TokioHost::new(ClockQuality::Synced));
+        let mut actions = BTreeMap::new();
         for (i, device) in plan.devices.iter().enumerate() {
             let plan = Arc::clone(plan);
             let shared = Arc::clone(shared);
             let host = Arc::clone(&host);
             let stop = rx.clone();
             let device = device.clone();
-            match device.driver.as_str() {
+            let name = device.name.clone();
+            let (action_tx, action_rx) = tokio::sync::mpsc::channel(ACTION_CHANNEL_CAPACITY);
+            let dispatched = match device.driver.as_str() {
                 "sysfs" => {
                     let root = Arc::clone(&self.sysfs_root);
-                    self.handle
-                        .spawn(run_sysfs(device, plan, i, shared, host, stop, root));
+                    self.handle.spawn(run_sysfs(
+                        device, plan, i, shared, host, stop, root, action_rx,
+                    ));
+                    true
                 }
                 "modbus-rtu" => {
-                    self.handle
-                        .spawn(run_modbus_rtu(device, plan, i, shared, host, stop));
+                    self.handle.spawn(run_modbus_rtu(
+                        device, plan, i, shared, host, stop, action_rx,
+                    ));
+                    true
                 }
                 "modbus-tcp" => {
-                    self.handle
-                        .spawn(run_modbus_tcp(device, plan, i, shared, host, stop));
+                    self.handle.spawn(run_modbus_tcp(
+                        device, plan, i, shared, host, stop, action_rx,
+                    ));
+                    true
                 }
                 other => {
                     eprintln!(
                         "warning: device `{}`: driver `{other}` has no real adapter yet",
                         device.name
                     );
+                    false
                 }
+            };
+            if dispatched {
+                actions.insert(name, action_tx);
             }
         }
-        Box::new(RealSet { stop: tx })
+        Box::new(RealSet { stop: tx, actions })
     }
 }
