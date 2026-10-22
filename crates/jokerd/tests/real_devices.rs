@@ -92,3 +92,48 @@ fn a_real_sysfs_device_reaches_shared_slots() {
     set.stop();
     runtime.shutdown_timeout(Duration::from_secs(1));
 }
+
+#[test]
+fn the_dispatched_device_has_a_real_action_channel_and_an_undeclared_name_does_not() {
+    let fake = FakeSys::new();
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("joker.toml"), JOKER_TOML).unwrap();
+    let loaded = load(&OsFileSystem, &dir.path().join("joker.toml"), &NativeTasks)
+        .unwrap_or_else(|e| panic!("{e}"));
+    let plan = Arc::new(loaded.plan);
+    let shared = Arc::new(Shared::new(&plan));
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let devices = RealDevices::with_sysfs_root(runtime.handle().clone(), fake.0.to_str().unwrap());
+    let set = devices.start(&plan, &shared);
+
+    assert!(
+        set.action_sender("not-a-real-device").is_none(),
+        "an unknown device name must not resolve to a channel"
+    );
+    let sender = set
+        .action_sender("pi")
+        .expect("the dispatched sysfs device registers its action channel");
+
+    let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+    let outcome = runtime.block_on(async {
+        sender
+            .send(jokerd::drivers::ActionCall {
+                steps: Vec::new(),
+                reply: reply_tx,
+            })
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(1), reply_rx)
+            .await
+            .expect("the driver task answered before the deadline")
+            .unwrap()
+    });
+    assert_eq!(outcome, jokerd::drivers::ActionOutcome::Ok);
+
+    set.stop();
+    runtime.shutdown_timeout(Duration::from_secs(1));
+}

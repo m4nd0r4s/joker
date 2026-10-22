@@ -5,6 +5,7 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::drivers::ActionCall;
 use crate::io::{DeviceIo, SimDevice};
 use crate::pacer::Monotonic;
 use crate::plan::Plan;
@@ -14,6 +15,14 @@ use crate::shared::Shared;
 pub trait DeviceSet: Send {
     /// Stops them; their slots stay as they were.
     fn stop(self: Box<Self>);
+
+    /// The action-invocation channel for `device`, if this set dispatches
+    /// one (ref/06 §2.10, AUR-405): `None` when the device has no real
+    /// adapter running (`sim`, or a driver family `RealDevices` does not
+    /// dispatch yet) or its name is unknown to this set.
+    fn action_sender(&self, _device: &str) -> Option<tokio::sync::mpsc::Sender<ActionCall>> {
+        None
+    }
 }
 
 /// Starts the devices of a generation. The driver crates provide one
@@ -50,6 +59,12 @@ impl DeviceSet for CombinedSet {
     fn stop(self: Box<Self>) {
         self.0.stop();
         self.1.stop();
+    }
+
+    fn action_sender(&self, device: &str) -> Option<tokio::sync::mpsc::Sender<ActionCall>> {
+        self.0
+            .action_sender(device)
+            .or_else(|| self.1.action_sender(device))
     }
 }
 
@@ -113,5 +128,40 @@ impl Devices for SimDevices {
                 .spawn(SimDevice::new(io).run(self.period, rx.clone()));
         }
         Box::new(SimSet { stop: tx })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Fixed(Option<tokio::sync::mpsc::Sender<ActionCall>>);
+
+    impl DeviceSet for Fixed {
+        fn stop(self: Box<Self>) {}
+
+        fn action_sender(&self, _device: &str) -> Option<tokio::sync::mpsc::Sender<ActionCall>> {
+            self.0.clone()
+        }
+    }
+
+    #[test]
+    fn a_combined_set_tries_the_first_half_before_the_second() {
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+        let combined = CombinedSet(Box::new(Fixed(Some(tx.clone()))), Box::new(Fixed(None)));
+        assert!(combined.action_sender("anything").is_some());
+    }
+
+    #[test]
+    fn a_combined_set_falls_through_to_the_second_half() {
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+        let combined = CombinedSet(Box::new(Fixed(None)), Box::new(Fixed(Some(tx))));
+        assert!(combined.action_sender("anything").is_some());
+    }
+
+    #[test]
+    fn neither_half_answering_is_none() {
+        let combined = CombinedSet(Box::new(Fixed(None)), Box::new(Fixed(None)));
+        assert!(combined.action_sender("anything").is_none());
     }
 }
