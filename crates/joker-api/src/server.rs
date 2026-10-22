@@ -234,6 +234,10 @@ async fn status(State(b): State<Shared>, RawQuery(raw): RawQuery) -> Response {
     }
 }
 
+async fn metrics(State(b): State<Shared>) -> Response {
+    run(b, |b| b.metrics()).await
+}
+
 async fn signal(State(b): State<Shared>, UrlPath(path): UrlPath<String>) -> Response {
     run(b, move |b| b.signal(&path)).await
 }
@@ -456,6 +460,7 @@ pub fn router(backend: Arc<dyn Backend>) -> Router {
         .route("/v1/info", get(info))
         .route("/v1/health", get(health))
         .route("/v1/status", get(status))
+        .route("/v1/metrics", get(metrics))
         .route("/v1/signals", get(signals))
         .route("/v1/signals/{path}", get(signal))
         .route("/v1/values", get(values))

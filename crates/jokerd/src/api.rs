@@ -869,6 +869,35 @@ impl Backend for Node {
         })))
     }
 
+    fn metrics(&self) -> Result<Reply, Problem> {
+        let groups: Vec<Value> = match self.view() {
+            None => Vec::new(),
+            Some(v) => v
+                .plan
+                .groups
+                .iter()
+                .zip(v.shared.groups.iter())
+                .map(|(g, s)| {
+                    json!({
+                        "group": g.name,
+                        "ticks": s.ticks.get(),
+                        "overruns": s.overruns.get(),
+                        // `max` is all this build tracks today (a running
+                        // worst-case, not a histogram): `p50`/`p99`/`p999`/
+                        // `window` are not computed, so they are simply
+                        // absent — `Percentiles` has no required fields.
+                        "jitter": {"max": duration(s.max_late_ns.get())},
+                        "duration": {"max": duration(s.max_duration_ns.get())},
+                    })
+                })
+                .collect(),
+        };
+        Ok(Reply::ok(json!({
+            "at": timestamp(utc_now_ns()),
+            "groups": groups,
+        })))
+    }
+
     fn signals(&self, query: &Query) -> Result<Reply, Problem> {
         let v = self.need_view()?;
         let sel = values_of(query, "sel");

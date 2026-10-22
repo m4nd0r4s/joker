@@ -386,6 +386,10 @@ async fn meta_signals_and_values_follow_the_contract() {
     assert_eq!(h.status, 200);
     let s = f.call("GET", "/v1/status", "/v1/status", None).await;
     assert_eq!(s.json()["groups"][0]["name"], "main");
+    let m = f.call("GET", "/v1/metrics", "/v1/metrics", None).await;
+    assert_eq!(m.status, 200, "{}", m.json());
+    assert_eq!(m.json()["groups"][0]["group"], "main");
+    assert!(m.json()["groups"][0]["ticks"].as_u64().unwrap() > 0);
     let sig = f
         .call("GET", "/v1/signals", "/v1/signals?sel=pi.**", None)
         .await;
