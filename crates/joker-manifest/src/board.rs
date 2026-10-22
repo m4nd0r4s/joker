@@ -1,14 +1,22 @@
 //! Loads a `.board.toml` file (ref/03 §2.3) into a [`BoardInfo`], the same
-//! type `Context` already uses for the manifest checks.
+//! type `Context` already uses for the manifest checks, and (for `jk
+//! board show`) a [`BoardPeripherals`] of whatever `[watchdog]`, `[gpio]`,
+//! `[io.*]`, `[serial]`, `[i2c]`, `[spi]` and `[can]` the file declares
+//! (ref/03 §2.3.2, Linux boards only — MCU peripherals, §2.3.3, are not
+//! modeled here).
 //!
-//! Scoped to what `BoardInfo` models: `name`/`version` (just the major),
-//! `arch`, `os` (`micro`), `cpus` and `memory` (IEC bytes). Peripherals
-//! (`[watchdog]`, `[gpio]`, `[io.*]`, `[serial]`, …), MCU-only sections
+//! `BoardInfo` stays scoped to what the manifest checks need: `name`/
+//! `version` (just the major), `arch`, `os` (`micro`), `cpus` and `memory`
+//! (IEC bytes). `BoardPeripherals` is rendering data for `jk board show`,
+//! not validated the way `[board]` is: a malformed entry is just left
+//! out, the same way an unreferenced `[io.<name>]` takes no resources
+//! until the manifest refers to it (§2.3.2). MCU-only sections
 //! (`[capacities]`, `[irq]`, `[areas]`, `[pins.*]`, …) and `recommended`
-//! are not parsed here (AUR-414); `jokerd`'s resource-class wiring
+//! are still not parsed; `jokerd`'s resource-class wiring
 //! (`resources::rt_cpus`) reads `[resources]` from the *manifest*, not
 //! from the board.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use toml::de::DeTable;
@@ -16,7 +24,76 @@ use toml::de::DeTable;
 use crate::context::BoardInfo;
 use crate::diag::{Diagnostic, Diagnostics};
 use crate::source::{Sources, Span};
-use crate::value::{self, Table};
+use crate::value::{self, Table, Value};
+
+/// A board's hardware watchdog (`[watchdog]`, ref/03 §2.3.2).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Watchdog {
+    /// The device path.
+    pub device: Option<String>,
+    /// The timeout the daemon arms it with.
+    pub timeout: Option<String>,
+    /// The lowest timeout the hardware accepts.
+    pub min_timeout: Option<String>,
+    /// The highest timeout the hardware accepts.
+    pub max_timeout: Option<String>,
+}
+
+/// A board's GPIO chip (`[gpio]`, ref/03 §2.3.2).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Gpio {
+    /// The chip label or path (`"pinctrl-rp1"`, or `"auto"`).
+    pub chip: Option<String>,
+    /// Named lines, by offset; empty when the kernel's own names are used.
+    pub lines: BTreeMap<String, i64>,
+}
+
+/// One `[io.<name>]`: fixed IO of the board (`board.<name>`, ref/03
+/// §2.3.2). `extra` is the family's own address keys (`line`, `var`, …),
+/// rendered as given rather than modeled per driver.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct IoPoint {
+    /// The driver.
+    pub driver: Option<String>,
+    /// `"input"` or `"output"`.
+    pub direction: Option<String>,
+    /// What the hardware falls back to when `jokerd` or the board stops.
+    pub fallback: Option<String>,
+    /// Every other key, rendered.
+    pub extra: BTreeMap<String, String>,
+}
+
+/// A stable serial port (`[serial]`, ref/03 §2.3.2).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SerialPort {
+    /// The device path.
+    pub path: String,
+    /// Whether it is wired for RS-485.
+    pub rs485: bool,
+    /// The highest baud rate the port supports.
+    pub max_baud: Option<u32>,
+}
+
+/// A board's declared peripherals (ref/03 §2.3.2), for `jk board show`.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct BoardPeripherals {
+    /// `storage` of `[board]` (`"sd"`, `"emmc"`, `"ssd"`).
+    pub storage: Option<String>,
+    /// `[watchdog]`.
+    pub watchdog: Option<Watchdog>,
+    /// `[gpio]`.
+    pub gpio: Option<Gpio>,
+    /// `[io.<name>]`, by name.
+    pub io: BTreeMap<String, IoPoint>,
+    /// `[serial]`, by name.
+    pub serial: BTreeMap<String, SerialPort>,
+    /// `[i2c]`, by name.
+    pub i2c: BTreeMap<String, String>,
+    /// `[spi]`, by name.
+    pub spi: BTreeMap<String, String>,
+    /// `[can]`, by name.
+    pub can: BTreeMap<String, String>,
+}
 
 /// The result of loading one board file.
 #[derive(Debug)]
@@ -27,6 +104,9 @@ pub struct BoardReport {
     pub diagnostics: Diagnostics,
     /// The board, when `[board]` parsed.
     pub board: Option<BoardInfo>,
+    /// Whatever peripherals the file declares, parsed independently of
+    /// whether `[board]` itself parsed.
+    pub peripherals: BoardPeripherals,
 }
 
 impl BoardReport {
@@ -82,6 +162,7 @@ pub fn parse(path: &Path, text: &str) -> BoardReport {
                     sources,
                     diagnostics,
                     board: None,
+                    peripherals: BoardPeripherals::default(),
                 };
             }
         },
@@ -96,14 +177,17 @@ pub fn parse(path: &Path, text: &str) -> BoardReport {
                 sources,
                 diagnostics,
                 board: None,
+                peripherals: BoardPeripherals::default(),
             };
         }
     };
     let board = load(&table, &mut diagnostics);
+    let peripherals = load_peripherals(&table);
     BoardReport {
         sources,
         diagnostics,
         board,
+        peripherals,
     }
 }
 
@@ -148,6 +232,180 @@ fn load(table: &Table, diagnostics: &mut Diagnostics) -> Option<BoardInfo> {
         memory,
         no_wasm: no_wasm_arch(arch),
     })
+}
+
+/// A value, rendered for display (`jk board show`): not a general TOML
+/// serializer, just enough for the scalar/array shapes a board's own
+/// address keys use.
+fn display_value(v: &Value) -> String {
+    match v {
+        Value::String(s) => s.clone(),
+        Value::Integer(i) => i.to_string(),
+        Value::Float(f) => f.to_string(),
+        Value::Bool(b) => b.to_string(),
+        Value::Datetime(d) => d.clone(),
+        Value::Array(items) => items
+            .iter()
+            .map(|n| display_value(&n.value))
+            .collect::<Vec<_>>()
+            .join(", "),
+        Value::Table(_) => "{…}".to_owned(),
+    }
+}
+
+/// Every `[watchdog]`/`[gpio]`/`[io.*]`/`[serial]`/`[i2c]`/`[spi]`/`[can]`
+/// the file declares (ref/03 §2.3.2), independently of whether `[board]`
+/// itself parsed. Unlike `load`, nothing here is diagnosed: a malformed
+/// entry is just left out, since this is rendering data for `jk board
+/// show`, not something `jk board check` validates.
+fn load_peripherals(table: &Table) -> BoardPeripherals {
+    let storage = table
+        .get("board")
+        .and_then(|e| e.node.as_table())
+        .and_then(|b| b.get("storage"))
+        .and_then(|e| e.node.as_str())
+        .map(str::to_owned);
+    let watchdog = table
+        .get("watchdog")
+        .and_then(|e| e.node.as_table())
+        .map(load_watchdog);
+    let gpio = table
+        .get("gpio")
+        .and_then(|e| e.node.as_table())
+        .map(load_gpio);
+    let io = table
+        .get("io")
+        .and_then(|e| e.node.as_table())
+        .map(load_io_points)
+        .unwrap_or_default();
+    let serial = table
+        .get("serial")
+        .and_then(|e| e.node.as_table())
+        .map(load_serial_ports)
+        .unwrap_or_default();
+    let i2c = table
+        .get("i2c")
+        .and_then(|e| e.node.as_table())
+        .map(load_string_map)
+        .unwrap_or_default();
+    let spi = table
+        .get("spi")
+        .and_then(|e| e.node.as_table())
+        .map(load_string_map)
+        .unwrap_or_default();
+    let can = table
+        .get("can")
+        .and_then(|e| e.node.as_table())
+        .map(load_string_map)
+        .unwrap_or_default();
+    BoardPeripherals {
+        storage,
+        watchdog,
+        gpio,
+        io,
+        serial,
+        i2c,
+        spi,
+        can,
+    }
+}
+
+fn load_watchdog(t: &Table) -> Watchdog {
+    let text = |key: &str| t.get(key).and_then(|e| e.node.as_str()).map(str::to_owned);
+    Watchdog {
+        device: text("device"),
+        timeout: text("timeout"),
+        min_timeout: text("min_timeout"),
+        max_timeout: text("max_timeout"),
+    }
+}
+
+fn load_gpio(t: &Table) -> Gpio {
+    let chip = t
+        .get("chip")
+        .and_then(|e| e.node.as_str())
+        .map(str::to_owned);
+    let lines = t
+        .get("lines")
+        .and_then(|e| e.node.as_table())
+        .map(|lines| {
+            lines
+                .iter()
+                .filter_map(|(name, e)| match e.node.value {
+                    Value::Integer(i) => Some((name.clone(), i)),
+                    _ => None,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    Gpio { chip, lines }
+}
+
+/// `[io.<name>]` (ref/03 §2.3.2): `driver`/`direction`/`fallback` are
+/// pulled out by name; every other key (the driver family's own address,
+/// `line`/`var`/…) is kept in `extra`, rendered as given.
+fn load_io_points(t: &Table) -> BTreeMap<String, IoPoint> {
+    t.iter()
+        .filter_map(|(name, e)| {
+            let point = e.node.as_table()?;
+            let text = |key: &str| {
+                point
+                    .get(key)
+                    .and_then(|e| e.node.as_str())
+                    .map(str::to_owned)
+            };
+            let extra = point
+                .iter()
+                .filter(|(k, _)| !matches!(k.as_str(), "driver" | "direction" | "fallback"))
+                .map(|(k, e)| (k.clone(), display_value(&e.node.value)))
+                .collect();
+            Some((
+                name.clone(),
+                IoPoint {
+                    driver: text("driver"),
+                    direction: text("direction"),
+                    fallback: text("fallback"),
+                    extra,
+                },
+            ))
+        })
+        .collect()
+}
+
+/// `[serial]` (ref/03 §2.3.2): a name maps to either a bare path or a
+/// `{ path, rs485, max_baud }` table.
+fn load_serial_ports(t: &Table) -> BTreeMap<String, SerialPort> {
+    t.iter()
+        .filter_map(|(name, e)| {
+            let port = match &e.node.value {
+                Value::String(path) => SerialPort {
+                    path: path.clone(),
+                    rs485: false,
+                    max_baud: None,
+                },
+                Value::Table(sub) => SerialPort {
+                    path: sub.get("path").and_then(|e| e.node.as_str())?.to_owned(),
+                    rs485: sub
+                        .get("rs485")
+                        .is_some_and(|e| matches!(e.node.value, Value::Bool(true))),
+                    max_baud: sub.get("max_baud").and_then(|e| match e.node.value {
+                        Value::Integer(i) => u32::try_from(i).ok(),
+                        _ => None,
+                    }),
+                },
+                _ => return None,
+            };
+            Some((name.clone(), port))
+        })
+        .collect()
+}
+
+/// `[i2c]`/`[spi]`/`[can]` (ref/03 §2.3.2): a name maps to a path or
+/// interface string.
+fn load_string_map(t: &Table) -> BTreeMap<String, String> {
+    t.iter()
+        .filter_map(|(name, e)| Some((name.clone(), e.node.as_str()?.to_owned())))
+        .collect()
 }
 
 const TIER_REVIEW: &str =

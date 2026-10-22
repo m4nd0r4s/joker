@@ -210,6 +210,12 @@ enum BoardCommand {
         #[arg(long)]
         from: String,
     },
+    /// Renders a board profile's declared peripherals (local checks only;
+    /// no `--node` yet).
+    Show {
+        /// The board profile file.
+        file: PathBuf,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -370,5 +376,8 @@ fn run(cli: Cli) -> Result<u8, Failure> {
         Command::Board {
             command: BoardCommand::New { name, from },
         } => board::new(&name, &from),
+        Command::Board {
+            command: BoardCommand::Show { file },
+        } => board::show(&file),
     }
 }

@@ -63,6 +63,59 @@ fn board_new_copies_and_renames() {
     assert_eq!(code(&check), 0, "{}", text(&check));
 }
 
+const RPI5_WITH_PERIPHERALS: &str = concat!(
+    "schema = 1\n\n",
+    "[board]\n",
+    "name    = \"rpi5\"\n",
+    "version = \"1.0.0\"\n",
+    "arch    = \"aarch64\"\n",
+    "cpus    = 4\n",
+    "memory  = \"8 GiB\"\n",
+    "storage = \"ssd\"\n",
+    "\n",
+    "[watchdog]\n",
+    "device  = \"/dev/watchdog0\"\n",
+    "timeout = \"15s\"\n",
+    "\n",
+    "[gpio]\n",
+    "chip = \"pinctrl-rp1\"\n",
+    "\n",
+    "[i2c]\n",
+    "\"i2c1\" = \"/dev/i2c-1\"\n",
+    "\n",
+    "[serial]\n",
+    "\"uart0\" = \"/dev/ttyAMA0\"\n",
+);
+
+/// `jk board show`: a local, no-node command that renders a board file's
+/// own declared IO/ports/watchdog/storage (AUR-279), same spirit as
+/// `jk board check` but printing instead of just validating.
+#[test]
+fn shows_a_board_file_s_declared_peripherals() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("rpi5.board.toml"), RPI5_WITH_PERIPHERALS).unwrap();
+    let out = jk(dir.path(), &["board", "show", "rpi5.board.toml"]);
+    assert_eq!(code(&out), 0, "{}", text(&out));
+    let rendered = text(&out);
+    assert!(rendered.contains("ssd"), "{rendered}");
+    assert!(rendered.contains("/dev/watchdog0"), "{rendered}");
+    assert!(rendered.contains("15s"), "{rendered}");
+    assert!(rendered.contains("pinctrl-rp1"), "{rendered}");
+    assert!(rendered.contains("i2c1"), "{rendered}");
+    assert!(rendered.contains("/dev/i2c-1"), "{rendered}");
+    assert!(rendered.contains("uart0"), "{rendered}");
+    assert!(rendered.contains("/dev/ttyAMA0"), "{rendered}");
+}
+
+#[test]
+fn board_show_reports_a_broken_board_file() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("bad.board.toml"), "[board]\nname = \"x\"\n").unwrap();
+    let out = jk(dir.path(), &["board", "show", "bad.board.toml"]);
+    assert_eq!(code(&out), 2, "{}", text(&out));
+    assert!(text(&out).contains("J0142"));
+}
+
 #[test]
 fn board_new_refuses_to_overwrite() {
     let dir = tempfile::tempdir().unwrap();
