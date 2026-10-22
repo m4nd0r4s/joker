@@ -185,6 +185,18 @@ pub struct TraceRequest {
     pub label: Option<String>,
 }
 
+/// `ResetRequest` (ref/09 §5.7, `openapi` schema `ResetRequest`): the
+/// body of `POST /v1/outputs/{path}/reset`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ResetTripRequest {
+    /// Why, mandatory.
+    pub reason: String,
+    /// Wait for the result after the next tick of the owning group.
+    #[serde(default = "yes")]
+    pub wait: bool,
+}
+
 /// `InvokeRequest` (ref/09 §5.10, `openapi` schema `InvokeRequest`): the
 /// body of `POST /v1/actions/{target}/{action}`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

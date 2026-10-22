@@ -63,6 +63,9 @@ fn empty_shared(bindings: Vec<joker_hal::OutputBinding>, boxes: Vec<CommitBox>) 
     Shared {
         slots: Vec::new().into_boxed_slice(),
         inboxes: Vec::new().into_boxed_slice(),
+        resets: Vec::new().into_boxed_slice(),
+        reset_results: crossbeam_queue::ArrayQueue::new(1),
+        reset_results_dropped: Default::default(),
         decisions: crossbeam_queue::ArrayQueue::new(1),
         decisions_dropped: Default::default(),
         results: crossbeam_queue::ArrayQueue::new(1),

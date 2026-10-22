@@ -201,6 +201,29 @@ fn effective() -> String {
     )
 }
 
+/// A numeric output that trips on an out-of-range write (docs/16 E7),
+/// for `jk reset`'s own contract test — self-contained (not built on
+/// [`effective`], since TOML cannot repeat a `[devices.pi.signals]`
+/// table header).
+fn effective_with_trippable_output() -> String {
+    "[project]\n\
+     name  = \"reset-test\"\n\
+     joker = \"1.0\"\n\
+     mode  = \"dev\"\n\
+     \n\
+     [outputs.\"pi.p_set\"]\n\
+     safe     = \"0 kW\"\n\
+     range    = [\"-100 kW\", \"100 kW\"]\n\
+     on_range = \"trip\"\n\
+     \n\
+     [devices.pi]\n\
+     driver = \"sim\"\n\
+     \n\
+     [devices.pi.signals]\n\
+     p_set = { type = \"f64\", direction = \"output\", unit = \"kW\" }\n"
+        .to_owned()
+}
+
 struct Fixture {
     http: Http,
     contract: Contract,
@@ -209,6 +232,10 @@ struct Fixture {
 }
 
 async fn start() -> Fixture {
+    start_with(&effective()).await
+}
+
+async fn start_with(manifest: &str) -> Fixture {
     let dir = tempfile::tempdir().unwrap();
     let clock = Monotonic::start();
     let log = Arc::new(Mutex::new(
@@ -227,7 +254,7 @@ async fn start() -> Fixture {
     )
     .unwrap();
     let g = c
-        .propose(&effective(), "", Some("bench".into()), false)
+        .propose(manifest, "", Some("bench".into()), false)
         .unwrap();
     c.activate(g.number, None, None).unwrap();
     let controller = Arc::new(Mutex::new(c));
@@ -707,6 +734,80 @@ async fn the_action_catalog_follows_the_contract() {
     assert_eq!(catalog.status, 200, "{}", catalog.json());
     // The fixture's only device is `sim`, which declares no actions.
     assert_eq!(catalog.json()["items"].as_array().unwrap().len(), 0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn resetting_a_trip_follows_the_contract() {
+    let f = start_with(&effective_with_trippable_output()).await;
+
+    // Not tripped yet: resolves immediately, no tick needed.
+    let not_tripped = f
+        .call(
+            "POST",
+            "/v1/outputs/{path}/reset",
+            "/v1/outputs/pi.p_set/reset",
+            Some(json!({"reason": "probe", "wait": true})),
+        )
+        .await;
+    assert_eq!(not_tripped.status, 200, "{}", not_tripped.json());
+    assert_eq!(not_tripped.json()["result"], "not_tripped");
+
+    // An out-of-range manual write trips it (on_range = "trip").
+    let write = f
+        .call(
+            "POST",
+            "/v1/outputs/{path}/manual",
+            "/v1/outputs/pi.p_set/manual",
+            Some(json!({"value": 150, "ttl": "5s", "reason": "force a trip", "wait": true})),
+        )
+        .await;
+    assert_eq!(write.status, 200, "{}", write.json());
+    assert_eq!(write.json()["outcome"]["outcome"], "tripped");
+
+    // Still held by the same out-of-range write: reset clears the trip
+    // for a tick, but the same condition re-trips it (docs/16 E7).
+    let retripped = f
+        .call(
+            "POST",
+            "/v1/outputs/{path}/reset",
+            "/v1/outputs/pi.p_set/reset",
+            Some(json!({"reason": "clear", "wait": true})),
+        )
+        .await;
+    assert_eq!(retripped.status, 200, "{}", retripped.json());
+    assert_eq!(retripped.json()["result"], "retripped");
+
+    // Release the bad write, then reset again: this time it clears.
+    let released = f
+        .call(
+            "POST",
+            "/v1/outputs/{path}/release",
+            "/v1/outputs/pi.p_set/release",
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!(released.status, 200, "{}", released.json());
+    let cleared = f
+        .call(
+            "POST",
+            "/v1/outputs/{path}/reset",
+            "/v1/outputs/pi.p_set/reset",
+            Some(json!({"reason": "clear for real", "wait": true})),
+        )
+        .await;
+    assert_eq!(cleared.status, 200, "{}", cleared.json());
+    assert_eq!(cleared.json()["result"], "cleared");
+
+    // A reason is mandatory.
+    let no_reason = f
+        .call(
+            "POST",
+            "/v1/outputs/{path}/reset",
+            "/v1/outputs/pi.p_set/reset",
+            Some(json!({"reason": "", "wait": true})),
+        )
+        .await;
+    assert_eq!(no_reason.status, 400, "{}", no_reason.json());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

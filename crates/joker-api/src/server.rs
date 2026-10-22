@@ -270,6 +270,21 @@ async fn release(
     }
 }
 
+async fn reset_trip(
+    State(b): State<Shared>,
+    ConnectInfo(peer): ConnectInfo<Peer>,
+    UrlPath(path): UrlPath<String>,
+    body: Bytes,
+) -> Response {
+    match decode(&body) {
+        Ok(req) => {
+            let who = principal(peer);
+            run(b, move |b| b.reset_trip(&who, &path, req)).await
+        }
+        Err(p) => problem_response(b.as_ref(), &p),
+    }
+}
+
 async fn write_ticket(State(b): State<Shared>, UrlPath(id): UrlPath<String>) -> Response {
     run(b, move |b| b.write_ticket(&id)).await
 }
@@ -432,6 +447,7 @@ pub fn router(backend: Arc<dyn Backend>) -> Router {
         .route("/v1/outputs/{path}", get(output))
         .route("/v1/outputs/{path}/manual", post(manual_write))
         .route("/v1/outputs/{path}/release", post(release))
+        .route("/v1/outputs/{path}/reset", post(reset_trip))
         .route("/v1/manual", get(manual))
         .route("/v1/writes/{write}", get(write_ticket))
         .route("/v1/actions", get(actions))

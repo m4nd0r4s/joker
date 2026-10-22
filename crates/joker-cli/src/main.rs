@@ -153,6 +153,14 @@ enum Command {
         /// The output path.
         target: String,
     },
+    /// Ends a trip on an output (docs/16 E7).
+    Reset {
+        /// The output.
+        output: String,
+        /// Why.
+        #[arg(long)]
+        reason: String,
+    },
     /// Invokes an action of a device (ref/09 §5.10).
     Action {
         /// `<target>.<action>`.
@@ -326,6 +334,7 @@ fn run(cli: Cli) -> Result<u8, Failure> {
             force,
         } => node()?.release(&output, level.as_deref(), force),
         Command::Explain { target } => node()?.explain(&target),
+        Command::Reset { output, reason } => node()?.reset(&output, &reason),
         Command::Action {
             target_action,
             args,
