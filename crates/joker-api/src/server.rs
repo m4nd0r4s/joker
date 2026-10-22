@@ -273,6 +273,32 @@ async fn write_ticket(State(b): State<Shared>, UrlPath(id): UrlPath<String>) -> 
     run(b, move |b| b.write_ticket(&id)).await
 }
 
+async fn invoke_action(
+    State(b): State<Shared>,
+    ConnectInfo(peer): ConnectInfo<Peer>,
+    UrlPath((target, action)): UrlPath<(String, String)>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let key = header(&headers, "idempotency-key").map(str::to_owned);
+    if key.is_none() {
+        return problem_response(
+            b.as_ref(),
+            &Problem::new("J-E1023", 400, "`Idempotency-Key` is required"),
+        );
+    }
+    match decode(&body) {
+        Ok(req) => {
+            let who = principal(peer);
+            run(b, move |b| {
+                b.invoke_action(&who, &target, &action, key.as_deref(), req)
+            })
+            .await
+        }
+        Err(p) => problem_response(b.as_ref(), &p),
+    }
+}
+
 async fn create_generation(
     State(b): State<Shared>,
     ConnectInfo(peer): ConnectInfo<Peer>,
@@ -407,6 +433,7 @@ pub fn router(backend: Arc<dyn Backend>) -> Router {
         .route("/v1/outputs/{path}/release", post(release))
         .route("/v1/manual", get(manual))
         .route("/v1/writes/{write}", get(write_ticket))
+        .route("/v1/actions/{target}/{action}", post(invoke_action))
         .route("/v1/decisions", get(decisions))
         .route("/v1/generations", get(generations).post(create_generation))
         .route("/v1/generations/rollback", post(rollback))

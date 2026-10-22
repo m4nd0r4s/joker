@@ -700,6 +700,33 @@ async fn traces_are_cut_from_the_ring() {
     assert_eq!(unsupported.json()["code"], "J-E1017");
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn invoking_an_action_follows_the_contract() {
+    let f = start().await;
+    let no_key = f
+        .call(
+            "POST",
+            "/v1/actions/{target}/{action}",
+            "/v1/actions/pi/reset",
+            Some(json!({"args": {}})),
+        )
+        .await;
+    assert_eq!(no_key.status, 400, "{}", no_key.json());
+    assert_eq!(no_key.json()["code"], "J-E1023");
+
+    let unknown = f
+        .call_with(
+            "POST",
+            "/v1/actions/{target}/{action}",
+            "/v1/actions/pi/reset",
+            &[("Idempotency-Key", "k1")],
+            Some(json!({"args": {}})),
+        )
+        .await;
+    assert_eq!(unknown.status, 404, "{}", unknown.json());
+    assert_eq!(unknown.json()["code"], "J-E1400");
+}
+
 #[test]
 #[should_panic(expected = "get /v1/info 200")]
 fn the_contract_check_rejects_a_bad_body() {
