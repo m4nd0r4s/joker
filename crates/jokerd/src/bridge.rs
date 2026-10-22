@@ -113,6 +113,14 @@ pub struct DeviceActionPlan {
     /// The action's default timeout (explicit, or derived from its
     /// steps' `wait`/`until` budgets, ref/03 §2.2.12).
     pub timeout_ns: u64,
+    /// `[devices.<d>.actions.<a>].dedup_window`, the manifest's own
+    /// override (ref/09 §5.10); `None` falls back to the API's own
+    /// 60s default (`jokerd::control::Controller::invoke_action`).
+    pub dedup_window_ns: Option<u64>,
+    /// The minimum caller role to invoke this action: the manifest's
+    /// own `role`, with `viewer` already floored to `operator`
+    /// (`J0298`, ref/09 §5.10). Defaults to `operator` undeclared.
+    pub role: String,
     /// The compiled steps, in order.
     pub steps: Vec<DeviceStep>,
 }
@@ -402,7 +410,8 @@ fn compile_action_step(
 /// [`DeviceActionPlan`]s. An action using `native` instead of `steps`
 /// (no entry in `action_steps`) is skipped, not an error.
 fn actions_of_profile(
-    device: &str,
+    device_name: &str,
+    device: &Device,
     profile: &joker_manifest::context::ProfileInfo,
 ) -> Result<Vec<DeviceActionPlan>, BridgeError> {
     let mut out = Vec::new();
@@ -412,7 +421,7 @@ fn actions_of_profile(
         }
         let compiled: Vec<DeviceStep> = steps
             .iter()
-            .map(|s| compile_action_step(device, name, s))
+            .map(|s| compile_action_step(device_name, name, s))
             .collect::<Result<_, _>>()?;
         let timeout_ns = profile
             .actions
@@ -421,13 +430,50 @@ fn actions_of_profile(
             .flatten()
             .map(Duration::as_nanos)
             .unwrap_or(1_000_000_000);
+        let dedup_window_ns = dedup_window_override(device, name);
+        let role = role_of(device, name);
         out.push(DeviceActionPlan {
             name: name.clone(),
             timeout_ns,
+            dedup_window_ns,
+            role,
             steps: compiled,
         });
     }
     Ok(out)
+}
+
+/// `[devices.<d>.actions.<a>].role`, floored to `operator` (`J0298`: a
+/// declared `viewer` still counts as `operator`, the API's own minimum),
+/// defaulting to `operator` when undeclared.
+fn role_of(device: &Device, action: &str) -> String {
+    let declared = device
+        .actions
+        .get(action)
+        .and_then(Node::as_table)
+        .and_then(|t| t.get("role"))
+        .and_then(|e| e.node.as_str());
+    match declared {
+        Some("viewer") | None => "operator".to_owned(),
+        Some(other) => other.to_owned(),
+    }
+}
+
+/// `[devices.<d>.actions.<a>].dedup_window`, already validated by
+/// `joker-manifest` (`schema.rs`'s `Ty::Duration`) before this ever
+/// runs; reparsed here with the same canonical parser the manifest
+/// decoder itself uses, since `Device::actions` is kept as raw, written
+/// `Node`s (not decoded into a struct — the manifest crate's own
+/// comment on that field says so).
+fn dedup_window_override(device: &Device, action: &str) -> Option<u64> {
+    let text = device
+        .actions
+        .get(action)?
+        .as_table()?
+        .get("dedup_window")?
+        .node
+        .as_str()?;
+    Duration::parse(text).ok().map(Duration::as_nanos)
 }
 
 fn point_from_raw(
@@ -551,7 +597,7 @@ pub fn device_plan(
     }
 
     let actions = match profile {
-        Some(profile) => actions_of_profile(name, profile)?,
+        Some(profile) => actions_of_profile(name, device, profile)?,
         None => Vec::new(),
     };
 

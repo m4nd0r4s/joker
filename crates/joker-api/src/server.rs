@@ -218,6 +218,7 @@ get_query!(
     ]
 );
 get_query!(generations, generations, ["state", "limit", "cursor"]);
+get_query!(actions, actions, ["target"]);
 
 async fn info(State(b): State<Shared>, ConnectInfo(peer): ConnectInfo<Peer>) -> Response {
     let who = principal(peer);
@@ -433,6 +434,7 @@ pub fn router(backend: Arc<dyn Backend>) -> Router {
         .route("/v1/outputs/{path}/release", post(release))
         .route("/v1/manual", get(manual))
         .route("/v1/writes/{write}", get(write_ticket))
+        .route("/v1/actions", get(actions))
         .route("/v1/actions/{target}/{action}", post(invoke_action))
         .route("/v1/decisions", get(decisions))
         .route("/v1/generations", get(generations).post(create_generation))

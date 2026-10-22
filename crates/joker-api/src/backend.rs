@@ -137,6 +137,8 @@ pub trait Backend: Send + Sync + 'static {
     fn trace(&self, id: &str) -> Result<Reply>;
     /// `GET /v1/traces/{trace}/file`: the bytes of a ready trace.
     fn trace_file(&self, id: &str) -> Result<Vec<u8>>;
+    /// `GET /v1/actions` (ref/09 §5.10): catalog of invocable actions.
+    fn actions(&self, query: &Query) -> Result<Reply>;
     /// `POST /v1/actions/{target}/{action}` (ref/09 §5.10): `idempotency_key`
     /// is the required `Idempotency-Key` header (`J-E1023` without it).
     fn invoke_action(
