@@ -23,6 +23,7 @@ use joker_hal::spec::PlanRequest;
 use joker_hal::types::BatchKind;
 use joker_hal::{CommitRx, Cx, RxState};
 
+use crate::plan::Plan;
 use crate::shared::Shared;
 
 /// The core's transport bits for a settled scalar raw value, or `None`
@@ -51,6 +52,32 @@ pub struct PointTarget {
     pub signal: SignalId,
     /// The core type, for [`raw_to_bits`].
     pub ty: ValueType,
+}
+
+/// The [`PointTarget`]s of `plan.devices[device_index]`'s read points
+/// (input and param; output points never reach a `RawSink`, they only
+/// reach the driver as `CommittedWrite`s).
+pub fn point_targets(plan: &Plan, device_index: usize) -> Vec<PointTarget> {
+    let Some(device) = plan.devices.get(device_index) else {
+        return Vec::new();
+    };
+    device
+        .points
+        .iter()
+        .enumerate()
+        .filter_map(|(i, p)| {
+            if p.direction == joker_hal::Direction::Output {
+                return None;
+            }
+            let signal = plan.id(&p.path)?;
+            let ty = plan.signals.iter().find(|s| s.path == p.path)?.ty;
+            Some(PointTarget {
+                point: i as u32,
+                signal,
+                ty,
+            })
+        })
+        .collect()
 }
 
 /// Runs one real device's driver on `host`'s clock until `stop` returns
