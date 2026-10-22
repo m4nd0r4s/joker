@@ -100,6 +100,132 @@ pub struct DevicePlan {
     pub fallback_keepalive_ns: Option<u64>,
     /// The device's points.
     pub points: Vec<DevicePointPlan>,
+    /// The device's `[actions.<a>]`, compiled (ref/03 §2.2.12); empty
+    /// without a profile or without any action declaring `steps`.
+    pub actions: Vec<DeviceActionPlan>,
+}
+
+/// One compiled `[actions.<a>]` of a device.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DeviceActionPlan {
+    /// Action name.
+    pub name: String,
+    /// The action's default timeout (explicit, or derived from its
+    /// steps' `wait`/`until` budgets, ref/03 §2.2.12).
+    pub timeout_ns: u64,
+    /// The compiled steps, in order.
+    pub steps: Vec<DeviceStep>,
+}
+
+/// One step of a compiled device action, address-resolved into the
+/// driver's own CBOR the same way a point's address is (ref/03 §2.2.12).
+#[derive(Debug, Clone, PartialEq)]
+pub enum DeviceStep {
+    /// Writes a raw value, or (with `value = "$name"`) an argument.
+    Write {
+        /// Where, in the driver's own CBOR schema.
+        addr: Vec<u8>,
+        /// The driver's `type` for this address.
+        type_name: Option<String>,
+        /// What to write.
+        value: DeviceStepValue,
+    },
+    /// Reads and stores the result under `into`.
+    Read {
+        /// Where, in the driver's own CBOR schema.
+        addr: Vec<u8>,
+        /// The driver's `type` for this address.
+        type_name: Option<String>,
+        /// The result field this fills.
+        into: String,
+    },
+    /// Waits before the next step.
+    Wait(Duration),
+    /// Reads until the value matches `equals`, or fails with `timeout`.
+    Until {
+        /// Where, in the driver's own CBOR schema.
+        addr: Vec<u8>,
+        /// The driver's `type` for this address.
+        type_name: Option<String>,
+        /// What it waits to see.
+        equals: joker_hal::acquire::OwnedRaw,
+        /// How long it waits.
+        timeout: Duration,
+    },
+    /// Ends the action with `message` if the value matches `equals`.
+    FailIf {
+        /// Where, in the driver's own CBOR schema.
+        addr: Vec<u8>,
+        /// The driver's `type` for this address.
+        type_name: Option<String>,
+        /// What ends the action.
+        equals: joker_hal::acquire::OwnedRaw,
+        /// Why.
+        message: String,
+    },
+}
+
+/// A step's literal value, or a named argument substituted at invocation
+/// (`"$name"`, ref/03 §2.2.12).
+#[derive(Debug, Clone, PartialEq)]
+pub enum DeviceStepValue {
+    /// A literal value.
+    Literal(joker_hal::acquire::OwnedRaw),
+    /// `"$name"`: the value of that argument, substituted at invocation.
+    Arg(String),
+}
+
+impl DeviceStep {
+    /// The borrowed form the interpreter (`joker_hal::interpreter`) walks.
+    pub fn view(&self) -> joker_hal::steps::Step<'_> {
+        use joker_hal::steps::{Step, StepValue};
+        match self {
+            Self::Write {
+                addr,
+                type_name,
+                value,
+            } => Step::Write {
+                addr: joker_hal::cbor::Cbor::new(addr),
+                type_name: type_name.as_deref().unwrap_or(""),
+                value: match value {
+                    DeviceStepValue::Literal(v) => StepValue::Literal(v.view()),
+                    DeviceStepValue::Arg(name) => StepValue::Arg(name),
+                },
+            },
+            Self::Read {
+                addr,
+                type_name,
+                into,
+            } => Step::Read {
+                addr: joker_hal::cbor::Cbor::new(addr),
+                type_name: type_name.as_deref().unwrap_or(""),
+                into,
+            },
+            Self::Wait(d) => Step::Wait(*d),
+            Self::Until {
+                addr,
+                type_name,
+                equals,
+                timeout,
+            } => Step::Until {
+                addr: joker_hal::cbor::Cbor::new(addr),
+                type_name: type_name.as_deref().unwrap_or(""),
+                equals: equals.view(),
+                timeout: *timeout,
+            },
+            Self::FailIf {
+                addr,
+                type_name,
+                equals,
+                message,
+            } => Step::FailIf {
+                addr: joker_hal::cbor::Cbor::new(addr),
+                type_name: type_name.as_deref().unwrap_or(""),
+                equals: equals.view(),
+                message,
+            },
+        }
+    }
 }
 
 /// Why a device could not be planned.
@@ -194,6 +320,114 @@ fn bus_params_cbor(bus: &joker_manifest::model::Bus) -> Vec<u8> {
 fn i2c_len(addr: &[u8]) -> Option<u8> {
     let cbor = joker_hal::cbor::Cbor::new(addr);
     u8::try_from(cbor.get("len").ok()??.as_u64().ok()?).ok()
+}
+
+fn action_value_to_owned_raw(value: &Value) -> Result<joker_hal::acquire::OwnedRaw, BridgeError> {
+    use joker_hal::acquire::OwnedRaw;
+    match value {
+        Value::Bool(b) => Ok(OwnedRaw::Bool(*b)),
+        Value::Integer(i) => Ok(OwnedRaw::Int(*i)),
+        Value::Float(f) => Ok(OwnedRaw::Float(*f)),
+        Value::String(s) => Ok(OwnedRaw::Text(s.clone())),
+        other => Err(err(format!(
+            "action step: a {} is not a supported literal",
+            other.type_name()
+        ))),
+    }
+}
+
+/// Compiles one [`joker_manifest::context::ActionStep`] into a
+/// [`DeviceStep`], resolving its address into CBOR the same way a point's
+/// address is (`table_to_cbor`). Scoped: a step always needs an explicit
+/// `type` here (ref/03 §2.2.12's alternate `signal = "<output>"` write
+/// form, which would let `write` infer its type and scale from a
+/// declared signal, is not supported).
+fn compile_action_step(
+    device: &str,
+    action: &str,
+    step: &joker_manifest::context::ActionStep,
+) -> Result<DeviceStep, BridgeError> {
+    use joker_manifest::context::{ActionStep, ActionValue};
+    Ok(match step {
+        ActionStep::Write {
+            addr,
+            type_name,
+            value,
+        } => DeviceStep::Write {
+            addr: table_to_cbor(addr),
+            type_name: type_name.clone(),
+            value: match value {
+                ActionValue::Literal(v) => DeviceStepValue::Literal(action_value_to_owned_raw(v)?),
+                ActionValue::Arg(name) => DeviceStepValue::Arg(name.clone()),
+            },
+        },
+        ActionStep::Read {
+            addr,
+            type_name,
+            into,
+        } => DeviceStep::Read {
+            addr: table_to_cbor(addr),
+            type_name: type_name.clone(),
+            into: into.clone(),
+        },
+        ActionStep::Wait(d) => DeviceStep::Wait(*d),
+        ActionStep::Until {
+            addr,
+            type_name,
+            equals,
+            timeout,
+        } => DeviceStep::Until {
+            addr: table_to_cbor(addr),
+            type_name: type_name.clone(),
+            equals: action_value_to_owned_raw(equals)
+                .map_err(|_| err(format!("{device}.{action}: unsupported `until` literal")))?,
+            timeout: *timeout,
+        },
+        ActionStep::FailIf {
+            addr,
+            type_name,
+            equals,
+            message,
+        } => DeviceStep::FailIf {
+            addr: table_to_cbor(addr),
+            type_name: type_name.clone(),
+            equals: action_value_to_owned_raw(equals)
+                .map_err(|_| err(format!("{device}.{action}: unsupported `fail_if` literal")))?,
+            message: message.clone(),
+        },
+    })
+}
+
+/// Compiles every `[actions.<a>]` of `profile` with `steps` into
+/// [`DeviceActionPlan`]s. An action using `native` instead of `steps`
+/// (no entry in `action_steps`) is skipped, not an error.
+fn actions_of_profile(
+    device: &str,
+    profile: &joker_manifest::context::ProfileInfo,
+) -> Result<Vec<DeviceActionPlan>, BridgeError> {
+    let mut out = Vec::new();
+    for (name, steps) in &profile.action_steps {
+        if steps.is_empty() {
+            continue;
+        }
+        let compiled: Vec<DeviceStep> = steps
+            .iter()
+            .map(|s| compile_action_step(device, name, s))
+            .collect::<Result<_, _>>()?;
+        let timeout_ns = profile
+            .actions
+            .get(name)
+            .copied()
+            .flatten()
+            .map(Duration::as_nanos)
+            .unwrap_or(1_000_000_000);
+        out.push(DeviceActionPlan {
+            name: name.clone(),
+            timeout_ns,
+            steps: compiled,
+        });
+    }
+    Ok(out)
 }
 
 fn point_from_raw(
@@ -316,6 +550,11 @@ pub fn device_plan(
         }
     }
 
+    let actions = match profile {
+        Some(profile) => actions_of_profile(name, profile)?,
+        None => Vec::new(),
+    };
+
     Ok(DevicePlan {
         name: name.to_owned(),
         driver,
@@ -327,6 +566,7 @@ pub fn device_plan(
         timeout_ns,
         fallback_keepalive_ns,
         points,
+        actions,
     })
 }
 
