@@ -161,6 +161,8 @@ enum Command {
         #[arg(long)]
         reason: String,
     },
+    /// Lists tripped outputs (docs/16 E7).
+    Trips,
     /// Invokes an action of a device (ref/09 §5.10).
     Action {
         /// `<target>.<action>`.
@@ -335,6 +337,7 @@ fn run(cli: Cli) -> Result<u8, Failure> {
         } => node()?.release(&output, level.as_deref(), force),
         Command::Explain { target } => node()?.explain(&target),
         Command::Reset { output, reason } => node()?.reset(&output, &reason),
+        Command::Trips => node()?.trips(),
         Command::Action {
             target_action,
             args,

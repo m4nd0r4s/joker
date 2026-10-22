@@ -197,6 +197,17 @@ pub struct ResetTripRequest {
     pub wait: bool,
 }
 
+/// `BulkResetRequest` (ref/09 §5.7, `openapi` schema `BulkResetRequest`):
+/// the body of `POST /v1/trips/reset`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BulkResetRequest {
+    /// Selectors of the outputs to reset.
+    pub sel: Vec<String>,
+    /// Why, mandatory.
+    pub reason: String,
+}
+
 /// `InvokeRequest` (ref/09 §5.10, `openapi` schema `InvokeRequest`): the
 /// body of `POST /v1/actions/{target}/{action}`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

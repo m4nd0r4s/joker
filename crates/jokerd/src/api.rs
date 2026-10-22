@@ -6,8 +6,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use joker_api::model::{
-    ActivateRequest, GenerationProposal, InvokeActionRequest, ManualWriteRequest, ReasonBody,
-    ReleaseRequest, ResetTripRequest, RollbackRequest, TraceRequest,
+    ActivateRequest, BulkResetRequest, GenerationProposal, InvokeActionRequest, ManualWriteRequest,
+    ReasonBody, ReleaseRequest, ResetTripRequest, RollbackRequest, TraceRequest,
 };
 use joker_api::{Backend, Headers, Principal, Problem, Query, Reply};
 use joker_core::image::{Intent, NO_TASK, Proposal, RELINQUISH, Source as ProposalSource};
@@ -426,6 +426,51 @@ impl Node {
                 .map_err(|_| Problem::new("J-E1014", 503, "the owner group's inbox is full"))?;
         }
         Ok(())
+    }
+
+    /// Queues a reset of `path` (owned by `group`) and, if `wait`,
+    /// waits for its resolution (ref/09 §5.7). Shared by the single
+    /// (`reset_trip`) and bulk (`reset_trips`) endpoints.
+    fn reset_one(
+        &self,
+        v: &View,
+        path: &str,
+        group: &str,
+        wait: bool,
+    ) -> Result<&'static str, Problem> {
+        let signal = v
+            .plan
+            .id(path)
+            .ok_or_else(|| Problem::new("J-E1000", 500, "output without signal"))?;
+        let group_index = v
+            .plan
+            .groups
+            .iter()
+            .position(|g| g.name == group)
+            .ok_or_else(|| Problem::new("J-E1000", 500, "output's group not found"))?;
+        let resets = v
+            .shared
+            .resets
+            .get(group_index)
+            .ok_or_else(|| Problem::new("J-E1000", 500, "output's group has no reset queue"))?;
+        let ticket = self.tickets.number();
+        resets
+            .push(crate::shared::ResetRequest { signal, ticket })
+            .map_err(|_| Problem::new("J-E1014", 503, "the reset queue is full"))?;
+        if !wait {
+            return Ok("queued");
+        }
+        match self
+            .tickets
+            .wait_reset(&v.shared, ticket, Duration::from_secs(5))
+        {
+            Some(outcome) => Ok(match outcome.kind {
+                crate::shared::ResetKind::Cleared => "cleared",
+                crate::shared::ResetKind::Retripped => "retripped",
+                crate::shared::ResetKind::NotTripped => "not_tripped",
+            }),
+            None => Ok("queued"),
+        }
     }
 
     fn manual_level(text: Option<&str>) -> Result<u8, Problem> {
@@ -1003,38 +1048,60 @@ impl Backend for Node {
             .output(path)
             .ok_or_else(|| Problem::new("J-E1100", 404, format!("`{path}` is not an output")))?
             .clone();
-        let signal = v
+        let result = self.reset_one(&v, &o.path, &o.group, req.wait)?;
+        Ok(Reply::ok(json!({"output": o.path, "result": result})))
+    }
+
+    fn trips(&self, query: &Query) -> Result<Reply, Problem> {
+        let v = self.need_view()?;
+        let sel = values_of(query, "sel");
+        let items: Vec<Value> = v
             .plan
-            .id(&o.path)
-            .ok_or_else(|| Problem::new("J-E1000", 500, "output without signal"))?;
-        let group_index = v
-            .plan
-            .groups
+            .outputs
             .iter()
-            .position(|g| g.name == o.group)
-            .ok_or_else(|| Problem::new("J-E1000", 500, "output's group not found"))?;
-        let resets = v
-            .shared
-            .resets
-            .get(group_index)
-            .ok_or_else(|| Problem::new("J-E1000", 500, "output's group has no reset queue"))?;
-        let ticket = self.tickets.number();
-        resets
-            .push(crate::shared::ResetRequest { signal, ticket })
-            .map_err(|_| Problem::new("J-E1014", 503, "the reset queue is full"))?;
-        let mut result = json!({"output": o.path, "result": "queued"});
-        if req.wait
-            && let Some(outcome) =
-                self.tickets
-                    .wait_reset(&v.shared, ticket, Duration::from_secs(5))
-        {
-            result["result"] = json!(match outcome.kind {
-                crate::shared::ResetKind::Cleared => "cleared",
-                crate::shared::ResetKind::Retripped => "retripped",
-                crate::shared::ResetKind::NotTripped => "not_tripped",
-            });
+            .filter(|o| sel.is_empty() || sel.iter().any(|s| wire::matches(s, &o.path)))
+            .filter_map(|o| {
+                let signal = v.plan.id(&o.path)?;
+                let since_mono_ns = v.shared.trip_since(signal)?;
+                Some(json!({
+                    "output": o.path,
+                    "since": timestamp(self.utc_origin_ns.saturating_add(since_mono_ns as i64)),
+                    "scope": "output",
+                    // Today the only cause jokerd wires into a trip is an
+                    // out-of-range write with `on_range = "trip"`
+                    // (docs/16 E7); alarm- and group_overrun-triggered
+                    // trips (ADR 0040 Sec7, docs/01 Sec4) aren't wired in
+                    // jokerd yet (no caller of `Outputs::trip()` exists
+                    // in production), so there is nothing else this
+                    // could honestly report yet.
+                    "cause": {"kind": "range"},
+                }))
+            })
+            .collect();
+        Ok(Reply::ok(json!({"items": items})))
+    }
+
+    fn reset_trips(&self, _who: &Principal, req: BulkResetRequest) -> Result<Reply, Problem> {
+        if req.reason.is_empty() {
+            return Err(bad("J-E1106", "a reset needs a reason").with("pointer", json!("/reason")));
         }
-        Ok(Reply::ok(result))
+        if req.sel.is_empty() {
+            return Err(bad("J-E1013", "`sel` is required").with("pointer", json!("/sel")));
+        }
+        let v = self.need_view()?;
+        let items: Vec<Value> = v
+            .plan
+            .outputs
+            .iter()
+            .filter(|o| req.sel.iter().any(|s| wire::matches(s, &o.path)))
+            .map(|o| {
+                let result = self
+                    .reset_one(&v, &o.path, &o.group, true)
+                    .unwrap_or("not_tripped");
+                json!({"output": o.path, "result": result})
+            })
+            .collect();
+        Ok(Reply::ok(json!({"items": items})))
     }
 
     fn manual(&self, query: &Query) -> Result<Reply, Problem> {

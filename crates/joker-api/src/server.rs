@@ -218,6 +218,7 @@ get_query!(
     ]
 );
 get_query!(generations, generations, ["state", "limit", "cursor"]);
+get_query!(trips, trips, ["sel"]);
 get_query!(actions, actions, ["target"]);
 
 async fn info(State(b): State<Shared>, ConnectInfo(peer): ConnectInfo<Peer>) -> Response {
@@ -287,6 +288,20 @@ async fn reset_trip(
 
 async fn write_ticket(State(b): State<Shared>, UrlPath(id): UrlPath<String>) -> Response {
     run(b, move |b| b.write_ticket(&id)).await
+}
+
+async fn reset_trips(
+    State(b): State<Shared>,
+    ConnectInfo(peer): ConnectInfo<Peer>,
+    body: Bytes,
+) -> Response {
+    match decode(&body) {
+        Ok(req) => {
+            let who = principal(peer);
+            run(b, move |b| b.reset_trips(&who, req)).await
+        }
+        Err(p) => problem_response(b.as_ref(), &p),
+    }
 }
 
 async fn invoke_action(
@@ -450,6 +465,8 @@ pub fn router(backend: Arc<dyn Backend>) -> Router {
         .route("/v1/outputs/{path}/reset", post(reset_trip))
         .route("/v1/manual", get(manual))
         .route("/v1/writes/{write}", get(write_ticket))
+        .route("/v1/trips", get(trips))
+        .route("/v1/trips/reset", post(reset_trips))
         .route("/v1/actions", get(actions))
         .route("/v1/actions/{target}/{action}", post(invoke_action))
         .route("/v1/decisions", get(decisions))

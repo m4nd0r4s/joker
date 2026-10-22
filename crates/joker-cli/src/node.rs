@@ -439,6 +439,29 @@ impl Node {
         })
     }
 
+    /// `jk trips`: lists tripped outputs (docs/16 E7).
+    pub fn trips(&self) -> Result<u8, Failure> {
+        let t = checked(self.client.get("/v1/trips")?)?.json();
+        if self.json {
+            print_json(&t);
+            return Ok(0);
+        }
+        println!("{}", self.header()?);
+        let items = t["items"].as_array().cloned().unwrap_or_default();
+        if items.is_empty() {
+            println!("no tripped outputs");
+        }
+        for item in items {
+            println!(
+                "{}  since {}  cause {}",
+                item["output"].as_str().unwrap_or("?"),
+                item["since"].as_str().unwrap_or("?"),
+                item["cause"]["kind"].as_str().unwrap_or("?"),
+            );
+        }
+        Ok(0)
+    }
+
     /// `jk explain <output>`: the arbiter state of an output (docs/07) —
     /// owning group, occupied levels, active level, envelope and last
     /// result. The other forms docs/07 lists (a manifest key's origin,

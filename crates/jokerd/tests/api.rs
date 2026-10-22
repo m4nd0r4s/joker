@@ -811,6 +811,60 @@ async fn resetting_a_trip_follows_the_contract() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn listing_and_bulk_resetting_trips_follows_the_contract() {
+    let f = start_with(&effective_with_trippable_output()).await;
+
+    let empty = f.call("GET", "/v1/trips", "/v1/trips", None).await;
+    assert_eq!(empty.status, 200, "{}", empty.json());
+    assert_eq!(empty.json()["items"].as_array().unwrap().len(), 0);
+
+    let write = f
+        .call(
+            "POST",
+            "/v1/outputs/{path}/manual",
+            "/v1/outputs/pi.p_set/manual",
+            Some(json!({"value": 150, "ttl": "5s", "reason": "force a trip", "wait": true})),
+        )
+        .await;
+    assert_eq!(write.json()["outcome"]["outcome"], "tripped");
+
+    let listed = f.call("GET", "/v1/trips", "/v1/trips", None).await;
+    assert_eq!(listed.status, 200, "{}", listed.json());
+    let items = listed.json()["items"].as_array().unwrap().clone();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["output"], "pi.p_set");
+    assert_eq!(items[0]["cause"]["kind"], "range");
+    assert!(items[0]["since"].as_str().is_some());
+
+    let released = f
+        .call(
+            "POST",
+            "/v1/outputs/{path}/release",
+            "/v1/outputs/pi.p_set/release",
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!(released.status, 200, "{}", released.json());
+
+    let bulk = f
+        .call(
+            "POST",
+            "/v1/trips/reset",
+            "/v1/trips/reset",
+            Some(json!({"sel": ["pi.*"], "reason": "clear the group"})),
+        )
+        .await;
+    assert_eq!(bulk.status, 200, "{}", bulk.json());
+    let items = bulk.json()["items"].as_array().unwrap().clone();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["output"], "pi.p_set");
+    assert_eq!(items[0]["result"], "cleared");
+
+    let now_empty = f.call("GET", "/v1/trips", "/v1/trips", None).await;
+    assert_eq!(now_empty.json()["items"].as_array().unwrap().len(), 0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn invoking_an_action_follows_the_contract() {
     let f = start().await;
     let no_key = f

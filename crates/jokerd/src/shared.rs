@@ -245,6 +245,11 @@ pub struct Shared {
     pub trace_dropped: Counter,
     /// Status per output, in the order of [`Shared::output_ids`].
     pub outputs: Box<[OutputStatus]>,
+    /// When each output (same order as [`Shared::output_ids`]) last
+    /// transitioned into trip, monotonic ns; 0 while clear (`GET
+    /// /v1/trips`'s own `Trip.since`, ref/09 §5.7). Set by the cycle
+    /// thread only, read by the API.
+    pub trip_since: Box<[AtomicU64]>,
     /// The output signals, sorted.
     pub output_ids: Box<[SignalId]>,
     /// Statistics per group.
@@ -346,6 +351,7 @@ impl Shared {
             trace_filled: ArrayQueue::new(TRACE_BUFFERS),
             trace_dropped: Counter::default(),
             outputs: output_ids.iter().map(|_| OutputStatus::new()).collect(),
+            trip_since: output_ids.iter().map(|_| AtomicU64::new(0)).collect(),
             output_ids: output_ids.into_boxed_slice(),
             groups: plan.groups.iter().map(|_| GroupStats::default()).collect(),
             export_request: AtomicU64::new(0),
@@ -361,6 +367,24 @@ impl Shared {
     pub fn output(&self, signal: SignalId) -> Option<&OutputStatus> {
         let i = self.output_ids.binary_search(&signal).ok()?;
         self.outputs.get(i)
+    }
+
+    /// When `signal` last became tripped, monotonic ns; `None` while
+    /// clear.
+    pub fn trip_since(&self, signal: SignalId) -> Option<u64> {
+        let i = self.output_ids.binary_search(&signal).ok()?;
+        let since = self.trip_since.get(i)?.load(Ordering::Relaxed);
+        (since != 0).then_some(since)
+    }
+
+    /// Sets (or clears, with 0) when `signal` became tripped (cycle
+    /// thread only: one writer, same reasoning as [`OutputStatus::publish`]).
+    pub fn set_trip_since(&self, signal: SignalId, since_mono_ns: u64) {
+        if let Ok(i) = self.output_ids.binary_search(&signal)
+            && let Some(cell) = self.trip_since.get(i)
+        {
+            cell.store(since_mono_ns, Ordering::Relaxed);
+        }
     }
 
     /// Asks the cycle thread to stop.

@@ -74,6 +74,7 @@ fn empty_shared(
         trace_filled: crossbeam_queue::ArrayQueue::new(1),
         trace_dropped: Default::default(),
         outputs: Vec::new().into_boxed_slice(),
+        trip_since: Vec::new().into_boxed_slice(),
         output_ids: Vec::new().into_boxed_slice(),
         groups: Vec::new().into_boxed_slice(),
         export_request: Default::default(),
