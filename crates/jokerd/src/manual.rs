@@ -5,10 +5,12 @@
 //! the tickets that carry a write's result back to the caller.
 
 use std::collections::{BTreeMap, HashMap};
+use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use joker_core::commit::WriteResult;
+use serde::{Deserialize, Serialize};
 
 use crate::shared::{ResetOutcome, Shared};
 
@@ -31,13 +33,65 @@ pub struct Occupant {
     pub reason: String,
 }
 
-/// The manual levels held, by (output path, level).
+/// An [`Occupant`] as written to `<state_dir>/manual.json` (A14):
+/// everything but `until_mono_ns`, which is meaningless across a
+/// restart and is recomputed from `until_utc_ns` on [`ManualTable::load`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Persisted {
+    output: String,
+    level: u8,
+    principal: String,
+    value: serde_json::Value,
+    ttl_ns: u64,
+    since_utc_ns: i64,
+    until_utc_ns: i64,
+    reason: String,
+}
+
+/// The manual levels held, by (output path, level); optionally backed
+/// by a file so a level survives a `jokerd` restart within its TTL
+/// (docs/16 A14).
 #[derive(Debug, Default)]
 pub struct ManualTable {
     levels: Mutex<BTreeMap<(String, u8), Occupant>>,
+    path: Option<PathBuf>,
 }
 
 impl ManualTable {
+    /// Loads `path`, dropping records whose TTL has already passed by
+    /// `now_utc_ns`, and recomputing `until_mono_ns` for the rest from
+    /// the real time left on their lease. Further mutations persist to
+    /// `path`. A missing or unreadable file loads as empty (first boot).
+    pub fn load(path: PathBuf, now_utc_ns: i64, now_mono_ns: u64) -> Self {
+        let records: Vec<Persisted> = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|text| serde_json::from_str(&text).ok())
+            .unwrap_or_default();
+        let mut levels = BTreeMap::new();
+        for r in records {
+            if r.until_utc_ns <= now_utc_ns {
+                continue;
+            }
+            let remaining_ns = u64::try_from(r.until_utc_ns - now_utc_ns).unwrap_or(0);
+            levels.insert(
+                (r.output, r.level),
+                Occupant {
+                    principal: r.principal,
+                    value: r.value,
+                    ttl_ns: r.ttl_ns,
+                    since_utc_ns: r.since_utc_ns,
+                    until_utc_ns: r.until_utc_ns,
+                    until_mono_ns: now_mono_ns.saturating_add(remaining_ns),
+                    reason: r.reason,
+                },
+            );
+        }
+        Self {
+            levels: Mutex::new(levels),
+            path: Some(path),
+        }
+    }
+
     /// The holder of a level, dropping it if its TTL has passed.
     pub fn get(&self, output: &str, level: u8, now_mono_ns: u64) -> Option<Occupant> {
         let mut m = self.lock();
@@ -51,11 +105,14 @@ impl ManualTable {
     /// Sets the holder of a level.
     pub fn set(&self, output: &str, level: u8, occupant: Occupant) {
         self.lock().insert((output.to_owned(), level), occupant);
+        self.save();
     }
 
     /// Frees a level.
     pub fn remove(&self, output: &str, level: u8) -> Option<Occupant> {
-        self.lock().remove(&(output.to_owned(), level))
+        let r = self.lock().remove(&(output.to_owned(), level));
+        self.save();
+        r
     }
 
     /// Every level held, in (output, level) order, without expired ones.
@@ -70,12 +127,36 @@ impl ManualTable {
     /// Forgets everything (a new generation starts without manual levels).
     pub fn clear(&self) {
         self.lock().clear();
+        self.save();
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, BTreeMap<(String, u8), Occupant>> {
         self.levels
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Rewrites `path` (if any) with the current table, best-effort: a
+    /// write failure is not fatal to the request that triggered it.
+    fn save(&self) {
+        let Some(path) = &self.path else { return };
+        let records: Vec<Persisted> = self
+            .lock()
+            .iter()
+            .map(|((output, level), o)| Persisted {
+                output: output.clone(),
+                level: *level,
+                principal: o.principal.clone(),
+                value: o.value.clone(),
+                ttl_ns: o.ttl_ns,
+                since_utc_ns: o.since_utc_ns,
+                until_utc_ns: o.until_utc_ns,
+                reason: o.reason.clone(),
+            })
+            .collect();
+        if let Ok(text) = serde_json::to_string_pretty(&records) {
+            let _ = std::fs::write(path, text);
+        }
     }
 }
 

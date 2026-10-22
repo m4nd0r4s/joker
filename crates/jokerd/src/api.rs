@@ -125,7 +125,9 @@ impl Node {
         utc_origin_ns: i64,
         state_dir: &Path,
     ) -> std::io::Result<Self> {
-        Ok(Self {
+        let now_mono_ns = clock.now_ns();
+        let manual = ManualTable::load(state_dir.join("manual.json"), utc_now_ns(), now_mono_ns);
+        let node = Self {
             controller,
             clock,
             utc_origin_ns,
@@ -134,9 +136,54 @@ impl Node {
             name: host_name(),
             state_dir: state_dir.to_owned(),
             tickets: TicketBook::default(),
-            manual: ManualTable::default(),
+            manual,
             traces: Arc::new(Traces::open(&state_dir.join("traces"))?),
-        })
+        };
+        node.restore_manual(now_mono_ns);
+        Ok(node)
+    }
+
+    /// Re-injects every manual level loaded by [`ManualTable::load`] into
+    /// the running generation's arbiter, so occupancy (not just this
+    /// node's own bookkeeping) survives a restart within TTL (docs/16
+    /// A14). A level whose output or writer no longer exists in the
+    /// active plan is silently dropped: there's nothing to restore it
+    /// into.
+    fn restore_manual(&self, now_mono_ns: u64) {
+        let Some(v) = self.view() else { return };
+        for (path, level, occ) in self.manual.all(now_mono_ns) {
+            let remaining_ns = occ.until_mono_ns.saturating_sub(now_mono_ns);
+            if remaining_ns == 0 {
+                continue;
+            }
+            let Some(o) = v.plan.output(&path) else {
+                continue;
+            };
+            let Some(signal) = v.plan.signal(&o.path) else {
+                continue;
+            };
+            let Some(signal_id) = v.plan.id(&o.path) else {
+                continue;
+            };
+            let Some(writer) = v.plan.writer(&format!("user:manual:{level}")) else {
+                continue;
+            };
+            let Ok(bits) = input_bits(signal, &occ.value) else {
+                continue;
+            };
+            let proposal = Proposal {
+                writer,
+                signal: signal_id,
+                value: bits,
+                flags: 0,
+                source: ProposalSource::Async,
+                ticket: 0,
+                ttl_ns: remaining_ns,
+                intent: Intent::Write,
+                task: NO_TASK,
+            };
+            let _ = self.stage(&v, &[proposal], &o.group);
+        }
     }
 
     fn view(&self) -> Option<View> {
