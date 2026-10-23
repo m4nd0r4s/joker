@@ -1,22 +1,24 @@
 //! [`Devices`] for every driver family with a complete real Linux
 //! adapter: `sysfs` (`Link::Paths`), `modbus-rtu` (`Link::Serial` over
-//! `TokioSerial`) and `modbus-tcp` (`Link::Tcp` over `TokioTcpConnector`).
-//! `gpio` and `i2c` are not dispatched here yet: their drivers exist and
-//! are tested against an in-memory double, but the real Linux chardev/
-//! i2c-dev adapter (opening `/dev/gpiochipN`/`/dev/i2c-N` and issuing the
-//! ioctl) is not implemented (AUR-401). A device declaring one of those
-//! is reported, not silently ignored.
+//! `TokioSerial`), `modbus-tcp` (`Link::Tcp` over `TokioTcpConnector`)
+//! and `gpio` (`Link::Gpio` over `LinuxGpio`, chardev v1). `i2c` is not
+//! dispatched here yet: its driver exists and is tested against an
+//! in-memory double, but the real Linux `i2c-dev` adapter (opening
+//! `/dev/i2c-N` and issuing the ioctl) is not implemented (AUR-401). A
+//! device declaring it is reported, not silently ignored.
 
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use joker_core::ClockQuality;
+use joker_driver_gpio::{GpioDriver, GpioPlanner};
 use joker_driver_modbus::{ModbusPlanner, ModbusRtu, ModbusTcp, ModbusTcpPlanner};
 use joker_driver_sysfs::{SysfsDriver, SysfsPlanner};
 use joker_hal::link::DevicePaths;
-use joker_hal::std_host::{SerialConfig, TokioHost, TokioSerial, TokioTcpConnector};
-use joker_hal::{Cbor, Driver, Link, OpenArgs, Planner};
+use joker_hal::std_host::{LinuxGpio, SerialConfig, TokioHost, TokioSerial, TokioTcpConnector};
+use joker_hal::{Cbor, Direction, Driver, GpioChip, Link, OpenArgs, Planner};
 use tokio::sync::watch;
 
 use crate::bridge::{DevicePlan, owned_request};
@@ -171,6 +173,60 @@ async fn run_modbus_tcp(
     .await;
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "each parameter is a distinct, independently-sourced piece of one device's dispatch; see run_sysfs's own allow"
+)]
+async fn run_gpio(
+    device: DevicePlan,
+    plan: Arc<Plan>,
+    device_index: usize,
+    shared: Arc<Shared>,
+    host: Arc<TokioHost>,
+    mut stop: watch::Receiver<bool>,
+    action_rx: tokio::sync::mpsc::Receiver<ActionCall>,
+) {
+    let owned = owned_request(&device);
+    let views = owned.views();
+    let Ok(hal_plan) = GpioPlanner::plan(&views.request()) else {
+        return;
+    };
+    let Ok(chip) = joker_driver_gpio::plan::chip_id(Cbor::new(&device.config)) else {
+        return;
+    };
+    let mut lines = Vec::new();
+    for p in views.request().points {
+        let Ok(addr) = joker_driver_gpio::plan::check_point(p) else {
+            return;
+        };
+        lines.push((addr.line, p.direction == Direction::Output));
+    }
+    let Ok(gpio) = LinuxGpio::open(&PathBuf::from("/dev").join(chip), &lines) else {
+        return;
+    };
+    let Ok(driver) = GpioDriver::open(
+        &OpenArgs::new(views.request(), hal_plan.view()),
+        Link::Gpio(GpioChip::new(gpio)),
+    ) else {
+        return;
+    };
+    let targets = point_targets(&plan, device_index);
+    run_driver(
+        driver,
+        &*host,
+        views.request(),
+        hal_plan.view(),
+        device.timeout_ns,
+        &targets,
+        &shared,
+        device_index,
+        device.fallback_keepalive_ns,
+        action_rx,
+        move || *stop.borrow_and_update(),
+    )
+    .await;
+}
+
 /// How many pending action calls a device's channel buffers before a
 /// caller sees the device's queue as full (`J-E1403`).
 const ACTION_CHANNEL_CAPACITY: usize = 4;
@@ -258,6 +314,11 @@ impl Devices for RealDevices {
                     self.handle.spawn(run_modbus_tcp(
                         device, plan, i, shared, host, stop, action_rx,
                     ));
+                    true
+                }
+                "gpio" => {
+                    self.handle
+                        .spawn(run_gpio(device, plan, i, shared, host, stop, action_rx));
                     true
                 }
                 other => {

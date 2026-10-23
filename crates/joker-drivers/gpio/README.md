@@ -1,6 +1,6 @@
 # joker-driver-gpio
 
-Digital lines of a Linux `gpiochip` (chardev v2 ABI), tier N (docs/05 §10).
+Digital lines of a Linux `gpiochip` (chardev v1 ABI), tier N (docs/05 §10). v1, not v2: the v2 ABI needs Linux 5.10+, newer than the bench board's kernel (4.19).
 
 Address keys (ref/03 §2.2.5): `line` (integer), `active_low` (bool),
 `bias` (`as-is` | `pull-up` | `pull-down` | `disabled`), `drive`
@@ -16,7 +16,11 @@ Device config: `chip` (string, the `gpiochip` name, e.g. `gpiochip0`),
 used by the host to resolve the real `Link::Gpio`; this crate only
 validates its presence and shape.
 
-The real Linux chardev adapter (opening `/dev/gpiochipN` and issuing the
-v2 ioctl) is not implemented here yet — `Link::Gpio` and this driver are
-verified against an in-memory double (`joker_hal::GpioLines`), the same
-way `Link::Tcp` shipped before `TokioTcp`.
+The real Linux chardev v1 adapter (`joker_hal::std_host::LinuxGpio`,
+backed by `joker-gpio-sys`'s ioctls: `GPIO_GET_LINEHANDLE_IOCTL`,
+`GPIOHANDLE_GET_LINE_VALUES_IOCTL`, `GPIOHANDLE_SET_LINE_VALUES_IOCTL`)
+opens `/dev/gpiochipN` and requests one handle per granted line, each
+with its own fixed direction (v1 fixes input/output per handle request).
+`Link::Gpio` and this driver are also verified against an in-memory
+double (`joker_hal::testing::MemoryGpio`), the same way `Link::Tcp`
+shipped before `TokioTcp`.

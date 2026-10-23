@@ -93,6 +93,53 @@ fn a_real_sysfs_device_reaches_shared_slots() {
     runtime.shutdown_timeout(Duration::from_secs(1));
 }
 
+const GPIO_JOKER_TOML: &str = r#"
+[project]
+name  = "real-devices-gpio-test"
+joker = "1.0"
+mode  = "dev"
+
+[devices.hdr]
+driver = "gpio"
+chip   = "gpiochip0-that-does-not-exist-in-this-test"
+
+[devices.hdr.signals]
+line4 = { type = "bool", direction = "input", line = 4, poll = "20ms" }
+"#;
+
+#[test]
+fn a_gpio_device_dispatches_and_registers_its_action_channel_even_without_the_chip() {
+    // The chip path is deliberately wrong: this test proves `RealDevices`
+    // dispatches `driver = "gpio"` to `run_gpio` (action channel
+    // registered, same as any other real driver) without needing a real
+    // `/dev/gpiochipN` — the real chardev v1 ioctl path itself is only
+    // safely exercisable against real hardware (the bench Pi, read-only
+    // line), not blindly in this environment's own GPIO lines.
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("joker.toml"), GPIO_JOKER_TOML).unwrap();
+    let loaded = load(&OsFileSystem, &dir.path().join("joker.toml"), &NativeTasks)
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert!(!loaded.report.has_errors(), "{}", loaded.report.render());
+    assert_eq!(loaded.plan.devices[0].driver, "gpio");
+
+    let plan = Arc::new(loaded.plan);
+    let shared = Arc::new(Shared::new(&plan));
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let devices = RealDevices::new(runtime.handle().clone());
+    let set = devices.start(&plan, &shared);
+
+    let sender = set
+        .action_sender("hdr")
+        .expect("the dispatched gpio device registers its action channel");
+    drop(sender);
+
+    set.stop();
+    runtime.shutdown_timeout(Duration::from_secs(1));
+}
+
 #[test]
 fn the_dispatched_device_has_a_real_action_channel_and_an_undeclared_name_does_not() {
     let fake = FakeSys::new();
