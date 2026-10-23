@@ -27,7 +27,7 @@ use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::cbor::Cbor;
 use crate::cx::Host;
-use crate::link::{IoError, Parity, SerialInfo, SerialIo};
+use crate::link::{GpioLines, IoError, Parity, SerialInfo, SerialIo};
 use crate::types::{DriverError, J0852, MonoNs};
 
 /// A host on tokio's clock. Monotonic time starts at 0 when the host is
@@ -411,6 +411,58 @@ impl crate::link::TcpConnect for TokioTcpConnector {
     }
 }
 
+/// A Linux `gpiochip`'s lines (`Link::Gpio`, ref/06 §3.4): chardev **v1**
+/// (`<linux/gpio.h>`, `joker-gpio-sys`), not v2 — the bench board's
+/// kernel (4.19) predates v2 (needs 5.10+). Every line it serves is
+/// requested once at [`LinuxGpio::open`] time, each with its own fixed
+/// direction (v1's `GPIO_GET_LINEHANDLE_IOCTL` fixes input/output per
+/// request, unlike v2's per-line reconfiguration); a line the manifest
+/// never granted is [`IoError::Unsupported`], the same answer a line on
+/// a chip this build never opened would give.
+pub struct LinuxGpio {
+    handles: BTreeMap<u32, std::os::fd::OwnedFd>,
+}
+
+impl core::fmt::Debug for LinuxGpio {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("LinuxGpio")
+            .field(
+                "lines",
+                &self.handles.keys().collect::<alloc::vec::Vec<_>>(),
+            )
+            .finish()
+    }
+}
+
+impl LinuxGpio {
+    /// Opens `chip_path` (e.g. `/dev/gpiochip0`) and requests a handle
+    /// for each `(line, output)` pair the manifest granted. Fails the
+    /// whole chip if the device or any one line's handle cannot be
+    /// opened: a device the manifest expects known-good lines from is
+    /// better refused here than left half-granted.
+    pub fn open(chip_path: &Path, lines: &[(u32, bool)]) -> io::Result<Self> {
+        let chip = File::open(chip_path)?;
+        let mut handles = BTreeMap::new();
+        for &(line, output) in lines {
+            let handle = joker_gpio_sys::request_line_handle(chip.as_fd(), line, output, "jokerd")?;
+            handles.insert(line, handle);
+        }
+        Ok(Self { handles })
+    }
+}
+
+impl GpioLines for LinuxGpio {
+    fn get(&mut self, line: u32) -> Result<bool, IoError> {
+        let handle = self.handles.get(&line).ok_or(IoError::Unsupported)?;
+        joker_gpio_sys::get_line_value(handle.as_fd()).map_err(|e| io_error(&e))
+    }
+
+    fn set(&mut self, line: u32, value: bool) -> Result<(), IoError> {
+        let handle = self.handles.get(&line).ok_or(IoError::Unsupported)?;
+        joker_gpio_sys::set_line_value(handle.as_fd(), value).map_err(|e| io_error(&e))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -520,5 +572,25 @@ mod tests {
         let mut buf = [0u8; 2];
         stream.read_exact(&mut buf).await.unwrap();
         assert_eq!(buf, [9, 9]);
+    }
+
+    #[test]
+    fn opening_a_non_gpiochip_path_is_refused() {
+        assert!(LinuxGpio::open(Path::new("/dev/null"), &[(0, false)]).is_err());
+    }
+
+    #[test]
+    fn a_line_outside_the_granted_set_is_unsupported() {
+        // `/dev/null` fails to open as a chip for any line, so a line that
+        // was never granted at all would also have no handle; this only
+        // exercises the lookup path once a `LinuxGpio` with zero granted
+        // lines exists, built the same way `DevicePaths::new(&[])` would
+        // for an empty grant set, without needing a real gpiochip.
+        let empty = LinuxGpio {
+            handles: std::collections::BTreeMap::new(),
+        };
+        let mut empty = empty;
+        assert_eq!(empty.get(0), Err(IoError::Unsupported));
+        assert_eq!(empty.set(0, true), Err(IoError::Unsupported));
     }
 }

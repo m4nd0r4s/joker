@@ -1,6 +1,6 @@
 [package]
 name = "joker-driver-gpio"
-description = "Joker gpio driver: digital lines of a Linux gpiochip (chardev v2)"
+description = "Joker gpio driver: digital lines of a Linux gpiochip (chardev v1)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

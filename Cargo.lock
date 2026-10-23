@@ -1384,6 +1384,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "joker-gpio-sys"
+version = "0.0.0"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "joker-hal"
 version = "0.0.0"
 dependencies = [
@@ -1391,6 +1398,7 @@ dependencies = [
  "embedded-io 0.7.1",
  "embedded-io-async",
  "joker-core",
+ "joker-gpio-sys",
  "joker-hal",
  "joker-serial-sys",
  "joker-units",

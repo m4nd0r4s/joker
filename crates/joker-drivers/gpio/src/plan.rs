@@ -31,7 +31,8 @@ pub const DESCRIPTOR: Descriptor = Descriptor {
     interface: INTERFACE,
     micro: false,
     license: "Apache-2.0 OR MIT",
-    description: "Digital lines of a Linux gpiochip, chardev v2 (ref/03 §2.2.5, docs/05 §10)",
+    description: "Digital lines of a Linux gpiochip, chardev v1 (ref/03 §2.2.5, docs/05 §10; \
+        v1, not v2 — the bench board's kernel predates v2, which needs Linux 5.10+)",
 };
 
 /// `bias` (ref/03 §2.2.5).
