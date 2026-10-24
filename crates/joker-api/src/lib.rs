@@ -4,6 +4,7 @@ pub mod backend;
 pub mod id;
 pub mod model;
 pub mod problem;
+pub mod prometheus;
 #[cfg(feature = "server")]
 pub mod server;
 #[cfg(feature = "server")]

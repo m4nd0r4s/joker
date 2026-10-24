@@ -352,6 +352,31 @@ async fn metrics(State(b): State<Shared>, Extension(engine): Extension<ws::Engin
     .await
 }
 
+/// `GET /metrics` (ADR 0071): the snapshot of `GET /v1/metrics` in the
+/// Prometheus text exposition format.
+async fn prometheus(State(b): State<Shared>, Extension(engine): Extension<ws::Engine>) -> Response {
+    let stats = Arc::clone(&engine.stats);
+    let backend = Arc::clone(&b);
+    let result = tokio::task::spawn_blocking(move || {
+        backend
+            .metrics()
+            .map(|r| crate::prometheus::render(&ws::with_api(r.body, &stats)))
+    })
+    .await
+    .unwrap_or_else(|_| Err(Problem::new("J-E1000", 500, "the handler panicked")));
+    match result {
+        Ok(text) => {
+            let mut headers = base_headers(b.as_ref(), &request_id());
+            headers.insert(
+                "content-type",
+                HeaderValue::from_static(crate::prometheus::CONTENT_TYPE),
+            );
+            (StatusCode::OK, headers, text).into_response()
+        }
+        Err(p) => problem_response(b.as_ref(), &p),
+    }
+}
+
 async fn signal(State(b): State<Shared>, UrlPath(path): UrlPath<String>) -> Response {
     run(b, move |b| b.signal(&path)).await
 }
@@ -683,6 +708,7 @@ pub fn router_with(backend: Arc<dyn Backend>, limits: ws::Limits) -> Router {
         .route("/v1/health", get(health))
         .route("/v1/status", get(status))
         .route("/v1/metrics", get(metrics))
+        .route("/metrics", get(prometheus))
         .route("/v1/signals", get(signals))
         .route("/v1/signals/{path}", get(signal))
         .route("/v1/values", get(values))
