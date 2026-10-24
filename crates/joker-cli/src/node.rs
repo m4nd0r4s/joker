@@ -607,7 +607,10 @@ impl Node {
                 "{}  {:<20} {:<14} applied {:<8} level {:<14} {}",
                 e["ts"].as_str().unwrap_or(""),
                 e["output"].as_str().unwrap_or(""),
-                e["outcome"]["outcome"].as_str().unwrap_or(""),
+                e["outcome"]["outcome"]
+                    .as_str()
+                    .or_else(|| e["ack"]["status"].as_str())
+                    .unwrap_or(""),
                 e["applied"].to_string(),
                 e["active_level"].as_str().unwrap_or(""),
                 e["writer"]["writer"].as_str().unwrap_or("")
