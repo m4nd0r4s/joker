@@ -27,6 +27,8 @@ fn top_prints_the_group_row() {
     assert!(buf.contains("api connections"), "{buf:?}");
 }
 
+/// No app writes `pi.act_led`, so it lives in the implicit `default`
+/// group (docs/16 A11) rather than a declared `[cycles.*]`.
 #[test]
 fn top_json_prints_one_metrics_snapshot() {
     let dir = tempfile::tempdir().unwrap();
@@ -43,7 +45,5 @@ fn top_json_prints_one_metrics_snapshot() {
     );
     let v: serde_json::Value = serde_json::from_str(buf.trim()).unwrap();
     assert!(v["at"].is_string(), "{buf:?}");
-    // No app writes `pi.act_led`, so it lives in the implicit `default`
-    // group (docs/16 A11) rather than a declared `[cycles.*]`.
     assert_eq!(v["groups"][0]["group"], "default");
 }
