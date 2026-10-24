@@ -294,37 +294,23 @@ impl Node {
         Ok(0)
     }
 
-    /// `jk top` (ref/09 §5.2, `x-joker-cli: [jk top]`): a live view of
-    /// `GET /v1/metrics`, redrawn every second until Ctrl-C. Composes
-    /// from the existing endpoint; no new node API.
+    /// `jk top` (ref/09 §9.1): a live view over `GET /v1/ws`, subscribed
+    /// to `metrics`, `status` and `outputs`, redrawn as the node sends them
+    /// until Ctrl-C or until the node closes the subscription (exit 4).
+    /// With `--json`, prints the first `Metrics` and exits.
     pub fn top(&self) -> Result<u8, Failure> {
-        loop {
-            let m = checked(self.client.get("/v1/metrics")?)?.json();
-            if self.json {
-                print_json(&m);
-                return Ok(0); // a live JSON stream belongs to `--watch`,
-                // not `--json`: one snapshot is the honest contract here.
-            }
-            print!("\x1B[2J\x1B[H"); // clear screen, home cursor
-            println!("{}", self.header()?);
-            println!("at {}", m["at"].as_str().unwrap_or("?"));
-            println!(
-                "{:<16} {:>10} {:>10} {:>14} {:>14}",
-                "group", "ticks", "overruns", "jitter(max)", "duration(max)"
-            );
-            for g in m["groups"].as_array().cloned().unwrap_or_default() {
-                println!(
-                    "{:<16} {:>10} {:>10} {:>14} {:>14}",
-                    g["group"].as_str().unwrap_or(""),
-                    g["ticks"],
-                    g["overruns"],
-                    g["jitter"]["max"].as_str().unwrap_or("-"),
-                    g["duration"]["max"].as_str().unwrap_or("-"),
-                );
-            }
-            std::io::stdout().flush().ok();
-            std::thread::sleep(Duration::from_secs(1));
-        }
+        let socket = self.client.socket().to_owned();
+        let header = if self.json {
+            String::new()
+        } else {
+            self.header()?
+        };
+        let json_mode = self.json;
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| Failure::usage(format!("tokio: {e}")))?;
+        runtime.block_on(top_view(&socket, &header, json_mode))
     }
 
     /// `jk read`.
@@ -834,6 +820,144 @@ async fn next_message(ws: &mut UnixWs, closing: &mut Option<Value>) -> Result<Va
             Some(Err(e)) => return Err(lost(format!("connection lost: {e}"))),
             None => return Err(lost("the node closed the connection".into())),
         }
+    }
+}
+
+/// What `jk top` has seen of each topic.
+#[derive(Default)]
+struct TopState {
+    metrics: Value,
+    status: Value,
+    outputs: std::collections::BTreeMap<String, Value>,
+}
+
+fn render_top(header: &str, t: &TopState) -> String {
+    use std::fmt::Write as _;
+
+    let mut out = String::new();
+    let _ = writeln!(out, "{header}");
+    let _ = writeln!(out, "at {}", t.metrics["at"].as_str().unwrap_or("?"));
+    let _ = writeln!(
+        out,
+        "{:<16} {:>10} {:>10} {:>14} {:>14}",
+        "group", "ticks", "overruns", "jitter(max)", "duration(max)"
+    );
+    for g in t.metrics["groups"].as_array().cloned().unwrap_or_default() {
+        let _ = writeln!(
+            out,
+            "{:<16} {:>10} {:>10} {:>14} {:>14}",
+            g["group"].as_str().unwrap_or(""),
+            g["ticks"],
+            g["overruns"],
+            g["jitter"]["max"].as_str().unwrap_or("-"),
+            g["duration"]["max"].as_str().unwrap_or("-"),
+        );
+    }
+    let drivers = t.metrics["drivers"].as_array().cloned().unwrap_or_default();
+    if !drivers.is_empty() {
+        let _ = writeln!(
+            out,
+            "\n{:<16} {:<11} {:>10} {:>10} {:>10}",
+            "device", "link", "reconnects", "dropped", "invalid"
+        );
+        for d in drivers {
+            let _ = writeln!(
+                out,
+                "{:<16} {:<11} {:>10} {:>10} {:>10}",
+                d["device"].as_str().unwrap_or(""),
+                d["link"].as_str().unwrap_or("?"),
+                d["reconnects"],
+                d["dropped_samples"],
+                d["invalid_samples"],
+            );
+        }
+    }
+    if !t.outputs.is_empty() {
+        let _ = writeln!(
+            out,
+            "\n{:<32} {:>12} {:<12} {:<8}",
+            "output", "applied", "level", "tripped"
+        );
+        for o in t.outputs.values() {
+            let _ = writeln!(
+                out,
+                "{:<32} {:>12} {:<12} {:<8}",
+                o["path"].as_str().unwrap_or(""),
+                o["applied"].to_string(),
+                o["active_level"].as_str().unwrap_or("none"),
+                o["tripped"],
+            );
+        }
+    }
+    let manual = t.status["manual"].as_array().map_or(0, Vec::len);
+    let api = &t.metrics["api"];
+    let _ = writeln!(
+        out,
+        "\nmanual levels {manual} · api connections {} subscriptions {} dropped {}",
+        api["connections"], api["subscriptions"], api["dropped"]
+    );
+    out
+}
+
+async fn top_view(socket: &Path, header: &str, json_mode: bool) -> Result<u8, Failure> {
+    use futures_util::SinkExt;
+    use tokio_tungstenite::tungstenite::Message;
+
+    let mut ws = open_ws(socket).await?;
+    let topics: &[&str] = if json_mode {
+        &["metrics"]
+    } else {
+        &["metrics", "status", "outputs"]
+    };
+    for topic in topics {
+        let mut sub = json!({"op": "subscribe", "id": topic, "topic": topic});
+        if *topic == "outputs" {
+            sub["min_interval"] = json!("1s");
+        }
+        ws.send(Message::Text(sub.to_string().into()))
+            .await
+            .map_err(|e| lost(e.to_string()))?;
+    }
+    let mut subs: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+    let mut state = TopState::default();
+    let mut closing = None;
+    loop {
+        let v = next_message(&mut ws, &mut closing).await?;
+        let sub = v["sub"].as_str().unwrap_or("").to_owned();
+        match v["op"].as_str() {
+            Some("subscribed") => {
+                subs.insert(sub, v["topic"].as_str().unwrap_or("").to_owned());
+                continue;
+            }
+            Some("data" | "resync") => {}
+            _ => continue,
+        }
+        let items = v["items"].as_array().cloned().unwrap_or_default();
+        match subs.get(&sub).map(String::as_str) {
+            Some("metrics") => {
+                state.metrics = items.into_iter().next().unwrap_or(Value::Null);
+                if json_mode {
+                    print_json(&state.metrics);
+                    return Ok(0);
+                }
+            }
+            Some("status") => state.status = items.into_iter().next().unwrap_or(Value::Null),
+            Some("outputs") => {
+                if v["op"] == "resync" {
+                    state.outputs.clear();
+                }
+                for o in items {
+                    let path = o["path"].as_str().unwrap_or("").to_owned();
+                    state.outputs.insert(path, o);
+                }
+            }
+            _ => continue,
+        }
+        if state.metrics.is_null() {
+            continue;
+        }
+        print!("\x1B[2J\x1B[H{}", render_top(header, &state));
+        std::io::stdout().flush().ok();
     }
 }
 

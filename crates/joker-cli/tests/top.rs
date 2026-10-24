@@ -1,5 +1,6 @@
-//! `jk top` (ref/09 §5.2, `x-joker-cli: [jk top]`): a real `jokerd`
-//! subprocess and a real `jk` subprocess reading `GET /v1/metrics`.
+//! `jk top` (ref/09 §9.1): a real `jokerd` subprocess and a real `jk`
+//! subprocess subscribed to `metrics`, `status` and `outputs` over
+//! `GET /v1/ws`.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -22,6 +23,8 @@ fn top_prints_the_group_row() {
     );
     assert!(buf.contains("default"), "{buf:?}");
     assert!(buf.contains("jitter(max)"), "{buf:?}");
+    assert!(buf.contains("pi.act_led"), "{buf:?}");
+    assert!(buf.contains("api connections"), "{buf:?}");
 }
 
 #[test]
