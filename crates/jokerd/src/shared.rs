@@ -23,8 +23,9 @@ pub const DECISION_CAPACITY: usize = 16_384;
 pub const RESULT_CAPACITY: usize = 4_096;
 /// Capacity of each group's reset-request queue (`jk reset`, docs/16 E7).
 pub const RESET_CAPACITY: usize = 16;
-/// Capacity of each group's trip-injection queue (persisted-trip restore
-/// at boot, docs/01 §7).
+/// Capacity of each group's trip-injection queue (trips requested while
+/// the generation runs; the persisted trips are restored before the first
+/// tick through `RunOptions::initial_trips`, with no capacity, ADR 0061).
 pub const TRIP_CAPACITY: usize = 16;
 /// State exports in flight (apps per request).
 pub const EXPORT_CAPACITY: usize = 256;
@@ -44,11 +45,11 @@ pub struct ResetRequest {
     pub ticket: u32,
 }
 
-/// A request to put an output in trip, with no reply (persisted-trip
-/// restore at boot, docs/01 §7): pushed once by [`crate::api::Node`] into
-/// the owning group's own queue, consumed by that group's next tick, the
-/// same reasoning as [`ResetRequest`] — the cycle thread is the only one
-/// that may call `Outputs::trip`.
+/// A request to put an output in trip while the generation runs, with no
+/// reply: pushed into the owning group's own queue and consumed by that
+/// group's next tick, the same reasoning as [`ResetRequest`] — the cycle
+/// thread is the only one that may call `Outputs::trip`. The persisted
+/// trips do not go through it (`RunOptions::initial_trips`, ADR 0061).
 #[derive(Debug, Clone, Copy)]
 pub struct TripRequest {
     /// The output to trip.
@@ -243,8 +244,7 @@ pub struct Shared {
     pub inboxes: Box<[ArrayQueue<Proposal>]>,
     /// One reset-request queue per group, by group index (`jk reset`).
     pub resets: Box<[ArrayQueue<ResetRequest>]>,
-    /// One trip-injection queue per group, by group index (persisted-trip
-    /// restore at boot).
+    /// One trip-injection queue per group, by group index ([`TripRequest`]).
     pub trips: Box<[ArrayQueue<TripRequest>]>,
     /// Resolutions of reset requests, by ticket.
     pub reset_results: ArrayQueue<ResetOutcome>,

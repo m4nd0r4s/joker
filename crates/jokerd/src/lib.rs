@@ -18,6 +18,7 @@ pub mod load;
 pub mod manual;
 pub mod native;
 pub mod pacer;
+pub mod persistent;
 pub mod plan;
 pub mod real_devices;
 pub mod replay;

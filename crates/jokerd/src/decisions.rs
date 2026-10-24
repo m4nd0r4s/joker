@@ -24,6 +24,7 @@ use serde_json::{Map, Value, json};
 
 use crate::plan::Plan;
 use crate::shared::Shared;
+use crate::trips::TripTable;
 
 /// How often batch records are synced.
 pub const BATCH_SYNC: Duration = Duration::from_secs(1);
@@ -213,6 +214,58 @@ pub fn record_json(plan: &Plan, generation: u64, r: &DecisionRecord) -> Map<Stri
     m
 }
 
+/// Persists each transition of an output into or out of trip to
+/// `state/trips` as the services observe it (docs/01 §7, ADR 0061): the
+/// cycle thread publishes when each output became tripped, and this
+/// compares it with what it saw last, so a trip is persisted whether or
+/// not anyone reads the API.
+#[derive(Debug)]
+pub struct TripWatch {
+    table: Arc<TripTable>,
+    paths: Vec<String>,
+    tripped: Vec<bool>,
+}
+
+impl TripWatch {
+    /// Watches the outputs of `shared` (in [`Shared::output_ids`] order).
+    pub fn new(plan: &Plan, shared: &Shared, table: Arc<TripTable>) -> Self {
+        let paths = shared
+            .output_ids
+            .iter()
+            .map(|id| plan.path(*id).unwrap_or("").to_owned())
+            .collect();
+        Self {
+            table,
+            paths,
+            tripped: vec![false; shared.output_ids.len()],
+        }
+    }
+
+    /// Persists every transition since the last call; one that fails to
+    /// persist is reported and retried on the next call.
+    pub fn observe(&mut self, shared: &Shared, utc_origin_ns: i64) {
+        let cells = shared.trip_since.iter();
+        for ((cell, path), seen) in cells.zip(&self.paths).zip(self.tripped.iter_mut()) {
+            let since = cell.load(Ordering::Relaxed);
+            let now = since != 0;
+            if now == *seen || path.is_empty() {
+                continue;
+            }
+            let result = if now {
+                let since_utc_ns =
+                    utc_origin_ns.saturating_add(i64::try_from(since).unwrap_or(i64::MAX));
+                self.table.set_tripped(path, since_utc_ns)
+            } else {
+                self.table.clear_tripped(path)
+            };
+            match result {
+                Ok(()) => *seen = now,
+                Err(e) => eprintln!("jokerd: cannot persist the trip of {path}: {e}"),
+            }
+        }
+    }
+}
+
 /// The thread that drains the decision records of one generation.
 #[derive(Debug)]
 pub struct DecisionWriter {
@@ -221,22 +274,28 @@ pub struct DecisionWriter {
 }
 
 impl DecisionWriter {
-    /// Starts draining `shared.decisions` into `log`.
+    /// Starts draining `shared.decisions` into `log` and, with `trips`,
+    /// persisting the trip transitions of `shared` ([`TripWatch`]).
     pub fn spawn(
         plan: Arc<Plan>,
         shared: Arc<Shared>,
         log: SharedLog,
         generation: u64,
         utc_origin_ns: i64,
+        trips: Option<Arc<TripTable>>,
     ) -> Self {
         let stop = Arc::new(AtomicBool::new(false));
         let flag = Arc::clone(&stop);
+        let mut watch = trips.map(|t| TripWatch::new(&plan, &shared, t));
         let handle = std::thread::Builder::new()
             .name("svc/decisions".into())
             .spawn(move || {
                 let mut reported_drops = 0;
                 loop {
                     let stopping = flag.load(Ordering::Acquire);
+                    if let Some(w) = watch.as_mut() {
+                        w.observe(&shared, utc_origin_ns);
+                    }
                     drain(
                         &plan,
                         &shared,

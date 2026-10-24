@@ -322,11 +322,43 @@ impl Drop for Fixture {
     }
 }
 
+/// The decision-log entries of `dir` from line `from` on.
+fn decisions_from(dir: &Path, from: usize) -> Vec<Value> {
+    DecisionLog::read_all(&dir.join("decisions.jsonl"))
+        .unwrap()
+        .into_iter()
+        .skip(from)
+        .collect()
+}
+
+/// The first `output` record of `output` among `entries`.
+fn first_output_record<'a>(entries: &'a [Value], output: &str) -> &'a Value {
+    entries
+        .iter()
+        .find(|e| e["record"] == "output" && e["output"] == output)
+        .unwrap_or_else(|| panic!("no output record of {output} in {entries:?}"))
+}
+
+/// A daemon booted by [`boot_at`].
+struct Halt {
+    stop: tokio::sync::oneshot::Sender<()>,
+    controller: jokerd::daemon::SharedController,
+}
+
+impl Halt {
+    /// Stops the API and the running generation, as the end of the
+    /// process would.
+    fn halt(self) {
+        let _ = self.stop.send(());
+        jokerd::daemon::lock_controller(&self.controller).shutdown();
+    }
+}
+
 /// Boots a daemon over `dir` the way `jokerd::daemon::run` does (`boot()`
 /// reactivates a confirmed generation if one is stored, else `manifest`
 /// is proposed and activated fresh) — used to simulate a process restart
 /// over the same state directory (A14).
-async fn boot_at(dir: &Path, manifest: &str) -> (Http, tokio::sync::oneshot::Sender<()>) {
+async fn boot_at(dir: &Path, manifest: &str) -> (Http, Halt) {
     let clock = Monotonic::start();
     let log = Arc::new(Mutex::new(
         DecisionLog::open(&dir.join("decisions.jsonl")).unwrap(),
@@ -350,7 +382,7 @@ async fn boot_at(dir: &Path, manifest: &str) -> (Http, tokio::sync::oneshot::Sen
         c.activate(g.number, None, None).unwrap();
     }
     let controller = Arc::new(Mutex::new(c));
-    let node = Node::new(controller, clock, 0, dir).unwrap();
+    let node = Node::new(Arc::clone(&controller), clock, 0, dir).unwrap();
     let socket = dir.join("api.sock");
     let _ = std::fs::remove_file(&socket);
     let (tx, rx) = tokio::sync::oneshot::channel::<()>();
@@ -369,7 +401,13 @@ async fn boot_at(dir: &Path, manifest: &str) -> (Http, tokio::sync::oneshot::Sen
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
     tokio::time::sleep(Duration::from_millis(200)).await;
-    (Http { socket }, tx)
+    (
+        Http { socket },
+        Halt {
+            stop: tx,
+            controller,
+        },
+    )
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -961,11 +999,22 @@ async fn a_manual_write_survives_a_jokerd_restart_within_its_ttl() {
         .await;
     assert_eq!(write.status, 200, "{}", write.json());
     assert_eq!(write.json()["outcome"]["outcome"], "accepted");
-    let _ = stop.send(());
+    stop.halt();
 
-    // A new daemon process over the same state directory: the manual
-    // level and its real arbiter occupancy must both come back (A14).
+    let before = decisions_from(dir.path(), 0).len();
+
     let (http2, stop2) = boot_at(dir.path(), &manifest).await;
+    let after = decisions_from(dir.path(), before);
+    let first = first_output_record(&after, "pi.act_led");
+    assert_eq!(first["tick"], 0, "{first}");
+    assert_eq!(first["level"], "manual:4", "{first}");
+    assert!(
+        after.iter().any(|e| e["record"] == "manual_restored"
+            && e["output"] == "pi.act_led"
+            && e["level"] == "manual:4"
+            && e["synced"] == false),
+        "no manual_restored record in {after:?}"
+    );
     let out = http2.send("GET", "/v1/outputs/pi.act_led", &[], None).await;
     assert_eq!(out.json()["active_level"], "manual:4", "{}", out.json());
     assert_eq!(out.json()["applied"], true);
@@ -976,7 +1025,7 @@ async fn a_manual_write_survives_a_jokerd_restart_within_its_ttl() {
         "{}",
         list.json()
     );
-    let _ = stop2.send(());
+    stop2.halt();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -995,9 +1044,6 @@ async fn a_trip_survives_a_jokerd_restart() {
         .await;
     assert_eq!(write.status, 200, "{}", write.json());
     assert_eq!(write.json()["outcome"]["outcome"], "tripped");
-    // Release the out-of-range write: the manual level (A14) no longer
-    // has a cause that would re-trip the output on its own, isolating
-    // this test to the trip's own persistence, not A14's.
     let released = http
         .send(
             "POST",
@@ -1014,12 +1060,15 @@ async fn a_trip_survives_a_jokerd_restart() {
         "{}",
         still_tripped.json()
     );
-    let _ = stop.send(());
+    stop.halt();
 
-    // A new daemon process over the same state directory: the trip must
-    // come back, both in the API's own bookkeeping and in the real
-    // arbiter (docs/01 §7).
+    let before = decisions_from(dir.path(), 0).len();
+
     let (http2, stop2) = boot_at(dir.path(), &manifest).await;
+    let after = decisions_from(dir.path(), before);
+    let first = first_output_record(&after, "pi.p_set");
+    assert_eq!(first["tick"], 0, "{first}");
+    assert_eq!(first["cause"]["kind"], "trip", "{first}");
     let out = http2.send("GET", "/v1/outputs/pi.p_set", &[], None).await;
     assert_eq!(out.json()["tripped"], true, "{}", out.json());
     let trips = http2.send("GET", "/v1/trips", &[], None).await;
@@ -1029,7 +1078,36 @@ async fn a_trip_survives_a_jokerd_restart() {
         "{}",
         trips.json()
     );
-    let _ = stop2.send(());
+    stop2.halt();
+}
+
+/// A trip reaches `state/trips` when it happens, not when someone reads
+/// the API (docs/01 §7, ADR 0061): nothing here calls a GET, and the
+/// write does not wait for its tick.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_trip_is_persisted_on_its_transition_without_any_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let (http, stop) = boot_at(dir.path(), &effective_with_trippable_output()).await;
+    let write = http
+        .send(
+            "POST",
+            "/v1/outputs/pi.p_set/manual",
+            &[],
+            Some(&json!({"value": 150, "ttl": "30s", "reason": "force a trip", "wait": false})),
+        )
+        .await;
+    assert_eq!(write.status, 202, "{}", write.json());
+    let path = dir.path().join("state").join("trips");
+    let mut persisted = false;
+    for _ in 0..100 {
+        if std::fs::read_to_string(&path).is_ok_and(|t| t.contains("pi.p_set")) {
+            persisted = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    stop.halt();
+    assert!(persisted, "state/trips never recorded the trip");
 }
 
 /// A dead-`jokerd`-and-restart cycle bumps the startup counter
@@ -1044,13 +1122,13 @@ async fn the_boot_counter_persists_and_increments_across_restarts() {
     let first = http.send("GET", "/v1/info", &[], None).await;
     let first_count = first.json()["runtime"]["boot_count"].as_u64().unwrap();
     assert!(first_count >= 1, "{}", first.json());
-    let _ = stop.send(());
+    stop.halt();
 
     let (http2, stop2) = boot_at(dir.path(), &manifest).await;
     let second = http2.send("GET", "/v1/info", &[], None).await;
     let second_count = second.json()["runtime"]["boot_count"].as_u64().unwrap();
     assert_eq!(second_count, first_count + 1, "{}", second.json());
-    let _ = stop2.send(());
+    stop2.halt();
 }
 
 /// A trips file that cannot be parsed keeps the daemon from starting: a
