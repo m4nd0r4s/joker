@@ -9,7 +9,7 @@ use joker_core::ClockQuality;
 use joker_core::image::{Intent, NO_TASK, Proposal, Source};
 use serde_json::{Map, json};
 
-use crate::decisions::{SharedLog, lock};
+use crate::decisions::{SharedLog, StateWriteFailure, lock};
 use crate::manual::{ManualTable, Restored, RestoredLevel};
 use crate::plan::Plan;
 use crate::runner::Restore;
@@ -56,21 +56,31 @@ impl Persistent {
         Arc::clone(&self.manual)
     }
 
-    /// What the next generation of `plan` restores before its first tick,
-    /// at monotonic `now_mono_ns`: every persisted trip of an output of
-    /// the plan and, for the first generation of the daemon only, every
+    /// What generation `generation` of `plan` restores before its first
+    /// tick, at monotonic `now_mono_ns`: every persisted trip of an output
+    /// of the plan and, for the first generation of the daemon only, every
     /// manual level held (a later generation starts without manual
     /// levels, and the table is cleared; a failure to persist that is
-    /// reported, not fatal to the switch). Levels and trips of outputs the
-    /// plan does not have stay persisted but are not restored.
-    pub fn restore_for(&mut self, plan: &Plan, now_mono_ns: u64) -> Restore {
-        let trips = self
+    /// recorded as `state_write_failed`, not fatal to the switch). A
+    /// persisted trip of an output the plan does not declare stays
+    /// persisted, is not restored, and is recorded as `trip_kept` (ADR
+    /// 0070); manual levels of such outputs are not restored.
+    pub fn restore_for(
+        &mut self,
+        plan: &Plan,
+        now_mono_ns: u64,
+        log: &SharedLog,
+        generation: u64,
+    ) -> Restore {
+        let (declared, kept): (Vec<String>, Vec<String>) = self
             .trips
             .paths()
-            .iter()
-            .filter(|path| plan.output(path).is_some())
-            .filter_map(|path| plan.id(path))
-            .collect();
+            .into_iter()
+            .partition(|path| plan.output(path).is_some());
+        for path in &kept {
+            self.record_kept(log, generation, path);
+        }
+        let trips = declared.iter().filter_map(|path| plan.id(path)).collect();
         let manual = if self.first {
             self.manual
                 .all(now_mono_ns)
@@ -96,11 +106,34 @@ impl Persistent {
                 .collect()
         } else {
             if let Err(e) = self.manual.clear(now_mono_ns) {
-                eprintln!("jokerd: cannot persist the manual levels: {e}");
+                StateWriteFailure {
+                    generation: Some(generation),
+                    file: "state/manual",
+                    output: None,
+                    op: "clear",
+                }
+                .report(log, &e);
             }
             Vec::new()
         };
         Restore { trips, manual }
+    }
+
+    fn record_kept(&self, log: &SharedLog, generation: u64, path: &str) {
+        let mut m = Map::new();
+        m.insert("gen".into(), json!(generation));
+        m.insert("record".into(), json!("trip_kept"));
+        m.insert("output".into(), json!(path));
+        m.insert(
+            "since".into(),
+            self.trips
+                .since(path)
+                .map_or(serde_json::Value::Null, |ns| json!(timestamp(ns))),
+        );
+        m.insert("ts".into(), json!(timestamp(crate::wire::utc_now_ns())));
+        if let Err(e) = lock(log).append(m, true) {
+            eprintln!("jokerd: decision log: {e}");
+        }
     }
 
     /// Records that generation `generation` started with what

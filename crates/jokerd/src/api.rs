@@ -19,7 +19,7 @@ use serde_json::{Map, Value, json};
 use crate::actions::Rejected;
 use crate::control::{ActionResult, ControlError, Invoked};
 use crate::daemon::{SharedController, lock_controller};
-use crate::decisions::{DecisionLog, SharedLog, lock};
+use crate::decisions::{DecisionLog, SharedLog, StateWriteFailure, lock};
 use crate::generations::{Activation, GenState, Generation, Origin};
 use crate::manual::{ManualTable, Occupant, TicketBook};
 use crate::pacer::Monotonic;
@@ -66,13 +66,6 @@ fn problem(e: ControlError) -> Problem {
         .map(|(code, message)| joker_api::problem::ProblemError { code, message })
         .collect();
     p
-}
-
-/// Reports a failure to persist a state file on standard error: the
-/// request that triggered it already took effect in the arbiter.
-fn persisted<T>(what: &str, r: std::io::Result<T>) -> Option<T> {
-    r.map_err(|e| eprintln!("jokerd: cannot persist {what}: {e}"))
-        .ok()
 }
 
 fn bad(code: &str, detail: impl Into<String>) -> Problem {
@@ -161,6 +154,13 @@ impl Node {
             log,
             quality,
         })
+    }
+
+    /// Records a failure to write a state file in the decision log
+    /// (`state_write_failed`, ADR 0070): the request that triggered it
+    /// already took effect in the arbiter.
+    fn persisted<T>(&self, failure: StateWriteFailure<'_>, r: std::io::Result<T>) -> Option<T> {
+        r.map_err(|e| failure.report(&self.log, &e)).ok()
     }
 
     /// Records a trip reset requested through the API, with who asked and
@@ -526,7 +526,15 @@ impl Node {
         {
             Some(outcome) => Ok(match outcome.kind {
                 crate::shared::ResetKind::Cleared => {
-                    persisted("a trip", self.trips.clear_tripped(path));
+                    self.persisted(
+                        StateWriteFailure {
+                            generation: Some(v.number),
+                            file: "state/trips",
+                            output: Some(path),
+                            op: "reset",
+                        },
+                        self.trips.clear_tripped(path),
+                    );
                     "cleared"
                 }
                 crate::shared::ResetKind::Retripped => "retripped",
@@ -534,6 +542,36 @@ impl Node {
             }),
             None => Ok("queued"),
         }
+    }
+
+    /// The persisted trips of outputs the running generation does not
+    /// declare, matching `sel` (all with an empty `sel`), with when each
+    /// tripped (ADR 0070).
+    fn kept_trips(&self, v: &View, sel: &[String]) -> Vec<(String, i64)> {
+        self.trips
+            .paths()
+            .into_iter()
+            .filter(|p| v.plan.output(p).is_none())
+            .filter(|p| sel.is_empty() || sel.iter().any(|s| wire::matches(s, p)))
+            .filter_map(|p| self.trips.since(&p).map(|since| (p, since)))
+            .collect()
+    }
+
+    /// Resets a persisted trip of an output the running generation does
+    /// not declare: there is no group to go through, so it only leaves
+    /// `state/trips` (ADR 0070).
+    fn reset_kept(&self, v: &View, path: &str) -> Result<&'static str, Problem> {
+        self.trips.clear_tripped(path).map_err(|e| {
+            StateWriteFailure {
+                generation: Some(v.number),
+                file: "state/trips",
+                output: Some(path),
+                op: "reset",
+            }
+            .report(&self.log, &e);
+            Problem::new("J-E1000", 500, format!("cannot persist state/trips: {e}"))
+        })?;
+        Ok("cleared")
     }
 
     fn manual_level(text: Option<&str>) -> Result<u8, Problem> {
@@ -679,11 +717,6 @@ impl Backend for Node {
             json!({
                 "version": env!("CARGO_PKG_VERSION"),
                 "boot_id": self.boot_id,
-                // Not in the OpenAPI schema yet (ref/09): docs/01 §20's
-                // "startup counter" for the dead-jokerd failure mode,
-                // persisted in state/boot_count. The schema has no
-                // `additionalProperties: false` on this object, so this
-                // is additive, not a contract break.
                 "boot_count": self.boot_count,
                 "started_at": timestamp(self.started_utc_ns),
             }),
@@ -1045,7 +1078,15 @@ impl Backend for Node {
             },
             now,
         );
-        persisted("a manual level", stored);
+        self.persisted(
+            StateWriteFailure {
+                generation: Some(v.number),
+                file: "state/manual",
+                output: Some(&o.path),
+                op: "set",
+            },
+            stored,
+        );
         let id = joker_api::server::ulid(u128::try_from(since).unwrap_or(0));
         let mut ticket = json!({
             "id": id,
@@ -1140,7 +1181,15 @@ impl Backend for Node {
             }],
             &o.group,
         )?;
-        persisted("a manual level", self.manual.remove(&o.path, level, now));
+        self.persisted(
+            StateWriteFailure {
+                generation: Some(v.number),
+                file: "state/manual",
+                output: Some(&o.path),
+                op: "remove",
+            },
+            self.manual.remove(&o.path, level, now),
+        );
         let id = joker_api::server::ulid(u128::try_from(utc_now_ns()).unwrap_or(0));
         let mut ticket = json!({
             "id": id,
@@ -1172,11 +1221,19 @@ impl Backend for Node {
             return Err(bad("J-E1106", "a reset needs a reason").with("pointer", json!("/reason")));
         }
         let v = self.need_view()?;
-        let o = v
-            .plan
-            .output(path)
-            .ok_or_else(|| Problem::new("J-E1100", 404, format!("`{path}` is not an output")))?
-            .clone();
+        let Some(o) = v.plan.output(path).cloned() else {
+            if !self.trips.is_tripped(path) {
+                return Err(Problem::new(
+                    "J-E1100",
+                    404,
+                    format!("`{path}` is not an output"),
+                ));
+            }
+            let result = self.reset_kept(&v, path);
+            let item = self.record_reset(&v, path, &user(who), &req.reason, &result);
+            result?;
+            return Ok(Reply::ok(item));
+        };
         let result = self.reset_one(&v, &o.path, &o.group, req.wait);
         let item = self.record_reset(&v, &o.path, &user(who), &req.reason, &result);
         result?;
@@ -1205,6 +1262,15 @@ impl Backend for Node {
                     "cause": {"kind": "range"},
                 }))
             })
+            .chain(self.kept_trips(&v, &sel).into_iter().map(|(path, since)| {
+                json!({
+                    "output": path,
+                    "since": timestamp(since),
+                    "scope": "output",
+                    "cause": {"kind": "range"},
+                    "declared": false,
+                })
+            }))
             .collect();
         Ok(Reply::ok(json!({"items": items})))
     }
@@ -1226,6 +1292,10 @@ impl Backend for Node {
                 let result = self.reset_one(&v, &o.path, &o.group, true);
                 self.record_reset(&v, &o.path, &user(who), &req.reason, &result)
             })
+            .chain(self.kept_trips(&v, &req.sel).into_iter().map(|(path, _)| {
+                let result = self.reset_kept(&v, &path);
+                self.record_reset(&v, &path, &user(who), &req.reason, &result)
+            }))
             .collect();
         Ok(Reply::ok(json!({"items": items})))
     }
