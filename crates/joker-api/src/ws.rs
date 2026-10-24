@@ -15,19 +15,27 @@
 //! (ADR 0063); the writer task gives up on a socket that does not drain, so
 //! the close never waits behind it.
 //!
-//! **Not built:** resumption after a reconnection (§6.7), the
-//! generation-swap `resolved` notice (§6.9), the node sampling budget (§6.6
-//! point 5), the per-group minimum of `outputs`, and the topics without a
-//! data source in this build (refused with `J-E1902`).
+//! Every subscription reserves its sampling rate against the node budget,
+//! and an `outputs` subscription samples no faster than its fastest group
+//! (§6.5, §6.6 point 5). A `signals` or `outputs` subscription whose
+//! selectors resolve to another list sends `resolved` before the new paths,
+//! and the role of a connection is recomputed when the generation changes
+//! (§6.9). When a connection ends its session is parked with a replay
+//! buffer per subscription, and `resume` (or `Last-Event-ID` on SSE) takes
+//! it over within the resume window (§6.7, ADR 0074).
+//!
+//! **Not built:** the topics without a data source in this build (refused
+//! with `J-E1902`).
 
-use std::collections::{BTreeMap, VecDeque};
-use std::sync::Arc;
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use axum::Extension;
 use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{ConnectInfo, RawQuery, State};
+use axum::http::HeaderMap;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use futures_util::stream::SplitSink;
@@ -58,6 +66,18 @@ pub struct Limits {
     pub heartbeat_miss: Duration,
     /// Subscriptions per connection (64).
     pub max_subscriptions: usize,
+    /// The sampling budget of the node, in samples per second (1,000,000).
+    pub sampling_budget: u64,
+    /// How long a dropped session stays resumable (60 s).
+    pub resume_window: Duration,
+    /// Sessions the node keeps for resumption (16, ADR 0074).
+    pub parked_sessions: usize,
+    /// Messages kept per subscription for a replay (256).
+    pub replay_messages: usize,
+    /// Bytes of replay kept per session (1 MiB).
+    pub replay_bytes: usize,
+    /// How often a connection looks for a generation swap (1 s).
+    pub generation_check: Duration,
 }
 
 impl Default for Limits {
@@ -69,6 +89,12 @@ impl Default for Limits {
             heartbeat: Duration::from_secs(15),
             heartbeat_miss: Duration::from_secs(45),
             max_subscriptions: 64,
+            sampling_budget: 1_000_000,
+            resume_window: Duration::from_secs(60),
+            parked_sessions: 16,
+            replay_messages: 256,
+            replay_bytes: 1 << 20,
+            generation_check: Duration::from_secs(1),
         }
     }
 }
@@ -78,28 +104,112 @@ impl Default for Limits {
 pub struct ApiStats {
     connections: AtomicU64,
     subscriptions: AtomicU64,
+    sampled: AtomicU64,
     dropped: AtomicU64,
 }
 
 impl ApiStats {
-    /// The `api` object of `Metrics`: open connections, live subscriptions
-    /// and the items dropped from event rings (`joker.api.dropped`).
+    /// The `api` object of `Metrics`: open connections, live
+    /// subscriptions, the samples per second they reserve and the items
+    /// dropped from event rings (`joker.api.dropped`).
     pub fn json(&self) -> Value {
         json!({
             "connections": self.connections.load(Ordering::Relaxed),
             "subscriptions": self.subscriptions.load(Ordering::Relaxed),
+            "sampled_per_s": self.sampled.load(Ordering::Relaxed),
             "dropped": self.dropped.load(Ordering::Relaxed),
         })
     }
+
+    /// Reserves `rate` samples/s if it fits in `budget`; otherwise the
+    /// rate that still fits.
+    fn reserve(&self, rate: u64, budget: u64) -> Result<(), u64> {
+        self.sampled
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |used| {
+                used.checked_add(rate).filter(|n| *n <= budget)
+            })
+            .map(|_| ())
+            .map_err(|used| budget.saturating_sub(used))
+    }
+
+    fn take(&self, rate: u64) {
+        self.sampled.fetch_add(rate, Ordering::AcqRel);
+    }
+
+    fn release(&self, rate: u64) {
+        let _ = self
+            .sampled
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |used| {
+                Some(used.saturating_sub(rate))
+            });
+    }
+}
+
+/// A session kept after its connection ended, for resumption (§6.7).
+struct Parked {
+    id: String,
+    who: Principal,
+    subs: BTreeMap<String, Subscription>,
+    at: Instant,
 }
 
 /// What the subscription engine needs besides the backend.
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct Engine {
     /// Its limits.
     pub limits: Limits,
     /// Its counters.
     pub stats: Arc<ApiStats>,
+    parked: Arc<Mutex<VecDeque<Parked>>>,
+}
+
+impl std::fmt::Debug for Engine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Engine")
+            .field("limits", &self.limits)
+            .field("stats", &self.stats)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Engine {
+    /// An engine with `limits` and fresh counters.
+    pub fn new(limits: Limits) -> Self {
+        Self {
+            limits,
+            ..Self::default()
+        }
+    }
+
+    fn store(&self) -> MutexGuard<'_, VecDeque<Parked>> {
+        let mut store = match self.parked.lock() {
+            Ok(g) => g,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        let window = self.limits.resume_window;
+        store.retain(|p| p.at.elapsed() < window);
+        store
+    }
+
+    /// Keeps `parked` for the resume window, dropping the oldest session
+    /// beyond the limit (ADR 0074).
+    fn park(&self, parked: Parked) {
+        if self.limits.parked_sessions == 0 || parked.subs.is_empty() {
+            return;
+        }
+        let mut store = self.store();
+        while store.len() >= self.limits.parked_sessions {
+            store.pop_front();
+        }
+        store.push_back(parked);
+    }
+
+    /// Takes the parked session `id` of `who`, if it is still there.
+    fn unpark(&self, id: &str, who: &Principal) -> Option<Parked> {
+        let mut store = self.store();
+        let i = store.iter().position(|p| p.id == id && p.who == *who)?;
+        store.remove(i)
+    }
 }
 
 struct ConnectionGuard(Arc<ApiStats>);
@@ -200,9 +310,9 @@ fn format_interval(d: Duration) -> String {
     joker_units::Duration::from_nanos(u64::try_from(d.as_nanos()).unwrap_or(u64::MAX)).to_string()
 }
 
-fn parse_interval(topic: Topic, text: Option<&str>) -> Result<Duration, Problem> {
+fn parse_interval(topic: Topic, text: Option<&str>) -> Result<Option<Duration>, Problem> {
     let Some(text) = text else {
-        return Ok(topic.default_interval());
+        return Ok(None);
     };
     let d = joker_units::Duration::parse(text)
         .map_err(|e| Problem::new("J-E1012", 400, format!("min_interval: {e}")))?;
@@ -219,13 +329,29 @@ fn parse_interval(topic: Topic, text: Option<&str>) -> Result<Duration, Problem>
             ),
         ));
     }
-    Ok(d)
+    Ok(Some(d))
+}
+
+/// The samples per second of `items` read every `interval`, rounded up
+/// (ADR 0074).
+fn rate_of(items: usize, interval: Duration) -> u64 {
+    let items = u128::try_from(items.max(1)).unwrap_or(u128::MAX);
+    let nanos = interval.as_nanos().max(1);
+    u64::try_from(items.saturating_mul(1_000_000_000).div_ceil(nanos)).unwrap_or(u64::MAX)
+}
+
+/// The `GenerationRef` of a `Joker-Generation` header value.
+fn generation_ref(header: Option<&str>) -> Value {
+    header
+        .and_then(|h| h.split_once(' '))
+        .and_then(|(n, hash)| Some(json!({"gen": n.parse::<u64>().ok()?, "hash": hash})))
+        .unwrap_or(Value::Null)
 }
 
 /// A message on its way to the client.
 enum Out {
     Text {
-        text: String,
+        text: Arc<str>,
         release: Option<Arc<AtomicBool>>,
     },
     Ping,
@@ -261,10 +387,20 @@ impl Outbox {
     /// goes alone into an empty queue. `release` is set until the message
     /// leaves the queue.
     fn push(&mut self, value: &Value, release: Option<&Arc<AtomicBool>>) -> bool {
-        let text = value.to_string();
+        self.push_text(Arc::from(value.to_string()), release, false)
+    }
+
+    /// Queues `text`; with `force`, even when it does not fit (a replay,
+    /// bounded by the replay buffer).
+    fn push_text(
+        &mut self,
+        text: Arc<str>,
+        release: Option<&Arc<AtomicBool>>,
+        force: bool,
+    ) -> bool {
         let n = text.len();
         let held = self.bytes.load(Ordering::Acquire);
-        if held > 0 && held.saturating_add(n) > self.capacity {
+        if !force && held > 0 && held.saturating_add(n) > self.capacity {
             self.refused = self.refused.max(n);
             return false;
         }
@@ -324,12 +460,47 @@ struct Subscription {
     buffer: usize,
     lost: u64,
     in_flight: Arc<AtomicBool>,
+    rate: u64,
+    paths: Option<BTreeSet<String>>,
+    replay: VecDeque<Replayed>,
+}
+
+/// A `data` or `resync` message kept for a replay (§6.7).
+struct Replayed {
+    seq: u64,
+    stamp: u64,
+    text: Arc<str>,
 }
 
 impl Subscription {
     fn busy(&self) -> bool {
         self.in_flight.load(Ordering::Acquire)
     }
+
+    fn replay_bytes(&self) -> usize {
+        self.replay.iter().map(|r| r.text.len()).sum()
+    }
+
+    /// Whether `paths` (of `items`) are the ones this subscription resolved.
+    fn same_paths(&self, items: &[Value]) -> bool {
+        let Some(paths) = &self.paths else {
+            return true;
+        };
+        items.len() == paths.len()
+            && items.iter().all(|i| {
+                i.get("path")
+                    .and_then(Value::as_str)
+                    .is_some_and(|p| paths.contains(p))
+            })
+    }
+}
+
+fn paths_of(items: &[Value]) -> BTreeSet<String> {
+    items
+        .iter()
+        .filter_map(|i| i.get("path").and_then(Value::as_str))
+        .map(str::to_owned)
+        .collect()
 }
 
 fn item_key(topic: Topic, item: &Value, index: usize) -> String {
@@ -406,19 +577,29 @@ pub(crate) fn with_api(mut metrics: Value, stats: &ApiStats) -> Value {
 struct Session {
     backend: Shared,
     engine: Engine,
+    who: Principal,
     role: &'static str,
     id: String,
     subs: BTreeMap<String, Subscription>,
     outbox: Outbox,
+    replay_bytes: usize,
+    stamp: u64,
+    generation: Option<String>,
+    checked: Instant,
 }
 
 impl Drop for Session {
     fn drop(&mut self) {
-        let n = u64::try_from(self.subs.len()).unwrap_or(u64::MAX);
-        self.engine
-            .stats
-            .subscriptions
-            .fetch_sub(n, Ordering::Relaxed);
+        for sub in self.subs.values() {
+            self.engine.release(sub);
+        }
+    }
+}
+
+impl Engine {
+    fn release(&self, sub: &Subscription) {
+        self.stats.subscriptions.fetch_sub(1, Ordering::Relaxed);
+        self.stats.release(sub.rate);
     }
 }
 
@@ -431,10 +612,17 @@ struct SubscribeOptions {
     buffer: Option<usize>,
 }
 
+/// What follows `resumed` for one subscription.
+enum Follow {
+    Replay(String, u64),
+    Gap(String, u64),
+}
+
 impl Session {
     fn new(
         backend: Shared,
         engine: &Engine,
+        who: Principal,
         role: &'static str,
     ) -> (Self, mpsc::UnboundedReceiver<Out>, Arc<AtomicUsize>) {
         let (outbox, rx, bytes) = Outbox::new(engine.limits.outbox_bytes);
@@ -442,14 +630,50 @@ impl Session {
             Self {
                 backend,
                 engine: engine.clone(),
+                who,
                 role,
                 id: new_id(),
                 subs: BTreeMap::new(),
                 outbox,
+                replay_bytes: 0,
+                stamp: 0,
+                generation: None,
+                checked: Instant::now(),
             },
             rx,
             bytes,
         )
+    }
+
+    /// The shortest period among the groups that own `items` (outputs),
+    /// and never less than 10 ms (ADR 0074).
+    async fn outputs_floor(&self, items: &[Value]) -> Duration {
+        let groups: BTreeSet<String> = items
+            .iter()
+            .filter_map(|i| i.get("group").and_then(Value::as_str))
+            .map(str::to_owned)
+            .collect();
+        let b = Arc::clone(&self.backend);
+        let status = tokio::task::spawn_blocking(move || b.status())
+            .await
+            .ok()
+            .and_then(Result::ok);
+        let shortest = status
+            .as_ref()
+            .and_then(|r| r.body.get("groups"))
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter(|g| {
+                g.get("name")
+                    .and_then(Value::as_str)
+                    .is_some_and(|n| groups.contains(n))
+            })
+            .filter_map(|g| g.get("period").and_then(Value::as_str))
+            .filter_map(|p| joker_units::Duration::parse(p).ok())
+            .map(|d| Duration::from_nanos(d.as_nanos()))
+            .min();
+        shortest.map_or(MINIMUM_INTERVAL, |d| d.max(MINIMUM_INTERVAL))
     }
 
     /// Accepts a subscription: queues `subscribed` and, with `initial`, its
@@ -479,7 +703,7 @@ impl Session {
                 ),
             ));
         }
-        let interval = parse_interval(topic, options.min_interval.as_deref())?;
+        let asked = parse_interval(topic, options.min_interval.as_deref())?;
         let every = match options.mode.as_deref() {
             None | Some("change") => false,
             Some("interval") => true,
@@ -491,21 +715,45 @@ impl Session {
                 ));
             }
         };
+        let items = read_topic(&self.backend, &self.engine, topic, &options.sel).await?;
+        let floor = if topic == Topic::Outputs {
+            self.outputs_floor(&items).await
+        } else {
+            topic.minimum_interval()
+        };
+        let interval = match asked {
+            Some(d) if d < floor => {
+                return Err(Problem::new(
+                    "J-E1905",
+                    400,
+                    format!(
+                        "min_interval of `{}` below {}, the period of the fastest group it reads",
+                        topic.name(),
+                        format_interval(floor)
+                    ),
+                ));
+            }
+            Some(d) => d,
+            None => topic.default_interval().max(floor),
+        };
+        let resolved = if topic.is_event() { 1 } else { items.len() };
+        let rate = rate_of(resolved, interval);
+        let budget = self.engine.limits.sampling_budget;
+        self.engine.stats.reserve(rate, budget).map_err(|fits| {
+            Problem::new(
+                "J-E1903",
+                400,
+                format!(
+                    "the sampling budget of the node is exhausted: this subscription needs {rate} samples/s and {fits} still fit (of {budget})"
+                ),
+            )
+        })?;
         self.engine
             .stats
             .subscriptions
             .fetch_add(1, Ordering::Relaxed);
-        let items = match read_topic(&self.backend, &self.engine, topic, &options.sel).await {
-            Ok(items) => items,
-            Err(p) => {
-                self.engine
-                    .stats
-                    .subscriptions
-                    .fetch_sub(1, Ordering::Relaxed);
-                return Err(p);
-            }
-        };
         let sub_id = new_id();
+        let paths = matches!(topic, Topic::Signals | Topic::Outputs).then(|| paths_of(&items));
         let mut sub = Subscription {
             topic,
             sel: options.sel,
@@ -520,6 +768,9 @@ impl Session {
             buffer: options.buffer.unwrap_or(DEFAULT_BUFFER).clamp(64, 4096),
             lost: 0,
             in_flight: Arc::new(AtomicBool::new(false)),
+            rate,
+            paths,
+            replay: VecDeque::new(),
         };
         if topic.is_event() {
             sub.last_id = items
@@ -543,15 +794,61 @@ impl Session {
             self.send_resync(&sub_id, &mut sub, items);
         }
         self.subs.insert(sub_id.clone(), sub);
+        self.trim_replay();
         Ok(sub_id)
     }
 
     fn unsubscribe(&mut self, sub: &str) {
-        if self.subs.remove(sub).is_some() {
-            self.engine
-                .stats
-                .subscriptions
-                .fetch_sub(1, Ordering::Relaxed);
+        if let Some(s) = self.subs.remove(sub) {
+            self.remove(&s);
+        }
+    }
+
+    fn remove(&mut self, sub: &Subscription) {
+        self.engine.release(sub);
+        self.replay_bytes = self.replay_bytes.saturating_sub(sub.replay_bytes());
+    }
+
+    /// Queues a `data` or `resync` message of `sub` with its next `seq`,
+    /// and keeps it for a replay.
+    fn emit(&mut self, sub: &mut Subscription, msg: &Value) -> bool {
+        let text: Arc<str> = Arc::from(msg.to_string());
+        if !self
+            .outbox
+            .push_text(Arc::clone(&text), Some(&sub.in_flight), false)
+        {
+            return false;
+        }
+        sub.seq += 1;
+        self.stamp += 1;
+        self.replay_bytes += text.len();
+        sub.replay.push_back(Replayed {
+            seq: sub.seq,
+            stamp: self.stamp,
+            text,
+        });
+        if sub.replay.len() > self.engine.limits.replay_messages
+            && let Some(r) = sub.replay.pop_front()
+        {
+            self.replay_bytes = self.replay_bytes.saturating_sub(r.text.len());
+        }
+        true
+    }
+
+    /// Drops the oldest kept messages of the session beyond its replay
+    /// bytes (ADR 0074).
+    fn trim_replay(&mut self) {
+        while self.replay_bytes > self.engine.limits.replay_bytes {
+            let oldest = self
+                .subs
+                .values_mut()
+                .filter(|s| !s.replay.is_empty())
+                .min_by_key(|s| s.replay.front().map_or(u64::MAX, |r| r.stamp));
+            let Some(r) = oldest.and_then(|s| s.replay.pop_front()) else {
+                self.replay_bytes = 0;
+                return;
+            };
+            self.replay_bytes = self.replay_bytes.saturating_sub(r.text.len());
         }
     }
 
@@ -565,8 +862,7 @@ impl Session {
             "seq": sub.seq + 1,
             "items": items,
         });
-        if self.outbox.push(&msg, Some(&sub.in_flight)) {
-            sub.seq += 1;
+        if self.emit(sub, &msg) {
             sub.resync = false;
             if !sub.topic.is_event() {
                 sub.last = items
@@ -591,7 +887,9 @@ impl Session {
                 continue;
             };
             sub.next_due = now + sub.interval;
-            if let Ok(items) = read_topic(&self.backend, &self.engine, sub.topic, &sub.sel).await {
+            if let Ok(items) = read_topic(&self.backend, &self.engine, sub.topic, &sub.sel).await
+                && (sub.same_paths(&items) || self.re_resolve(&id, &mut sub, &items).await)
+            {
                 if sub.topic.is_event() {
                     self.sample_event(&id, &mut sub, items);
                 } else if sub.resync {
@@ -601,6 +899,95 @@ impl Session {
                 }
             }
             self.subs.insert(id, sub);
+        }
+        self.trim_replay();
+    }
+
+    /// The selectors of `sub` resolve to the paths of `items` now: sends
+    /// `resolved` before anything with an added path, forgets the removed
+    /// ones and updates the reservation (§6.9, ADR 0074). `false` when the
+    /// notice did not fit in the queue; the next interval tries again.
+    async fn re_resolve(&mut self, sub_id: &str, sub: &mut Subscription, items: &[Value]) -> bool {
+        let now = paths_of(items);
+        let old = sub.paths.take().unwrap_or_default();
+        let added: Vec<&String> = now.difference(&old).collect();
+        let removed: Vec<&String> = old.difference(&now).collect();
+        let b = Arc::clone(&self.backend);
+        let header = tokio::task::spawn_blocking(move || b.headers().generation)
+            .await
+            .ok()
+            .flatten();
+        let msg = json!({
+            "op": "resolved",
+            "sub": sub_id,
+            "generation": generation_ref(header.as_deref()),
+            "added": added,
+            "removed": removed,
+        });
+        if !self.outbox.push(&msg, None) {
+            sub.paths = Some(old);
+            return false;
+        }
+        for path in &removed {
+            sub.last.remove(path.as_str());
+        }
+        let rate = rate_of(now.len(), sub.interval);
+        self.engine.stats.take(rate);
+        self.engine.stats.release(sub.rate);
+        sub.rate = rate;
+        sub.paths = Some(now);
+        true
+    }
+
+    /// Recomputes the role when the running generation changed, ending the
+    /// subscriptions the new role cannot keep (§6.9, ADR 0074).
+    async fn check_generation(&mut self) {
+        if self.checked.elapsed() < self.engine.limits.generation_check {
+            return;
+        }
+        self.checked = Instant::now();
+        let b = Arc::clone(&self.backend);
+        let who = self.who.clone();
+        let Ok((generation, role)) = tokio::task::spawn_blocking(move || {
+            (b.headers().generation, role_with(&who, &b.socket_roles()))
+        })
+        .await
+        else {
+            return;
+        };
+        if generation == self.generation {
+            return;
+        }
+        self.generation = generation;
+        self.role = role;
+        let lost: Vec<String> = self
+            .subs
+            .iter()
+            .filter(|(_, s)| role_rank(role) < role_rank(s.topic.role()))
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in lost {
+            let Some(sub) = self.subs.remove(&id) else {
+                continue;
+            };
+            self.remove(&sub);
+            self.outbox.push(
+                &json!({"op": "gap", "sub": id, "lost": 0, "reason": "role_changed", "ts": now_rfc3339()}),
+                None,
+            );
+            let p = Problem::new(
+                "J-E1002",
+                403,
+                format!(
+                    "`{}` needs the role `{}`",
+                    sub.topic.name(),
+                    sub.topic.role()
+                ),
+            );
+            self.outbox.push(
+                &json!({"op": "error", "id": null, "sub": id, "problem": p.body(None)}),
+                None,
+            );
         }
     }
 
@@ -624,8 +1011,7 @@ impl Session {
             "seq": sub.seq + 1,
             "items": changed,
         });
-        if self.outbox.push(&msg, Some(&sub.in_flight)) {
-            sub.seq += 1;
+        if self.emit(sub, &msg) {
             sub.last.extend(seen);
         }
     }
@@ -672,9 +1058,87 @@ impl Session {
             "seq": sub.seq + 1,
             "items": items,
         });
-        if self.outbox.push(&msg, Some(&sub.in_flight)) {
-            sub.seq += 1;
+        if self.emit(sub, &msg) {
             sub.ring.clear();
+        }
+    }
+
+    /// Parks this session for resumption (§6.7, ADR 0074).
+    fn park(mut self) {
+        let subs = std::mem::take(&mut self.subs);
+        for sub in subs.values() {
+            self.engine.release(sub);
+        }
+        self.engine.park(Parked {
+            id: self.id.clone(),
+            who: self.who.clone(),
+            subs,
+            at: Instant::now(),
+        });
+    }
+
+    /// Takes over `parked`: answers `resumed` and replays, resyncs or
+    /// declares the gap of each subscription in `wanted` (ADR 0074).
+    fn resume(&mut self, id: Option<&str>, parked: Parked, wanted: Vec<(String, u64)>) {
+        let mut kept = parked.subs;
+        self.id = parked.id;
+        let mut results = Vec::with_capacity(wanted.len());
+        let mut follow = Vec::with_capacity(wanted.len());
+        for (sub_id, last_seq) in wanted {
+            let Some(mut sub) = kept.remove(&sub_id) else {
+                results.push(json!({"sub": sub_id, "result": "unknown"}));
+                continue;
+            };
+            sub.in_flight = Arc::new(AtomicBool::new(false));
+            sub.next_due = Instant::now();
+            self.engine
+                .stats
+                .subscriptions
+                .fetch_add(1, Ordering::Relaxed);
+            self.engine.stats.take(sub.rate);
+            let covered = last_seq == sub.seq
+                || (last_seq < sub.seq
+                    && sub
+                        .replay
+                        .front()
+                        .is_some_and(|r| r.seq <= last_seq.saturating_add(1)));
+            if covered {
+                results.push(json!({"sub": sub_id, "result": "replayed"}));
+                follow.push(Follow::Replay(sub_id.clone(), last_seq));
+            } else {
+                results.push(json!({"sub": sub_id, "result": "resync"}));
+                if sub.topic.is_event() {
+                    follow.push(Follow::Gap(
+                        sub_id.clone(),
+                        sub.seq.saturating_sub(last_seq),
+                    ));
+                } else {
+                    sub.resync = true;
+                }
+            }
+            self.subs.insert(sub_id, sub);
+        }
+        self.replay_bytes = self.subs.values().map(Subscription::replay_bytes).sum();
+        self.outbox.push(
+            &json!({"op": "resumed", "id": id, "session": self.id, "subs": results}),
+            None,
+        );
+        for f in follow {
+            match f {
+                Follow::Replay(sub_id, last) => {
+                    if let Some(sub) = self.subs.get(&sub_id) {
+                        for r in sub.replay.iter().filter(|r| r.seq > last) {
+                            self.outbox.push_text(Arc::clone(&r.text), None, true);
+                        }
+                    }
+                }
+                Follow::Gap(sub_id, lost) => {
+                    self.outbox.push(
+                        &json!({"op": "gap", "sub": sub_id, "lost": lost, "reason": "resume_unavailable", "ts": now_rfc3339()}),
+                        None,
+                    );
+                }
+            }
         }
     }
 }
@@ -701,6 +1165,9 @@ enum ClientMsg {
     Resume {
         #[serde(default)]
         id: Option<String>,
+        session: String,
+        #[serde(default)]
+        subs: Vec<ResumeSub>,
     },
     Ping {
         #[serde(default)]
@@ -710,6 +1177,12 @@ enum ClientMsg {
         #[serde(default)]
         id: Option<String>,
     },
+}
+
+#[derive(Debug, Deserialize)]
+struct ResumeSub {
+    sub: String,
+    last_seq: u64,
 }
 
 fn default_true() -> bool {
@@ -774,7 +1247,7 @@ async fn writer(
             },
         };
         let msg = match &out {
-            Out::Text { text, .. } => Message::Text(text.clone().into()),
+            Out::Text { text, .. } => Message::Text(String::from(&**text).into()),
             Out::Ping => Message::Ping(Vec::new().into()),
         };
         tokio::select! {
@@ -817,7 +1290,7 @@ async fn handle_socket(socket: WebSocket, backend: Shared, engine: Engine, who: 
     let _guard = ConnectionGuard::new(&engine.stats);
     let limits = engine.limits;
     let role = role_with(&who, &backend.socket_roles());
-    let (mut session, rx, bytes) = Session::new(Arc::clone(&backend), &engine, role);
+    let (mut session, rx, bytes) = Session::new(Arc::clone(&backend), &engine, who.clone(), role);
     let (sink, mut stream) = socket.split();
     let (close_tx, close_rx) = oneshot::channel::<Closing>();
     let mut writer_task = tokio::spawn(writer(sink, rx, bytes, close_rx, limits.close_timeout));
@@ -846,7 +1319,7 @@ async fn handle_socket(socket: WebSocket, backend: Shared, engine: Engine, who: 
         "role": role,
         "generation": generation,
         "heartbeat": format_interval(limits.heartbeat),
-        "resume_window": "0s",
+        "resume_window": format_interval(limits.resume_window),
         "limits": {"max_subscriptions": limits.max_subscriptions},
     });
     session.outbox.push(&welcome, None);
@@ -886,6 +1359,7 @@ async fn handle_socket(socket: WebSocket, backend: Shared, engine: Engine, who: 
                 }
             }
             _ = sample_tick.tick() => {
+                session.check_generation().await;
                 session.sample_due().await;
                 if session.outbox.is_full() {
                     let since = *full_since.get_or_insert_with(Instant::now);
@@ -905,7 +1379,10 @@ async fn handle_socket(socket: WebSocket, backend: Shared, engine: Engine, who: 
                     session.outbox.push(&json!({"op": "heartbeat", "ts": now_rfc3339()}), None);
                 }
             }
-            _ = &mut writer_task => return,
+            _ = &mut writer_task => {
+                session.park();
+                return;
+            }
         }
     };
     match closing {
@@ -914,7 +1391,7 @@ async fn handle_socket(socket: WebSocket, backend: Shared, engine: Engine, who: 
         }
         None => drop(close_tx),
     }
-    drop(session);
+    session.park();
     let _ = writer_task.await;
 }
 
@@ -967,9 +1444,32 @@ async fn handle_client_message(raw: &str, session: &mut Session) -> bool {
                 None,
             );
         }
-        ClientMsg::Resume { id } => {
-            let p = Problem::new("J-E1907", 400, "no session to resume");
-            session.outbox.push(&error_json(id.as_deref(), &p), None);
+        ClientMsg::Resume {
+            id,
+            session: wanted,
+            subs,
+        } => {
+            let parked = if session.subs.is_empty() {
+                session.engine.unpark(&wanted, &session.who)
+            } else {
+                None
+            };
+            match parked {
+                Some(parked) => session.resume(
+                    id.as_deref(),
+                    parked,
+                    subs.into_iter().map(|s| (s.sub, s.last_seq)).collect(),
+                ),
+                None => {
+                    let detail = if session.subs.is_empty() {
+                        format!("session `{wanted}` cannot be resumed; subscribe again")
+                    } else {
+                        "`resume` comes before any `subscribe` on a connection".to_owned()
+                    };
+                    let p = Problem::new("J-E1907", 400, detail);
+                    session.outbox.push(&error_json(id.as_deref(), &p), None);
+                }
+            }
         }
         ClientMsg::Unsubscribe { id, sub } => {
             session.unsubscribe(&sub);
@@ -1042,13 +1542,25 @@ fn stream_options(raw: Option<&str>) -> Result<(String, SubscribeOptions), Probl
     Ok((topic, options))
 }
 
+/// The `<session>.<seq>` of a `Last-Event-ID` header.
+fn last_event_id(headers: &HeaderMap) -> Option<(String, u64)> {
+    let (session, seq) = headers
+        .get("last-event-id")?
+        .to_str()
+        .ok()?
+        .rsplit_once('.')?;
+    Some((session.to_owned(), seq.parse().ok()?))
+}
+
 /// `GET /v1/stream` (ref/09 §6.11): one subscription per request, over the
-/// same engine as `/v1/ws`. A stream whose queue stays full past the grace
-/// is ended.
+/// same engine as `/v1/ws`. `Last-Event-ID` resumes the session it names
+/// (ADR 0074). A stream whose queue stays full past the grace is ended,
+/// and the session of an ended stream is parked.
 pub async fn sse_handler(
     State(backend): State<Shared>,
     Extension(engine): Extension<Engine>,
     ConnectInfo(peer): ConnectInfo<Peer>,
+    headers: HeaderMap,
     RawQuery(raw): RawQuery,
 ) -> Response {
     let (topic, options) = match stream_options(raw.as_deref()) {
@@ -1058,10 +1570,30 @@ pub async fn sse_handler(
     let who = principal(peer);
     let limits = engine.limits;
     let role = role_with(&who, &backend.socket_roles());
-    let (mut session, rx, bytes) = Session::new(backend, &engine, role);
-    let sub_id = match session.subscribe(None, &topic, options).await {
-        Ok(s) => s,
-        Err(p) => return problem_response(&p),
+    let (mut session, rx, bytes) = Session::new(backend, &engine, who.clone(), role);
+    let asked = last_event_id(&headers);
+    let parked = asked
+        .as_ref()
+        .and_then(|(id, _)| engine.unpark(id, &who))
+        .and_then(|p| Some((p.subs.keys().next()?.clone(), p)));
+    let sub_id = match (parked, asked) {
+        (Some((sub, parked)), Some((_, last))) => {
+            session.resume(None, parked, vec![(sub.clone(), last)]);
+            sub
+        }
+        (_, asked) => {
+            let sub = match session.subscribe(None, &topic, options).await {
+                Ok(s) => s,
+                Err(p) => return problem_response(&p),
+            };
+            if asked.is_some() && session.subs.get(&sub).is_some_and(|s| s.topic.is_event()) {
+                session.outbox.push(
+                    &json!({"op": "gap", "sub": sub, "reason": "resume_unavailable", "ts": now_rfc3339()}),
+                    None,
+                );
+            }
+            sub
+        }
     };
     let guard = ConnectionGuard::new(&engine.stats);
     let (stop_tx, stop_rx) = oneshot::channel::<()>();
@@ -1073,19 +1605,21 @@ pub async fn sse_handler(
         loop {
             sample_tick.tick().await;
             if session.outbox.tx.is_closed() || !session.subs.contains_key(&sub_id) {
-                return;
+                break;
             }
+            session.check_generation().await;
             session.sample_due().await;
             if session.outbox.is_full() {
                 let since = *full_since.get_or_insert_with(Instant::now);
                 if since.elapsed() >= limits.slow_client_grace {
                     let _ = stop_tx.send(());
-                    return;
+                    break;
                 }
             } else {
                 full_since = None;
             }
         }
+        session.park();
     });
     let events = UnboundedReceiverStream::new(rx).filter_map(move |out| {
         delivered(&out, &bytes);
@@ -1098,7 +1632,7 @@ pub async fn sse_handler(
                 if let Some(seq) = parsed["seq"].as_u64() {
                     event = event.id(format!("{session_id}.{seq}"));
                 }
-                Some(event.data(text))
+                Some(event.data(&*text))
             }
             Out::Ping => None,
         };
