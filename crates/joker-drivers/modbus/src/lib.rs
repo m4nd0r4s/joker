@@ -1,5 +1,6 @@
 #![doc = include_str!("../README.md")]
 
+pub mod access;
 pub mod driver;
 pub mod driver_tcp;
 pub mod plan;

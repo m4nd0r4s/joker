@@ -24,7 +24,7 @@ pub const DESCRIPTOR: Descriptor = Descriptor {
     protocols: &["modbus"],
     buses: &[BusKind::Serial],
     instance: InstanceMode::Device,
-    capabilities: Capabilities::of(&[Capability::Write]),
+    capabilities: Capabilities::of(&[Capability::Write, Capability::RawAccess]),
     interface: INTERFACE,
     micro: false,
     license: "Apache-2.0 OR MIT",
@@ -43,6 +43,11 @@ pub struct Address {
     pub fc: u8,
     /// Extracted bit, with FC 3/4 and `bool`.
     pub bit: Option<u8>,
+    /// `word_order = "little"`: the first register is the least
+    /// significant.
+    pub word_little: bool,
+    /// `byte_order = "little"`: the bytes of each register are swapped.
+    pub byte_little: bool,
 }
 
 impl Address {
@@ -51,6 +56,8 @@ impl Address {
         let mut at = None;
         let mut fc = None;
         let mut bit = None;
+        let mut word_little = false;
+        let mut byte_little = false;
         for entry in addr.entries().map_err(|_| "the address is not a table")? {
             let (k, v) = entry.map_err(|_| "the address is not a table")?;
             match k {
@@ -74,9 +81,15 @@ impl Address {
                     bit = Some(v.as_u64().ok().filter(|b| *b < 16).ok_or("`bit` is 0–15")? as u8)
                 }
                 "word_order" | "byte_order" => {
-                    let s = v.as_str().map_err(|_| "expected big or little")?;
-                    if s != "big" && s != "little" {
-                        return Err("expected big or little");
+                    let little = match v.as_str().map_err(|_| "expected big or little")? {
+                        "big" => false,
+                        "little" => true,
+                        _ => return Err("expected big or little"),
+                    };
+                    if k == "word_order" {
+                        word_little = little;
+                    } else {
+                        byte_little = little;
                     }
                 }
                 _ => return Err("unknown address key"),
@@ -86,6 +99,8 @@ impl Address {
             at: at.ok_or("missing `at`")?,
             fc: fc.ok_or("missing `fc`")?,
             bit,
+            word_little,
+            byte_little,
         })
     }
 }
@@ -372,7 +387,7 @@ pub const DESCRIPTOR_TCP: Descriptor = Descriptor {
     protocols: &["modbus"],
     buses: &[BusKind::Ethernet],
     instance: InstanceMode::Device,
-    capabilities: Capabilities::of(&[Capability::Write]),
+    capabilities: Capabilities::of(&[Capability::Write, Capability::RawAccess]),
     interface: INTERFACE,
     micro: false,
     license: "Apache-2.0 OR MIT",

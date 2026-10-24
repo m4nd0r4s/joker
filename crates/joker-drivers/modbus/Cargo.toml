@@ -16,6 +16,7 @@ embedded-io-async.workspace = true
 [dev-dependencies]
 joker-hal = { workspace = true, features = ["testing"] }
 joker-core.workspace = true
+joker-units.workspace = true
 
 [lints]
 workspace = true
