@@ -139,6 +139,7 @@ expect = [
 
 [[case]]
 id     = "a_bad_read_is_a_device_failure"
+doubles = ["register"]
 name   = "a Bad read ends the action with device, and its value is never stored"
 spec   = ["ADR 0060 §5", "ADR 0060 §6", "ADR 0066 §13"]
 do     = [{ at = "100ms", invoke = "pcs.read_bad", key = "k1" }]
@@ -149,6 +150,7 @@ expect = [
 
 [[case]]
 id     = "an_uncertain_read_keeps_its_quality"
+doubles = ["register"]
 name   = "an Uncertain value enters the result with its quality"
 spec   = ["ADR 0060 §6", "ADR 0066 §12", "AGENTS.md invariant 4"]
 do     = [{ at = "100ms", invoke = "pcs.read_uncertain", key = "k1" }]
@@ -158,6 +160,7 @@ expect = [
 
 [[case]]
 id     = "an_uncertain_read_ends_fail_if"
+doubles = ["register"]
 name   = "an Uncertain read in fail_if ends the action with device whatever its value"
 spec   = ["ADR 0060 §5"]
 do     = [{ at = "100ms", invoke = "pcs.guard_uncertain", key = "k1" }]

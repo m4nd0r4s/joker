@@ -56,7 +56,8 @@ impl Reg {
         }
     }
 
-    fn as_i64(self) -> i64 {
+    /// The value as an integer: a `bool` is 0 or 1, a float truncated.
+    pub fn as_i64(self) -> i64 {
         match self {
             Self::Bool(b) => i64::from(b),
             Self::Int(i) => i,

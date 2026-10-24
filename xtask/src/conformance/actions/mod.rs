@@ -1,8 +1,11 @@
 //! The `action` suites (ADR 0066 §20–§24): device and instance actions
 //! of the runtime, run against the daemon's own controller, invocation
-//! hub and io tasks, with a register double in place of each driver.
+//! hub and io tasks, with a register double in place of each driver, and
+//! again with the real `modbus-tcp` driver against a wire double (ADR
+//! 0073).
 
 pub mod double;
+pub mod wire;
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -10,10 +13,11 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use joker_core::{ClockQuality, QualityCode, QualityReason};
+use joker_driver_modbus::{ModbusTcp, ModbusTcpPlanner};
 use joker_hal::cbor::Cbor;
-use joker_hal::std_host::TokioHost;
+use joker_hal::std_host::{TokioHost, TokioTcpConnector};
 use joker_hal::types::{BatchFailure, BatchKind, Direction, Poll, RawStatus, Reason};
-use joker_hal::{ActionSpec, PlanRequest};
+use joker_hal::{ActionSpec, Driver, Link, OpenArgs, PlanRequest, Planner, TcpEndpoint};
 use jokerd::actions::{Answer, Hub, MAX_WAIT, Refusal, Request, Role};
 use jokerd::control::{Config, Controller};
 use jokerd::decisions::DecisionLog;
@@ -51,13 +55,57 @@ struct Suite {
     cases: Vec<Case>,
 }
 
+/// Which double a case runs against (ADR 0073).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Mode {
+    /// The register double in place of every driver (ADR 0066 §21).
+    Register,
+    /// The real driver of every `modbus-tcp` device, against the wire
+    /// double; the register double for the others.
+    Wire,
+}
+
+impl Mode {
+    fn suffix(self) -> &'static str {
+        match self {
+            Self::Register => "",
+            Self::Wire => "@wire",
+        }
+    }
+}
+
 #[derive(Debug)]
 struct Case {
     id: String,
     name: Option<String>,
     spec: Vec<String>,
+    doubles: Vec<Mode>,
     steps: Vec<Step>,
     expect: Vec<(String, Expect)>,
+}
+
+fn doubles_of(t: &Table, at: &str) -> Result<Vec<Mode>, Diagnostic> {
+    let Some(v) = t.get("doubles") else {
+        return Ok(vec![Mode::Register, Mode::Wire]);
+    };
+    let list = v
+        .as_array()
+        .ok_or_else(|| diag(at, "`doubles` is a list of `register` and `wire`"))?;
+    let mut modes = Vec::new();
+    for item in list {
+        let mode = match item.as_str() {
+            Some("register") => Mode::Register,
+            Some("wire") => Mode::Wire,
+            _ => return Err(diag(at, "`doubles` is a list of `register` and `wire`")),
+        };
+        if !modes.contains(&mode) {
+            modes.push(mode);
+        }
+    }
+    if modes.is_empty() {
+        return Err(diag(at, "`doubles` names at least one double"));
+    }
+    Ok(modes)
 }
 
 #[derive(Debug)]
@@ -502,10 +550,18 @@ fn load(text_in: &str) -> Result<Suite, Vec<Diagnostic>> {
         if expect.is_empty() {
             errors.push(diag(&at, "`expect` is required"));
         }
+        let doubles = match doubles_of(t, &at) {
+            Ok(d) => d,
+            Err(e) => {
+                errors.push(e);
+                continue;
+            }
+        };
         cases.push(Case {
             id: case_id,
             name: text(t, "name"),
             spec: strings(t.get("spec")),
+            doubles,
             steps,
             expect,
         });
@@ -526,6 +582,7 @@ fn load(text_in: &str) -> Result<Suite, Vec<Diagnostic>> {
 struct DoubleDevices {
     handle: tokio::runtime::Handle,
     doubles: BTreeMap<String, double::Shared>,
+    mode: Mode,
 }
 
 struct DoubleSet {
@@ -571,6 +628,20 @@ impl Devices for DoubleDevices {
             });
             let (tx, rx) = tokio::sync::mpsc::channel(jokerd::actions::QUEUE_DEPTH);
             senders.insert(device.name.clone(), tx);
+            if self.mode == Mode::Wire && device.driver == "modbus-tcp" {
+                start_wire(
+                    &self.handle,
+                    state,
+                    device.clone(),
+                    Arc::clone(plan),
+                    index,
+                    Arc::clone(shared),
+                    Arc::clone(&host),
+                    rx,
+                    stop_rx.clone(),
+                );
+                continue;
+            }
             let device = device.clone();
             let plan = Arc::clone(plan);
             let shared = Arc::clone(shared);
@@ -620,6 +691,91 @@ impl Devices for DoubleDevices {
     }
 }
 
+fn wire_listener(state: &double::Shared) -> std::io::Result<(std::net::TcpListener, String)> {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
+    listener.set_nonblocking(true)?;
+    let address = listener.local_addr()?.to_string();
+    let down = state
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .spec
+        .link_down;
+    if down {
+        drop(listener);
+        let refused = std::net::TcpListener::bind("127.0.0.1:0")?;
+        let address = refused.local_addr()?.to_string();
+        drop(refused);
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::ConnectionRefused,
+            address,
+        ));
+    }
+    Ok((listener, address))
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the same pieces `run_driver` takes for one device, plus the double it serves"
+)]
+fn start_wire(
+    handle: &tokio::runtime::Handle,
+    state: double::Shared,
+    device: jokerd::bridge::DevicePlan,
+    plan: Arc<Plan>,
+    index: usize,
+    shared: Arc<jokerd::shared::Shared>,
+    host: Arc<TokioHost>,
+    rx: tokio::sync::mpsc::Receiver<ActionCall>,
+    mut stop: tokio::sync::watch::Receiver<bool>,
+) {
+    let address = match wire_listener(&state) {
+        Ok((listener, address)) => {
+            handle.spawn(wire::serve_on(listener, state));
+            address
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::ConnectionRefused => e.to_string(),
+        Err(e) => {
+            eprintln!("wire double of `{}`: {e}", device.name);
+            return;
+        }
+    };
+    handle.spawn(async move {
+        let owned = jokerd::bridge::owned_request(&device);
+        let views = owned.views();
+        let request = views.request();
+        let hal_plan = match ModbusTcpPlanner::plan(&request) {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("plan of `{}`: {e:?}", device.name);
+                return;
+            }
+        };
+        let link = Link::Tcp(TcpEndpoint::new(TokioTcpConnector::to(&address)));
+        let driver = match ModbusTcp::open(&OpenArgs::new(request, hal_plan.view()), link) {
+            Ok(d) => d,
+            Err(e) => {
+                eprintln!("open of `{}`: {e:?}", device.name);
+                return;
+            }
+        };
+        let targets = point_targets(&plan, index);
+        run_driver(
+            driver,
+            &*host,
+            request,
+            hal_plan.view(),
+            device.timeout_ns,
+            &targets,
+            &shared,
+            index,
+            device.fallback_keepalive_ns,
+            rx,
+            move || *stop.borrow_and_update(),
+        )
+        .await;
+    });
+}
+
 enum Observed {
     Answer(Answer),
     Refused(Refusal),
@@ -667,7 +823,7 @@ fn profile_path(dir: &Path, reference: &str) -> Option<std::path::PathBuf> {
     )
 }
 
-fn run_case(suite: &Suite, case: &Case, dir: &Path) -> Result<Run, String> {
+fn run_case(suite: &Suite, case: &Case, mode: Mode, dir: &Path) -> Result<Run, String> {
     for (reference, text) in &suite.profiles {
         let path = profile_path(dir, reference)
             .ok_or_else(|| format!("`{reference}` is not `<vendor>/<model>@<major>`"))?;
@@ -693,6 +849,7 @@ fn run_case(suite: &Suite, case: &Case, dir: &Path) -> Result<Run, String> {
     let devices = Arc::new(DoubleDevices {
         handle: runtime.handle().clone(),
         doubles: doubles.clone(),
+        mode,
     });
     let mut controller = Controller::new(
         dir,
@@ -1008,8 +1165,12 @@ pub fn run_file(path: &Path, text_in: &str, filters: &[String]) -> SuiteReport {
         }
     };
     let mut cases = Vec::new();
-    for case in &suite.cases {
-        let id = format!("{}.{}", suite.id, case.id);
+    for (case, mode) in suite
+        .cases
+        .iter()
+        .flat_map(|c| c.doubles.iter().map(move |m| (c, *m)))
+    {
+        let id = format!("{}.{}{}", suite.id, case.id, mode.suffix());
         if !super::selected(&id, filters) {
             continue;
         }
@@ -1031,7 +1192,7 @@ pub fn run_file(path: &Path, text_in: &str, filters: &[String]) -> SuiteReport {
         };
         let outcome = Scratch::new()
             .map_err(|e| e.to_string())
-            .and_then(|dir| run_case(&suite, case, &dir.0));
+            .and_then(|dir| run_case(&suite, case, mode, &dir.0));
         match outcome {
             Err(e) => {
                 report.status = Status::Error;
@@ -1114,6 +1275,21 @@ expect = [{ invocation = "k", state = "succeeded" }]
             "",
         );
         assert!(load(&no_expect).is_err());
+    }
+
+    #[test]
+    fn a_case_runs_against_both_doubles_unless_it_names_them() {
+        let both = load(MINIMAL).unwrap();
+        assert_eq!(both.cases[0].doubles, [Mode::Register, Mode::Wire]);
+        let one = MINIMAL.replace("id     = \"c\"", "id     = \"c\"\ndoubles = [\"register\"]");
+        assert_eq!(load(&one).unwrap().cases[0].doubles, [Mode::Register]);
+        for bad in ["[]", "[\"bus\"]", "\"wire\""] {
+            let text = MINIMAL.replace(
+                "id     = \"c\"",
+                &format!("id     = \"c\"\ndoubles = {bad}"),
+            );
+            assert!(load(&text).is_err_and(|d| d.iter().all(|d| d.code == "J0887")));
+        }
     }
 
     #[test]

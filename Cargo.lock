@@ -3747,6 +3747,7 @@ dependencies = [
  "critical-section",
  "joker-case-runner",
  "joker-core",
+ "joker-driver-modbus",
  "joker-expr",
  "joker-hal",
  "joker-units",

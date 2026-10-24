@@ -99,6 +99,7 @@ expect = [
 
 [[case]]
 id     = "a_native_action_returns_its_record"
+doubles = ["register"]
 name   = "a native action reaches the driver's invoke and its record is the result"
 spec   = ["ref/06 §2.10", "ADR 0058 §5"]
 do     = [{ at = "100ms", invoke = "pcs.identify", key = "k1" }]
@@ -110,6 +111,7 @@ expect = [
 
 [[case]]
 id     = "a_native_failure_is_a_device_failure"
+doubles = ["register"]
 name   = "a native action-failure device is projected onto device"
 spec   = ["ref/06 §2.10", "ref/04 §7.1", "ADR 0066 §13"]
 do     = [{ at = "100ms", invoke = "pcs.broken", key = "k1" }]
@@ -119,6 +121,7 @@ expect = [
 
 [[case]]
 id     = "cancelling_a_long_native_action"
+doubles = ["register"]
 name   = "a long native action sees the cancellation and ends cancelled"
 spec   = ["ref/06 §2.10", "ADR 0066 §9"]
 do     = [
