@@ -131,21 +131,42 @@ impl Http {
         headers: &[(&str, &str)],
         body: Option<&Value>,
     ) -> Response {
+        let payload = body.map(|b| b.to_string());
+        self.exchange(
+            method,
+            path,
+            headers,
+            payload
+                .as_deref()
+                .map(|p| ("application/json", p.as_bytes())),
+        )
+        .await
+    }
+
+    async fn exchange(
+        &self,
+        method: &str,
+        path: &str,
+        headers: &[(&str, &str)],
+        body: Option<(&str, &[u8])>,
+    ) -> Response {
         let mut stream = tokio::net::UnixStream::connect(&self.socket).await.unwrap();
-        let payload = body.map(|b| b.to_string()).unwrap_or_default();
         let mut req = format!("{method} {path} HTTP/1.1\r\nhost: joker\r\nconnection: close\r\n");
         for (k, v) in headers {
             req.push_str(&format!("{k}: {v}\r\n"));
         }
-        if body.is_some() {
+        if let Some((kind, bytes)) = body {
             req.push_str(&format!(
-                "content-type: application/json\r\ncontent-length: {}\r\n",
-                payload.len()
+                "content-type: {kind}\r\ncontent-length: {}\r\n",
+                bytes.len()
             ));
         }
         req.push_str("\r\n");
-        req.push_str(&payload);
-        stream.write_all(req.as_bytes()).await.unwrap();
+        let mut raw = req.into_bytes();
+        if let Some((_, bytes)) = body {
+            raw.extend_from_slice(bytes);
+        }
+        stream.write_all(&raw).await.unwrap();
         let mut raw = Vec::new();
         stream.read_to_end(&mut raw).await.unwrap();
         let split = raw.windows(4).position(|w| w == b"\r\n\r\n").unwrap();
@@ -1317,6 +1338,102 @@ fn the_contract_check_rejects_a_bad_body() {
 #[should_panic(expected = "is not in the contract")]
 fn the_contract_check_rejects_an_unknown_operation() {
     Contract::load().check("get", "/v1/nowhere", 200, &json!({}));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn blobs_are_uploaded_once_and_only_with_their_digest() {
+    let f = start().await;
+    let bytes = b"\0asm a component".to_vec();
+    let digest = jokerd::blobs::digest_of(&bytes);
+    let missing = f
+        .call(
+            "POST",
+            "/v1/blobs/missing",
+            "/v1/blobs/missing",
+            Some(json!({"digests": [digest]})),
+        )
+        .await;
+    assert_eq!(missing.json()["missing"], json!([digest]));
+    let head = f
+        .http
+        .send("HEAD", &format!("/v1/blobs/{digest}"), &[], None)
+        .await;
+    assert_eq!(head.status, 404);
+
+    let wrong = jokerd::blobs::digest_of(b"something else");
+    let mismatch = f
+        .http
+        .exchange(
+            "POST",
+            &format!("/v1/blobs/uploads?digest={wrong}"),
+            &[],
+            Some(("application/octet-stream", &bytes)),
+        )
+        .await;
+    f.contract.check(
+        "post",
+        "/v1/blobs/uploads",
+        mismatch.status,
+        &mismatch.json(),
+    );
+    assert_eq!(
+        (mismatch.status, mismatch.json()["code"].clone()),
+        (400, json!("J-E1603"))
+    );
+    let unknown = f
+        .http
+        .exchange(
+            "POST",
+            &format!("/v1/blobs/uploads?digest={digest}&kind=joker.app.v9%2Bwasm"),
+            &[],
+            Some(("application/octet-stream", &bytes)),
+        )
+        .await;
+    assert_eq!(unknown.json()["code"], "J-E1012");
+
+    let path = format!("/v1/blobs/uploads?digest={digest}&kind=joker.app.v1%2Bwasm");
+    let up = f
+        .http
+        .exchange(
+            "POST",
+            &path,
+            &[],
+            Some(("application/octet-stream", &bytes)),
+        )
+        .await;
+    f.contract
+        .check("post", "/v1/blobs/uploads", up.status, &up.json());
+    assert_eq!(up.status, 201, "{}", up.json());
+    assert_eq!(up.json()["existed"], false);
+    assert_eq!(up.json()["kind"], "joker.app.v1+wasm");
+    assert_eq!(
+        up.header("location"),
+        Some(format!("/v1/blobs/{digest}").as_str())
+    );
+    let again = f
+        .http
+        .exchange(
+            "POST",
+            &path,
+            &[],
+            Some(("application/octet-stream", &bytes)),
+        )
+        .await;
+    assert_eq!(again.json()["existed"], true);
+    let head = f
+        .http
+        .send("HEAD", &format!("/v1/blobs/{digest}"), &[], None)
+        .await;
+    assert_eq!(head.status, 200);
+    let missing = f
+        .call(
+            "POST",
+            "/v1/blobs/missing",
+            "/v1/blobs/missing",
+            Some(json!({"digests": [digest, wrong]})),
+        )
+        .await;
+    assert_eq!(missing.json()["missing"], json!([wrong]));
 }
 
 const GPIO_WITHOUT_CHIP: &str = r#"

@@ -6,8 +6,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use joker_api::model::{
-    ActivateRequest, BulkResetRequest, GenerationProposal, InvokeActionRequest, ManualWriteRequest,
-    ReasonBody, ReleaseRequest, ResetTripRequest, RollbackRequest, TraceRequest,
+    ARTIFACT_KINDS, ActivateRequest, BulkResetRequest, GenerationProposal, InvokeActionRequest,
+    ManualWriteRequest, MissingBlobsRequest, ReasonBody, ReleaseRequest, ResetTripRequest,
+    RollbackRequest, TraceRequest,
 };
 use joker_api::{Backend, Headers, Principal, Problem, Query, Reply};
 use joker_core::image::{Intent, NO_TASK, Proposal, RELINQUISH, Source as ProposalSource};
@@ -17,6 +18,7 @@ use joker_core::{Level, WriterKind};
 use serde_json::{Map, Value, json};
 
 use crate::actions::Rejected;
+use crate::blobs::{Blobs, PutError, parse_digest};
 use crate::control::{ActionResult, ControlError, Invoked};
 use crate::daemon::{SharedController, lock_controller};
 use crate::decisions::{DecisionLog, SharedLog, StateWriteFailure, lock};
@@ -50,6 +52,7 @@ pub struct Node {
     traces: Arc<Traces>,
     log: SharedLog,
     quality: Arc<crate::clock::ClockMonitor>,
+    blobs: Blobs,
 }
 
 impl std::fmt::Debug for Node {
@@ -87,6 +90,27 @@ fn one(query: &Query, key: &str) -> Option<String> {
         .rev()
         .find(|(k, _)| k == key)
         .map(|(_, v)| v.clone())
+}
+
+fn digest(text: &str, pointer: &str) -> Result<[u8; 32], Problem> {
+    parse_digest(text).ok_or_else(|| {
+        bad(
+            "J-E1012",
+            format!("`{text}` is not a `sha256:<hex>` digest"),
+        )
+        .with("pointer", json!(pointer))
+    })
+}
+
+fn artifact_kind(kind: &str, pointer: &str) -> Result<(), Problem> {
+    if kind == "joker.model.v1+jkm" {
+        return Err(bad("J-E1017", "`joker.model.v1+jkm` is reserved for 1.1"));
+    }
+    if !ARTIFACT_KINDS.contains(&kind) {
+        return Err(bad("J-E1012", format!("unknown artifact kind `{kind}`"))
+            .with("pointer", json!(pointer)));
+    }
+    Ok(())
 }
 
 fn user(who: &Principal) -> String {
@@ -152,6 +176,7 @@ impl Node {
             trips,
             traces: Arc::new(Traces::open(&state_dir.join("traces"))?),
             log,
+            blobs: Blobs::new(state_dir),
             quality,
         })
     }
@@ -1544,6 +1569,52 @@ impl Backend for Node {
         let mut r = Reply::with_status(201, self.generation_json(&g));
         r.etag = Some(g.hash.clone());
         Ok(r)
+    }
+
+    fn missing_blobs(&self, req: MissingBlobsRequest) -> Result<Reply, Problem> {
+        if req.digests.is_empty() || req.digests.len() > 1024 {
+            return Err(
+                bad("J-E1012", "between 1 and 1024 digests").with("pointer", json!("/digests"))
+            );
+        }
+        let mut missing = Vec::new();
+        for (i, d) in req.digests.iter().enumerate() {
+            if !self.blobs.contains(&digest(d, &format!("/digests/{i}"))?) {
+                missing.push(d.clone());
+            }
+        }
+        Ok(Reply::ok(json!({ "missing": missing })))
+    }
+
+    fn has_blob(&self, text: &str) -> Result<bool, Problem> {
+        Ok(self.blobs.contains(&digest(text, "/digest")?))
+    }
+
+    fn upload_blob(
+        &self,
+        _who: &Principal,
+        text: &str,
+        kind: Option<&str>,
+        bytes: &[u8],
+    ) -> Result<Reply, Problem> {
+        let d = digest(text, "/digest")?;
+        if let Some(k) = kind {
+            artifact_kind(k, "/kind")?;
+        }
+        let existed = self.blobs.put(&d, bytes).map_err(|e| match e {
+            PutError::Mismatch { actual } => Problem::new(
+                "J-E1603",
+                400,
+                format!("the bytes are {actual}, not {text}"),
+            ),
+            PutError::TooLarge => Problem::new("J-E1606", 413, "a blob carries at most 8 MiB"),
+            PutError::Io(e) => Problem::new("J-E1000", 500, format!("blob store: {e}")),
+        })?;
+        let mut body = json!({ "digest": text, "size": bytes.len(), "existed": existed });
+        if let Some(k) = kind {
+            body["kind"] = json!(k);
+        }
+        Ok(Reply::with_status(201, body))
     }
 
     fn generation(&self, selector: &str) -> Result<Reply, Problem> {

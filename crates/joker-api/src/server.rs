@@ -5,11 +5,12 @@ use std::path::Path;
 use std::sync::Arc;
 
 use axum::body::{Body, Bytes};
+use axum::extract::DefaultBodyLimit;
 use axum::extract::connect_info::{ConnectInfo, Connected};
 use axum::extract::{Path as UrlPath, RawQuery, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::{get, head, post};
 use axum::serve::IncomingStream;
 use axum::{Extension, Router};
 use serde::de::DeserializeOwned;
@@ -413,6 +414,75 @@ async fn create_generation(
     }
 }
 
+/// The largest blob of a monolithic upload (ref/09 §5.13).
+pub const MAX_UPLOAD: usize = 8 << 20;
+
+/// The largest request body (ref/00 §11).
+pub const MAX_BODY: usize = 16 << 20;
+
+async fn missing_blobs(State(b): State<Shared>, body: Bytes) -> Response {
+    match decode(&body) {
+        Ok(req) => run(b, move |b| b.missing_blobs(req)).await,
+        Err(p) => problem_response(b.as_ref(), &p),
+    }
+}
+
+async fn blob_head(State(b): State<Shared>, UrlPath(digest): UrlPath<String>) -> Response {
+    let backend = Arc::clone(&b);
+    let result = tokio::task::spawn_blocking(move || backend.has_blob(&digest))
+        .await
+        .unwrap_or_else(|_| Err(Problem::new("J-E1000", 500, "the handler panicked")));
+    let headers = base_headers(b.as_ref(), &request_id());
+    match result {
+        Ok(true) => (StatusCode::OK, headers).into_response(),
+        Ok(false) => (StatusCode::NOT_FOUND, headers).into_response(),
+        Err(p) => problem_response(b.as_ref(), &p),
+    }
+}
+
+async fn upload_blob(
+    State(b): State<Shared>,
+    ConnectInfo(peer): ConnectInfo<Peer>,
+    RawQuery(raw): RawQuery,
+    body: Bytes,
+) -> Response {
+    let q = match parse_query(raw.as_deref(), &["digest", "kind"]) {
+        Ok(q) => q,
+        Err(p) => return problem_response(b.as_ref(), &p),
+    };
+    let value = |name: &str| q.iter().find(|(k, _)| k == name).map(|(_, v)| v.clone());
+    let Some(digest) = value("digest") else {
+        return problem_response(
+            b.as_ref(),
+            &Problem::new(
+                "J-E1012",
+                400,
+                "this node takes monolithic uploads: `?digest=` with the bytes (at most 8 MiB)",
+            )
+            .with("pointer", serde_json::json!("/digest")),
+        );
+    };
+    if body.len() > MAX_UPLOAD {
+        return problem_response(
+            b.as_ref(),
+            &Problem::new("J-E1606", 413, "a monolithic upload carries at most 8 MiB"),
+        );
+    }
+    let kind = value("kind");
+    let who = principal(peer);
+    let location = format!("/v1/blobs/{digest}");
+    let mut response = run(b, move |b| {
+        b.upload_blob(&who, &digest, kind.as_deref(), &body)
+    })
+    .await;
+    if response.status() == StatusCode::CREATED
+        && let Ok(v) = HeaderValue::from_str(&location)
+    {
+        response.headers_mut().insert("location", v);
+    }
+    response
+}
+
 async fn generation(State(b): State<Shared>, UrlPath(sel): UrlPath<String>) -> Response {
     run(b, move |b| b.generation(&sel)).await
 }
@@ -544,6 +614,12 @@ pub fn router_with(backend: Arc<dyn Backend>, limits: ws::Limits) -> Router {
         .route("/v1/actions", get(actions))
         .route("/v1/actions/{target}/{action}", post(invoke_action))
         .route("/v1/decisions", get(decisions))
+        .route("/v1/blobs/missing", post(missing_blobs))
+        .route("/v1/blobs/{digest}", head(blob_head))
+        .route(
+            "/v1/blobs/uploads",
+            post(upload_blob).layer(DefaultBodyLimit::max(MAX_BODY)),
+        )
         .route("/v1/generations", get(generations).post(create_generation))
         .route("/v1/generations/rollback", post(rollback))
         .route("/v1/generations/{gen}", get(generation))
