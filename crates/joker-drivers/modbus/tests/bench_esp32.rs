@@ -426,3 +426,29 @@ fn plan_refuses_what_m0_cannot_do() {
         "J0171"
     );
 }
+
+#[test]
+fn a_full_sample_ring_counts_every_dropped_sample() {
+    let p = profile();
+    let req = p.request(
+        "esp",
+        1,
+        S,
+        100 * MS,
+        serial_bus("esp32", "/dev/ttyUSB0", 115_200),
+    );
+    let views = req.views();
+    let plan = ModbusPlanner::plan(&views.request()).unwrap();
+    let (rig, port) = new_rig();
+    let mut bench: Bench<'_, ModbusRtu> = Bench::open(
+        rig.host.clone(),
+        views.request(),
+        plan.view(),
+        Link::Serial(port),
+    )
+    .unwrap();
+    bench.connect().unwrap();
+    let points = plan.view().batch(3).unwrap().points.len() as u64;
+    assert_eq!(u64::from(bench.read_into_full_ring(3).unwrap()), points);
+    assert!(bench.counters().contains(&("dropped_samples", points)));
+}

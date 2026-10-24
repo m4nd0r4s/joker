@@ -31,6 +31,7 @@ struct Counters {
     reconnects: u64,
     exceptions: u64,
     disconnects: u64,
+    dropped_samples: u64,
 }
 
 /// The runtime half of `modbus-tcp`.
@@ -277,11 +278,15 @@ impl Driver for ModbusTcp {
                     .get(offset..offset + usize::from(p.span))
                     .map(RawValue::Regs),
             };
-            if let Some(value) = value {
-                let _ = out.push(RawSample {
-                    ts_hw: Some(now),
-                    ..RawSample::good(id, value)
-                });
+            if let Some(value) = value
+                && out
+                    .push(RawSample {
+                        ts_hw: Some(now),
+                        ..RawSample::good(id, value)
+                    })
+                    .is_err()
+            {
+                self.counters.dropped_samples += 1;
             }
         }
         Ok(())
@@ -337,5 +342,6 @@ impl Driver for ModbusTcp {
         out.counter("reconnects", c.reconnects);
         out.counter("exceptions", c.exceptions);
         out.counter("disconnects", c.disconnects);
+        out.counter("dropped_samples", c.dropped_samples);
     }
 }

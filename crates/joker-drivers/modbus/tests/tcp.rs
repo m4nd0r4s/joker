@@ -264,3 +264,24 @@ fn a_silent_connection_times_out_as_comm_failure() {
         RawStatus::bad(joker_hal::Reason::COMM_FAILURE)
     );
 }
+
+#[test]
+fn a_full_sample_ring_counts_the_dropped_sample() {
+    let device = Arc::new(Mutex::new(Device {
+        holding0: 42,
+        coil0: false,
+        refuse_connect: false,
+        garble_transaction: false,
+        silent: false,
+    }));
+    let req = request();
+    let views = req.views();
+    let plan = ModbusTcpPlanner::plan(&views.request()).unwrap();
+    let link = Link::Tcp(TcpEndpoint::new(Connector { device }));
+    let host = Arc::new(VirtualHost::new(0));
+    let mut bench: Bench<'_, ModbusTcp> =
+        Bench::open(host, views.request(), plan.view(), link).unwrap();
+    bench.connect().unwrap();
+    assert_eq!(bench.read_into_full_ring(0).unwrap(), 1);
+    assert!(bench.counters().contains(&("dropped_samples", 1)));
+}

@@ -207,6 +207,7 @@ pub struct SysfsDriver {
     leds: Vec<Led>,
     points: Vec<(PointId, Point)>,
     errors: u64,
+    dropped_samples: u64,
 }
 
 fn read_number(paths: &DevicePaths, file: &str) -> Result<i64, std::io::Error> {
@@ -333,6 +334,7 @@ impl Driver for SysfsDriver {
             leds,
             points,
             errors: 0,
+            dropped_samples: 0,
         })
     }
 
@@ -386,7 +388,9 @@ impl Driver for SysfsDriver {
         let now = cx.now().mono_ns;
         for &point in batch.points {
             let sample = self.read_point(point, now);
-            let _ = out.push(sample);
+            if out.push(sample).is_err() {
+                self.dropped_samples += 1;
+            }
         }
         Ok(())
     }
@@ -414,6 +418,7 @@ impl Driver for SysfsDriver {
 
     fn health(&self, out: &mut HealthOut<'_>) {
         out.counter("errors", self.errors);
+        out.counter("dropped_samples", self.dropped_samples);
         out.counter(
             "leds_broken",
             self.leds.iter().filter(|l| l.broken).count() as u64,

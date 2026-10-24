@@ -32,7 +32,8 @@ use crate::acquire::{SampleBuffer, Settled, settle};
 use crate::commit::{OutputBinding, RawEncoding};
 use crate::cx::{Cx, Host, LogLevel};
 use crate::driver::{
-    AckSlot, CommittedWrite, ConnectOut, Driver, OpenArgs, RawSink, ReadBatch, WriteAck, WriteAcks,
+    AckSlot, CommittedWrite, ConnectOut, Driver, HealthOut, OpenArgs, RawSink, ReadBatch, WriteAck,
+    WriteAcks,
 };
 use crate::link::{GpioLineConfig, GpioLines, IoError, Link, SerialInfo, SerialIo};
 use crate::plan::PlanView;
@@ -746,6 +747,31 @@ impl<'r, D: Driver> Bench<'r, D> {
             .run(self.driver.read(&mut cx, &batch, &mut sink))
             .map_err(|_| BenchError::Stalled)?;
         Ok(settle(&self.request, &batch, self.buf.samples(), result))
+    }
+
+    /// One execution of batch `id` now, into a sample ring that is already
+    /// full: every sample the driver pushes is dropped. Returns how many
+    /// the sink refused.
+    pub fn read_into_full_ring(&mut self, id: BatchId) -> Result<u32, BenchError> {
+        let spec = self.plan.batch(id).ok_or(BenchError::NoBatch)?;
+        let host = self.host.clone();
+        let deadline = host.mono() + self.timeout_ns;
+        let batch = ReadBatch::new(&spec, deadline);
+        let mut cx = Cx::new(&*host, deadline);
+        let mut full = SampleBuffer::with_capacity(0);
+        let mut sink = RawSink::new(&mut full);
+        let _ = host
+            .run(self.driver.read(&mut cx, &batch, &mut sink))
+            .map_err(|_| BenchError::Stalled)?;
+        Ok(sink.dropped())
+    }
+
+    /// The counters the driver reports in `health` now.
+    pub fn counters(&self) -> Vec<(&'static str, u64)> {
+        let mut counters = [("", 0); crate::driver::MAX_COUNTERS];
+        let mut out = HealthOut::new(&mut counters);
+        self.driver.health(&mut out);
+        out.counters().to_vec()
     }
 
     /// One `write` call now.

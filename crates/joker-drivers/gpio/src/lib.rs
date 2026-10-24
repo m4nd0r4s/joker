@@ -28,6 +28,7 @@ pub struct GpioDriver {
     chip: GpioChip,
     points: Vec<Point>,
     errors: u64,
+    dropped_samples: u64,
 }
 
 fn io_status(e: joker_hal::IoError) -> RawStatus {
@@ -66,6 +67,7 @@ impl Driver for GpioDriver {
             chip,
             points,
             errors: 0,
+            dropped_samples: 0,
         })
     }
 
@@ -98,7 +100,9 @@ impl Driver for GpioDriver {
                     RawSample::failed(id, io_status(e))
                 }
             };
-            let _ = out.push(sample);
+            if out.push(sample).is_err() {
+                self.dropped_samples += 1;
+            }
         }
         Ok(())
     }
@@ -130,5 +134,6 @@ impl Driver for GpioDriver {
 
     fn health(&self, out: &mut HealthOut<'_>) {
         out.counter("errors", self.errors);
+        out.counter("dropped_samples", self.dropped_samples);
     }
 }

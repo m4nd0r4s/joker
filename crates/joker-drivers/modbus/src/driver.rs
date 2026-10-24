@@ -33,6 +33,7 @@ struct Counters {
     crc_errors: u64,
     exceptions: u64,
     disconnects: u64,
+    dropped_samples: u64,
 }
 
 /// The runtime half of `modbus-rtu`.
@@ -248,11 +249,15 @@ impl Driver for ModbusRtu {
                     .get(offset..offset + usize::from(p.span))
                     .map(RawValue::Regs),
             };
-            if let Some(value) = value {
-                let _ = out.push(RawSample {
-                    ts_hw: Some(now),
-                    ..RawSample::good(id, value)
-                });
+            if let Some(value) = value
+                && out
+                    .push(RawSample {
+                        ts_hw: Some(now),
+                        ..RawSample::good(id, value)
+                    })
+                    .is_err()
+            {
+                self.counters.dropped_samples += 1;
             }
         }
         Ok(())
@@ -301,5 +306,6 @@ impl Driver for ModbusRtu {
         out.counter("crc_errors", c.crc_errors);
         out.counter("exceptions", c.exceptions);
         out.counter("disconnects", c.disconnects);
+        out.counter("dropped_samples", c.dropped_samples);
     }
 }
