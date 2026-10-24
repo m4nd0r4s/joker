@@ -603,6 +603,7 @@ impl Checker<'_> {
                     },
                     type_name: None,
                     raw: BTreeMap::new(),
+                    acquisition: crate::context::Acquisition::NONE,
                 };
                 for (member_name, member) in &info.members {
                     if !matches!(
@@ -1209,8 +1210,31 @@ impl Checker<'_> {
                     .get(&device)
                     .and_then(|d| d.profile.as_ref())
                     .and_then(|p| self.context.profiles.get(&p.value));
-                let has_fallback = profile.is_some_and(|p| p.fallback);
+                let signal = target
+                    .strip_prefix(device.as_str())
+                    .and_then(|rest| rest.strip_prefix('.'))
+                    .unwrap_or(target);
+                let has_fallback = profile.is_some_and(|p| p.fallback_covers(signal));
                 if has_fallback {
+                    if let (Some(value), Some(safe)) = (
+                        profile.and_then(|p| p.fallback_value.as_ref()),
+                        &envelope.safe,
+                    ) {
+                        let unit = self.paths.get(target).and_then(|r| r.info.unit);
+                        if !fallback_as_safe(value, &safe.value, &envelope.safer, unit.as_ref()) {
+                            self.push(
+                                Diagnostic::new(
+                                    "J0205",
+                                    format!(
+                                        "the device fallback of `{target}` is not as safe as its `safe` (`safer = \"{}\"`)",
+                                        envelope.safer
+                                    ),
+                                )
+                                .at(safe.span)
+                                .label("the profile's `[fallback] value` is applied when the node stops"),
+                            );
+                        }
+                    }
                     if let Some(accept) = &envelope.accept_missing_fallback {
                         self.push(
                             Diagnostic::new(
@@ -2477,6 +2501,54 @@ fn render(node: &Node) -> String {
                 .collect::<Vec<_>>()
                 .join(",")
         ),
+    }
+}
+
+/// A number of a fallback value or of a `safe`, in `unit` when it is a
+/// quantity.
+fn safe_number(value: &Value, unit: Option<&joker_units::Unit>) -> Option<f64> {
+    match value {
+        Value::Integer(i) => Some(*i as f64),
+        Value::Float(f) => Some(*f),
+        Value::Bool(b) => Some(f64::from(u8::from(*b))),
+        Value::String(text) => match joker_units::Literal::parse(text).ok()? {
+            joker_units::Literal::Number(n) => Some(n),
+            joker_units::Literal::Quantity(q) => q.value_in(unit?).ok(),
+        },
+        _ => None,
+    }
+}
+
+/// Whether the device fallback `value` is as safe as `safe` (docs/01 §8,
+/// `J0205`): equal with `safer = "equal"`, not above it with `"lower"`,
+/// not below it with `"higher"`. Two values that cannot be compared are
+/// not as safe.
+fn fallback_as_safe(
+    value: &Value,
+    safe: &crate::model::SafeValue,
+    safer: &str,
+    unit: Option<&joker_units::Unit>,
+) -> bool {
+    use crate::model::SafeValue;
+    let safe = match safe {
+        SafeValue::Bool(b) => Value::Bool(*b),
+        SafeValue::Integer(i) => Value::Integer(*i),
+        SafeValue::Float(f) => Value::Float(*f),
+        SafeValue::Text(t) => Value::String(t.clone()),
+        SafeValue::Relinquish => return true,
+    };
+    if let (Value::String(a), Value::String(b)) = (value, &safe)
+        && safe_number(value, unit).is_none()
+    {
+        return safer == "equal" && a == b;
+    }
+    let (Some(fallback), Some(safe)) = (safe_number(value, unit), safe_number(&safe, unit)) else {
+        return false;
+    };
+    match safer {
+        "lower" => fallback <= safe,
+        "higher" => fallback >= safe,
+        _ => fallback == safe,
     }
 }
 

@@ -235,6 +235,25 @@ pub struct ProfileInfo {
     /// `[enums]`: each enum's variants and their integer values (ref/03
     /// §2.2.8).
     pub enums: BTreeMap<String, BTreeMap<String, i64>>,
+    /// `[fallback] applies_to`: the outputs the device fallback covers;
+    /// `None` covers every output of the profile (ref/03 §2.2.11).
+    pub fallback_outputs: Option<BTreeSet<String>>,
+    /// `[fallback] value`: the fixed value the equipment applies in
+    /// fallback, checked against each covered output's `safe` (`J0205`).
+    pub fallback_value: Option<crate::value::Value>,
+}
+
+impl ProfileInfo {
+    /// Whether the device fallback covers the output `signal` (a path
+    /// relative to the device): every output without `applies_to`, only
+    /// the listed ones with it.
+    pub fn fallback_covers(&self, signal: &str) -> bool {
+        self.fallback
+            && self
+                .fallback_outputs
+                .as_ref()
+                .is_none_or(|outputs| outputs.contains(signal))
+    }
 }
 
 /// What `[actions.<a>]` declares besides its steps and its timeout
@@ -374,6 +393,49 @@ pub enum Direction {
     Param,
 }
 
+/// The poll of one profile point (ref/03 §2.2.4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PointPoll {
+    /// Read every period.
+    Period(Duration),
+    /// Read only on request (`"on_demand"`, parameters only).
+    OnDemand,
+}
+
+/// How the acquisition stage turns a profile point's raw value into the
+/// value of its signal (ref/03 §3, ref/06 §2.7). Decoding (`word_order`,
+/// `byte_order`, `bit`) belongs to the point's address; these are the
+/// steps after it.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Acquisition {
+    /// `scale`: value = raw × `scale` + `offset`.
+    pub scale: Option<f64>,
+    /// `offset`, in the unit of the signal.
+    pub offset: Option<f64>,
+    /// `invert`: inverted logic of a `bool`.
+    pub invert: bool,
+    /// `deadband`, in the unit of the signal: a new value closer than this
+    /// to the last one published keeps the last one.
+    pub deadband: Option<f64>,
+    /// The raw integer of each variant of an `enum` signal, in the order of
+    /// [`SignalType::Enum::variants`]; empty for any other signal.
+    pub enum_values: Vec<i64>,
+    /// The point's own `poll`, when it declares one.
+    pub poll: Option<PointPoll>,
+}
+
+impl Acquisition {
+    /// No acquisition step: the raw value is the value.
+    pub const NONE: Self = Self {
+        scale: None,
+        offset: None,
+        invert: false,
+        deadband: None,
+        enum_values: Vec::new(),
+        poll: None,
+    };
+}
+
 /// One signal.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SignalInfo {
@@ -392,6 +454,9 @@ pub struct SignalInfo {
     /// what a driver's own address schema validates (ref/03 §2.2.5).
     /// Empty for signals this crate itself builds (classes, parameters).
     pub raw: BTreeMap<String, crate::value::Node>,
+    /// The acquisition steps of a profile point; [`Acquisition::NONE`]
+    /// for every other signal.
+    pub acquisition: Acquisition,
 }
 
 impl SignalInfo {
@@ -403,6 +468,7 @@ impl SignalInfo {
             direction,
             type_name: None,
             raw: BTreeMap::new(),
+            acquisition: Acquisition::NONE,
         }
     }
 

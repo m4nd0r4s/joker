@@ -136,8 +136,6 @@ pub fn profiles() -> BTreeMap<String, ProfileInfo> {
             quirks: BTreeMap::new(),
             poll: Some(Duration::from_millis(100)),
             timeout: None,
-            actions: BTreeMap::new(),
-            action_steps: BTreeMap::new(),
             ..ProfileInfo::default()
         },
     );

@@ -95,10 +95,103 @@ fn cases() -> Vec<Case> {
         ),
         (
             "J0821",
+            format!("{HEADER}[actions.reset]\nsteps = [{{ jump = 1 }}]\n"),
+            "unknown step",
+        ),
+        (
+            "J0821",
+            format!("{HEADER}[actions.reset]\nsteps = [{{ write = {{ at = 1 }} }}]\n"),
+            "write step without a value",
+        ),
+        (
+            "J0821",
             format!(
                 "{HEADER}[actions.set]\nsteps = [{{ write = {{ at = 1, type = \"u16\", value = \"$level\" }} }}]\n"
             ),
-            "a step argument the action does not declare",
+            "undeclared argument",
+        ),
+        (
+            "J0807",
+            format!("{HEADER}[coherent]\npower = [\"p\"]\n"),
+            "reserved section",
+        ),
+        (
+            "J0807",
+            format!("{HEADER}[connect]\nsteps = []\n"),
+            "connect steps",
+        ),
+        (
+            "J0807",
+            format!("{HEADER}[relinquish.p]\nsteps = []\n"),
+            "relinquish steps",
+        ),
+        (
+            "J0807",
+            format!("{HEADER}[signals.p]\nat = 0\ntype = \"i16\"\nlimits = [-1, 1]\n"),
+            "limits",
+        ),
+        (
+            "J0807",
+            format!(
+                "{HEADER}[signals.p]\nat = 0\ntype = \"i16\"\nscale = {{ from = [0, 10], to = [\"0 kW\", \"1 kW\"] }}\n"
+            ),
+            "two-point scale",
+        ),
+        (
+            "J0807",
+            format!("{HEADER}[fallback]\ntimeout_register = {{ at = 1 }}\n"),
+            "fallback register",
+        ),
+        (
+            "J0807",
+            format!(
+                "{HEADER}[signals.p]\nat = 0\nfc = 6\ntype = \"i16\"\nscale = 0.1\nunit = \"kW\"\ndirection = \"output\"\n"
+            ),
+            "scaled output",
+        ),
+        (
+            "J0140",
+            format!("{HEADER}[signals.p]\nat = 0\ntype = \"i16\"\n[nonsense]\nx = 1\n"),
+            "unknown section",
+        ),
+        (
+            "J0140",
+            format!("{HEADER}[defaults]\nenum = \"Mode\"\n"),
+            "key not admitted in defaults",
+        ),
+        (
+            "J0806",
+            format!("{HEADER}[defaults]\ntimeout = \"soon\"\n"),
+            "defaults timeout is not a duration",
+        ),
+        (
+            "J0817",
+            format!("{HEADER}[signals.p]\nat = 0\ntype = \"i16\"\npoll = \"on_demand\"\n"),
+            "on-demand input",
+        ),
+        (
+            "J0814",
+            format!(
+                "{HEADER}[enums]\nMode = {{ a = 0, b = 0 }}\n[signals.m]\nat = 0\ntype = \"u16\"\nenum = \"Mode\"\n"
+            ),
+            "repeated enum value",
+        ),
+        (
+            "J0815",
+            format!("{HEADER}[signals.p]\nat = 0\ntype = \"bool\"\nscale = 10\n"),
+            "scale on a bool",
+        ),
+        (
+            "J0815",
+            format!("{HEADER}[signals.p]\nat = 0\ntype = \"u16\"\ninvert = true\n"),
+            "invert on an integer",
+        ),
+        (
+            "J0820",
+            format!(
+                "{HEADER}[signals.p]\nat = 0\ntype = \"u16\"\n[fallback]\ntimeout = \"2s\"\napplies_to = [\"p\"]\n"
+            ),
+            "applies_to an input",
         ),
     ]
 }
@@ -107,6 +200,10 @@ fn cases() -> Vec<Case> {
 fn every_case_reports_its_code() {
     for (code, text, what) in cases() {
         let report = parse(Path::new("x.profile.toml"), &text);
+        assert!(
+            report.profile.is_none(),
+            "{what}: a profile with an error loads"
+        );
         assert!(
             report
                 .diagnostics
@@ -195,7 +292,6 @@ fn an_action_default_timeout_sums_the_waits_plus_a_second_per_step() {
     let p = ok(&format!(
         "{HEADER}[actions.reset]\nsteps = [{{ write = {{ at = 1, value = 1 }} }}, {{ wait = \"500ms\" }}, {{ write = {{ at = 1, value = 0 }} }}]\n"
     ));
-    // 3 steps x 1s + the 500ms wait.
     assert_eq!(
         p.actions.get("reset"),
         Some(&Some(joker_units::Duration::from_millis(3_500)))
@@ -336,7 +432,6 @@ fn an_action_default_timeout_now_also_counts_until_budgets() {
     let p = ok(&format!(
         "{HEADER}[actions.reset]\nsteps = [{{ until = {{ at = 2, type = \"bool\", equals = true, timeout = \"2s\" }} }}]\n"
     ));
-    // 1 step x 1s + the 2s until budget.
     assert_eq!(
         p.actions.get("reset"),
         Some(&Some(joker_units::Duration::from_secs(3)))
@@ -406,4 +501,104 @@ fn enums_keep_their_variant_values() {
     let mode = p.enums.get("PcsMode").expect("PcsMode");
     assert_eq!(mode.get("off"), Some(&0));
     assert_eq!(mode.get("standby"), Some(&3));
+}
+
+#[test]
+fn a_scaled_integer_point_is_a_float_with_its_scale_and_offset() {
+    let p = ok(&format!(
+        "{HEADER}[signals.p_ac]\nat = 0\nfc = 4\ntype = \"i32\"\nscale = 0.001\noffset = -1.5\nunit = \"kW\"\n"
+    ));
+    let s = p.signals.get("p_ac").unwrap();
+    assert_eq!(s.ty, SignalType::Float);
+    assert_eq!(s.acquisition.scale, Some(0.001));
+    assert_eq!(s.acquisition.offset, Some(-1.5));
+}
+
+#[test]
+fn an_integer_point_with_a_unit_is_a_float_and_without_one_stays_an_integer() {
+    let p = ok(&format!(
+        "{HEADER}[signals.uptime]\nat = 2\ntype = \"u32\"\nunit = \"s\"\n[signals.count]\nat = 4\ntype = \"u32\"\n"
+    ));
+    assert_eq!(p.signals["uptime"].ty, SignalType::Float);
+    assert_eq!(p.signals["count"].ty, SignalType::Integer);
+}
+
+#[test]
+fn signal_type_forces_an_integer_or_a_float() {
+    let p = ok(&format!(
+        "{HEADER}[signals.uptime]\nat = 2\ntype = \"u32\"\nunit = \"s\"\nsignal_type = \"u64\"\n[signals.raw]\nat = 4\ntype = \"u16\"\nsignal_type = \"f64\"\n"
+    ));
+    assert_eq!(p.signals["uptime"].ty, SignalType::Integer);
+    assert_eq!(p.signals["raw"].ty, SignalType::Float);
+}
+
+#[test]
+fn defaults_reach_every_point_and_the_point_wins() {
+    let p = ok(&format!(
+        "{HEADER}[defaults]\nfc = 4\nword_order = \"little\"\nbyte_order = \"little\"\n[signals.a]\nat = 0\ntype = \"u32\"\n[signals.b]\nat = 2\ntype = \"u32\"\nword_order = \"big\"\n"
+    ));
+    let a = &p.signals["a"].raw;
+    assert_eq!(a["fc"].value, joker_manifest::value::Value::Integer(4));
+    assert_eq!(a["word_order"].as_str(), Some("little"));
+    assert_eq!(a["byte_order"].as_str(), Some("little"));
+    assert_eq!(p.signals["b"].raw["word_order"].as_str(), Some("big"));
+}
+
+#[test]
+fn an_enum_keeps_the_integer_of_each_variant_in_variant_order() {
+    let p = ok(&format!(
+        "{HEADER}[enums]\nPcsMode = {{ off = 0, standby = 1, p_control = 7 }}\n[signals.mode]\nat = 0\ntype = \"u16\"\nenum = \"PcsMode\"\n"
+    ));
+    let s = &p.signals["mode"];
+    let SignalType::Enum { variants, .. } = &s.ty else {
+        panic!("expected an enum, got {:?}", s.ty);
+    };
+    assert_eq!(variants, &["off", "p_control", "standby"]);
+    assert_eq!(s.acquisition.enum_values, vec![0, 7, 1]);
+}
+
+#[test]
+fn invert_deadband_and_poll_reach_the_acquisition() {
+    use joker_manifest::context::PointPoll;
+    let p = ok(&format!(
+        "{HEADER}[signals.run]\nat = 0\nfc = 2\ntype = \"bool\"\ninvert = true\n[signals.p]\nat = 0\nfc = 4\ntype = \"i16\"\nscale = 0.1\nunit = \"kW\"\ndeadband = \"500 W\"\npoll = \"1s\"\n[signals.fw]\nat = 9\nfc = 3\ntype = \"u16\"\ndirection = \"param\"\npoll = \"on_demand\"\n"
+    ));
+    assert!(p.signals["run"].acquisition.invert);
+    let a = &p.signals["p"].acquisition;
+    assert_eq!(a.deadband, Some(0.5));
+    assert_eq!(
+        a.poll,
+        Some(PointPoll::Period(joker_units::Duration::from_secs(1)))
+    );
+    assert_eq!(p.signals["fw"].acquisition.poll, Some(PointPoll::OnDemand));
+}
+
+#[test]
+fn the_bench_profile_of_document_23_loads() {
+    let p = ok(include_str!(
+        "../../joker-drivers/modbus/tests/project/profiles/local/bench-esp32@1.profile.toml"
+    ));
+    assert!(p.fallback_covers("led"));
+    assert_eq!(
+        p.fallback_value,
+        Some(joker_manifest::value::Value::Bool(false))
+    );
+    assert_eq!(p.signals["touch"].acquisition.deadband, Some(5.0));
+}
+
+#[test]
+fn applies_to_limits_what_the_fallback_covers() {
+    let p = ok(&format!(
+        "{HEADER}[signals.a]\nat = 0\nfc = 6\ntype = \"u16\"\ndirection = \"output\"\n[signals.b]\nat = 1\nfc = 6\ntype = \"u16\"\ndirection = \"output\"\n[fallback]\ntimeout = \"2s\"\nvalue = 0\napplies_to = [\"a\"]\n"
+    ));
+    assert!(p.fallback_covers("a"));
+    assert!(!p.fallback_covers("b"));
+}
+
+#[test]
+fn x_keys_are_ignored() {
+    let p = ok(&format!(
+        "{HEADER}x_note = \"free\"\n[signals.p]\nat = 0\ntype = \"u16\"\nx_comment = \"free\"\n"
+    ));
+    assert!(!p.signals["p"].raw.contains_key("x_comment"));
 }
