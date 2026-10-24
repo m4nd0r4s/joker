@@ -2,6 +2,7 @@
 
 pub mod actions;
 pub mod api;
+pub mod apps;
 pub mod blobs;
 pub mod bridge;
 pub mod catalog;

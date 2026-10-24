@@ -9,6 +9,9 @@
 use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+use crossbeam_queue::ArrayQueue;
 
 use joker_core::ValueType;
 use joker_host::meta::{MetaPort, PortKind as MetaKind, TaskKind};
@@ -23,12 +26,74 @@ use joker_units::{Duration, Literal, Unit};
 
 use crate::task::{CycleTask, Prepare, TaskContext, TaskError, TaskProvider, TaskSpec};
 
+/// A trap of a Wasm cycle task, as the cycle thread saw it (docs/01 §9).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Trap {
+    /// The app.
+    pub app: Arc<str>,
+    /// The cycle task.
+    pub task: Arc<str>,
+    /// The trap code (`J-E0905`).
+    pub code: &'static str,
+    /// The tick of its group.
+    pub tick: u64,
+    /// The latch instant of that tick.
+    pub at_mono_ns: u64,
+}
+
+/// Where the cycle thread reports traps without allocating or blocking: a
+/// bounded queue that the daemon drains into the decision log (ADR 0067).
+/// A full queue drops the trap and counts it.
+#[derive(Debug)]
+pub struct Traps {
+    queue: ArrayQueue<Trap>,
+    dropped: AtomicU64,
+}
+
+impl Default for Traps {
+    fn default() -> Self {
+        Self::new(64)
+    }
+}
+
+impl Traps {
+    /// A queue of `capacity` traps.
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            queue: ArrayQueue::new(capacity.max(1)),
+            dropped: AtomicU64::new(0),
+        }
+    }
+
+    /// Reports a trap.
+    pub fn report(&self, trap: Trap) {
+        if self.queue.push(trap).is_err() {
+            self.dropped.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    /// Takes the traps reported so far, oldest first.
+    pub fn drain(&self) -> Vec<Trap> {
+        let mut out = Vec::with_capacity(self.queue.len());
+        while let Some(t) = self.queue.pop() {
+            out.push(t);
+        }
+        out
+    }
+
+    /// Traps dropped because the queue was full.
+    pub fn dropped(&self) -> u64 {
+        self.dropped.load(Ordering::Relaxed)
+    }
+}
+
 /// The Wasm apps a node can run, by app name.
 #[derive(Clone)]
 pub struct WasmTasks {
     engine: Arc<HostEngine>,
     apps: BTreeMap<String, Arc<AppComponent>>,
     mode: RunMode,
+    traps: Arc<Traps>,
 }
 
 impl fmt::Debug for WasmTasks {
@@ -47,11 +112,39 @@ fn host(e: joker_host::HostError) -> TaskError {
 impl WasmTasks {
     /// No apps yet, on an engine for this machine.
     pub fn new(mode: RunMode) -> Result<Self, TaskError> {
-        Ok(Self {
-            engine: Arc::new(HostEngine::native().map_err(host)?),
+        Ok(Self::with_engine(
+            Arc::new(HostEngine::native().map_err(host)?),
+            mode,
+        ))
+    }
+
+    /// No apps yet, on `engine`, which must be this machine's.
+    pub fn with_engine(engine: Arc<HostEngine>, mode: RunMode) -> Self {
+        Self {
+            engine,
             apps: BTreeMap::new(),
             mode,
-        })
+            traps: Arc::default(),
+        }
+    }
+
+    /// Reports the traps of its tasks to `traps`.
+    pub fn with_traps(mut self, traps: Arc<Traps>) -> Self {
+        self.traps = traps;
+        self
+    }
+
+    /// The traps of its tasks.
+    pub fn traps(&self) -> Arc<Traps> {
+        Arc::clone(&self.traps)
+    }
+
+    /// Adds a component loaded elsewhere (from the AOT cache of a node)
+    /// under the name of its `joker:meta`, which is returned.
+    pub fn insert(&mut self, component: Arc<AppComponent>) -> String {
+        let name = component.meta().name.clone();
+        self.apps.insert(name.clone(), component);
+        name
     }
 
     /// Compiles a component and adds it under the name of its `joker:meta`,
@@ -239,6 +332,9 @@ impl TaskProvider for WasmTasks {
             task: task as u32,
             ports,
             instance: None,
+            app: Arc::from(spec.app),
+            task_name: Arc::from(spec.task),
+            traps: Arc::clone(&self.traps),
         }))
     }
 }
@@ -258,6 +354,9 @@ struct WasmTask {
     task: u32,
     ports: Vec<(Binding, String)>,
     instance: Option<CycleInstance>,
+    app: Arc<str>,
+    task_name: Arc<str>,
+    traps: Arc<Traps>,
 }
 
 impl fmt::Debug for WasmTask {
@@ -323,12 +422,25 @@ impl CycleTask for WasmTask {
             .instance
             .as_mut()
             .ok_or_else(|| TaskError("the Wasm task was not prepared".into()))?;
+        if instance.is_poisoned() {
+            return Err(TaskError(String::new()));
+        }
+        let tick = cx.tick();
         let (image, outputs) = cx.parts();
         let report = instance.run(self.task, image, outputs).map_err(host)?;
         match report.status {
             CycleStatus::Ok => Ok(()),
-            CycleStatus::AppError => Err(TaskError("the app returned an error".into())),
-            CycleStatus::Trap(code) => Err(TaskError(code.into())),
+            CycleStatus::AppError => Err(TaskError(String::new())),
+            CycleStatus::Trap(code) => {
+                self.traps.report(Trap {
+                    app: Arc::clone(&self.app),
+                    task: Arc::clone(&self.task_name),
+                    code,
+                    tick: tick.map_or(0, |t| t.index),
+                    at_mono_ns: tick.map_or(0, |t| t.at.mono_ns),
+                });
+                Err(TaskError(String::new()))
+            }
         }
     }
 }

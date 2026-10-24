@@ -22,7 +22,7 @@ use crate::blobs::{Blobs, PutError, parse_digest};
 use crate::control::{ActionResult, ControlError, Invoked};
 use crate::daemon::{SharedController, lock_controller};
 use crate::decisions::{DecisionLog, SharedLog, StateWriteFailure, lock};
-use crate::generations::{Activation, GenState, Generation, Origin};
+use crate::generations::{Activation, GenArtifact, GenState, Generation, Origin};
 use crate::manual::{ManualTable, Occupant, TicketBook};
 use crate::pacer::Monotonic;
 use crate::plan::{OutputPlan, Plan};
@@ -1553,10 +1553,27 @@ impl Backend for Node {
             )
         })?;
         let lock = req.lock.content.unwrap_or_default();
+        let mut artifacts = Vec::with_capacity(req.artifacts.len());
+        for (i, a) in req.artifacts.iter().enumerate() {
+            digest(&a.digest, &format!("/artifacts/{i}/digest"))?;
+            artifact_kind(&a.kind, &format!("/artifacts/{i}/kind"))?;
+            artifacts.push(GenArtifact {
+                name: a.name.clone(),
+                kind: a.kind.clone(),
+                digest: a.digest.clone(),
+            });
+        }
         let g = {
             let mut c = lock_controller(&self.controller);
-            c.propose_by(&manifest, &lock, req.message, dry_run, Some(user(who)))
-                .map_err(problem)?
+            c.propose_with(
+                &manifest,
+                &lock,
+                &artifacts,
+                req.message,
+                dry_run,
+                Some(user(who)),
+            )
+            .map_err(problem)?
         };
         if dry_run {
             let mut body = json!({

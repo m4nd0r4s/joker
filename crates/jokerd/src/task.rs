@@ -165,6 +165,16 @@ pub trait TaskProvider: Send + Sync {
     fn instantiate(&self, spec: TaskSpec<'_>) -> Result<Box<dyn CycleTask>, TaskError>;
 }
 
+impl TaskProvider for std::sync::Arc<dyn TaskProvider> {
+    fn interfaces(&self) -> BTreeMap<String, AppInterface> {
+        self.as_ref().interfaces()
+    }
+
+    fn instantiate(&self, spec: TaskSpec<'_>) -> Result<Box<dyn CycleTask>, TaskError> {
+        self.as_ref().instantiate(spec)
+    }
+}
+
 /// A provider that combines several, asking each in turn.
 #[derive(Default)]
 pub struct Providers {
