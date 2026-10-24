@@ -954,6 +954,22 @@ async fn listing_and_bulk_resetting_trips_follows_the_contract() {
 
     let now_empty = f.call("GET", "/v1/trips", "/v1/trips", None).await;
     assert_eq!(now_empty.json()["items"].as_array().unwrap().len(), 0);
+
+    let resets: Vec<Value> = decisions_from(f._dir.path(), 0)
+        .into_iter()
+        .filter(|e| e["record"] == "reset")
+        .collect();
+    assert_eq!(resets.len(), 1, "{resets:?}");
+    assert_eq!(resets[0]["output"], "pi.p_set");
+    assert_eq!(resets[0]["reason"], "clear the group");
+    assert_eq!(resets[0]["result"], "cleared");
+    assert!(
+        resets[0]["principal"]
+            .as_str()
+            .is_some_and(|p| p.starts_with("user:")),
+        "{}",
+        resets[0]
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

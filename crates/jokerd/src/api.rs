@@ -19,7 +19,7 @@ use serde_json::{Map, Value, json};
 use crate::actions::Rejected;
 use crate::control::{ActionResult, ControlError, Invoked};
 use crate::daemon::{SharedController, lock_controller};
-use crate::decisions::DecisionLog;
+use crate::decisions::{DecisionLog, SharedLog, lock};
 use crate::generations::{Activation, GenState, Generation, Origin};
 use crate::manual::{ManualTable, Occupant, TicketBook};
 use crate::pacer::Monotonic;
@@ -48,6 +48,7 @@ pub struct Node {
     manual: Arc<ManualTable>,
     trips: Arc<TripTable>,
     traces: Arc<Traces>,
+    log: SharedLog,
 }
 
 impl std::fmt::Debug for Node {
@@ -138,9 +139,9 @@ impl Node {
         utc_origin_ns: i64,
         state_dir: &Path,
     ) -> std::io::Result<Self> {
-        let (manual, trips) = {
+        let (manual, trips, log) = {
             let c = lock_controller(&controller);
-            (c.manual(), c.trips())
+            (c.manual(), c.trips(), c.log())
         };
         let boot_count = state_file::bump_counter(state_dir, "boot_count")?;
         Ok(Self {
@@ -156,7 +157,37 @@ impl Node {
             manual,
             trips,
             traces: Arc::new(Traces::open(&state_dir.join("traces"))?),
+            log,
         })
+    }
+
+    /// Records a trip reset requested through the API, with who asked and
+    /// why, with `fsync` (ref/09 §5.7, ADR 0061), and returns its
+    /// `ResetResult`.
+    fn record_reset(
+        &self,
+        v: &View,
+        output: &str,
+        principal: &str,
+        reason: &str,
+        result: &Result<&'static str, Problem>,
+    ) -> Value {
+        let item = reset_item(output, result);
+        let mut m = Map::new();
+        m.insert("gen".into(), json!(v.number));
+        m.insert("record".into(), json!("reset"));
+        m.insert("output".into(), json!(output));
+        m.insert("principal".into(), json!(principal));
+        m.insert("reason".into(), json!(reason));
+        m.insert("result".into(), item["result"].clone());
+        if let Some(error) = item.get("error") {
+            m.insert("error".into(), error.clone());
+        }
+        m.insert("ts".into(), json!(timestamp(utc_now_ns())));
+        if let Err(e) = lock(&self.log).append(m, true) {
+            eprintln!("jokerd: decision log: {e}");
+        }
+        item
     }
 
     fn view(&self) -> Option<View> {
@@ -505,6 +536,20 @@ impl Node {
                     .with("pointer", json!("/level"))),
             },
         }
+    }
+}
+
+/// The `ResetResult` of one output (ref/09 §5.7): its result, or
+/// `failed` with the problem's code and detail when it could not be reset
+/// (ADR 0061).
+fn reset_item(output: &str, result: &Result<&'static str, Problem>) -> Value {
+    match result {
+        Ok(r) => json!({"output": output, "result": r}),
+        Err(p) => json!({
+            "output": output,
+            "result": "failed",
+            "error": {"code": p.code, "detail": p.detail.clone().unwrap_or_default()},
+        }),
     }
 }
 
@@ -1112,7 +1157,7 @@ impl Backend for Node {
 
     fn reset_trip(
         &self,
-        _who: &Principal,
+        who: &Principal,
         path: &str,
         req: ResetTripRequest,
     ) -> Result<Reply, Problem> {
@@ -1125,8 +1170,10 @@ impl Backend for Node {
             .output(path)
             .ok_or_else(|| Problem::new("J-E1100", 404, format!("`{path}` is not an output")))?
             .clone();
-        let result = self.reset_one(&v, &o.path, &o.group, req.wait)?;
-        Ok(Reply::ok(json!({"output": o.path, "result": result})))
+        let result = self.reset_one(&v, &o.path, &o.group, req.wait);
+        let item = self.record_reset(&v, &o.path, &user(who), &req.reason, &result);
+        result?;
+        Ok(Reply::ok(item))
     }
 
     fn trips(&self, query: &Query) -> Result<Reply, Problem> {
@@ -1155,7 +1202,7 @@ impl Backend for Node {
         Ok(Reply::ok(json!({"items": items})))
     }
 
-    fn reset_trips(&self, _who: &Principal, req: BulkResetRequest) -> Result<Reply, Problem> {
+    fn reset_trips(&self, who: &Principal, req: BulkResetRequest) -> Result<Reply, Problem> {
         if req.reason.is_empty() {
             return Err(bad("J-E1106", "a reset needs a reason").with("pointer", json!("/reason")));
         }
@@ -1169,10 +1216,8 @@ impl Backend for Node {
             .iter()
             .filter(|o| req.sel.iter().any(|s| wire::matches(s, &o.path)))
             .map(|o| {
-                let result = self
-                    .reset_one(&v, &o.path, &o.group, true)
-                    .unwrap_or("not_tripped");
-                json!({"output": o.path, "result": result})
+                let result = self.reset_one(&v, &o.path, &o.group, true);
+                self.record_reset(&v, &o.path, &user(who), &req.reason, &result)
             })
             .collect();
         Ok(Reply::ok(json!({"items": items})))
@@ -1714,6 +1759,17 @@ fn decision_json(e: &Value, hashes: &std::collections::BTreeMap<u64, String>) ->
 mod tests {
     use super::*;
     use crate::bridge::DeviceActionPlan;
+
+    #[test]
+    fn a_reset_that_could_not_be_queued_is_reported_as_failed_with_its_error() {
+        let full = Err(Problem::new("J-E1014", 503, "the reset queue is full"));
+        let item = reset_item("pi.p_set", &full);
+        assert_eq!(item["result"], "failed");
+        assert_eq!(item["error"]["code"], "J-E1014");
+        assert_eq!(item["error"]["detail"], "the reset queue is full");
+        let cleared = reset_item("pi.p_set", &Ok("cleared"));
+        assert_eq!(cleared, json!({"output": "pi.p_set", "result": "cleared"}));
+    }
 
     #[test]
     fn an_action_decl_carries_its_role_and_timeout_but_omits_an_undeclared_dedup_window() {
