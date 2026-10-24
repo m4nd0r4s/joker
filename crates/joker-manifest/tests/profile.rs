@@ -93,6 +93,13 @@ fn cases() -> Vec<Case> {
             format!("{HEADER}[actions.reset]\nsteps = []\ntimeout = \"soon\"\n"),
             "action timeout is not a duration",
         ),
+        (
+            "J0821",
+            format!(
+                "{HEADER}[actions.set]\nsteps = [{{ write = {{ at = 1, type = \"u16\", value = \"$level\" }} }}]\n"
+            ),
+            "a step argument the action does not declare",
+        ),
     ]
 }
 
@@ -347,4 +354,56 @@ fn quirks_latency() {
         p.quirks.contains_key("max_regs"),
         "the raw table keeps every key"
     );
+}
+
+#[test]
+fn an_action_keeps_its_args_result_long_and_description() {
+    let p = ok(&format!(
+        "{HEADER}[actions.calibrate]\nargs = {{ span = \"f64 %\", fast = \"bool\" }}\nresult = {{ offset = \"i64\" }}\nlong = true\ndescription = \"zero the sensor\"\nsteps = [{{ write = {{ at = 1, type = \"u16\", value = \"$span\" }} }}]\n"
+    ));
+    let decl = p.action_decls.get("calibrate").expect("calibrate");
+    assert_eq!(decl.args.get("span").map(String::as_str), Some("f64 %"));
+    assert_eq!(decl.args.get("fast").map(String::as_str), Some("bool"));
+    assert_eq!(decl.result.get("offset").map(String::as_str), Some("i64"));
+    assert!(decl.long);
+    assert!(decl.native.is_none());
+    assert_eq!(decl.description.as_deref(), Some("zero the sensor"));
+}
+
+#[test]
+fn a_native_action_keeps_its_table_and_has_no_steps() {
+    let p = ok(&format!(
+        "{HEADER}[actions.identify]\nnative = {{ method = \"ns=2;s=Identify\" }}\ntimeout = \"2s\"\n"
+    ));
+    let decl = p.action_decls.get("identify").expect("identify");
+    let native = decl.native.as_ref().expect("a native table");
+    assert_eq!(
+        native.get("method").and_then(|n| n.as_str()),
+        Some("ns=2;s=Identify")
+    );
+    assert!(!p.action_steps.contains_key("identify"));
+    assert!(!decl.long);
+}
+
+#[test]
+fn implements_maps_class_actions_to_profile_actions() {
+    let p = ok(&format!(
+        "{HEADER}[actions.reset_fault]\nsteps = [{{ wait = \"10ms\" }}]\n[implements.\"std/pump@1\"]\nmap = {{ reset = \"actions.reset_fault\", stop = \"actions.missing\", running = \"status.running\" }}\n"
+    ));
+    assert_eq!(
+        p.implemented_actions.get("reset").map(String::as_str),
+        Some("reset_fault")
+    );
+    assert!(!p.implemented_actions.contains_key("stop"));
+    assert!(!p.implemented_actions.contains_key("running"));
+}
+
+#[test]
+fn enums_keep_their_variant_values() {
+    let p = ok(&format!(
+        "{HEADER}[enums]\nPcsMode = {{ off = 0, standby = 3 }}\n"
+    ));
+    let mode = p.enums.get("PcsMode").expect("PcsMode");
+    assert_eq!(mode.get("off"), Some(&0));
+    assert_eq!(mode.get("standby"), Some(&3));
 }

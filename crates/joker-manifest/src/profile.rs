@@ -10,9 +10,12 @@
 //! address-agnostic (each step's address is whatever keys its own table
 //! declares beyond its kind's keys, left raw for a driver family to
 //! compile into CBOR, same treatment as a signal's [`SignalInfo::raw`]).
-//! `native` actions, `args`/`result` type tables, address schemas
+//! An action's `args`/`result` type tables, `long`, `native` and
+//! `description` are kept as [`crate::context::ActionDecl`], and the
+//! class actions `[implements]` maps to them as
+//! [`ProfileInfo::implemented_actions`]. Address schemas
 //! (driver-specific, ref/03 §2.2.5), `[coherent]`, `[connect]`,
-//! `[relinquish]`, `[events]`, `[implements]`, `[discovery]`, per-signal
+//! `[relinquish]`, `[events]`, the rest of `[implements]`, `[discovery]`, per-signal
 //! acquisition keys (`scale`, `limits`, …) and the fallback's register
 //! forms (`timeout_register`/`value_register`/`values`/`applies_to`) are
 //! not parsed here (AUR-414/405).
@@ -109,6 +112,8 @@ fn load(table: &Table, file: FileId, diagnostics: &mut Diagnostics) -> Option<Pr
     let (fallback, configurable, fallback_timeout) = fallback_of(table, diagnostics);
     let action_steps = action_steps_of(table);
     let actions = actions_of(table, &action_steps, diagnostics);
+    let action_decls = action_decls_of(table, &action_steps, diagnostics);
+    let implemented_actions = implemented_actions_of(table, &actions);
     let quirks_table = table
         .get("profile")
         .and_then(|e| e.node.as_table())
@@ -132,7 +137,32 @@ fn load(table: &Table, file: FileId, diagnostics: &mut Diagnostics) -> Option<Pr
         timeout,
         actions,
         action_steps,
+        action_decls,
+        implemented_actions,
+        enums: enum_values_of(table),
     })
+}
+
+fn enum_values_of(table: &Table) -> BTreeMap<String, BTreeMap<String, i64>> {
+    let Some(enums) = table.get("enums").and_then(|e| e.node.as_table()) else {
+        return BTreeMap::new();
+    };
+    enums
+        .iter()
+        .filter_map(|(name, entry)| {
+            let variants = entry.node.as_table()?;
+            Some((
+                name.clone(),
+                variants
+                    .iter()
+                    .filter_map(|(v, e)| match e.node.value {
+                        Value::Integer(i) => Some((v.clone(), i)),
+                        _ => None,
+                    })
+                    .collect(),
+            ))
+        })
+        .collect()
 }
 
 fn enums_of(table: &Table) -> BTreeMap<String, Vec<String>> {
@@ -476,6 +506,114 @@ fn actions_of(
             }
             _ => {
                 out.insert(name.clone(), None);
+            }
+        }
+    }
+    out
+}
+
+fn string_table(action: &Table, key: &str) -> BTreeMap<String, String> {
+    action
+        .get(key)
+        .and_then(|e| e.node.as_table())
+        .map(|t| {
+            t.iter()
+                .filter_map(|(k, e)| e.node.as_str().map(|v| (k.clone(), v.to_owned())))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Every `"$name"` a program's `write` steps use.
+fn step_args(steps: &[crate::context::ActionStep]) -> Vec<&str> {
+    use crate::context::{ActionStep, ActionValue};
+    steps
+        .iter()
+        .filter_map(|s| match s {
+            ActionStep::Write {
+                value: ActionValue::Arg(name),
+                ..
+            } => Some(name.as_str()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// `[actions.<a>]`'s `args`, `result`, `long`, `native` and
+/// `description` (ref/03 §2.2.12). A `"$name"` in a step that `args`
+/// does not declare is `J0821`.
+fn action_decls_of(
+    table: &Table,
+    action_steps: &BTreeMap<String, Vec<crate::context::ActionStep>>,
+    diagnostics: &mut Diagnostics,
+) -> BTreeMap<String, crate::context::ActionDecl> {
+    let Some(actions) = table.get("actions").and_then(|e| e.node.as_table()) else {
+        return BTreeMap::new();
+    };
+    let mut out = BTreeMap::new();
+    for (name, entry) in actions {
+        let Some(action) = entry.node.as_table() else {
+            continue;
+        };
+        let decl = crate::context::ActionDecl {
+            args: string_table(action, "args"),
+            result: string_table(action, "result"),
+            long: matches!(
+                action.get("long").map(|e| &e.node.value),
+                Some(Value::Bool(true))
+            ),
+            native: action
+                .get("native")
+                .and_then(|e| e.node.as_table())
+                .map(|t| t.iter().map(|(k, e)| (k.clone(), e.node.clone())).collect()),
+            description: action
+                .get("description")
+                .and_then(|e| e.node.as_str())
+                .map(str::to_owned),
+        };
+        for arg in step_args(action_steps.get(name).map_or(&[][..], Vec::as_slice)) {
+            if !decl.args.contains_key(arg) {
+                diagnostics.push(
+                    Diagnostic::new(
+                        "J0821",
+                        format!("action `{name}`: `${arg}` is not declared in `args`"),
+                    )
+                    .at(entry.node.span),
+                );
+            }
+        }
+        out.insert(name.clone(), decl);
+    }
+    out
+}
+
+/// The class `action` members `[implements."<class>"].map` binds to one
+/// of this profile's actions (`m = "actions.<a>"`, ref/03 §2.2.14).
+fn implemented_actions_of(
+    table: &Table,
+    actions: &BTreeMap<String, Option<Duration>>,
+) -> BTreeMap<String, String> {
+    let Some(implements) = table.get("implements").and_then(|e| e.node.as_table()) else {
+        return BTreeMap::new();
+    };
+    let mut out = BTreeMap::new();
+    for entry in implements.values() {
+        let Some(map) = entry
+            .node
+            .as_table()
+            .and_then(|t| t.get("map"))
+            .and_then(|e| e.node.as_table())
+        else {
+            continue;
+        };
+        for (member, target) in map {
+            if let Some(action) = target
+                .node
+                .as_str()
+                .and_then(|t| t.strip_prefix("actions."))
+                .filter(|a| actions.contains_key(*a))
+            {
+                out.insert(member.clone(), action.to_owned());
             }
         }
     }

@@ -138,6 +138,7 @@ pub fn profiles() -> BTreeMap<String, ProfileInfo> {
             timeout: None,
             actions: BTreeMap::new(),
             action_steps: BTreeMap::new(),
+            ..ProfileInfo::default()
         },
     );
     p
