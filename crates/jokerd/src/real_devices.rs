@@ -16,7 +16,9 @@ use joker_driver_gpio::{GpioDriver, GpioPlanner};
 use joker_driver_modbus::{ModbusPlanner, ModbusRtu, ModbusTcp, ModbusTcpPlanner};
 use joker_driver_sysfs::{SysfsDriver, SysfsPlanner};
 use joker_hal::link::DevicePaths;
-use joker_hal::std_host::{LinuxGpio, SerialConfig, TokioHost, TokioSerial, TokioTcpConnector};
+use joker_hal::std_host::{
+    ClockQualityCell, LinuxGpio, SerialConfig, TokioHost, TokioSerial, TokioTcpConnector,
+};
 use joker_hal::{Cbor, Direction, Driver, GpioChip, Link, OpenArgs, Planner};
 use tokio::sync::watch;
 
@@ -399,6 +401,7 @@ const ACTION_CHANNEL_CAPACITY: usize = 4;
 pub struct RealDevices {
     handle: tokio::runtime::Handle,
     sysfs_root: Arc<str>,
+    clock: Arc<ClockQualityCell>,
 }
 
 impl std::fmt::Debug for RealDevices {
@@ -412,10 +415,15 @@ impl std::fmt::Debug for RealDevices {
 impl RealDevices {
     /// Devices spawned on `handle`, with `sysfs`'s root at `/sys`.
     pub fn new(handle: tokio::runtime::Handle) -> Self {
-        Self {
-            handle,
-            sysfs_root: Arc::from(joker_driver_sysfs::SYSFS_ROOT),
-        }
+        Self::with_sysfs_root(handle, joker_driver_sysfs::SYSFS_ROOT)
+    }
+
+    /// The same devices, stamping their instants with the quality
+    /// `clock` holds when each is read (the node's clock, ADR 0069)
+    /// instead of `unsynced`.
+    pub fn with_clock(mut self, clock: Arc<ClockQualityCell>) -> Self {
+        self.clock = clock;
+        self
     }
 
     /// Devices spawned on `handle`, with `sysfs`'s root overridden (a
@@ -424,6 +432,7 @@ impl RealDevices {
         Self {
             handle,
             sysfs_root: Arc::from(sysfs_root),
+            clock: Arc::new(ClockQualityCell::new(ClockQuality::Unsynced)),
         }
     }
 }
@@ -449,7 +458,7 @@ impl DeviceSet for RealSet {
 impl Devices for RealDevices {
     fn start(&self, plan: &Arc<Plan>, shared: &Arc<Shared>) -> Box<dyn DeviceSet> {
         let (tx, rx) = watch::channel(false);
-        let host = Arc::new(TokioHost::new(ClockQuality::Synced));
+        let host = Arc::new(TokioHost::tracking(Arc::clone(&self.clock)));
         let mut actions = BTreeMap::new();
         for (i, device) in plan.devices.iter().enumerate() {
             let plan = Arc::clone(plan);

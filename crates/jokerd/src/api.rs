@@ -49,6 +49,7 @@ pub struct Node {
     trips: Arc<TripTable>,
     traces: Arc<Traces>,
     log: SharedLog,
+    quality: Arc<crate::clock::ClockMonitor>,
 }
 
 impl std::fmt::Debug for Node {
@@ -139,9 +140,9 @@ impl Node {
         utc_origin_ns: i64,
         state_dir: &Path,
     ) -> std::io::Result<Self> {
-        let (manual, trips, log) = {
+        let (manual, trips, log, quality) = {
             let c = lock_controller(&controller);
-            (c.manual(), c.trips(), c.log())
+            (c.manual(), c.trips(), c.log(), c.clock())
         };
         let boot_count = state_file::bump_counter(state_dir, "boot_count")?;
         Ok(Self {
@@ -158,6 +159,7 @@ impl Node {
             trips,
             traces: Arc::new(Traces::open(&state_dir.join("traces"))?),
             log,
+            quality,
         })
     }
 
@@ -212,12 +214,19 @@ impl Node {
     }
 
     fn clock_json(&self) -> Value {
-        let quality = crate::pacer::SystemPacer::host_clock_quality();
-        json!({
-            "quality": quality.name(),
+        let state = self.quality.state();
+        let mut clock = json!({
+            "quality": state.quality.name(),
             "utc": timestamp(utc_now_ns()),
             "mono_ns": self.now_mono().to_string(),
-        })
+        });
+        if let Some(last) = state.last_sync_utc_ns {
+            clock["last_sync"] = json!(timestamp(last));
+            if state.quality == joker_core::ClockQuality::Holdover {
+                clock["holdover_since"] = json!(timestamp(last));
+            }
+        }
+        clock
     }
 
     fn generation_json(&self, g: &Generation) -> Value {
@@ -657,9 +666,7 @@ impl Backend for Node {
     fn headers(&self) -> Headers {
         Headers {
             generation: self.view().map(|v| format!("{} {}", v.number, v.hash)),
-            clock: crate::pacer::SystemPacer::host_clock_quality()
-                .name()
-                .to_owned(),
+            clock: self.quality.quality().name().to_owned(),
         }
     }
 
@@ -1497,7 +1504,7 @@ impl Backend for Node {
             ring: Arc::clone(&v.ring),
             generation: (v.number, v.hash.clone()),
             utc_origin_ns: self.utc_origin_ns,
-            clock: crate::pacer::SystemPacer::host_clock_quality() as u8,
+            clock: self.quality.quality() as u8,
         };
         let now = self.now_mono();
         let mut entry = TraceEntry {

@@ -75,6 +75,9 @@ pub struct Config {
     pub retention: Duration,
     /// UTC time at the daemon's monotonic zero, to stamp log entries.
     pub utc_origin_ns: i64,
+    /// The node's clock quality, which [`Controller::refresh_clock`]
+    /// re-evaluates under the running generation's `[clock]` (ADR 0069).
+    pub clock: Arc<crate::clock::ClockMonitor>,
 }
 
 impl Default for Config {
@@ -84,6 +87,7 @@ impl Default for Config {
             max_window: Duration::from_secs(24 * 3600),
             retention: crate::trace_ring::DEFAULT_RETENTION,
             utc_origin_ns: 0,
+            clock: Arc::default(),
         }
     }
 }
@@ -118,6 +122,7 @@ pub struct Controller {
     permit_state: std::collections::BTreeMap<(String, String), Vec<u64>>,
     heartbeat: Arc<crate::supervisor::Heartbeat>,
     persistent: crate::persistent::Persistent,
+    clock_policy: crate::clock::ClockPolicy,
 }
 
 /// What invoking an action produced (ref/09 §5.10, ADR 0058). Mirrors
@@ -270,6 +275,7 @@ impl Controller {
             permit_state: std::collections::BTreeMap::new(),
             heartbeat: Arc::default(),
             persistent,
+            clock_policy: crate::clock::ClockPolicy::default(),
         })
     }
 
@@ -292,6 +298,42 @@ impl Controller {
     /// watchdog feed to read without this controller's lock (ADR 0061).
     pub fn heartbeat(&self) -> Arc<crate::supervisor::Heartbeat> {
         Arc::clone(&self.heartbeat)
+    }
+
+    /// The node's clock quality.
+    pub fn clock(&self) -> Arc<crate::clock::ClockMonitor> {
+        Arc::clone(&self.config.clock)
+    }
+
+    /// Re-evaluates the clock quality under the running generation's
+    /// `[clock]` and, when it changed, records the change in the decision
+    /// log (`clock`, ADR 0069). Reads the time daemon's state: call it
+    /// from the service loop, never from the tick path.
+    pub fn refresh_clock(&self) {
+        self.refresh_clock_for(self.active.as_ref().map(|a| a.number));
+    }
+
+    fn refresh_clock_for(&self, generation: Option<u64>) {
+        let now = utc_now_ns();
+        let Some(t) = self.config.clock.refresh(self.clock_policy, now) else {
+            return;
+        };
+        let state = self.config.clock.state();
+        let mut m = Map::new();
+        m.insert("gen".into(), generation.map_or(Value::Null, |g| json!(g)));
+        m.insert("record".into(), json!("clock"));
+        m.insert("quality".into(), json!(t.to.name()));
+        m.insert("from".into(), json!(t.from.name()));
+        m.insert(
+            "last_sync".into(),
+            state
+                .last_sync_utc_ns
+                .map_or(Value::Null, |ns| json!(crate::wire::timestamp(ns))),
+        );
+        m.insert("ts".into(), json!(crate::wire::timestamp(now)));
+        if let Err(e) = crate::decisions::lock(&self.log).append(m, true) {
+            eprintln!("jokerd: decision log: {e}");
+        }
     }
 
     /// The store.
@@ -604,6 +646,8 @@ impl Controller {
             }
             None => Default::default(),
         };
+        self.clock_policy = crate::clock::ClockPolicy::of(&loaded.manifest);
+        self.refresh_clock_for(Some(number));
         let plan = Arc::new(loaded.plan);
         let pacer = (self.pacer)();
         let restore = self.persistent.restore_for(&plan, pacer.now().mono_ns);

@@ -5,6 +5,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
+use jokerd::clock::{ClockMonitor, ClockPolicy};
 use jokerd::control::{Config, Controller};
 use jokerd::daemon::lock_controller;
 use jokerd::decisions::DecisionLog;
@@ -74,6 +75,9 @@ pub fn run(entry: &Entry, socket: &Path) -> Result<u8, Failure> {
         .map_err(|e| Failure::usage(format!("tokio: {e}")))?;
     let log = DecisionLog::open(&dir.join("decisions.jsonl")).map_err(io)?;
     let tasks: Arc<dyn TaskProvider> = Arc::new(project::tasks(entry)?);
+    let quality = Arc::new(ClockMonitor::default());
+    quality.refresh(ClockPolicy::default(), jokerd::wire::utc_now_ns());
+    let cell = quality.cell();
     let controller = Controller::new(
         dir,
         Arc::new(Mutex::new(log)),
@@ -83,9 +87,10 @@ pub fn run(entry: &Entry, socket: &Path) -> Result<u8, Failure> {
             clock,
             Duration::from_millis(10),
         )),
-        Box::new(move || Box::new(SystemPacer::new(clock, SystemPacer::host_clock_quality()))),
+        Box::new(move || Box::new(SystemPacer::tracking(clock, Arc::clone(&cell)))),
         Config {
             utc_origin_ns,
+            clock: quality,
             ..Config::default()
         },
     )
@@ -119,6 +124,8 @@ pub fn run(entry: &Entry, socket: &Path) -> Result<u8, Failure> {
             tokio::select! {
                 _ = tokio::signal::ctrl_c() => break,
                 _ = tick.tick() => {
+                    let c = Arc::clone(&watcher);
+                    let _ = tokio::task::spawn_blocking(move || lock_controller(&c).refresh_clock()).await;
                     let now = stamp(&files);
                     if now != seen {
                         seen = now;

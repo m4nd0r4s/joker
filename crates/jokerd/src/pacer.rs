@@ -6,7 +6,12 @@
 
 use std::time::{Instant as StdInstant, SystemTime, UNIX_EPOCH};
 
+use std::sync::Arc;
+
 use joker_core::time::{ClockQuality, Instant};
+use joker_hal::std_host::ClockQualityCell;
+
+use crate::clock::{ClockPolicy, SyncSource, TimesyncFile, evaluate};
 
 /// The cycle thread's source of time.
 pub trait Pacer: Send {
@@ -49,24 +54,32 @@ impl Monotonic {
 #[derive(Debug)]
 pub struct SystemPacer {
     mono: Monotonic,
-    quality: ClockQuality,
+    quality: Arc<ClockQualityCell>,
 }
 
 impl SystemPacer {
     /// A pacer on the daemon's monotonic clock, with the wall clock judged
-    /// `quality`.
+    /// `quality` for good.
     pub fn new(mono: Monotonic, quality: ClockQuality) -> Self {
+        Self::tracking(mono, Arc::new(ClockQualityCell::new(quality)))
+    }
+
+    /// A pacer on the daemon's monotonic clock whose instants carry the
+    /// quality `quality` holds when each is read: one atomic load, so the
+    /// cycle thread sees every re-evaluation of the clock (ADR 0069).
+    pub fn tracking(mono: Monotonic, quality: Arc<ClockQualityCell>) -> Self {
         Self { mono, quality }
     }
 
-    /// The wall clock quality the host reports: `synced` when systemd's
-    /// time synchronisation says so, `unsynced` otherwise (docs/01 §18).
+    /// The wall clock quality the host reports now, under the default
+    /// `[clock]` (docs/01 §18, ADR 0069). Reads a file: never call it on
+    /// the tick path.
     pub fn host_clock_quality() -> ClockQuality {
-        if std::path::Path::new("/run/systemd/timesync/synchronized").exists() {
-            ClockQuality::Synced
-        } else {
-            ClockQuality::Unsynced
-        }
+        evaluate(
+            TimesyncFile::default().last_sync_utc_ns(),
+            crate::wire::utc_now_ns(),
+            ClockPolicy::default(),
+        )
     }
 }
 
@@ -80,7 +93,7 @@ impl Pacer for SystemPacer {
         Instant {
             mono_ns: mono,
             utc_ns: utc,
-            clock: self.quality,
+            clock: self.quality.get(),
         }
     }
 

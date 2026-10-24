@@ -4,6 +4,7 @@ pub mod actions;
 pub mod api;
 pub mod bridge;
 pub mod catalog;
+pub mod clock;
 pub mod compress;
 pub mod control;
 pub mod cycle;
