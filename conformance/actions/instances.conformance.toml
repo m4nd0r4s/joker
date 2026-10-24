@@ -1,0 +1,67 @@
+schema = 1
+
+[suite]
+kind  = "action"
+id    = "actions.instances"
+spec  = ["docs/17 §4.2", "ref/03 §2.2.14", "ref/09 §5.10", "ADR 0066 §17"]
+hosts = ["linux"]
+
+[fixture]
+manifest = """
+[project]
+name  = "actions-instances"
+joker = "1.0"
+mode  = "dev"
+
+[devices.vfd]
+driver  = "modbus-tcp"
+address = "127.0.0.1:1502"
+unit_id = 1
+profile = "acme/vfd@1"
+poll    = "20ms"
+timeout = "200ms"
+
+[devices.vfd.actions.reset_fault]
+role = "admin"
+"""
+
+[fixture.profiles]
+"acme/vfd@1" = """
+[profile]
+name    = "acme/vfd"
+version = "1.0.0"
+driver  = "modbus"
+
+[signals.state]
+at   = 30001
+fc   = 4
+type = "u16"
+
+[actions.reset_fault]
+steps = [
+    { write = { at = 40300, fc = 6, type = "u16", value = 1 } },
+    { write = { at = 40300, fc = 6, type = "u16", value = 0 } },
+]
+
+[implements."std/pump@1"]
+map = { reset = "actions.reset_fault", running = "state" }
+"""
+
+[[double]]
+device    = "vfd"
+registers = { "30001" = 0 }
+
+[[case]]
+id     = "an_implicit_instance_action_runs_the_profile_action"
+name   = "the class action an implicit instance maps runs the device's steps, with the device's configuration"
+spec   = ["docs/17 §4.2", "ref/03 §2.2.14", "ADR 0066 §14", "ADR 0066 §17"]
+do     = [
+    { at = "100ms", invoke = "vfd.reset", key = "k1", role = "operator" },
+    { at = "100ms", invoke = "vfd.reset", key = "k2", role = "admin" },
+]
+expect = [
+    { invocation = "k1", rejected = "J-E1002" },
+    { invocation = "k2", state = "succeeded" },
+    { writes = "vfd", equals = [[40300, 1], [40300, 0]] },
+    { decision = "k2", outcome = "ok", instance = "vfd", device = "vfd" },
+]

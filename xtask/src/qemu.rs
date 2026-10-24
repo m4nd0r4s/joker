@@ -605,6 +605,9 @@ pub fn run(options: &Options) -> Result<bool, String> {
     for file in files {
         let text =
             std::fs::read_to_string(&file).map_err(|e| format!("{}: {e}", file.display()))?;
+        if conformance::actions::is_action_suite(&text) {
+            continue;
+        }
         let display = file
             .strip_prefix(root())
             .unwrap_or(&file)

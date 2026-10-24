@@ -16,6 +16,9 @@ joker-expr.workspace = true
 toml = "1.1"
 serde_json = "1.0"
 critical-section = { workspace = true, features = ["std"] }
+jokerd = { path = "../crates/jokerd" }
+joker-hal = { path = "../crates/joker-hal", features = ["std", "plan"] }
+tokio = { version = "1.48", features = ["rt-multi-thread", "sync", "time"] }
 assert_no_alloc = { version = "1.1.2", default-features = false, features = ["warn_debug", "warn_release"] }
 
 [lints]

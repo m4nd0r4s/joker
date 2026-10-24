@@ -3736,8 +3736,11 @@ dependencies = [
  "joker-case-runner",
  "joker-core",
  "joker-expr",
+ "joker-hal",
  "joker-units",
+ "jokerd",
  "serde_json",
+ "tokio",
  "toml",
 ]
 

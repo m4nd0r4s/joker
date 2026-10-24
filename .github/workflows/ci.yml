@@ -104,7 +104,7 @@ jobs:
       - name: same result sequence on x86_64, aarch64, Cortex-M33 and RISC-V (docs/16 §7, docs/11 Phase 0 gate 2)
         run: |
           digests() {
-            jq -S '[.suites[].cases[] | {id, status, sequence_digest}]' "$1/report.json"
+            jq -S '[.suites[] | select((.id // "") | startswith("actions.") | not) | .cases[] | {id, status, sequence_digest}]' "$1/report.json"
           }
           status=0
           for arch in aarch64 thumbv8m riscv32; do

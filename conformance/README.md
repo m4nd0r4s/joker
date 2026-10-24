@@ -16,7 +16,7 @@ conformance/
   <area>/<suite>.conformance.toml
   link/<name>.vectors.toml
   abi/<name>.vectors.toml
-  actions/<name>.action.toml
+  actions/<suite>.conformance.toml
 ```
 
 | Area | What it covers |
@@ -29,7 +29,7 @@ conformance/
 | `trace/` | the full per-tick result sequence that the determinism gate compares (docs/16 §7) |
 | `link/` | Joker Link test vectors: framing, L2 security, message encodings, the signed OTA manifest (ref/07) |
 | `abi/` | Joker Micro C ABI vectors: status codes, enumerations, quality words, input setters (ref/08) |
-| `actions/` | M19 device actions end to end: dispatch, driver steps and the decision log (ref/06 §2.10–§2.14, ADR 0058) — its own format, see "Device actions" below |
+| `actions/` | M19 device and instance actions end to end: role, arguments, permissive, deduplication, the device queue, step and native programs against a register double, long actions and cancellation, and the decision log (ref/09 §5.10, ref/06 §2.10, ADR 0058, ADR 0060, ADR 0066) — suite kind `action`, see "Device actions" below |
 
 ## File format
 
@@ -100,9 +100,7 @@ spec = ["ref/07 §4.2"]
 
 ## Device actions
 
-`actions/` cases cover M19 device actions (ref/06 §2.10–§2.14, ADR 0058) end to end: dispatch (serialize per device, dedup by key, gate on `permit`), running the action's compiled steps against its real driver, and the resulting decision-log `action` record. An action is I/O by definition — it runs against a real `Driver` — so it does not fit the core-only timeline schema the other areas share (no device, no driver, no I/O, both `linux` and `mcu` hosts) and is not run by `cargo xtask conformance`. The same reasoning already gave `link/` and `abi/` their own formats; this is a third one, same rationale.
-
-These cases run as a `jokerd`-side test (`crates/jokerd/src/control.rs`'s `conformance_actions` module, `cargo test -p jokerd`), not through the xtask conformance runner. They load the fixture's `joker_toml`/`profile_toml` as a real manifest and profile through `jokerd::load::load` — the exact same path a real node uses — and invoke through a real `Controller::invoke_action`, with every `[[case]]` of a file sharing one `Controller`/decision log in order (so a later case can replay an earlier one's idempotency key, as in the fixture below). The only double is at the driver boundary: ref/06 §2.10 delegates "which registers, in what order" to the driver, and this area is about the dispatch/decision-log mechanics above that boundary, not any one driver's wire protocol — the same level the project's own spy/fake driver tests already use (`crates/jokerd/tests/action_invoke.rs`).
+`actions/` holds suites of kind `action` (ref/03 §2.6.1, ADR 0066 §20–§24). An action is the runtime's dispatch above a driver, so it is I/O and does not fit the core timeline; it runs only on the `linux` host, and `cargo xtask conformance` runs it against the daemon itself: the fixture's manifest is activated as a generation, with its permits, its plan and its decision log, and every device runs its own io task with a **register double** in place of its driver. The steps of a program therefore go through the real interpreter and reach the double's registers, and a native action reaches the double's `invoke`. The QEMU runner skips these files, and the determinism comparison between hosts leaves the `actions.*` suites out.
 
 ### File format
 
@@ -110,32 +108,43 @@ These cases run as a `jokerd`-side test (`crates/jokerd/src/control.rs`'s `confo
 schema = 1
 
 [suite]
-kind = "action"
-id   = "actions.<name>"
-spec = ["ref/06 §2.10"]
+kind  = "action"
+id    = "actions.<suite>"
+spec  = ["ref/09 §5.10"]
+hosts = ["linux"]
 
 [fixture]
-joker_toml   = "..."
-profile_toml = "..."
+manifest = """..."""
+
+[fixture.profiles]
+"acme/pcs@1" = """..."""
+
+[[double]]
+device    = "pcs"
+registers = { "30001" = 1 }
+on_write  = [{ at = 40310, value = 1, set = { "30010" = 1 } }]
+quality   = { "30040" = "bad(comm_failure)" }
+fail      = { "40999" = "device_fault" }
+
+[double.native.identify]
+result = { serial = 1234 }
 
 [[case]]
-name   = "..."
-spec   = ["..."]
-device = "<device name in joker_toml>"
-action = "<action name in profile_toml>"
-key    = "<idempotency key>"
-driver = "succeeds" # or "fails"
-after  = "<an earlier case's name>" # optional, documents ordering intent
-
-[case.expect]
-state         = "succeeded" # or "failed"
-decision_kind = "action"
-outcome       = "ok" # or "failed"
-replay        = true # optional: this invocation must be a dedup replay, not a fresh run
+id     = "..."
+do     = [{ at = "100ms", invoke = "pcs.reset_fault", key = "k1" }]
+expect = [{ invocation = "k1", state = "succeeded" }]
 ```
 
-- `schema = 1` is the first key/value pair; `[suite]` names the file (`kind = "action"`, `id`, `spec`).
-- `[fixture]` carries a real manifest and a real profile, verbatim, in the same TOML grammar `jokerd::load::load`/`joker-manifest::profile::parse` already accept elsewhere — nothing new to learn here, no comments allowed in them either.
-- Every `[[case]]` runs in file order against the fixture's `Controller`. `driver` picks the double's behavior for that one invocation (`succeeds` replies `Ok`; `fails` replies a `Failed` outcome). `after` is documentation only (the runner always runs cases in order); it exists so a reader does not have to infer why a later case's `key` matches an earlier one's.
-- `[case.expect].state` is the invocation's outcome as `Controller::invoke_action` reports it (`succeeded`, `failed`, or implicitly `rejected` if the test asserts a `Rejected` variant); `decision_kind`/`outcome` are the matching decision-log `action` record's own `record`/`outcome` fields (ADR 0058 §7); `replay = true` asserts the invocation was served from the dispatcher's dedup cache, not run again.
+- `[fixture] manifest` is a manifest in ref/01 syntax, verbatim; `[fixture.profiles]` maps each profile reference it uses to the profile's text (ref/03 §2.2).
+- `[[double]]` declares the equipment of one device: `registers` (the value of each address, keyed by the address's `at`), `on_write` (writing `value` at `at` also sets the registers of `set`), `quality` (the quality the double reports for reads of an address, a literal of ref/03 §2.1.3), `fail` (`device_fault`, `timeout` or `comm_failure` for reads and writes of an address), `link = "down"` (every `connect` fails) and `[double.native.<action>]` (`result`, `failure` = `timeout` \| `device` \| `invalid`, `hold` = how long the call runs, checking for cancellation). A device without a `[[double]]` has empty registers.
+- `do` runs in order; `at` is the earliest instant, counted from the start of the case in real time:
+  - `{ at, invoke = "<target>.<action>", key, ref, args, timeout, reason, wait, role }` invokes as a principal with `role` (default `operator`); `ref` names the invocation for the expectations (default: the key);
+  - `{ at, cancel = "<ref>" }` cancels it;
+  - `{ at, settle = true }` waits until every invocation ended.
+- `expect` is checked once every invocation ended:
+  - `{ invocation = "<ref>", state, result, error, code, message, replay, progress }` — the invocation as `/v1/invocations/{id}` shows it (`error` is `error.kind`, `message` a part of `error.message`); `{ invocation = "<ref>", rejected = "<code>" }` for a request error;
+  - `{ decision = "<ref>", outcome, kind, code, duplicate, count, instance, device }` — its `action` record (`duplicate = true`: `duplicate_of` names the original invocation);
+  - `{ writes = "<device>", equals = [[at, value], …] }` — every write the double received, in order;
+  - `{ register = "<device>", at, equals }` — a register at the end of the case.
+- Each case starts from a fresh node. A malformed suite is `J0887`; a failed expectation is `J0842`.
 - Every case carries a `spec` list, same convention as the core suites.

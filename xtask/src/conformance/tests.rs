@@ -430,6 +430,9 @@ fn the_streaming_verdict_of_the_firmware_agrees_with_the_report() {
     let mut ran = 0;
     for file in super::discover(&root).unwrap() {
         let text = std::fs::read_to_string(&file).unwrap();
+        if super::actions::is_action_suite(&text) {
+            continue;
+        }
         ran += verdicts_agree(&file, &text);
     }
     assert!(ran > 0);

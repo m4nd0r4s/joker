@@ -1,0 +1,208 @@
+schema = 1
+
+[suite]
+kind  = "action"
+id    = "actions.steps"
+spec  = ["ref/03 §2.2.12", "ref/06 §2.10", "ref/09 §5.10", "ADR 0058", "ADR 0060", "ADR 0066"]
+hosts = ["linux"]
+
+[fixture]
+manifest = """
+[project]
+name  = "actions-steps"
+joker = "1.0"
+mode  = "dev"
+
+[devices.pcs]
+driver  = "modbus-tcp"
+address = "127.0.0.1:1502"
+unit_id = 1
+profile = "acme/pcs@1"
+poll    = "20ms"
+timeout = "200ms"
+"""
+
+[fixture.profiles]
+"acme/pcs@1" = """
+[profile]
+name    = "acme/pcs"
+version = "1.0.0"
+driver  = "modbus"
+
+[signals.state]
+at   = 30001
+fc   = 4
+type = "u16"
+
+[actions.reset_fault]
+steps = [
+    { write = { at = 40300, fc = 6, type = "u16", value = 1 } },
+    { wait = "10ms" },
+    { write = { at = 40300, fc = 6, type = "u16", value = 0 } },
+]
+
+[actions.start]
+result = { speed = "u16" }
+steps  = [
+    { write = { at = 40310, fc = 6, type = "u16", value = 1 } },
+    { until = { at = 30010, fc = 4, type = "u16", equals = 1, timeout = "500ms" } },
+    { read = { at = 30011, fc = 4, type = "u16", into = "speed" } },
+]
+
+[actions.guarded]
+steps = [
+    { fail_if = { at = 30020, fc = 4, type = "u16", equals = 1, message = "already faulted" } },
+    { write = { at = 40320, fc = 6, type = "u16", value = 1 } },
+]
+
+[actions.wait_ready]
+steps = [{ until = { at = 30030, fc = 4, type = "u16", equals = 1, timeout = "100ms" } }]
+
+[actions.read_bad]
+result = { value = "u16" }
+steps  = [{ read = { at = 30040, fc = 4, type = "u16", into = "value" } }]
+
+[actions.read_uncertain]
+result = { value = "u16" }
+steps  = [{ read = { at = 30050, fc = 4, type = "u16", into = "value" } }]
+
+[actions.guard_uncertain]
+steps = [
+    { fail_if = { at = 30050, fc = 4, type = "u16", equals = 1, message = "never" } },
+    { write = { at = 40350, fc = 6, type = "u16", value = 1 } },
+]
+
+[actions.set_level]
+args  = { level = "u64" }
+steps = [{ write = { at = 40330, fc = 6, type = "u16", value = "$level" } }]
+
+[actions.slow]
+timeout = "1s"
+steps   = [
+    { wait = "300ms" },
+    { write = { at = 40340, fc = 6, type = "u16", value = 1 } },
+]
+
+[actions.write_fault]
+steps = [{ write = { at = 40999, fc = 6, type = "u16", value = 1 } }]
+"""
+
+[[double]]
+device    = "pcs"
+registers = { "30001" = 0, "30010" = 0, "30011" = 1450, "30020" = 1, "30030" = 0, "30040" = 7, "30050" = 9, "40300" = 0 }
+on_write  = [{ at = 40310, value = 1, set = { "30010" = 1 } }]
+quality   = { "30040" = "bad(comm_failure)", "30050" = "uncertain(stale)" }
+fail      = { "40999" = "device_fault" }
+
+[[case]]
+id     = "writes_run_in_order"
+name   = "the steps of a program reach the equipment in order, and the invocation is recorded once"
+spec   = ["ref/03 §2.2.12", "ref/06 §2.10", "ADR 0058 §7", "ADR 0058 §8"]
+do     = [{ at = "100ms", invoke = "pcs.reset_fault", key = "k1" }]
+expect = [
+    { invocation = "k1", state = "succeeded", replay = false },
+    { writes = "pcs", equals = [[40300, 1], [40300, 0]] },
+    { register = "pcs", at = 40300, equals = 0 },
+    { decision = "k1", outcome = "ok", device = "pcs", count = 1 },
+]
+
+[[case]]
+id     = "until_and_read_fill_the_result"
+name   = "until waits for the value a write makes the equipment show, and read stores its value under into"
+spec   = ["ref/03 §2.2.12"]
+do     = [{ at = "100ms", invoke = "pcs.start", key = "k1" }]
+expect = [
+    { invocation = "k1", state = "succeeded", result = { speed = 1450 } },
+    { writes = "pcs", equals = [[40310, 1]] },
+]
+
+[[case]]
+id     = "fail_if_ends_with_its_message"
+name   = "fail_if ends the program with its message before the next step"
+spec   = ["ref/03 §2.2.12", "ADR 0058 §6", "ADR 0066 §13"]
+do     = [{ at = "100ms", invoke = "pcs.guarded", key = "k1" }]
+expect = [
+    { invocation = "k1", state = "failed", error = "invalid", code = "J-E1408", message = "already faulted" },
+    { writes = "pcs", equals = [] },
+    { decision = "k1", outcome = "failed", kind = "invalid", code = "J-E1408" },
+]
+
+[[case]]
+id     = "until_times_out"
+name   = "an until that never sees its value ends with timeout"
+spec   = ["ref/03 §2.2.12", "ref/04 §7.1", "ADR 0066 §13"]
+do     = [{ at = "100ms", invoke = "pcs.wait_ready", key = "k1" }]
+expect = [
+    { invocation = "k1", state = "failed", error = "timeout", code = "J-E1406" },
+    { decision = "k1", outcome = "failed", kind = "timeout", code = "J-E1406" },
+]
+
+[[case]]
+id     = "a_bad_read_is_a_device_failure"
+name   = "a Bad read ends the action with device, and its value is never stored"
+spec   = ["ADR 0060 §5", "ADR 0060 §6", "ADR 0066 §13"]
+do     = [{ at = "100ms", invoke = "pcs.read_bad", key = "k1" }]
+expect = [
+    { invocation = "k1", state = "failed", error = "device", code = "J-E1407", message = "bad(comm_failure)" },
+    { decision = "k1", outcome = "failed", kind = "device", code = "J-E1407" },
+]
+
+[[case]]
+id     = "an_uncertain_read_keeps_its_quality"
+name   = "an Uncertain value enters the result with its quality"
+spec   = ["ADR 0060 §6", "ADR 0066 §12", "AGENTS.md invariant 4"]
+do     = [{ at = "100ms", invoke = "pcs.read_uncertain", key = "k1" }]
+expect = [
+    { invocation = "k1", state = "succeeded", result = { value = { value = 9, quality = "uncertain(stale)" } } },
+]
+
+[[case]]
+id     = "an_uncertain_read_ends_fail_if"
+name   = "an Uncertain read in fail_if ends the action with device whatever its value"
+spec   = ["ADR 0060 §5"]
+do     = [{ at = "100ms", invoke = "pcs.guard_uncertain", key = "k1" }]
+expect = [
+    { invocation = "k1", state = "failed", error = "device", code = "J-E1407" },
+    { writes = "pcs", equals = [] },
+]
+
+[[case]]
+id     = "an_argument_is_written"
+name   = "a step's $name is the value of the argument"
+spec   = ["ref/03 §2.2.12", "ADR 0066 §5"]
+do     = [{ at = "100ms", invoke = "pcs.set_level", key = "k1", args = { level = 42 } }]
+expect = [
+    { invocation = "k1", state = "succeeded" },
+    { writes = "pcs", equals = [[40330, 42]] },
+    { register = "pcs", at = 40330, equals = 42 },
+]
+
+[[case]]
+id     = "the_action_timeout_bounds_the_program"
+name   = "a shorter request timeout ends a program still waiting at its deadline"
+spec   = ["ref/09 §5.10", "ADR 0066 §4"]
+do     = [{ at = "100ms", invoke = "pcs.slow", key = "k1", timeout = "100ms" }]
+expect = [
+    { invocation = "k1", state = "failed", error = "timeout", code = "J-E1406" },
+    { writes = "pcs", equals = [] },
+]
+
+[[case]]
+id     = "a_request_timeout_cannot_lengthen_the_action"
+name   = "a request timeout longer than the configured one is invalid"
+spec   = ["ref/09 §5.10", "ADR 0066 §4"]
+do     = [{ at = "100ms", invoke = "pcs.slow", key = "k1", timeout = "2s" }]
+expect = [
+    { invocation = "k1", rejected = "J-E1401" },
+    { decision = "k1", outcome = "rejected_invalid", code = "J-E1401" },
+    { writes = "pcs", equals = [] },
+]
+
+[[case]]
+id     = "a_failed_write_is_a_device_failure"
+name   = "a write-addr the equipment refuses ends the action with device"
+spec   = ["ref/06 §2.10", "ADR 0058 §6", "ADR 0066 §13"]
+do     = [{ at = "100ms", invoke = "pcs.write_fault", key = "k1" }]
+expect = [
+    { invocation = "k1", state = "failed", error = "device", code = "J-E1407" },
+]
