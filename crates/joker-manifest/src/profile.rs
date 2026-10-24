@@ -780,6 +780,7 @@ fn signal_of(
         deadband,
         enum_values,
         poll,
+        ..Acquisition::NONE
     };
     if let Some(u) = unit {
         info = info.with_unit(u);

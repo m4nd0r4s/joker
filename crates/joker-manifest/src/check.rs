@@ -604,16 +604,15 @@ impl Checker<'_> {
                     );
                 }
                 info = Some(base);
-            } else if let (Some(info), Some(u)) = (info.as_mut(), &unit) {
-                match info.unit {
-                    Some(profile_unit) if profile_unit.dimension() != u.value.dimension() => {
-                        self.push(
-                            Diagnostic::new("J0107", "incompatible unit (dimension)")
-                                .at(u.span)
-                                .label(format!("the profile declares {}", describe(&profile_unit))),
-                        );
+            }
+            if let Some(adjusted) = info.as_mut().filter(|_| !opaque) {
+                match crate::adjust::adjust(adjusted, !declared, &tuning.value) {
+                    Ok(a) => *adjusted = a.info,
+                    Err(errors) => {
+                        for e in errors {
+                            self.push(e);
+                        }
                     }
-                    _ => info.unit = Some(u.value),
                 }
             }
             if let Some(info) = info {

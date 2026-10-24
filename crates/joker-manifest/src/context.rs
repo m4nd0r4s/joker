@@ -422,6 +422,14 @@ pub struct Acquisition {
     pub enum_values: Vec<i64>,
     /// The point's own `poll`, when it declares one.
     pub poll: Option<PointPoll>,
+    /// `limits`, in the unit of the signal: a value outside them is
+    /// `bad(out_of_range)`.
+    pub limits: Option<(f64, f64)>,
+    /// `stuck_detect`: a `good` value that stays bit for bit equal this
+    /// long is `uncertain(frozen)`.
+    pub stuck_detect: Option<Duration>,
+    /// `debounce` of a `bool` read by poll (docs/16 §3.4).
+    pub debounce: Option<Duration>,
 }
 
 impl Acquisition {
@@ -433,6 +441,9 @@ impl Acquisition {
         deadband: None,
         enum_values: Vec::new(),
         poll: None,
+        limits: None,
+        stuck_detect: None,
+        debounce: None,
     };
 }
 
