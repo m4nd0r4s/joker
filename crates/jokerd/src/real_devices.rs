@@ -8,7 +8,6 @@
 //! device declaring it is reported, not silently ignored.
 
 use std::collections::BTreeMap;
-use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -27,17 +26,55 @@ use crate::drivers::{ActionCall, mark_bad, point_targets, run_driver};
 use crate::plan::Plan;
 use crate::shared::Shared;
 
-fn tcp_addr(config: &[u8]) -> Option<SocketAddr> {
+/// The default Modbus TCP port (ref/01 appendix A).
+pub const MODBUS_TCP_PORT: u16 = 502;
+
+/// The endpoint of a `modbus-tcp` device from its `[devices.<d>]` keys
+/// (ref/01 appendix A): `address = "<host>:<port>"`, required, the port
+/// 502 by default. The host is a name (resolved at each connection), an
+/// IPv4 literal or an IPv6 literal, bracketed when it carries a port.
+/// Returns `"<host>:<port>"` for the connector, or why the key is wrong.
+pub fn modbus_tcp_address(config: &[u8]) -> Result<String, String> {
     let cbor = Cbor::new(config);
-    let host = cbor.get("host").ok()??.as_str().ok()?;
-    let port = cbor
-        .get("port")
+    let address = cbor
+        .get("address")
         .ok()
         .flatten()
-        .and_then(|p| p.as_u64().ok())
-        .and_then(|p| u16::try_from(p).ok())
-        .unwrap_or(502);
-    format!("{host}:{port}").parse().ok()
+        .ok_or("`address` is required")?
+        .as_str()
+        .map_err(|_| "`address` must be a string \"<host>:<port>\"")?
+        .trim();
+    let (host, port) = if let Some(rest) = address.strip_prefix('[') {
+        let (host, after) = rest
+            .split_once(']')
+            .ok_or_else(|| format!("`address` `{address}`: unclosed `[`"))?;
+        let port = match after {
+            "" => None,
+            p => Some(
+                p.strip_prefix(':')
+                    .ok_or_else(|| format!("`address` `{address}`: expected `:<port>`"))?,
+            ),
+        };
+        (format!("[{host}]"), port)
+    } else {
+        match address.rsplit_once(':') {
+            Some((host, _)) if host.contains(':') => (format!("[{address}]"), None),
+            Some((host, port)) => (host.to_owned(), Some(port)),
+            None => (address.to_owned(), None),
+        }
+    };
+    if host.is_empty() || host == "[]" {
+        return Err(format!("`address` `{address}`: no host"));
+    }
+    let port = match port {
+        None => MODBUS_TCP_PORT,
+        Some(p) => p
+            .parse::<u16>()
+            .ok()
+            .filter(|p| *p != 0)
+            .ok_or_else(|| format!("`address` `{address}`: port must be 1-65535"))?,
+    };
+    Ok(format!("{host}:{port}"))
 }
 
 #[allow(
@@ -169,16 +206,11 @@ async fn run_modbus_tcp(
         Ok(p) => p,
         Err(e) => return setup_failed(&shared, &plan, device_index, &host, format!("plan: {e:?}")),
     };
-    let Some(addr) = tcp_addr(&device.config) else {
-        return setup_failed(
-            &shared,
-            &plan,
-            device_index,
-            &host,
-            "no valid `host`/`port`".to_owned(),
-        );
+    let address = match modbus_tcp_address(&device.config) {
+        Ok(a) => a,
+        Err(e) => return setup_failed(&shared, &plan, device_index, &host, e),
     };
-    let endpoint = joker_hal::link::TcpEndpoint::new(TokioTcpConnector::new(addr));
+    let endpoint = joker_hal::link::TcpEndpoint::new(TokioTcpConnector::to(&address));
     let driver = match ModbusTcp::open(
         &OpenArgs::new(views.request(), hal_plan.view()),
         Link::Tcp(endpoint),
