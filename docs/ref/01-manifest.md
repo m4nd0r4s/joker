@@ -584,7 +584,7 @@ The action must exist in the profile (`J0101`). The implementation (steps, regis
 
 | Key | Type | Req. | Default | Validation | Origin | Phase |
 |---|---|---|---|---|---|---|
-| `permit` | `Expr<bool>` | no | `"true"` | permissive evaluated before each invocation (`Uncertain` counts as false) | 03 §5.2 | 1.0 |
+| `permit` | `Expr<bool>` | no | `"true"` | permissive evaluated before each invocation (`Uncertain` counts as false); one that does not compile against the plan stops the generation from loading with the expression's code, and a declared permit the runtime cannot evaluate denies the invocation (ADR 0060) | 03 §5.2 | 1.0 |
 | `role` | `"viewer"` \| `"operator"` \| `"admin"` | no | `"operator"` | minimum role of whoever invokes through the CLI, API, HMI or bridge; `"viewer"` is accepted with the warning `J0298` and counts as `"operator"`, because the API requires at least `operator` for any action (`ref/09`) | 03 §5.2 | 1.0 |
 | `timeout` | `Duration` | cond. | that of the profile | without either of the two, `J0142` | 03 §5.2 | 1.0 |
 | `dedup_window` | `Duration` | no | `"60s"` | window of the idempotency key (16, E9) | 16 E9 | 1.0 |
