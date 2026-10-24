@@ -134,6 +134,21 @@ pub struct GroupStats {
     pub last_tick_mono_ns: Counter,
 }
 
+/// What the io task of one real device reports (ref/06 §2.12, AGENTS.md
+/// invariant 7), in `plan.devices` order.
+#[derive(Debug, Default)]
+pub struct DeviceStats {
+    /// The effective link state, as the code of `joker_hal::LinkState`
+    /// (`connecting` 0, `up` 1, `degraded` 2, `down` 3).
+    pub link: Counter,
+    /// Successful `connect` calls after the first one.
+    pub reconnects: Counter,
+    /// Samples the device's sample ring refused.
+    pub dropped_samples: Counter,
+    /// Samples that broke the rules of ref/06 §2.8 (`J0869`).
+    pub invalid_samples: Counter,
+}
+
 /// One tick of one group, encoded as a trace segment of one tick.
 #[derive(Debug)]
 pub struct TraceChunk {
@@ -291,6 +306,8 @@ pub struct Shared {
     pub commit_bindings: Vec<Vec<OutputBinding>>,
     /// The boxes matching [`Shared::commit_bindings`], one per device.
     pub commit_boxes: Vec<Vec<CommitBox>>,
+    /// Per device (`plan.devices` order): its link and its counters.
+    pub devices: Box<[DeviceStats]>,
 }
 
 fn raw_encoding_of(ty: ValueType) -> Option<RawEncoding> {
@@ -384,6 +401,11 @@ impl Shared {
             running: AtomicBool::new(false),
             commit_bindings,
             commit_boxes,
+            devices: plan
+                .devices
+                .iter()
+                .map(|_| DeviceStats::default())
+                .collect(),
         }
     }
 

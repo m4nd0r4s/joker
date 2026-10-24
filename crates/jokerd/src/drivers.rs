@@ -21,7 +21,7 @@ use joker_hal::cx::Host;
 use joker_hal::driver::{AckSlot, ConnectOut, Driver, RawSink, ReadBatch, WriteAcks};
 use joker_hal::plan::PlanView;
 use joker_hal::spec::PlanRequest;
-use joker_hal::types::BatchKind;
+use joker_hal::types::{BatchFailure, BatchKind, LinkState, WriteStatus};
 use joker_hal::{CommitRx, Cx, RxState};
 
 use crate::bridge::DeviceStep;
@@ -351,15 +351,190 @@ pub fn point_targets(plan: &Plan, device_index: usize) -> Vec<PointTarget> {
         .collect()
 }
 
+/// The first reconnection delay after a link goes `down` (ref/06 §2.12).
+pub const BACKOFF_MIN_NS: u64 = 250_000_000;
+/// The longest reconnection delay (ref/06 §2.12).
+pub const BACKOFF_MAX_NS: u64 = 30_000_000_000;
+/// Consecutive rounds in which every batch failed against the link before
+/// it goes `down` (ref/06 §2.12).
+pub const DOWN_AFTER_FAILED_ROUNDS: u32 = 3;
+/// Consecutive write timeouts before the link goes `down` (ref/06 §2.12).
+pub const DOWN_AFTER_WRITE_TIMEOUTS: u32 = 3;
+const DEGRADED_WINDOW: u32 = 20;
+const IDLE_NS: u64 = 100_000_000;
+
+/// The reconnection delays of ref/06 §2.12: 250 ms doubling up to 30 s,
+/// each with a jitter of ±20 %. The jitter comes from a small xorshift
+/// generator seeded by the caller, so a run on a virtual clock repeats.
+#[derive(Clone, Copy, Debug)]
+pub struct Backoff {
+    base_ns: u64,
+    state: u64,
+}
+
+impl Backoff {
+    /// A backoff at its first delay, its jitter seeded by `seed`.
+    pub fn new(seed: u64) -> Self {
+        Self {
+            base_ns: BACKOFF_MIN_NS,
+            state: seed | 1,
+        }
+    }
+
+    /// Back to the first delay, after a successful connection.
+    pub fn reset(&mut self) {
+        self.base_ns = BACKOFF_MIN_NS;
+    }
+
+    /// The next delay, then doubles the base up to [`BACKOFF_MAX_NS`].
+    pub fn next_delay_ns(&mut self) -> u64 {
+        self.state ^= self.state << 13;
+        self.state ^= self.state >> 7;
+        self.state ^= self.state << 17;
+        let base = self.base_ns;
+        let span = base / 5;
+        self.base_ns = base.saturating_mul(2).min(BACKOFF_MAX_NS);
+        base - span + self.state % (2 * span + 1)
+    }
+}
+
+/// The effective link state of one device as its io task computes it from
+/// the calls (ref/06 §2.12): `down` after a failed `connect`, a
+/// `not-connected`, [`DOWN_AFTER_FAILED_ROUNDS`] rounds in which every
+/// batch failed or [`DOWN_AFTER_WRITE_TIMEOUTS`] write timeouts in a row;
+/// `degraded` while at least 20 % of the last 20 batch executions failed
+/// against the link, back `up` under 5 %.
+#[derive(Clone, Copy, Debug)]
+struct LinkTracker {
+    state: LinkState,
+    window: u32,
+    failed_rounds: u32,
+    write_timeouts: u32,
+}
+
+impl LinkTracker {
+    fn up() -> Self {
+        Self {
+            state: LinkState::Up,
+            window: 0,
+            failed_rounds: 0,
+            write_timeouts: 0,
+        }
+    }
+
+    fn batch(&mut self, failed: bool) {
+        self.window = (self.window << 1 | u32::from(failed)) & ((1 << DEGRADED_WINDOW) - 1);
+        let failures = self.window.count_ones();
+        self.state = match self.state {
+            LinkState::Up if failures * 5 >= DEGRADED_WINDOW => LinkState::Degraded,
+            LinkState::Degraded if failures * 20 < DEGRADED_WINDOW => LinkState::Up,
+            other => other,
+        };
+    }
+
+    fn round(&mut self, executed: u32, failed: u32) -> bool {
+        if executed == 0 {
+            return false;
+        }
+        if failed == executed {
+            self.failed_rounds += 1;
+        } else {
+            self.failed_rounds = 0;
+        }
+        self.failed_rounds >= DOWN_AFTER_FAILED_ROUNDS
+    }
+
+    fn write_timeout(&mut self, timed_out: bool) -> bool {
+        if timed_out {
+            self.write_timeouts += 1;
+        } else {
+            self.write_timeouts = 0;
+        }
+        self.write_timeouts >= DOWN_AFTER_WRITE_TIMEOUTS
+    }
+}
+
+fn publish_link(shared: &Shared, device_index: usize, state: LinkState) {
+    if let Some(stats) = shared.devices.get(device_index) {
+        stats.link.set(state as u64);
+    }
+}
+
+fn mark_all(shared: &Shared, targets: &[PointTarget], quality: Quality, now: u64) {
+    for target in targets {
+        if let Some(slot) = shared.slots.get(target.signal.index()) {
+            slot.write(0, quality, NO_TS_SRC, now);
+        }
+    }
+}
+
+/// Writes `bad(reason)` into the slot of every read point of `targets`:
+/// how a device that cannot run, or whose link is down, shows on its
+/// signals (ref/06 §2.8, the link quality).
+pub fn mark_bad(shared: &Shared, targets: &[PointTarget], reason: QualityReason, now: u64) {
+    mark_all(shared, targets, Quality::new(QualityCode::Bad, reason), now);
+}
+
+enum Ended {
+    Stopped,
+    LinkDown,
+}
+
+fn reply_not_connected(call: ActionCall) {
+    let _ = call
+        .reply
+        .send(ActionOutcome::Device(String::from("not connected")));
+}
+
+/// Waits until `until` on `host`'s clock, answering every action call
+/// with a device failure (the link is not up), and polling `stop` at
+/// least every 100 ms. True when `stop` asked to end.
+async fn pause(
+    host: &dyn Host,
+    until: u64,
+    action_rx: &mut tokio::sync::mpsc::Receiver<ActionCall>,
+    actions_open: &mut bool,
+    stop: &mut impl FnMut() -> bool,
+) -> bool {
+    loop {
+        if stop() {
+            return true;
+        }
+        let now = host.now().mono_ns;
+        if now >= until {
+            return false;
+        }
+        let wake = until.min(now + IDLE_NS);
+        let sleep = core::future::poll_fn(|task_cx| host.poll_sleep(wake, task_cx));
+        if *actions_open {
+            tokio::select! {
+                () = sleep => {}
+                call = action_rx.recv() => match call {
+                    Some(call) => reply_not_connected(call),
+                    None => *actions_open = false,
+                },
+            }
+        } else {
+            sleep.await;
+        }
+    }
+}
+
 /// Runs one real device's driver on `host`'s clock until `stop` returns
-/// true: connects, then loops writes-before-reads like
-/// `joker_hal::testing::Bench::run_until`, but for real (`host` is a
-/// `TokioHost` in production; a test can still use `VirtualHost` plus its
-/// own `run`, since this is a plain `async fn`). Reads land in
+/// true, following the lifecycle of ref/06 §2.1: `connect`, then
+/// writes-before-reads on the poll batches' periods (`host` is a
+/// `TokioHost` in production, a `VirtualHost` in tests). Reads land in
 /// `shared.slots` through `targets`, every settled point of every read
 /// (a failed read or a value that does not convert writes a `bad` sample,
 /// see [`settled_sample`]). Writes are drained from the `CommitRx` on
 /// `shared.commit_bindings[device_index]`/`commit_boxes[device_index]`.
+///
+/// The link state of ref/06 §2.12 goes to `shared.devices[device_index]`.
+/// When the link goes `down` (a failed `connect`, a `not-connected`, three
+/// rounds in which every batch failed, three write timeouts in a row) the
+/// driver is disconnected, every read point turns `bad(comm_failure)`, and
+/// `connect` is retried after a [`Backoff`] delay; after each `connect`
+/// the applied value of every output is resent (`resync`).
 #[allow(
     clippy::too_many_arguments,
     reason = "each parameter is a distinct, independently-sourced piece (the driver, the clock, the plan request/view, a deadline, the slot targets, the shared commit channel, which device, and the stop condition); a wrapper struct would only rename this list, not shrink it"
@@ -377,41 +552,118 @@ pub async fn run_driver<D: Driver>(
     mut action_rx: tokio::sync::mpsc::Receiver<ActionCall>,
     mut stop: impl FnMut() -> bool,
 ) {
-    let deadline = host.now().mono_ns + timeout_ns;
-    let mut cx = Cx::new(host, deadline);
-    let mut connect_sink = ();
-    let mut out = ConnectOut::new(&mut connect_sink);
-    if driver.connect(&mut cx, &mut out).await.is_err() {
-        return;
-    }
-
-    let bindings = &shared.commit_bindings[device_index];
-    let boxes = &shared.commit_boxes[device_index];
+    let bindings = shared
+        .commit_bindings
+        .get(device_index)
+        .map_or(&[][..], Vec::as_slice);
+    let boxes = shared
+        .commit_boxes
+        .get(device_index)
+        .map_or(&[][..], Vec::as_slice);
     let mut rx_state = vec![RxState::default(); bindings.len()];
     let Ok(mut rx) = CommitRx::new(bindings, boxes, &mut rx_state) else {
+        mark_bad(
+            shared,
+            targets,
+            QualityReason::ConfigError,
+            host.now().mono_ns,
+        );
         return;
     };
+    let mut backoff = Backoff::new(host.now().mono_ns ^ (device_index as u64) << 32);
+    let mut actions_open = true;
+    let mut connected_before = false;
+    publish_link(shared, device_index, LinkState::Connecting);
+    while !stop() {
+        let deadline = host.now().mono_ns + timeout_ns;
+        let mut cx = Cx::new(host, deadline);
+        let mut connect_sink = ();
+        let mut out = ConnectOut::new(&mut connect_sink);
+        let connected = driver.connect(&mut cx, &mut out).await.is_ok();
+        if connected {
+            if connected_before && let Some(stats) = shared.devices.get(device_index) {
+                stats.reconnects.bump();
+            }
+            connected_before = true;
+            backoff.reset();
+            rx.resync();
+            let ended = serve(
+                &mut driver,
+                host,
+                &request,
+                plan,
+                timeout_ns,
+                targets,
+                shared,
+                device_index,
+                fallback_keepalive_ns,
+                &mut rx,
+                &mut action_rx,
+                &mut actions_open,
+                &mut stop,
+            )
+            .await;
+            if matches!(ended, Ended::Stopped) {
+                break;
+            }
+            let mut cx = Cx::new(host, host.now().mono_ns + timeout_ns);
+            driver.disconnect(&mut cx).await;
+        }
+        publish_link(shared, device_index, LinkState::Down);
+        mark_bad(
+            shared,
+            targets,
+            QualityReason::CommFailure,
+            host.now().mono_ns,
+        );
+        let delay = backoff.next_delay_ns();
+        eprintln!(
+            "warning: device `{}`: link down, connecting again in {} ms",
+            request.devices.first().map_or("?", |d| d.name),
+            delay / 1_000_000
+        );
+        let until = host.now().mono_ns + delay;
+        if pause(host, until, &mut action_rx, &mut actions_open, &mut stop).await {
+            break;
+        }
+        publish_link(shared, device_index, LinkState::Connecting);
+    }
+    let mut cx = Cx::new(host, host.now().mono_ns + timeout_ns);
+    driver.disconnect(&mut cx).await;
+}
 
-    // On-demand batches (`fc`/params read only when something asks) are
-    // not scheduled here at all: there is no periodic "due" for them to
-    // begin with, and treating them as always-due-again spun this loop
-    // at the virtual clock's own resolution once already (fixed by
-    // scoping the scheduler to `Poll` batches only). A real on-demand
-    // read needs its own request-driven trigger, not built yet.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the connected half of run_driver, with the same pieces plus the state run_driver keeps across reconnections"
+)]
+async fn serve<D: Driver>(
+    driver: &mut D,
+    host: &dyn Host,
+    request: &PlanRequest<'_>,
+    plan: PlanView<'_>,
+    timeout_ns: u64,
+    targets: &[PointTarget],
+    shared: &Shared,
+    device_index: usize,
+    fallback_keepalive_ns: Option<u64>,
+    rx: &mut CommitRx<'_>,
+    action_rx: &mut tokio::sync::mpsc::Receiver<ActionCall>,
+    actions_open: &mut bool,
+    stop: &mut impl FnMut() -> bool,
+) -> Ended {
+    let stats = shared.devices.get(device_index);
+    let mut link = LinkTracker::up();
+    publish_link(shared, device_index, link.state);
     let mut due: Vec<u64> = vec![host.now().mono_ns; plan.len()];
     let mut buf = SampleBuffer::with_capacity(4096);
-    const IDLE_NS: u64 = 100_000_000;
-    // docs/01 §8, M1: the device fallback keepalive is renewed regardless
-    // of whether the applied value changed; `applies_to` (which outputs
-    // it actually covers, ref/03 §2.2.11) is not resolved, so every
-    // binding of this device is marked due, same as `resync`.
     let mut next_keepalive = fallback_keepalive_ns.map(|ns| host.now().mono_ns + ns);
     while !stop() {
         if let (Some(ns), Some(next)) = (fallback_keepalive_ns, next_keepalive)
             && host.now().mono_ns >= next
         {
-            for i in 0..bindings.len() {
-                rx.keepalive(i);
+            let mut i = 0;
+            while rx.keepalive(i) {
+                i += 1;
             }
             next_keepalive = Some(host.now().mono_ns + ns);
         }
@@ -420,9 +672,17 @@ pub async fn run_driver<D: Driver>(
         if !writes.is_empty() {
             let mut slots = vec![AckSlot::default(); writes.len()];
             if let Some(mut acks) = WriteAcks::new(&writes, &mut slots) {
-                let deadline = host.now().mono_ns + timeout_ns;
+                let deadline = host.now().mono_ns + timeout_ns * (1 + writes.len() as u64 / 8);
                 let mut cx = Cx::new(host, deadline);
                 driver.write(&mut cx, &writes, &mut acks).await;
+                let mut down = false;
+                for ack in acks.iter() {
+                    down |= ack.status == WriteStatus::NotConnected
+                        || link.write_timeout(ack.status == WriteStatus::Timeout);
+                }
+                if down {
+                    return Ended::LinkDown;
+                }
             }
         }
 
@@ -432,26 +692,22 @@ pub async fn run_driver<D: Driver>(
             .map(|b| due[b.head.id as usize])
             .chain(next_keepalive)
             .min()
-            .unwrap_or(host.now().mono_ns + IDLE_NS);
-        tokio::select! {
-            () = core::future::poll_fn(|task_cx| host.poll_sleep(next, task_cx)) => {}
-            call = action_rx.recv() => {
-                if let Some(call) = call {
-                    let views: Vec<_> = call.steps.iter().map(DeviceStep::view).collect();
-                    let deadline = host.now().mono_ns + timeout_ns;
-                    let mut acx = Cx::new(host, deadline);
-                    let result = joker_hal::interpreter::run(&mut driver, &mut acx, 0, &views).await;
-                    let _ = call.reply.send(match result {
-                        Ok(()) => ActionOutcome::Ok,
-                        Err(joker_hal::interpreter::Failure::TimedOut) => ActionOutcome::TimedOut,
-                        Err(e @ joker_hal::interpreter::Failure::Device(_)) => {
-                            ActionOutcome::Device(format!("{e:?}"))
-                        }
-                        Err(e) => ActionOutcome::Failed(format!("{e:?}")),
-                    });
+            .unwrap_or(host.now().mono_ns + IDLE_NS)
+            .min(host.now().mono_ns + IDLE_NS);
+        let sleep = core::future::poll_fn(|task_cx| host.poll_sleep(next, task_cx));
+        if *actions_open {
+            tokio::select! {
+                () = sleep => {}
+                call = action_rx.recv() => {
+                    match call {
+                        Some(call) => run_action(driver, host, timeout_ns, call).await,
+                        None => *actions_open = false,
+                    }
+                    continue;
                 }
-                continue;
             }
+        } else {
+            sleep.await;
         }
         if host.now().mono_ns < next {
             continue;
@@ -463,6 +719,7 @@ pub async fn run_driver<D: Driver>(
             })
             .map(|b| b.head.id)
             .collect();
+        let (mut executed, mut failed) = (0, 0);
         for id in ids {
             let Some(spec) = plan.batch(id) else { continue };
             let deadline = host.now().mono_ns + timeout_ns;
@@ -471,23 +728,53 @@ pub async fn run_driver<D: Driver>(
             buf.clear();
             let mut sink = RawSink::new(&mut buf);
             let result = driver.read(&mut cx, &batch, &mut sink).await;
-            let settled = settle(&request, &batch, buf.samples(), result);
+            if let Some(stats) = stats {
+                stats.dropped_samples.add(u64::from(sink.dropped()));
+            }
+            let settled = settle(request, &batch, buf.samples(), result);
             let now = host.now().mono_ns;
             for s in &settled {
+                if s.invalid.is_some()
+                    && let Some(stats) = stats
+                {
+                    stats.invalid_samples.bump();
+                }
                 if let Some(target) = targets.iter().find(|t| t.point == s.point) {
                     store_settled(shared, target, s, now);
                 }
             }
-            // One step, not a catch-up loop: an on-demand batch's period
-            // is 0, and a `while *d <= now { *d += period }` with a near-0
-            // period would spin a huge number of times before `now`
-            // itself ever advances (`now` only moves on through the
-            // `poll_sleep` stall above, not inside this inner loop).
+            let against_link = result.is_err_and(|f| f.counts_for_link());
+            executed += 1;
+            failed += u32::from(against_link);
+            link.batch(against_link);
+            if matches!(result, Err(BatchFailure::NotConnected)) {
+                return Ended::LinkDown;
+            }
             let period = spec.head.period_ns.max(1);
             let d = &mut due[id as usize];
             if *d <= now {
                 *d = now + period;
             }
         }
+        if link.round(executed, failed) {
+            return Ended::LinkDown;
+        }
+        publish_link(shared, device_index, link.state);
     }
+    Ended::Stopped
+}
+
+async fn run_action<D: Driver>(driver: &mut D, host: &dyn Host, timeout_ns: u64, call: ActionCall) {
+    let views: Vec<_> = call.steps.iter().map(DeviceStep::view).collect();
+    let deadline = host.now().mono_ns + timeout_ns;
+    let mut acx = Cx::new(host, deadline);
+    let result = joker_hal::interpreter::run(driver, &mut acx, 0, &views).await;
+    let _ = call.reply.send(match result {
+        Ok(()) => ActionOutcome::Ok,
+        Err(joker_hal::interpreter::Failure::TimedOut) => ActionOutcome::TimedOut,
+        Err(e @ joker_hal::interpreter::Failure::Device(_)) => {
+            ActionOutcome::Device(format!("{e:?}"))
+        }
+        Err(e) => ActionOutcome::Failed(format!("{e:?}")),
+    });
 }
