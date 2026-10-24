@@ -2,14 +2,15 @@
 //! `Driver`, polls it on a real clock, and feeds `Shared`'s slots and a
 //! device's `CommitRx` (docs/01 §3.4, ref/06 §2.1).
 //!
-//! Scoped deliberately: [`raw_to_bits`] only covers the scalar raw kinds
-//! (`Bool`/`Int`/`Uint`/`Float`) a settled value can already carry
-//! directly as the core's transport bits. `Regs` (modbus's register
-//! words) and `Bytes` (i2c's byte buffers) need the raw-to-engineering
-//! decode of ref/06 §2.7 (word/byte order, scale, offset,
-//! `round_ties_even`) — not implemented anywhere in this codebase yet,
-//! by any driver or by the core. A point using either kind reads as
-//! `bad(config_error)` until that decode exists.
+//! The acquisition step of ref/06 §3.6 lives here: [`raw_to_bits`]
+//! carries the already typed scalar raw kinds (`Bool`/`Int`/`Uint`/
+//! `Float`) as the core's transport bits, and [`decode_to_bits`] decodes
+//! `Regs` (modbus registers) and `Bytes` (i2c buffers) from the point's
+//! raw `type`, `word_order`, `byte_order` and `bit` (ref/03 §3, step 1).
+//! A value that cannot become the signal's type reads as
+//! `bad(config_error)`. `scale`, `offset` and `invert` are not applied:
+//! the manifest does not carry them to the device plan yet, so a profile
+//! point that declares them is decoded unscaled.
 
 use std::sync::Arc;
 
@@ -72,6 +73,213 @@ pub fn raw_to_bits(value: &OwnedRaw, ty: ValueType) -> Option<u64> {
     }
 }
 
+/// A raw `type` of ref/03 §2.2.7 a register or byte buffer decodes from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RawType {
+    /// `bool`.
+    Bool,
+    /// `u8`.
+    U8,
+    /// `i8`.
+    I8,
+    /// `u16`.
+    U16,
+    /// `i16`.
+    I16,
+    /// `u32`.
+    U32,
+    /// `i32`.
+    I32,
+    /// `u64`.
+    U64,
+    /// `i64`.
+    I64,
+    /// `f32`.
+    F32,
+    /// `f64`.
+    F64,
+    /// Any other `type`: the value is already typed by the driver, or does
+    /// not fit a scalar slot.
+    Other,
+}
+
+impl RawType {
+    /// The raw type named `name` in a profile or a manifest.
+    pub fn parse(name: &str) -> Self {
+        match name {
+            "bool" => Self::Bool,
+            "u8" => Self::U8,
+            "i8" => Self::I8,
+            "u16" | "bits16" => Self::U16,
+            "i16" => Self::I16,
+            "u32" | "bits32" => Self::U32,
+            "i32" => Self::I32,
+            "u64" | "bits64" => Self::U64,
+            "i64" => Self::I64,
+            "f32" => Self::F32,
+            "f64" => Self::F64,
+            _ => Self::Other,
+        }
+    }
+
+    fn bytes(self) -> Option<usize> {
+        match self {
+            Self::Bool | Self::Other => None,
+            Self::U8 | Self::I8 => Some(1),
+            Self::U16 | Self::I16 => Some(2),
+            Self::U32 | Self::I32 | Self::F32 => Some(4),
+            Self::U64 | Self::I64 | Self::F64 => Some(8),
+        }
+    }
+}
+
+/// How one point's raw value is decoded (ref/06 §2.7, ref/03 §3 step 1).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Decode {
+    /// The point's raw `type`.
+    pub raw: RawType,
+    /// `word_order = "little"`: the first register holds the least
+    /// significant word.
+    pub words_little: bool,
+    /// `byte_order = "little"`: the least significant byte comes first,
+    /// within each register or across a byte buffer.
+    pub bytes_little: bool,
+    /// `bit`: the bit of a register a `bool` reads.
+    pub bit: Option<u8>,
+}
+
+impl Decode {
+    /// No decoding: the driver delivers an already typed value.
+    pub const TYPED: Self = Self {
+        raw: RawType::Other,
+        words_little: false,
+        bytes_little: false,
+        bit: None,
+    };
+
+    /// The decoding of a point of raw `type_name` at `addr` (the address
+    /// CBOR of its driver, where `word_order`, `byte_order` and `bit`
+    /// live; both orders default to `big`).
+    pub fn of_point(type_name: &str, addr: &[u8]) -> Self {
+        let cbor = joker_hal::Cbor::new(addr);
+        let little = |key: &str| {
+            cbor.get(key)
+                .ok()
+                .flatten()
+                .and_then(|v| v.as_str().ok())
+                .is_some_and(|v| v == "little")
+        };
+        Self {
+            raw: RawType::parse(type_name),
+            words_little: little("word_order"),
+            bytes_little: little("byte_order"),
+            bit: cbor
+                .get("bit")
+                .ok()
+                .flatten()
+                .and_then(|v| v.as_u64().ok())
+                .and_then(|b| u8::try_from(b).ok())
+                .filter(|b| *b < 64),
+        }
+    }
+}
+
+enum Number {
+    Bool(bool),
+    Int(i64),
+    Uint(u64),
+    Float(f64),
+}
+
+fn number_to_bits(number: Number, ty: ValueType) -> Option<u64> {
+    match (number, ty) {
+        (Number::Bool(b), ValueType::Bool) => Some(u64::from(b)),
+        (Number::Int(i), ValueType::I64) => Some(i as u64),
+        (Number::Int(i), ValueType::U64 | ValueType::Enum | ValueType::Bits) => {
+            u64::try_from(i).ok()
+        }
+        (Number::Uint(u), ValueType::U64 | ValueType::Enum | ValueType::Bits) => Some(u),
+        (Number::Uint(u), ValueType::I64) => i64::try_from(u).ok().map(|i| i as u64),
+        (Number::Int(i), ValueType::F64 | ValueType::F32) => ty.f64_to_bits(i as f64),
+        (Number::Uint(u), ValueType::F64 | ValueType::F32) => ty.f64_to_bits(u as f64),
+        (Number::Float(f), ValueType::F64 | ValueType::F32) => ty.f64_to_bits(f),
+        _ => None,
+    }
+}
+
+fn word_bits(words: &[u16], decode: &Decode) -> u64 {
+    let word = |w: &u16| {
+        if decode.bytes_little {
+            w.swap_bytes()
+        } else {
+            *w
+        }
+    };
+    let fold = |acc: u64, w: &u16| (acc << 16) | u64::from(word(w));
+    if decode.words_little {
+        words.iter().rev().fold(0, fold)
+    } else {
+        words.iter().fold(0, fold)
+    }
+}
+
+fn byte_bits(bytes: &[u8], decode: &Decode) -> u64 {
+    let fold = |acc: u64, b: &u8| (acc << 8) | u64::from(*b);
+    if decode.bytes_little {
+        bytes.iter().rev().fold(0, fold)
+    } else {
+        bytes.iter().fold(0, fold)
+    }
+}
+
+fn typed(bits: u64, decode: &Decode) -> Option<Number> {
+    Some(match decode.raw {
+        RawType::Bool => Number::Bool(match decode.bit {
+            Some(b) => bits >> b & 1 == 1,
+            None => bits != 0,
+        }),
+        RawType::U8 | RawType::U16 | RawType::U32 | RawType::U64 => Number::Uint(bits),
+        RawType::I8 => Number::Int(i64::from(bits as u8 as i8)),
+        RawType::I16 => Number::Int(i64::from(bits as u16 as i16)),
+        RawType::I32 => Number::Int(i64::from(bits as u32 as i32)),
+        RawType::I64 => Number::Int(bits as i64),
+        RawType::F32 => Number::Float(f64::from(f32::from_bits(bits as u32))),
+        RawType::F64 => Number::Float(f64::from_bits(bits)),
+        RawType::Other => return None,
+    })
+}
+
+/// The core's transport bits for a settled raw value of a point decoded
+/// as `decode`: register words and byte buffers are decoded first (raw
+/// type, word and byte order, `bit`; ref/03 §3 step 1), already typed
+/// scalars go through [`raw_to_bits`]. `None` when the value does not
+/// match the point's raw type (wrong length, an unknown `type`) or cannot
+/// become `ty` (a negative value for an unsigned signal, a float for an
+/// integer one).
+pub fn decode_to_bits(value: &OwnedRaw, decode: &Decode, ty: ValueType) -> Option<u64> {
+    let bits = match value {
+        OwnedRaw::Regs(words) => {
+            let expected = decode.raw.bytes().map_or(1, |n| n / 2).max(1);
+            if words.len() != expected {
+                return None;
+            }
+            word_bits(words, decode)
+        }
+        OwnedRaw::Bytes(bytes) => {
+            let fits = match decode.raw.bytes() {
+                Some(n) => bytes.len() == n,
+                None => decode.raw == RawType::Bool && (1..=8).contains(&bytes.len()),
+            };
+            if !fits {
+                return None;
+            }
+            byte_bits(bytes, decode)
+        }
+        _ => return raw_to_bits(value, ty),
+    };
+    number_to_bits(typed(bits, decode)?, ty)
+}
+
 /// What one settled point becomes in its slot (ref/06 §2.8, docs/16 §3):
 /// the value's bits and the driver's quality when the value converts to
 /// the signal's type, otherwise no value at all. A `bad` sample keeps its
@@ -84,7 +292,7 @@ pub fn settled_sample(target: &PointTarget, settled: &Settled) -> (u64, Quality)
     if status.is_bad() {
         return (0, status);
     }
-    match raw_to_bits(&settled.value, target.ty) {
+    match decode_to_bits(&settled.value, &target.decode, target.ty) {
         Some(bits) => (bits, status),
         None => (
             0,
@@ -110,8 +318,10 @@ pub struct PointTarget {
     /// value is never read here — writes reach the driver through
     /// `CommitRx`, not this list).
     pub signal: SignalId,
-    /// The core type, for [`raw_to_bits`].
+    /// The core type, for [`decode_to_bits`].
     pub ty: ValueType,
+    /// How the point's raw value is decoded.
+    pub decode: Decode,
 }
 
 /// The [`PointTarget`]s of `plan.devices[device_index]`'s read points
@@ -135,6 +345,7 @@ pub fn point_targets(plan: &Plan, device_index: usize) -> Vec<PointTarget> {
                 point: i as u32,
                 signal,
                 ty,
+                decode: Decode::of_point(&p.type_name, &p.addr),
             })
         })
         .collect()
