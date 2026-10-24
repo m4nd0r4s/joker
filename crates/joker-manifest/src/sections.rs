@@ -1200,6 +1200,15 @@ impl Checker<'_> {
             }
             for target in &targets {
                 let Some(device) = self.paths.get(target).and_then(|r| r.device.clone()) else {
+                    if let Some(keepalive) = &envelope.keepalive {
+                        self.push(
+                            Diagnostic::new(
+                                "J0276",
+                                format!("`keepalive` on `{target}`, which has no device fallback"),
+                            )
+                            .at(keepalive.span),
+                        );
+                    }
                     continue;
                 };
                 if self.opaque.contains(&device) {
@@ -1215,6 +1224,23 @@ impl Checker<'_> {
                     .and_then(|rest| rest.strip_prefix('.'))
                     .unwrap_or(target);
                 let has_fallback = profile.is_some_and(|p| p.fallback_covers(signal));
+                if let Some(keepalive) = &envelope.keepalive {
+                    let timeout = profile.and_then(|p| p.fallback_timeout);
+                    let message = if !has_fallback {
+                        Some(format!(
+                            "`keepalive` on `{target}`, which has no device fallback"
+                        ))
+                    } else if timeout.is_some_and(|t| keepalive.value >= t) {
+                        Some(format!(
+                            "`keepalive` of `{target}` not below the timeout of its device fallback"
+                        ))
+                    } else {
+                        None
+                    };
+                    if let Some(message) = message {
+                        self.push(Diagnostic::new("J0276", message).at(keepalive.span));
+                    }
+                }
                 if has_fallback {
                     if let (Some(value), Some(safe)) = (
                         profile.and_then(|p| p.fallback_value.as_ref()),

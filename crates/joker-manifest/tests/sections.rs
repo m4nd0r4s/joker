@@ -364,6 +364,9 @@ fn cases() -> Vec<Case> {
         ("J0189", site("[apps.pump_ctl]\npath = \"apps/x\"\nbind.x = \"pcs.p_ac\"\n[instances.p2]\nclass = \"pump@1\"\nimplemented_by = { app = \"pump_ctl\", bind = { x = \"pcs.f\" } }\n"), "port bound in two places"),
         ("J0243", format!("{BASE}[target]\nboard = \"zero\"\n[apps.ctl]\npath = \"apps/x\"\n"), "board without a Wasm engine"),
         ("J0276", site("[devices.pcs.fallback]\nkeepalive = \"5s\"\n").replacen("[devices.pcs]\n", "[devices.pcs]\nfallback = { keepalive = \"5s\" }\n", 1).replace("[devices.pcs.fallback]\nkeepalive = \"5s\"\n", ""), "keepalive above the device timeout"),
+        ("J0276", site("").replacen("safe = \"0 kW\"\n", "safe = \"0 kW\"\nkeepalive = \"3s\"\n", 1), "output keepalive above the device timeout"),
+        ("J0276", format!("{BASE}{FB}[outputs.\"fb.do_2\"]\nsafe = false\nkeepalive = \"1s\"\naccept_missing_fallback = \"bench lamp, no load behind it\"\n"), "output keepalive without a device fallback"),
+        ("J0235", site("").replacen("safe = \"0 kW\"\n", "safe = \"0 kW\"\nverify = { readback = \"pcs.p_ac\" }\n", 1), "float verify without a tolerance"),
         ("J0284", site("[resources]\nrt = { cpus = [3] }\n[cycles.main]\nperiod = \"20ms\"\ncpu = 1\n"), "cpu outside rt"),
         ("J0286", site("[cycles.main]\nperiod = \"20ms\"\noverrun = \"degrade\"\n"), "degrade without optional tasks"),
         ("J0287", site("[cycles.main]\nperiod = \"20ms\"\noverrun = \"catch_up\"\n").replacen("safe = \"0 kW\"\n", "safe = \"0 kW\"\nrate = \"5 kW/s\"\ngroup = \"main\"\n", 1), "catch_up with time-dependent outputs"),
@@ -372,6 +375,19 @@ fn cases() -> Vec<Case> {
         ("J0101", site("[devices.pcs.actions.bogus]\n"), "action not declared in the profile"),
         ("J0142", site("[devices.pcs.actions.silent]\n"), "action without a timeout and no profile default"),
     ]
+}
+
+#[test]
+fn an_output_keepalive_below_the_device_timeout_is_accepted() {
+    let text = site("").replacen(
+        "safe = \"0 kW\"\n",
+        "safe = \"0 kW\"\nkeepalive = \"1s\"\nverify = { readback = \"pcs.p_ac\", tolerance = \"1 kW\" }\n",
+        1,
+    );
+    let report = run(&text);
+    for code in ["J0276", "J0235"] {
+        assert!(!report.codes().contains(&code), "{}", report.render());
+    }
 }
 
 #[test]
