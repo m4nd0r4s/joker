@@ -155,6 +155,20 @@ pub fn controller(
     Ok(c)
 }
 
+/// Binds the API socket and only then calls `ready` (`sd_notify
+/// READY=1`): a daemon is ready once clients can connect, and a socket
+/// that cannot be bound is a startup error, not a silent background
+/// failure. Must be called within a Tokio runtime.
+pub fn bind_then_ready(
+    socket: &std::path::Path,
+    ready: impl FnOnce(),
+) -> Result<tokio::net::UnixListener, String> {
+    let listener = joker_api::server::bind_unix(socket)
+        .map_err(|e| format!("api socket {}: {e}", socket.display()))?;
+    ready();
+    Ok(listener)
+}
+
 /// Runs the daemon until a termination signal.
 pub fn run(options: Options, tasks: Arc<dyn TaskProvider>) -> Result<(), String> {
     std::fs::create_dir_all(&options.state_dir)
@@ -191,17 +205,23 @@ pub fn run(options: Options, tasks: Arc<dyn TaskProvider>) -> Result<(), String>
         &options.state_dir,
     )
     .map_err(|e| format!("traces: {e}"))?;
-    let watchdog =
-        crate::watchdog::WatchdogFeeder::spawn(board_watchdog(&options), Arc::clone(&controller));
+    let heartbeat = lock_controller(&controller).heartbeat();
+    let watchdog = crate::watchdog::WatchdogFeeder::spawn(
+        board_watchdog(&options),
+        heartbeat,
+        crate::watchdog::notify_socket(),
+    )
+    .map_err(|e| format!("cannot start the watchdog feed: {e}"))?;
     let (stop_api, api_stopped) = tokio::sync::oneshot::channel::<()>();
-    let socket = options.socket.clone();
+    let listener = runtime.block_on(async {
+        bind_then_ready(&options.socket, || crate::watchdog::sd_notify("READY=1\n"))
+    })?;
     let api = runtime.spawn(async move {
-        joker_api::server::serve_unix(&socket, Arc::new(node), async {
+        joker_api::server::serve_listener(listener, Arc::new(node), async {
             let _ = api_stopped.await;
         })
         .await
     });
-    crate::watchdog::sd_notify("READY=1\n");
     let timer = Arc::clone(&controller);
     runtime.block_on(async move {
         let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
@@ -249,6 +269,30 @@ mod tests {
     fn board_is_parsed() {
         let o = Options::parse(args("--manifest joker.toml --board board.toml")).unwrap();
         assert_eq!(o.board, Some(PathBuf::from("board.toml")));
+    }
+
+    #[test]
+    fn ready_is_signalled_only_after_the_socket_is_bound() {
+        let dir = tempfile::tempdir().unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let socket = dir.path().join("run").join("api.sock");
+        let mut bound_when_ready = None;
+        let listener = runtime.block_on(async {
+            bind_then_ready(&socket, || bound_when_ready = Some(socket.exists()))
+        });
+        assert!(listener.is_ok());
+        assert_eq!(bound_when_ready, Some(true));
+
+        let file = dir.path().join("not-a-dir");
+        std::fs::write(&file, b"").unwrap();
+        let mut ready = false;
+        let failed =
+            runtime.block_on(async { bind_then_ready(&file.join("api.sock"), || ready = true) });
+        assert!(failed.is_err());
+        assert!(!ready);
     }
 
     #[test]

@@ -22,7 +22,7 @@
 //! response reaches narrows to the group that is actually stuck.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
@@ -119,6 +119,110 @@ pub fn check_and_respond(
     stale
 }
 
+/// How long the watchdog feed tolerates a silent supervisor (ADR 0061):
+/// many polls, so that scheduling jitter does not stop the feed, and
+/// well under any hardware watchdog timeout.
+pub const HEARTBEAT_MAX_AGE: Duration = Duration::from_millis(500);
+
+/// What the watchdog feed should do now (docs/01 §8, ADR 0061).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Feed {
+    /// Feed: the supervisor is alive, or there is nothing to supervise.
+    Feed,
+    /// Do not feed this time: a supervisor runs but has not beaten
+    /// within [`HEARTBEAT_MAX_AGE`].
+    Skip,
+    /// Stop feeding for good: a supervisor forced `safe`, and the
+    /// watchdog must restart the daemon.
+    Stop,
+}
+
+/// The liveness of the supervisors of a daemon, across its generations:
+/// each poll of a running supervisor beats it, and the watchdog feed
+/// reads it without taking any lock. It keeps its own clock, so a beat
+/// and its age are always on one origin.
+#[derive(Debug)]
+pub struct Heartbeat {
+    clock: Monotonic,
+    last_beat_ns: AtomicU64,
+    armed: AtomicU32,
+    forced: AtomicBool,
+}
+
+impl Default for Heartbeat {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Heartbeat {
+    /// A heartbeat with no supervisor running.
+    pub fn new() -> Self {
+        Self {
+            clock: Monotonic::start(),
+            last_beat_ns: AtomicU64::new(0),
+            armed: AtomicU32::new(0),
+            forced: AtomicBool::new(false),
+        }
+    }
+
+    /// Records that a supervisor is alive now.
+    pub fn beat(&self) {
+        self.last_beat_ns
+            .store(self.clock.now_ns(), Ordering::Release);
+    }
+
+    pub(crate) fn arm(&self) {
+        self.beat();
+        self.armed.fetch_add(1, Ordering::AcqRel);
+    }
+
+    fn disarm(&self) {
+        let mut current = self.armed.load(Ordering::Acquire);
+        while current > 0 {
+            match self.armed.compare_exchange_weak(
+                current,
+                current - 1,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return,
+                Err(seen) => current = seen,
+            }
+        }
+    }
+
+    pub(crate) fn force(&self) {
+        self.forced.store(true, Ordering::Release);
+    }
+
+    /// Whether a supervisor of this daemon has ever forced `safe`
+    /// (sticky until the process restarts, docs/01 §8).
+    pub fn forced(&self) -> bool {
+        self.forced.load(Ordering::Acquire)
+    }
+
+    /// What the watchdog feed should do, with a supervisor that must
+    /// have beaten within `max_age`.
+    pub fn feed(&self, max_age: Duration) -> Feed {
+        if self.forced() {
+            return Feed::Stop;
+        }
+        if self.armed.load(Ordering::Acquire) == 0 {
+            return Feed::Feed;
+        }
+        let age = self
+            .clock
+            .now_ns()
+            .saturating_sub(self.last_beat_ns.load(Ordering::Acquire));
+        if u128::from(age) > max_age.as_nanos() {
+            Feed::Skip
+        } else {
+            Feed::Feed
+        }
+    }
+}
+
 /// What the supervisor of one generation records in the decision log.
 #[derive(Debug, Clone)]
 pub struct Recorder {
@@ -159,27 +263,28 @@ impl Recorder {
 #[derive(Debug)]
 pub struct Supervisor {
     stop: Arc<AtomicBool>,
-    stale: Arc<AtomicBool>,
+    heartbeat: Arc<Heartbeat>,
     handle: Option<JoinHandle<()>>,
 }
 
 impl Supervisor {
     /// Starts watching `shared`'s groups against `plan`'s periods, on
-    /// `clock`, the clock the cycle thread stamps its ticks with. A
-    /// thread that cannot be started is an error: a generation does not
-    /// run unsupervised.
+    /// `clock`, the clock the cycle thread stamps its ticks with, beating
+    /// `heartbeat` on every poll. A thread that cannot be started is an
+    /// error: a generation does not run unsupervised.
     pub fn spawn(
         plan: Arc<Plan>,
         shared: Arc<Shared>,
         clock: Monotonic,
         recorder: Recorder,
+        heartbeat: Arc<Heartbeat>,
     ) -> std::io::Result<Self> {
         let group_boxes = group_boxes(&plan, &shared);
         let stop = Arc::new(AtomicBool::new(false));
-        let stale = Arc::new(AtomicBool::new(false));
         let flag = Arc::clone(&stop);
-        let stale_flag = Arc::clone(&stale);
-        let handle = std::thread::Builder::new()
+        let beats = Arc::clone(&heartbeat);
+        heartbeat.arm();
+        let spawned = std::thread::Builder::new()
             .name("rt/supervisor".into())
             .spawn(move || {
                 if let Err(e) = raise_priority() {
@@ -188,6 +293,7 @@ impl Supervisor {
                 let mut armed_at = None;
                 let mut was_stale = false;
                 while !flag.load(Ordering::Acquire) {
+                    beats.beat();
                     let now_mono_ns = clock.now_ns();
                     if !shared.running.load(Ordering::Acquire) {
                         armed_at = None;
@@ -207,41 +313,41 @@ impl Supervisor {
                     }
                     was_stale = found_stale;
                     if found_stale {
-                        stale_flag.store(true, Ordering::Release);
+                        beats.force();
                     }
                     std::thread::sleep(POLL_INTERVAL);
                 }
-            })?;
-        Ok(Self {
-            stop,
-            stale,
-            handle: Some(handle),
-        })
-    }
-
-    /// Whether the supervisor has ever found a stale group in this
-    /// generation (sticky: it does not clear once a group recovers —
-    /// forcing `safe` is meant to hold until a restart, not toggle with
-    /// the hang, docs/01 §8).
-    pub fn is_stale(&self) -> bool {
-        self.stale.load(Ordering::Acquire)
+            });
+        match spawned {
+            Ok(handle) => Ok(Self {
+                stop,
+                heartbeat,
+                handle: Some(handle),
+            }),
+            Err(e) => {
+                heartbeat.disarm();
+                Err(e)
+            }
+        }
     }
 
     /// Stops the supervisor and waits for its thread to end.
     pub fn stop(mut self) {
+        self.halt();
+    }
+
+    fn halt(&mut self) {
         self.stop.store(true, Ordering::Release);
         if let Some(h) = self.handle.take() {
             let _ = h.join();
+            self.heartbeat.disarm();
         }
     }
 }
 
 impl Drop for Supervisor {
     fn drop(&mut self) {
-        self.stop.store(true, Ordering::Release);
-        if let Some(h) = self.handle.take() {
-            let _ = h.join();
-        }
+        self.halt();
     }
 }
 
@@ -322,6 +428,34 @@ mod tests {
         });
         let shared = crate::shared::Shared::new(&plan);
         (plan, shared)
+    }
+
+    #[test]
+    fn a_heartbeat_with_no_supervisor_feeds() {
+        assert_eq!(Heartbeat::new().feed(Duration::ZERO), Feed::Feed);
+    }
+
+    #[test]
+    fn a_supervisor_that_stopped_beating_stops_the_feed() {
+        let heartbeat = Heartbeat::new();
+        heartbeat.arm();
+        assert_eq!(heartbeat.feed(Duration::from_secs(60)), Feed::Feed);
+        std::thread::sleep(Duration::from_millis(5));
+        assert_eq!(heartbeat.feed(Duration::from_millis(1)), Feed::Skip);
+        heartbeat.beat();
+        assert_eq!(heartbeat.feed(Duration::from_secs(60)), Feed::Feed);
+    }
+
+    #[test]
+    fn a_disarmed_heartbeat_feeds_again_and_a_forced_one_never_does() {
+        let heartbeat = Heartbeat::new();
+        heartbeat.arm();
+        heartbeat.disarm();
+        heartbeat.disarm();
+        std::thread::sleep(Duration::from_millis(5));
+        assert_eq!(heartbeat.feed(Duration::from_millis(1)), Feed::Feed);
+        heartbeat.force();
+        assert_eq!(heartbeat.feed(Duration::from_secs(60)), Feed::Stop);
     }
 
     #[test]
