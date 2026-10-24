@@ -357,6 +357,20 @@ impl Client {
         self.send("POST", path, &all, Some(body))
     }
 
+    /// `POST` with an `application/octet-stream` body (a blob upload,
+    /// ref/09 §5.13); adds `Joker-Nonce` and `Joker-Timestamp`.
+    pub fn post_bytes(&self, path: &str, body: &[u8]) -> Result<Response, ClientError> {
+        let nonce = joker_api::id::ulid(now_ns());
+        let ts = humantime::format_rfc3339_nanos(std::time::SystemTime::now()).to_string();
+        let headers = [("joker-nonce", nonce.as_str()), ("joker-timestamp", &ts)];
+        self.exchange(
+            "POST",
+            path,
+            &headers,
+            Some(("application/octet-stream", body)),
+        )
+    }
+
     /// Sends one request.
     pub fn send(
         &self,
@@ -365,12 +379,29 @@ impl Client {
         headers: &[(&str, &str)],
         body: Option<&Value>,
     ) -> Result<Response, ClientError> {
+        let payload = body.map(Value::to_string);
+        self.exchange(
+            method,
+            path,
+            headers,
+            payload
+                .as_deref()
+                .map(|p| ("application/json", p.as_bytes())),
+        )
+    }
+
+    fn exchange(
+        &self,
+        method: &str,
+        path: &str,
+        headers: &[(&str, &str)],
+        body: Option<(&str, &[u8])>,
+    ) -> Result<Response, ClientError> {
         let mut stream = UnixStream::connect(&self.socket)
             .map_err(|e| ClientError::unreachable(format!("{}: {e}", self.target)))?;
         stream
             .set_read_timeout(Some(self.timeout))
             .map_err(|e| ClientError::unreachable(e.to_string()))?;
-        let payload = body.map(Value::to_string).unwrap_or_default();
         let mut req = format!(
             "{method} {path} HTTP/1.1\r\nhost: joker\r\nconnection: close\r\nuser-agent: jk/{}\r\n",
             env!("CARGO_PKG_VERSION")
@@ -378,16 +409,19 @@ impl Client {
         for (k, v) in headers {
             req.push_str(&format!("{k}: {v}\r\n"));
         }
-        if body.is_some() {
+        if let Some((kind, bytes)) = body {
             req.push_str(&format!(
-                "content-type: application/json\r\ncontent-length: {}\r\n",
-                payload.len()
+                "content-type: {kind}\r\ncontent-length: {}\r\n",
+                bytes.len()
             ));
         }
         req.push_str("\r\n");
-        req.push_str(&payload);
+        let mut raw = req.into_bytes();
+        if let Some((_, bytes)) = body {
+            raw.extend_from_slice(bytes);
+        }
         stream
-            .write_all(req.as_bytes())
+            .write_all(&raw)
             .map_err(|e| ClientError::unreachable(format!("{}: {e}", self.target)))?;
         let mut raw = Vec::new();
         stream

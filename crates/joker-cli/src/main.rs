@@ -52,6 +52,12 @@ enum Command {
         #[arg(long, default_value = ".joker/dev.sock")]
         socket: PathBuf,
     },
+    /// Compile the apps to Wasm and, with `--target`, precompile them for a node.
+    Build {
+        /// A board (`rpi3b-plus@1`) or a target triple (`aarch64-unknown-linux-gnu`).
+        #[arg(long)]
+        target: Option<String>,
+    },
     /// Send the manifest to the node as a new generation and activate it.
     Apply {
         /// Confirmation window: without `jk confirm` in time, the node rolls back.
@@ -313,6 +319,7 @@ fn run(cli: Cli) -> Result<u8, Failure> {
         }
         Command::Check => node::check(&entry()?, cli.json),
         Command::Dev { socket } => dev::run(&entry()?, &socket),
+        Command::Build { target } => apps::build_command(&entry()?, target.as_deref(), cli.json),
         Command::Apply {
             confirm,
             dry_run,
