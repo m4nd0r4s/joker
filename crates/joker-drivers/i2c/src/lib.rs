@@ -114,14 +114,14 @@ impl Driver for I2cDriver {
         Ok(())
     }
 
+    /// Read-only in this version: `check_point` already refuses any
+    /// `output`/non-`param` point, so no write ever reaches here.
     async fn write(
         &mut self,
         cx: &mut Cx<'_>,
         writes: &[CommittedWrite<'_>],
         acks: &mut WriteAcks<'_>,
     ) {
-        // Read-only in this version: `check_point` already refuses any
-        // `output`/non-`param` point, so no write ever reaches here.
         let now = cx.now().mono_ns;
         for (k, _) in writes.iter().enumerate() {
             acks.set(k, WriteStatus::Unsupported, Some(now));
