@@ -554,6 +554,8 @@ All keys. Reading is strict (ref/00 §1: an unknown key is `J0140`; `x_*` ignore
     store.cbor                   received entries, still encrypted (§3.4.4)
   state/
     trips                        persistent trips (01 §7), always fsync
+    manual                       manual levels (16 A14), always fsync
+    boot_count                   startup counter (01 §20), decimal integer
     alarms                       acknowledgments and shelves
     intents/                     pending intents (M18)
   kv/<app>/                      kv of the apps (≤ 1 MiB per app, 01 §9.1)
@@ -569,7 +571,7 @@ All keys. Reading is strict (ref/00 §1: an unknown key is `J0140`; `x_*` ignore
 
 - Everything that `jokerd` writes is written to a temporary file in `tmp/` and swapped in with `rename(2)`, with `fsync` of the file and of the directory.
 - What is not in this tree does not belong to `jokerd`. An extra file, or a file of `generations/` whose digest does not match `generation.cbor`, is `J0907` in `jk doctor`.
-- The semantics of `state/` (what persists across restarts) is that of document 16 and of 01 §7; here only the names are fixed.
+- The semantics of `state/` (what persists across restarts) is that of document 16 and of 01 §7; here only the names are fixed. A file of `state/` that exists but cannot be read is a startup error of `jokerd` (ADR 0061).
 
 ### 2.3 The `jk` client
 
