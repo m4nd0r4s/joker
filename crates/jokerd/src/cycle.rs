@@ -465,6 +465,7 @@ fn tick(
     if outputs.commit(&g.image, &shared.slots, &mut sink).is_err() {
         stats.task_errors.bump();
     }
+    shared.apply_confirmations(at.mono_ns);
     for tx in commit_tx.iter_mut() {
         tx.publish(outputs);
     }

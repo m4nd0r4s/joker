@@ -89,6 +89,8 @@ fn empty_shared(
         devices: vec![jokerd::shared::DeviceStats::default()].into_boxed_slice(),
         write_acks: crossbeam_queue::ArrayQueue::new(8),
         write_acks_dropped: Default::default(),
+        confirmations: crossbeam_queue::ArrayQueue::new(16),
+        confirmations_dropped: Default::default(),
     }
 }
 

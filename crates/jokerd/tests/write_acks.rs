@@ -84,6 +84,8 @@ fn shared(bindings: Vec<joker_hal::OutputBinding>, boxes: Vec<CommitBox>) -> Sha
         devices: vec![DeviceStats::default()].into_boxed_slice(),
         write_acks: crossbeam_queue::ArrayQueue::new(8),
         write_acks_dropped: Default::default(),
+        confirmations: crossbeam_queue::ArrayQueue::new(16),
+        confirmations_dropped: Default::default(),
     }
 }
 
@@ -137,6 +139,68 @@ fn a_rejected_write_is_queued_for_the_decision_log() {
     assert_eq!(ack.kind, WriteKind::Set);
     assert_eq!(ack.status, WriteStatus::DeviceRejected);
     assert!(shared.write_acks.pop().is_none(), "one write, one ack");
+    let confirmation = shared
+        .confirmations
+        .pop()
+        .expect("the rejection reaches the cycle thread");
+    assert_eq!(confirmation.output, output);
+    assert!(!confirmation.confirmed);
+}
+
+#[test]
+fn a_rejected_output_is_uncertain_not_confirmed_until_a_write_is_confirmed() {
+    use joker_core::{Quality, QualityCode, QualityReason};
+    use jokerd::shared::Confirmation;
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("joker.toml"), JOKER_TOML).unwrap();
+    let loaded = load(&OsFileSystem, &dir.path().join("joker.toml"), &NativeTasks)
+        .unwrap_or_else(|e| panic!("{e}"));
+    let shared = Shared::new(&loaded.plan);
+    let relay = loaded.plan.id("io.relay").unwrap();
+    let slot = &shared.slots[relay.index()];
+    slot.write(1, Quality::GOOD, 0, 10);
+    let quality = || {
+        let q = slot.read(8).unwrap().quality();
+        (q.code(), q.reason())
+    };
+
+    shared
+        .confirmations
+        .push(Confirmation {
+            output: relay,
+            confirmed: true,
+        })
+        .unwrap();
+    shared.apply_confirmations(20);
+    assert_eq!(quality(), (QualityCode::Good, QualityReason::None));
+
+    shared
+        .confirmations
+        .push(Confirmation {
+            output: relay,
+            confirmed: false,
+        })
+        .unwrap();
+    shared.apply_confirmations(30);
+    assert_eq!(
+        quality(),
+        (QualityCode::Uncertain, QualityReason::NotConfirmed)
+    );
+    assert_eq!(
+        slot.read(8).unwrap().transport_bits(),
+        1,
+        "the applied value stays"
+    );
+
+    shared
+        .confirmations
+        .push(Confirmation {
+            output: relay,
+            confirmed: true,
+        })
+        .unwrap();
+    shared.apply_confirmations(40);
+    assert_eq!(quality(), (QualityCode::Good, QualityReason::None));
 }
 
 const JOKER_TOML: &str = r#"
