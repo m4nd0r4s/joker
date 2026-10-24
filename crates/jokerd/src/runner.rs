@@ -12,7 +12,7 @@ use crate::decisions::{DecisionWriter, SharedLog};
 use crate::pacer::Pacer;
 use crate::plan::Plan;
 use crate::shared::Shared;
-use crate::supervisor::Supervisor;
+use crate::supervisor::{Recorder, Supervisor};
 use crate::trace_ring::{RingFeeder, SharedRing, TraceRing};
 
 /// What a generation needs to start.
@@ -52,6 +52,8 @@ pub struct Running {
 
 impl Running {
     /// Starts the cycle thread `rt/cycle` and the services of a plan.
+    /// With a real clock (`Pacer::monotonic`), `rt/supervisor` watches
+    /// the groups on that same clock; a virtual clock runs unsupervised.
     pub fn start(
         plan: Arc<Plan>,
         tasks: Vec<GroupTasks>,
@@ -60,6 +62,22 @@ impl Running {
         start: Start,
     ) -> Result<Self, CycleError> {
         let shared = Arc::new(Shared::new(&plan));
+        let supervisor = match pacer.monotonic() {
+            Some(clock) => Some(
+                Supervisor::spawn(
+                    Arc::clone(&plan),
+                    Arc::clone(&shared),
+                    clock,
+                    Recorder {
+                        log: Arc::clone(&log),
+                        generation: start.generation,
+                        utc_origin_ns: start.utc_origin_ns,
+                    },
+                )
+                .map_err(|e| CycleError(format!("cannot start the supervisor thread: {e}")))?,
+            ),
+            None => None,
+        };
         let ring = Arc::new(Mutex::new(TraceRing::new(&plan, start.retention)));
         let decisions = DecisionWriter::spawn(
             Arc::clone(&plan),
@@ -69,8 +87,7 @@ impl Running {
             start.utc_origin_ns,
         );
         let feeder = RingFeeder::spawn(&plan, Arc::clone(&shared), Arc::clone(&ring));
-        let supervisor = Supervisor::spawn(Arc::clone(&plan), Arc::clone(&shared));
-        let cycle = {
+        let spawned = {
             let plan = Arc::clone(&plan);
             let shared = Arc::clone(&shared);
             let options = RunOptions {
@@ -87,7 +104,17 @@ impl Running {
                     }
                     run(&plan, &shared, tasks, pacer.as_mut(), options)
                 })
-                .map_err(|e| CycleError(format!("cannot start the cycle thread: {e}")))?
+        };
+        let cycle = match spawned {
+            Ok(cycle) => cycle,
+            Err(e) => {
+                if let Some(s) = supervisor {
+                    s.stop();
+                }
+                feeder.stop();
+                let _ = decisions.stop();
+                return Err(CycleError(format!("cannot start the cycle thread: {e}")));
+            }
         };
         Ok(Self {
             generation: start.generation,
@@ -97,7 +124,7 @@ impl Running {
             cycle: Some(cycle),
             decisions: Some(decisions),
             feeder: Some(feeder),
-            supervisor: Some(supervisor),
+            supervisor,
         })
     }
 

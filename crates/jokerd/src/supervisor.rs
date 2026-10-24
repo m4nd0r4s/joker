@@ -5,14 +5,21 @@
 //! bit — bypassing the group entirely, through the already-built
 //! `joker_hal::commit::ForceSafe` (docs/09 attack 4(c)'s own
 //! refinement: the single-writer principle forbids writing into a
-//! group's own boxes any other way).
+//! group's own boxes any other way) — and records it in the decision
+//! log (`supervisor_force_safe`, ADR 0061).
+//!
+//! The heartbeat is stamped by the cycle thread with its pacer's clock,
+//! so the supervisor reads that same clock ([`crate::pacer::Pacer::monotonic`]):
+//! one origin for every generation of the daemon. A group is judged from
+//! the moment the cycle loop starts, so a group that never ticks at all
+//! is stale once its deadline passes, like one that stopped.
 //!
 //! Today, every group shares one `rt/cycle` thread (AUR-275, one thread
 //! per group, is not built yet), so a real hang makes every group go
 //! stale together: the response below forces every output of every
-//! group, not just the stale one. The detection math (`stale`) does not
-//! change when AUR-275 lands — only how many groups the response
-//! reaches narrows to the group that is actually stuck.
+//! group, not just the stale one. The detection math (`stale_groups`)
+//! does not change when AUR-275 lands — only how many groups the
+//! response reaches narrows to the group that is actually stuck.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -20,7 +27,10 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 use joker_hal::commit::ForceSafe;
+use serde_json::{Map, json};
 
+use crate::decisions::{SharedLog, lock};
+use crate::pacer::Monotonic;
 use crate::plan::Plan;
 use crate::shared::Shared;
 
@@ -29,7 +39,7 @@ pub const STALE_FACTOR: u64 = 3;
 
 /// How often the supervisor checks (independent of any group's period,
 /// since today it watches the one shared cycle thread as a whole).
-const POLL_INTERVAL: Duration = Duration::from_millis(20);
+pub const POLL_INTERVAL: Duration = Duration::from_millis(20);
 
 /// The (device_index, box_index) pairs of every output of a plan,
 /// grouped by owning group index — precomputed once per generation
@@ -55,34 +65,94 @@ pub fn group_boxes(plan: &Plan, shared: &Shared) -> Vec<Vec<(usize, usize)>> {
     boxes
 }
 
+/// The groups that have not ticked for more than `STALE_FACTOR` periods
+/// at `now_mono_ns`, each with how long it has been silent. A group's
+/// silence counts from its last tick, or from `armed_at_mono_ns` (when
+/// the cycle loop started) if it has not ticked since then.
+pub fn stale_groups(
+    plan: &Plan,
+    shared: &Shared,
+    armed_at_mono_ns: u64,
+    now_mono_ns: u64,
+) -> Vec<(usize, u64)> {
+    plan.groups
+        .iter()
+        .enumerate()
+        .filter_map(|(g, group)| {
+            let last = shared
+                .groups
+                .get(g)
+                .map_or(0, |s| s.last_tick_mono_ns.get())
+                .max(armed_at_mono_ns);
+            let silent = now_mono_ns.saturating_sub(last);
+            (silent > STALE_FACTOR * group.period_ns).then_some((g, silent))
+        })
+        .collect()
+}
+
+/// Sets the `force_safe` bit of every output in `group_boxes`.
+pub fn force_safe(shared: &Shared, group_boxes: &[Vec<(usize, usize)>]) {
+    for boxes in group_boxes {
+        for &(device, index) in boxes {
+            if let Some(device_boxes) = shared.commit_boxes.get(device) {
+                ForceSafe::new(device_boxes).set(index, true);
+            }
+        }
+    }
+}
+
 /// Checks every group's heartbeat against `now_mono_ns` and, if any is
 /// stale, sets the `force_safe` bit of every output of every group in
 /// `group_boxes` (today's whole-process response, see the module doc).
-/// Returns whether any group was found stale (for logging and for the
-/// hardware-watchdog feed to stop on, AUR-274 phase 4).
+/// Returns the stale groups, empty when none is.
 pub fn check_and_respond(
     plan: &Plan,
     shared: &Shared,
     group_boxes: &[Vec<(usize, usize)>],
+    armed_at_mono_ns: u64,
     now_mono_ns: u64,
-) -> bool {
-    let any_stale = plan.groups.iter().enumerate().any(|(g, group)| {
-        let last = shared
-            .groups
-            .get(g)
-            .map_or(0, |s| s.last_tick_mono_ns.get());
-        last != 0 && now_mono_ns.saturating_sub(last) > STALE_FACTOR * group.period_ns
-    });
-    if any_stale {
-        for boxes in group_boxes {
-            for &(device, index) in boxes {
-                if let Some(device_boxes) = shared.commit_boxes.get(device) {
-                    ForceSafe::new(device_boxes).set(index, true);
-                }
-            }
+) -> Vec<(usize, u64)> {
+    let stale = stale_groups(plan, shared, armed_at_mono_ns, now_mono_ns);
+    if !stale.is_empty() {
+        force_safe(shared, group_boxes);
+    }
+    stale
+}
+
+/// What the supervisor of one generation records in the decision log.
+#[derive(Debug, Clone)]
+pub struct Recorder {
+    /// The decision log.
+    pub log: SharedLog,
+    /// Generation number.
+    pub generation: u64,
+    /// UTC time at monotonic zero, to stamp the entry.
+    pub utc_origin_ns: i64,
+}
+
+impl Recorder {
+    fn force_safe(&self, plan: &Plan, stale: &[(usize, u64)], now_mono_ns: u64) {
+        let groups: Vec<&str> = stale
+            .iter()
+            .filter_map(|(g, _)| plan.groups.get(*g).map(|g| g.name.as_str()))
+            .collect();
+        let silent_ns = stale.iter().map(|(_, s)| *s).max().unwrap_or(0);
+        let mut m = Map::new();
+        m.insert("gen".into(), json!(self.generation));
+        m.insert("record".into(), json!("supervisor_force_safe"));
+        m.insert("groups".into(), json!(groups));
+        m.insert("silent_ns".into(), json!(silent_ns));
+        m.insert("at_mono_ns".into(), json!(now_mono_ns));
+        m.insert(
+            "ts".into(),
+            json!(crate::wire::timestamp(self.utc_origin_ns.saturating_add(
+                i64::try_from(now_mono_ns).unwrap_or(i64::MAX)
+            ))),
+        );
+        if let Err(e) = lock(&self.log).append(m, true) {
+            eprintln!("jokerd: rt/supervisor: decision log: {e}");
         }
     }
-    any_stale
 }
 
 /// The `rt/supervisor` thread of one running generation.
@@ -94,14 +164,16 @@ pub struct Supervisor {
 }
 
 impl Supervisor {
-    /// Starts watching `shared`'s groups against `plan`'s periods. Uses
-    /// its own `Monotonic` clock rather than sharing the cycle thread's
-    /// pacer (which would need a lock neither thread may block on): the
-    /// two clocks' origins are microseconds apart at most, set within
-    /// the same `Running::start` call, which is negligible next to the
-    /// `STALE_FACTOR`-periods tolerance (tens to hundreds of ms).
-    pub fn spawn(plan: Arc<Plan>, shared: Arc<Shared>) -> Self {
-        let clock = crate::pacer::Monotonic::start();
+    /// Starts watching `shared`'s groups against `plan`'s periods, on
+    /// `clock`, the clock the cycle thread stamps its ticks with. A
+    /// thread that cannot be started is an error: a generation does not
+    /// run unsupervised.
+    pub fn spawn(
+        plan: Arc<Plan>,
+        shared: Arc<Shared>,
+        clock: Monotonic,
+        recorder: Recorder,
+    ) -> std::io::Result<Self> {
         let group_boxes = group_boxes(&plan, &shared);
         let stop = Arc::new(AtomicBool::new(false));
         let stale = Arc::new(AtomicBool::new(false));
@@ -113,16 +185,25 @@ impl Supervisor {
                 if let Err(e) = raise_priority() {
                     eprintln!("rt/supervisor: {e}; running at default priority");
                 }
+                let mut armed_at = None;
                 let mut was_stale = false;
                 while !flag.load(Ordering::Acquire) {
                     let now_mono_ns = clock.now_ns();
-                    let found_stale = check_and_respond(&plan, &shared, &group_boxes, now_mono_ns);
+                    if !shared.running.load(Ordering::Acquire) {
+                        armed_at = None;
+                        std::thread::sleep(POLL_INTERVAL);
+                        continue;
+                    }
+                    let since = *armed_at.get_or_insert(now_mono_ns);
+                    let found = check_and_respond(&plan, &shared, &group_boxes, since, now_mono_ns);
+                    let found_stale = !found.is_empty();
                     if found_stale && !was_stale {
                         eprintln!(
                             "jokerd: rt/supervisor: a group has not ticked in over {}x its \
                              period; forcing every output to safe (AUR-274)",
                             STALE_FACTOR
                         );
+                        recorder.force_safe(&plan, &found, now_mono_ns);
                     }
                     was_stale = found_stale;
                     if found_stale {
@@ -130,20 +211,18 @@ impl Supervisor {
                     }
                     std::thread::sleep(POLL_INTERVAL);
                 }
-            })
-            .ok();
-        Self {
+            })?;
+        Ok(Self {
             stop,
             stale,
-            handle,
-        }
+            handle: Some(handle),
+        })
     }
 
     /// Whether the supervisor has ever found a stale group in this
     /// generation (sticky: it does not clear once a group recovers —
     /// forcing `safe` is meant to hold until a restart, not toggle with
-    /// the hang, docs/01 §8). The hardware-watchdog feed (AUR-274 phase
-    /// 4) stops the moment this turns true.
+    /// the hang, docs/01 §8).
     pub fn is_stale(&self) -> bool {
         self.stale.load(Ordering::Acquire)
     }
@@ -246,32 +325,46 @@ mod tests {
     }
 
     #[test]
-    fn a_group_that_never_ticked_is_not_stale() {
+    fn a_group_that_never_ticked_is_not_stale_before_its_deadline() {
         let (plan, shared) = plan_with_one_bound_output();
         let boxes = group_boxes(&plan, &shared);
-        assert!(!check_and_respond(
-            &plan,
-            &shared,
-            &boxes,
-            1_000_000_000_000
-        ));
+        let armed_at = 5_000_000_000;
+        let shortest = plan.groups.iter().map(|g| g.period_ns).min().unwrap();
+        let deadline = armed_at + STALE_FACTOR * shortest;
+        assert!(check_and_respond(&plan, &shared, &boxes, armed_at, deadline).is_empty());
+    }
+
+    #[test]
+    fn a_group_that_never_ticked_is_stale_after_its_deadline() {
+        let (plan, shared) = plan_with_one_bound_output();
+        let boxes = group_boxes(&plan, &shared);
+        let armed_at = 5_000_000_000;
+        let longest = plan.groups.iter().map(|g| g.period_ns).max().unwrap();
+        let past = armed_at + STALE_FACTOR * longest + 1;
+        let stale = check_and_respond(&plan, &shared, &boxes, armed_at, past);
+        let every: Vec<(usize, u64)> = (0..plan.groups.len())
+            .map(|g| (g, past - armed_at))
+            .collect();
+        assert_eq!(stale, every);
+    }
+
+    #[test]
+    fn a_tick_before_the_loop_started_does_not_count_as_silence() {
+        let (plan, shared) = plan_with_one_bound_output();
+        shared.groups[0].last_tick_mono_ns.set(1);
+        let armed_at = 9_000_000_000;
+        assert!(stale_groups(&plan, &shared, armed_at, armed_at + 1).is_empty());
     }
 
     #[test]
     fn a_group_stale_past_the_factor_forces_every_output_safe() {
         let (plan, shared) = plan_with_one_bound_output();
         let boxes = group_boxes(&plan, &shared);
-        // The default group's period is small (no explicit [cycles] ->
-        // whatever load()'s own default is); tick it once at t=0, then
-        // ask "is it stale" from far enough in the future.
-        shared.groups[0].last_tick_mono_ns.set(0);
-        shared.groups[0].last_tick_mono_ns.set(1); // any non-zero "has ticked"
+        shared.groups[0].last_tick_mono_ns.set(1);
         let period_ns = plan.groups[0].period_ns;
         let now = 1 + STALE_FACTOR * period_ns + 1;
-        assert!(check_and_respond(&plan, &shared, &boxes, now));
+        assert!(!check_and_respond(&plan, &shared, &boxes, 0, now).is_empty());
 
-        // Every output's box must now report `forced`: the next write
-        // any device's `CommitRx` pulls is a `ForceSafe` one.
         let mut any_checked = false;
         for (bindings, boxes) in shared
             .commit_bindings
