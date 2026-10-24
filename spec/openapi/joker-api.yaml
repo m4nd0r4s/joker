@@ -5583,7 +5583,7 @@ components:
         last_outcome: {$ref: '#/components/schemas/WriteOutcome'}
     DecisionKind:
       type: string
-      enum: [proposal, expiry, release, takeover, safe, trip, reset, method, intent]
+      enum: [proposal, expiry, release, takeover, safe, trip, reset, method, intent, write_ack]
     Decision:
       type: object
       required: [id, ts, output, kind]
@@ -5643,6 +5643,22 @@ components:
             method: {type: string}
             args: {type: object}
         intent: {$ref: '#/components/schemas/Ulid'}
+        ack:
+          description: only with kind = write_ack - a write the equipment did not confirm (ref/06 §2.9, ADR 0065)
+          type: object
+          required: [device, write_seq, write_kind, status, code]
+          properties:
+            device: {type: string}
+            write_seq: {type: integer, minimum: 0}
+            write_kind:
+              type: string
+              enum: [set, keepalive, force_safe, relinquish, resync]
+            status:
+              type: string
+              enum: [timeout, comm_failure, device_rejected, not_connected, unsupported, late, skipped]
+            code:
+              type: ['null', string]
+              enum: [null, J0877, J0878]
         model_outputs:
           description: reserved for 1.1 (M22)
           type: ['null', array]
