@@ -28,7 +28,7 @@ use crate::types::{PointId, RawValue, WriteKind};
 
 /// Proof that a [`CommittedWrite`] was built by this module.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct Sealed(());
+pub(crate) struct Sealed(pub(crate) ());
 
 /// How an applied value becomes raw.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
