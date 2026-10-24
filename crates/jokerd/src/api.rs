@@ -756,7 +756,7 @@ impl Backend for Node {
             "caller".into(),
             json!({
                 "principal": {"id": user(who), "transport": who.transport, "uid": who.uid},
-                "role": "admin",
+                "role": joker_api::server::role_of(who),
                 "session": joker_api::server::ulid(u128::try_from(utc_now_ns()).unwrap_or(0)),
             }),
         );
