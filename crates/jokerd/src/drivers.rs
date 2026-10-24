@@ -67,7 +67,7 @@ pub fn raw_to_bits(value: &OwnedRaw, ty: ValueType) -> Option<u64> {
         (OwnedRaw::Int(i), ValueType::I64) => Some(*i as u64),
         (OwnedRaw::Uint(u), ValueType::U64 | ValueType::Enum | ValueType::Bits) => Some(*u),
         (OwnedRaw::Float(f), ValueType::F64) => Some(f.to_bits()),
-        (OwnedRaw::Float(f), ValueType::F32) => Some(u64::from((*f as f32).to_bits())),
+        (OwnedRaw::Float(f), ValueType::F32) => ValueType::F32.f64_to_bits(*f),
         _ => None,
     }
 }
