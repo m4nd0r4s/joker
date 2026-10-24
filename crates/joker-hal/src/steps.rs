@@ -124,7 +124,6 @@ mod tests {
                 timeout: Duration::from_secs(2),
             },
         ];
-        // 3 steps x 1s, plus the 500ms wait, plus the 2s until budget.
         assert_eq!(
             default_timeout(&steps),
             Duration::from_millis(3_000 + 500 + 2_000)

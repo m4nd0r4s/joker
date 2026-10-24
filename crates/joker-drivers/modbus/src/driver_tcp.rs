@@ -104,6 +104,11 @@ impl ModbusTcp {
         t
     }
 
+    /// Sends `frame` and reads one reply into `out`. The reply starts with
+    /// the 6-byte MBAP header (transaction, protocol and length, two bytes
+    /// each); its length counts the unit byte plus the PDU (function code
+    /// and the rest), and the PDU alone sizes the check of the reply. In
+    /// `out`, byte 6 is the unit, byte 7 the function and the rest follows.
     async fn exchange(
         &mut self,
         cx: &Cx<'_>,
@@ -126,7 +131,6 @@ impl ModbusTcp {
         let io = async {
             let stream = self.stream.as_mut().ok_or(Fail::Gone)?;
             stream.write_all(frame).await.map_err(io_fail)?;
-            // The 6-byte MBAP header: transaction(2), protocol(2), length(2).
             stream.read_exact(&mut out[..6]).await.map_err(read_fail)?;
             let Some(got_transaction) = transaction_of(&out[..6]) else {
                 return Err(Fail::Garbled);
@@ -137,9 +141,6 @@ impl ModbusTcp {
             let Some(len) = header_length(&out[..6]) else {
                 return Err(Fail::Garbled);
             };
-            // `len` counts the unit byte plus the PDU (function code +
-            // the rest); `pdu_len` is the PDU alone, used to size-check
-            // the reply.
             let tail_len = usize::from(len);
             let pdu_len = tail_len.saturating_sub(1);
             if pdu_len == 0 || 6 + tail_len > out.len() {
@@ -149,7 +150,6 @@ impl ModbusTcp {
                 .read_exact(&mut out[6..6 + tail_len])
                 .await
                 .map_err(read_fail)?;
-            // out[6] = unit, out[7] = function, out[8..] = the rest.
             let function = frame[7];
             let got_function = out[7];
             if got_function == function | 0x80 {

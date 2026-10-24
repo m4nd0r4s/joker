@@ -6,12 +6,12 @@
 pub const MAX_ADU: usize = 260;
 
 /// An MBAP-framed request: transaction id, unit, function, two 16-bit
-/// words. No CRC.
+/// words. No CRC. The length field is 6: the unit byte plus a 5-byte PDU
+/// (function and two words).
 pub fn request(transaction: u16, unit: u8, function: u8, a: u16, b: u16) -> [u8; 12] {
     let [t0, t1] = transaction.to_be_bytes();
     let [a0, a1] = a.to_be_bytes();
     let [b0, b1] = b.to_be_bytes();
-    // Length field: unit (1) + PDU (function + 2 words = 5).
     let [l0, l1] = 6u16.to_be_bytes();
     [t0, t1, 0, 0, l0, l1, unit, function, a0, a1, b0, b1]
 }
@@ -61,9 +61,10 @@ mod tests {
         assert_eq!(header_length(&[1]), None);
     }
 
+    /// Header (6), unit (1), function (1), byte count (1) and two
+    /// registers (4) make 13 bytes.
     #[test]
     fn read_response_len_covers_header_unit_and_pdu() {
-        // header(6) + unit(1) + fc(1) + byte-count(1) + 2 regs(4) = 13.
         assert_eq!(read_response_len(3, 2), 13);
     }
 }
