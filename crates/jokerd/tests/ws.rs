@@ -145,6 +145,8 @@ async fn a_subscribe_gets_a_welcome_then_a_subscribed_and_a_resync() {
     assert!(resync["items"].is_array(), "{resync}");
 }
 
+/// The connection itself stays open after the error (ref/09 §6.2): a
+/// ping still works.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_unknown_topic_is_refused_without_closing_the_connection() {
     let f = start().await;
@@ -163,7 +165,6 @@ async fn an_unknown_topic_is_refused_without_closing_the_connection() {
     assert_eq!(error["id"], "r1");
     assert_eq!(error["problem"]["code"], "J-E1902");
 
-    // The connection itself stays open (ref/09 §6.2): a ping still works.
     ws.send(Message::Text(
         json!({"op": "ping", "id": "p1"}).to_string().into(),
     ))
@@ -174,6 +175,9 @@ async fn an_unknown_topic_is_refused_without_closing_the_connection() {
     assert_eq!(pong["id"], "p1");
 }
 
+/// `common::JOKER_TOML`'s own `light` app flips `pi.act_led` on its own
+/// cycle, with no action needed from the test: the next `data` message on
+/// the subscription just has to arrive on its own.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_live_change_arrives_as_a_data_message() {
     let f = start().await;
@@ -197,15 +201,15 @@ async fn a_live_change_arrives_as_a_data_message() {
     assert_eq!(subscribed["op"], "subscribed");
     let _resync = next_json(&mut ws).await;
 
-    // `common::JOKER_TOML`'s own `light` app flips `pi.act_led` on its
-    // own cycle, with no action needed from the test: the next `data`
-    // message on the subscription just has to arrive on its own.
     let data = next_json(&mut ws).await;
     assert_eq!(data["op"], "data");
     assert_eq!(data["sub"], subscribed["sub"]);
     assert!(data["items"].is_array(), "{data}");
 }
 
+/// Reads enough of the stream to see the first two SSE events, then
+/// stops: SSE ignores `connection: close` and streams forever, so a
+/// partial read is enough to prove it started right.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn sse_stream_sends_a_subscribed_event_then_data() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -219,10 +223,6 @@ async fn sse_stream_sends_a_subscribed_event_then_data() {
         .await
         .unwrap();
     let mut raw = Vec::new();
-    // Read enough of the stream to see the first two SSE events, then
-    // stop (the connection is `connection: close`-ignorant for SSE,
-    // which streams forever; a partial read is enough to prove it
-    // started right).
     let mut buf = [0u8; 4096];
     let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
     while raw.len() < 4096 && tokio::time::Instant::now() < deadline {
