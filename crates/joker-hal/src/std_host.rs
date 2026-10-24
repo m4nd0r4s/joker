@@ -366,10 +366,12 @@ impl crate::link::TcpIo for TokioTcp {
     }
 }
 
-/// Connects to a fixed address on tokio's reactor, reconnecting on every
-/// call (ref/06 §3.4, `Link::Tcp`).
+/// Connects to a fixed `host:port` on tokio's reactor, reconnecting on
+/// every call (ref/06 §3.4, `Link::Tcp`). A host name is resolved again on
+/// every call, so a device whose address changes in DNS is found on the
+/// next reconnection.
 pub struct TokioTcpConnector {
-    addr: std::net::SocketAddr,
+    addr: String,
     connecting: Option<Pin<Box<dyn Future<Output = io::Result<tokio::net::TcpStream>> + Send>>>,
 }
 
@@ -384,8 +386,15 @@ impl core::fmt::Debug for TokioTcpConnector {
 impl TokioTcpConnector {
     /// A connector for `addr`. Must run inside a tokio runtime.
     pub fn new(addr: std::net::SocketAddr) -> Self {
+        Self::to(&std::format!("{addr}"))
+    }
+
+    /// A connector for `address`, `"<host>:<port>"` where the host is a
+    /// name, an IPv4 literal or a bracketed IPv6 literal. Must run inside
+    /// a tokio runtime.
+    pub fn to(address: &str) -> Self {
         Self {
-            addr,
+            addr: String::from(address),
             connecting: None,
         }
     }
@@ -398,7 +407,7 @@ impl crate::link::TcpConnect for TokioTcpConnector {
     ) -> Poll<Result<crate::link::TcpStream, IoError>> {
         let fut = self
             .connecting
-            .get_or_insert_with(|| Box::pin(tokio::net::TcpStream::connect(self.addr)));
+            .get_or_insert_with(|| Box::pin(tokio::net::TcpStream::connect(self.addr.clone())));
         match fut.as_mut().poll(cx) {
             Poll::Ready(Ok(stream)) => {
                 self.connecting = None;
@@ -606,6 +615,19 @@ mod tests {
             bias: GpioBias::AsIs,
             drive: GpioDrive::PushPull,
         }
+    }
+
+    #[tokio::test]
+    async fn tcp_resolves_a_host_name() {
+        use crate::link::TcpEndpoint;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let accept = tokio::spawn(async move { listener.accept().await.is_ok() });
+        let mut endpoint =
+            TcpEndpoint::new(TokioTcpConnector::to(&std::format!("localhost:{port}")));
+        assert!(endpoint.connect().await.is_ok());
+        assert!(accept.await.unwrap());
     }
 
     #[test]
