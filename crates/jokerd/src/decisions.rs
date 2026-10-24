@@ -277,6 +277,53 @@ pub fn write_ack_json(plan: &Plan, generation: u64, ack: &WriteAckRecord) -> Map
     m
 }
 
+/// A failure to write a runtime state file while running (ADR 0070).
+#[derive(Debug, Clone, Copy)]
+pub struct StateWriteFailure<'a> {
+    /// The generation running, if any.
+    pub generation: Option<u64>,
+    /// `state/manual` or `state/trips`.
+    pub file: &'static str,
+    /// The output whose change was being written; `None` when the whole
+    /// table was being rewritten.
+    pub output: Option<&'a str>,
+    /// `set`, `remove` or `clear` for manual levels; `trip` or `reset`
+    /// for trips.
+    pub op: &'static str,
+}
+
+impl StateWriteFailure<'_> {
+    /// Reports `error` on standard error and appends the
+    /// `state_write_failed` record to `log` with `fsync`.
+    pub fn report(&self, log: &SharedLog, error: &io::Error) {
+        let output = self.output.unwrap_or("");
+        eprintln!(
+            "jokerd: cannot persist {} ({} {output}): {error}",
+            self.file, self.op
+        );
+        let mut m = Map::new();
+        m.insert(
+            "gen".into(),
+            self.generation.map_or(Value::Null, |g| json!(g)),
+        );
+        m.insert("record".into(), json!("state_write_failed"));
+        m.insert("file".into(), json!(self.file));
+        m.insert(
+            "output".into(),
+            self.output.map_or(Value::Null, |o| json!(o)),
+        );
+        m.insert("op".into(), json!(self.op));
+        m.insert("error".into(), json!(error.to_string()));
+        m.insert(
+            "ts".into(),
+            json!(crate::wire::timestamp(crate::wire::utc_now_ns())),
+        );
+        if let Err(e) = lock(log).append(m, true) {
+            eprintln!("jokerd: decision log: {e}");
+        }
+    }
+}
+
 /// Persists each transition of an output into or out of trip to
 /// `state/trips` as the services observe it (docs/01 §7, ADR 0061): the
 /// cycle thread publishes when each output became tripped, and this
@@ -287,6 +334,7 @@ pub struct TripWatch {
     table: Arc<TripTable>,
     paths: Vec<String>,
     tripped: Vec<bool>,
+    reported: Vec<bool>,
 }
 
 impl TripWatch {
@@ -301,17 +349,29 @@ impl TripWatch {
             table,
             paths,
             tripped: vec![false; shared.output_ids.len()],
+            reported: vec![false; shared.output_ids.len()],
         }
     }
 
     /// Persists every transition since the last call; one that fails to
-    /// persist is reported and retried on the next call.
-    pub fn observe(&mut self, shared: &Shared, utc_origin_ns: i64) {
+    /// persist is recorded once in `log` (`state_write_failed`, ADR 0070)
+    /// and retried on the next call.
+    pub fn observe(
+        &mut self,
+        shared: &Shared,
+        utc_origin_ns: i64,
+        log: &SharedLog,
+        generation: u64,
+    ) {
         let cells = shared.trip_since.iter();
-        for ((cell, path), seen) in cells.zip(&self.paths).zip(self.tripped.iter_mut()) {
+        let state = cells
+            .zip(&self.paths)
+            .zip(self.tripped.iter_mut().zip(self.reported.iter_mut()));
+        for ((cell, path), (seen, reported)) in state {
             let since = cell.load(Ordering::Relaxed);
             let now = since != 0;
             if now == *seen || path.is_empty() {
+                *reported = false;
                 continue;
             }
             let result = if now {
@@ -322,8 +382,21 @@ impl TripWatch {
                 self.table.clear_tripped(path)
             };
             match result {
-                Ok(()) => *seen = now,
-                Err(e) => eprintln!("jokerd: cannot persist the trip of {path}: {e}"),
+                Ok(()) => {
+                    *seen = now;
+                    *reported = false;
+                }
+                Err(e) if !*reported => {
+                    *reported = true;
+                    StateWriteFailure {
+                        generation: Some(generation),
+                        file: "state/trips",
+                        output: Some(path),
+                        op: if now { "trip" } else { "reset" },
+                    }
+                    .report(log, &e);
+                }
+                Err(_) => {}
             }
         }
     }
@@ -357,7 +430,7 @@ impl DecisionWriter {
                 loop {
                     let stopping = flag.load(Ordering::Acquire);
                     if let Some(w) = watch.as_mut() {
-                        w.observe(&shared, utc_origin_ns);
+                        w.observe(&shared, utc_origin_ns, &log, generation);
                     }
                     drain(
                         &plan,

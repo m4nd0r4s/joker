@@ -1097,6 +1097,132 @@ async fn a_trip_survives_a_jokerd_restart() {
     stop2.halt();
 }
 
+/// A persisted trip of an output that a new generation does not declare
+/// is kept, recorded as `trip_kept`, listed with `declared: false`, and
+/// cleared by a reset of its path (ADR 0070).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_trip_of_an_output_a_new_generation_removed_is_kept_listed_and_resettable() {
+    let dir = tempfile::tempdir().unwrap();
+    let (http, stop) = boot_at(dir.path(), &effective_with_trippable_output()).await;
+    let write = http
+        .send(
+            "POST",
+            "/v1/outputs/pi.p_set/manual",
+            &[],
+            Some(&json!({"value": 150, "ttl": "30s", "reason": "force a trip", "wait": true})),
+        )
+        .await;
+    assert_eq!(write.json()["outcome"]["outcome"], "tripped");
+    let trips_file = dir.path().join("state").join("trips");
+    for _ in 0..100 {
+        if std::fs::read_to_string(&trips_file).is_ok_and(|t| t.contains("pi.p_set")) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    {
+        let mut c = jokerd::daemon::lock_controller(&stop.controller);
+        let g = c
+            .propose(&effective(), "", Some("drop p_set".into()), false)
+            .unwrap();
+        c.activate(g.number, None, None).unwrap();
+    }
+    let kept: Vec<Value> = decisions_from(dir.path(), 0)
+        .into_iter()
+        .filter(|e| e["record"] == "trip_kept")
+        .collect();
+    assert_eq!(kept.len(), 1, "{kept:?}");
+    assert_eq!(kept[0]["output"], "pi.p_set");
+    assert_eq!(kept[0]["gen"], 2);
+
+    let contract = Contract::load();
+    let listed = http.send("GET", "/v1/trips", &[], None).await;
+    contract.check("get", "/v1/trips", 200, &listed.json());
+    let items = listed.json()["items"].as_array().unwrap().clone();
+    assert_eq!(items.len(), 1, "{}", listed.json());
+    assert_eq!(items[0]["output"], "pi.p_set");
+    assert_eq!(items[0]["declared"], false);
+
+    let missing = http
+        .send(
+            "POST",
+            "/v1/outputs/pi.nothing/reset",
+            &[],
+            Some(&json!({"reason": "nothing here"})),
+        )
+        .await;
+    assert_eq!(missing.status, 404, "{}", missing.json());
+
+    let reset = http
+        .send(
+            "POST",
+            "/v1/outputs/pi.p_set/reset",
+            &[],
+            Some(&json!({"reason": "the output is gone"})),
+        )
+        .await;
+    assert_eq!(reset.status, 200, "{}", reset.json());
+    contract.check("post", "/v1/outputs/{path}/reset", 200, &reset.json());
+    assert_eq!(reset.json()["result"], "cleared");
+    assert!(
+        !std::fs::read_to_string(&trips_file)
+            .unwrap()
+            .contains("pi.p_set")
+    );
+    let after = http.send("GET", "/v1/trips", &[], None).await;
+    assert_eq!(after.json()["items"].as_array().unwrap().len(), 0);
+    let resets: Vec<Value> = decisions_from(dir.path(), 0)
+        .into_iter()
+        .filter(|e| e["record"] == "reset")
+        .collect();
+    assert_eq!(resets.len(), 1, "{resets:?}");
+    assert_eq!(resets[0]["result"], "cleared");
+    assert_eq!(resets[0]["reason"], "the output is gone");
+    stop.halt();
+}
+
+/// A manual level that cannot be written to `state/manual` still holds,
+/// and the failure is recorded as `state_write_failed` instead of only
+/// reaching standard error (ADR 0070).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_manual_level_that_cannot_be_persisted_is_recorded() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let (http, stop) = boot_at(dir.path(), &effective()).await;
+    let state = dir.path().join("state");
+    std::fs::set_permissions(&state, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let write = http
+        .send(
+            "POST",
+            "/v1/outputs/pi.act_led/manual",
+            &[],
+            Some(
+                &json!({"value": true, "ttl": "30s", "reason": "disk is read-only", "wait": true}),
+            ),
+        )
+        .await;
+    std::fs::set_permissions(&state, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(write.status, 200, "{}", write.json());
+    let held = http.send("GET", "/v1/manual", &[], None).await;
+    assert_eq!(
+        held.json()["items"].as_array().unwrap().len(),
+        1,
+        "{}",
+        held.json()
+    );
+    let failures: Vec<Value> = decisions_from(dir.path(), 0)
+        .into_iter()
+        .filter(|e| e["record"] == "state_write_failed")
+        .collect();
+    assert_eq!(failures.len(), 1, "{failures:?}");
+    assert_eq!(failures[0]["file"], "state/manual");
+    assert_eq!(failures[0]["op"], "set");
+    assert_eq!(failures[0]["output"], "pi.act_led");
+    assert_eq!(failures[0]["gen"], 1);
+    assert!(failures[0]["error"].as_str().is_some_and(|e| !e.is_empty()));
+    stop.halt();
+}
+
 /// A trip reaches `state/trips` when it happens, not when someone reads
 /// the API (docs/01 §7, ADR 0061): nothing here calls a GET, and the
 /// write does not wait for its tick.
@@ -1136,8 +1262,9 @@ async fn the_boot_counter_persists_and_increments_across_restarts() {
 
     let (http, stop) = boot_at(dir.path(), &manifest).await;
     let first = http.send("GET", "/v1/info", &[], None).await;
+    Contract::load().check("get", "/v1/info", 200, &first.json());
     let first_count = first.json()["runtime"]["boot_count"].as_u64().unwrap();
-    assert!(first_count >= 1, "{}", first.json());
+    assert_eq!(first_count, 1, "{}", first.json());
     stop.halt();
 
     let (http2, stop2) = boot_at(dir.path(), &manifest).await;

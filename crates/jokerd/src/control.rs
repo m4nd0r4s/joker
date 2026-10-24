@@ -650,7 +650,9 @@ impl Controller {
         self.refresh_clock_for(Some(number));
         let plan = Arc::new(loaded.plan);
         let pacer = (self.pacer)();
-        let restore = self.persistent.restore_for(&plan, pacer.now().mono_ns);
+        let restore = self
+            .persistent
+            .restore_for(&plan, pacer.now().mono_ns, &self.log, number);
         let running = Running::start_with(
             Arc::clone(&plan),
             tasks,
