@@ -309,7 +309,7 @@ The driver only receives **applied writes** (ADR 0005). It never sees proposals.
 - **Order:** a `write` call carries one or more writes, in the order in which they must go onto the wire. The driver respects it. The writes of an atomic group (M20) always go **together in a single call**, in the declared `order` (`atomic.index` 0..count−1), and the driver does not interleave other writes of the same device with them. With the `atomic-request` capability, the driver puts them in the same request when the protocol allows it (contiguous FC 16).
 - **Acks:** exactly one `write-ack` per write, in the same order, with the same `seq`. If a write of an atomic group fails, the following ones of the group carry `skipped` and the core marks the group `uncertain(partial_write)` (02 §7.3).
 - **Timed:** `at` only appears with the `timed-write` capability and on `timed` points. The driver applies the write at `at` with its declared precision; if it cannot by `at` + tolerance (the descriptor's, 100 µs by default for GPIO), it returns `late`, and the core records `J0878`. Without the capability, the core applies the write at the first tick with `t ≥ at` and the driver receives it without `at` (02 §7.2).
-- **Pulses** (`pulse`): the core generates two `set` writes (the value and, afterwards, the `safe`). The driver does not know what a pulse is.
+- **Pulses** (`pulse`): the core generates two `set` writes (the value and, afterwards, the `safe`). The driver does not know what a pulse is. Outside a pulse, a `resync` or a `keepalive` of a pulse output carries `safe`, never the pulse value (ADR 0072).
 
 | `write-status` | Code | Effect in the core |
 |---|---|---|

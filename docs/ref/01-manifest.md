@@ -657,8 +657,8 @@ group          = "fast"
 | `verify` | table | no | — | below | 03 §6 | 1.0 |
 | `reset_when` | `Expr<bool>` | no | — (only `jk reset`) | 16 E7; on an output without `on_range = "trip"` and without an alarm with `trip` on it, it is `J0236` (warning) | 03 §6 | 1.0 |
 | `group` | `Name` from `[cycles]` | no | the A11 rule | nonexistent group `J0237` | 03 §6 | 1.0 |
-| `keepalive` | `Duration` | no | the device's `fallback.keepalive` | only on outputs of devices with a fallback; `J0276` | 01 §8, new | 1.0 |
-| `pulse` | `Duration` | no | — | only `bool` (`J0233`); after applying a value ≠ `safe`, the output returns to `safe` once `pulse` has elapsed | 03 §6 | 1.0 |
+| `keepalive` | `Duration` | no | the device's `fallback.keepalive` | the period at which the output stage renews this output's device fallback (ADR 0072); only on an output its device fallback covers (`[fallback] applies_to`), and below that fallback's timeout (`J0276`) | 01 §8, new | 1.0 |
+| `pulse` | `Duration` | no | — | only `bool` (`J0233`); after applying a value ≠ `safe`, the output returns to `safe` once `pulse` has elapsed: the output stage writes the value and then `safe` (`ref/06` §2.9); a `resync` or `keepalive` outside a pulse writes `safe`; the applied value stays the writer's (ADR 0072) | 03 §6 | 1.0 |
 | `remote_levels` | `List<Level>` (set) or string `"<n>-<m>"` (`"3-16"`) | no | the levels that no local writer of the MCU uses | **only on a Joker Micro**: arbiter levels delegated to the link (16 A12, `ref/07` §15); on a Linux node `J0145`; a level also used by a local writer `J0210` | `ref/07` §15 | 1.0 |
 | `accept_missing_fallback` | `Text` (justification ≥ 10 characters) | no | — | turns the `J0205` for a missing fallback into a warning, and `jk lock` copies it to `[accepted]`; on an output that has a fallback it is `J0277` (warning) | 01 §8, track 02 | 1.0 |
 | `widen` | `Text` or `Table<key, Text>` | no | — | overlays (§7.4) | 03 §2 | 1.0 |
@@ -671,11 +671,11 @@ group          = "fast"
 
 | Key | Type | Req. | Default | Validation |
 |---|---|---|---|---|
-| `verify.readback` | `Path` of an input | yes | — | must be an input, with the same dimension (`J0235`) |
+| `verify.readback` | `Path` of an input | yes | — | must be an input, with the same dimension (`J0235`); on a `bool` output a `bool`, on an `enum` output one with the same variants (`J0235`) |
 | `verify.tolerance` | `Quantity` (difference) | cond. | — (exact equality) | required on `f64`/`f32` outputs (`J0235`); on a `string` or `bytes` output `J0233` |
-| `verify.within` | `Duration` | no | 2 × `poll` of the `readback` device | ≥ one `poll` of that device (`J0235`) |
+| `verify.within` | `Duration` | no | 2 × `poll` of the `readback` device (1 s without a declared `poll`) | ≥ one `poll` of that device (`J0235`) |
 
-An output that does not confirm becomes `Uncertain(NotConfirmed)` and fires `joker.output.<s>.unconfirmed` (document 01, §7).
+An output that does not confirm becomes `Uncertain(NotConfirmed)` and fires `joker.output.<s>.unconfirmed` (document 01, §7). The readback **confirms** when it is `good` and within `tolerance` of the applied value; the output does not confirm when it has disagreed for `within` without interruption, and the first readback that agrees makes it `good` again. A new applied value starts a new window, and `relinquish` is not verified (ADR 0072).
 
 **Rules that involve several keys:**
 

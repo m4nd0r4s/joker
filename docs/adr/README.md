@@ -68,6 +68,7 @@
 | [0069](0069-clock-quality-re-evaluation.md) | How `jokerd` derives and re-evaluates the clock quality |
 | [0070](0070-state-write-failures-orphaned-trips-boot-count-and-jokerd-flags.md) | State write failures, trips of outputs a generation removed, the startup counter in the API, and `jokerd`'s bench flags |
 | [0071](0071-prometheus-metrics-exposition.md) | The Prometheus `/metrics` exposition: endpoint, role, names, labels and summaries |
+| [0072](0072-output-envelope-keys-in-jokerd.md) | Every output envelope key takes effect in `jokerd`: step 6, `verify`, `keepalive` and `pulse` |
 | [0073](0073-raw-access-in-the-catalog-drivers-and-the-wire-double.md) | Access by address in the catalog drivers, and the wire double of the action suites |
 | [0074](0074-subscription-resume-re-resolution-and-sampling-budget.md) | Subscription resumption, re-resolution on a generation swap, and the sampling budget |
 
