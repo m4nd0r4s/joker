@@ -4,7 +4,9 @@
 //! Wasmtime cannot check that precompiled bytes are what its compiler wrote:
 //! loading arbitrary bytes is undefined behaviour. The host only loads files
 //! of the AOT cache, which it wrote itself or installed from a generation
-//! whose artifacts are signed (ADR 0025), under the engine's own
+//! whose artifacts are signed (ADR 0025) or, until signatures are checked,
+//! were uploaded by an admin of the local API, who may already replace the
+//! runtime itself (ADR 0067), under the engine's own
 //! [`EngineId`] and the SHA-256 of the component they were compiled from,
 //! after wasmtime has checked their header against the engine
 //! ([`wasmtime::Engine::detect_precompiled`]).
