@@ -59,5 +59,6 @@
 | [0060](0060-fail-closed-permits-and-step-quality.md) | Action permits fail closed; step conditions honour quality |
 | [0061](0061-runtime-state-files-supervisor-records-and-bulk-reset-errors.md) | Runtime state files, supervisor and restore records, and per-output errors of a bulk reset |
 | [0062](0062-wide-signal-values.md) | Wide signal values: the wide slot, decoding, the envelope, the API, the decision log and the trace |
+| [0069](0069-clock-quality-re-evaluation.md) | How `jokerd` derives and re-evaluates the clock quality |
 
 Changing a decision = writing a new ADR that replaces it, and updating the affected documents in the same set of commits.
