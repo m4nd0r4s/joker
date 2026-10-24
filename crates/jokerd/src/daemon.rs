@@ -22,15 +22,15 @@ pub struct Options {
     pub entry: Option<PathBuf>,
     /// The API socket.
     pub socket: PathBuf,
-    /// The node's board profile, for the hardware-watchdog feed
-    /// (AUR-274 phase 4; see `watchdog`'s own module doc for why this
-    /// is an explicit flag and not resolved from the manifest/lock).
+    /// The node's board profile, whose `[watchdog]` is fed until the
+    /// board is resolved from the generation's lock (ref/02 §2.2.3, ADR
+    /// 0070).
     pub board: Option<PathBuf>,
 }
 
 impl Options {
-    /// Parses `--state-dir <dir>`, `--manifest <entry>` and `--board
-    /// <file>`.
+    /// Parses `--state-dir <dir>`, `--socket <path>`, `--manifest
+    /// <entry>` and `--board <file>` (ref/02 §2.2.3).
     pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Self, String> {
         let mut state_dir = PathBuf::from("/var/lib/joker");
         let mut entry = None;

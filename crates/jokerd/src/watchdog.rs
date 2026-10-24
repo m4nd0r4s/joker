@@ -184,6 +184,29 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_systemd_unit_waits_for_ready_and_is_fed_three_times_per_watchdog_period() {
+        let unit = include_str!("../dist/jokerd.service");
+        assert!(
+            unit.lines()
+                .all(|l| !l.trim_start().starts_with('#') && !l.trim_start().starts_with(';')),
+            "the unit carries no comments"
+        );
+        let key = |name: &str| {
+            unit.lines()
+                .find_map(|l| l.strip_prefix(name)?.strip_prefix('='))
+                .unwrap_or_else(|| panic!("no {name} in the unit"))
+        };
+        assert_eq!(key("Type"), "notify");
+        assert_eq!(key("NotifyAccess"), "main");
+        assert_eq!(key("RuntimeDirectory"), "joker");
+        let watchdog: u64 = key("WatchdogSec").parse().unwrap_or(0);
+        assert!(
+            Duration::from_secs(watchdog) >= 3 * DEFAULT_INTERVAL,
+            "{watchdog}"
+        );
+    }
+
+    #[test]
     fn without_a_board_watchdog_the_default_interval_applies() {
         assert_eq!(feed_interval(None), DEFAULT_INTERVAL);
     }
