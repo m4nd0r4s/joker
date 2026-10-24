@@ -204,7 +204,7 @@ pub fn run(options: Options, tasks: Arc<dyn TaskProvider>) -> Result<(), String>
         utc_origin_ns,
         &options.state_dir,
     )
-    .map_err(|e| format!("traces: {e}"))?;
+    .map_err(|e| format!("node state: {e}"))?;
     let heartbeat = lock_controller(&controller).heartbeat();
     let watchdog = crate::watchdog::WatchdogFeeder::spawn(
         board_watchdog(&options),

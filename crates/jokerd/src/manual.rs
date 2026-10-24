@@ -15,8 +15,8 @@ use serde::{Deserialize, Serialize};
 use crate::shared::{ResetOutcome, Shared};
 use crate::state_file;
 
-/// The name of the persisted manual-levels file under the state
-/// directory (docs/ref/02 §2.2.4).
+/// The name of the persisted manual-levels file, `state/manual` under
+/// the state directory (docs/ref/02 §2.2.4, ADR 0061).
 pub const STATE_FILE: &str = "manual";
 
 /// Who holds a manual level of an output.
@@ -57,17 +57,32 @@ struct Persisted {
     reason: String,
 }
 
-/// What [`ManualTable::load`] restored, for the caller to log (A14: a
-/// level restored without a trustworthy clock is a
-/// `manual_restored`-worthy event — logged today, an alarm once M9/
-/// AUR-288 exists).
+/// One manual level found by [`ManualTable::load`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RestoredLevel {
+    /// The output.
+    pub output: String,
+    /// The manual level.
+    pub level: u8,
+    /// Who held it.
+    pub principal: String,
+    /// The time left on it at startup, ns (0 for an expired one).
+    pub remaining_ns: u64,
+}
+
+/// What [`ManualTable::load`] restored, for the caller to log in the
+/// decision log (A14: a level restored without a trustworthy clock is
+/// `manual_restored`, a stand-in for the alarm until M9/AUR-288; one
+/// whose deadline had passed is `manual_expired`, ADR 0061).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Restored {
     /// Levels restored normally, using the recorded UTC deadline.
-    pub synced: Vec<(String, u8)>,
+    pub synced: Vec<RestoredLevel>,
     /// Levels restored from `remaining_ns_at_write` because the clock
     /// was not `Synced` at boot.
-    pub degraded: Vec<(String, u8)>,
+    pub degraded: Vec<RestoredLevel>,
+    /// Levels discarded because their deadline had passed.
+    pub expired: Vec<RestoredLevel>,
 }
 
 /// The manual levels held, by (output path, level); optionally backed
@@ -86,34 +101,42 @@ impl ManualTable {
     /// `until_utc_ns - now_utc_ns`; otherwise, from each record's own
     /// `remaining_ns_at_write`, counted from `now_mono_ns` (A14's
     /// documented fallback). Further mutations persist to `state_dir`. A
-    /// missing or unreadable file loads as empty (first boot).
+    /// missing file loads as empty (first boot); a file that cannot be
+    /// read or parsed is an error (ADR 0061).
     pub fn load(
         state_dir: PathBuf,
         now_utc_ns: i64,
         now_mono_ns: u64,
         clock_synced: bool,
-    ) -> (Self, Restored) {
-        let records: Vec<Persisted> = state_file::read(&state_dir, STATE_FILE)
-            .ok()
-            .flatten()
-            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-            .unwrap_or_default();
+    ) -> std::io::Result<(Self, Restored)> {
+        let records: Vec<Persisted> = match state_file::read(&state_dir, STATE_FILE)? {
+            None => Vec::new(),
+            Some(bytes) => serde_json::from_slice(&bytes)
+                .map_err(|e| state_file::corrupt(&state_dir, STATE_FILE, e))?,
+        };
         let mut levels = BTreeMap::new();
         let mut restored = Restored::default();
         for r in records {
             let remaining_ns = if clock_synced {
-                if r.until_utc_ns <= now_utc_ns {
-                    continue;
-                }
-                restored.synced.push((r.output.clone(), r.level));
-                u64::try_from(r.until_utc_ns - now_utc_ns).unwrap_or(0)
+                u64::try_from(r.until_utc_ns.saturating_sub(now_utc_ns)).unwrap_or(0)
             } else {
-                if r.remaining_ns_at_write == 0 {
-                    continue;
-                }
-                restored.degraded.push((r.output.clone(), r.level));
                 r.remaining_ns_at_write
             };
+            let found = RestoredLevel {
+                output: r.output.clone(),
+                level: r.level,
+                principal: r.principal.clone(),
+                remaining_ns,
+            };
+            if remaining_ns == 0 {
+                restored.expired.push(found);
+                continue;
+            }
+            if clock_synced {
+                restored.synced.push(found);
+            } else {
+                restored.degraded.push(found);
+            }
             levels.insert(
                 (r.output, r.level),
                 Occupant {
@@ -127,13 +150,13 @@ impl ManualTable {
                 },
             );
         }
-        (
+        Ok((
             Self {
                 levels: Mutex::new(levels),
                 state_dir: Some(state_dir),
             },
             restored,
-        )
+        ))
     }
 
     /// The holder of a level, dropping it if its TTL has passed.
@@ -146,17 +169,28 @@ impl ManualTable {
         m.get(&key).cloned()
     }
 
-    /// Sets the holder of a level.
-    pub fn set(&self, output: &str, level: u8, occupant: Occupant, now_mono_ns: u64) {
+    /// Sets the holder of a level, and persists the table.
+    pub fn set(
+        &self,
+        output: &str,
+        level: u8,
+        occupant: Occupant,
+        now_mono_ns: u64,
+    ) -> std::io::Result<()> {
         self.lock().insert((output.to_owned(), level), occupant);
-        self.save(now_mono_ns);
+        self.save(now_mono_ns)
     }
 
-    /// Frees a level.
-    pub fn remove(&self, output: &str, level: u8, now_mono_ns: u64) -> Option<Occupant> {
+    /// Frees a level, and persists the table.
+    pub fn remove(
+        &self,
+        output: &str,
+        level: u8,
+        now_mono_ns: u64,
+    ) -> std::io::Result<Option<Occupant>> {
         let r = self.lock().remove(&(output.to_owned(), level));
-        self.save(now_mono_ns);
-        r
+        self.save(now_mono_ns)?;
+        Ok(r)
     }
 
     /// Every level held, in (output, level) order, without expired ones.
@@ -168,10 +202,11 @@ impl ManualTable {
             .collect()
     }
 
-    /// Forgets everything (a new generation starts without manual levels).
-    pub fn clear(&self, now_mono_ns: u64) {
+    /// Forgets everything (a new generation starts without manual
+    /// levels), and persists the table.
+    pub fn clear(&self, now_mono_ns: u64) -> std::io::Result<()> {
         self.lock().clear();
-        self.save(now_mono_ns);
+        self.save(now_mono_ns)
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, BTreeMap<(String, u8), Occupant>> {
@@ -180,11 +215,10 @@ impl ManualTable {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    /// Rewrites `state_dir` (if any) with the current table, best-effort:
-    /// a write failure is not fatal to the request that triggered it.
-    fn save(&self, now_mono_ns: u64) {
+    /// Rewrites `state_dir` (if any) with the current table.
+    fn save(&self, now_mono_ns: u64) -> std::io::Result<()> {
         let Some(state_dir) = &self.state_dir else {
-            return;
+            return Ok(());
         };
         let records: Vec<Persisted> = self
             .lock()
@@ -201,9 +235,8 @@ impl ManualTable {
                 reason: o.reason.clone(),
             })
             .collect();
-        if let Ok(text) = serde_json::to_vec_pretty(&records) {
-            let _ = state_file::write_atomic(state_dir, STATE_FILE, &text);
-        }
+        let text = serde_json::to_vec_pretty(&records).map_err(std::io::Error::other)?;
+        state_file::write_atomic(state_dir, STATE_FILE, &text)
     }
 }
 
@@ -335,51 +368,72 @@ mod tests {
         }
     }
 
+    fn level(remaining_ns: u64) -> RestoredLevel {
+        RestoredLevel {
+            output: "pi.act_led".into(),
+            level: 4,
+            principal: "user:x".into(),
+            remaining_ns,
+        }
+    }
+
     #[test]
     fn a_level_survives_a_save_load_round_trip_with_a_synced_clock() {
         let dir = tempfile::tempdir().unwrap();
-        let (table, _) = ManualTable::load(dir.path().to_owned(), 0, 0, true);
-        table.set("pi.act_led", 4, occupant(10_000_000_000), 0);
+        let (table, _) = ManualTable::load(dir.path().to_owned(), 0, 0, true).unwrap();
+        table
+            .set("pi.act_led", 4, occupant(10_000_000_000), 0)
+            .unwrap();
+        assert!(dir.path().join("state").join(STATE_FILE).exists());
 
-        let (loaded, restored) = ManualTable::load(dir.path().to_owned(), 5_000_000_000, 0, true);
+        let (loaded, restored) =
+            ManualTable::load(dir.path().to_owned(), 5_000_000_000, 0, true).unwrap();
         let occ = loaded.get("pi.act_led", 4, 0).expect("restored");
         assert_eq!(occ.principal, "user:x");
-        // 11s (until_utc_ns) - 5s (now_utc_ns) = 6s left, from a mono now of 0.
         assert_eq!(occ.until_mono_ns, 6_000_000_000);
-        assert_eq!(restored.synced, vec![("pi.act_led".to_owned(), 4)]);
+        assert_eq!(restored.synced, vec![level(6_000_000_000)]);
         assert!(restored.degraded.is_empty());
     }
 
     #[test]
     fn an_expired_level_is_dropped_with_a_synced_clock() {
         let dir = tempfile::tempdir().unwrap();
-        let (table, _) = ManualTable::load(dir.path().to_owned(), 0, 0, true);
-        table.set("pi.act_led", 4, occupant(10_000_000_000), 0);
+        let (table, _) = ManualTable::load(dir.path().to_owned(), 0, 0, true).unwrap();
+        table
+            .set("pi.act_led", 4, occupant(10_000_000_000), 0)
+            .unwrap();
 
-        // now_utc_ns (20s) is past until_utc_ns (11s): expired.
-        let (loaded, restored) = ManualTable::load(dir.path().to_owned(), 20_000_000_000, 0, true);
+        let (loaded, restored) =
+            ManualTable::load(dir.path().to_owned(), 20_000_000_000, 0, true).unwrap();
         assert_eq!(loaded.get("pi.act_led", 4, 0), None);
         assert!(restored.synced.is_empty());
+        assert_eq!(restored.expired, vec![level(0)]);
     }
 
     #[test]
     fn a_level_restores_from_remaining_ttl_without_a_synced_clock() {
         let dir = tempfile::tempdir().unwrap();
-        let (table, _) = ManualTable::load(dir.path().to_owned(), 0, 0, true);
-        // 7s left at the moment of this save (now_mono_ns = 3s, until_mono_ns = 10s).
-        table.set("pi.act_led", 4, occupant(10_000_000_000), 3_000_000_000);
+        let (table, _) = ManualTable::load(dir.path().to_owned(), 0, 0, true).unwrap();
+        table
+            .set("pi.act_led", 4, occupant(10_000_000_000), 3_000_000_000)
+            .unwrap();
 
-        // A restart with an unsynced clock: now_utc_ns is meaningless (0,
-        // as if the clock reset), but the degraded path must still
-        // restore using the recorded remaining TTL, from a fresh
-        // now_mono_ns of 100s.
         let (loaded, restored) =
-            ManualTable::load(dir.path().to_owned(), 0, 100_000_000_000, false);
+            ManualTable::load(dir.path().to_owned(), 0, 100_000_000_000, false).unwrap();
         let occ = loaded
             .get("pi.act_led", 4, 100_000_000_000)
             .expect("restored");
         assert_eq!(occ.until_mono_ns, 107_000_000_000);
-        assert_eq!(restored.degraded, vec![("pi.act_led".to_owned(), 4)]);
+        assert_eq!(restored.degraded, vec![level(7_000_000_000)]);
         assert!(restored.synced.is_empty());
+    }
+
+    #[test]
+    fn a_corrupt_manual_file_is_an_error_not_an_empty_table() {
+        let dir = tempfile::tempdir().unwrap();
+        state_file::write_atomic(dir.path(), STATE_FILE, b"not json").unwrap();
+        let e = ManualTable::load(dir.path().to_owned(), 0, 0, true).unwrap_err();
+        assert_eq!(e.kind(), std::io::ErrorKind::InvalidData);
+        assert!(e.to_string().contains("state/manual"), "{e}");
     }
 }
