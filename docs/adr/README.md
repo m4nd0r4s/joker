@@ -60,6 +60,7 @@
 | [0061](0061-runtime-state-files-supervisor-records-and-bulk-reset-errors.md) | Runtime state files, supervisor and restore records, and per-output errors of a bulk reset |
 | [0062](0062-wide-signal-values.md) | Wide signal values: the wide slot, decoding, the envelope, the API, the decision log and the trace |
 | [0063](0063-socket-roles-subscription-limits-and-device-counters.md) | Socket roles, subscription limits and device counters in status and metrics |
+| [0064](0064-profile-acquisition-subset-and-refused-keys.md) | The profile acquisition stage of 1.0, and profile keys this runtime refuses |
 | [0066](0066-device-and-instance-actions-invocations-and-their-conformance-area.md) | Device and instance actions: the invocation lifecycle, and the `action` conformance area |
 | [0067](0067-apps-reach-the-node-as-artifacts.md) | How Wasm apps reach a node, run from its AOT cache, and report traps |
 | [0068](0068-expression-evaluation-groups-and-window-periods.md) | Evaluation groups and window periods of manifest expressions |
