@@ -231,6 +231,15 @@ jobs:
       - run: rustup show
       - run: cargo test --locked -p joker-supply-chain
 
+  comments:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python3 tools/comment-guard/comment_guard.py
+
   spec-lint:
     runs-on: ubuntu-latest
     steps:
