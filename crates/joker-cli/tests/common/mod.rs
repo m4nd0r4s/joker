@@ -1,11 +1,11 @@
 //! Shared helpers for `jk` integration tests that need a real `jokerd`
 //! subprocess on the other end of the socket.
 
-#![allow(dead_code, clippy::unwrap_used, clippy::expect_used)]
+#![allow(dead_code, clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// `jokerd`'s binary, built alongside this test but in a sibling crate:
 /// `CARGO_BIN_EXE_jokerd` is only set for binaries of *this* package.
@@ -81,14 +81,7 @@ pub fn spawn_jokerd(dir: &Path) -> Daemon {
         .stderr(Stdio::null())
         .spawn()
         .unwrap();
-    for _ in 0..200 {
-        if socket.exists() {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    std::thread::sleep(Duration::from_millis(100));
-    Daemon { child, socket }
+    wait_for_socket(child, socket)
 }
 
 /// Starts a real `jokerd` over the state directory `dir` with no entry
@@ -107,14 +100,36 @@ pub fn spawn_empty_jokerd(dir: &Path) -> Daemon {
         .stderr(Stdio::inherit())
         .spawn()
         .unwrap();
-    for _ in 0..500 {
-        if socket.exists() {
-            break;
+    wait_for_socket(child, socket)
+}
+
+/// How long a test waits for a spawned `jokerd` to accept connections: a
+/// debug build on a loaded CI runner can take several seconds to start.
+const SOCKET_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Polls until `jokerd` accepts a connection on `socket`, so that a test
+/// never races the daemon's startup. Panics if the daemon exits first or
+/// the socket does not come up within [`SOCKET_TIMEOUT`].
+fn wait_for_socket(mut child: Child, socket: PathBuf) -> Daemon {
+    let deadline = Instant::now() + SOCKET_TIMEOUT;
+    loop {
+        if std::os::unix::net::UnixStream::connect(&socket).is_ok() {
+            return Daemon { child, socket };
         }
-        std::thread::sleep(Duration::from_millis(10));
+        if let Ok(Some(status)) = child.try_wait() {
+            panic!("jokerd exited before its socket came up: {status}");
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!(
+                "jokerd did not accept connections on {} within {:?}",
+                socket.display(),
+                SOCKET_TIMEOUT
+            );
+        }
+        std::thread::sleep(Duration::from_millis(20));
     }
-    std::thread::sleep(Duration::from_millis(100));
-    Daemon { child, socket }
 }
 
 /// Stops a `jokerd` the way systemd does (`SIGTERM`) and waits for it.
