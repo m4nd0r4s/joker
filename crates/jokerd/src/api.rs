@@ -586,6 +586,40 @@ impl Node {
     }
 }
 
+/// The `link_state` of ref/00 §6 for a [`crate::shared::DeviceStats::link`]
+/// code.
+fn link_name(code: u64) -> &'static str {
+    match code {
+        0 => "connecting",
+        1 => "up",
+        2 => "degraded",
+        3 => "down",
+        4 => "drift",
+        _ => "stopped",
+    }
+}
+
+/// The link state and loss counters of every device with an io task, in
+/// `plan.devices` order (ADR 0063, invariant 7).
+fn devices_json(v: &View) -> Vec<(String, Value)> {
+    v.plan
+        .devices
+        .iter()
+        .zip(v.shared.devices.iter())
+        .map(|(d, s)| {
+            (
+                d.name.clone(),
+                json!({
+                    "link": link_name(s.link.get()),
+                    "reconnects": s.reconnects.get(),
+                    "dropped_samples": s.dropped_samples.get(),
+                    "invalid_samples": s.invalid_samples.get(),
+                }),
+            )
+        })
+        .collect()
+}
+
 /// The `ResetResult` of one output (ref/09 §5.7): its result, or
 /// `failed` with the problem's code and detail when it could not be reset
 /// (ADR 0061).
@@ -790,6 +824,15 @@ impl Backend for Node {
     fn status(&self) -> Result<Reply, Problem> {
         let v = self.view();
         let now = self.now_mono();
+        let devices: Vec<Value> = v.as_ref().map_or_else(Vec::new, |v| {
+            devices_json(v)
+                .into_iter()
+                .map(|(name, mut d)| {
+                    d["name"] = json!(name);
+                    d
+                })
+                .collect()
+        });
         let (generation, groups, apps, manual) = match &v {
             None => (Value::Null, Vec::new(), Vec::new(), Vec::new()),
             Some(v) => {
@@ -845,7 +888,7 @@ impl Backend for Node {
             "generation": generation,
             "clock": self.clock_json(),
             "groups": groups,
-            "devices": [],
+            "devices": devices,
             "apps": apps,
             "alarms": {"active": 0, "unacked": 0, "items": []},
             "trips": [],
@@ -854,7 +897,17 @@ impl Backend for Node {
     }
 
     fn metrics(&self) -> Result<Reply, Problem> {
-        let groups: Vec<Value> = match self.view() {
+        let view = self.view();
+        let drivers: Vec<Value> = view.as_ref().map_or_else(Vec::new, |v| {
+            devices_json(v)
+                .into_iter()
+                .map(|(name, mut d)| {
+                    d["device"] = json!(name);
+                    d
+                })
+                .collect()
+        });
+        let groups: Vec<Value> = match view {
             None => Vec::new(),
             Some(v) => v
                 .plan
@@ -866,10 +919,6 @@ impl Backend for Node {
                         "group": g.name,
                         "ticks": s.ticks.get(),
                         "overruns": s.overruns.get(),
-                        // `max` is all this build tracks today (a running
-                        // worst-case, not a histogram): `p50`/`p99`/`p999`/
-                        // `window` are not computed, so they are simply
-                        // absent — `Percentiles` has no required fields.
                         "jitter": {"max": duration(s.max_late_ns.get())},
                         "duration": {"max": duration(s.max_duration_ns.get())},
                     })
@@ -879,6 +928,7 @@ impl Backend for Node {
         Ok(Reply::ok(json!({
             "at": timestamp(utc_now_ns()),
             "groups": groups,
+            "drivers": drivers,
         })))
     }
 
