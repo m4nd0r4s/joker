@@ -84,7 +84,7 @@ fn empty_shared(
         stop: Default::default(),
         running: Default::default(),
         commit_bindings: vec![bindings],
-        keepalive: vec![vec![true; boxes.len()]],
+        stages: vec![vec![jokerd::shared::OutputStage::COVERED; boxes.len()]],
         commit_boxes: vec![boxes],
         devices: vec![jokerd::shared::DeviceStats::default()].into_boxed_slice(),
         write_acks: crossbeam_queue::ArrayQueue::new(8),

@@ -35,6 +35,7 @@ pub mod task;
 pub mod trace_ring;
 pub mod traces;
 pub mod trips;
+pub mod verify;
 pub mod wasm;
 pub mod watchdog;
 pub mod wire;

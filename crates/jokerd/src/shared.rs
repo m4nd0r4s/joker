@@ -339,10 +339,9 @@ pub struct Shared {
     pub commit_bindings: Vec<Vec<OutputBinding>>,
     /// The boxes matching [`Shared::commit_bindings`], one per device.
     pub commit_boxes: Vec<Vec<CommitBox>>,
-    /// Per device, matching [`Shared::commit_bindings`]: whether the
-    /// device fallback covers that output, so its io task renews it with
-    /// `keepalive` (ref/03 §2.2.11 `applies_to`).
-    pub keepalive: Vec<Vec<bool>>,
+    /// Per device, matching [`Shared::commit_bindings`]: what the output
+    /// stage of its io task does with each output besides writing it.
+    pub stages: Vec<Vec<OutputStage>>,
     /// Per device (`plan.devices` order): its link and its counters.
     pub devices: Box<[DeviceStats]>,
     /// Writes the real drivers did not confirm, for the decision log.
@@ -356,6 +355,40 @@ pub struct Shared {
     pub confirmations_dropped: Counter,
 }
 
+/// What the output stage does with one output besides writing its
+/// applied value (ref/06 §2.9, ADR 0072).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct OutputStage {
+    /// The device fallback covers the output (ref/03 §2.2.11
+    /// `applies_to`), so its io task renews it with `keepalive`.
+    pub covered: bool,
+    /// The output's own `keepalive`, ns, in place of the device's
+    /// `fallback.keepalive`; only on a covered output.
+    pub keepalive_ns: Option<u64>,
+    /// `pulse`, ns: the output stage writes `safe` once it has elapsed
+    /// after a write of any other value.
+    pub pulse_ns: Option<u64>,
+}
+
+impl OutputStage {
+    /// A covered output with no keepalive or pulse of its own.
+    pub const COVERED: Self = Self {
+        covered: true,
+        keepalive_ns: None,
+        pulse_ns: None,
+    };
+
+    /// The period this output is renewed at, given its device's
+    /// `fallback.keepalive`; `None` when it is not renewed.
+    pub fn keepalive_period(&self, device_ns: Option<u64>) -> Option<u64> {
+        if self.covered {
+            self.keepalive_ns.or(device_ns)
+        } else {
+            None
+        }
+    }
+}
+
 fn raw_encoding_of(ty: ValueType) -> Option<RawEncoding> {
     match ty {
         ValueType::Bool => Some(RawEncoding::Bool),
@@ -366,18 +399,22 @@ fn raw_encoding_of(ty: ValueType) -> Option<RawEncoding> {
     }
 }
 
-/// Per device: the output bindings, their boxes, and whether the device
-/// fallback covers each output.
-type CommitChannels = (Vec<Vec<OutputBinding>>, Vec<Vec<CommitBox>>, Vec<Vec<bool>>);
+/// Per device: the output bindings, their boxes, and the output stage of
+/// each output.
+type CommitChannels = (
+    Vec<Vec<OutputBinding>>,
+    Vec<Vec<CommitBox>>,
+    Vec<Vec<OutputStage>>,
+);
 
 fn commit_channels(plan: &Plan) -> CommitChannels {
     let mut bindings = Vec::with_capacity(plan.devices.len());
     let mut boxes = Vec::with_capacity(plan.devices.len());
-    let mut keepalive = Vec::with_capacity(plan.devices.len());
+    let mut stages = Vec::with_capacity(plan.devices.len());
     for device in &plan.devices {
         let mut device_bindings = Vec::new();
         let mut device_boxes = Vec::new();
-        let mut device_keepalive = Vec::new();
+        let mut device_stages = Vec::new();
         for (i, point) in device.points.iter().enumerate() {
             if point.direction != joker_hal::Direction::Output {
                 continue;
@@ -405,18 +442,21 @@ fn commit_channels(plan: &Plan) -> CommitChannels {
                 .strip_prefix(device.name.as_str())
                 .and_then(|rest| rest.strip_prefix('.'))
                 .unwrap_or(&point.path);
-            device_keepalive.push(
-                device
+            let output = plan.output(&point.path);
+            device_stages.push(OutputStage {
+                covered: device
                     .fallback_outputs
                     .as_ref()
                     .is_none_or(|covered| covered.contains(relative)),
-            );
+                keepalive_ns: output.and_then(|o| o.keepalive_ns),
+                pulse_ns: output.and_then(|o| o.pulse_ns),
+            });
         }
         bindings.push(device_bindings);
         boxes.push(device_boxes);
-        keepalive.push(device_keepalive);
+        stages.push(device_stages);
     }
-    (bindings, boxes, keepalive)
+    (bindings, boxes, stages)
 }
 
 impl Shared {
@@ -462,7 +502,7 @@ impl Shared {
         for _ in 0..TRACE_BUFFERS {
             let _ = trace_free.push(Vec::with_capacity(trace_len));
         }
-        let (commit_bindings, commit_boxes, keepalive) = commit_channels(plan);
+        let (commit_bindings, commit_boxes, stages) = commit_channels(plan);
         Self {
             slots,
             inboxes: (0..plan.groups.len())
@@ -493,7 +533,7 @@ impl Shared {
             running: AtomicBool::new(false),
             commit_bindings,
             commit_boxes,
-            keepalive,
+            stages,
             devices: plan
                 .devices
                 .iter()

@@ -697,8 +697,13 @@ applies_to = ["led"]
         let shared = jokerd::shared::Shared::new(&loaded.plan);
         let covered: Vec<(String, bool)> = shared.commit_bindings[0]
             .iter()
-            .zip(&shared.keepalive[0])
-            .map(|(b, on)| (loaded.plan.path(b.signal).unwrap().to_owned(), *on))
+            .zip(&shared.stages[0])
+            .map(|(b, stage)| {
+                (
+                    loaded.plan.path(b.signal).unwrap().to_owned(),
+                    stage.covered,
+                )
+            })
             .collect();
         assert_eq!(
             covered,

@@ -24,12 +24,12 @@ use joker_hal::driver::{
 };
 use joker_hal::plan::PlanView;
 use joker_hal::spec::PlanRequest;
-use joker_hal::types::{BatchFailure, BatchKind, LinkState, WriteStatus};
-use joker_hal::{CommitRx, Cx, RxState};
+use joker_hal::types::{BatchFailure, BatchKind, LinkState, WriteKind, WriteStatus};
+use joker_hal::{CommitRx, Cx, OutputBinding, RxState};
 use joker_manifest::context::Acquisition;
 
 use crate::plan::Plan;
-use crate::shared::{Confirmation, Shared, WriteAckRecord};
+use crate::shared::{Confirmation, OutputStage, Shared, WriteAckRecord};
 
 pub use crate::action_exec::{ActionCall, ActionOutcome};
 
@@ -640,7 +640,11 @@ async fn pause(
 /// `shared.slots` through `targets`, every settled point of every read
 /// (a failed read or a value that does not convert writes a `bad` sample,
 /// see [`settled_sample`]). Writes are drained from the `CommitRx` on
-/// `shared.commit_bindings[device_index]`/`commit_boxes[device_index]`.
+/// `shared.commit_bindings[device_index]`/`commit_boxes[device_index]`,
+/// through the output stage of `shared.stages[device_index]` (ADR 0072):
+/// each output its device fallback covers is renewed with `keepalive` at
+/// its own period, or at `fallback_keepalive_ns`, and a `pulse` output is
+/// written back to `safe` once its pulse has elapsed.
 ///
 /// The link state of ref/06 §2.12 goes to `shared.devices[device_index]`.
 /// When the link goes `down` (a failed `connect`, a `not-connected`, three
@@ -774,24 +778,24 @@ async fn serve<D: Driver>(
     let mut deadbands = vec![Deadband::default(); targets.len()];
     let mut batch_windows = vec![BatchWindow::default(); plan.len()];
     let mut rejected = vec![false; shared.commit_bindings.get(device_index).map_or(0, Vec::len)];
-    let mut next_keepalive = fallback_keepalive_ns.map(|ns| host.now().mono_ns + ns);
+    let stages = shared
+        .stages
+        .get(device_index)
+        .map_or(&[][..], Vec::as_slice);
+    let mut output_stage = OutputStageState::new(stages, fallback_keepalive_ns, host.now().mono_ns);
     while !stop() {
-        if let (Some(ns), Some(next)) = (fallback_keepalive_ns, next_keepalive)
-            && host.now().mono_ns >= next
-        {
-            let covered = shared
-                .keepalive
-                .get(device_index)
-                .map_or(&[][..], Vec::as_slice);
-            for (i, on) in covered.iter().enumerate() {
-                if *on {
-                    rx.keepalive(i);
-                }
-            }
-            next_keepalive = Some(host.now().mono_ns + ns);
-        }
         let mut writes = Vec::new();
+        output_stage.due(host.now().mono_ns, rx, &mut writes);
         rx.drain_into(&mut writes);
+        output_stage.pulses(
+            host.now().mono_ns,
+            shared
+                .commit_bindings
+                .get(device_index)
+                .map_or(&[][..], Vec::as_slice),
+            rx,
+            &mut writes,
+        );
         if !writes.is_empty() {
             let mut slots = vec![AckSlot::default(); writes.len()];
             if let Some(mut acks) = WriteAcks::new(&writes, &mut slots) {
@@ -815,7 +819,7 @@ async fn serve<D: Driver>(
             .iter()
             .filter(|b| b.head.kind == BatchKind::Poll)
             .map(|b| due[b.head.id as usize])
-            .chain(next_keepalive)
+            .chain(output_stage.next())
             .min()
             .unwrap_or(host.now().mono_ns + IDLE_NS)
             .min(host.now().mono_ns + IDLE_NS);
@@ -892,6 +896,102 @@ async fn serve<D: Driver>(
         publish_link(shared, device_index, link.state);
     }
     Ended::Stopped
+}
+
+/// The timers of the output stage of one device (ref/06 §2.9, ADR 0072):
+/// when each output's next `keepalive` is due, and when a pulse in
+/// progress ends.
+struct OutputStageState {
+    periods: Vec<Option<u64>>,
+    keepalive_at: Vec<Option<u64>>,
+    pulse_ns: Vec<Option<u64>>,
+    pulse_end: Vec<Option<u64>>,
+}
+
+impl OutputStageState {
+    fn new(stages: &[OutputStage], device_keepalive_ns: Option<u64>, now: u64) -> Self {
+        let periods: Vec<Option<u64>> = stages
+            .iter()
+            .map(|s| s.keepalive_period(device_keepalive_ns))
+            .collect();
+        Self {
+            keepalive_at: periods.iter().map(|p| p.map(|ns| now + ns)).collect(),
+            periods,
+            pulse_ns: stages.iter().map(|s| s.pulse_ns).collect(),
+            pulse_end: vec![None; stages.len()],
+        }
+    }
+
+    /// Queues the writes whose time has come: the end of each pulse that
+    /// has elapsed (the declared `safe`), and the keepalive of each output
+    /// whose period has elapsed.
+    fn due(&mut self, now: u64, rx: &mut CommitRx<'_>, writes: &mut Vec<CommittedWrite<'static>>) {
+        for (i, end) in self.pulse_end.iter_mut().enumerate() {
+            if end.is_some_and(|at| now >= at) {
+                *end = None;
+                if let Some(w) = rx.safe_write(i, WriteKind::Set) {
+                    writes.push(w);
+                }
+            }
+        }
+        for (i, (at, period)) in self.keepalive_at.iter_mut().zip(&self.periods).enumerate() {
+            if let (Some(due), Some(ns)) = (*at, period)
+                && now >= due
+            {
+                rx.keepalive(i);
+                *at = Some(now + ns);
+            }
+        }
+    }
+
+    /// Applies `pulse` to the drained writes: a write of a value other
+    /// than `safe` starts a pulse, a write of `safe` ends it, and a
+    /// `resync` or `keepalive` outside a pulse renews `safe`, the state the
+    /// equipment rests in, instead of starting the pulse again.
+    fn pulses(
+        &mut self,
+        now: u64,
+        bindings: &[OutputBinding],
+        rx: &mut CommitRx<'_>,
+        writes: &mut [CommittedWrite<'static>],
+    ) {
+        for w in writes.iter_mut() {
+            let Some(i) = bindings.iter().position(|b| b.point == w.point) else {
+                continue;
+            };
+            let Some(Some(ns)) = self.pulse_ns.get(i).copied() else {
+                continue;
+            };
+            let Some(end) = self.pulse_end.get_mut(i) else {
+                continue;
+            };
+            if rx.is_safe(i, w) {
+                if w.kind == WriteKind::Set || w.kind == WriteKind::ForceSafe {
+                    *end = None;
+                }
+                continue;
+            }
+            match w.kind {
+                WriteKind::Set => *end = Some(now + ns),
+                WriteKind::Resync | WriteKind::Keepalive if end.is_none() => {
+                    if let Some(safe) = rx.safe_write(i, w.kind) {
+                        *w = safe;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// When the next timer of the output stage is due.
+    fn next(&self) -> Option<u64> {
+        self.keepalive_at
+            .iter()
+            .chain(&self.pulse_end)
+            .flatten()
+            .copied()
+            .min()
+    }
 }
 
 fn record_failed_acks(
