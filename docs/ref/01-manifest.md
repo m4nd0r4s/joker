@@ -199,7 +199,7 @@ The language is that of document 02, §10, with the edge cases of document 16, �
 
 - **Constant or expression:** in a position that accepts both (`range`), a string that is entirely a `quantity` is a constant; anything else is an expression. `"-125 kW"` is a constant; `"-bms.p_max_discharge"` is an expression.
 - **References** (`model:`, `pipe:`, `class:`) are not paths (16, P4) and do not appear in expressions, except in the model functions of the 1.1 positions (`good(model:m)`, `ood_ratio(model:m, 15m)`, `model_threshold(m)`).
-- **Evaluation group:** the expressions of an output run in its owning group (A11); `calc` and alarms run in the fastest group that consumes them, or in the implicit `calc` group (100 ms), or in the group indicated by `group` (§5.13, §5.14).
+- **Evaluation group:** the expressions of an output run in its owning group (A11); `calc` and alarms run in the fastest group that consumes them, or in the implicit `calc` group (100 ms), or in the group indicated by `group` (§5.13, §5.14). What consumes a signal, the order of the `calc` and alarms inside a tick and which samples an expression reads are in ADR 0068. A `permit` runs at each invocation, not in a tick; its windows are sized with the period of the fastest group that owns an output of the action's device, or 100 ms (ADR 0068).
 - **Dependencies between `calc`** form an acyclic graph; a cycle is `J0190`.
 - An expression with a syntax error is `J0158`; unknown signal `J0302`; unknown variant `J0303`; dimensions `J0301`; types `J0304`; window above the maximum `J0305`; function or arguments `J0307`. The typing rules and the semantics of windows and stateful functions are in ADR 0034.
 
@@ -584,7 +584,7 @@ The action must exist in the profile (`J0101`). The implementation (steps, regis
 
 | Key | Type | Req. | Default | Validation | Origin | Phase |
 |---|---|---|---|---|---|---|
-| `permit` | `Expr<bool>` | no | `"true"` | permissive evaluated before each invocation (`Uncertain` counts as false); one that does not compile against the plan stops the generation from loading with the expression's code, and a declared permit the runtime cannot evaluate denies the invocation (ADR 0060) | 03 §5.2 | 1.0 |
+| `permit` | `Expr<bool>` | no | `"true"` | permissive evaluated before each invocation (`Uncertain` counts as false); one that does not compile against the plan stops the generation from loading with the expression's code, and a declared permit the runtime cannot evaluate denies the invocation (ADR 0060); its windows are sized with the period of the fastest group that owns an output of the device, or 100 ms (ADR 0068) | 03 §5.2 | 1.0 |
 | `role` | `"viewer"` \| `"operator"` \| `"admin"` | no | `"operator"` | minimum role of whoever invokes through the CLI, API, HMI or bridge; `"viewer"` is accepted with the warning `J0298` and counts as `"operator"`, because the API requires at least `operator` for any action (`ref/09`) | 03 §5.2 | 1.0 |
 | `timeout` | `Duration` | cond. | that of the profile | without either of the two, `J0142` | 03 §5.2 | 1.0 |
 | `dedup_window` | `Duration` | no | `"60s"` | window of the idempotency key (16, E9) | 16 E9 | 1.0 |
