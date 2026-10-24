@@ -109,12 +109,6 @@ line4 = { type = "bool", direction = "input", line = 4, poll = "20ms" }
 
 #[test]
 fn a_gpio_device_dispatches_and_registers_its_action_channel_even_without_the_chip() {
-    // The chip path is deliberately wrong: this test proves `RealDevices`
-    // dispatches `driver = "gpio"` to `run_gpio` (action channel
-    // registered, same as any other real driver) without needing a real
-    // `/dev/gpiochipN` — the real chardev v1 ioctl path itself is only
-    // safely exercisable against real hardware (the bench Pi, read-only
-    // line), not blindly in this environment's own GPIO lines.
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("joker.toml"), GPIO_JOKER_TOML).unwrap();
     let loaded = load(&OsFileSystem, &dir.path().join("joker.toml"), &NativeTasks)
@@ -135,6 +129,43 @@ fn a_gpio_device_dispatches_and_registers_its_action_channel_even_without_the_ch
         .action_sender("hdr")
         .expect("the dispatched gpio device registers its action channel");
     drop(sender);
+
+    set.stop();
+    runtime.shutdown_timeout(Duration::from_secs(1));
+}
+
+#[test]
+fn a_device_whose_driver_cannot_be_set_up_reads_bad_config_error() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("joker.toml"), GPIO_JOKER_TOML).unwrap();
+    let loaded = load(&OsFileSystem, &dir.path().join("joker.toml"), &NativeTasks)
+        .unwrap_or_else(|e| panic!("{e}"));
+    let plan = Arc::new(loaded.plan);
+    let shared = Arc::new(Shared::new(&plan));
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let set = RealDevices::new(runtime.handle().clone()).start(&plan, &shared);
+
+    let line = plan.id("hdr.line4").unwrap();
+    let mut failed = None;
+    for _ in 0..50 {
+        std::thread::sleep(Duration::from_millis(10));
+        if let Ok(sample) = shared.slots[line.index()].read(8)
+            && sample.seq() != 0
+        {
+            failed = Some(sample.quality());
+            break;
+        }
+    }
+    let quality = failed.expect("the failed setup reached the slot");
+    assert_eq!(quality.code(), joker_core::QualityCode::Bad);
+    assert_eq!(quality.reason(), joker_core::QualityReason::ConfigError);
+    assert_eq!(
+        shared.devices[0].link.get(),
+        jokerd::real_devices::LINK_STOPPED
+    );
 
     set.stop();
     runtime.shutdown_timeout(Duration::from_secs(1));
