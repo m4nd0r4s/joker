@@ -133,7 +133,7 @@ fn shared() -> Shared {
         running: Default::default(),
         commit_bindings: vec![Vec::new()],
         commit_boxes: vec![Vec::new()],
-        keepalive: vec![Vec::new()],
+        stages: vec![Vec::new()],
         devices: vec![DeviceStats::default()].into_boxed_slice(),
         write_acks: crossbeam_queue::ArrayQueue::new(8),
         write_acks_dropped: Default::default(),

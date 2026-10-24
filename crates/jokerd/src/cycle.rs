@@ -222,6 +222,7 @@ pub fn run(
     for signal in &options.initial_trips {
         outputs.trip(*signal);
     }
+    let mut verifier = crate::verify::Verifier::new(plan);
 
     let mut commit_last: Vec<Vec<Option<Applied>>> = shared
         .commit_bindings
@@ -339,6 +340,7 @@ pub fn run(
                 },
                 &mut outputs,
                 &mut commit_tx,
+                &mut verifier,
             )
         };
         match options.tick_guard {
@@ -387,6 +389,7 @@ fn tick(
     expressions: &mut Expressions<'_, '_>,
     outputs: &mut Outputs<'_>,
     commit_tx: &mut [joker_hal::CommitTx<'_>],
+    verifier: &mut crate::verify::Verifier,
 ) {
     let stats = &shared.groups[g.index];
     if g.image.latch(index, at, &shared.slots, registry).is_err() {
@@ -466,6 +469,7 @@ fn tick(
         stats.task_errors.bump();
     }
     shared.apply_confirmations(at.mono_ns);
+    verifier.check(g.index, outputs, &shared.slots, at.mono_ns);
     for tx in commit_tx.iter_mut() {
         tx.publish(outputs);
     }

@@ -8,7 +8,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use joker_core::output::{ClockRequirement, OnInterlock, OnRange, SafeValue, Writers};
+use joker_core::output::{Budget, ClockRequirement, OnInterlock, OnRange, SafeValue, Writers};
 use joker_core::registry::{Alias, Direction as CoreDirection, GroupMeta, OwnedRegistry, UnitRef};
 use joker_core::{
     GroupId, Level, OutputConfig, SignalId, SignalMeta, ValueType, WriterConfig, WriterId,
@@ -17,7 +17,8 @@ use joker_core::{
 use joker_manifest::check::PathRegistry;
 use joker_manifest::context::{Context, Direction, SignalType};
 use joker_manifest::model::{Binding, Envelope, Manifest, SafeValue as ManifestSafe};
-use joker_units::{Duration, Literal, Quantity, Unit};
+use joker_manifest::value::{Node, Value};
+use joker_units::{Conversion, Duration, Literal, Quantity, Unit};
 
 use crate::expr_plan::{AlarmPlan, CalcPlan, OutputExprs};
 
@@ -143,9 +144,42 @@ pub struct OutputPlan {
     pub permit_uncertain: bool,
     /// `grace`, ns.
     pub grace_ns: u64,
+    /// `deadband`, in the output's unit (step 6).
+    pub deadband: Option<f64>,
+    /// `min_interval`, ns (step 6).
+    pub min_interval_ns: u64,
+    /// `max_actuations` (step 6).
+    pub max_actuations: Option<Budget>,
+    /// `verify`, resolved against the readback signal (docs/01 §7,
+    /// ADR 0072).
+    pub verify: Option<VerifyPlan>,
+    /// The output's own `keepalive`, ns: the period its device fallback
+    /// is renewed at, in place of the device's `fallback.keepalive`
+    /// (docs/01 §8, ADR 0072).
+    pub keepalive_ns: Option<u64>,
+    /// `pulse`, ns: after a value other than `safe` is written, the
+    /// output stage writes `safe` once it has elapsed (ref/06 §2.9,
+    /// ADR 0072).
+    pub pulse_ns: Option<u64>,
     /// The compiled expressions and `requires_good` of the envelope,
     /// filled by `expr_plan::bind` once the registry exists.
     pub exprs: OutputExprs,
+}
+
+/// The readback verification of an output (`verify`, docs/01 §7,
+/// ADR 0072).
+#[derive(Debug, Clone, PartialEq)]
+pub struct VerifyPlan {
+    /// The canonical path of the readback input.
+    pub readback: String,
+    /// The readback's unit to the output's unit.
+    pub conversion: Conversion,
+    /// The largest difference that confirms, in the output's unit; `None`
+    /// is exact equality.
+    pub tolerance: Option<f64>,
+    /// How long the readback may disagree before the output is
+    /// `uncertain(not_confirmed)`, ns.
+    pub within_ns: u64,
 }
 
 /// One writer.
@@ -420,13 +454,13 @@ impl Plan {
                 .get(&canon)
                 .map(|l| l.iter().map(|(_, id, _)| *id).collect())
                 .unwrap_or_default();
-            outputs.push(output_plan(
-                &canon,
-                signal,
-                envelope,
-                owner[&canon].clone(),
-                allowed,
-            )?);
+            let mut output = output_plan(&canon, signal, envelope, owner[&canon].clone(), allowed)?;
+            output.verify = envelope
+                .verify
+                .as_ref()
+                .map(|v| verify_plan(&canon, signal, v, &signals, paths, manifest, context))
+                .transpose()?;
+            outputs.push(output);
         }
         outputs.sort_by(|a, b| a.path.cmp(&b.path));
 
@@ -658,6 +692,9 @@ impl Plan {
                     .as_ref()
                     .map(|(low, high)| (low.bound(), high.bound()));
                 config.reset_when = o.exprs.reset_when.as_ref().map(|e| &e.program);
+                config.deadband = o.deadband;
+                config.min_interval_ns = o.min_interval_ns;
+                config.max_actuations = o.max_actuations;
                 outputs.push(config);
             }
         }
@@ -676,16 +713,110 @@ impl Plan {
     }
 }
 
-fn max_age(manifest: &Manifest, context: &Context, device: Option<&str>) -> Option<u64> {
+fn device_poll(manifest: &Manifest, context: &Context, device: Option<&str>) -> Option<Duration> {
     let device = manifest.devices.get(device?)?;
-    let poll = device.poll.map(|p| p.value).or_else(|| {
+    device.poll.map(|p| p.value).or_else(|| {
         device
             .profile
             .as_ref()
             .and_then(|p| context.profiles.get(&p.value))
             .and_then(|p| p.poll)
-    })?;
+    })
+}
+
+fn max_age(manifest: &Manifest, context: &Context, device: Option<&str>) -> Option<u64> {
+    let poll = device_poll(manifest, context, device)?;
     Some(poll.as_nanos().saturating_mul(3))
+}
+
+/// The default poll of a device without one (ref/01 §5.8).
+const DEFAULT_POLL_NS: u64 = 1_000_000_000;
+
+fn verify_plan(
+    path: &str,
+    output: &SignalPlan,
+    verify: &Node,
+    signals: &[SignalPlan],
+    paths: &PathRegistry,
+    manifest: &Manifest,
+    context: &Context,
+) -> Result<VerifyPlan, PlanError> {
+    let invalid =
+        |why: String| PlanError::new(Some("J0235"), format!("`verify` of `{path}`: {why}"));
+    let table = verify
+        .as_table()
+        .ok_or_else(|| invalid("not a table".to_owned()))?;
+    let readback = table
+        .get("readback")
+        .and_then(|e| e.node.as_str())
+        .ok_or_else(|| invalid("no `readback`".to_owned()))?;
+    let canonical = paths
+        .get(readback)
+        .map(|r| r.canonical.clone())
+        .ok_or_else(|| invalid(format!("`{readback}` is not a signal")))?;
+    let input = signals
+        .iter()
+        .find(|s| s.path == canonical && s.direction == CoreDirection::Input)
+        .ok_or_else(|| invalid(format!("`{readback}` is not an input")))?;
+    let unit = unit_of(output)?;
+    let conversion = if input.ty == ValueType::Enum || output.ty == ValueType::Enum {
+        if input.variants != output.variants {
+            return Err(invalid(format!(
+                "`{readback}` does not have the variants of the output"
+            )));
+        }
+        Conversion::IDENTITY
+    } else if input.ty == ValueType::Bool || output.ty == ValueType::Bool {
+        if input.ty != output.ty {
+            return Err(invalid(format!("`{readback}` is not a boolean")));
+        }
+        Conversion::IDENTITY
+    } else {
+        let numeric = |ty: ValueType| ty.is_numeric();
+        if !numeric(input.ty) || !numeric(output.ty) {
+            return Err(invalid(format!("`{readback}` cannot be compared")));
+        }
+        unit_of(input)?.conversion_to(&unit).map_err(|_| {
+            invalid(format!(
+                "`{readback}` is not in the dimension of the output"
+            ))
+        })?
+    };
+    let tolerance = match table.get("tolerance").map(|e| &e.node.value) {
+        None => None,
+        Some(Value::String(text)) => {
+            Some(quantity_in(text, &unit.difference(), "verify.tolerance")?)
+        }
+        Some(Value::Integer(i)) if unit.is_dimensionless() => Some(*i as f64),
+        Some(Value::Float(f)) if unit.is_dimensionless() => Some(*f),
+        Some(_) => return Err(invalid("`tolerance` is not a quantity".to_owned())),
+    };
+    if tolerance.is_none() && matches!(output.ty, ValueType::F64 | ValueType::F32) {
+        return Err(invalid("a float output needs a `tolerance`".to_owned()));
+    }
+    if tolerance.is_some_and(|t| !t.is_finite() || t < 0.0) {
+        return Err(invalid("`tolerance` must not be negative".to_owned()));
+    }
+    let poll_ns = device_poll(manifest, context, input.device.as_deref())
+        .map_or(DEFAULT_POLL_NS, Duration::as_nanos);
+    let within_ns = match table.get("within").and_then(|e| e.node.as_str()) {
+        Some(text) => Duration::parse(text)
+            .map_err(|e| PlanError::new(Some(e.code()), format!("`verify.within` of `{path}`")))?
+            .as_nanos(),
+        None => poll_ns.saturating_mul(2),
+    };
+    if within_ns < poll_ns {
+        return Err(invalid(format!(
+            "`within` is shorter than one poll of `{readback}` ({} ms)",
+            poll_ns / 1_000_000
+        )));
+    }
+    Ok(VerifyPlan {
+        readback: canonical,
+        conversion,
+        tolerance,
+        within_ns,
+    })
 }
 
 fn unit_of(signal: &SignalPlan) -> Result<Unit, PlanError> {
@@ -814,6 +945,15 @@ fn output_plan(
         _ => OnInterlock::Safe,
     };
     let enum_values = (0..signal.variants.len() as u64).collect();
+    let deadband = envelope
+        .deadband
+        .as_ref()
+        .map(|d| quantity_in(&d.value, &unit.difference(), "deadband"))
+        .transpose()?;
+    let max_actuations = envelope.max_actuations.as_ref().map(|b| Budget {
+        count: b.value.count,
+        window_ns: b.value.window.as_nanos(),
+    });
     Ok(OutputPlan {
         path: path.to_owned(),
         group,
@@ -831,6 +971,12 @@ fn output_plan(
         enum_values,
         permit_uncertain: envelope.permit_uncertain,
         grace_ns: duration_ns(envelope.grace),
+        deadband,
+        min_interval_ns: duration_ns(envelope.min_interval),
+        max_actuations,
+        verify: None,
+        keepalive_ns: envelope.keepalive.map(|k| k.value.as_nanos()),
+        pulse_ns: envelope.pulse.map(|p| p.value.as_nanos()),
         exprs: OutputExprs::default(),
     })
 }
