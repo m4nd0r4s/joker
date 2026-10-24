@@ -993,6 +993,7 @@ mod action_tests {
             quirks: Vec::new(),
             timeout_ns: 1_000_000_000,
             fallback_keepalive_ns: None,
+            fallback_outputs: None,
             points: Vec::new(),
             actions: vec![DeviceActionPlan {
                 name: "reset_fault".into(),

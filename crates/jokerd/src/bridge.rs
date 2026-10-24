@@ -43,7 +43,7 @@ pub fn table_to_cbor(table: &BTreeMap<String, Node>) -> Vec<u8> {
 }
 
 use joker_hal::types::{Direction, RawKind};
-use joker_manifest::context::{Context, Direction as ManifestDirection};
+use joker_manifest::context::{Context, Direction as ManifestDirection, PointPoll};
 use joker_manifest::model::{Device, Manifest};
 use joker_units::Duration;
 
@@ -67,6 +67,10 @@ pub struct DevicePointPlan {
     pub expect: RawKind,
     /// Width in registers, bytes, or 0 for a scalar.
     pub width: u16,
+    /// The acquisition steps of the point (ref/03 §3, ADR 0064): the
+    /// profile's `scale`, `offset`, `invert`, `enum` integers and
+    /// `deadband`; none for a signal declared in the manifest.
+    pub acquisition: joker_manifest::context::Acquisition,
 }
 
 /// One device this generation's manifest declares, resolved into what any
@@ -98,6 +102,10 @@ pub struct DevicePlan {
     /// §2.2.11, which output a fallback actually covers) is not resolved
     /// here yet.
     pub fallback_keepalive_ns: Option<u64>,
+    /// The outputs the device fallback covers (`[fallback] applies_to`,
+    /// ref/03 §2.2.11), as paths relative to the device; `None` covers
+    /// every output. Only covered outputs are renewed with `keepalive`.
+    pub fallback_outputs: Option<std::collections::BTreeSet<String>>,
     /// The device's points.
     pub points: Vec<DevicePointPlan>,
     /// The device's `[actions.<a>]`, compiled (ref/03 §2.2.12); empty
@@ -573,6 +581,10 @@ pub(crate) fn permit_sources(
     out
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the resolved pieces of one point, each from a different place of the manifest or the profile"
+)]
 fn point_from_raw(
     driver: &str,
     device: &str,
@@ -581,6 +593,7 @@ fn point_from_raw(
     direction: Direction,
     poll_ns: Option<u64>,
     raw: &BTreeMap<String, Node>,
+    acquisition: joker_manifest::context::Acquisition,
 ) -> Result<DevicePointPlan, BridgeError> {
     let addr = table_to_cbor(raw);
     let addr_len = if driver == "i2c" {
@@ -601,6 +614,7 @@ fn point_from_raw(
         poll_ns,
         expect,
         width,
+        acquisition,
     })
 }
 
@@ -656,7 +670,12 @@ pub fn device_plan(
                 .signals
                 .get(signal)
                 .and_then(|s| parse_poll(&s.value).map(Duration::as_nanos));
-            let poll_ns = override_poll.or(device_poll_ns).or(profile_poll_ns);
+            let poll_ns = match (override_poll, info.acquisition.poll) {
+                (Some(ns), _) => Some(ns),
+                (None, Some(PointPoll::Period(d))) => Some(d.as_nanos()),
+                (None, Some(PointPoll::OnDemand)) => None,
+                (None, None) => device_poll_ns.or(profile_poll_ns),
+            };
             points.push(point_from_raw(
                 &driver,
                 name,
@@ -665,6 +684,7 @@ pub fn device_plan(
                 direction_of(info.direction),
                 poll_ns,
                 &info.raw,
+                info.acquisition.clone(),
             )?);
         }
     } else {
@@ -689,6 +709,7 @@ pub fn device_plan(
                 parse_direction(raw),
                 poll_ns,
                 &address_only,
+                joker_manifest::context::Acquisition::NONE,
             )?);
         }
     }
@@ -708,6 +729,9 @@ pub fn device_plan(
         quirks,
         timeout_ns,
         fallback_keepalive_ns,
+        fallback_outputs: profile
+            .filter(|p| p.fallback)
+            .and_then(|p| p.fallback_outputs.clone()),
         points,
         actions,
     })

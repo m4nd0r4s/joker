@@ -256,7 +256,6 @@ steps = [
         assert_eq!(plan.actions.len(), 1);
         let action = &plan.actions[0];
         assert_eq!(action.name, "reset_fault");
-        // 3 steps x 1s + the 500ms wait.
         assert_eq!(action.timeout_ns, 3_500_000_000);
         assert_eq!(
             action.dedup_window_ns, None,
@@ -566,5 +565,144 @@ button = { type = "bool", direction = "input", line = 17, active_low = true }
         assert_eq!(req.points[0].expect, joker_hal::RawKind::Regs);
         assert_eq!(req.points[0].width, 2);
         assert_eq!(req.points[0].direction, joker_hal::Direction::Input);
+    }
+
+    const SCALED_PROFILE_TOML: &str = r#"
+schema = 1
+
+[profile]
+name    = "acme/pcs"
+version = "1.0.0"
+driver  = "modbus"
+
+[defaults]
+fc         = 4
+word_order = "little"
+
+[enums.PcsState]
+off     = 0
+running = 2
+
+[signals.p_ac]
+at     = 0
+type   = "i32"
+scale  = 0.001
+offset = 1.0
+unit   = "kW"
+
+[signals.state]
+at   = 10
+type = "u16"
+enum = "PcsState"
+"#;
+
+    #[test]
+    fn a_scaled_profile_point_reads_as_its_engineering_value() {
+        use joker_hal::acquire::{OwnedRaw, Settled};
+        use joker_hal::types::RawStatus;
+        let dir = project(&[
+            ("joker.toml", JOKER_TOML),
+            ("profiles/acme/pcs@1.profile.toml", SCALED_PROFILE_TOML),
+        ]);
+        let loaded = load(&OsFileSystem, &dir.path().join("joker.toml"), &NativeTasks)
+            .unwrap_or_else(|e| panic!("{e}"));
+        let p_ac = loaded.plan.signal("pcs.p_ac").unwrap();
+        assert_eq!(
+            p_ac.ty,
+            joker_core::ValueType::F64,
+            "a scaled i32 is a float"
+        );
+        let targets = jokerd::drivers::point_targets(&loaded.plan, 0);
+        let target = targets
+            .iter()
+            .find(|t| Some(t.signal) == loaded.plan.id("pcs.p_ac"))
+            .unwrap();
+        assert!(
+            target.decode.words_little,
+            "[defaults] word_order reaches the point"
+        );
+        let settled = Settled {
+            point: target.point,
+            value: OwnedRaw::Regs(vec![0x07D0, 0x0000]),
+            status: RawStatus::OK,
+            invalid: None,
+            ts_hw: None,
+        };
+        let (bits, quality) = jokerd::drivers::settled_sample(target, &settled);
+        assert!(quality.is_good());
+        assert!(
+            (f64::from_bits(bits) - 3.0).abs() < 1e-9,
+            "{}",
+            f64::from_bits(bits)
+        );
+
+        let state = targets
+            .iter()
+            .find(|t| Some(t.signal) == loaded.plan.id("pcs.state"))
+            .unwrap();
+        let settled = Settled {
+            point: state.point,
+            value: OwnedRaw::Regs(vec![2]),
+            status: RawStatus::OK,
+            invalid: None,
+            ts_hw: None,
+        };
+        let (bits, _) = jokerd::drivers::settled_sample(state, &settled);
+        let variants = &loaded.plan.signal("pcs.state").unwrap().variants;
+        assert_eq!(variants[bits as usize], "running");
+    }
+
+    const TWO_OUTPUTS_PROFILE_TOML: &str = r#"
+schema = 1
+
+[profile]
+name    = "acme/pcs"
+version = "1.0.0"
+driver  = "modbus"
+
+[signals.led]
+at        = 0
+fc        = 5
+type      = "bool"
+direction = "output"
+
+[signals.horn]
+at        = 1
+fc        = 5
+type      = "bool"
+direction = "output"
+
+[fallback]
+timeout    = "2s"
+value      = false
+applies_to = ["led"]
+"#;
+
+    #[test]
+    fn only_the_outputs_the_fallback_applies_to_are_kept_alive() {
+        let joker = format!(
+            "{JOKER_TOML}\n[outputs.\"pcs.led\"]\nsafe = false\n[outputs.\"pcs.horn\"]\nsafe = false\naccept_missing_fallback = \"bench horn, no load behind it\"\n"
+        );
+        let dir = project(&[
+            ("joker.toml", &joker),
+            ("profiles/acme/pcs@1.profile.toml", TWO_OUTPUTS_PROFILE_TOML),
+        ]);
+        let loaded = load(&OsFileSystem, &dir.path().join("joker.toml"), &NativeTasks)
+            .unwrap_or_else(|e| panic!("{e}"));
+        let device = &loaded.plan.devices[0];
+        assert_eq!(
+            device.fallback_outputs,
+            Some(["led".to_owned()].into_iter().collect())
+        );
+        let shared = jokerd::shared::Shared::new(&loaded.plan);
+        let covered: Vec<(String, bool)> = shared.commit_bindings[0]
+            .iter()
+            .zip(&shared.keepalive[0])
+            .map(|(b, on)| (loaded.plan.path(b.signal).unwrap().to_owned(), *on))
+            .collect();
+        assert_eq!(
+            covered,
+            vec![("pcs.horn".to_owned(), false), ("pcs.led".to_owned(), true)]
+        );
     }
 }

@@ -83,6 +83,7 @@ fn empty_shared(bindings: Vec<joker_hal::OutputBinding>, boxes: Vec<CommitBox>) 
         stop: Default::default(),
         running: Default::default(),
         commit_bindings: vec![bindings],
+        keepalive: vec![vec![true; boxes.len()]],
         commit_boxes: vec![boxes],
         devices: vec![jokerd::shared::DeviceStats::default()].into_boxed_slice(),
         write_acks: crossbeam_queue::ArrayQueue::new(8),
@@ -136,9 +137,6 @@ fn a_keepalive_interval_resends_without_a_new_commit() {
         move || host_for_stop.mono() >= stop_at,
     ))
     .unwrap();
-
-    // The inherited publish is the first write; ~250ms / 50ms keepalive
-    // gives several more resends with no further commit at all.
     let seen = writes_seen.load(Ordering::SeqCst);
     assert!(seen >= 4, "expected several keepalive resends, got {seen}");
 }
