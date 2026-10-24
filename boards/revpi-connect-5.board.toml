@@ -3,6 +3,7 @@ schema = 1
 [board]
 name    = "revpi-connect-5"
 version = "1.0.0"
+description = "Revolution Pi Connect 5. The fixed IO (board.led_a1, board.relay) is not declared yet: its GPIO lines need the board pinout."
 arch    = "aarch64"
 cpus    = 4
 memory  = "4 GiB"
@@ -11,12 +12,6 @@ recommended = { rt = [3], io = [2], ml = [1, 2], bg = [0] }
 [watchdog]
 device  = "/dev/watchdog0"
 timeout = "60s"
-
-# [io.led_a1] / [io.relay] and their GPIO lines are left for whoever has the
-# RevPi Connect 5 pinout (docs/05 §11's own example uses "…" placeholders
-# too, for the same reason): BoardInfo (ref/03 §2.3.1) does not model fixed
-# IO, so this does not block jk check; it only means board.led_a1/board.relay
-# are not usable yet.
 
 [serial]
 "rs485-0" = "/dev/ttyRS485-0"
