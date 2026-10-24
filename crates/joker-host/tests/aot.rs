@@ -81,6 +81,31 @@ fn the_laptop_cross_compiles_for_the_bench_nodes() {
 }
 
 #[test]
+fn a_node_accepts_only_a_cwasm_built_for_its_own_engine() {
+    let wasm = common::echo();
+    let native = HostEngine::native().unwrap();
+    let foreign = if std::env::consts::ARCH == "x86_64" {
+        "aarch64-unknown-linux-gnu"
+    } else {
+        "x86_64-unknown-linux-gnu"
+    };
+    let cache = cache("accept");
+    let other = HostEngine::for_target(foreign).unwrap();
+    let cwasm = other.precompile(&wasm).unwrap();
+    let err = cache.accept(&native, &wasm, &cwasm).unwrap_err();
+    assert_eq!(err.code(), "J-E0010");
+    assert!(!cache.contains(&native, &wasm));
+    let err = cache.accept(&native, &wasm, b"not a cwasm").unwrap_err();
+    assert_eq!(err.code(), "J-E0010");
+
+    let laptop = HostEngine::for_target(native.triple()).unwrap();
+    let cwasm = laptop.precompile(&wasm).unwrap();
+    cache.accept(&native, &wasm, &cwasm).unwrap();
+    assert!(cache.contains(&native, &wasm));
+    cache.load(&native, &wasm, RuntimeMode::Prod).unwrap();
+}
+
+#[test]
 fn a_cross_engine_does_not_run_code() {
     let triple = if std::env::consts::ARCH == "x86_64" {
         "aarch64-unknown-linux-gnu"

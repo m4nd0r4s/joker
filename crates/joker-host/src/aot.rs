@@ -62,6 +62,27 @@ impl AotCache {
         Ok(path)
     }
 
+    /// Installs a `.cwasm` that arrived with a generation (`joker.app.v1+cwasm`,
+    /// ADR 0067) as the artifact of `wasm` for `engine`, once `engine` has
+    /// accepted it: a `.cwasm` built for another engine is refused with
+    /// `J-E0010` and nothing is stored.
+    pub fn accept(
+        &self,
+        engine: &HostEngine,
+        wasm: &[u8],
+        cwasm: &[u8],
+    ) -> Result<PathBuf, HostError> {
+        if !engine.is_native() {
+            return Err(HostError::new(
+                codes::AOT_UNAVAILABLE,
+                format!("{} cannot run code for {}", engine.id(), engine.triple()),
+            ));
+        }
+        meta::read(wasm)?;
+        ffi::deserialize_component(engine.wasmtime(), cwasm)?;
+        self.store(engine.id(), &component::digest(wasm), cwasm)
+    }
+
     /// True when the artifact of `wasm` for `engine` is in the cache.
     pub fn contains(&self, engine: &HostEngine, wasm: &[u8]) -> bool {
         self.path(engine.id(), &component::digest(wasm)).is_file()
