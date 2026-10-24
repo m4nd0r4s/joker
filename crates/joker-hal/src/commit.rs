@@ -384,6 +384,27 @@ impl<'a> CommitRx<'a> {
         }
     }
 
+    /// The declared `safe` of box `index` as a write of `kind`: the end of
+    /// a pulse (ref/06 §2.9, the second of its two writes), or a resync or
+    /// keepalive of a pulse output, which renews the state the equipment
+    /// rests in. `None` when `index` is out of range.
+    pub fn safe_write(&mut self, index: usize, kind: WriteKind) -> Option<CommittedWrite<'static>> {
+        let binding = *self.bindings.get(index)?;
+        let safe = self.boxes.get(index)?.safe();
+        Some(self.write(binding.point, binding.encoding, safe, kind))
+    }
+
+    /// True when `write` carries the declared `safe` of box `index`.
+    pub fn is_safe(&self, index: usize, write: &CommittedWrite<'_>) -> bool {
+        let (Some(binding), Some(bx)) = (self.bindings.get(index), self.boxes.get(index)) else {
+            return false;
+        };
+        match bx.safe() {
+            Applied::Value(bits) => write.value == binding.encoding.raw(bits),
+            Applied::Relinquish => write.value == RawValue::None,
+        }
+    }
+
     fn write(
         &mut self,
         point: PointId,
@@ -540,6 +561,30 @@ mod tests {
         );
         assert_eq!(rx.take(), None, "one keepalive per call, not forever");
         assert!(!rx.keepalive(1), "out of range");
+    }
+
+    #[test]
+    fn the_declared_safe_is_a_write_of_its_own() {
+        let mut h = OutputHarness::new(&[("pi.relay", ValueType::Bool, 0, 4)]).unwrap();
+        let bindings = h.bindings(&[RawEncoding::Bool]);
+        let boxes = [CommitBox::new()];
+        let mut last = [None];
+        let mut state = [RxState::default()];
+        let mut tx = CommitTx::new(h.outputs(), &bindings, &boxes, &mut last).unwrap();
+        let mut rx = CommitRx::new(&bindings, &boxes, &mut state).unwrap();
+        h.manual("pi.relay", 1);
+        tx.publish(h.outputs());
+        let set = rx.take().unwrap();
+        assert!(!rx.is_safe(0, &set));
+        let end = rx.safe_write(0, WriteKind::Set).unwrap();
+        assert_eq!(
+            (end.point, end.value, end.kind),
+            (4, RawValue::Bool(false), WriteKind::Set)
+        );
+        assert!(end.seq > set.seq);
+        assert!(rx.is_safe(0, &end));
+        assert!(rx.safe_write(1, WriteKind::Set).is_none());
+        assert!(!rx.is_safe(1, &end));
     }
 
     #[test]
