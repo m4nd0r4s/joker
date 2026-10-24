@@ -397,6 +397,8 @@ steps = [{ write = { at = 40300, fc = 6, value = 1 } }, { wait = "500ms" }, { wr
 | `until` | `{ <address>, type, equals, timeout }` | reads until the value matches or the time runs out (then `Err(timeout)`) |
 | `fail_if` | `{ <address>, type, equals, message }` | ends with `Err(message)` if the value matches |
 
+**Quality of a step's read** (ADR 0060, 16 §3.2): a `Bad` read in `read`, `until` or `fail_if` ends the action with `Err(device)` naming the quality reason, and its raw value is never compared or stored; an `Uncertain` read ends a `fail_if` the same way, is not a match for `until` (it keeps polling), and enters the result of `read` with its flag. A step the interpreter cannot resolve (a non-scalar type, an unresolved `$arg`) is `Err(unsupported)`, never a communication failure.
+
 Address in a `forbidden`, unknown step, `wait` above the `timeout` or undeclared `$arg`: `J0821`. Missing arguments or arguments with the wrong type in an invocation: `J0822` (in `jk check` for actions called by known expressions; at runtime, `Err(invalid_args)`).
 
 #### 2.2.13 `[connect]`, `[relinquish]` and `[events]`
