@@ -213,6 +213,18 @@ pub enum DeviceStepValue {
 }
 
 impl DeviceStep {
+    /// The address the step reaches, in the driver's CBOR; `None` for a
+    /// `wait`.
+    pub fn addr(&self) -> Option<&[u8]> {
+        match self {
+            Self::Write { addr, .. }
+            | Self::Read { addr, .. }
+            | Self::Until { addr, .. }
+            | Self::FailIf { addr, .. } => Some(addr),
+            Self::Wait(_) => None,
+        }
+    }
+
     /// The borrowed form the interpreter (`joker_hal::interpreter`) walks.
     pub fn view(&self) -> joker_hal::steps::Step<'_> {
         use joker_hal::steps::{Step, StepValue};

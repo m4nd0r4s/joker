@@ -99,9 +99,16 @@ async fn run_sysfs(
         Ok(p) => p,
         Err(e) => return setup_failed(&shared, &plan, device_index, &host, format!("plan: {e:?}")),
     };
+    let step_addrs: Vec<Cbor<'_>> = device
+        .actions
+        .iter()
+        .flat_map(|a| a.steps.iter())
+        .filter_map(crate::bridge::DeviceStep::addr)
+        .map(Cbor::new)
+        .collect();
     let paths = DevicePaths::new(
         &*sysfs_root,
-        &joker_driver_sysfs::grants(&views.request())
+        &joker_driver_sysfs::grants_with(&views.request(), &step_addrs)
             .iter()
             .map(String::as_str)
             .collect::<Vec<_>>(),
