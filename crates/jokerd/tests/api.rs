@@ -1053,6 +1053,36 @@ async fn the_boot_counter_persists_and_increments_across_restarts() {
     let _ = stop2.send(());
 }
 
+/// A trips file that cannot be parsed keeps the daemon from starting: a
+/// node that cannot know whether an output is in trip must not come back
+/// with it at its normal value (docs/01 §7, ADR 0061).
+#[test]
+fn a_corrupt_trips_file_keeps_the_daemon_from_starting() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("state")).unwrap();
+    std::fs::write(dir.path().join("state").join("trips"), b"[{\"output\": ").unwrap();
+    let clock = Monotonic::start();
+    let log = Arc::new(Mutex::new(
+        DecisionLog::open(&dir.path().join("decisions.jsonl")).unwrap(),
+    ));
+    let started = Controller::new(
+        dir.path(),
+        log,
+        Arc::new(NativeTasks),
+        Arc::new(NoDevices),
+        Box::new(move || Box::new(SystemPacer::new(clock, ClockQuality::Unsynced))),
+        Config::default(),
+    )
+    .map_err(|e| e.to_string())
+    .and_then(|c| {
+        Node::new(Arc::new(Mutex::new(c)), clock, 0, dir.path())
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    });
+    let e = started.unwrap_err();
+    assert!(e.contains("state/trips"), "{e}");
+}
+
 #[test]
 #[should_panic(expected = "get /v1/info 200")]
 fn the_contract_check_rejects_a_bad_body() {

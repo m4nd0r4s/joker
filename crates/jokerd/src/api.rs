@@ -66,6 +66,13 @@ fn problem(e: ControlError) -> Problem {
     p
 }
 
+/// Reports a failure to persist a state file on standard error: the
+/// request that triggered it already took effect in the arbiter.
+fn persisted<T>(what: &str, r: std::io::Result<T>) -> Option<T> {
+    r.map_err(|e| eprintln!("jokerd: cannot persist {what}: {e}"))
+        .ok()
+}
+
 fn bad(code: &str, detail: impl Into<String>) -> Problem {
     Problem::new(code, 400, detail)
 }
@@ -137,7 +144,7 @@ impl Node {
             utc_now_ns(),
             now_mono_ns,
             clock_synced,
-        );
+        )?;
         if !restored.degraded.is_empty() {
             eprintln!(
                 "jokerd: restored {} manual level(s) without a synced clock (A14): {:?}",
@@ -145,8 +152,8 @@ impl Node {
                 restored.degraded
             );
         }
-        let (trips, restored_trips) = TripTable::load(state_dir.to_owned());
-        let boot_count = state_file::bump_counter(state_dir, "boot_count");
+        let (trips, restored_trips) = TripTable::load(state_dir.to_owned())?;
+        let boot_count = state_file::bump_counter(state_dir, "boot_count")?;
         let node = Self {
             controller,
             clock,
@@ -202,9 +209,11 @@ impl Node {
             match v.shared.trip_since(signal) {
                 Some(since_mono_ns) => {
                     let since_utc_ns = self.utc_origin_ns.saturating_add(since_mono_ns as i64);
-                    self.trips.set_tripped(&o.path, since_utc_ns);
+                    persisted("a trip", self.trips.set_tripped(&o.path, since_utc_ns));
                 }
-                None => self.trips.clear_tripped(&o.path),
+                None => {
+                    persisted("a trip", self.trips.clear_tripped(&o.path));
+                }
             }
         }
     }
@@ -444,10 +453,10 @@ impl Node {
         if tripped {
             if let Some(since_mono_ns) = id.and_then(|id| v.shared.trip_since(id)) {
                 let since_utc_ns = self.utc_origin_ns.saturating_add(since_mono_ns as i64);
-                self.trips.set_tripped(&o.path, since_utc_ns);
+                persisted("a trip", self.trips.set_tripped(&o.path, since_utc_ns));
             }
         } else {
-            self.trips.clear_tripped(&o.path);
+            persisted("a trip", self.trips.clear_tripped(&o.path));
         }
         let active_level = Level::new(level).map_or(json!("none"), |l| json!(l.to_string()));
         let now = self.now_mono();
@@ -587,7 +596,7 @@ impl Node {
         {
             Some(outcome) => Ok(match outcome.kind {
                 crate::shared::ResetKind::Cleared => {
-                    self.trips.clear_tripped(path);
+                    persisted("a trip", self.trips.clear_tripped(path));
                     "cleared"
                 }
                 crate::shared::ResetKind::Retripped => "retripped",
@@ -1080,7 +1089,7 @@ impl Backend for Node {
         self.stage(&v, &proposals, &o.group)?;
         let since = utc_now_ns();
         let until = since.saturating_add(i64::try_from(ttl).unwrap_or(i64::MAX));
-        self.manual.set(
+        let stored = self.manual.set(
             &o.path,
             level,
             Occupant {
@@ -1094,6 +1103,7 @@ impl Backend for Node {
             },
             now,
         );
+        persisted("a manual level", stored);
         let id = joker_api::server::ulid(u128::try_from(since).unwrap_or(0));
         let mut ticket = json!({
             "id": id,
@@ -1122,9 +1132,12 @@ impl Backend for Node {
                 && let Some(since_mono_ns) =
                     v.plan.id(&o.path).and_then(|id| v.shared.trip_since(id))
             {
-                self.trips.set_tripped(
-                    &o.path,
-                    self.utc_origin_ns.saturating_add(since_mono_ns as i64),
+                persisted(
+                    "a trip",
+                    self.trips.set_tripped(
+                        &o.path,
+                        self.utc_origin_ns.saturating_add(since_mono_ns as i64),
+                    ),
                 );
             }
             ticket["outcome"] = outcome_json(r.outcome, Some(applied));
@@ -1197,7 +1210,7 @@ impl Backend for Node {
             }],
             &o.group,
         )?;
-        self.manual.remove(&o.path, level, now);
+        persisted("a manual level", self.manual.remove(&o.path, level, now));
         let id = joker_api::server::ulid(u128::try_from(utc_now_ns()).unwrap_or(0));
         let mut ticket = json!({
             "id": id,
@@ -1507,7 +1520,7 @@ impl Backend for Node {
         let switched = lock_controller(&self.controller)
             .activate(g.number, window, Some(user(who)))
             .map_err(problem)?;
-        self.manual.clear(self.now_mono());
+        persisted("the manual levels", self.manual.clear(self.now_mono()));
         Ok(Reply::ok(self.generation_json(&switched.generation)))
     }
 
@@ -1549,7 +1562,7 @@ impl Backend for Node {
         let switched = lock_controller(&self.controller)
             .rollback(to, Some(user(who)), Some(req.reason))
             .map_err(problem)?;
-        self.manual.clear(self.now_mono());
+        persisted("the manual levels", self.manual.clear(self.now_mono()));
         Ok(Reply::ok(self.generation_json(&switched.generation)))
     }
 
