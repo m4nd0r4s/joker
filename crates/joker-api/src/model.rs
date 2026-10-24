@@ -67,6 +67,40 @@ pub struct ContentRef {
     pub content: Option<String>,
 }
 
+/// The artifact types of ref/00 §7.1, in short form (`ArtifactKind`,
+/// ref/09 §5.13). `joker.model.v1+jkm` is reserved for 1.1.
+pub const ARTIFACT_KINDS: &[&str] = &[
+    "joker.config.v1+cbor",
+    "joker.manifest.v1+toml",
+    "joker.lock.v1+toml",
+    "joker.provenance.v1+json",
+    "joker.app.v1+wasm",
+    "joker.app.v1+cwasm",
+    "joker.driver.v1+wasm",
+    "joker.driver.v1+tar",
+    "joker.profile.v1+toml",
+    "joker.board.v1+toml",
+    "joker.sim.v1+toml",
+    "joker.class.v1+jkc",
+    "joker.class.contract.v1+json",
+    "joker.class.conformance.v1+toml",
+    "joker.micro-firmware.v1",
+    "joker.generation.v1",
+    "joker.secrets.v1",
+    "joker.key.v1+pem",
+    "joker.runtime.v1",
+    "joker.trace.v1",
+    "joker.model.v1+jkm",
+];
+
+/// The body of `POST /v1/blobs/missing` (ref/09 §5.13).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MissingBlobsRequest {
+    /// The digests to look up, 1 to 1024.
+    pub digests: Vec<String>,
+}
+
 /// `ArtifactRef`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

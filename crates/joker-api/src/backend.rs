@@ -5,7 +5,8 @@ use serde_json::Value;
 
 use crate::model::{
     ActivateRequest, BulkResetRequest, GenerationProposal, InvokeActionRequest, ManualWriteRequest,
-    ReasonBody, ReleaseRequest, ResetTripRequest, RollbackRequest, TraceRequest,
+    MissingBlobsRequest, ReasonBody, ReleaseRequest, ResetTripRequest, RollbackRequest,
+    TraceRequest,
 };
 use crate::problem::Problem;
 
@@ -117,6 +118,19 @@ pub trait Backend: Send + Sync + 'static {
         who: &Principal,
         request: GenerationProposal,
         dry_run: bool,
+    ) -> Result<Reply>;
+    /// `POST /v1/blobs/missing`: which digests the store lacks.
+    fn missing_blobs(&self, request: MissingBlobsRequest) -> Result<Reply>;
+    /// `HEAD /v1/blobs/{digest}`: whether the store holds the blob.
+    fn has_blob(&self, digest: &str) -> Result<bool>;
+    /// `POST /v1/blobs/uploads?digest=` with the bytes: a monolithic upload
+    /// (ref/09 §5.13), checked against `digest`.
+    fn upload_blob(
+        &self,
+        who: &Principal,
+        digest: &str,
+        kind: Option<&str>,
+        bytes: &[u8],
     ) -> Result<Reply>;
     /// `GET /v1/generations/{gen}`.
     fn generation(&self, selector: &str) -> Result<Reply>;

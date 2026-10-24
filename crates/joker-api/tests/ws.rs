@@ -13,7 +13,8 @@ use std::time::Duration;
 use futures_util::{SinkExt, StreamExt};
 use joker_api::model::{
     ActivateRequest, BulkResetRequest, GenerationProposal, InvokeActionRequest, ManualWriteRequest,
-    ReasonBody, ReleaseRequest, ResetTripRequest, RollbackRequest, TraceRequest,
+    MissingBlobsRequest, ReasonBody, ReleaseRequest, ResetTripRequest, RollbackRequest,
+    TraceRequest,
 };
 use joker_api::ws::Limits;
 use joker_api::{Backend, Headers, Principal, Problem, Query, Reply};
@@ -135,6 +136,21 @@ impl Backend for Stub {
         _who: &Principal,
         _request: GenerationProposal,
         _dry_run: bool,
+    ) -> Result<Reply, Problem> {
+        none()
+    }
+    fn missing_blobs(&self, _request: MissingBlobsRequest) -> Result<Reply, Problem> {
+        none()
+    }
+    fn has_blob(&self, _digest: &str) -> Result<bool, Problem> {
+        Ok(false)
+    }
+    fn upload_blob(
+        &self,
+        _who: &Principal,
+        _digest: &str,
+        _kind: Option<&str>,
+        _bytes: &[u8],
     ) -> Result<Reply, Problem> {
         none()
     }
