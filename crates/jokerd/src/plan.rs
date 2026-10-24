@@ -19,6 +19,8 @@ use joker_manifest::context::{Context, Direction, SignalType};
 use joker_manifest::model::{Binding, Envelope, Manifest, SafeValue as ManifestSafe};
 use joker_units::{Duration, Literal, Quantity, Unit};
 
+use crate::expr_plan::{AlarmPlan, CalcPlan, OutputExprs};
+
 /// The implicit group of outputs no cycle task writes (docs/16 A11).
 pub const DEFAULT_GROUP: &str = "default";
 /// The period of the implicit `default` group.
@@ -137,6 +139,13 @@ pub struct OutputPlan {
     pub writers: Vec<WriterId>,
     /// Valid enum values.
     pub enum_values: Vec<u64>,
+    /// `permit_uncertain`.
+    pub permit_uncertain: bool,
+    /// `grace`, ns.
+    pub grace_ns: u64,
+    /// The compiled expressions and `requires_good` of the envelope,
+    /// filled by `expr_plan::bind` once the registry exists.
+    pub exprs: OutputExprs,
 }
 
 /// One writer.
@@ -188,6 +197,10 @@ pub struct Plan {
     ///
     /// [`PlanEnv`]: crate::expr_plan::PlanEnv
     pub permits: BTreeMap<(String, String), joker_expr::Program>,
+    /// Every `calc`, compiled, in evaluation order (ADR 0068).
+    pub calcs: Vec<CalcPlan>,
+    /// Every alarm of the manifest, compiled, in name order.
+    pub alarms: Vec<AlarmPlan>,
 }
 
 /// The borrowed core tables of a plan.
@@ -354,7 +367,10 @@ impl Plan {
                 aliases.insert(path.clone(), reg.canonical.clone());
                 continue;
             }
+            let derived =
+                reg.device.is_none() && (path.starts_with("calc.") || path.starts_with("alarm."));
             let direction = match reg.info.direction {
+                Direction::Input if derived => CoreDirection::Derived,
                 Direction::Input => CoreDirection::Input,
                 Direction::Output => CoreDirection::Output,
                 Direction::Param => continue,
@@ -497,33 +513,45 @@ impl Plan {
             devices,
             permit_sources: BTreeMap::new(),
             permits: BTreeMap::new(),
+            calcs: Vec::new(),
+            alarms: Vec::new(),
         };
+        plan.index()?;
+        plan.permit_sources = crate::bridge::permit_sources(manifest, &plan.devices);
+        crate::expr_plan::bind(&mut plan, manifest)?;
+        plan.index()?;
+        Ok(plan)
+    }
+
+    /// Resolves every path to its `SignalId`, hashes the registry and puts
+    /// each group's ports in id order. Ids depend only on the paths, so a
+    /// second call after derived signals gain their group keeps them and
+    /// only changes the hash.
+    fn index(&mut self) -> Result<(), PlanError> {
         let (ids, hash) = {
-            let tables = plan.tables()?;
+            let tables = self.tables()?;
             let registry = tables.registry.as_registry();
             let mut ids = BTreeMap::new();
-            for s in &plan.signals {
+            for s in &self.signals {
                 if let Some(id) = registry.resolve(&s.path) {
                     ids.insert(s.path.clone(), id);
                 }
             }
-            for (alias, target) in &plan.aliases {
+            for (alias, target) in &self.aliases {
                 if let Some(id) = registry.resolve(target) {
                     ids.insert(alias.clone(), id);
                 }
             }
             (ids, registry.hash())
         };
-        plan.ids = ids;
-        plan.registry_hash = hash;
-        for g in &mut plan.groups {
-            let ids = &plan.ids;
+        self.ids = ids;
+        self.registry_hash = hash;
+        for g in &mut self.groups {
+            let ids = &self.ids;
             g.ports.sort_by_key(|p| ids.get(p).copied());
             g.ports.dedup();
         }
-        plan.permit_sources = crate::bridge::permit_sources(manifest, &plan.devices);
-        plan.permits = crate::bridge::compile_permits(&plan)?;
-        Ok(plan)
+        Ok(())
     }
 
     /// The `SignalId` of a path (canonical or alias).
@@ -605,6 +633,16 @@ impl Plan {
                 config.max_lease_ns = o.max_lease_ns;
                 config.max_manual_ns = o.max_manual_ns;
                 config.writers = Writers::Only(&o.writers);
+                config.interlock = o.exprs.interlock.as_ref().map(|e| &e.program);
+                config.permit_uncertain = o.permit_uncertain;
+                config.requires_good = &o.exprs.requires_good;
+                config.grace_ns = o.grace_ns;
+                config.range_exprs = o
+                    .exprs
+                    .range
+                    .as_ref()
+                    .map(|(low, high)| (low.bound(), high.bound()));
+                config.reset_when = o.exprs.reset_when.as_ref().map(|e| &e.program);
                 outputs.push(config);
             }
         }
@@ -640,7 +678,7 @@ fn unit_of(signal: &SignalPlan) -> Result<Unit, PlanError> {
         .map_err(|e| PlanError::new(Some(e.code()), format!("unit of `{}`", signal.path)))
 }
 
-fn quantity_in(text: &str, unit: &Unit, what: &str) -> Result<f64, PlanError> {
+pub(crate) fn quantity_in(text: &str, unit: &Unit, what: &str) -> Result<f64, PlanError> {
     match Literal::parse(text) {
         Ok(Literal::Quantity(q)) => q
             .value_in(unit)
@@ -652,7 +690,7 @@ fn quantity_in(text: &str, unit: &Unit, what: &str) -> Result<f64, PlanError> {
         )),
         Err(_) => Err(PlanError::new(
             None,
-            format!("{what} `{text}` is an expression; M0 supports constants only"),
+            format!("{what} `{text}` is not a quantity"),
         )),
     }
 }
@@ -732,12 +770,14 @@ fn output_plan(
         .ok_or_else(|| PlanError::new(Some("J0201"), format!("output `{path}` has no `safe`")))?;
     let safe = safe_bits(&safe.value, signal, &unit)?;
     let range = match &envelope.range {
-        Some(r) if r.value.len() == 2 => Some((
+        Some(r) if r.value.len() != 2 => {
+            return Err(PlanError::new(Some("J0230"), "range needs two bounds"));
+        }
+        Some(r) if r.value.iter().all(|b| Literal::parse(&b.value).is_ok()) => Some((
             quantity_in(&r.value[0].value, &unit, "range")?,
             quantity_in(&r.value[1].value, &unit, "range")?,
         )),
-        Some(_) => return Err(PlanError::new(Some("J0230"), "range needs two bounds")),
-        None => None,
+        _ => None,
     };
     let rate = envelope
         .rate
@@ -758,12 +798,6 @@ fn output_plan(
         "hold" => OnInterlock::Hold,
         _ => OnInterlock::Safe,
     };
-    if envelope.interlock.is_some() || !envelope.requires_good.is_empty() {
-        return Err(PlanError::new(
-            None,
-            format!("output `{path}`: `interlock` and `requires_good` are not in the M0 core yet"),
-        ));
-    }
     let enum_values = (0..signal.variants.len() as u64).collect();
     Ok(OutputPlan {
         path: path.to_owned(),
@@ -780,6 +814,9 @@ fn output_plan(
         max_manual_ns: duration_ns(envelope.max_manual),
         writers,
         enum_values,
+        permit_uncertain: envelope.permit_uncertain,
+        grace_ns: duration_ns(envelope.grace),
+        exprs: OutputExprs::default(),
     })
 }
 

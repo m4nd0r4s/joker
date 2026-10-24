@@ -4,6 +4,8 @@
 
 use std::collections::BTreeMap;
 
+use joker_core::alarm::{AlarmRuntime, Alarms};
+use joker_core::class::Classes;
 use joker_core::commit::{CommitSink, OutputResult, OutputState};
 use joker_core::image::{ImageStorage, ProcessImage, Proposal, Source};
 use joker_core::slot::SeqExtender;
@@ -201,6 +203,22 @@ pub fn replay(
     let slots: Vec<Slot> = (0..registry.len()).map(|_| Slot::new()).collect();
     let mut states = vec![OutputState::EMPTY; tables.outputs.len()];
     let mut intakes = vec![None; STAGING_CAPACITY];
+    let mut output_arena = vec![0u64; tables.outputs.iter().map(|c| c.state_words()).sum()];
+    let derived = crate::expr_plan::derived_defs(plan, &registry)?;
+    let mut derived_arena = vec![0u64; derived.iter().map(|d| d.expr.state_words()).sum()];
+    let mut method_scratch = Vec::new();
+    let mut classes = Classes::new(&[], &derived, &mut method_scratch);
+    classes
+        .set_state_arena(&mut derived_arena)
+        .map_err(|e| format!("derived signals: {e:?}"))?;
+    let alarm_configs = crate::expr_plan::alarm_configs(plan, &registry)?;
+    let mut alarm_states = vec![AlarmRuntime::EMPTY; alarm_configs.len()];
+    let mut alarms =
+        Alarms::new(&alarm_configs, &mut alarm_states).map_err(|e| format!("alarms: {e:?}"))?;
+    let mut alarm_arena = vec![0u64; alarms.state_words()];
+    alarms
+        .set_state_arena(&mut alarm_arena)
+        .map_err(|e| format!("alarms: {e:?}"))?;
     let mut outputs = Outputs::new(
         &registry,
         &tables.writers,
@@ -211,6 +229,9 @@ pub fn replay(
         },
     )
     .map_err(|e| format!("outputs: {e:?}"))?;
+    outputs
+        .set_state_arena(&mut output_arena)
+        .map_err(|e| format!("outputs: {e:?}"))?;
     let ports: Vec<Vec<SignalId>> = plan
         .groups
         .iter()
@@ -288,6 +309,20 @@ pub fn replay(
         for p in &t.proposals {
             let _ = image.stage_async(*p);
         }
+        classes
+            .evaluate_derived(image, &slots)
+            .map_err(|e| format!("tick {}: {e:?}", t.index))?;
+        results.clear();
+        alarms
+            .evaluate(
+                image,
+                &slots,
+                &mut outputs,
+                &mut Collect {
+                    results: &mut results,
+                },
+            )
+            .map_err(|e| format!("tick {}: {e:?}", t.index))?;
         for (writer, task) in &mut groups[g] {
             let mut cx = TaskContext::new(image, &outputs, *writer);
             let _ = task.run(&mut cx);

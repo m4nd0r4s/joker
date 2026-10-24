@@ -10,6 +10,8 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::atomic::Ordering;
 
+use joker_core::alarm::{AlarmRuntime, Alarms};
+use joker_core::class::Classes;
 use joker_core::commit::{CommitSink, DecisionRecord, OutputResult, OutputState, WriteResult};
 use joker_core::envelope::Applied;
 use joker_core::image::{ImageStorage, ProcessImage, Proposal};
@@ -183,6 +185,22 @@ pub fn run(
     }
     let mut states = vec![OutputState::EMPTY; tables.outputs.len()];
     let mut intakes = vec![None; STAGING_CAPACITY];
+    let mut output_arena = vec![0u64; tables.outputs.iter().map(|c| c.state_words()).sum()];
+    let derived = crate::expr_plan::derived_defs(plan, &registry).map_err(CycleError)?;
+    let mut derived_arena = vec![0u64; derived.iter().map(|d| d.expr.state_words()).sum()];
+    let mut method_scratch = Vec::new();
+    let mut classes = Classes::new(&[], &derived, &mut method_scratch);
+    classes
+        .set_state_arena(&mut derived_arena)
+        .map_err(|e| CycleError(format!("derived signals: {e:?}")))?;
+    let alarm_configs = crate::expr_plan::alarm_configs(plan, &registry).map_err(CycleError)?;
+    let mut alarm_states = vec![AlarmRuntime::EMPTY; alarm_configs.len()];
+    let mut alarms = Alarms::new(&alarm_configs, &mut alarm_states)
+        .map_err(|e| CycleError(format!("alarms: {e:?}")))?;
+    let mut alarm_arena = vec![0u64; alarms.state_words()];
+    alarms
+        .set_state_arena(&mut alarm_arena)
+        .map_err(|e| CycleError(format!("alarms: {e:?}")))?;
     let mut outputs = Outputs::new(
         &registry,
         &tables.writers,
@@ -193,6 +211,9 @@ pub fn run(
         },
     )
     .map_err(|e| CycleError(format!("outputs: {e:?}")))?;
+    outputs
+        .set_state_arena(&mut output_arena)
+        .map_err(|e| CycleError(format!("outputs: {e:?}")))?;
     for (path, applied) in &options.inherit {
         if let Some(id) = plan.id(path) {
             outputs.inherit(id, *applied);
@@ -312,6 +333,10 @@ pub fn run(
                 started,
                 shared,
                 &registry,
+                &mut Expressions {
+                    classes: &mut classes,
+                    alarms: &mut alarms,
+                },
                 &mut outputs,
                 &mut commit_tx,
             )
@@ -343,12 +368,23 @@ pub fn run(
     Ok(exit)
 }
 
+/// The derived signals and alarms of a generation (docs/01 §4 step 3).
+struct Expressions<'e, 'a> {
+    classes: &'e mut Classes<'a>,
+    alarms: &'e mut Alarms<'a>,
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "every argument is a distinct piece of the generation's tick state, borrowed for one tick"
+)]
 fn tick(
     g: &mut GroupRun<'_>,
     index: u64,
     at: joker_core::Instant,
     shared: &Shared,
     registry: &joker_core::Registry<'_>,
+    expressions: &mut Expressions<'_, '_>,
     outputs: &mut Outputs<'_>,
     commit_tx: &mut [joker_hal::CommitTx<'_>],
 ) {
@@ -388,6 +424,28 @@ fn tick(
         while let Some(req) = trips.pop() {
             outputs.trip(req.signal);
         }
+    }
+    if expressions
+        .classes
+        .evaluate_derived(&g.image, &shared.slots)
+        .is_err()
+    {
+        stats.task_errors.bump();
+    }
+    g.results.clear();
+    let mut sink = Sink {
+        shared,
+        results: &mut g.results,
+        tick: index,
+        at_mono_ns: at.mono_ns,
+        pending_resets: &mut g.pending_resets,
+    };
+    if expressions
+        .alarms
+        .evaluate(&g.image, &shared.slots, outputs, &mut sink)
+        .is_err()
+    {
+        stats.task_errors.bump();
     }
     for (writer, task) in &mut g.tasks {
         let mut cx = TaskContext::new(&mut g.image, outputs, *writer);
