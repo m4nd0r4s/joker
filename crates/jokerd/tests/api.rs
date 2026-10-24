@@ -14,7 +14,7 @@ use joker_core::ClockQuality;
 use jokerd::api::Node;
 use jokerd::control::{Config, Controller};
 use jokerd::decisions::DecisionLog;
-use jokerd::devices::NoDevices;
+use jokerd::devices::{Devices, NoDevices};
 use jokerd::native::NativeTasks;
 use jokerd::pacer::{Monotonic, SystemPacer};
 use serde_json::{Value, json};
@@ -236,6 +236,10 @@ async fn start() -> Fixture {
 }
 
 async fn start_with(manifest: &str) -> Fixture {
+    start_with_devices(manifest, Arc::new(NoDevices)).await
+}
+
+async fn start_with_devices(manifest: &str, devices: Arc<dyn Devices>) -> Fixture {
     let dir = tempfile::tempdir().unwrap();
     let clock = Monotonic::start();
     let log = Arc::new(Mutex::new(
@@ -245,7 +249,7 @@ async fn start_with(manifest: &str) -> Fixture {
         dir.path(),
         log,
         Arc::new(NativeTasks),
-        Arc::new(NoDevices),
+        devices,
         Box::new(move || Box::new(SystemPacer::new(clock, ClockQuality::Unsynced))),
         Config {
             min_window: Duration::from_millis(100),
@@ -1313,4 +1317,41 @@ fn the_contract_check_rejects_a_bad_body() {
 #[should_panic(expected = "is not in the contract")]
 fn the_contract_check_rejects_an_unknown_operation() {
     Contract::load().check("get", "/v1/nowhere", 200, &json!({}));
+}
+
+const GPIO_WITHOUT_CHIP: &str = r#"
+[project]
+name  = "api-devices-test"
+joker = "1.0"
+mode  = "dev"
+
+[devices.hdr]
+driver = "gpio"
+chip   = "gpiochip0-that-does-not-exist-in-this-test"
+
+[devices.hdr.signals]
+line4 = { type = "bool", direction = "input", line = 4, poll = "20ms" }
+"#;
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn status_and_metrics_show_the_link_and_counters_of_each_device() {
+    let devices = jokerd::real_devices::RealDevices::new(tokio::runtime::Handle::current());
+    let f = start_with_devices(GPIO_WITHOUT_CHIP, Arc::new(devices)).await;
+
+    let s = f.call("GET", "/v1/status", "/v1/status", None).await;
+    assert_eq!(s.status, 200, "{}", s.json());
+    let device = &s.json()["devices"][0];
+    assert_eq!(device["name"], "hdr", "{device}");
+    assert_eq!(device["link"], "stopped", "{device}");
+    assert_eq!(device["reconnects"], 0);
+    assert_eq!(device["dropped_samples"], 0);
+    assert_eq!(device["invalid_samples"], 0);
+
+    let m = f.call("GET", "/v1/metrics", "/v1/metrics", None).await;
+    assert_eq!(m.status, 200, "{}", m.json());
+    let driver = &m.json()["drivers"][0];
+    assert_eq!(driver["device"], "hdr", "{driver}");
+    assert_eq!(driver["link"], "stopped", "{driver}");
+    assert_eq!(driver["reconnects"], 0);
+    assert!(m.json()["api"]["dropped"].is_u64(), "{}", m.json());
 }
