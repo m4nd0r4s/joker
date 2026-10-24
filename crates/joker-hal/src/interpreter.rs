@@ -1,6 +1,12 @@
 //! Walks a compiled [`Step`](crate::steps::Step) program against a
 //! driver's `read-addr`/`write-addr` (ref/06 §2.10, ADR 0058).
 //!
+//! Every value a step reads is a sample with a quality, and the step
+//! honours it (ADR 0060, document 16 §3.2): a `Bad` read ends the program
+//! with [`Failure::Quality`] and its raw value is never compared or
+//! stored; an `Uncertain` read ends a `fail_if` the same way, is not a
+//! match for `until`, and enters the result of `read` with its flag.
+//!
 //! Comparisons (`until`, `fail_if`) and `read`'s `into` only support the
 //! scalar raw kinds (`bool`, `int`, `uint`, `float`); `Regs`/`Bytes`/`Text`
 //! are out of scope here. `StepValue::Arg` (a `"$name"` substitution) is
@@ -12,16 +18,20 @@ use joker_units::Duration;
 
 use crate::steps::{Step, StepValue};
 use crate::{
-    AddrRead, AddrWrite, BatchFailure, Cx, DeviceIx, Driver, Full, RawKind, RawSample, RawSink,
-    RawValue, SampleSink,
+    AddrRead, AddrWrite, BatchFailure, Cx, DeviceIx, Driver, Full, QualityCode, RawKind, RawSample,
+    RawSink, RawStatus, RawValue, SampleSink,
 };
 
 /// A scalar captured from a sample, or written as a literal.
 #[derive(Clone, Copy, Debug, PartialEq)]
-enum Scalar {
+pub enum Scalar {
+    /// A `bool`.
     Bool(bool),
+    /// A signed integer.
     Int(i64),
+    /// An unsigned integer.
     Uint(u64),
+    /// A float.
     Float(f64),
 }
 
@@ -46,25 +56,64 @@ impl Scalar {
     }
 }
 
+/// One value a `read` step stored, with the quality the equipment
+/// reported for it (`Good` or `Uncertain`; a `Bad` read never gets here).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Reading {
+    /// The value.
+    pub value: Scalar,
+    /// Its quality.
+    pub status: RawStatus,
+}
+
+/// Where a program's `read` steps store their values: the action's
+/// result record, field by field (ref/03 §2.2.12 `into`).
+pub trait Results<'a> {
+    /// Stores `reading` under the result field `into`.
+    fn record(&mut self, into: &'a str, reading: Reading);
+}
+
+/// Discards every `read` result: for the programs that produce none
+/// (`[connect]`, `[relinquish]`, `[config] apply` and the fallback, ADR
+/// 0058 §4).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct NoResults;
+
+impl<'a> Results<'a> for NoResults {
+    fn record(&mut self, _into: &'a str, _reading: Reading) {}
+}
+
+#[cfg(feature = "alloc")]
+impl<'a> Results<'a> for alloc::vec::Vec<(&'a str, Reading)> {
+    fn record(&mut self, into: &'a str, reading: Reading) {
+        self.push((into, reading));
+    }
+}
+
 /// Why a program did not run to completion.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Failure<'a> {
     /// `read-addr`/`write-addr` failed.
     Device(BatchFailure),
-    /// An `until` step never saw `equals` before its `timeout`.
+    /// An `until` step never saw `equals` with `Good` quality before its
+    /// `timeout`.
     TimedOut,
     /// A `fail_if` step saw `equals`.
     FailedCondition(&'a str),
+    /// A step read a sample it cannot trust (ADR 0060): `Bad` in any
+    /// step, or `Uncertain` in `fail_if`. Projected onto
+    /// `device(error)`, naming the reason.
+    Quality(RawStatus),
     /// A borrowed raw kind (`Regs`/`Bytes`/`Text`) or a `"$name"`
     /// argument: not resolved by this interpreter yet.
     Unsupported,
 }
 
-struct Capture(Option<Scalar>);
+struct Capture(Option<(RawStatus, Option<Scalar>)>);
 
 impl SampleSink for Capture {
     fn accept(&mut self, sample: &RawSample<'_>) -> Result<(), Full> {
-        self.0 = Scalar::of(sample.value);
+        self.0 = Some((sample.status, Scalar::of(sample.value)));
         Ok(())
     }
 }
@@ -76,7 +125,7 @@ async fn read_scalar<D: Driver>(
     addr: crate::Cbor<'_>,
     type_name: &str,
     expect: RawKind,
-) -> Result<Scalar, Failure<'static>> {
+) -> Result<Reading, Failure<'static>> {
     let mut capture = Capture(None);
     let req = AddrRead {
         device,
@@ -89,16 +138,36 @@ async fn read_scalar<D: Driver>(
         .read_addr(cx, &req, &mut RawSink::new(&mut capture))
         .await
         .map_err(Failure::Device)?;
-    capture.0.ok_or(Failure::Unsupported)
+    let (status, value) = capture.0.ok_or(Failure::Unsupported)?;
+    if status.code == QualityCode::Bad {
+        return Err(Failure::Quality(status));
+    }
+    let value = value.ok_or(Failure::Unsupported)?;
+    Ok(Reading { value, status })
 }
 
 /// Runs `program` against `driver`'s `device`, in order, stopping at the
-/// first failure.
+/// first failure, for a program whose `read` results nobody needs (ADR
+/// 0058 §4). An invoked action uses [`run_into`], so its result record
+/// is filled.
 pub async fn run<'a, D: Driver>(
     driver: &mut D,
     cx: &mut Cx<'_>,
     device: DeviceIx,
     program: &'a [Step<'a>],
+) -> Result<(), Failure<'a>> {
+    run_into(driver, cx, device, program, &mut NoResults).await
+}
+
+/// Runs `program` against `driver`'s `device`, in order, stopping at the
+/// first failure; every `read` step stores its value and quality in
+/// `results` under its `into`.
+pub async fn run_into<'a, D: Driver, R: Results<'a>>(
+    driver: &mut D,
+    cx: &mut Cx<'_>,
+    device: DeviceIx,
+    program: &'a [Step<'a>],
+    results: &mut R,
 ) -> Result<(), Failure<'a>> {
     for step in program {
         match step {
@@ -119,12 +188,13 @@ pub async fn run<'a, D: Driver>(
                 driver.write_addr(cx, &req).await.map_err(Failure::Device)?;
             }
             Step::Read {
-                addr, type_name, ..
+                addr,
+                type_name,
+                into,
             } => {
-                // The result record is not built yet (no caller wants it
-                // until the live wiring exists); run for its side effects
-                // and the same failure modes as a bare read.
-                read_scalar(driver, cx, device, *addr, type_name, RawKind::Float).await?;
+                let reading =
+                    read_scalar(driver, cx, device, *addr, type_name, RawKind::Float).await?;
+                results.record(into, reading);
             }
             Step::Wait(d) => {
                 let now = cx.now().mono_ns;
@@ -139,10 +209,9 @@ pub async fn run<'a, D: Driver>(
                 let target = Scalar::of(*equals).ok_or(Failure::Unsupported)?;
                 let deadline = cx.now().mono_ns + timeout.as_nanos();
                 loop {
-                    let got = read_scalar(driver, cx, device, *addr, type_name, target.kind())
-                        .await
-                        .map_err(|_| Failure::Device(BatchFailure::CommFailure("until")))?;
-                    if got == target {
+                    let got =
+                        read_scalar(driver, cx, device, *addr, type_name, target.kind()).await?;
+                    if got.status.code == QualityCode::Good && got.value == target {
                         break;
                     }
                     let now = cx.now().mono_ns;
@@ -161,7 +230,10 @@ pub async fn run<'a, D: Driver>(
             } => {
                 let target = Scalar::of(*equals).ok_or(Failure::Unsupported)?;
                 let got = read_scalar(driver, cx, device, *addr, type_name, target.kind()).await?;
-                if got == target {
+                if got.status.code != QualityCode::Good {
+                    return Err(Failure::Quality(got.status));
+                }
+                if got.value == target {
                     return Err(Failure::FailedCondition(message));
                 }
             }
@@ -182,6 +254,10 @@ mod tests {
     struct Fake {
         register: u16,
         writes: Vec<u16>,
+        status: Option<RawStatus>,
+        valueless: bool,
+        text: bool,
+        reads: usize,
     }
 
     impl Driver for Fake {
@@ -212,10 +288,19 @@ mod tests {
             _req: &AddrRead<'_>,
             out: &mut RawSink<'_>,
         ) -> Result<(), BatchFailure> {
-            let _ = out.push(RawSample::good(
-                0u32,
-                RawValue::Uint(u64::from(self.register)),
-            ));
+            self.reads += 1;
+            let value = if self.valueless {
+                RawValue::None
+            } else if self.text {
+                RawValue::Text("on")
+            } else {
+                RawValue::Uint(u64::from(self.register))
+            };
+            let mut sample = RawSample::good(0u32, value);
+            if let Some(status) = self.status {
+                sample.status = status;
+            }
+            let _ = out.push(sample);
             Ok(())
         }
 
@@ -259,7 +344,7 @@ mod tests {
         let mut cx = Cx::new(&*host, host.mono() + 1_000_000_000);
         let mut driver = Fake {
             register: 9,
-            writes: Vec::new(),
+            ..Fake::default()
         };
         let program = [
             Step::FailIf {
@@ -272,7 +357,6 @@ mod tests {
         ];
         let result = host.run(run(&mut driver, &mut cx, 0u16, &program)).unwrap();
         assert_eq!(result, Err(Failure::FailedCondition("already faulted")));
-        // The write after fail_if never ran.
         assert!(driver.writes.is_empty());
     }
 
@@ -299,7 +383,7 @@ mod tests {
         let mut cx = Cx::new(&*host, host.mono() + 10_000_000_000);
         let mut driver = Fake {
             register: 42,
-            writes: Vec::new(),
+            ..Fake::default()
         };
         let program = [Step::Until {
             addr: crate::Cbor::new(&[]),
@@ -310,5 +394,167 @@ mod tests {
         host.run(run(&mut driver, &mut cx, 0u16, &program))
             .unwrap()
             .unwrap();
+    }
+
+    const BAD: RawStatus = RawStatus::bad(crate::Reason(12));
+    const UNCERTAIN: RawStatus = RawStatus::uncertain(crate::Reason(3));
+
+    fn until(equals: u64, timeout_ms: u64) -> Step<'static> {
+        Step::Until {
+            addr: crate::Cbor::new(&[]),
+            type_name: "u16",
+            equals: RawValue::Uint(equals),
+            timeout: Duration::from_millis(timeout_ms),
+        }
+    }
+
+    fn fail_if(equals: u64) -> Step<'static> {
+        Step::FailIf {
+            addr: crate::Cbor::new(&[]),
+            type_name: "u16",
+            equals: RawValue::Uint(equals),
+            message: "already faulted",
+        }
+    }
+
+    fn read(into: &'static str) -> Step<'static> {
+        Step::Read {
+            addr: crate::Cbor::new(&[]),
+            type_name: "u16",
+            into,
+        }
+    }
+
+    #[allow(
+        clippy::unwrap_used,
+        reason = "a test helper; a host failure fails the test"
+    )]
+    fn run_program(
+        driver: &mut Fake,
+        program: &[Step<'static>],
+    ) -> (Result<(), Failure<'static>>, Vec<(&'static str, Reading)>) {
+        let host = alloc::sync::Arc::new(VirtualHost::new(0));
+        let mut cx = Cx::new(&*host, host.mono() + 10_000_000_000);
+        let program: &'static [Step<'static>] = alloc::boxed::Box::leak(program.into());
+        let mut results = Vec::new();
+        let result = host
+            .run(run_into(driver, &mut cx, 0u16, program, &mut results))
+            .unwrap();
+        (result, results)
+    }
+
+    #[test]
+    fn a_bad_read_never_satisfies_until_even_when_its_raw_value_matches() {
+        let mut driver = Fake {
+            register: 42,
+            status: Some(BAD),
+            ..Fake::default()
+        };
+        let (result, _) = run_program(&mut driver, &[until(42, 100)]);
+        assert_eq!(result, Err(Failure::Quality(BAD)));
+    }
+
+    #[test]
+    fn a_bad_read_in_fail_if_ends_the_action_with_its_quality_whatever_the_value() {
+        for register in [9, 1] {
+            let mut driver = Fake {
+                register,
+                status: Some(BAD),
+                ..Fake::default()
+            };
+            let (result, _) = run_program(&mut driver, &[fail_if(9), write_step(1)]);
+            assert_eq!(result, Err(Failure::Quality(BAD)));
+            assert!(driver.writes.is_empty());
+        }
+    }
+
+    #[test]
+    fn a_bad_read_without_a_value_is_a_quality_failure_not_unsupported() {
+        let mut driver = Fake {
+            status: Some(BAD),
+            valueless: true,
+            ..Fake::default()
+        };
+        let (result, _) = run_program(&mut driver, &[until(42, 100)]);
+        assert_eq!(result, Err(Failure::Quality(BAD)));
+    }
+
+    #[test]
+    fn an_uncertain_match_does_not_satisfy_until() {
+        let mut driver = Fake {
+            register: 42,
+            status: Some(UNCERTAIN),
+            ..Fake::default()
+        };
+        let (result, _) = run_program(&mut driver, &[until(42, 100)]);
+        assert_eq!(result, Err(Failure::TimedOut));
+        assert!(driver.reads > 1);
+    }
+
+    #[test]
+    fn an_uncertain_read_in_fail_if_ends_the_action_with_its_quality() {
+        let mut driver = Fake {
+            register: 1,
+            status: Some(UNCERTAIN),
+            ..Fake::default()
+        };
+        let (result, _) = run_program(&mut driver, &[fail_if(9), write_step(1)]);
+        assert_eq!(result, Err(Failure::Quality(UNCERTAIN)));
+        assert!(driver.writes.is_empty());
+    }
+
+    #[test]
+    fn a_read_step_stores_its_value_and_quality_in_the_results() {
+        let mut driver = Fake {
+            register: 7,
+            ..Fake::default()
+        };
+        let (result, results) = run_program(&mut driver, &[read("first")]);
+        assert_eq!(result, Ok(()));
+        driver.status = Some(UNCERTAIN);
+        let (result, more) = run_program(&mut driver, &[read("second")]);
+        assert_eq!(result, Ok(()));
+        assert_eq!(
+            results,
+            [(
+                "first",
+                Reading {
+                    value: Scalar::Uint(7),
+                    status: RawStatus::OK
+                }
+            )]
+        );
+        assert_eq!(
+            more,
+            [(
+                "second",
+                Reading {
+                    value: Scalar::Uint(7),
+                    status: UNCERTAIN
+                }
+            )]
+        );
+    }
+
+    #[test]
+    fn a_bad_read_step_ends_the_action_and_stores_nothing() {
+        let mut driver = Fake {
+            register: 7,
+            status: Some(BAD),
+            ..Fake::default()
+        };
+        let (result, results) = run_program(&mut driver, &[read("first")]);
+        assert_eq!(result, Err(Failure::Quality(BAD)));
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn an_unsupported_value_in_until_stays_unsupported() {
+        let mut driver = Fake {
+            text: true,
+            ..Fake::default()
+        };
+        let (result, _) = run_program(&mut driver, &[until(42, 100)]);
+        assert_eq!(result, Err(Failure::Unsupported));
     }
 }
