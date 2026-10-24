@@ -3,9 +3,7 @@
 //!
 //! This only models the *static* shape of a program: the aggregate
 //! default timeout ref/01 §5.8.2 falls back to when the manifest does
-//! not give one, and the data the interpreter will walk once it exists
-//! (ADR 0058; the interpreter itself, and the profile loader that
-//! produces a program from `[actions.<a>].steps`, are still open).
+//! not give one, and the data [`crate::interpreter`] walks (ADR 0058).
 
 use joker_units::Duration;
 

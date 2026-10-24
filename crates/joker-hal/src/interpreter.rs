@@ -1,5 +1,5 @@
 //! Walks a compiled [`Step`](crate::steps::Step) program against a
-//! driver's `read-addr`/`write-addr` (ref/06 §2.10, ADR 0058).
+//! driver's `read-addr`/`write-addr` (ref/06 §2.10, ADR 0058, ADR 0066).
 //!
 //! Every value a step reads is a sample with a quality, and the step
 //! honours it (ADR 0060, document 16 §3.2): a `Bad` read ends the program
@@ -7,12 +7,13 @@
 //! stored; an `Uncertain` read ends a `fail_if` the same way, is not a
 //! match for `until`, and enters the result of `read` with its flag.
 //!
-//! Comparisons (`until`, `fail_if`) and `read`'s `into` only support the
-//! scalar raw kinds (`bool`, `int`, `uint`, `float`); `Regs`/`Bytes`/`Text`
-//! are out of scope here. `StepValue::Arg` (a `"$name"` substitution) is
-//! not resolved yet: a step that needs it fails with
-//! [`Failure::Unsupported`]. Both are open follow-ups, not a silent
-//! limitation of the step language itself.
+//! A step's `type` decides the raw kind it reads and the kind a literal
+//! is written as; comparisons are numeric across `int`, `uint` and
+//! `float`. `"$name"` takes the argument's value from [`Args`]; one the
+//! invocation does not carry is [`Failure::Unsupported`] (ADR 0060 §7).
+//! The interpreter checks for cancellation before each step (ADR 0066
+//! §9) and bounds every driver call by the step timeout (ref/06 §2.14);
+//! the program as a whole is bounded by its caller.
 
 use joker_units::Duration;
 
@@ -54,6 +55,74 @@ impl Scalar {
             Self::Float(_) => RawKind::Float,
         }
     }
+
+    /// Equality by value: `int`, `uint` and `float` compare as numbers,
+    /// a `bool` only with a `bool`.
+    pub fn matches(self, other: Self) -> bool {
+        match (self, other) {
+            (Self::Bool(a), Self::Bool(b)) => a == b,
+            (Self::Bool(_), _) | (_, Self::Bool(_)) => false,
+            (Self::Int(a), Self::Int(b)) => a == b,
+            (Self::Uint(a), Self::Uint(b)) => a == b,
+            (Self::Int(a), Self::Uint(b)) | (Self::Uint(b), Self::Int(a)) => {
+                u64::try_from(a).is_ok_and(|a| a == b)
+            }
+            (Self::Float(a), b) | (b, Self::Float(a)) => b.as_f64() == Some(a),
+        }
+    }
+
+    fn as_f64(self) -> Option<f64> {
+        match self {
+            Self::Bool(_) => None,
+            Self::Int(i) => Some(i as f64),
+            Self::Uint(u) => Some(u as f64),
+            Self::Float(f) => Some(f),
+        }
+    }
+
+    /// This value as `kind`, when it fits exactly.
+    fn coerce(self, kind: RawKind) -> Option<Self> {
+        match (self, kind) {
+            (s, k) if s.kind() == k => Some(s),
+            (Self::Int(i), RawKind::Uint) => u64::try_from(i).ok().map(Self::Uint),
+            (Self::Uint(u), RawKind::Int) => i64::try_from(u).ok().map(Self::Int),
+            (Self::Int(i), RawKind::Float) => Some(Self::Float(i as f64)),
+            (Self::Uint(u), RawKind::Float) => Some(Self::Float(u as f64)),
+            (Self::Float(f), RawKind::Int)
+                if (-9.0e15..9.0e15).contains(&f) && (f as i64) as f64 == f =>
+            {
+                Some(Self::Int(f as i64))
+            }
+            (Self::Float(f), RawKind::Uint)
+                if (0.0..9.0e15).contains(&f) && (f as u64) as f64 == f =>
+            {
+                Some(Self::Uint(f as u64))
+            }
+            _ => None,
+        }
+    }
+
+    fn raw(self) -> RawValue<'static> {
+        match self {
+            Self::Bool(b) => RawValue::Bool(b),
+            Self::Int(i) => RawValue::Int(i),
+            Self::Uint(u) => RawValue::Uint(u),
+            Self::Float(f) => RawValue::Float(f),
+        }
+    }
+}
+
+/// The raw kind a step's `type` reads and writes (ref/03 §2.2.7):
+/// `bool`, the signed and unsigned integers, and the floats. `None` for
+/// an empty or other `type`, when the literal's own kind decides.
+pub fn kind_of_type(type_name: &str) -> Option<RawKind> {
+    match type_name {
+        "bool" | "bit" | "coil" => Some(RawKind::Bool),
+        "i8" | "i16" | "i32" | "i64" => Some(RawKind::Int),
+        "u8" | "u16" | "u32" | "u64" => Some(RawKind::Uint),
+        "f32" | "f64" => Some(RawKind::Float),
+        _ => None,
+    }
 }
 
 /// One value a `read` step stored, with the quality the equipment
@@ -67,10 +136,16 @@ pub struct Reading {
 }
 
 /// Where a program's `read` steps store their values: the action's
-/// result record, field by field (ref/03 §2.2.12 `into`).
+/// result record, field by field (ref/03 §2.2.12 `into`), and where its
+/// progress goes.
 pub trait Results<'a> {
     /// Stores `reading` under the result field `into`.
     fn record(&mut self, into: &'a str, reading: Reading);
+
+    /// `done` of `total` steps have completed (ADR 0066 §10).
+    fn progress(&mut self, done: usize, total: usize) {
+        let _ = (done, total);
+    }
 }
 
 /// Discards every `read` result: for the programs that produce none
@@ -90,6 +165,54 @@ impl<'a> Results<'a> for alloc::vec::Vec<(&'a str, Reading)> {
     }
 }
 
+/// The arguments of one invocation, by name (ref/03 §2.2.12 `"$name"`).
+pub trait Args: crate::cx::MaybeSync {
+    /// The value of the argument `name`, already converted to its
+    /// declared type (ADR 0066 §5).
+    fn arg(&self, name: &str) -> Option<Scalar>;
+}
+
+/// An invocation without arguments.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct NoArgs;
+
+impl Args for NoArgs {
+    fn arg(&self, _name: &str) -> Option<Scalar> {
+        None
+    }
+}
+
+/// Arguments as a list of `(name, value)` pairs.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ArgList<'x>(pub &'x [(&'x str, Scalar)]);
+
+impl Args for ArgList<'_> {
+    fn arg(&self, name: &str) -> Option<Scalar> {
+        self.0.iter().find(|(n, _)| *n == name).map(|(_, v)| *v)
+    }
+}
+
+/// What one invocation of a program brings besides its steps.
+#[derive(Clone, Copy)]
+pub struct Call<'x> {
+    /// The device the steps address.
+    pub device: DeviceIx,
+    /// Its arguments.
+    pub args: &'x dyn Args,
+    /// The bound of each `read-addr`/`write-addr`, from the start of the
+    /// call: the device's `timeout` (ref/06 §2.14).
+    pub step_timeout_ns: u64,
+}
+
+impl core::fmt::Debug for Call<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Call")
+            .field("device", &self.device)
+            .field("step_timeout_ns", &self.step_timeout_ns)
+            .finish_non_exhaustive()
+    }
+}
+
 /// Why a program did not run to completion.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Failure<'a> {
@@ -104,9 +227,13 @@ pub enum Failure<'a> {
     /// step, or `Uncertain` in `fail_if`. Projected onto
     /// `device(error)`, naming the reason.
     Quality(RawStatus),
-    /// A borrowed raw kind (`Regs`/`Bytes`/`Text`) or a `"$name"`
-    /// argument: not resolved by this interpreter yet.
+    /// A borrowed raw kind (`Regs`/`Bytes`/`Text`), a literal that does
+    /// not fit the step's `type`, or a `"$name"` the invocation does not
+    /// carry.
     Unsupported,
+    /// The core cancelled the invocation before the next step (ADR 0066
+    /// §9).
+    Cancelled,
 }
 
 struct Capture(Option<(RawStatus, Option<Scalar>)>);
@@ -118,24 +245,29 @@ impl SampleSink for Capture {
     }
 }
 
+fn step_cx<'h>(cx: &Cx<'h>, call: &Call<'_>) -> Cx<'h> {
+    cx.narrowed(cx.now().mono_ns.saturating_add(call.step_timeout_ns))
+}
+
 async fn read_scalar<D: Driver>(
     driver: &mut D,
-    cx: &mut Cx<'_>,
-    device: DeviceIx,
+    cx: &Cx<'_>,
+    call: &Call<'_>,
     addr: crate::Cbor<'_>,
     type_name: &str,
     expect: RawKind,
 ) -> Result<Reading, Failure<'static>> {
     let mut capture = Capture(None);
     let req = AddrRead {
-        device,
+        device: call.device,
         addr,
         expect,
         width: 1,
         type_name,
     };
+    let mut scx = step_cx(cx, call);
     driver
-        .read_addr(cx, &req, &mut RawSink::new(&mut capture))
+        .read_addr(&mut scx, &req, &mut RawSink::new(&mut capture))
         .await
         .map_err(Failure::Device)?;
     let (status, value) = capture.0.ok_or(Failure::Unsupported)?;
@@ -146,54 +278,78 @@ async fn read_scalar<D: Driver>(
     Ok(Reading { value, status })
 }
 
+fn target(equals: RawValue<'_>, type_name: &str) -> Result<(Scalar, RawKind), Failure<'static>> {
+    let literal = Scalar::of(equals).ok_or(Failure::Unsupported)?;
+    let kind = kind_of_type(type_name).unwrap_or(literal.kind());
+    let target = literal.coerce(kind).ok_or(Failure::Unsupported)?;
+    Ok((target, kind))
+}
+
 /// Runs `program` against `driver`'s `device`, in order, stopping at the
-/// first failure, for a program whose `read` results nobody needs (ADR
-/// 0058 §4). An invoked action uses [`run_into`], so its result record
-/// is filled.
+/// first failure, for a program whose `read` results nobody needs and
+/// that takes no arguments (ADR 0058 §4). An invoked action uses
+/// [`run_into`], so its result record is filled.
 pub async fn run<'a, D: Driver>(
     driver: &mut D,
     cx: &mut Cx<'_>,
     device: DeviceIx,
     program: &'a [Step<'a>],
 ) -> Result<(), Failure<'a>> {
-    run_into(driver, cx, device, program, &mut NoResults).await
+    let call = Call {
+        device,
+        args: &NoArgs,
+        step_timeout_ns: cx.deadline().saturating_sub(cx.now().mono_ns),
+    };
+    run_into(driver, cx, &call, program, &mut NoResults).await
 }
 
-/// Runs `program` against `driver`'s `device`, in order, stopping at the
-/// first failure; every `read` step stores its value and quality in
-/// `results` under its `into`.
+/// Runs `program` against `driver`, in order, stopping at the first
+/// failure; every `read` step stores its value and quality in `results`
+/// under its `into`, and `results` hears of every completed step.
 pub async fn run_into<'a, D: Driver, R: Results<'a>>(
     driver: &mut D,
     cx: &mut Cx<'_>,
-    device: DeviceIx,
+    call: &Call<'_>,
     program: &'a [Step<'a>],
     results: &mut R,
 ) -> Result<(), Failure<'a>> {
-    for step in program {
+    for (done, step) in program.iter().enumerate() {
+        if cx.cancelled() {
+            return Err(Failure::Cancelled);
+        }
         match step {
             Step::Write {
                 addr,
                 type_name,
                 value,
             } => {
-                let StepValue::Literal(value) = value else {
-                    return Err(Failure::Unsupported);
+                let given = match value {
+                    StepValue::Literal(v) => *v,
+                    StepValue::Arg(name) => call.args.arg(name).ok_or(Failure::Unsupported)?.raw(),
+                };
+                let value = match (Scalar::of(given), kind_of_type(type_name)) {
+                    (Some(s), Some(kind)) => s.coerce(kind).ok_or(Failure::Unsupported)?.raw(),
+                    _ => given,
                 };
                 let req = AddrWrite {
-                    device,
+                    device: call.device,
                     addr: *addr,
-                    value: *value,
+                    value,
                     type_name,
                 };
-                driver.write_addr(cx, &req).await.map_err(Failure::Device)?;
+                let mut scx = step_cx(cx, call);
+                driver
+                    .write_addr(&mut scx, &req)
+                    .await
+                    .map_err(Failure::Device)?;
             }
             Step::Read {
                 addr,
                 type_name,
                 into,
             } => {
-                let reading =
-                    read_scalar(driver, cx, device, *addr, type_name, RawKind::Float).await?;
+                let expect = kind_of_type(type_name).unwrap_or(RawKind::Float);
+                let reading = read_scalar(driver, cx, call, *addr, type_name, expect).await?;
                 results.record(into, reading);
             }
             Step::Wait(d) => {
@@ -206,17 +362,19 @@ pub async fn run_into<'a, D: Driver, R: Results<'a>>(
                 equals,
                 timeout,
             } => {
-                let target = Scalar::of(*equals).ok_or(Failure::Unsupported)?;
+                let (target, kind) = target(*equals, type_name)?;
                 let deadline = cx.now().mono_ns + timeout.as_nanos();
                 loop {
-                    let got =
-                        read_scalar(driver, cx, device, *addr, type_name, target.kind()).await?;
-                    if got.status.code == QualityCode::Good && got.value == target {
+                    let got = read_scalar(driver, cx, call, *addr, type_name, kind).await?;
+                    if got.status.code == QualityCode::Good && got.value.matches(target) {
                         break;
                     }
                     let now = cx.now().mono_ns;
                     if now >= deadline {
                         return Err(Failure::TimedOut);
+                    }
+                    if cx.cancelled() {
+                        return Err(Failure::Cancelled);
                     }
                     let poll_ns = Duration::from_millis(20).as_nanos();
                     cx.sleep_until((now + poll_ns).min(deadline)).await;
@@ -228,16 +386,17 @@ pub async fn run_into<'a, D: Driver, R: Results<'a>>(
                 equals,
                 message,
             } => {
-                let target = Scalar::of(*equals).ok_or(Failure::Unsupported)?;
-                let got = read_scalar(driver, cx, device, *addr, type_name, target.kind()).await?;
+                let (target, kind) = target(*equals, type_name)?;
+                let got = read_scalar(driver, cx, call, *addr, type_name, kind).await?;
                 if got.status.code != QualityCode::Good {
                     return Err(Failure::Quality(got.status));
                 }
-                if got.value == target {
+                if got.value.matches(target) {
                     return Err(Failure::FailedCondition(message));
                 }
             }
         }
+        results.progress(done + 1, program.len());
     }
     Ok(())
 }
@@ -258,6 +417,7 @@ mod tests {
         valueless: bool,
         text: bool,
         reads: usize,
+        deadlines: Vec<u64>,
     }
 
     impl Driver for Fake {
@@ -284,11 +444,12 @@ mod tests {
 
         async fn read_addr(
             &mut self,
-            _cx: &mut Cx<'_>,
+            cx: &mut Cx<'_>,
             _req: &AddrRead<'_>,
             out: &mut RawSink<'_>,
         ) -> Result<(), BatchFailure> {
             self.reads += 1;
+            self.deadlines.push(cx.deadline());
             let value = if self.valueless {
                 RawValue::None
             } else if self.text {
@@ -437,8 +598,13 @@ mod tests {
         let mut cx = Cx::new(&*host, host.mono() + 10_000_000_000);
         let program: &'static [Step<'static>] = alloc::boxed::Box::leak(program.into());
         let mut results = Vec::new();
+        let call = Call {
+            device: 0,
+            args: &NoArgs,
+            step_timeout_ns: 1_000_000_000,
+        };
         let result = host
-            .run(run_into(driver, &mut cx, 0u16, program, &mut results))
+            .run(run_into(driver, &mut cx, &call, program, &mut results))
             .unwrap();
         (result, results)
     }
@@ -556,5 +722,161 @@ mod tests {
         };
         let (result, _) = run_program(&mut driver, &[until(42, 100)]);
         assert_eq!(result, Err(Failure::Unsupported));
+    }
+
+    #[allow(
+        clippy::unwrap_used,
+        reason = "a test helper; a host failure fails the test"
+    )]
+    fn run_with(
+        host: &VirtualHost,
+        driver: &mut Fake,
+        program: &[Step<'static>],
+        args: &[(&str, Scalar)],
+    ) -> (Result<(), Failure<'static>>, Progress) {
+        let mut cx = Cx::new(host, host.mono() + 10_000_000_000);
+        let program: &'static [Step<'static>] = alloc::boxed::Box::leak(program.into());
+        let args = ArgList(args);
+        let call = Call {
+            device: 0,
+            args: &args,
+            step_timeout_ns: 1_000_000_000,
+        };
+        let mut progress = Progress::default();
+        let result = host
+            .run(run_into(driver, &mut cx, &call, program, &mut progress))
+            .unwrap();
+        (result, progress)
+    }
+
+    #[derive(Debug, Default)]
+    struct Progress(Vec<(usize, usize)>);
+
+    impl<'a> Results<'a> for Progress {
+        fn record(&mut self, _into: &'a str, _reading: Reading) {}
+
+        fn progress(&mut self, done: usize, total: usize) {
+            self.0.push((done, total));
+        }
+    }
+
+    #[test]
+    fn an_argument_is_written_where_the_step_names_it() {
+        let host = VirtualHost::new(0);
+        let mut driver = Fake::default();
+        let program = [Step::Write {
+            addr: crate::Cbor::new(&[]),
+            type_name: "u16",
+            value: StepValue::Arg("level"),
+        }];
+        let (result, _) = run_with(&host, &mut driver, &program, &[("level", Scalar::Uint(12))]);
+        assert_eq!(result, Ok(()));
+        assert_eq!(driver.writes, [12]);
+    }
+
+    #[test]
+    fn a_missing_argument_is_unsupported_and_writes_nothing() {
+        let host = VirtualHost::new(0);
+        let mut driver = Fake::default();
+        let program = [Step::Write {
+            addr: crate::Cbor::new(&[]),
+            type_name: "u16",
+            value: StepValue::Arg("level"),
+        }];
+        let (result, _) = run_with(&host, &mut driver, &program, &[]);
+        assert_eq!(result, Err(Failure::Unsupported));
+        assert!(driver.writes.is_empty());
+    }
+
+    #[test]
+    fn a_signed_literal_is_written_as_the_unsigned_type_of_its_step() {
+        let host = VirtualHost::new(0);
+        let mut driver = Fake::default();
+        let program = [Step::Write {
+            addr: crate::Cbor::new(&[]),
+            type_name: "u16",
+            value: StepValue::Literal(RawValue::Int(5)),
+        }];
+        let (result, _) = run_with(&host, &mut driver, &program, &[]);
+        assert_eq!(result, Ok(()));
+        assert_eq!(driver.writes, [5]);
+    }
+
+    #[test]
+    fn a_negative_literal_does_not_fit_an_unsigned_step() {
+        let host = VirtualHost::new(0);
+        let mut driver = Fake::default();
+        let program = [Step::Write {
+            addr: crate::Cbor::new(&[]),
+            type_name: "u16",
+            value: StepValue::Literal(RawValue::Int(-1)),
+        }];
+        let (result, _) = run_with(&host, &mut driver, &program, &[]);
+        assert_eq!(result, Err(Failure::Unsupported));
+    }
+
+    #[test]
+    fn until_matches_a_signed_literal_against_an_unsigned_register() {
+        let host = VirtualHost::new(0);
+        let mut driver = Fake {
+            register: 3,
+            ..Fake::default()
+        };
+        let program = [Step::Until {
+            addr: crate::Cbor::new(&[]),
+            type_name: "u16",
+            equals: RawValue::Int(3),
+            timeout: Duration::from_millis(100),
+        }];
+        let (result, _) = run_with(&host, &mut driver, &program, &[]);
+        assert_eq!(result, Ok(()));
+        assert_eq!(driver.reads, 1);
+    }
+
+    #[test]
+    fn a_cancelled_invocation_stops_before_its_next_step() {
+        let host = VirtualHost::new(0);
+        host.set_cancelled(true);
+        let mut driver = Fake::default();
+        let (result, progress) = run_with(&host, &mut driver, &[write_step(1)], &[]);
+        assert_eq!(result, Err(Failure::Cancelled));
+        assert!(driver.writes.is_empty());
+        assert!(progress.0.is_empty());
+    }
+
+    #[test]
+    fn every_completed_step_reports_progress() {
+        let host = VirtualHost::new(0);
+        let mut driver = Fake::default();
+        let (result, progress) = run_with(
+            &host,
+            &mut driver,
+            &[
+                write_step(1),
+                Step::Wait(Duration::from_millis(5)),
+                write_step(0),
+            ],
+            &[],
+        );
+        assert_eq!(result, Ok(()));
+        assert_eq!(progress.0, [(1, 3), (2, 3), (3, 3)]);
+    }
+
+    #[test]
+    fn each_driver_call_is_bounded_by_the_step_timeout_within_the_program_deadline() {
+        let host = VirtualHost::new(0);
+        let mut driver = Fake::default();
+        let (result, _) = run_with(&host, &mut driver, &[read("first")], &[]);
+        assert_eq!(result, Ok(()));
+        assert_eq!(driver.deadlines, [1_000_000_000]);
+    }
+
+    #[test]
+    fn scalars_compare_by_value_across_numeric_kinds() {
+        assert!(Scalar::Int(1).matches(Scalar::Uint(1)));
+        assert!(Scalar::Uint(2).matches(Scalar::Float(2.0)));
+        assert!(!Scalar::Int(-1).matches(Scalar::Uint(u64::MAX)));
+        assert!(!Scalar::Bool(true).matches(Scalar::Uint(1)));
+        assert!(Scalar::Bool(false).matches(Scalar::Bool(false)));
     }
 }
