@@ -98,6 +98,22 @@ fn context() -> Context {
             ..ProfileInfo::default()
         },
     );
+    c.profiles.insert(
+        "acme/fb@1".into(),
+        ProfileInfo {
+            signals: [
+                ("do_1", signal(Bool, Output, None)),
+                ("do_2", signal(Bool, Output, None)),
+            ]
+            .into_iter()
+            .map(|(k, v)| (k.to_owned(), v))
+            .collect(),
+            fallback: true,
+            fallback_outputs: Some(["do_1".to_owned()].into_iter().collect()),
+            fallback_value: Some(joker_manifest::value::Value::Bool(true)),
+            ..ProfileInfo::default()
+        },
+    );
     c.boards.insert(
         "rpi4".into(),
         BoardInfo {
@@ -222,6 +238,9 @@ fn run(text: &str) -> Report {
 }
 
 const BASE: &str = "[project]\nname = \"t\"\nmode = \"dev\"\n";
+
+const FB: &str =
+    "[devices.fb]\ndriver = \"modbus-tcp\"\naddress = \"10.0.0.3:502\"\nprofile = \"acme/fb@1\"\n";
 const PROD: &str =
     "[project]\nname = \"t\"\njoker = \"1.0\"\nmode = \"prod\"\n[target]\nboard = \"rpi4@1\"\n";
 const MICRO: &str =
@@ -292,6 +311,8 @@ fn cases() -> Vec<Case> {
         ("J0304", site("[outputs.\"pcs.p_set\"]\nsafe = \"0 kW\"\ninterlock = \"pcs.p_ac\"\n").replacen("[outputs.\"pcs.p_set\"]\nsafe = \"0 kW\"\n", "", 1), "interlock that is not a boolean"),
         ("J0301", site("[outputs.\"pcs.p_set\"]\nsafe = \"0 kW\"\nrange = [\"-pcs.f\", \"100 kW\"]\n").replacen("[outputs.\"pcs.p_set\"]\nsafe = \"0 kW\"\n", "", 1), "range bound in another dimension"),
         ("J0205", format!("{BASE}[devices.led]\ndriver = \"gpio\"\n[devices.led.signals]\nact = {{ line = \"GPIO2\", direction = \"output\" }}\n[outputs.\"led.act\"]\nsafe = false\n"), "output without a device fallback"),
+        ("J0205", format!("{BASE}{FB}[outputs.\"fb.do_1\"]\nsafe = true\n[outputs.\"fb.do_2\"]\nsafe = false\n"), "output outside the fallback's applies_to"),
+        ("J0205", format!("{BASE}{FB}[outputs.\"fb.do_1\"]\nsafe = false\n[outputs.\"fb.do_2\"]\nsafe = false\naccept_missing_fallback = \"indicator only, no load\"\n"), "fallback value not as safe as safe"),
         ("J0238", format!("{BASE}[devices.led]\ndriver = \"gpio\"\n[devices.led.signals]\nact = {{ line = \"GPIO2\", direction = \"output\" }}\n[outputs.\"led.act\"]\nsafe = false\nsafer = \"lower\"\naccept_missing_fallback = \"indicator only, no load\"\n"), "safer without a fallback"),
         ("J0277", site("[outputs.\"pcs.p_set\"]\nsafe = \"0 kW\"\naccept_missing_fallback = \"justified somehow\"\n").replacen("[outputs.\"pcs.p_set\"]\nsafe = \"0 kW\"\n", "", 1), "acceptance on an output with a fallback"),
         ("J0270", site("[atomic.a]\noutputs = [\"pcs.p_set\", \"pcs.q_set\"]\n[atomic.b]\noutputs = [\"pcs.p_set\", \"pcs.apply\"]\n"), "output in two atomic groups"),
@@ -511,4 +532,13 @@ fn the_json_schema_is_up_to_date() {
         committed == generated,
         "schema/joker-manifest.schema.json is stale: run `JOKER_BLESS=1 cargo test -p joker-manifest --test sections`"
     );
+}
+
+#[test]
+fn a_fallback_value_as_safe_as_safe_and_an_accepted_uncovered_output_pass() {
+    let text = format!(
+        "{BASE}{FB}[outputs.\"fb.do_1\"]\nsafe = true\n[outputs.\"fb.do_2\"]\nsafe = false\naccept_missing_fallback = \"indicator only, no load\"\n"
+    );
+    let report = run(&text);
+    assert!(!report.codes().contains(&"J0205"), "{}", report.render());
 }

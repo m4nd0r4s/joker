@@ -1472,6 +1472,7 @@ impl Checker<'_> {
                         direction: Direction::Param,
                         type_name: None,
                         raw: BTreeMap::new(),
+                        acquisition: crate::context::Acquisition::NONE,
                     };
                     self.constant(
                         &format!("parameter `{name}`"),
