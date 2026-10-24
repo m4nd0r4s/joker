@@ -2,13 +2,30 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** A `bytes`/`string` device-input signal (e.g. i2c's register reads) actually reaches its signal's slot and is readable over `GET /v1/values`/`jk read`, instead of being silently skipped forever.
+**Goal:** A `bytes`/`string` device-input signal (an i2c buffer, a Modbus string) actually reaches a wide slot with its real value and quality, and is readable over `GET /v1/values`/`jk read`, instead of always reading `bad(config_error)` as it does on `main` today.
 
 **Architecture:** A new `WideSlot` primitive in `joker-core` (same seqlock algorithm as the existing `Slot`, just 96 bytes instead of 32, for payloads up to 64 bytes) lives in a separate, sparse table in `jokerd::shared::Shared`, sized only to signals actually declared `bytes`/`string`. `jokerd::drivers::run_driver`'s settle loop and `jokerd::wire`'s JSON serialization both branch on the signal's type: scalar types keep going through `Shared::slots` exactly as today; `Bytes`/`String` go through the new `Shared::wide_slots` instead. `Slot` itself, and `joker_core::registry::SignalMeta`, are not touched at all.
 
 **Tech Stack:** Rust, `no_std`+`alloc` dual-target (`joker-core`), `std`+`tokio` (`jokerd`), existing `loom` test infrastructure for the lock-free primitive.
 
-**Reference:** Full design at `docs/superpowers/specs/2026-10-23-wide-signal-values-design.md`, §1 and §2. Linear issue AUR-419.
+**Reference:** ADR 0062 (`docs/adr/0062-wide-signal-values.md`) is normative; the design note `docs/superpowers/specs/2026-10-23-wide-signal-values-design.md` (§1 and §2) is background, and where it differs from the ADR the ADR wins. Linear issue AUR-419.
+
+## Revision 2026-10-24 (review of AUR-419)
+
+Read this before any task. The plan was written against `main` of 2026-10-23; the fixes of PR #65 (merged 2026-10-24) changed the code it describes, and a review found three problems with the plan itself.
+
+**Corrected premises.**
+
+- *"The write is silently skipped on both success and failure."* No longer true. Since `05ac394` ("write a bad sample when a real driver's read fails") and `7ac3278` ("decode modbus registers and i2c byte buffers"), `run_driver` stores every settled point through `store_settled` → `settled_sample` → `decode_to_bits`, and `mark_bad`/`mark_all` write `bad(<reason>)` when a link goes down or a device cannot start. A wide-typed signal is therefore no longer stuck at `seq = 0`/`uncertain(initial)`: it reads `bad(config_error)` (no value) on every poll, in its **scalar** slot, because `number_to_bits` has no case for `Bytes`/`String`. The gap is the same in kind (a wide value never arrives) but its symptom changed, and the regression test must assert a real value and a real failure quality in the **wide** slot, not merely `seq > 0`.
+- *"Exactly mirroring what the scalar path already does for a failed read."* True now (it was not when the plan was written): the scalar failure path writes `bad`. The wide path must mirror `settled_sample` (a `bad` status keeps its reason, a value that does not convert is `bad(config_error)`) **and** `mark_all` (link down, device that cannot start).
+- *"Numeric i2c reads need the WideSlot."* No: since `7ac3278` an i2c point typed `u16`/`i16`/… decodes into its scalar signal. Only points declared `string` or `bytes` need this plan. AUR-401's bench smoke test must declare the point `type = "bytes"` to exercise it.
+- *Truncation.* ADR 0062 decision 3 replaces the design's silent truncation: a write of more than 64 B stores zero bytes and `bad(config_error)`. Task 2 follows the ADR.
+- *Decoding.* ADR 0062 decision 5 also covers Modbus `string`/`bytes` points (`OwnedRaw::Regs`), `encoding = "ascii"`/`"utf8"` validation and the 64 B limit. Task 4 implements all of it, not only `Bytes`/`Text`.
+- *Staleness.* `max_age` applies to wide signals (ADR 0062 decision 13); Task 5 reuses `sample`'s staleness grading instead of skipping it.
+
+**File pointers on `main` at `512e1ce`.** `slot.rs` `lo`/`hi`/`join`: lines 166–176 (unchanged). `Shared::slots` is built at `crates/jokerd/src/shared.rs:384-385`; `Plan.signals` ("in path order") at `crates/jokerd/src/plan.rs:160-161`; `SignalPlan.ty` at `plan.rs:90`, and `SignalPlan` now also has `enum_name: Option<String>` (every struct literal below needs `enum_name: None`). The settle write is `store_settled` at `crates/jokerd/src/drivers.rs:306-311`, the failure write `mark_all` at `drivers.rs:465-471`, and `PointTarget` (`drivers.rs:316`) now carries `decode: Decode`; build targets with `jokerd::drivers::point_targets(&plan, i)` instead of struct literals. `drivers.rs` imports `OwnedRaw`, `SampleBuffer`, `Settled` and `settle` at line 19. `GET /v1/values` is `fn values` at `crates/jokerd/src/api.rs:873-893`; `GET /v1/signals?sample=true` reads samples at `api.rs:1652-1662` and needs the same wide branch.
+
+**Workflow.** This repository uses jj, and nothing goes to `main` directly. Work in your own workspace (`jj workspace add ../joker-aur-419 -r main@origin`), check `jj config get user.email` before the first commit, make one atomic commit per task with `jj commit -m "type(scope): summary" -m "why"` (no AI attribution), keep the code free of comments (AGENTS.md invariant 12), then push a branch (`jj bookmark create aur-419-wide-slot-input -r @-` and `jj git push --bookmark aur-419-wide-slot-input`) and open a pull request with base `main` that names AUR-419. Move AUR-419 to In Review; the owner merges.
 
 ---
 
@@ -61,10 +78,7 @@ Expected: existing `slot::tests::*` all still pass (this is a pure visibility wi
 - [ ] **Step 3: Commit**
 
 ```bash
-git add crates/joker-core/src/slot.rs
-git commit -m "refactor(joker-core): widen Slot's word-packing helpers to pub(crate)
-
-Needed by the new WideSlot (same packing scheme, bigger payload) so it
+jj commit -m "refactor(joker-core): widen Slot's word-packing helpers to pub(crate)" -m "Needed by the new WideSlot (same packing scheme, bigger payload) so it
 doesn't duplicate lo/hi/join."
 ```
 
@@ -90,7 +104,7 @@ Create `crates/joker-core/src/wide_slot.rs`:
 //! bigger `Slot`: every scalar signal keeps paying zero cost for a
 //! feature only `bytes`/`string` signals use.
 
-use crate::quality::Quality;
+use crate::quality::{Quality, QualityCode, QualityReason};
 use crate::slot::Collision;
 use crate::slot::{hi, join, lo};
 use crate::sync::{AtomicU32, Ordering, fence};
@@ -189,15 +203,19 @@ impl WideSlot {
     }
 
     /// Stores a new sample and returns its 31-bit sequence number.
-    /// `bytes` longer than [`WIDE_SLOT_CAPACITY`] is truncated, not
-    /// rejected: the owning point's own address (`len: 1..=64`) is the
-    /// real guarantee; this is a last-resort safety net, and `joker-core`
-    /// denies `clippy::panic`.
+    /// `bytes` longer than [`WIDE_SLOT_CAPACITY`] is never truncated: it
+    /// stores zero bytes with `bad(config_error)` (ADR 0062, decision 3).
+    /// Producers check the length first; this is a last line of defence.
     ///
     /// Only the slot's single writer may call this (docs/01 §3.2's own
     /// rule for [`crate::slot::Slot::write`] applies here identically).
     pub fn write(&self, bytes: &[u8], quality: Quality, ts_src: i64, ts_acq: u64) -> u32 {
-        let len = bytes.len().min(WIDE_SLOT_CAPACITY);
+        let (bytes, quality) = if bytes.len() > WIDE_SLOT_CAPACITY {
+            (&[][..], Quality::new(QualityCode::Bad, QualityReason::ConfigError))
+        } else {
+            (bytes, quality)
+        };
+        let len = bytes.len();
         let version = self.version.load(Ordering::Relaxed);
         let busy = version.wrapping_add(1);
         self.version.store(busy, Ordering::Relaxed);
@@ -305,13 +323,15 @@ mod tests {
     }
 
     #[test]
-    fn a_payload_longer_than_64_bytes_is_truncated_not_rejected() {
+    fn a_payload_longer_than_64_bytes_is_bad_config_error_not_truncated() {
         let slot = WideSlot::new();
         let too_long = [b'x'; 100];
         slot.write(&too_long, Quality::GOOD, NO_TS_SRC, 0);
         let s = slot.read(0).unwrap();
-        assert_eq!(s.as_slice().len(), WIDE_SLOT_CAPACITY);
-        assert!(s.as_slice().iter().all(|&b| b == b'x'));
+        assert!(s.as_slice().is_empty());
+        assert_eq!(s.quality().code(), QualityCode::Bad);
+        assert_eq!(s.quality().reason(), QualityReason::ConfigError);
+        assert_eq!(s.seq(), 1);
     }
 
     #[test]
@@ -404,7 +424,7 @@ pub use wide_slot::{WIDE_SLOT_CAPACITY, WideSample, WideSlot};
 Before adding the module to `lib.rs` (Step 2), running the tests fails to compile (`wide_slot` module doesn't exist, confirming RED). After Step 2:
 
 Run: `cargo test -p joker-core --lib wide_slot::`
-Expected: `wide_slot_is_96_bytes_and_aligned`, `empty_wide_slot_reads_initial`, `write_then_read`, `a_payload_longer_than_64_bytes_is_truncated_not_rejected`, `concurrent_readers_never_see_torn_samples` all `ok`.
+Expected: `wide_slot_is_96_bytes_and_aligned`, `empty_wide_slot_reads_initial`, `write_then_read`, `a_payload_longer_than_64_bytes_is_bad_config_error_not_truncated`, `concurrent_readers_never_see_torn_samples` all `ok`.
 
 - [ ] **Step 4: Run the loom test**
 
@@ -415,7 +435,7 @@ Expected: `reader_sees_whole_samples_only` passes.
 
 - [ ] **Step 5: Run a mutation check**
 
-Temporarily change the truncation line `let len = bytes.len().min(WIDE_SLOT_CAPACITY);` to `let len = bytes.len();` (no truncation) and re-run `a_payload_longer_than_64_bytes_is_truncated_not_rejected` — it must fail (this proves the test actually exercises truncation, not just happens to pass). Revert the change.
+Temporarily change the guard `bytes.len() > WIDE_SLOT_CAPACITY` to `false` (so an oversized write is stored) and re-run `a_payload_longer_than_64_bytes_is_bad_config_error_not_truncated` — it must fail or panic on the slice bound (this proves the test exercises the guard). Revert the change.
 
 - [ ] **Step 6: Run clippy**
 
@@ -425,10 +445,7 @@ Expected: clean (no new warnings; `joker-core`'s `[lints.clippy]` denies `unwrap
 - [ ] **Step 7: Commit**
 
 ```bash
-git add crates/joker-core/src/wide_slot.rs crates/joker-core/src/lib.rs
-git commit -m "feat(joker-core): WideSlot, a <=64-byte seqlock last-value slot
-
-Same algorithm as Slot (odd version = write in progress, every field
+jj commit -m "feat(joker-core): WideSlot, a <=64-byte seqlock last-value slot" -m "Same algorithm as Slot (odd version = write in progress, every field
 AtomicU32, no unsafe), sized for bytes/string signals up to 64 bytes
 (docs/02-signal-model.md §2). Slot itself is untouched - zero risk to
 the existing scalar path, which is used by every signal regardless of
@@ -443,7 +460,7 @@ type."
 - Modify: `crates/jokerd/src/shared.rs`
 - Test: `crates/jokerd/tests/shared.rs` (create if it doesn't exist; check first with `ls crates/jokerd/tests/shared.rs`)
 
-**Background:** `jokerd::plan::Plan.signals: Vec<SignalPlan>` is already "in path order" (`crates/jokerd/src/plan.rs:149-156`'s own doc comment), and `Shared::new` already assumes `plan.signals[i]` corresponds to `SignalId(i)` (`crates/jokerd/src/shared.rs:343-344`: `let slots: Box<[Slot]> = (0..plan.signals.len()).map(|_| Slot::new()).collect();`, and elsewhere `shared.slots.get(target.signal.index())`). `SignalPlan.ty: ValueType` is already there (`crates/jokerd/src/plan.rs:89`) — no `joker-core` registry changes are needed to build the wide-signal index; it's a pure `jokerd`-side derived table computed once in `Shared::new`, from data `jokerd` already has.
+**Background:** `jokerd::plan::Plan.signals: Vec<SignalPlan>` is already "in path order" (`crates/jokerd/src/plan.rs:160-161`'s own doc comment), and `Shared::new` already assumes `plan.signals[i]` corresponds to `SignalId(i)` (`crates/jokerd/src/shared.rs:384-385`: `let slots: Box<[Slot]> = (0..plan.signals.len()).map(|_| Slot::new()).collect();`, and elsewhere `shared.slots.get(target.signal.index())`). `SignalPlan.ty: ValueType` is already there (`crates/jokerd/src/plan.rs:90`) — no `joker-core` registry changes are needed to build the wide-signal index; it's a pure `jokerd`-side derived table computed once in `Shared::new`, from data `jokerd` already has.
 
 - [ ] **Step 1: Check whether `crates/jokerd/tests/shared.rs` already exists**
 
@@ -502,12 +519,11 @@ fn a_wide_signal_gets_a_wide_slot_and_a_scalar_signal_does_not() {
         "a bytes signal must resolve to a WideSlot"
     );
 
-    // No scalar signal is declared in this manifest; prove instead that
-    // an id past the end of the wide table (there's exactly one wide
-    // signal here, index 0) resolves to nothing, rather than panicking
-    // or wrapping.
     let out_of_range = joker_core::SignalId(temp_id.0 + 1);
-    assert!(shared.wide_slot(out_of_range).is_none());
+    assert!(
+        shared.wide_slot(out_of_range).is_none(),
+        "an id past the end of the plan resolves to no wide slot"
+    );
 }
 
 #[test]
@@ -563,7 +579,7 @@ Right after the existing `impl Shared { pub fn new(plan: &Plan) -> Self {` line 
         let mut wide_index: Vec<Option<u32>> = Vec::with_capacity(plan.signals.len());
         let mut wide_count: u32 = 0;
         for s in &plan.signals {
-            if matches!(s.ty, ValueType::Bytes | ValueType::String) {
+            if matches!(s.ty, ValueType::Bytes | ValueType::String | ValueType::Record) {
                 wide_index.push(Some(wide_count));
                 wide_count += 1;
             } else {
@@ -610,10 +626,7 @@ Expected: clean.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add crates/jokerd/src/shared.rs crates/jokerd/tests/shared.rs
-git commit -m "feat(jokerd): Shared gains a sparse WideSlot table for bytes/string signals
-
-Built once in Shared::new from plan.signals (already in SignalId
+jj commit -m "feat(jokerd): Shared gains a sparse WideSlot table for bytes/string signals" -m "Built once in Shared::new from plan.signals (already in SignalId
 order, already carries ty: ValueType) - no joker-core registry changes
 needed. Sized only to signals actually declared bytes/string; zero for
 a manifest that declares none."
@@ -621,35 +634,28 @@ a manifest that declares none."
 
 ---
 
-### Task 4: Wire `jokerd::drivers::run_driver`'s settle loop
+### Task 4: Wire the settle and failure paths of `jokerd::drivers`
 
 **Files:**
 - Modify: `crates/jokerd/src/drivers.rs`
 - Test: `crates/jokerd/tests/drivers.rs`
 
-**Background:** `run_driver`'s settle loop (`crates/jokerd/src/drivers.rs`, inside the `while !stop()` loop, the `for s in settled { ... }` block) currently does:
+**Background (on `main` at `512e1ce`):** every settled point goes through
 
 ```rust
-            for s in settled {
-                let Some(target) = targets.iter().find(|t| t.point == s.point) else {
-                    continue;
-                };
-                let Some(bits) = raw_to_bits(&s.value, target.ty) else {
-                    continue;
-                };
-                if let Some(slot) = shared.slots.get(target.signal.index()) {
-                    slot.write(bits, s.status.into(), NO_TS_SRC, now);
-                }
-            }
+fn store_settled(shared: &Shared, target: &PointTarget, settled: &Settled, now: u64) {
+    let (bits, quality) = settled_sample(target, settled);
+    if let Some(slot) = shared.slots.get(target.signal.index()) {
+        slot.write(bits, quality, NO_TS_SRC, settled.ts_hw.unwrap_or(now));
+    }
+}
 ```
 
-(`now` is `let now = host.now().mono_ns;`, assigned the line directly before this loop.)
-
-This never writes for `Bytes`/`Text` on success (`raw_to_bits` has no case for them) or on failure (`s.value` is `OwnedRaw::None` either way, same `None` result). Both must write — success with the real bytes, failure with zero bytes and the real bad `Quality` — exactly mirroring what the scalar path already does for a failed read.
+(`crates/jokerd/src/drivers.rs:306-311`), and a link that goes down or a device that cannot start goes through `mark_all` (`drivers.rs:465-471`), which writes `bad(<reason>)` into the scalar slot of every target. For a `bytes`/`string` signal `settled_sample` calls `decode_to_bits`, which ends in `number_to_bits` with no case for wide types, so the signal reads `bad(config_error)` in its scalar slot on every poll, and the wide slot never receives anything. Both paths must write the wide slot instead, following ADR 0062 decisions 5 and 6: the decoded bytes and the driver's quality on success; zero bytes and the real `bad` quality on failure; zero bytes and `bad(config_error)` for a value that does not decode (wrong raw kind, over 64 B, a `string` that fails its `encoding`).
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `crates/jokerd/tests/drivers.rs` (reuses that file's existing `mod common;` if present — check the file's current imports first; the test below assumes the same top-level imports the file already has, plus the ones listed):
+Append to `crates/jokerd/tests/drivers.rs`. Follow the current shape of `a_read_that_starts_failing_turns_the_slot_bad_instead_of_keeping_the_last_value` in the same file for the `run_driver` call (it returns `()`; `host.run(...)` is unwrapped) and build the targets with `point_targets`, which fills `decode`. Check that the i2c manifest below still loads without errors (the test asserts it) and adjust its keys to ref/01 and ref/03 if it does not:
 
 ```rust
 #[test]
@@ -690,7 +696,7 @@ temp = { type = "bytes", direction = "input", reg = 0, len = 2, poll = "20ms" }
     let plan = I2cPlanner::plan(&views.request()).unwrap();
 
     let (bus, handle) = MemoryI2c::new();
-    handle.preload(0x40, &[0xAB, 0xCD]); // register 0, 2 bytes
+    handle.preload(0x40, &[0xAB, 0xCD]);
     let link = Link::I2c(I2cBus::new(bus));
     let driver = I2cDriver::open(
         &joker_hal::OpenArgs::new(views.request(), plan.view()),
@@ -699,16 +705,12 @@ temp = { type = "bytes", direction = "input", reg = 0, len = 2, poll = "20ms" }
     .unwrap();
 
     let temp_id = loaded.plan.id("sensor.temp").unwrap();
-    let targets = vec![PointTarget {
-        point: 0,
-        signal: temp_id,
-        ty: joker_core::ValueType::Bytes,
-    }];
+    let targets = jokerd::drivers::point_targets(&loaded.plan, 0);
 
     let host = Arc::new(VirtualHost::new(0));
-    let stop_at = 100_000_000u64; // 100 ms of virtual time
+    let stop_at = 100_000_000u64;
     let host_for_stop = Arc::clone(&host);
-    let result = host.run(run_driver(
+    host.run(run_driver(
         driver,
         &*host,
         views.request(),
@@ -720,18 +722,14 @@ temp = { type = "bytes", direction = "input", reg = 0, len = 2, poll = "20ms" }
         None,
         tokio::sync::mpsc::channel(1).1,
         move || host_for_stop.mono() >= stop_at,
-    ));
-    assert!(result.is_ok(), "the loop must end via stop(), not stall");
+    ))
+    .unwrap();
 
     let sample = shared.wide_slot(temp_id).unwrap().read(8).unwrap();
     assert!(sample.seq() > 0, "a successful wide read must advance past seq 0");
     assert_eq!(sample.as_slice(), &[0xAB, 0xCD]);
     assert!(sample.quality().is_good());
 
-    // Now deny the address and prove a FAILED read also writes (the
-    // exact bug found on the bench Pi: today neither success nor
-    // failure ever writes for a wide signal).
-    handle.deny(0x40);
     let host2 = Arc::new(VirtualHost::new(0));
     let (bus2, handle2) = MemoryI2c::new();
     handle2.preload(0x40, &[0xAB, 0xCD]);
@@ -744,7 +742,7 @@ temp = { type = "bytes", direction = "input", reg = 0, len = 2, poll = "20ms" }
     .unwrap();
     let shared2 = Arc::new(Shared::new(&loaded.plan));
     let host2_for_stop = Arc::clone(&host2);
-    let result2 = host2.run(run_driver(
+    host2.run(run_driver(
         driver2,
         &*host2,
         views.request(),
@@ -756,69 +754,47 @@ temp = { type = "bytes", direction = "input", reg = 0, len = 2, poll = "20ms" }
         None,
         tokio::sync::mpsc::channel(1).1,
         move || host2_for_stop.mono() >= stop_at,
-    ));
-    assert!(result2.is_ok());
+    ))
+    .unwrap();
     let failed_sample = shared2.wide_slot(temp_id).unwrap().read(8).unwrap();
     assert!(
         failed_sample.seq() > 0,
         "a FAILED wide read must also advance past seq 0, with a bad quality"
     );
-    assert!(!failed_sample.quality().is_good());
+    assert_eq!(failed_sample.quality().code(), joker_core::QualityCode::Bad);
+    assert!(failed_sample.as_slice().is_empty(), "a bad wide sample carries no bytes");
+    let scalar = shared2.slots[temp_id.index()].read(8).unwrap();
+    assert_eq!(scalar.seq(), 0, "the scalar slot of a wide signal is never written");
 }
 ```
+
+Add a second test, `a_wide_value_that_does_not_decode_is_bad_config_error`, that calls `jokerd::drivers` with a settled `OwnedRaw::Bytes` of 65 bytes, and one with `OwnedRaw::Text` holding a non-ASCII character for a `string` point whose `encoding` is the default `ascii`, and asserts zero bytes and `bad(config_error)` in the wide slot. Add a third, `a_wide_signal_turns_bad_when_its_link_goes_down`, that calls `mark_bad` on wide targets and asserts the wide slot reads `bad(<reason>)`.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
 Run: `cargo test -p jokerd --test drivers a_wide_read_reaches_its_wide_slot_on_success_and_on_failure`
-Expected: FAIL — `Shared::wide_slot` exists (Task 3), but the sample never advances past `seq == 0` (`assert!(sample.seq() > 0, ...)` fails on the first assertion after the successful read), because `run_driver`'s settle loop does not write wide values yet.
+Expected: FAIL — `Shared::wide_slot` exists (Task 3), but the wide sample never advances past `seq == 0`, because `store_settled` writes `bad(config_error)` into the scalar slot instead.
 
-- [ ] **Step 3: Implement the settle-loop branch**
+- [ ] **Step 3: Implement the wide branch of `store_settled` and `mark_all`**
 
-In `crates/jokerd/src/drivers.rs`, inside the `for id in ids { ... }` loop of `run_driver`, replace the inner `for s in settled { ... }` block:
+In `crates/jokerd/src/drivers.rs`:
 
-```rust
-            for s in settled {
-                let Some(target) = targets.iter().find(|t| t.point == s.point) else {
-                    continue;
-                };
-                let Some(bits) = raw_to_bits(&s.value, target.ty) else {
-                    continue;
-                };
-                if let Some(slot) = shared.slots.get(target.signal.index()) {
-                    slot.write(bits, s.status.into(), NO_TS_SRC, s.ts_hw.unwrap_or(now));
-                }
-            }
-```
-
-with:
+1. Add `pub fn decode_to_wide(value: &OwnedRaw, decode: &Decode, ty: ValueType) -> Option<Vec<u8>>` next to `decode_to_bits` (ADR 0062 decision 5): `OwnedRaw::Bytes(b)` as is; `OwnedRaw::Text(t)` as its UTF-8 bytes; `OwnedRaw::Regs(words)` as two bytes per word, big-endian, swapped when `decode.bytes_little`, with no `word_order`; anything else `None`. Then `None` when the result is longer than 64 B, or when `ty` is `String` and the bytes are not valid UTF-8 or, with the point's `encoding = "ascii"` (the default), contain a byte `>= 0x80`. `Decode` does not carry `encoding` yet: add it where `PointTarget` is built from the point's profile entry (`point_targets`). This runs in the io task, not in the cycle, so a `Vec` is allowed; if you prefer, return a `([u8; 64], usize)` instead.
+2. Add `pub fn settled_wide(target: &PointTarget, settled: &Settled) -> (Vec<u8>, Quality)`, the wide twin of `settled_sample`: a `bad` status gives no bytes and keeps its reason; a value that `decode_to_wide` refuses gives no bytes and `bad(config_error)`; otherwise the bytes and the status.
+3. In `store_settled`, before the scalar path:
 
 ```rust
-            for s in settled {
-                let Some(target) = targets.iter().find(|t| t.point == s.point) else {
-                    continue;
-                };
-                let ts_acq = s.ts_hw.unwrap_or(now);
-                if matches!(target.ty, ValueType::Bytes | ValueType::String) {
-                    if let Some(wide) = shared.wide_slot(target.signal) {
-                        let bytes: &[u8] = match &s.value {
-                            OwnedRaw::Bytes(b) => b.as_slice(),
-                            OwnedRaw::Text(t) => t.as_bytes(),
-                            _ => &[],
-                        };
-                        wide.write(bytes, s.status.into(), NO_TS_SRC, ts_acq);
-                    }
-                    continue;
-                }
-                let Some(bits) = raw_to_bits(&s.value, target.ty) else {
-                    continue;
-                };
-                if let Some(slot) = shared.slots.get(target.signal.index()) {
-                    slot.write(bits, s.status.into(), NO_TS_SRC, ts_acq);
-                }
-            }
+    if is_wide(target.ty) {
+        let (bytes, quality) = settled_wide(target, settled);
+        if let Some(wide) = shared.wide_slot(target.signal) {
+            wide.write(&bytes, quality, NO_TS_SRC, settled.ts_hw.unwrap_or(now));
+        }
+        return;
+    }
 ```
 
-`OwnedRaw` is already imported (`crates/jokerd/src/drivers.rs:18`: `use joker_hal::acquire::{OwnedRaw, SampleBuffer, settle};`) — no import change needed for the `match &s.value { OwnedRaw::Bytes(b) => ..., OwnedRaw::Text(t) => ... }` above.
+4. In `mark_all`, for a wide target, write `wide.write(&[], quality, NO_TS_SRC, now)` into its wide slot and skip the scalar slot.
+5. `is_wide(ty)` is `matches!(ty, ValueType::Bytes | ValueType::String | ValueType::Record)`; put it next to `Shared::wide_slot` so Tasks 3, 4 and 6 share it.
 
 - [ ] **Step 4: Run the test to verify it passes**
 
@@ -827,34 +803,32 @@ Expected: `ok`.
 
 - [ ] **Step 5: Run a mutation check**
 
-Temporarily remove the `continue;` right after the wide-write `if` block (so execution falls through into the scalar `raw_to_bits` path for wide signals too) and re-run the test — it must fail or panic (the scalar path's `shared.slots.get(target.signal.index())` would write into the WRONG array slot, since `target.signal.index()` is a dense `SignalId` index, not a `wide_slots` index; for this single-wide-signal manifest it may coincidentally not panic, so instead verify the mutation by asserting `sample.seq()` would be wrong/stale — if the mutation doesn't produce an observable test failure, broaden the test manifest to include a second, scalar signal first, so the two code paths provably diverge). Revert the mutation once confirmed.
+Temporarily remove the `return;` after the wide write in `store_settled` (so a wide point also falls through to the scalar path) and re-run the test: the assertion that the scalar slot of a wide signal is never written must fail. Revert the mutation once confirmed.
 
 - [ ] **Step 6: Run the rest of `jokerd`'s driver tests**
 
 Run: `cargo test -p jokerd --test drivers`
-Expected: `run_driver_reads_and_writes_through_the_real_commit_channel` (the existing GPIO test) and the new i2c test both pass — the scalar path is unchanged for non-wide signals.
+Expected: the existing tests (`run_driver_reads_and_writes_through_the_real_commit_channel`, `a_read_that_starts_failing_turns_the_slot_bad_instead_of_keeping_the_last_value`, `a_value_that_does_not_convert_to_the_signal_type_is_bad_config_error`), `crates/jokerd/tests/raw_bits.rs` and the new ones all pass — the scalar path is unchanged for non-wide signals.
 
 - [ ] **Step 7: Run clippy**
 
 Run: `cargo clippy -p jokerd --all-targets -- -D warnings`
 Expected: clean.
 
-- [ ] **Step 8: Update the module doc comment that is now stale**
+- [ ] **Step 8: Update the module documentation**
 
-`crates/jokerd/src/drivers.rs`'s module doc (top of file) currently says `Bytes` (i2c's byte buffers) "need[s] the raw-to-engineering decode of ref/06 §2.7 ... not implemented anywhere in this codebase yet ... A point using either kind reads as `bad(config_error)` until that decode exists." This is no longer accurate for `Bytes`/`String` — they now reach `WideSlot` directly (raw bytes, no engineering decode needed for a `bytes`/`string` signal — unlike `Regs`, which still has no decode and is unaffected by this change). Update the doc comment to say so: scope the still-true claim to `Regs` only, and note that `Bytes`/`Text` now go through `Shared::wide_slot` instead of `raw_to_bits`.
+The module docstring of `crates/jokerd/src/drivers.rs` describes how `Regs` and `Bytes` are decoded into scalar signals (`decode_to_bits`). Add that `string`/`bytes` signals are decoded by `decode_to_wide` into their wide slot (ADR 0062), and that their scalar slot is never written.
 
 - [ ] **Step 9: Commit**
 
 ```bash
-git add crates/jokerd/src/drivers.rs crates/jokerd/tests/drivers.rs
-git commit -m "fix(jokerd): a bytes/string driver read reaches its WideSlot
-
-The exact gap found deploying the real i2c adapter to the bench Pi:
-raw_to_bits has no case for OwnedRaw::Bytes/Text, so the write was
-silently skipped on both success and failure, leaving the signal
-stuck at seq=0/uncertain(initial) forever. Bytes/Text now write to
-Shared::wide_slot instead - on failure too, with the real bad Quality,
-matching what the scalar path already does on failure."
+jj commit -m "fix(jokerd): a bytes/string driver read reaches its wide slot" -m "A string or bytes signal read bad(config_error) on every poll, in its
+scalar slot, because decode_to_bits has no case for wide types: the
+real i2c adapter on the bench could never deliver a buffer. Settled
+wide points are now decoded per ADR 0062 (bytes, text and Modbus
+registers, the 64 B limit, the ascii/utf8 encoding) and written to the
+signal's wide slot, and a failed read or a link that goes down writes
+the real bad quality there, as the scalar path does."
 ```
 
 ---
@@ -864,13 +838,13 @@ matching what the scalar path already does on failure."
 **Files:**
 - Modify: `crates/jokerd/src/wire.rs`
 
-**Background:** `wire::value(signal: &SignalPlan, bits: u64) -> Value` (`crates/jokerd/src/wire.rs:42-70ish`) converts a scalar signal's `u64` bits to its JSON form. `wire::sample(signal: &SignalPlan, s: &Sample, now_mono_ns: u64, utc_origin_ns: i64) -> Value` (`crates/jokerd/src/wire.rs:105-140`) builds the full JSON object (`path`/`value`/`unit`/`quality`/`reason`/`ts_acq`/`seq`/`age`) for `GET /v1/values`. Both need a wide counterpart. Per `ref/00-conventions.md` §4.1 (already normative, not a new decision): `bytes` → base64, `string` → plain JSON string.
+**Background:** `wire::value(signal: &SignalPlan, bits: u64) -> Value` (`crates/jokerd/src/wire.rs:42-71`) converts a scalar signal's `u64` bits to its JSON form. `wire::sample(signal: &SignalPlan, s: &Sample, now_mono_ns: u64, utc_origin_ns: i64) -> Value` (`crates/jokerd/src/wire.rs:105-141`) builds the full JSON object (`path`/`value`/`unit`/`quality`/`reason`/`ts_acq`/`seq`/`age`) for `GET /v1/values`. Both need a wide counterpart. Per `ref/00-conventions.md` §4.1 (already normative, not a new decision): `bytes` → base64, `string` → plain JSON string.
 
 - [ ] **Step 1: Check what base64 crate (if any) is already a dependency**
 
 Run: `grep -n "base64" crates/jokerd/Cargo.toml Cargo.toml`
 
-If `base64` is already a workspace dependency (used elsewhere, e.g. by `joker-api` for something else), reuse the exact same crate/version `jokerd`'s `Cargo.toml` would need. If it is not yet a dependency anywhere, add it in Step 2 before writing code that uses it.
+On `main` at `512e1ce` no crate depends on `base64`. Adding it is a new dependency: it must pass `cargo deny` and `cargo vet` (ADR 0055); record the audit or exemption in `supply-chain/` in the same commit. A 30-line encoder/decoder in `wire.rs` (standard alphabet, padded, RFC 4648 §4) is an acceptable alternative that avoids the dependency.
 
 - [ ] **Step 2: Add `base64` as a dependency if Step 1 found none**
 
@@ -904,6 +878,7 @@ use joker_core::registry::Direction as CoreDirection;
             max_age_ns: None,
             device: None,
             variants: Vec::new(),
+            enum_name: None,
         };
         assert_eq!(wide_value(&bytes_signal, &[0xAB, 0xCD]), json!("q80="));
 
@@ -927,6 +902,7 @@ use joker_core::registry::Direction as CoreDirection;
             max_age_ns: None,
             device: None,
             variants: Vec::new(),
+            enum_name: None,
         };
         let slot = WideSlot::new();
         slot.write(&[0xAB, 0xCD], Quality::GOOD, joker_core::value::NO_TS_SRC, 5);
@@ -948,9 +924,10 @@ Expected: FAIL to compile — `wide_value`/`wide_sample` don't exist yet.
 In `crates/jokerd/src/wire.rs`, right after the existing `pub fn value(signal: &SignalPlan, bits: u64) -> Value { ... }` function, add:
 
 ```rust
-/// The JSON form of a wide (`bytes`/`string`) signal's raw bytes: base64
-/// for `bytes`, a plain UTF-8 string for `string` (`ref/00-conventions.md`
-/// §4.1's own encoding table — not a new decision here).
+/// The JSON form of a wide (`bytes`/`string`) signal's bytes: base64
+/// (RFC 4648 §4, padded) for `bytes`, the text for `string` (ref/00 §4.1,
+/// ADR 0062). The acquisition stage only stores valid UTF-8 in a `string`
+/// slot, so the `null` arm is unreachable in a correct node.
 pub fn wide_value(signal: &SignalPlan, bytes: &[u8]) -> Value {
     use base64::Engine as _;
     match signal.ty {
@@ -968,17 +945,15 @@ Right after the existing `pub fn sample(signal: &SignalPlan, s: &Sample, now_mon
 
 ```rust
 /// [`sample`]'s counterpart for a wide (`bytes`/`string`) signal's
-/// [`joker_core::WideSample`]. Does not apply `max_age` staleness
-/// re-grading (`sample`'s own `signal.max_age_ns` branch) - wide
-/// signals do not declare `max_age` in this build; revisit together if
-/// that ever changes.
+/// [`joker_core::WideSample`], with the same `max_age` staleness grading
+/// (ADR 0062, decision 13).
 pub fn wide_sample(
     signal: &SignalPlan,
     s: &joker_core::WideSample,
     now_mono_ns: u64,
     utc_origin_ns: i64,
 ) -> Value {
-    let q = s.quality();
+    let q = graded(signal, s.quality(), s.seq(), s.ts_acq(), now_mono_ns);
     let shown = if q.is_bad() || s.seq() == 0 {
         Value::Null
     } else {
@@ -1005,7 +980,7 @@ pub fn wide_sample(
 }
 ```
 
-(`quality_name`/`reason_name` are `pub fn` in this same file at lines 89 and 98; `timestamp`/`duration` are the module's own `pub fn`s defined near the top — all four are the exact same helpers `sample` already calls, confirmed by reading the file.)
+(`quality_name`/`reason_name` are `pub fn` in this same file at lines 89 and 98; `timestamp`/`duration` are the module's own `pub fn`s defined near the top. Extract the `max_age` block at the top of `sample` (`wire.rs:106-117`) into `fn graded(signal: &SignalPlan, q: Quality, seq: u64, ts_acq: u64, now_mono_ns: u64) -> Quality` and call it from both `sample` and `wide_sample`. Add a test that a wide sample older than `2 × max_age` reads `bad(stale)` with `"value": null`.)
 
 - [ ] **Step 6: Run the test to verify it passes**
 
@@ -1020,12 +995,10 @@ Expected: clean.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add crates/jokerd/src/wire.rs crates/jokerd/Cargo.toml Cargo.lock
-git commit -m "feat(jokerd): wide_value/wide_sample JSON serialization
-
-Mirrors value()/sample()'s existing shape for bytes/string signals,
-encoded per ref/00-conventions.md §4.1 (bytes: base64, string: plain
-text) - already-normative, not a new decision."
+jj commit -m "feat(jokerd): JSON form of string and bytes samples" -m "GET /v1/values needs the wide counterpart of value() and sample():
+ref/00 §4.1 and ADR 0062 fix bytes as padded standard base64 and
+string as its text, with the same max_age grading and null for a bad
+or never written sample."
 ```
 
 ---
@@ -1033,7 +1006,7 @@ text) - already-normative, not a new decision."
 ### Task 6: Wire `GET /v1/values` (and therefore `jk read`) to the wide path
 
 **Files:**
-- Modify: `crates/jokerd/src/api.rs:929-949`
+- Modify: `crates/jokerd/src/api.rs:873-893` (`fn values`) and `api.rs:1652-1662` (`GET /v1/signals?sample=true`)
 - Test: `crates/jokerd/tests/api.rs`
 
 **Background:** `fn values(&self, query: &Query) -> Result<Reply, Problem>` (`crates/jokerd/src/api.rs:929-949`) currently reads every selected signal from `v.shared.slots` and serializes with `wire::sample`. It needs to branch to `v.shared.wide_slot`/`wire::wide_sample` for `Bytes`/`String` signals.
@@ -1089,8 +1062,6 @@ temp = { type = "bytes", direction = "input", reg = 0, len = 2, poll = "20ms" }
     c.activate(g.number, None, None).unwrap();
     let controller = Arc::new(Mutex::new(c));
 
-    // Simulate what a real driver's settle path (Task 4) already does:
-    // write directly into the signal's WideSlot.
     {
         let guard = controller.lock().unwrap();
         let (_, _, running) = guard.current().unwrap();
@@ -1160,7 +1131,7 @@ with:
             .into_iter()
             .filter_map(|s| {
                 let id = v.plan.id(&s.path)?;
-                if matches!(s.ty, joker_core::ValueType::Bytes | joker_core::ValueType::String) {
+                if crate::shared::is_wide(s.ty) {
                     let sample = v.shared.wide_slot(id)?.read(8).ok()?;
                     return Some(wire::wide_sample(s, &sample, now, self.utc_origin_ns));
                 }
@@ -1176,7 +1147,7 @@ with:
     }
 ```
 
-`crates/jokerd/src/api.rs` does not import `ValueType` under a bare name (checked: its `use joker_core::...` block at the top imports `Level`/`WriterKind`/etc., not `ValueType`), so the fully-qualified `joker_core::ValueType::Bytes`/`::String` above needs no new import — it compiles as written.
+Apply the same branch to the `sample` that `GET /v1/signals?sample=true` builds at `api.rs:1652-1662`, and extend the test to read the signal there too.
 
 - [ ] **Step 4: Run the test to verify it passes**
 
@@ -1196,11 +1167,10 @@ Expected: clean.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add crates/jokerd/src/api.rs crates/jokerd/tests/api.rs
-git commit -m "feat(jokerd): GET /v1/values (and jk read) serve bytes/string signals
-
-Branches to Shared::wide_slot/wire::wide_sample for a wide-typed
-signal; the scalar path is unchanged."
+jj commit -m "feat(jokerd): GET /v1/values and jk read serve string and bytes signals" -m "A wide signal's sample lives in its wide slot (ADR 0062), so the API
+read it from the unused scalar slot and always showed seq 0. values and
+signals?sample=true now read the wide slot through wire::wide_sample;
+the scalar path is unchanged."
 ```
 
 ---
@@ -1230,9 +1200,9 @@ Expected: builds clean (as it did for the earlier GPIO/i2c adapter work this sam
 
 - [ ] **Step 4: Deploy and re-run AUR-401's own i2c smoke test**
 
-Follow AUR-401's own documented smoke-test procedure (a throwaway manifest with an i2c device at an address nothing answers on, `/dev/i2c-1`) — this is the exact manifest/procedure already used and documented in AUR-401's Linear description. `scp` the new binary to the Pi, back up the old one, run the smoke test, and this time check with `jk read --json`:
+Follow AUR-401's own documented smoke-test procedure (a throwaway manifest with an i2c device at an address nothing answers on, `/dev/i2c-1`), with the point declared `type = "bytes"` (a numeric point already decodes on `main` and would not exercise this plan). `scp` the new binary to the Pi, back up the old one, run the smoke test, and this time check with `jk read --json`:
 
-Expected: `quality` is no longer stuck at `"uncertain"`/`reason: "initial"` with `seq: 0` forever — it should show a real `quality` (likely `"bad"` with a comm-failure-style reason, since address `0x40` still has nothing answering on this bench board's bus per AUR-401's own finding) and `seq` advancing on repeated reads, proving the write now actually happens on every poll.
+Expected: the signal no longer reads `bad(config_error)` from the scalar slot: it shows the driver's real failure quality (likely `"bad"` with a communication reason, since address `0x40` has nothing answering on this bench board's bus per AUR-401's own finding) with `seq` advancing on repeated reads, and, against a device that answers, the bytes in base64.
 
 - [ ] **Step 5: Clean up the Pi back to its steady state**
 
@@ -1242,6 +1212,12 @@ Exactly as done for every prior smoke test this session: stop the test instance,
 
 Mark each task checkbox in AUR-419's description that this plan completed, crediting the actual commit hashes from Tasks 1-6, and update the "Done when" section with the real bench-Pi verification result from Step 4 (quote the actual `quality`/`seq` observed, the same way every other Linear update this session has — grounded in what was actually observed, not a projected outcome).
 
-- [ ] **Step 7: Push**
+- [ ] **Step 7: Open the pull request**
 
-Run: `git push origin main`
+Never push to `main`. Push the bookmark of the stack and open a pull request with base `main`:
+
+Run: `jj bookmark create aur-419-wide-slot-input -r @-` (or `jj bookmark move` if it exists)
+Run: `jj git push --bookmark aur-419-wide-slot-input`
+Run: `gh pr create --base main --head aur-419-wide-slot-input --title "AUR-419: wide slot for bytes/string device inputs" --body "…"` (the body names AUR-419, cites ADR 0062 and summarises the bench result; no AI attribution)
+
+Then move AUR-419 to In Review (`linctl`, with `</dev/null`) and comment the PR URL on it. The owner reviews and merges.
