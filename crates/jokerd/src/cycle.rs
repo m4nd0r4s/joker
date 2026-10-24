@@ -57,6 +57,10 @@ pub struct RunOptions {
     /// The monotonic instant of tick 0 of every group; `None` is the
     /// pacer's current time.
     pub epoch_mono_ns: Option<u64>,
+    /// Outputs put in trip before the first tick: the persisted trips
+    /// (docs/01 §7), which hold across restarts and generations until a
+    /// reset (ADR 0061).
+    pub initial_trips: Vec<SignalId>,
 }
 
 struct Sink<'s> {
@@ -170,6 +174,9 @@ pub fn run(
         if let Some(id) = plan.id(path) {
             outputs.inherit(id, *applied);
         }
+    }
+    for signal in &options.initial_trips {
+        outputs.trip(*signal);
     }
 
     // One `CommitTx` per real-driver device (ref/06 §2.9, step 7): after

@@ -15,7 +15,7 @@ use jokerd::io::{DeviceIo, SimDevice};
 use jokerd::load::instantiate;
 use jokerd::native::NativeTasks;
 use jokerd::pacer::{Monotonic, SystemPacer, VirtualPacer};
-use jokerd::runner::{Running, Start};
+use jokerd::runner::{Restore, Running, Start, StartContext};
 use jokerd::task::{CycleTask, TaskContext, TaskError};
 use jokerd::trace_ring::{Cut, digest_bytes, lock};
 
@@ -330,5 +330,50 @@ fn a_hang_after_a_generation_switch_is_caught_by_the_supervisor() {
             .iter()
             .any(|e| e["record"] == "supervisor_force_safe" && e["groups"][0] == "default"),
         "no supervisor_force_safe entry in {entries:?}"
+    );
+}
+
+/// More manual levels to restore in one group than its inbox holds is a
+/// loud failure (ADR 0061): the generation does not start, and the
+/// decision log says why, instead of dropping the levels that do not fit.
+#[test]
+fn restoring_more_manual_levels_than_an_inbox_holds_fails_the_start() {
+    let plan = Arc::new(plan_with_one_bound_output());
+    let dir = tempfile::tempdir().unwrap();
+    let proposal = joker_core::image::Proposal {
+        writer: joker_core::WriterId(0),
+        signal: plan.id("pcs.a").unwrap(),
+        value: 1,
+        flags: 0,
+        source: joker_core::image::Source::Async,
+        ticket: 0,
+        ttl_ns: 1_000_000_000,
+        intent: joker_core::image::Intent::Write,
+        task: joker_core::image::NO_TASK,
+    };
+    let manual = vec![(0, proposal); jokerd::shared::INBOX_CAPACITY + 1];
+    let tasks: Vec<GroupTasks> = plan.groups.iter().map(|_| Vec::new()).collect();
+    let started = Running::start_with(
+        Arc::clone(&plan),
+        tasks,
+        Box::new(SystemPacer::new(Monotonic::start(), ClockQuality::Unsynced)),
+        log(&dir),
+        start(Some(1)),
+        StartContext {
+            restore: Restore {
+                trips: Vec::new(),
+                manual,
+            },
+            ..StartContext::default()
+        },
+    );
+    let e = started.unwrap_err();
+    assert!(e.0.contains("inbox"), "{e}");
+    let entries = DecisionLog::read_all(&dir.path().join("decisions.jsonl")).unwrap();
+    assert!(
+        entries.iter().any(|e| e["record"] == "restore_failed"
+            && e["what"] == "manual"
+            && e["count"] == jokerd::shared::INBOX_CAPACITY + 1),
+        "{entries:?}"
     );
 }

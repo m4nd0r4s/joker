@@ -117,6 +117,7 @@ pub struct Controller {
     actions: crate::actions::Dispatcher<ActionResult>,
     permit_state: std::collections::BTreeMap<(String, String), Vec<u64>>,
     heartbeat: Arc<crate::supervisor::Heartbeat>,
+    persistent: crate::persistent::Persistent,
 }
 
 /// What invoking an action produced (ref/09 §5.10, ADR 0058). Mirrors
@@ -254,6 +255,8 @@ impl Controller {
         pacer: PacerFactory,
         config: Config,
     ) -> Result<Self, ControlError> {
+        let persistent = crate::persistent::Persistent::load(state_dir, pacer().now())
+            .map_err(ControlError::io)?;
         Ok(Self {
             store: Store::open(&state_dir.join("generations")).map_err(ControlError::io)?,
             log,
@@ -266,7 +269,23 @@ impl Controller {
             actions: crate::actions::Dispatcher::new(),
             permit_state: std::collections::BTreeMap::new(),
             heartbeat: Arc::default(),
+            persistent,
         })
+    }
+
+    /// The persisted trips (docs/01 §7).
+    pub fn trips(&self) -> Arc<crate::trips::TripTable> {
+        self.persistent.trips()
+    }
+
+    /// The manual levels held (docs/16 A13, A14).
+    pub fn manual(&self) -> Arc<crate::manual::ManualTable> {
+        self.persistent.manual()
+    }
+
+    /// The decision log.
+    pub fn log(&self) -> SharedLog {
+        Arc::clone(&self.log)
     }
 
     /// The heartbeat the supervisor of every generation beats, for the
@@ -586,10 +605,12 @@ impl Controller {
             None => Default::default(),
         };
         let plan = Arc::new(loaded.plan);
+        let pacer = (self.pacer)();
+        let restore = self.persistent.restore_for(&plan, pacer.now().mono_ns);
         let running = Running::start_with(
             Arc::clone(&plan),
             tasks,
-            (self.pacer)(),
+            pacer,
             Arc::clone(&self.log),
             Start {
                 generation: number,
@@ -601,9 +622,12 @@ impl Controller {
             },
             StartContext {
                 heartbeat: Some(Arc::clone(&self.heartbeat)),
+                trips: Some(self.persistent.trips()),
+                restore,
             },
         )
         .map_err(|e| ControlError::new("J-E1000", 500, e.0))?;
+        self.persistent.started(&self.log, number, utc_now_ns());
         let devices = self.devices.start(&plan, &running.shared);
         self.permit_state.clear();
         self.active = Some(Active {

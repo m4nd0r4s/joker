@@ -5,15 +5,19 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
+use joker_core::SignalId;
 use joker_core::envelope::Applied;
+use joker_core::image::Proposal;
+use serde_json::{Map, json};
 
 use crate::cycle::{CycleError, CycleExit, GroupTasks, RunOptions, run};
-use crate::decisions::{DecisionWriter, SharedLog};
+use crate::decisions::{DecisionWriter, SharedLog, lock};
 use crate::pacer::Pacer;
 use crate::plan::Plan;
-use crate::shared::Shared;
+use crate::shared::{INBOX_CAPACITY, Shared};
 use crate::supervisor::{Heartbeat, Recorder, Supervisor};
 use crate::trace_ring::{RingFeeder, SharedRing, TraceRing};
+use crate::trips::TripTable;
 
 /// What a generation needs to start.
 #[derive(Debug)]
@@ -40,6 +44,68 @@ pub struct StartContext {
     /// The daemon's supervisor heartbeat, beaten by this generation's
     /// `rt/supervisor` (the watchdog feed reads it, ADR 0061).
     pub heartbeat: Option<Arc<Heartbeat>>,
+    /// The persisted trips, kept up to date with this generation's trip
+    /// transitions (docs/01 §7).
+    pub trips: Option<Arc<TripTable>>,
+    /// What to restore before the first tick.
+    pub restore: Restore,
+}
+
+/// The persisted state a generation restores before its first tick
+/// (docs/01 §7, docs/16 A14, ADR 0061).
+#[derive(Debug, Default)]
+pub struct Restore {
+    /// Outputs to put in trip.
+    pub trips: Vec<SignalId>,
+    /// Manual levels to stage, as proposals, by owning group index.
+    pub manual: Vec<(usize, Proposal)>,
+}
+
+/// Stages `manual` in the inboxes of `shared` before the cycle thread
+/// starts, so that the first tick of each group drains them. A group that
+/// would receive more than its inbox holds is an error, recorded in the
+/// decision log (`restore_failed`), and nothing is staged.
+fn stage_restored(
+    plan: &Plan,
+    shared: &Shared,
+    manual: &[(usize, Proposal)],
+    log: &SharedLog,
+    start: &Start,
+) -> Result<(), CycleError> {
+    for (g, group) in plan.groups.iter().enumerate() {
+        let count = manual.iter().filter(|(owner, _)| *owner == g).count();
+        if count > INBOX_CAPACITY {
+            let mut m = Map::new();
+            m.insert("gen".into(), json!(start.generation));
+            m.insert("record".into(), json!("restore_failed"));
+            m.insert("what".into(), json!("manual"));
+            m.insert("group".into(), json!(group.name));
+            m.insert("count".into(), json!(count));
+            m.insert("capacity".into(), json!(INBOX_CAPACITY));
+            m.insert(
+                "ts".into(),
+                json!(crate::wire::timestamp(crate::wire::utc_now_ns())),
+            );
+            if let Err(e) = lock(log).append(m, true) {
+                eprintln!("jokerd: decision log: {e}");
+            }
+            return Err(CycleError(format!(
+                "group `{}`: {count} manual levels to restore, more than its inbox holds \
+                 ({INBOX_CAPACITY})",
+                group.name
+            )));
+        }
+    }
+    for (g, proposal) in manual {
+        let inbox = shared
+            .inboxes
+            .get(*g)
+            .ok_or_else(|| CycleError(format!("no inbox for group {g}")))?;
+        inbox
+            .push(*proposal)
+            .map_err(|_| CycleError(format!("the inbox of group {g} is full")))?;
+    }
+    Ok(())
 }
 
 /// A generation that is ticking.
@@ -83,6 +149,7 @@ impl Running {
         context: StartContext,
     ) -> Result<Self, CycleError> {
         let shared = Arc::new(Shared::new(&plan));
+        stage_restored(&plan, &shared, &context.restore.manual, &log, &start)?;
         let supervisor = match pacer.monotonic() {
             Some(clock) => Some(
                 Supervisor::spawn(
@@ -107,6 +174,7 @@ impl Running {
             log,
             start.generation,
             start.utc_origin_ns,
+            context.trips,
         );
         let feeder = RingFeeder::spawn(&plan, Arc::clone(&shared), Arc::clone(&ring));
         let spawned = {
@@ -116,6 +184,7 @@ impl Running {
                 inherit: start.inherit,
                 max_ticks: start.max_ticks,
                 epoch_mono_ns: None,
+                initial_trips: context.restore.trips,
             };
             let cpus = start.cpus;
             std::thread::Builder::new()

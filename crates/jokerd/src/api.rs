@@ -45,8 +45,8 @@ pub struct Node {
     name: String,
     state_dir: PathBuf,
     tickets: TicketBook,
-    manual: ManualTable,
-    trips: TripTable,
+    manual: Arc<ManualTable>,
+    trips: Arc<TripTable>,
     traces: Arc<Traces>,
 }
 
@@ -129,32 +129,21 @@ struct View {
 }
 
 impl Node {
-    /// The API state of a daemon.
+    /// The API state of a daemon. The persisted trips and manual levels
+    /// are the controller's, already restored into the running generation
+    /// before its first tick (ADR 0061).
     pub fn new(
         controller: SharedController,
         clock: Monotonic,
         utc_origin_ns: i64,
         state_dir: &Path,
     ) -> std::io::Result<Self> {
-        let now_mono_ns = clock.now_ns();
-        let clock_synced =
-            crate::pacer::SystemPacer::host_clock_quality() == joker_core::ClockQuality::Synced;
-        let (manual, restored) = ManualTable::load(
-            state_dir.to_owned(),
-            utc_now_ns(),
-            now_mono_ns,
-            clock_synced,
-        )?;
-        if !restored.degraded.is_empty() {
-            eprintln!(
-                "jokerd: restored {} manual level(s) without a synced clock (A14): {:?}",
-                restored.degraded.len(),
-                restored.degraded
-            );
-        }
-        let (trips, restored_trips) = TripTable::load(state_dir.to_owned())?;
+        let (manual, trips) = {
+            let c = lock_controller(&controller);
+            (c.manual(), c.trips())
+        };
         let boot_count = state_file::bump_counter(state_dir, "boot_count")?;
-        let node = Self {
+        Ok(Self {
             controller,
             clock,
             utc_origin_ns,
@@ -167,98 +156,7 @@ impl Node {
             manual,
             trips,
             traces: Arc::new(Traces::open(&state_dir.join("traces"))?),
-        };
-        node.restore_manual(now_mono_ns);
-        node.restore_trips(&restored_trips);
-        Ok(node)
-    }
-
-    /// Re-injects every trip loaded by [`TripTable::load`] into the
-    /// running generation's arbiter (docs/01 §7): a persisted trip
-    /// survives a `jokerd` restart. An output that no longer exists in
-    /// the active plan is silently dropped.
-    fn restore_trips(&self, paths: &[String]) {
-        let Some(v) = self.view() else { return };
-        for path in paths {
-            let Some(o) = v.plan.output(path) else {
-                continue;
-            };
-            let Some(signal) = v.plan.id(&o.path) else {
-                continue;
-            };
-            let Some(group_index) = v.plan.groups.iter().position(|g| g.name == o.group) else {
-                continue;
-            };
-            let Some(trips) = v.shared.trips.get(group_index) else {
-                continue;
-            };
-            let _ = trips.push(crate::shared::TripRequest { signal });
-        }
-    }
-
-    /// Syncs [`TripTable`] with the live arbiter state of every output
-    /// (docs/01 §7): called from the handlers that already compute a
-    /// `View` and observe trip status, so a real transition persists
-    /// promptly without a dedicated background thread on the hot cycle
-    /// path.
-    fn sync_trips(&self, v: &View) {
-        for o in &v.plan.outputs {
-            let Some(signal) = v.plan.id(&o.path) else {
-                continue;
-            };
-            match v.shared.trip_since(signal) {
-                Some(since_mono_ns) => {
-                    let since_utc_ns = self.utc_origin_ns.saturating_add(since_mono_ns as i64);
-                    persisted("a trip", self.trips.set_tripped(&o.path, since_utc_ns));
-                }
-                None => {
-                    persisted("a trip", self.trips.clear_tripped(&o.path));
-                }
-            }
-        }
-    }
-
-    /// Re-injects every manual level loaded by [`ManualTable::load`] into
-    /// the running generation's arbiter, so occupancy (not just this
-    /// node's own bookkeeping) survives a restart within TTL (docs/16
-    /// A14). A level whose output or writer no longer exists in the
-    /// active plan is silently dropped: there's nothing to restore it
-    /// into.
-    fn restore_manual(&self, now_mono_ns: u64) {
-        let Some(v) = self.view() else { return };
-        for (path, level, occ) in self.manual.all(now_mono_ns) {
-            let remaining_ns = occ.until_mono_ns.saturating_sub(now_mono_ns);
-            if remaining_ns == 0 {
-                continue;
-            }
-            let Some(o) = v.plan.output(&path) else {
-                continue;
-            };
-            let Some(signal) = v.plan.signal(&o.path) else {
-                continue;
-            };
-            let Some(signal_id) = v.plan.id(&o.path) else {
-                continue;
-            };
-            let Some(writer) = v.plan.writer(&format!("user:manual:{level}")) else {
-                continue;
-            };
-            let Ok(bits) = input_bits(signal, &occ.value) else {
-                continue;
-            };
-            let proposal = Proposal {
-                writer,
-                signal: signal_id,
-                value: bits,
-                flags: 0,
-                source: ProposalSource::Async,
-                ticket: 0,
-                ttl_ns: remaining_ns,
-                intent: Intent::Write,
-                task: NO_TASK,
-            };
-            let _ = self.stage(&v, &[proposal], &o.group);
-        }
+        })
     }
 
     fn view(&self) -> Option<View> {
@@ -450,14 +348,6 @@ impl Node {
             }
             None => (safe.clone(), 0, None, false),
         };
-        if tripped {
-            if let Some(since_mono_ns) = id.and_then(|id| v.shared.trip_since(id)) {
-                let since_utc_ns = self.utc_origin_ns.saturating_add(since_mono_ns as i64);
-                persisted("a trip", self.trips.set_tripped(&o.path, since_utc_ns));
-            }
-        } else {
-            persisted("a trip", self.trips.clear_tripped(&o.path));
-        }
         let active_level = Level::new(level).map_or(json!("none"), |l| json!(l.to_string()));
         let now = self.now_mono();
         let mut levels = Vec::new();
@@ -1128,18 +1018,6 @@ impl Backend for Node {
                 joker_core::envelope::Applied::Relinquish => json!("relinquish"),
                 joker_core::envelope::Applied::Value(b) => wire::value(&signal, b),
             };
-            if r.outcome == Outcome::Tripped
-                && let Some(since_mono_ns) =
-                    v.plan.id(&o.path).and_then(|id| v.shared.trip_since(id))
-            {
-                persisted(
-                    "a trip",
-                    self.trips.set_tripped(
-                        &o.path,
-                        self.utc_origin_ns.saturating_add(since_mono_ns as i64),
-                    ),
-                );
-            }
             ticket["outcome"] = outcome_json(r.outcome, Some(applied));
             ticket["tick"] = json!({"group": o.group, "seq": r.tick});
         }
@@ -1253,7 +1131,6 @@ impl Backend for Node {
 
     fn trips(&self, query: &Query) -> Result<Reply, Problem> {
         let v = self.need_view()?;
-        self.sync_trips(&v);
         let sel = values_of(query, "sel");
         let items: Vec<Value> = v
             .plan
@@ -1263,17 +1140,14 @@ impl Backend for Node {
             .filter_map(|o| {
                 let signal = v.plan.id(&o.path)?;
                 let since_mono_ns = v.shared.trip_since(signal)?;
+                let since = self
+                    .trips
+                    .since(&o.path)
+                    .unwrap_or_else(|| self.utc_origin_ns.saturating_add(since_mono_ns as i64));
                 Some(json!({
                     "output": o.path,
-                    "since": timestamp(self.utc_origin_ns.saturating_add(since_mono_ns as i64)),
+                    "since": timestamp(since),
                     "scope": "output",
-                    // Today the only cause jokerd wires into a trip is an
-                    // out-of-range write with `on_range = "trip"`
-                    // (docs/16 E7); alarm- and group_overrun-triggered
-                    // trips (ADR 0040 Sec7, docs/01 Sec4) aren't wired in
-                    // jokerd yet (no caller of `Outputs::trip()` exists
-                    // in production), so there is nothing else this
-                    // could honestly report yet.
                     "cause": {"kind": "range"},
                 }))
             })
@@ -1520,7 +1394,6 @@ impl Backend for Node {
         let switched = lock_controller(&self.controller)
             .activate(g.number, window, Some(user(who)))
             .map_err(problem)?;
-        persisted("the manual levels", self.manual.clear(self.now_mono()));
         Ok(Reply::ok(self.generation_json(&switched.generation)))
     }
 
@@ -1562,7 +1435,6 @@ impl Backend for Node {
         let switched = lock_controller(&self.controller)
             .rollback(to, Some(user(who)), Some(req.reason))
             .map_err(problem)?;
-        persisted("the manual levels", self.manual.clear(self.now_mono()));
         Ok(Reply::ok(self.generation_json(&switched.generation)))
     }
 
