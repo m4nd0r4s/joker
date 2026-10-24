@@ -1,5 +1,6 @@
 //! The runtime half of `modbus-rtu`: one request per batch on the serial
-//! line, coil writes with their echo, and every failure mapped to the batch
+//! line, coil writes with their echo, the reads and writes of a step by
+//! address (`raw-access`, ADR 0073), and every failure mapped to the batch
 //! failures of ref/06 §2.8.
 //!
 //! The driver makes one attempt per call; retries are the core's. Before
@@ -10,13 +11,14 @@ use std::vec::Vec;
 
 use joker_hal::types::{J0852, J0853};
 use joker_hal::{
-    BatchFailure, CommittedWrite, ConnectOut, Cx, Driver, DriverError, HealthOut, IoError, Link,
-    MonoNs, OpenArgs, PointId, RawSample, RawSink, RawValue, ReadBatch, SerialPort, WriteAcks,
-    WriteKind, WriteStatus, code,
+    AddrRead, AddrWrite, BatchFailure, CommittedWrite, ConnectOut, Cx, Driver, DriverError,
+    HealthOut, IoError, Link, MonoNs, OpenArgs, PointId, RawSample, RawSink, RawValue, ReadBatch,
+    SerialPort, WriteAcks, WriteKind, WriteStatus, code,
 };
 
+use crate::access::Access;
 use crate::plan::{Address, Quirks, Request, check_point, span, unit_id};
-use crate::rtu::{MAX_ADU, crc_ok, read_data_len, request};
+use crate::rtu::{MAX_ADU, crc_ok, frame, read_data_len, request};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Point {
@@ -67,6 +69,7 @@ impl Fail {
             Self::Exception(1) => BatchFailure::DeviceFault("exception 1: illegal function"),
             Self::Exception(2) => BatchFailure::DeviceFault("exception 2: illegal data address"),
             Self::Exception(3) => BatchFailure::DeviceFault("exception 3: illegal data value"),
+            Self::Exception(4) => BatchFailure::DeviceFault("exception 4: server device failure"),
             Self::Exception(_) => BatchFailure::DeviceFault("exception"),
         }
     }
@@ -89,7 +92,7 @@ impl ModbusRtu {
     async fn exchange(
         &mut self,
         cx: &Cx<'_>,
-        frame: &[u8; 8],
+        frame: &[u8],
         body_len: usize,
         out: &mut [u8; MAX_ADU],
     ) -> Result<usize, Fail> {
@@ -296,6 +299,49 @@ impl Driver for ModbusRtu {
                 failed_group = Some(a.group);
             }
             acks.set(k, status, Some(cx.now().mono_ns));
+        }
+    }
+
+    async fn read_addr(
+        &mut self,
+        cx: &mut Cx<'_>,
+        req: &AddrRead<'_>,
+        out: &mut RawSink<'_>,
+    ) -> Result<(), BatchFailure> {
+        let access = Access::parse(req.addr, req.type_name)?;
+        let (request, n) = frame(self.unit, access.read()?.as_bytes());
+        let data_len = access.read_data_len();
+        let mut buf = [0u8; MAX_ADU];
+        let len = self
+            .exchange(cx, &request[..n], 1 + data_len, &mut buf)
+            .await
+            .map_err(Fail::batch)?;
+        if usize::from(buf[2]) != data_len || len != 5 + data_len {
+            return Err(BatchFailure::CommFailure("wrong byte count"));
+        }
+        let value = access.decode(&buf[3..3 + data_len])?;
+        let sample = RawSample {
+            ts_hw: Some(cx.now().mono_ns),
+            ..RawSample::good(0, value)
+        };
+        if out.push(sample).is_err() {
+            self.counters.dropped_samples += 1;
+        }
+        Ok(())
+    }
+
+    async fn write_addr(
+        &mut self,
+        cx: &mut Cx<'_>,
+        req: &AddrWrite<'_>,
+    ) -> Result<(), BatchFailure> {
+        let access = Access::parse(req.addr, req.type_name)?;
+        let (request, n) = frame(self.unit, access.write(req.value)?.as_bytes());
+        let mut buf = [0u8; MAX_ADU];
+        match self.exchange(cx, &request[..n], 4, &mut buf).await {
+            Ok(8) if buf[..6] == request[..6] => Ok(()),
+            Ok(_) => Err(BatchFailure::CommFailure("unexpected response")),
+            Err(f) => Err(f.batch()),
         }
     }
 

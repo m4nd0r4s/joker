@@ -452,3 +452,71 @@ fn a_full_sample_ring_counts_every_dropped_sample() {
     assert_eq!(u64::from(bench.read_into_full_ring(3).unwrap()), points);
     assert!(bench.counters().contains(&("dropped_samples", points)));
 }
+
+#[test]
+fn a_step_program_drives_the_bench_by_address() {
+    use joker_hal::RawValue;
+    use joker_hal::cbor::{Cbor, Value};
+    use joker_hal::interpreter::{NoArgs, Scalar};
+    use joker_hal::steps::{Step, StepValue};
+
+    let p = profile();
+    let req = p.request(
+        "esp",
+        1,
+        S,
+        100 * MS,
+        serial_bus("esp32", "/dev/ttyUSB0", 115_200),
+    );
+    let views = req.views();
+    let plan = ModbusPlanner::plan(&views.request()).unwrap();
+    let (rig, port) = new_rig();
+    let mut bench: Bench<'_, ModbusRtu> = Bench::open(
+        rig.host.clone(),
+        views.request(),
+        plan.view(),
+        Link::Serial(port),
+    )
+    .unwrap();
+    bench.connect().unwrap();
+
+    let at =
+        |at: u64, fc: u64| Value::map([("at", Value::Uint(at)), ("fc", Value::Uint(fc))]).encode();
+    let led = at(0, 5);
+    let firmware = at(0, 3);
+    let rssi = at(1, 4);
+    let uptime = at(2, 4);
+    let program = [
+        Step::Write {
+            addr: Cbor::new(&led),
+            type_name: "bool",
+            value: StepValue::Literal(RawValue::Bool(true)),
+        },
+        Step::Read {
+            addr: Cbor::new(&firmware),
+            type_name: "u16",
+            into: "firmware",
+        },
+        Step::Read {
+            addr: Cbor::new(&rssi),
+            type_name: "i16",
+            into: "rssi",
+        },
+        Step::Read {
+            addr: Cbor::new(&uptime),
+            type_name: "u32",
+            into: "uptime",
+        },
+    ];
+    let read = bench.steps(&program, &NoArgs, 2 * S).unwrap().unwrap();
+    let values: Vec<_> = read.iter().map(|(k, r)| (*k, r.value)).collect();
+    assert_eq!(
+        values,
+        [
+            ("firmware", Scalar::Uint(1)),
+            ("rssi", Scalar::Int(-67)),
+            ("uptime", Scalar::Uint(0x0001_0002)),
+        ]
+    );
+    assert!(rig.esp.lock().unwrap().led);
+}

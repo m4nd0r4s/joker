@@ -16,6 +16,18 @@ pub fn request(transaction: u16, unit: u8, function: u8, a: u16, b: u16) -> [u8;
     [t0, t1, 0, 0, l0, l1, unit, function, a0, a1, b0, b1]
 }
 
+/// An MBAP frame of any request PDU: transaction id, unit, PDU. Returns
+/// the buffer and the length of the frame in it.
+pub fn frame(transaction: u16, unit: u8, pdu: &[u8]) -> ([u8; MAX_ADU], usize) {
+    let mut out = [0u8; MAX_ADU];
+    let n = pdu.len().min(MAX_ADU - 7);
+    let [t0, t1] = transaction.to_be_bytes();
+    let [l0, l1] = (n as u16 + 1).to_be_bytes();
+    out[..7].copy_from_slice(&[t0, t1, 0, 0, l0, l1, unit]);
+    out[7..7 + n].copy_from_slice(&pdu[..n]);
+    (out, 7 + n)
+}
+
 /// The MBAP header's `length` field: how many bytes follow it (unit +
 /// PDU).
 pub fn header_length(frame: &[u8]) -> Option<u16> {
@@ -51,6 +63,12 @@ mod tests {
                 0x00, 0x01, 0x00, 0x00, 0x00, 0x06, 0x01, 0x03, 0x00, 0x00, 0x00, 0x01
             ]
         );
+    }
+
+    #[test]
+    fn a_frame_of_a_pdu_is_the_same_as_a_request() {
+        let (f, n) = frame(1, 1, &[3, 0, 0, 0, 1]);
+        assert_eq!(f[..n], request(1, 1, 3, 0, 1));
     }
 
     #[test]

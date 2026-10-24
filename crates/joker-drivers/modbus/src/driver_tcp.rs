@@ -1,5 +1,6 @@
 //! The runtime half of `modbus-tcp`: one TCP connection per device,
-//! reconnected on demand, MBAP-framed requests, and every failure mapped
+//! reconnected on demand, MBAP-framed requests, the reads and writes of a
+//! step by address (`raw-access`, ADR 0073), and every failure mapped
 //! to the batch failures of ref/06 §2.8 (ADR: same PDU/exception handling
 //! as `modbus-rtu`, only the framing and the transport differ).
 
@@ -8,13 +9,14 @@ use std::vec::Vec;
 use embedded_io_async::{Read, Write};
 use joker_hal::types::{J0852, J0853};
 use joker_hal::{
-    BatchFailure, CommittedWrite, ConnectOut, Cx, Driver, DriverError, HealthOut, IoError, Link,
-    MonoNs, OpenArgs, PointId, RawSample, RawSink, RawValue, ReadBatch, TcpEndpoint, WriteAcks,
-    WriteKind, WriteStatus, code,
+    AddrRead, AddrWrite, BatchFailure, CommittedWrite, ConnectOut, Cx, Driver, DriverError,
+    HealthOut, IoError, Link, MonoNs, OpenArgs, PointId, RawSample, RawSink, RawValue, ReadBatch,
+    TcpEndpoint, WriteAcks, WriteKind, WriteStatus, code,
 };
 
+use crate::access::Access;
 use crate::plan::{Address, Quirks, Request, check_point, span, unit_id};
-use crate::tcp::{MAX_ADU, header_length, read_data_len, request, transaction_of};
+use crate::tcp::{MAX_ADU, frame, header_length, read_data_len, request, transaction_of};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Point {
@@ -65,6 +67,7 @@ impl Fail {
             Self::Exception(1) => BatchFailure::DeviceFault("exception 1: illegal function"),
             Self::Exception(2) => BatchFailure::DeviceFault("exception 2: illegal data address"),
             Self::Exception(3) => BatchFailure::DeviceFault("exception 3: illegal data value"),
+            Self::Exception(4) => BatchFailure::DeviceFault("exception 4: server device failure"),
             Self::Exception(_) => BatchFailure::DeviceFault("exception"),
         }
     }
@@ -112,7 +115,7 @@ impl ModbusTcp {
     async fn exchange(
         &mut self,
         cx: &Cx<'_>,
-        frame: &[u8; 12],
+        frame: &[u8],
         body_len: usize,
         transaction: u16,
         out: &mut [u8; MAX_ADU],
@@ -332,6 +335,56 @@ impl Driver for ModbusTcp {
                 failed_group = Some(a.group);
             }
             acks.set(k, status, Some(cx.now().mono_ns));
+        }
+    }
+
+    async fn read_addr(
+        &mut self,
+        cx: &mut Cx<'_>,
+        req: &AddrRead<'_>,
+        out: &mut RawSink<'_>,
+    ) -> Result<(), BatchFailure> {
+        let access = Access::parse(req.addr, req.type_name)?;
+        let pdu = access.read()?;
+        let transaction = self.transaction();
+        let (request, n) = frame(transaction, self.unit, pdu.as_bytes());
+        let data_len = access.read_data_len();
+        let mut buf = [0u8; MAX_ADU];
+        let len = self
+            .exchange(cx, &request[..n], 1 + data_len, transaction, &mut buf)
+            .await
+            .map_err(Fail::batch)?;
+        if usize::from(buf[8]) != data_len || len != 9 + data_len {
+            return Err(BatchFailure::CommFailure("wrong byte count"));
+        }
+        let value = access.decode(&buf[9..9 + data_len])?;
+        let sample = RawSample {
+            ts_hw: Some(cx.now().mono_ns),
+            ..RawSample::good(0, value)
+        };
+        if out.push(sample).is_err() {
+            self.counters.dropped_samples += 1;
+        }
+        Ok(())
+    }
+
+    async fn write_addr(
+        &mut self,
+        cx: &mut Cx<'_>,
+        req: &AddrWrite<'_>,
+    ) -> Result<(), BatchFailure> {
+        let access = Access::parse(req.addr, req.type_name)?;
+        let pdu = access.write(req.value)?;
+        let transaction = self.transaction();
+        let (request, n) = frame(transaction, self.unit, pdu.as_bytes());
+        let mut buf = [0u8; MAX_ADU];
+        match self
+            .exchange(cx, &request[..n], 4, transaction, &mut buf)
+            .await
+        {
+            Ok(12) if buf[7..12] == request[7..12] => Ok(()),
+            Ok(_) => Err(BatchFailure::CommFailure("unexpected response")),
+            Err(f) => Err(f.batch()),
         }
     }
 
