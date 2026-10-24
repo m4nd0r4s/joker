@@ -21,7 +21,7 @@ use crate::generations::{Activation, GenState, Generation, Origin, Store, descri
 use crate::load::{LoadError, Loaded, instantiate, load};
 use crate::pacer::Pacer;
 use crate::plan::Plan;
-use crate::runner::{Running, Start};
+use crate::runner::{Running, Start, StartContext};
 use crate::task::TaskProvider;
 use crate::trace_ring::digest_bytes;
 
@@ -116,6 +116,7 @@ pub struct Controller {
     confirming: Option<Confirming>,
     actions: crate::actions::Dispatcher<ActionResult>,
     permit_state: std::collections::BTreeMap<(String, String), Vec<u64>>,
+    heartbeat: Arc<crate::supervisor::Heartbeat>,
 }
 
 /// What invoking an action produced (ref/09 §5.10, ADR 0058). Mirrors
@@ -264,7 +265,14 @@ impl Controller {
             confirming: None,
             actions: crate::actions::Dispatcher::new(),
             permit_state: std::collections::BTreeMap::new(),
+            heartbeat: Arc::default(),
         })
+    }
+
+    /// The heartbeat the supervisor of every generation beats, for the
+    /// watchdog feed to read without this controller's lock (ADR 0061).
+    pub fn heartbeat(&self) -> Arc<crate::supervisor::Heartbeat> {
+        Arc::clone(&self.heartbeat)
     }
 
     /// The store.
@@ -578,7 +586,7 @@ impl Controller {
             None => Default::default(),
         };
         let plan = Arc::new(loaded.plan);
-        let running = Running::start(
+        let running = Running::start_with(
             Arc::clone(&plan),
             tasks,
             (self.pacer)(),
@@ -590,6 +598,9 @@ impl Controller {
                 max_ticks: None,
                 utc_origin_ns: self.config.utc_origin_ns,
                 cpus: crate::resources::rt_cpus(&loaded.manifest),
+            },
+            StartContext {
+                heartbeat: Some(Arc::clone(&self.heartbeat)),
             },
         )
         .map_err(|e| ControlError::new("J-E1000", 500, e.0))?;

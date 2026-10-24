@@ -1,10 +1,13 @@
 //! Hardware watchdog feed and systemd's own software watchdog (docs/01
 //! §8, ref/03 §2.3.1): keeps `/dev/watchdog*` and `sd_notify
-//! WATCHDOG=1` fed while the active generation's `rt/supervisor` has
-//! not found a stale group. Stops feeding the moment it has — the
-//! intentional escalation that lets the board-level reset (or
-//! systemd's `WatchdogSec`) recover what jokerd's own supervisor
-//! could not (docs/01 §20's "Dead jokerd" row).
+//! WATCHDOG=1` fed while the running generation's `rt/supervisor` beats
+//! the daemon's [`Heartbeat`] and has not found a stale group (ADR
+//! 0061). A supervisor that stops beating (dead, or starved) skips the
+//! feed; one that forced `safe` stops it for good — the intentional
+//! escalation that lets the board-level reset (or systemd's
+//! `WatchdogSec`) recover what jokerd's own supervisor could not
+//! (docs/01 §20's "Dead jokerd" row). The feed reads only the
+//! heartbeat's atomics: it never takes the controller's lock.
 //!
 //! The board a node runs on is not resolved from the manifest/lock at
 //! runtime anywhere in this codebase yet (that pipeline — `[target]
@@ -27,7 +30,7 @@ use std::time::Duration;
 
 use joker_manifest::board::Watchdog;
 
-use crate::daemon::{SharedController, lock_controller};
+use crate::supervisor::{Feed, HEARTBEAT_MAX_AGE, Heartbeat};
 
 /// Feeds at least this often when the board declares no `[watchdog]`
 /// (only `sd_notify` has anything to feed then): matches the
@@ -40,13 +43,23 @@ const DEFAULT_INTERVAL: Duration = Duration::from_secs(3);
 /// `SOCK_DGRAM` Unix socket send, nothing `jokerd`'s own
 /// `unsafe_code = "forbid"` needs an exception for.
 pub fn sd_notify(msg: &str) {
-    let Ok(socket_path) = std::env::var("NOTIFY_SOCKET") else {
-        return;
-    };
+    if let Some(socket) = notify_socket() {
+        sd_notify_to(&socket, msg);
+    }
+}
+
+/// `$NOTIFY_SOCKET`, when the daemon runs under `systemd` with
+/// `Type=notify`.
+pub fn notify_socket() -> Option<PathBuf> {
+    std::env::var_os("NOTIFY_SOCKET").map(PathBuf::from)
+}
+
+/// Sends `msg` to the `sd_notify` socket at `socket`, best-effort.
+pub fn sd_notify_to(socket: &Path, msg: &str) {
     let Ok(sock) = UnixDatagram::unbound() else {
         return;
     };
-    let _ = sock.send_to(msg.as_bytes(), socket_path);
+    let _ = sock.send_to(msg.as_bytes(), socket);
 }
 
 /// How often to feed, from the board's declared `timeout`/`max_timeout`
@@ -70,7 +83,7 @@ fn feed_interval(watchdog: Option<&Watchdog>) -> Duration {
 
 /// The `svc/watchdog` thread of a daemon (not of one generation: the
 /// board does not change across a generation switch, so this spans
-/// them, re-checking whichever generation is active at each feed).
+/// them, reading the heartbeat every generation's supervisor beats).
 #[derive(Debug)]
 pub struct WatchdogFeeder {
     stop: Arc<AtomicBool>,
@@ -78,12 +91,17 @@ pub struct WatchdogFeeder {
 }
 
 impl WatchdogFeeder {
-    /// Starts feeding. `device` is the board's declared `[watchdog]`,
+    /// Starts feeding. `watchdog` is the board's declared `[watchdog]`,
     /// if any (`BoardPeripherals::watchdog`, from the file `--board`
-    /// named); without one, only `sd_notify` is fed, at
-    /// [`DEFAULT_INTERVAL`]. A device that fails to open is a warning,
-    /// not fatal: `sd_notify` still runs.
-    pub fn spawn(watchdog: Option<Watchdog>, controller: SharedController) -> Self {
+    /// named); `notify` is the `sd_notify` socket, if any. Without a
+    /// device, only `sd_notify` is fed, at [`DEFAULT_INTERVAL`]. A device
+    /// that fails to open is a warning, not fatal: `sd_notify` still
+    /// runs. A thread that cannot be started is an error.
+    pub fn spawn(
+        watchdog: Option<Watchdog>,
+        heartbeat: Arc<Heartbeat>,
+        notify: Option<PathBuf>,
+    ) -> std::io::Result<Self> {
         let interval = feed_interval(watchdog.as_ref());
         let device_path = watchdog.and_then(|w| w.device).map(PathBuf::from);
         let stop = Arc::new(AtomicBool::new(false));
@@ -100,30 +118,43 @@ impl WatchdogFeeder {
                         path.display()
                     );
                 }
-                loop {
-                    if flag.load(Ordering::Acquire) {
-                        return;
+                let mut skipping = false;
+                while !flag.load(Ordering::Acquire) {
+                    match heartbeat.feed(HEARTBEAT_MAX_AGE) {
+                        Feed::Stop => {
+                            eprintln!(
+                                "jokerd: watchdog: the supervisor found a stale group; \
+                                 stopping the feed so the hardware/systemd watchdog can \
+                                 restart the daemon (AUR-274)"
+                            );
+                            return;
+                        }
+                        Feed::Skip => {
+                            if !skipping {
+                                eprintln!(
+                                    "jokerd: watchdog: the supervisor has not beaten in \
+                                     {HEARTBEAT_MAX_AGE:?}; not feeding (ADR 0061)"
+                                );
+                            }
+                            skipping = true;
+                        }
+                        Feed::Feed => {
+                            skipping = false;
+                            if let Some(f) = device.as_mut() {
+                                let _ = f.write_all(&[0]);
+                            }
+                            if let Some(socket) = &notify {
+                                sd_notify_to(socket, "WATCHDOG=1\n");
+                            }
+                        }
                     }
-                    let stale = lock_controller(&controller)
-                        .current()
-                        .is_some_and(|(_, _, r)| r.is_stale());
-                    if stale {
-                        eprintln!(
-                            "jokerd: watchdog: the supervisor found a stale group; \
-                             stopping the feed so the hardware/systemd watchdog can \
-                             restart the daemon (AUR-274)"
-                        );
-                        return;
-                    }
-                    if let Some(f) = device.as_mut() {
-                        let _ = f.write_all(&[0]);
-                    }
-                    sd_notify("WATCHDOG=1\n");
                     std::thread::sleep(interval);
                 }
-            })
-            .ok();
-        Self { stop, handle }
+            })?;
+        Ok(Self {
+            stop,
+            handle: Some(handle),
+        })
     }
 
     /// Stops feeding and waits for the thread to end.
@@ -179,11 +210,80 @@ mod tests {
         assert_eq!(feed_interval(Some(&w)), DEFAULT_INTERVAL);
     }
 
+    fn fast_board() -> Option<Watchdog> {
+        Some(Watchdog {
+            device: None,
+            timeout: Some("300ms".to_owned()),
+            min_timeout: None,
+            max_timeout: None,
+        })
+    }
+
+    fn listener(dir: &tempfile::TempDir) -> (UnixDatagram, PathBuf) {
+        let path = dir.path().join("notify");
+        let sock = UnixDatagram::bind(&path).unwrap();
+        sock.set_read_timeout(Some(Duration::from_millis(50)))
+            .unwrap();
+        (sock, path)
+    }
+
+    fn feeds_within(sock: &UnixDatagram, window: Duration) -> usize {
+        let start = std::time::Instant::now();
+        let mut buf = [0u8; 64];
+        let mut n = 0;
+        while start.elapsed() < window {
+            if let Ok(len) = sock.recv(&mut buf) {
+                assert_eq!(&buf[..len], b"WATCHDOG=1\n");
+                n += 1;
+            }
+        }
+        n
+    }
+
     #[test]
-    fn sd_notify_without_notify_socket_does_not_panic() {
-        // No assertion beyond "did not panic": there is no observable
-        // side effect to check without a real systemd socket, and
-        // $NOTIFY_SOCKET is unset in the test environment.
-        sd_notify("WATCHDOG=1\n");
+    fn with_no_supervisor_running_the_feed_goes_on() {
+        let dir = tempfile::tempdir().unwrap();
+        let (sock, path) = listener(&dir);
+        let feeder =
+            WatchdogFeeder::spawn(fast_board(), Arc::new(Heartbeat::new()), Some(path)).unwrap();
+        assert!(feeds_within(&sock, Duration::from_millis(400)) >= 2);
+        feeder.stop();
+    }
+
+    #[test]
+    fn a_supervisor_that_stops_beating_stops_the_feed() {
+        let dir = tempfile::tempdir().unwrap();
+        let (sock, path) = listener(&dir);
+        let heartbeat = Arc::new(Heartbeat::new());
+        heartbeat.arm();
+        let beats = Arc::clone(&heartbeat);
+        let supervisor = std::thread::spawn(move || {
+            let start = std::time::Instant::now();
+            while start.elapsed() < Duration::from_millis(400) {
+                beats.beat();
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        });
+        let feeder =
+            WatchdogFeeder::spawn(fast_board(), Arc::clone(&heartbeat), Some(path)).unwrap();
+        assert!(feeds_within(&sock, Duration::from_millis(350)) >= 2);
+        supervisor.join().unwrap();
+        feeds_within(&sock, HEARTBEAT_MAX_AGE + Duration::from_millis(150));
+        assert_eq!(feeds_within(&sock, Duration::from_millis(400)), 0);
+        heartbeat.beat();
+        assert!(feeds_within(&sock, Duration::from_millis(300)) >= 1);
+        feeder.stop();
+    }
+
+    #[test]
+    fn a_forced_safe_stops_the_feed_for_good() {
+        let dir = tempfile::tempdir().unwrap();
+        let (sock, path) = listener(&dir);
+        let heartbeat = Arc::new(Heartbeat::new());
+        heartbeat.force();
+        let feeder =
+            WatchdogFeeder::spawn(fast_board(), Arc::clone(&heartbeat), Some(path)).unwrap();
+        assert_eq!(feeds_within(&sock, Duration::from_millis(300)), 0);
+        feeder.stop();
     }
 }

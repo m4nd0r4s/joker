@@ -12,7 +12,7 @@ use crate::decisions::{DecisionWriter, SharedLog};
 use crate::pacer::Pacer;
 use crate::plan::Plan;
 use crate::shared::Shared;
-use crate::supervisor::{Recorder, Supervisor};
+use crate::supervisor::{Heartbeat, Recorder, Supervisor};
 use crate::trace_ring::{RingFeeder, SharedRing, TraceRing};
 
 /// What a generation needs to start.
@@ -31,6 +31,15 @@ pub struct Start {
     /// CPU ids to pin the cycle thread to (`[resources] rt.cpus`,
     /// `resources::rt_cpus`); empty does nothing.
     pub cpus: Vec<usize>,
+}
+
+/// What a generation receives from the daemon that runs it, beyond
+/// [`Start`].
+#[derive(Debug, Default)]
+pub struct StartContext {
+    /// The daemon's supervisor heartbeat, beaten by this generation's
+    /// `rt/supervisor` (the watchdog feed reads it, ADR 0061).
+    pub heartbeat: Option<Arc<Heartbeat>>,
 }
 
 /// A generation that is ticking.
@@ -57,9 +66,21 @@ impl Running {
     pub fn start(
         plan: Arc<Plan>,
         tasks: Vec<GroupTasks>,
+        pacer: Box<dyn Pacer>,
+        log: SharedLog,
+        start: Start,
+    ) -> Result<Self, CycleError> {
+        Self::start_with(plan, tasks, pacer, log, start, StartContext::default())
+    }
+
+    /// [`Running::start`], with what the daemon hands every generation.
+    pub fn start_with(
+        plan: Arc<Plan>,
+        tasks: Vec<GroupTasks>,
         mut pacer: Box<dyn Pacer>,
         log: SharedLog,
         start: Start,
+        context: StartContext,
     ) -> Result<Self, CycleError> {
         let shared = Arc::new(Shared::new(&plan));
         let supervisor = match pacer.monotonic() {
@@ -73,6 +94,7 @@ impl Running {
                         generation: start.generation,
                         utc_origin_ns: start.utc_origin_ns,
                     },
+                    context.heartbeat.unwrap_or_default(),
                 )
                 .map_err(|e| CycleError(format!("cannot start the supervisor thread: {e}")))?,
             ),
@@ -131,13 +153,6 @@ impl Running {
     /// True while the cycle thread runs.
     pub fn is_running(&self) -> bool {
         self.cycle.as_ref().is_some_and(|h| !h.is_finished())
-    }
-
-    /// Whether this generation's `rt/supervisor` has ever found a stale
-    /// group (AUR-274 phase 4: the hardware-watchdog feed stops the
-    /// moment this turns true).
-    pub fn is_stale(&self) -> bool {
-        self.supervisor.as_ref().is_some_and(Supervisor::is_stale)
     }
 
     /// Stops after the current tick, drains the services and returns the

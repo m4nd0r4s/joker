@@ -498,6 +498,14 @@ pub async fn serve_unix(
     backend: Arc<dyn Backend>,
     shutdown: impl std::future::Future<Output = ()> + Send + 'static,
 ) -> std::io::Result<()> {
+    let listener = bind_unix(socket)?;
+    serve_listener(listener, backend, shutdown).await
+}
+
+/// Binds the API's Unix socket with mode 0660, replacing a stale socket
+/// file, so that a caller can tell its readiness (`sd_notify READY=1`)
+/// only once clients can connect. Must be called within a Tokio runtime.
+pub fn bind_unix(socket: &Path) -> std::io::Result<UnixListener> {
     if socket.exists() {
         std::fs::remove_file(socket)?;
     }
@@ -510,6 +518,16 @@ pub async fn serve_unix(
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(socket, std::fs::Permissions::from_mode(0o660))?;
     }
+    Ok(listener)
+}
+
+/// Serves the API on a socket bound by [`bind_unix`] until `shutdown`
+/// resolves.
+pub async fn serve_listener(
+    listener: UnixListener,
+    backend: Arc<dyn Backend>,
+    shutdown: impl std::future::Future<Output = ()> + Send + 'static,
+) -> std::io::Result<()> {
     let app = router(backend).into_make_service_with_connect_info::<Peer>();
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown)
