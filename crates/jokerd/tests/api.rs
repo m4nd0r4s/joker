@@ -832,7 +832,6 @@ async fn the_action_catalog_follows_the_contract() {
 async fn resetting_a_trip_follows_the_contract() {
     let f = start_with(&effective_with_trippable_output()).await;
 
-    // Not tripped yet: resolves immediately, no tick needed.
     let not_tripped = f
         .call(
             "POST",
@@ -841,8 +840,8 @@ async fn resetting_a_trip_follows_the_contract() {
             Some(json!({"reason": "probe", "wait": true})),
         )
         .await;
-    assert_eq!(not_tripped.status, 200, "{}", not_tripped.json());
-    assert_eq!(not_tripped.json()["result"], "not_tripped");
+    assert_eq!(not_tripped.status, 409, "{}", not_tripped.json());
+    assert_eq!(not_tripped.json()["code"], "J-E1120");
 
     // An out-of-range manual write trips it (on_range = "trip").
     let write = f

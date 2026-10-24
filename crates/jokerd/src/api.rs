@@ -1236,7 +1236,13 @@ impl Backend for Node {
         };
         let result = self.reset_one(&v, &o.path, &o.group, req.wait);
         let item = self.record_reset(&v, &o.path, &user(who), &req.reason, &result);
-        result?;
+        if result? == "not_tripped" {
+            return Err(Problem::new(
+                "J-E1120",
+                409,
+                format!("`{}` is not in trip", o.path),
+            ));
+        }
         Ok(Reply::ok(item))
     }
 
