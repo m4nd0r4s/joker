@@ -69,5 +69,6 @@
 | [0070](0070-state-write-failures-orphaned-trips-boot-count-and-jokerd-flags.md) | State write failures, trips of outputs a generation removed, the startup counter in the API, and `jokerd`'s bench flags |
 | [0071](0071-prometheus-metrics-exposition.md) | The Prometheus `/metrics` exposition: endpoint, role, names, labels and summaries |
 | [0073](0073-raw-access-in-the-catalog-drivers-and-the-wire-double.md) | Access by address in the catalog drivers, and the wire double of the action suites |
+| [0074](0074-subscription-resume-re-resolution-and-sampling-budget.md) | Subscription resumption, re-resolution on a generation swap, and the sampling budget |
 
 Changing a decision = writing a new ADR that replaces it, and updating the affected documents in the same set of commits.

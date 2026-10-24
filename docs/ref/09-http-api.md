@@ -288,7 +288,8 @@ Token bucket per principal. When exceeded: `J-E1014` (429) with `Retry-After`. T
 | WebSocket message from the client | 64 KiB | close 1009 |
 | WebSocket message from the server | 1 MiB (batches are split) | — |
 | subscriptions per connection | 64 | `J-E1903` |
-| sampling budget of the node (all subscriptions) | 1,000,000 samples/s | `J-E1903` |
+| sampling budget of the node (all subscriptions; ADR 0074) | 1,000,000 samples/s | `J-E1903` |
+| sessions kept for resumption | 16, for 60 s (ADR 0074) | `J-E1907` |
 | stored write tickets | 10 min | `J-E1110` (404) |
 | generations kept for rollback | the last 10 | `J-E1613` |
 | pending generation not activated | 1 h | `J-E1614` (410) |
@@ -847,9 +848,10 @@ An unknown `op` is `J-E1901`; an unknown topic, `J-E1902`; a malformed message, 
 | `data` | data | `sub`, `seq`, `items` |
 | `resync` | complete state (initial, after a `gap`, after a `resume` without replay) | `sub`, `seq`, `items` |
 | `gap` | lost items | `sub`, `lost`, `reason` (`overflow`, `intake_overflow`, `resume_unavailable`, `generation`, `role_changed`), `ts` |
-| `resolved` | the generation changed and the selector resolves to another list | `sub`, `generation`, `added`, `removed` |
+| `resolved` | the generation changed and the selector resolves to another list, before any `data` with an added path (ADR 0074) | `sub`, `generation`, `added`, `removed` |
 | `heartbeat` | 15 s without another message | `ts` |
-| `pong`, `unsubscribed`, `resumed`, `subscriptions` | responses | |
+| `resumed` | response to `resume` (ADR 0074) | `id`, `session`, `subs`: one `{sub, result}` per requested subscription, `result` = `replayed` \| `resync` \| `unknown` |
+| `pong`, `unsubscribed`, `subscriptions` | responses | |
 | `error` | error of a request or of a subscription | `id`, `sub`, `problem` (RFC 9457) |
 | `closing` | before the server closes | `code`, `problem` |
 
@@ -879,7 +881,7 @@ An unknown `op` is `J-E1901`; an unknown topic, `J-E1902`; a malformed message, 
 ### 6.5 Rate and coalescing
 
 - **State topics** (`signals`, `outputs`, `status`, `metrics`, `signal_trace`) are **sampled**, not queued. At each `min_interval`, the server reads the current state and sends what changed (`mode = change`, default: only signals with a new `seq`) or everything (`mode = interval`). Between two sends, the intermediate samples are dropped on purpose: it is the same *latest-wins* policy of the output boxes (document 01, §3.4). The jump in the `seq` of each signal tells the client how many samples were coalesced.
-- `min_interval`: default `100ms` in `signals`, `outputs` and `signal_trace`; `1s` in `status` and `metrics`. Minimum `10ms` (`J-E1905`); in `outputs`, the minimum is the period of the owning group; in `status` and `metrics`, `1s`.
+- `min_interval`: default `100ms` in `signals`, `outputs` and `signal_trace`; `1s` in `status` and `metrics`. Minimum `10ms` (`J-E1905`); in `outputs`, the minimum is the shortest period among the groups that own the resolved outputs, and the default is raised to it (ADR 0074); in `status` and `metrics`, `1s`.
 - **Event topics** are not coalesced: each item is delivered, or its drop is declared with a `gap`.
 - `initial: true` (default): the first message is a `resync` with the current state (state topics) or the active alarms (`alarms`).
 
@@ -898,12 +900,12 @@ An unknown `op` is `J-E1901`; an unknown topic, `J-E1902`; a malformed message, 
 2. **State:** a slow client only receives less often. The sampler does not generate the next message while the previous one has not left the queue of the connection, and the effective rate drops on its own.
 3. **Events:** each subscription has a ring of `buffer` items (64–4,096, default 1,024). When it is full, the oldest go and the client receives a `gap` with `lost`. In `alarms`, the `gap` is followed by a `resync` with the current table of alarms, so that the state is never wrong.
 4. **Connection:** if the output queue (1 MiB) stays full for more than **30 s**, the server sends `closing` and closes with **4008** (`J-E1906`). The queue counts the bytes of the messages it holds; it is full when a message did not fit, until it drains below 1 MiB, and the server waits at most 5 s for the `closing` and the close frame to leave before it drops the connection (ADR 0063). A client that does not read does not hold memory forever.
-5. **Node budget:** the sum of the sampling rates of all subscriptions is limited to 1,000,000 samples/s. A subscription that exceeds it is refused (`J-E1903`), with the rate that still fits in the `detail`.
+5. **Node budget:** the sum of the sampling rates of all subscriptions is limited to 1,000,000 samples/s. A subscription that exceeds it is refused (`J-E1903`), with the rate that still fits in the `detail`. The rate of a subscription is its resolved items (at least 1) times the samples per second of its `min_interval`; an event subscription counts one read per interval. A resumed or re-resolved subscription is not checked again, and `Metrics.api.sampled_per_s` is the sum (ADR 0074).
 
 ### 6.7 Resumption after a reconnection
 
-- The server keeps the state of a session (subscriptions, event rings and the last 256 messages sent of each subscription, up to 1 MiB) for `resume_window` (60 s) after the connection drops.
-- The client connects again and sends `resume` with the old `session` and the last `seq` of each subscription. For each one, the server answers in `resumed` with `replayed` (it resends the messages after `last_seq`) or `resync` (it sends the current state and, on event topics, a `gap` with `resume_unavailable`).
+- The server keeps the state of a session (subscriptions, event rings and the last 256 messages sent of each subscription, up to 1 MiB) for `resume_window` (60 s) after the connection drops, whatever the cause; at most 16 sessions are kept, the oldest going first (ADR 0074).
+- The client connects again and sends `resume`, before any `subscribe`, with the old `session` and the last `seq` of each subscription. For each one, the server answers in `resumed` with `replayed` (it resends the messages after `last_seq`), `resync` (it sends the current state and, on event topics, a `gap` with `resume_unavailable` whose `lost` counts the messages it could not resend) or `unknown`. The connection takes over the old `session`; subscriptions it does not name end; the items of event topics that arrived meanwhile are delivered after the cursor (ADR 0074).
 - Outside the window, or after a restart of `jokerd` (different `boot_id`), the session no longer exists: `J-E1907`, and the client subscribes again. For old events, the path is REST with a range (`/v1/alarm-events`, `/v1/decisions`, `/v1/events`), which reads from the historian.
 - Resumption requires the same principal. Another principal with the same `session` is `J-E1907`.
 
@@ -915,7 +917,7 @@ An unknown `op` is `J-E1901`; an unknown topic, `J-E1902`; a malformed message, 
 ### 6.9 Generation swap and role
 
 - On a generation swap, each subscription with selectors is resolved again. If the list changes, a `resolved` arrives with `added` and `removed`; the paths that survive continue without interruption. A `SignalId` is never sent.
-- The role is recomputed. If it drops, the subscriptions that required the old role end with `gap` (`role_changed`) and `error`; the connection continues.
+- The role is recomputed (at most once a second, ADR 0074). If it drops, the subscriptions that required the old role end with `gap` (`role_changed`) and `error`; the connection continues.
 
 ### 6.10 Close codes
 
@@ -946,7 +948,7 @@ data: {"op":"data","sub":"s1","seq":42,"items":[…]}
 : hb
 ```
 
-- `id` is `<session>.<seq>`. The browser resends it in `Last-Event-ID` when it reconnects, and that is an implicit `resume` with the rules of §6.7.
+- `id` is `<session>.<seq>`. The browser resends it in `Last-Event-ID` when it reconnects, and that is an implicit `resume` with the rules of §6.7. When the session cannot be resumed, the request starts a new one as if the header were absent, and an event topic begins with a `gap` (`resume_unavailable`) (ADR 0074).
 - Heartbeat: the comment line `: hb` every 15 s.
 - SSE counts toward the connection limit and the sampling budget like a WebSocket connection.
 
