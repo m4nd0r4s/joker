@@ -14,6 +14,7 @@ joker-hal = { workspace = true, features = ["std", "plan"] }
 [dev-dependencies]
 joker-hal = { workspace = true, features = ["testing"] }
 joker-core.workspace = true
+joker-units.workspace = true
 
 [lints]
 workspace = true

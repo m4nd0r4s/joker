@@ -29,7 +29,7 @@ pub const DESCRIPTOR: Descriptor = Descriptor {
     protocols: &["gpio"],
     buses: &[BusKind::None],
     instance: InstanceMode::Device,
-    capabilities: Capabilities::of(&[Capability::Write]),
+    capabilities: Capabilities::of(&[Capability::Write, Capability::RawAccess]),
     interface: INTERFACE,
     micro: false,
     license: "Apache-2.0 OR MIT",

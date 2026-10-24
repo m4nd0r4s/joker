@@ -16,6 +16,12 @@ the line never starts at a level the manifest did not declare. An output
 with `safe = "relinquish"` is refused: a line has no device logic to hand
 control back to.
 
+Access by address (`raw-access`, ADR 0073): the steps of a profile's
+actions read any line one of the device's points requests and write a
+line one of its outputs requests, as `bool`, with the step address's own
+`active_low`. Any other line is `config-error`: the host only requests
+the lines the points declare.
+
 Not yet supported: named lines (only integer `line` indices), `edges`
 (interrupt-driven push reads), `timestamp` and `debounce`. A point
 declaring any of these is a manifest error, not a silent no-op.

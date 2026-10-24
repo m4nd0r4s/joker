@@ -1338,6 +1338,7 @@ version = "0.0.0"
 dependencies = [
  "joker-core",
  "joker-hal",
+ "joker-units",
 ]
 
 [[package]]
