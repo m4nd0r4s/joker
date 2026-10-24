@@ -699,10 +699,7 @@ pub fn router(backend: Arc<dyn Backend>) -> Router {
 /// The router with the given subscription limits instead of those of ref/09
 /// (tests use short ones).
 pub fn router_with(backend: Arc<dyn Backend>, limits: ws::Limits) -> Router {
-    let engine = ws::Engine {
-        limits,
-        stats: Arc::default(),
-    };
+    let engine = ws::Engine::new(limits);
     Router::new()
         .route("/v1/info", get(info))
         .route("/v1/health", get(health))

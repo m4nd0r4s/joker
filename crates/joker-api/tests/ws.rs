@@ -197,5 +197,114 @@ async fn a_client_that_stops_reading_is_closed_with_4008_and_its_drops_are_count
     let api = &resync["items"][0]["api"];
     assert!(api["dropped"].as_u64().unwrap() > 0, "{resync}");
     assert_eq!(api["connections"], 1, "{resync}");
-    assert_eq!(api["subscriptions"], 1, "{resync}");
+    assert_eq!(
+        api["subscriptions"], 0,
+        "the first snapshot is read before the subscription counts: {resync}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_subscription_beyond_the_sampling_budget_is_refused_with_what_fits() {
+    let f = start(Limits {
+        sampling_budget: 50,
+        ..Limits::default()
+    })
+    .await;
+    let mut ws = connect(&f.socket).await;
+    let _welcome = next_json(&mut ws).await;
+    for i in 0..3 {
+        send(
+            &mut ws,
+            json!({"op": "subscribe", "id": format!("s{i}"), "topic": "signals", "sel": ["a.*"], "min_interval": "100ms", "initial": false}),
+        )
+        .await;
+    }
+    let replies = [
+        next_json(&mut ws).await,
+        next_json(&mut ws).await,
+        next_json(&mut ws).await,
+    ];
+    assert_eq!(replies[0]["op"], "subscribed");
+    assert_eq!(replies[1]["op"], "subscribed");
+    assert_eq!(replies[2]["op"], "error", "{:?}", replies[2]);
+    assert_eq!(replies[2]["problem"]["code"], "J-E1903");
+    let detail = replies[2]["problem"]["detail"].as_str().unwrap();
+    assert!(
+        detail.contains("20 samples/s") && detail.contains("10 still fit"),
+        "{detail}"
+    );
+
+    let (_, _, body) = common::http_get(&f.socket, "/v1/metrics").await;
+    let metrics: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(metrics["api"]["sampled_per_s"], 40, "{metrics}");
+    assert_eq!(metrics["api"]["subscriptions"], 2, "{metrics}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn outputs_sample_no_faster_than_their_fastest_group() {
+    let f = start(Limits::default()).await;
+    let mut ws = connect(&f.socket).await;
+    let _welcome = next_json(&mut ws).await;
+    send(
+        &mut ws,
+        json!({"op": "subscribe", "id": "slow", "topic": "outputs", "sel": ["o.slow"], "min_interval": "100ms"}),
+    )
+    .await;
+    let error = next_json(&mut ws).await;
+    assert_eq!(error["op"], "error");
+    assert_eq!(error["problem"]["code"], "J-E1905");
+    assert!(
+        error["problem"]["detail"].as_str().unwrap().contains("1s"),
+        "{error}"
+    );
+
+    send(
+        &mut ws,
+        json!({"op": "subscribe", "id": "default", "topic": "outputs", "sel": ["o.slow"], "initial": false}),
+    )
+    .await;
+    let subscribed = next_json(&mut ws).await;
+    assert_eq!(subscribed["op"], "subscribed", "{subscribed}");
+    assert_eq!(subscribed["min_interval"], "1s");
+
+    send(
+        &mut ws,
+        json!({"op": "subscribe", "id": "both", "topic": "outputs", "sel": ["o.*"], "min_interval": "20ms", "initial": false}),
+    )
+    .await;
+    let subscribed = next_json(&mut ws).await;
+    assert_eq!(subscribed["op"], "subscribed", "{subscribed}");
+    assert_eq!(subscribed["resolved"], 2);
+    assert_eq!(subscribed["min_interval"], "20ms");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_generation_swap_sends_resolved_before_the_new_paths() {
+    let f = start(Limits::default()).await;
+    let mut ws = connect(&f.socket).await;
+    let _welcome = next_json(&mut ws).await;
+    send(
+        &mut ws,
+        json!({"op": "subscribe", "id": "r", "topic": "signals", "sel": ["a.*"], "min_interval": "50ms"}),
+    )
+    .await;
+    let _subscribed = next_json(&mut ws).await;
+    let resync = next_json(&mut ws).await;
+    assert_eq!(resync["op"], "resync");
+
+    f.stub.generation.store(2, Ordering::SeqCst);
+    f.stub.added.store(true, Ordering::SeqCst);
+    f.stub.removed.store(true, Ordering::SeqCst);
+    let resolved = next_json(&mut ws).await;
+    assert_eq!(resolved["op"], "resolved", "{resolved}");
+    assert_eq!(resolved["sub"], resync["sub"]);
+    assert_eq!(resolved["generation"]["gen"], 2);
+    assert_eq!(resolved["added"], json!(["a.added"]));
+    assert_eq!(resolved["removed"], json!(["a.still"]));
+    let data = next_json(&mut ws).await;
+    assert_eq!(data["op"], "data", "{data}");
+    assert_eq!(data["items"].as_array().unwrap().len(), 1, "{data}");
+    assert_eq!(data["items"][0]["path"], "a.added");
+    let quiet = texts_for(&mut ws, Duration::from_millis(300)).await;
+    assert!(quiet.is_empty(), "the surviving path continues: {quiet:?}");
 }
