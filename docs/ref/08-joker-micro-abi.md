@@ -507,7 +507,7 @@ When a new generation (through flash) lacks a **required** entry with the same n
 
 | Component | RAM |
 |---|---|
-| slot per signal | 32 B (+ 2 × 64 B of arena per `string`/`bytes` signal) |
+| slot per signal | 32 B (+ 96 B of wide slot per `string`/`bytes` signal, ADR 0062) |
 | process image | 16 B per latched port per group |
 | output (envelope, arbiter, double-buffered box) | 96 B + 24 B per declared writer |
 | expression state | the `state_len` of each program; windows: 16 B per sample |

@@ -639,17 +639,17 @@ group          = "fast"
 | Key | Type | Req. | Default | Validation | Origin | Phase |
 |---|---|---|---|---|---|---|
 | `safe` | `Value<S>` or `"relinquish"` | **yes** | — (none; ADR 0006) | missing `J0201`; type `J0231`; must be constant `J0232`; outside the constant `range` `J0203`; `relinquish` only in drivers that support it `J0207` | 03 §6 | 1.0 |
-| `safer` | `"lower"` \| `"higher"` \| `"equal"` | no | `"equal"` | how to compare the equipment fallback with `safe` (M1, `J0205`); with `relinquish` it does not apply; without a device fallback it is ignored (`J0238`, warning) | 03 §6 | 1.0 |
-| `safe_ramp` | `Rate<S>` | no | — (going to `safe` is immediate) | `J0202` | 03 §6 | 1.0 |
+| `safer` | `"lower"` \| `"higher"` \| `"equal"` | no | `"equal"` | how to compare the equipment fallback with `safe` (M1, `J0205`); with `relinquish` it does not apply; without a device fallback it is ignored (`J0238`, warning); on a `string` or `bytes` output only `"equal"` (`J0233`) | 03 §6 | 1.0 |
+| `safe_ramp` | `Rate<S>` | no | — (going to `safe` is immediate) | `J0202`; on a `string` or `bytes` `J0233` | 03 §6 | 1.0 |
 | `interlock` | `Expr<bool>` | no | — (always permitted) | step 2; `Bad` counts as false; `Uncertain` too, unless `permit_uncertain` | 03 §6 | 1.0 |
 | `permit_uncertain` | `Bool` | no | `false` | applies to `interlock` and to the `range` limits with expressions (E6) | 03 §9.1 | 1.0 |
 | `on_interlock` | `"safe"` \| `"hold"` | no | `"safe"` | 16 E3; also applies to `requires_good` (16 E4) | 03 §6 | 1.0 |
 | `requires_good` | `List<Path \| Selector>` (set) | no | `[]` | step 3; unknown path `J0101` | 03 §6 | 1.0 |
 | `grace` | `Duration` | no | `"0s"` | 16 E4; accepts zero | 03 §6 | 1.0 |
-| `range` | `[Limit, Limit]`, with `Limit` = `Quantity<S>` or `Expr<number>` | no | — (no range step) | two elements, minimum < maximum when both are constant (`J0230`); dimension `J0107`; expressions E6; on a `bool` or `enum` `J0233` | 03 §6 | 1.0 |
-| `on_range` | `"clamp"` \| `"reject"` \| `"trip"` | no | `"clamp"` | step 4 | 03 §6 | 1.0 |
-| `rate` | `Rate<S>` | no | — | step 5; relative to the last applied value (16 E2); `J0202`; on a `bool` or `enum` `J0233` | 03 §6 | 1.0 |
-| `deadband` | `Quantity` (difference) | no | — | step 6; on a `bool` or `enum` `J0233` | 03 §6 | 1.0 |
+| `range` | `[Limit, Limit]`, with `Limit` = `Quantity<S>` or `Expr<number>` | no | — (no range step) | two elements, minimum < maximum when both are constant (`J0230`); dimension `J0107`; expressions E6; on a `bool`, `enum`, `string` or `bytes` `J0233` | 03 §6 | 1.0 |
+| `on_range` | `"clamp"` \| `"reject"` \| `"trip"` | no | `"clamp"` | step 4; on a `string` or `bytes` `J0233` | 03 §6 | 1.0 |
+| `rate` | `Rate<S>` | no | — | step 5; relative to the last applied value (16 E2); `J0202`; on a `bool`, `enum`, `string` or `bytes` `J0233` | 03 §6 | 1.0 |
+| `deadband` | `Quantity` (difference) | no | — | step 6; on a `bool`, `enum`, `string` or `bytes` `J0233` | 03 §6 | 1.0 |
 | `min_interval` | `Duration` | no | `"0s"` | step 6 | 03 §6 | 1.0 |
 | `max_actuations` | `Budget` | no | — | step 6: an actuation is an applied write with a value different from the previous one; `Suppressed` and keepalive do not count (16 E8); exhausted → `Rejected(Budget)` and alarm `joker.output.<s>.budget`; syntax `J0159` | 03 §6 | 1.0 |
 | `max_lease` | `Duration` | no | `"15m"` | ≤ `"24h"` (`J0255`); lease of each writer ≤ `max_lease` (`J0213`) | 03 §6 | 1.0 |
@@ -672,7 +672,7 @@ group          = "fast"
 | Key | Type | Req. | Default | Validation |
 |---|---|---|---|---|
 | `verify.readback` | `Path` of an input | yes | — | must be an input, with the same dimension (`J0235`) |
-| `verify.tolerance` | `Quantity` (difference) | cond. | — (exact equality) | required on `f64`/`f32` outputs (`J0235`) |
+| `verify.tolerance` | `Quantity` (difference) | cond. | — (exact equality) | required on `f64`/`f32` outputs (`J0235`); on a `string` or `bytes` output `J0233` |
 | `verify.within` | `Duration` | no | 2 × `poll` of the `readback` device | ≥ one `poll` of that device (`J0235`) |
 
 An output that does not confirm becomes `Uncertain(NotConfirmed)` and fires `joker.output.<s>.unconfirmed` (document 01, §7).

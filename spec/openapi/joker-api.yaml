@@ -4056,12 +4056,15 @@ components:
     Value:
       description: >-
         Value in JSON (ref/00, §4.1). Numbers in the signal unit; i64/u64 outside ±2^53 as a decimal string;
-        enum by variant name; bytes in base64; null only with quality bad(nan) or no value.
+        enum by variant name; string as its text; bytes in base64 (RFC 4648 §4, standard alphabet, padded;
+        ADR 0062); null only with quality bad(nan) or no value.
       type: [boolean, number, string, 'null']
     ValueInput:
       description: >-
         Input value. Number in the signal unit, quantity literal ("50 kW", converted; wrong dimension
-        is J0107), boolean, variant name, decimal string for large integers, base64 for bytes.
+        is J0107), boolean, variant name, decimal string for large integers, the text for string, base64
+        (RFC 4648 §4, standard alphabet, padded) for bytes; string and bytes up to 64 B, otherwise J-E1036
+        (ADR 0062).
       type: [boolean, number, string]
     GenSelector:
       type: string
