@@ -302,6 +302,7 @@ Token bucket per principal. When exceeded: `J-E1014` (429) with `Retry-After`. T
 | `application/x-ndjson` | bulky lists (§3.5) |
 | `text/csv` | `GET /v1/history`, `GET /v1/decisions` (columns of §5.5 and §5.7) |
 | `text/event-stream` | `GET /v1/stream` |
+| `text/plain; version=0.0.4; charset=utf-8` | `GET /metrics`, the Prometheus text exposition (ADR 0071) |
 | `application/toml` | manifest and lock of a generation |
 | `application/octet-stream` | upload chunks, blobs |
 | `application/vnd.joker.trace.v1` | `.jktrace` (document 16, §7) |
@@ -361,6 +362,7 @@ Legend: minimum **Role**; **M** = mutating (anti-replay over TCP, §2.5). The co
 | GET | `/v1/node/hardware` | viewer | | inventory of the hardware of the node, **with reads only** of the file system (`/proc`, `/sys`, `/dev`): architecture, model, CPUs, memory, kernel, boot command line, GPIO chips, LEDs, thermal zones, watchdogs, serial ports, I²C, SPI, network, USB, TPM (`NodeHardware`). It is what `jk board probe` and `jk board check --node` use (ref/03 §2.3.7) |
 | GET | `/v1/groups`, `/v1/groups/{group}` | viewer | | period, CPUs, priority, overrun policy, trip, order, tasks (WCET declared, from the lock, measured), jitter and duration (p50, p99, p99.9, max.), trace ring coverage (`Group`) |
 | GET | `/v1/metrics` | viewer | | snapshot of the metrics of document 01, §19, with the histograms that do not fit in scalar signals; per device, the link state, reconnections and the dropped and invalid samples (ADR 0063); `ml` is `null` in 1.0 (`Metrics`) |
+| GET | `/metrics` | viewer | | the same snapshot as `/v1/metrics` in the Prometheus text exposition format 0.0.4, outside `/v1` and on every API listener; names, labels and types in ADR 0071 (`joker_<area>_<name>`, entities as labels, `Percentiles` as summaries) |
 | GET | `/v1/logs` | viewer | | structured logs from the API ring (16 MiB by default), filters `source`, `app`, `level` (minimum), range; to follow, topic `logs` (§6) |
 
 **`NodeHardware`** (`GET /v1/node/hardware`). Each field says where it comes from; a field that the node cannot read (permissions, a system without `device-tree`) comes as `null`, and the `unreadable` list says which and why. Nothing here opens a device for writing, requests a GPIO or touches a bus: `jokerd` reads directories and attributes, and the GPIO lines only through the information `ioctl` of the chardev (`GPIO_V2_GET_LINEINFO_IOCTL`), which does not reserve them.

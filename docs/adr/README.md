@@ -67,6 +67,7 @@
 | [0068](0068-expression-evaluation-groups-and-window-periods.md) | Evaluation groups and window periods of manifest expressions |
 | [0069](0069-clock-quality-re-evaluation.md) | How `jokerd` derives and re-evaluates the clock quality |
 | [0070](0070-state-write-failures-orphaned-trips-boot-count-and-jokerd-flags.md) | State write failures, trips of outputs a generation removed, the startup counter in the API, and `jokerd`'s bench flags |
+| [0071](0071-prometheus-metrics-exposition.md) | The Prometheus `/metrics` exposition: endpoint, role, names, labels and summaries |
 | [0073](0073-raw-access-in-the-catalog-drivers-and-the-wire-double.md) | Access by address in the catalog drivers, and the wire double of the action suites |
 
 Changing a decision = writing a new ADR that replaces it, and updating the affected documents in the same set of commits.
