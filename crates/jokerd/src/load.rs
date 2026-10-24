@@ -52,14 +52,33 @@ pub struct Loaded {
     pub plan: Plan,
 }
 
-/// Checks and plans the manifest whose entry layer is `entry`.
+/// Checks and plans the manifest whose entry layer is `entry`, with the
+/// profiles and boards of the project around it (`profiles/`, `boards/`
+/// next to `entry`, read from disk): the project side (`jk check`,
+/// `jk replay`, tests).
 pub fn load(
     fs: &dyn FileSystem,
     entry: &Path,
     tasks: &dyn TaskProvider,
 ) -> Result<Loaded, LoadError> {
     let root = entry.parent().unwrap_or(Path::new("."));
-    let (context, catalog_errors) = catalog::context_for_project(tasks, root);
+    let (files, read_errors) = catalog::catalog_files(root);
+    for e in &read_errors {
+        eprintln!("warning: {e}");
+    }
+    load_with(fs, entry, tasks, &files)
+}
+
+/// Checks and plans the manifest whose entry layer is `entry`, with
+/// exactly the profiles and boards of `files` and nothing from the disk
+/// around it: a generation on a node, whose files are its own.
+pub fn load_with(
+    fs: &dyn FileSystem,
+    entry: &Path,
+    tasks: &dyn TaskProvider,
+    files: &catalog::CatalogFiles,
+) -> Result<Loaded, LoadError> {
+    let (context, catalog_errors) = catalog::context_for_files(tasks, files);
     for e in &catalog_errors {
         eprintln!("warning: {e}");
     }

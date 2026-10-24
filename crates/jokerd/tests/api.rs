@@ -1554,3 +1554,67 @@ async fn status_and_metrics_show_the_link_and_counters_of_each_device() {
     assert_eq!(driver["reconnects"], 0);
     assert!(m.json()["api"]["dropped"].is_u64(), "{}", m.json());
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_proposal_carries_its_profiles_as_uploaded_artifacts() {
+    let f = start().await;
+    let profile = "schema = 1\n\n[profile]\nname    = \"acme/pcs\"\nversion = \"1.0.0\"\ndriver  = \"modbus\"\n\n[signals.p_ac]\nat   = 0\nfc   = 4\ntype = \"f32\"\nunit = \"kW\"\n";
+    let digest = jokerd::blobs::digest_of(profile.as_bytes());
+    let manifest = format!(
+        "{}\n[devices.pcs]\ndriver  = \"modbus-tcp\"\naddress = \"127.0.0.1:1502\"\nprofile = \"acme/pcs@1\"\n",
+        effective()
+    );
+    let artifact = json!([{
+        "name": "profiles/acme/pcs@1.profile.toml",
+        "kind": "joker.profile.v1+toml",
+        "digest": digest,
+    }]);
+    let proposal = |artifacts: Value| {
+        json!({
+            "manifest": {"content": manifest},
+            "lock": {"content": ""},
+            "artifacts": artifacts,
+            "base": null,
+        })
+    };
+    let missing = f
+        .call(
+            "POST",
+            "/v1/generations",
+            "/v1/generations?dry_run=true",
+            Some(proposal(artifact.clone())),
+        )
+        .await;
+    assert_eq!(missing.json()["code"], "J-E1602", "{}", missing.json());
+    let up = f
+        .http
+        .exchange(
+            "POST",
+            &format!("/v1/blobs/uploads?digest={digest}&kind=joker.profile.v1%2Btoml"),
+            &[],
+            Some(("application/octet-stream", profile.as_bytes())),
+        )
+        .await;
+    assert_eq!(up.status, 201, "{}", up.json());
+    let with = f
+        .call(
+            "POST",
+            "/v1/generations",
+            "/v1/generations?dry_run=true",
+            Some(proposal(artifact)),
+        )
+        .await;
+    assert_eq!(with.status, 200, "{}", with.json());
+    let without = f
+        .call(
+            "POST",
+            "/v1/generations",
+            "/v1/generations?dry_run=true",
+            Some(proposal(json!([]))),
+        )
+        .await;
+    assert_eq!(
+        without.status, 422,
+        "the node has no profile of its own to fall back on"
+    );
+}

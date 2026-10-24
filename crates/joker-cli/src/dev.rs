@@ -78,6 +78,11 @@ pub fn run(entry: &Entry, socket: &Path) -> Result<u8, Failure> {
     let quality = Arc::new(ClockMonitor::default());
     quality.refresh(ClockPolicy::default(), jokerd::wire::utc_now_ns());
     let cell = quality.cell();
+    let project_dir = entry
+        .manifest
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
     let controller = Controller::new(
         dir,
         Arc::new(Mutex::new(log)),
@@ -91,6 +96,7 @@ pub fn run(entry: &Entry, socket: &Path) -> Result<u8, Failure> {
         Config {
             utc_origin_ns,
             clock: quality,
+            project_root: project_dir.to_path_buf(),
             ..Config::default()
         },
     )
@@ -109,12 +115,13 @@ pub fn run(entry: &Entry, socket: &Path) -> Result<u8, Failure> {
     });
     println!("local runtime on unix:{}", socket.display());
     println!("  jk --node unix:{} read '**'", socket.display());
-    let project_dir = entry
-        .manifest
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or(Path::new("."));
-    let files = project::layers(project_dir);
+    let mut files = project::layers(project_dir);
+    files.extend(
+        jokerd::catalog::catalog_files(project_dir)
+            .0
+            .keys()
+            .map(|name| project_dir.join(name)),
+    );
     let mut seen = stamp(&files);
     let watcher = Arc::clone(&controller);
     let entry = entry.clone();

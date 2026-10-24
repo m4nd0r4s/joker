@@ -16,14 +16,15 @@ use joker_manifest::MemoryFileSystem;
 use serde_json::{Map, Value, json};
 
 use crate::apps::{APP_CWASM, NodeApps, is_prod};
-use crate::blobs::parse_digest;
+use crate::blobs::{Blobs, digest_of, parse_digest};
+use crate::catalog::{self, CatalogFiles};
 use crate::decisions::{SharedLog, lock};
 use crate::devices::{DeviceSet, Devices};
 use crate::generations::{
     Activation, DescriptorArtifact, GenArtifact, GenState, Generation, Origin, Store,
     descriptor_hash,
 };
-use crate::load::{LoadError, Loaded, instantiate, load};
+use crate::load::{LoadError, Loaded, instantiate, load_with};
 use crate::pacer::Pacer;
 use crate::plan::Plan;
 use crate::runner::{Running, Start, StartContext};
@@ -83,8 +84,12 @@ pub struct Config {
     /// The node's clock quality, which [`Controller::refresh_clock`]
     /// re-evaluates under the running generation's `[clock]` (ADR 0069).
     pub clock: Arc<crate::clock::ClockMonitor>,
-    /// Where a generation's profiles and boards are looked up
-    /// (`profiles/`, `boards/`); empty is the working directory.
+    /// The project a proposal that carries no profile or board artifact
+    /// takes them from (`profiles/`, `boards/` under it, `jk dev` and the
+    /// conformance runners): they become artifacts of the generation, so
+    /// every activation runs with the files it was proposed with. Empty is
+    /// no project: a generation has only the profiles and boards it
+    /// carries, never those of the daemon's working directory.
     pub project_root: std::path::PathBuf,
 }
 
@@ -120,6 +125,7 @@ struct Confirming {
 /// The generation controller of a node.
 pub struct Controller {
     store: Store,
+    blobs: Blobs,
     log: SharedLog,
     tasks: Arc<dyn TaskProvider>,
     apps: Option<Arc<NodeApps>>,
@@ -153,18 +159,59 @@ pub struct Switched {
     pub from: Option<u64>,
 }
 
+/// Checks and plans a generation's manifest with exactly the profiles and
+/// boards it carries (`files`), never with files found on the disk
+/// around the daemon.
 fn loaded_of(
     manifest: &str,
     tasks: &dyn TaskProvider,
-    root: &Path,
+    files: &CatalogFiles,
 ) -> Result<Loaded, ControlError> {
     let mut fs = MemoryFileSystem::default();
-    let entry = root.join(EFFECTIVE);
-    fs.file(&entry, manifest);
+    fs.file(EFFECTIVE, manifest);
     for path in app_paths(manifest) {
-        fs.dir(root.join(path));
+        fs.dir(path);
     }
-    load(&fs, &entry, tasks).map_err(|e| validation(&e))
+    load_with(&fs, Path::new(EFFECTIVE), tasks, files).map_err(|e| validation(&e))
+}
+
+/// The profile and board files among a generation's `artifacts` (kinds
+/// `joker.profile.v1+toml` and `joker.board.v1+toml`), read from the blob
+/// store by digest. A name that is not a profile or board path is
+/// `J-E1012`; a blob that is missing, is not UTF-8 or no longer has its
+/// digest is `J-E1602`: a generation never runs with files other than its
+/// own.
+fn catalog_of(blobs: &Blobs, artifacts: &[GenArtifact]) -> Result<CatalogFiles, ControlError> {
+    let mut files = CatalogFiles::new();
+    for a in artifacts
+        .iter()
+        .filter(|a| a.kind == catalog::PROFILE_KIND || a.kind == catalog::BOARD_KIND)
+    {
+        if !catalog::is_catalog_path(&a.name) || catalog::kind_of(&a.name) != a.kind {
+            return Err(ControlError::new(
+                "J-E1012",
+                400,
+                format!("`{}` is not a {} path", a.name, a.kind),
+            ));
+        }
+        let digest = parse_digest(&a.digest).ok_or_else(|| {
+            ControlError::new("J-E1012", 400, format!("bad digest `{}`", a.digest))
+        })?;
+        let missing = |detail: String| ControlError::new("J-E1602", 422, detail);
+        let bytes = blobs
+            .get(&digest)
+            .map_err(|e| missing(format!("`{}` ({}): {e}", a.name, a.digest)))?;
+        if digest_of(&bytes) != a.digest {
+            return Err(missing(format!(
+                "`{}` no longer matches its digest {}",
+                a.name, a.digest
+            )));
+        }
+        let text =
+            String::from_utf8(bytes).map_err(|_| missing(format!("`{}` is not UTF-8", a.name)))?;
+        files.insert(a.name.clone(), text);
+    }
+    Ok(files)
 }
 
 /// The `path` of every app: on the node, an app is an artifact of the
@@ -263,6 +310,7 @@ impl Controller {
         let hub = Arc::new(crate::actions::Hub::new(Arc::clone(&log), clock));
         Ok(Self {
             store: Store::open(&state_dir.join("generations")).map_err(ControlError::io)?,
+            blobs: Blobs::new(state_dir),
             log,
             tasks,
             apps: None,
@@ -405,6 +453,52 @@ impl Controller {
         self.propose_with(manifest, lock, &[], message, dry_run, created_by)
     }
 
+    /// Puts profile and board files into the blob store and returns them as
+    /// artifacts (named by their path, with the media type of their kind
+    /// and the digest of their bytes). A name that is not a profile or
+    /// board path is `J-E1601`.
+    fn store_catalog(&self, files: &CatalogFiles) -> Result<Vec<GenArtifact>, ControlError> {
+        let mut out = Vec::with_capacity(files.len());
+        for (name, text) in files {
+            if !catalog::is_catalog_path(name) {
+                return Err(ControlError::new(
+                    "J-E1601",
+                    422,
+                    format!("`{name}` is not a profile or board path"),
+                ));
+            }
+            let digest = digest_of(text.as_bytes());
+            let bytes =
+                parse_digest(&digest).ok_or_else(|| ControlError::new("J-E1000", 500, "digest"))?;
+            self.blobs.put(&bytes, text.as_bytes()).map_err(|e| {
+                ControlError::new("J-E1000", 500, format!("blob of `{name}`: {e:?}"))
+            })?;
+            out.push(GenArtifact {
+                name: name.clone(),
+                kind: catalog::kind_of(name).to_owned(),
+                digest,
+            });
+        }
+        Ok(out)
+    }
+
+    /// [`Controller::propose_by`] with the profile and board files the
+    /// generation carries, by their path relative to a project root
+    /// (`profiles/acme/pcs@1.profile.toml`): they are stored as artifacts
+    /// of the generation ([`Controller::propose_with`]).
+    pub fn propose_files(
+        &mut self,
+        manifest: &str,
+        lock: &str,
+        files: &CatalogFiles,
+        message: Option<String>,
+        dry_run: bool,
+        created_by: Option<String>,
+    ) -> Result<Generation, ControlError> {
+        let artifacts = self.store_catalog(files)?;
+        self.propose_with(manifest, lock, &artifacts, message, dry_run, created_by)
+    }
+
     /// [`Controller::propose_by`] with the artifacts the generation refers
     /// to (ref/09 §5.13): its Wasm apps are loaded and checked now, and the
     /// artifacts are stored with it.
@@ -424,8 +518,21 @@ impl Controller {
                 "a generation is waiting for confirmation",
             ));
         }
+        let carries_catalog = artifacts
+            .iter()
+            .any(|a| a.kind == catalog::PROFILE_KIND || a.kind == catalog::BOARD_KIND);
+        let mut artifacts = artifacts.to_vec();
+        if !carries_catalog && !self.config.project_root.as_os_str().is_empty() {
+            let (files, errors) = catalog::catalog_files(&self.config.project_root);
+            if let Some(e) = errors.first() {
+                return Err(ControlError::new("J-E1601", 422, e.clone()));
+            }
+            artifacts.extend(self.store_catalog(&files)?);
+        }
+        let artifacts = artifacts.as_slice();
+        let files = catalog_of(&self.blobs, artifacts)?;
         let tasks = self.provider(manifest, artifacts)?;
-        let loaded = loaded_of(manifest, tasks.as_ref(), &self.config.project_root)?;
+        let loaded = loaded_of(manifest, tasks.as_ref(), &files)?;
         let hash = generation_hash_with(&loaded, lock, artifacts);
         if dry_run {
             return Ok(Generation {
@@ -681,7 +788,8 @@ impl Controller {
         })?;
         let artifacts = self.store.artifacts(number).map_err(ControlError::io)?;
         let provider = self.provider(&manifest, &artifacts)?;
-        let loaded = loaded_of(&manifest, provider.as_ref(), &self.config.project_root)?;
+        let files = catalog_of(&self.blobs, &artifacts)?;
+        let loaded = loaded_of(&manifest, provider.as_ref(), &files)?;
         let tasks = instantiate(&loaded.plan, &loaded.manifest, provider.as_ref())
             .map_err(|e| validation(&e))?;
         let from = self.active.as_ref().map(|a| a.number);
@@ -966,6 +1074,7 @@ mod action_tests {
     use crate::bridge::DeviceActionPlan;
     use crate::decisions::DecisionLog;
     use crate::devices::{DeviceSet, NoDevices};
+    use crate::load::load;
     use crate::native::NativeTasks;
     use crate::pacer::{Monotonic, SystemPacer};
     use crate::runner::{Running, Start};
