@@ -9,7 +9,7 @@ use crossbeam_queue::ArrayQueue;
 use joker_core::commit::{DecisionRecord, WriteResult};
 use joker_core::image::Proposal;
 use joker_core::{Quality, SignalId, Slot, ValueType};
-use joker_hal::{CommitBox, OutputBinding, RawEncoding};
+use joker_hal::{CommitBox, OutputBinding, RawEncoding, WriteKind, WriteStatus};
 
 use crate::plan::Plan;
 
@@ -21,6 +21,8 @@ pub const STAGING_CAPACITY: usize = 512;
 pub const DECISION_CAPACITY: usize = 16_384;
 /// Capacity of the write result queue (tickets of async writes).
 pub const RESULT_CAPACITY: usize = 4_096;
+/// Capacity of the queue of failed write acks from the real drivers.
+pub const WRITE_ACK_CAPACITY: usize = 1_024;
 /// Capacity of each group's reset-request queue (`jk reset`, docs/16 E7).
 pub const RESET_CAPACITY: usize = 16;
 /// Capacity of each group's trip-injection queue (trips requested while
@@ -147,6 +149,24 @@ pub struct DeviceStats {
     pub dropped_samples: Counter,
     /// Samples that broke the rules of ref/06 §2.8 (`J0869`).
     pub invalid_samples: Counter,
+}
+
+/// A write a real driver did not confirm (ref/06 §2.9): what the decision
+/// log records next to the commit that produced it (AGENTS.md invariant 8).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WriteAckRecord {
+    /// The device, in `plan.devices` order.
+    pub device: u32,
+    /// The output that was written.
+    pub output: SignalId,
+    /// The write's sequence number on that device.
+    pub seq: u64,
+    /// Why it was written.
+    pub kind: WriteKind,
+    /// What the driver answered.
+    pub status: WriteStatus,
+    /// Monotonic instant of the answer.
+    pub at_mono_ns: u64,
 }
 
 /// One tick of one group, encoded as a trace segment of one tick.
@@ -308,6 +328,10 @@ pub struct Shared {
     pub commit_boxes: Vec<Vec<CommitBox>>,
     /// Per device (`plan.devices` order): its link and its counters.
     pub devices: Box<[DeviceStats]>,
+    /// Writes the real drivers did not confirm, for the decision log.
+    pub write_acks: ArrayQueue<WriteAckRecord>,
+    /// Write acks dropped by a full queue.
+    pub write_acks_dropped: Counter,
 }
 
 fn raw_encoding_of(ty: ValueType) -> Option<RawEncoding> {
@@ -406,6 +430,8 @@ impl Shared {
                 .iter()
                 .map(|_| DeviceStats::default())
                 .collect(),
+            write_acks: ArrayQueue::new(WRITE_ACK_CAPACITY),
+            write_acks_dropped: Counter::default(),
         }
     }
 

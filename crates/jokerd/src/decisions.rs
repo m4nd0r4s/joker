@@ -5,8 +5,9 @@
 //! active level) and of each writer's results, with the repeat count of what
 //! held before. Trips, manual writes, rejections and changes of active level
 //! are written with `fsync` at once; the rest goes in a batch synced at
-//! least once a second. Records the cycle thread could not queue are counted
-//! and written as a `gap`.
+//! least once a second. The writes a real driver did not confirm follow as
+//! `write_ack` entries (ref/06 §2.9). Records that could not be queued are
+//! counted and written as a `gap`.
 
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufWriter, Write};
@@ -22,8 +23,10 @@ use joker_core::outcome::Outcome;
 use joker_core::{Level, ValueType, WriterId};
 use serde_json::{Map, Value, json};
 
+use joker_hal::{WriteKind, WriteStatus};
+
 use crate::plan::Plan;
-use crate::shared::Shared;
+use crate::shared::{Shared, WriteAckRecord};
 use crate::trips::TripTable;
 
 /// How often batch records are synced.
@@ -214,6 +217,66 @@ pub fn record_json(plan: &Plan, generation: u64, r: &DecisionRecord) -> Map<Stri
     m
 }
 
+fn write_status_name(status: WriteStatus) -> &'static str {
+    match status {
+        WriteStatus::Ok => "ok",
+        WriteStatus::Timeout => "timeout",
+        WriteStatus::CommFailure => "comm_failure",
+        WriteStatus::DeviceRejected => "device_rejected",
+        WriteStatus::NotConnected => "not_connected",
+        WriteStatus::Unsupported => "unsupported",
+        WriteStatus::Late => "late",
+        WriteStatus::Skipped => "skipped",
+    }
+}
+
+fn write_kind_name(kind: WriteKind) -> &'static str {
+    match kind {
+        WriteKind::Set => "set",
+        WriteKind::Keepalive => "keepalive",
+        WriteKind::ForceSafe => "force_safe",
+        WriteKind::Relinquish => "relinquish",
+        WriteKind::Resync => "resync",
+    }
+}
+
+/// The registry code a write status records (ref/06 §2.9): `J0877` for a
+/// write the equipment rejected or does not support, `J0878` for a timed
+/// write applied late.
+pub fn ack_code(status: WriteStatus) -> Option<&'static str> {
+    match status {
+        WriteStatus::DeviceRejected | WriteStatus::Unsupported => Some("J0877"),
+        WriteStatus::Late => Some("J0878"),
+        _ => None,
+    }
+}
+
+/// The log entry of a write a real driver did not confirm (ref/06 §2.9):
+/// `record = "write_ack"`, with the output, the device, the write's kind
+/// and sequence number, the driver's status and its code, if any. Those
+/// with a code are synced at once, like rejections.
+pub fn write_ack_json(plan: &Plan, generation: u64, ack: &WriteAckRecord) -> Map<String, Value> {
+    let mut m = Map::new();
+    m.insert("gen".into(), json!(generation));
+    m.insert("record".into(), json!("write_ack"));
+    m.insert("output".into(), json!(plan.path(ack.output).unwrap_or("")));
+    m.insert(
+        "device".into(),
+        plan.devices
+            .get(ack.device as usize)
+            .map_or(Value::Null, |d| json!(d.name)),
+    );
+    m.insert("write_seq".into(), json!(ack.seq));
+    m.insert("kind".into(), json!(write_kind_name(ack.kind)));
+    m.insert("status".into(), json!(write_status_name(ack.status)));
+    m.insert(
+        "code".into(),
+        ack_code(ack.status).map_or(Value::Null, |c| json!(c)),
+    );
+    m.insert("at_mono_ns".into(), json!(ack.at_mono_ns));
+    m
+}
+
 /// Persists each transition of an output into or out of trip to
 /// `state/trips` as the services observe it (docs/01 §7, ADR 0061): the
 /// cycle thread publishes when each output became tripped, and this
@@ -347,7 +410,18 @@ pub fn drain(
         );
         log.append(entry, immediate)?;
     }
-    let dropped = shared.decisions_dropped.get();
+    while let Some(ack) = shared.write_acks.pop() {
+        let immediate = ack_code(ack.status).is_some();
+        let mut entry = write_ack_json(plan, generation, &ack);
+        entry.insert(
+            "ts".into(),
+            json!(crate::wire::timestamp(
+                utc_origin_ns.saturating_add(ack.at_mono_ns as i64)
+            )),
+        );
+        log.append(entry, immediate)?;
+    }
+    let dropped = shared.decisions_dropped.get() + shared.write_acks_dropped.get();
     if dropped > *reported_drops {
         let mut m = Map::new();
         m.insert("gen".into(), json!(generation));

@@ -18,7 +18,9 @@ use joker_core::value::NO_TS_SRC;
 use joker_core::{Quality, QualityCode, QualityReason, SignalId, ValueType};
 use joker_hal::acquire::{OwnedRaw, SampleBuffer, Settled, settle};
 use joker_hal::cx::Host;
-use joker_hal::driver::{AckSlot, ConnectOut, Driver, RawSink, ReadBatch, WriteAcks};
+use joker_hal::driver::{
+    AckSlot, CommittedWrite, ConnectOut, Driver, RawSink, ReadBatch, WriteAcks,
+};
 use joker_hal::plan::PlanView;
 use joker_hal::spec::PlanRequest;
 use joker_hal::types::{BatchFailure, BatchKind, LinkState, WriteStatus};
@@ -26,7 +28,7 @@ use joker_hal::{CommitRx, Cx, RxState};
 
 use crate::bridge::DeviceStep;
 use crate::plan::Plan;
-use crate::shared::Shared;
+use crate::shared::{Shared, WriteAckRecord};
 
 /// A request to run a device action's compiled program against the
 /// device's real driver, from inside the io-domain task's own loop — the
@@ -534,7 +536,9 @@ async fn pause(
 /// rounds in which every batch failed, three write timeouts in a row) the
 /// driver is disconnected, every read point turns `bad(comm_failure)`, and
 /// `connect` is retried after a [`Backoff`] delay; after each `connect`
-/// the applied value of every output is resent (`resync`).
+/// the applied value of every output is resent (`resync`). Every write the
+/// driver does not ack `ok` goes to `shared.write_acks`, for the decision
+/// log (ref/06 §2.9, AGENTS.md invariant 8).
 #[allow(
     clippy::too_many_arguments,
     reason = "each parameter is a distinct, independently-sourced piece (the driver, the clock, the plan request/view, a deadline, the slot targets, the shared commit channel, which device, and the stop condition); a wrapper struct would only rename this list, not shrink it"
@@ -675,6 +679,7 @@ async fn serve<D: Driver>(
                 let deadline = host.now().mono_ns + timeout_ns * (1 + writes.len() as u64 / 8);
                 let mut cx = Cx::new(host, deadline);
                 driver.write(&mut cx, &writes, &mut acks).await;
+                record_failed_acks(shared, device_index, &writes, &acks, host.now().mono_ns);
                 let mut down = false;
                 for ack in acks.iter() {
                     down |= ack.status == WriteStatus::NotConnected
@@ -762,6 +767,38 @@ async fn serve<D: Driver>(
         publish_link(shared, device_index, link.state);
     }
     Ended::Stopped
+}
+
+fn record_failed_acks(
+    shared: &Shared,
+    device_index: usize,
+    writes: &[CommittedWrite<'_>],
+    acks: &WriteAcks<'_>,
+    now: u64,
+) {
+    let bindings = shared
+        .commit_bindings
+        .get(device_index)
+        .map_or(&[][..], Vec::as_slice);
+    for (write, ack) in writes.iter().zip(acks.iter()) {
+        if ack.status == WriteStatus::Ok {
+            continue;
+        }
+        let Some(binding) = bindings.iter().find(|b| b.point == write.point) else {
+            continue;
+        };
+        let record = WriteAckRecord {
+            device: device_index as u32,
+            output: binding.signal,
+            seq: ack.seq,
+            kind: write.kind,
+            status: ack.status,
+            at_mono_ns: now,
+        };
+        if shared.write_acks.push(record).is_err() {
+            shared.write_acks_dropped.bump();
+        }
+    }
 }
 
 async fn run_action<D: Driver>(driver: &mut D, host: &dyn Host, timeout_ns: u64, call: ActionCall) {
