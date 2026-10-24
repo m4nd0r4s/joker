@@ -74,8 +74,7 @@ pub fn load(
             codes: report.codes().iter().map(|c| (*c).to_owned()).collect(),
         });
     };
-    let mut plan = Plan::new(&manifest, &report.paths, &context, &hash).map_err(LoadError::Plan)?;
-    crate::bridge::wire_permits(&mut plan, &manifest);
+    let plan = Plan::new(&manifest, &report.paths, &context, &hash).map_err(LoadError::Plan)?;
     Ok(Loaded {
         report,
         manifest,
