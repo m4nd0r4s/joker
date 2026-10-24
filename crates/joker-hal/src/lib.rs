@@ -12,6 +12,7 @@ pub mod commit;
 pub mod cx;
 pub mod descriptor;
 pub mod driver;
+pub mod encode;
 pub mod interpreter;
 pub mod link;
 pub mod plan;
