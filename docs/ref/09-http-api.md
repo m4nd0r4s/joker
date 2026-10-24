@@ -510,7 +510,7 @@ The prediction uses the same functions of the core over the current values, outs
 | POST | `/v1/trips/reset` | operator | M | reset of several outputs by selector (`BulkResetRequest`), for example after the trip of a group |
 | GET | `/v1/decisions` | viewer | | decision log (M3): one entry per change of (applied value, result, active level), with `repeats` and `last_ts` (01 §19) |
 
-**Reset (document 16, E7).** The request is a `manual` action that goes to the inbox of the owning group. The response comes after the next tick: `cleared`, or `retripped` (the cause is still present and the output went back to trip at that tick, with the cause). An output that is not tripped is `J-E1120` (409). The trip is persistent (`state/trips`, document 01, §7), and the reset is also recorded with `fsync`.
+**Reset (document 16, E7).** The request is a `manual` action that goes to the inbox of the owning group. The response comes after the next tick: `cleared`, or `retripped` (the cause is still present and the output went back to trip at that tick, with the cause). An output that is not tripped is `J-E1120` (409). The trip is persistent (`state/trips`, document 01, §7), and the reset is also recorded with `fsync`, with its principal and reason (decision-log record `reset`, ADR 0061). In a bulk reset, an output that could not be reset (a full reset queue, for example) is `failed`, with its `error` (`code`, `detail`), and the others are still reset (ADR 0061).
 
 **Decision log filters:** `output` (selectors), `cause` (only the decisions whose causal set contains that signal: `jk decisions --cause`), `writer`, `outcome`, `kind` (`proposal`, `expiry`, `release`, `takeover`, `safe`, `trip`, `reset`, `method`, `intent`), range, order, pagination.
 

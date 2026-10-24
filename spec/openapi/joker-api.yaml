@@ -5494,7 +5494,14 @@ components:
         output: {$ref: '#/components/schemas/SignalPath'}
         result:
           type: string
-          enum: [cleared, retripped, queued, not_tripped]
+          enum: [cleared, retripped, queued, not_tripped, failed]
+        error:
+          description: only with result failed, in a bulk reset (ADR 0061)
+          type: object
+          required: [code, detail]
+          properties:
+            code: {type: string}
+            detail: {type: string}
         trip: {$ref: '#/components/schemas/Trip'}
         decision: {$ref: '#/components/schemas/Ulid'}
     Trip:
