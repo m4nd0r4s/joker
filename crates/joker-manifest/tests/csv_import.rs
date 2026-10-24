@@ -173,6 +173,8 @@ fn a_bom_is_accepted_and_ignored() {
     assert!(result.diagnostics.sorted(&sources).is_empty());
 }
 
+/// `30001` is in the wrong space for function code 3, whose holding
+/// registers are `4xxxx`.
 #[test]
 fn modicon_notation_converts_and_checks_the_space() {
     let csv = "signal,fc,at\nx,3,40001\n";
@@ -182,7 +184,7 @@ fn modicon_notation_converts_and_checks_the_space() {
     assert!(result.diagnostics.sorted(&sources).is_empty());
     assert!(result.toml.unwrap().contains("at = 0"));
 
-    let csv2 = "signal,fc,at\nx,3,30001\n"; // wrong space for fc 3 (holding = 4xxxx)
+    let csv2 = "signal,fc,at\nx,3,30001\n";
     let mut sources2 = Sources::default();
     let file2 = sources2.add("bad.csv".into(), csv2.to_owned());
     let result2 = import_csv(file2, csv2, "local/x", "modbus", true);
