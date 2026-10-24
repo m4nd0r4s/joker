@@ -63,8 +63,15 @@ A dependency is critical when it is on the cycle path, in the core, in what a no
 | `libc` | `joker-serial-sys` | Rust project | low | pinned |
 | `toml` | drivers, manifest | `toml-rs`, one main author (Ed Page) | single main maintainer | pinned 1.x; the manifest crate owns its schema, so a parser swap does not change a file format |
 | `sha2`, `rand_core` | `joker-host` | RustCrypto, rust-random | low | pinned; `sha2` has drop-in alternatives |
+| `thread-priority` | `jokerd` (puts the cycle thread on `SCHED_FIFO`) | one person (iddm) | single maintainer, next to the cycle path | pinned 3.x, exempted with the review note below; the fallback is the two `libc` calls it wraps (`pthread_setschedparam`, `sched_get_priority_max`) |
+| `tungstenite`, `tokio-tungstenite` | `joker-api` (`/v1/ws` through axum), `joker-cli` | one main author (daniel-abramov) | single main maintainer, parses frames from API clients | pinned 0.x with axum; exempted with the review note below; only reachable on the local Unix socket, so a frame bug needs local access |
 
 The table is reviewed in the per-phase update (§5), with `cargo vet suggest` and the crates.io owners of each crate.
+
+**Review notes (2026-10-24).** Both crates entered after the baseline and are exempted, with these notes, until our own audit in the Phase 1 update (§2, §5).
+
+- `thread-priority` 3.1.1: 2380 lines, no build script, no file, process or network access. Every `unsafe` block is a `libc` call (`pthread_getschedparam`, `pthread_setschedparam`, `sched_get_priority_min`/`max`, `sched_getattr`/`sched_setattr`, `setpriority`, `getpriority`) with stack-owned arguments, or the platform `errno` pointer; one `MaybeUninit::zeroed` of the plain `sched_param` struct. The Windows backend pulls `windows`, which is never compiled for a Joker target. `jokerd` calls only the safe `thread_native_id` and `set_thread_priority_and_policy`, once per cycle thread.
+- `tungstenite` 0.29.0 and `tokio-tungstenite` 0.29.0: 5436 and 1255 lines, no build script, no file or process access. The five `unsafe` sites are `str::from_utf8_unchecked` after a validation and `align_to_mut::<u32>` for frame masking, both sound. Frame and message sizes are bounded by the library limits that axum keeps. `tokio-tungstenite` has no `unsafe`. TLS features stay off.
 
 ## 5. Toolchains
 
