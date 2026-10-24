@@ -12,7 +12,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use joker_core::ClockQuality;
+use joker_core::{Clock, ClockQuality, QualityReason};
 use joker_driver_gpio::{GpioDriver, GpioPlanner};
 use joker_driver_modbus::{ModbusPlanner, ModbusRtu, ModbusTcp, ModbusTcpPlanner};
 use joker_driver_sysfs::{SysfsDriver, SysfsPlanner};
@@ -23,7 +23,7 @@ use tokio::sync::watch;
 
 use crate::bridge::{DevicePlan, owned_request};
 use crate::devices::{DeviceSet, Devices};
-use crate::drivers::{ActionCall, point_targets, run_driver};
+use crate::drivers::{ActionCall, mark_bad, point_targets, run_driver};
 use crate::plan::Plan;
 use crate::shared::Shared;
 
@@ -56,8 +56,9 @@ async fn run_sysfs(
 ) {
     let owned = owned_request(&device);
     let views = owned.views();
-    let Ok(hal_plan) = SysfsPlanner::plan(&views.request()) else {
-        return;
+    let hal_plan = match SysfsPlanner::plan(&views.request()) {
+        Ok(p) => p,
+        Err(e) => return setup_failed(&shared, &plan, device_index, &host, format!("plan: {e:?}")),
     };
     let paths = DevicePaths::new(
         &*sysfs_root,
@@ -66,11 +67,12 @@ async fn run_sysfs(
             .map(String::as_str)
             .collect::<Vec<_>>(),
     );
-    let Ok(driver) = SysfsDriver::open(
+    let driver = match SysfsDriver::open(
         &OpenArgs::new(views.request(), hal_plan.view()),
         Link::Paths(paths),
-    ) else {
-        return;
+    ) {
+        Ok(d) => d,
+        Err(e) => return setup_failed(&shared, &plan, device_index, &host, format!("open: {e:?}")),
     };
     let targets = point_targets(&plan, device_index);
     run_driver(
@@ -100,20 +102,40 @@ async fn run_modbus_rtu(
 ) {
     let owned = owned_request(&device);
     let views = owned.views();
-    let Ok(hal_plan) = ModbusPlanner::plan(&views.request()) else {
-        return;
+    let hal_plan = match ModbusPlanner::plan(&views.request()) {
+        Ok(p) => p,
+        Err(e) => return setup_failed(&shared, &plan, device_index, &host, format!("plan: {e:?}")),
     };
-    let Ok(config) = SerialConfig::from_params(Cbor::new(&device.bus_params)) else {
-        return;
+    let config = match SerialConfig::from_params(Cbor::new(&device.bus_params)) {
+        Ok(c) => c,
+        Err(e) => {
+            return setup_failed(
+                &shared,
+                &plan,
+                device_index,
+                &host,
+                format!("serial bus: {e:?}"),
+            );
+        }
     };
-    let Ok(port) = TokioSerial::open(&config) else {
-        return;
+    let port = match TokioSerial::open(&config) {
+        Ok(p) => p,
+        Err(e) => {
+            return setup_failed(
+                &shared,
+                &plan,
+                device_index,
+                &host,
+                format!("serial port: {e:?}"),
+            );
+        }
     };
-    let Ok(driver) = ModbusRtu::open(
+    let driver = match ModbusRtu::open(
         &OpenArgs::new(views.request(), hal_plan.view()),
         Link::Serial(joker_hal::link::SerialPort::new(port)),
-    ) else {
-        return;
+    ) {
+        Ok(d) => d,
+        Err(e) => return setup_failed(&shared, &plan, device_index, &host, format!("open: {e:?}")),
     };
     let targets = point_targets(&plan, device_index);
     run_driver(
@@ -143,18 +165,26 @@ async fn run_modbus_tcp(
 ) {
     let owned = owned_request(&device);
     let views = owned.views();
-    let Ok(hal_plan) = ModbusTcpPlanner::plan(&views.request()) else {
-        return;
+    let hal_plan = match ModbusTcpPlanner::plan(&views.request()) {
+        Ok(p) => p,
+        Err(e) => return setup_failed(&shared, &plan, device_index, &host, format!("plan: {e:?}")),
     };
     let Some(addr) = tcp_addr(&device.config) else {
-        return;
+        return setup_failed(
+            &shared,
+            &plan,
+            device_index,
+            &host,
+            "no valid `host`/`port`".to_owned(),
+        );
     };
     let endpoint = joker_hal::link::TcpEndpoint::new(TokioTcpConnector::new(addr));
-    let Ok(driver) = ModbusTcp::open(
+    let driver = match ModbusTcp::open(
         &OpenArgs::new(views.request(), hal_plan.view()),
         Link::Tcp(endpoint),
-    ) else {
-        return;
+    ) {
+        Ok(d) => d,
+        Err(e) => return setup_failed(&shared, &plan, device_index, &host, format!("open: {e:?}")),
     };
     let targets = point_targets(&plan, device_index);
     run_driver(
@@ -215,23 +245,39 @@ async fn run_gpio(
 ) {
     let owned = owned_request(&device);
     let views = owned.views();
-    let Ok(hal_plan) = GpioPlanner::plan(&views.request()) else {
-        return;
+    let hal_plan = match GpioPlanner::plan(&views.request()) {
+        Ok(p) => p,
+        Err(e) => return setup_failed(&shared, &plan, device_index, &host, format!("plan: {e:?}")),
     };
-    let Ok(chip) = joker_driver_gpio::plan::chip_id(Cbor::new(&device.config)) else {
-        return;
+    let chip = match joker_driver_gpio::plan::chip_id(Cbor::new(&device.config)) {
+        Ok(c) => c,
+        Err(e) => return setup_failed(&shared, &plan, device_index, &host, format!("chip: {e:?}")),
     };
     let mut lines = Vec::new();
     for p in views.request().points {
-        let Ok(addr) = joker_driver_gpio::plan::check_point(p) else {
-            return;
+        let addr = match joker_driver_gpio::plan::check_point(p) {
+            Ok(addr) => addr,
+            Err(e) => {
+                return setup_failed(
+                    &shared,
+                    &plan,
+                    device_index,
+                    &host,
+                    format!("point `{}`: {e:?}", p.path),
+                );
+            }
         };
         let safe = if p.direction == Direction::Output {
             match gpio_safe_level(&plan, p.path) {
                 Ok(level) => Some(level),
                 Err(e) => {
-                    eprintln!("error: device `{}`: {e}", device.name);
-                    return;
+                    return setup_failed(
+                        &shared,
+                        &plan,
+                        device_index,
+                        &host,
+                        format!("point `{}`: {e}", p.path),
+                    );
                 }
             }
         } else {
@@ -240,20 +286,23 @@ async fn run_gpio(
         lines.push(addr.line_config(safe));
     }
     let gpio = match LinuxGpio::open(&PathBuf::from("/dev").join(&chip), &lines) {
-        Ok(gpio) => gpio,
+        Ok(g) => g,
         Err(e) => {
-            eprintln!(
-                "error: device `{}`: cannot request the lines of `{chip}`: {e}",
-                device.name
+            return setup_failed(
+                &shared,
+                &plan,
+                device_index,
+                &host,
+                format!("/dev/{chip}: {e:?}"),
             );
-            return;
         }
     };
-    let Ok(driver) = GpioDriver::open(
+    let driver = match GpioDriver::open(
         &OpenArgs::new(views.request(), hal_plan.view()),
         Link::Gpio(GpioChip::new(gpio)),
-    ) else {
-        return;
+    ) {
+        Ok(d) => d,
+        Err(e) => return setup_failed(&shared, &plan, device_index, &host, format!("open: {e:?}")),
     };
     let targets = point_targets(&plan, device_index);
     run_driver(
@@ -270,6 +319,43 @@ async fn run_gpio(
         move || *stop.borrow_and_update(),
     )
     .await;
+}
+
+/// The effective link state of a device whose driver is not running
+/// (ref/06 §2.12, `link_state` of ref/00 §6): the core's own `stopped`.
+pub const LINK_STOPPED: u64 = 5;
+
+fn stopped(
+    shared: &Shared,
+    plan: &Plan,
+    device_index: usize,
+    host: &TokioHost,
+    reason: QualityReason,
+) {
+    if let Some(stats) = shared.devices.get(device_index) {
+        stats.link.set(LINK_STOPPED);
+    }
+    let targets = point_targets(plan, device_index);
+    mark_bad(shared, &targets, reason, host.now().mono_ns);
+}
+
+/// A device whose driver could not be set up (its plan, its bus or port,
+/// its `open`) does not run: the failure is reported, the link is
+/// `stopped`, and every read point of the device turns
+/// `bad(config_error)`, instead of keeping the initial value silently.
+fn setup_failed(
+    shared: &Shared,
+    plan: &Plan,
+    device_index: usize,
+    host: &TokioHost,
+    detail: String,
+) {
+    let name = plan
+        .devices
+        .get(device_index)
+        .map_or("?", |d| d.name.as_str());
+    eprintln!("error: device `{name}`: {detail}; its signals read bad(config_error)");
+    stopped(shared, plan, device_index, host, QualityReason::ConfigError);
 }
 
 /// How many pending action calls a device's channel buffers before a
@@ -368,9 +454,10 @@ impl Devices for RealDevices {
                 }
                 other => {
                     eprintln!(
-                        "warning: device `{}`: driver `{other}` has no real adapter yet",
+                        "warning: device `{}`: driver `{other}` has no real adapter yet; its signals read bad(not_connected)",
                         device.name
                     );
+                    stopped(&shared, &plan, i, &host, QualityReason::NotConnected);
                     false
                 }
             };
