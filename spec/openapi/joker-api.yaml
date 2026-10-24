@@ -4182,6 +4182,10 @@ components:
               type: array
               items: {type: string}
             boot_id: {$ref: '#/components/schemas/Ulid'}
+            boot_count:
+              description: startup counter of the state directory, after this start's increment (docs/01 §20, ADR 0070)
+              type: integer
+              minimum: 1
             started_at: {$ref: '#/components/schemas/Timestamp'}
         api:
           type: object
@@ -5531,6 +5535,9 @@ components:
         reset_when_now:
           description: current value of the reset_when condition
           type: ['boolean', 'null']
+        declared:
+          description: false for a persisted trip of an output the running generation does not declare (ADR 0070)
+          type: boolean
     ManualOverride:
       type: object
       required: [output, level, writer, principal, value, until, reason]
