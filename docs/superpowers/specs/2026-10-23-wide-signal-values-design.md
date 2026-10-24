@@ -2,6 +2,8 @@
 
 Status: approved by the user in brainstorming (2026-10-23), not yet implemented.
 
+**Normative decisions: ADR 0062** (`docs/adr/0062-wide-signal-values.md`, 2026-10-24). This note is background; where it differs from the ADR, the ADR wins. The differences: a write over 64 B stores zero bytes and `bad(config_error)` instead of being truncated (decision 3); the "clamps" of an output are `range`, `on_range`, `rate`, `safe_ramp`, `deadband` and `verify.tolerance` (`lower`/`higher`/`equal` are the values of `safer`), and they are refused with the existing `J0233`, not a new code (decision 9); an `Internal<T>` has one slot per app, shared by its cycle and async instances, not one per instance (decision 4); Modbus `string`/`bytes` registers are decoded too (decision 5); and the trace records lengths, not contents (decision 15). Since PR #65 a wide-typed signal on `main` reads `bad(config_error)` in its scalar slot rather than staying at `uncertain(initial)`; the Problem section below describes the code before that fix.
+
 ## Problem
 
 `bytes`/`string`/`record` signal values are deliberately refused everywhere in the runtime today — not an oversight, three independent, intentional gates:
