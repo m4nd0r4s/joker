@@ -1549,6 +1549,7 @@ dependencies = [
  "joker-api",
  "joker-core",
  "joker-driver-gpio",
+ "joker-driver-i2c",
  "joker-driver-modbus",
  "joker-driver-sysfs",
  "joker-expr",

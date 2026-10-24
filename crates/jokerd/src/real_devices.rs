@@ -1,25 +1,25 @@
-//! [`Devices`] for every driver family with a complete real Linux
-//! adapter: `sysfs` (`Link::Paths`), `modbus-rtu` (`Link::Serial` over
-//! `TokioSerial`), `modbus-tcp` (`Link::Tcp` over `TokioTcpConnector`)
-//! and `gpio` (`Link::Gpio` over `LinuxGpio`, chardev v1). `i2c` is not
-//! dispatched here yet: its driver exists and is tested against an
-//! in-memory double, but the real Linux `i2c-dev` adapter (opening
-//! `/dev/i2c-N` and issuing the ioctl) is not implemented (AUR-401). A
-//! device declaring it is reported, not silently ignored.
+//! [`Devices`] for every driver family with a real Linux adapter:
+//! `sysfs` (`Link::Paths`), `modbus-rtu` (`Link::Serial` over
+//! `TokioSerial`), `modbus-tcp` (`Link::Tcp` over `TokioTcpConnector`),
+//! `gpio` (`Link::Gpio` over `LinuxGpio`, chardev v1) and `i2c`
+//! (`Link::I2c` over `LinuxI2c`, `i2c-dev`, opened at the `dev` of the
+//! device's `i2c` bus). A device of any other driver is reported, and its
+//! signals read `bad(not_connected)`.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use joker_core::{Clock, ClockQuality, QualityReason};
 use joker_driver_gpio::{GpioDriver, GpioPlanner};
+use joker_driver_i2c::{I2cDriver, I2cPlanner};
 use joker_driver_modbus::{ModbusPlanner, ModbusRtu, ModbusTcp, ModbusTcpPlanner};
 use joker_driver_sysfs::{SysfsDriver, SysfsPlanner};
 use joker_hal::link::DevicePaths;
 use joker_hal::std_host::{
-    ClockQualityCell, LinuxGpio, SerialConfig, TokioHost, TokioSerial, TokioTcpConnector,
+    ClockQualityCell, LinuxGpio, LinuxI2c, SerialConfig, TokioHost, TokioSerial, TokioTcpConnector,
 };
-use joker_hal::{Cbor, Direction, Driver, GpioChip, Link, OpenArgs, Planner};
+use joker_hal::{Cbor, Direction, Driver, GpioChip, I2cBus, Link, OpenArgs, Planner};
 use tokio::sync::watch;
 
 use crate::bridge::{DevicePlan, owned_request};
@@ -355,6 +355,86 @@ async fn run_gpio(
     .await;
 }
 
+/// Opens the `i2c-dev` bus at a path into the [`I2cBus`] an `i2c` driver
+/// runs on: [`LinuxI2c`] on a node, an in-memory bus in a test.
+pub type I2cOpener = Arc<dyn Fn(&Path) -> std::io::Result<I2cBus> + Send + Sync>;
+
+/// The [`I2cOpener`] of a node: `/dev/i2c-N` through `i2c-dev`.
+pub fn linux_i2c() -> I2cOpener {
+    Arc::new(|dev: &Path| LinuxI2c::open(dev).map(I2cBus::new))
+}
+
+/// The `dev` of an `i2c` bus (ref/01 §5.6), from its CBOR parameters.
+fn i2c_dev(bus_params: &[u8]) -> Result<PathBuf, String> {
+    Cbor::new(bus_params)
+        .get("dev")
+        .ok()
+        .flatten()
+        .and_then(|v| v.as_str().ok())
+        .map(PathBuf::from)
+        .ok_or_else(|| "the device's `i2c` bus has no `dev`".to_owned())
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "each parameter is a distinct, independently-sourced piece of one device's dispatch; see run_sysfs's own allow"
+)]
+async fn run_i2c(
+    device: DevicePlan,
+    plan: Arc<Plan>,
+    device_index: usize,
+    shared: Arc<Shared>,
+    host: Arc<TokioHost>,
+    mut stop: watch::Receiver<bool>,
+    open_bus: I2cOpener,
+    action_rx: tokio::sync::mpsc::Receiver<ActionCall>,
+) {
+    let owned = owned_request(&device);
+    let views = owned.views();
+    let hal_plan = match I2cPlanner::plan(&views.request()) {
+        Ok(p) => p,
+        Err(e) => return setup_failed(&shared, &plan, device_index, &host, format!("plan: {e:?}")),
+    };
+    let dev = match i2c_dev(&device.bus_params) {
+        Ok(d) => d,
+        Err(e) => return setup_failed(&shared, &plan, device_index, &host, e),
+    };
+    let bus = match open_bus(&dev) {
+        Ok(b) => b,
+        Err(e) => {
+            return setup_failed(
+                &shared,
+                &plan,
+                device_index,
+                &host,
+                format!("{}: {e}", dev.display()),
+            );
+        }
+    };
+    let driver = match I2cDriver::open(
+        &OpenArgs::new(views.request(), hal_plan.view()),
+        Link::I2c(bus),
+    ) {
+        Ok(d) => d,
+        Err(e) => return setup_failed(&shared, &plan, device_index, &host, format!("open: {e:?}")),
+    };
+    let targets = point_targets(&plan, device_index);
+    run_driver(
+        driver,
+        &*host,
+        views.request(),
+        hal_plan.view(),
+        device.timeout_ns,
+        &targets,
+        &shared,
+        device_index,
+        device.fallback_keepalive_ns,
+        action_rx,
+        move || *stop.borrow_and_update(),
+    )
+    .await;
+}
+
 /// The effective link state of a device whose driver is not running
 /// (ref/06 §2.12, `link_state` of ref/00 §6): the core's own `stopped`.
 pub const LINK_STOPPED: u64 = 5;
@@ -402,6 +482,7 @@ pub struct RealDevices {
     handle: tokio::runtime::Handle,
     sysfs_root: Arc<str>,
     clock: Arc<ClockQualityCell>,
+    i2c: I2cOpener,
 }
 
 impl std::fmt::Debug for RealDevices {
@@ -433,7 +514,16 @@ impl RealDevices {
             handle,
             sysfs_root: Arc::from(sysfs_root),
             clock: Arc::new(ClockQualityCell::new(ClockQuality::Unsynced)),
+            i2c: linux_i2c(),
         }
+    }
+
+    /// The same devices, with `i2c` buses opened by `open` instead of
+    /// `i2c-dev` (an in-memory bus in a test).
+    #[must_use]
+    pub fn with_i2c(mut self, open: I2cOpener) -> Self {
+        self.i2c = open;
+        self
     }
 }
 
@@ -491,6 +581,13 @@ impl Devices for RealDevices {
                 "gpio" => {
                     self.handle
                         .spawn(run_gpio(device, plan, i, shared, host, stop, action_rx));
+                    true
+                }
+                "i2c" => {
+                    let open = Arc::clone(&self.i2c);
+                    self.handle.spawn(run_i2c(
+                        device, plan, i, shared, host, stop, open, action_rx,
+                    ));
                     true
                 }
                 other => {

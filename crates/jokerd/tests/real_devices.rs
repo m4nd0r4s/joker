@@ -321,3 +321,140 @@ fn a_modbus_tcp_device_connects_to_a_host_name() {
     set.stop();
     runtime.shutdown_timeout(Duration::from_secs(1));
 }
+
+const I2C_JOKER_TOML: &str = r#"
+[project]
+name  = "real-devices-i2c-test"
+joker = "1.0"
+mode  = "dev"
+
+[buses.i2c1]
+kind = "i2c"
+dev  = "/dev/i2c-1"
+
+[devices.adc]
+driver  = "i2c"
+bus     = "i2c1"
+address = 0x48
+profile = "local/adc@1"
+poll    = "20ms"
+"#;
+
+const I2C_PROFILE_TOML: &str = r#"
+schema = 1
+
+[profile]
+name    = "local/adc"
+version = "1.0.0"
+driver  = "i2c"
+
+[signals.raw]
+type = "i16"
+reg  = 0
+len  = 2
+
+[signals.volts]
+type  = "i16"
+reg   = 0
+len   = 2
+scale = 0.001
+unit  = "V"
+"#;
+
+fn i2c_plan() -> (Arc<jokerd::plan::Plan>, Arc<Shared>) {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("joker.toml"), I2C_JOKER_TOML).unwrap();
+    std::fs::create_dir_all(dir.path().join("profiles/local")).unwrap();
+    std::fs::write(
+        dir.path().join("profiles/local/adc@1.profile.toml"),
+        I2C_PROFILE_TOML,
+    )
+    .unwrap();
+    let loaded = load(&OsFileSystem, &dir.path().join("joker.toml"), &NativeTasks)
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert!(!loaded.report.has_errors(), "{}", loaded.report.render());
+    assert_eq!(loaded.plan.devices[0].driver, "i2c");
+    let plan = Arc::new(loaded.plan);
+    let shared = Arc::new(Shared::new(&plan));
+    (plan, shared)
+}
+
+fn first_sample(shared: &Shared, signal: joker_core::SignalId) -> joker_core::Sample {
+    for _ in 0..100 {
+        std::thread::sleep(Duration::from_millis(10));
+        if let Ok(sample) = shared.slots[signal.index()].read(8)
+            && sample.seq() != 0
+        {
+            return sample;
+        }
+    }
+    panic!("the device never wrote a sample");
+}
+
+#[test]
+fn an_i2c_device_reads_its_registers_through_the_bus_of_its_manifest() {
+    use joker_hal::testing::MemoryI2c;
+    let (plan, shared) = i2c_plan();
+    let (bus, chips) = MemoryI2c::new();
+    chips.preload(0x48, &[0xFF, 0x38]);
+    let opened = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let seen = Arc::clone(&opened);
+    let bus = std::sync::Mutex::new(Some(bus));
+    let open: jokerd::real_devices::I2cOpener = Arc::new(move |dev: &std::path::Path| {
+        seen.lock().unwrap().push(dev.to_path_buf());
+        bus.lock()
+            .unwrap()
+            .take()
+            .map(joker_hal::I2cBus::new)
+            .ok_or_else(|| std::io::Error::other("opened twice"))
+    });
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let set = RealDevices::new(runtime.handle().clone())
+        .with_i2c(open)
+        .start(&plan, &shared);
+
+    let sample = first_sample(&shared, plan.id("adc.raw").unwrap());
+    assert!(sample.quality().is_good(), "{:?}", sample.quality());
+    assert_eq!(sample.transport_bits() as i64, -200);
+    let volts = first_sample(&shared, plan.id("adc.volts").unwrap());
+    assert!((f64::from_bits(volts.transport_bits()) - -0.2).abs() < 1e-12);
+    assert_eq!(
+        opened.lock().unwrap().as_slice(),
+        [PathBuf::from("/dev/i2c-1")]
+    );
+    assert!(set.action_sender("adc").is_some());
+
+    set.stop();
+    runtime.shutdown_timeout(Duration::from_secs(1));
+}
+
+#[test]
+fn an_i2c_bus_that_cannot_be_opened_reads_bad_config_error() {
+    let (plan, shared) = i2c_plan();
+    let open: jokerd::real_devices::I2cOpener =
+        Arc::new(|_: &std::path::Path| Err(std::io::Error::from(std::io::ErrorKind::NotFound)));
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let set = RealDevices::new(runtime.handle().clone())
+        .with_i2c(open)
+        .start(&plan, &shared);
+
+    let sample = first_sample(&shared, plan.id("adc.raw").unwrap());
+    assert_eq!(sample.quality().code(), joker_core::QualityCode::Bad);
+    assert_eq!(
+        sample.quality().reason(),
+        joker_core::QualityReason::ConfigError
+    );
+    assert_eq!(
+        shared.devices[0].link.get(),
+        jokerd::real_devices::LINK_STOPPED
+    );
+
+    set.stop();
+    runtime.shutdown_timeout(Duration::from_secs(1));
+}

@@ -333,15 +333,18 @@ fn point_shape(driver: &str, type_name: &str, addr_len: Option<u8>) -> Option<(R
 }
 
 /// The CBOR a driver's `plan()`, or the host's own `Link` construction,
-/// reads from a `[buses.<b>]` declaration (ref/01 §5.6). Scoped to the
-/// serial keys `joker_hal::std_host::SerialConfig::from_params` reads
-/// (`port`, `baud`, `parity`, `stop`, `data_bits`, `dtr`, `rts`); the
-/// other bus kinds' own keys are not forwarded yet (no driver or host
-/// construction asks for them).
+/// reads from a `[buses.<b>]` declaration (ref/01 §5.6): the serial keys
+/// `joker_hal::std_host::SerialConfig::from_params` reads (`port`, `baud`,
+/// `parity`, `stop`, `data_bits`, `dtr`, `rts`) and the `dev` of an
+/// `i2c` bus; the other bus kinds' own keys are not forwarded yet (no
+/// driver or host construction asks for them).
 fn bus_params_cbor(bus: &joker_manifest::model::Bus) -> Vec<u8> {
     let mut entries = Vec::new();
     if let Some(port) = &bus.port {
         entries.push(("port".to_owned(), Cbor::Text(port.value.clone())));
+    }
+    if let Some(dev) = &bus.dev {
+        entries.push(("dev".to_owned(), Cbor::Text(dev.value.clone())));
     }
     if let Some(baud) = bus.baud {
         entries.push(("baud".to_owned(), Cbor::Int(baud.value)));
