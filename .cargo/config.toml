@@ -1,8 +1,5 @@
 [alias]
 xtask = "run --quiet --release --package xtask --"
 
-# Raspberry Pi (any model: ARMv6 code runs on ARMv7/ARMv8 too) via a
-# static musl binary, so it runs on old userspace (e.g. Raspbian
-# Stretch's glibc 2.24) without a glibc version match.
 [target.arm-unknown-linux-musleabihf]
 linker = "armv6l-unknown-linux-musleabihf-gcc"
