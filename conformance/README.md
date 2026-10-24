@@ -29,7 +29,7 @@ conformance/
 | `trace/` | the full per-tick result sequence that the determinism gate compares (docs/16 §7) |
 | `link/` | Joker Link test vectors: framing, L2 security, message encodings, the signed OTA manifest (ref/07) |
 | `abi/` | Joker Micro C ABI vectors: status codes, enumerations, quality words, input setters (ref/08) |
-| `actions/` | M19 device and instance actions end to end: role, arguments, permissive, deduplication, the device queue, step and native programs against a register double, long actions and cancellation, and the decision log (ref/09 §5.10, ref/06 §2.10, ADR 0058, ADR 0060, ADR 0066) — suite kind `action`, see "Device actions" below |
+| `actions/` | M19 device and instance actions end to end: role, arguments, permissive, deduplication, the device queue, step and native programs against a register double and the real `modbus-tcp` driver, long actions and cancellation, and the decision log (ref/09 §5.10, ref/06 §2.10, ADR 0058, ADR 0060, ADR 0066) — suite kind `action`, see "Device actions" below |
 
 ## File format
 
@@ -100,7 +100,7 @@ spec = ["ref/07 §4.2"]
 
 ## Device actions
 
-`actions/` holds suites of kind `action` (ref/03 §2.6.1, ADR 0066 §20–§24). An action is the runtime's dispatch above a driver, so it is I/O and does not fit the core timeline; it runs only on the `linux` host, and `cargo xtask conformance` runs it against the daemon itself: the fixture's manifest is activated as a generation, with its permits, its plan and its decision log, and every device runs its own io task with a **register double** in place of its driver. The steps of a program therefore go through the real interpreter and reach the double's registers, and a native action reaches the double's `invoke`. The QEMU runner skips these files, and the determinism comparison between hosts leaves the `actions.*` suites out.
+`actions/` holds suites of kind `action` (ref/03 §2.6.1, ADR 0066 §20–§24). An action is the runtime's dispatch above a driver, so it is I/O and does not fit the core timeline; it runs only on the `linux` host, and `cargo xtask conformance` runs it against the daemon itself: the fixture's manifest is activated as a generation, with its permits, its plan and its decision log, and every device runs its own io task with a **register double** in place of its driver. The steps of a program therefore go through the real interpreter and reach the double's registers, and a native action reaches the double's `invoke`. Each case then runs again, reported as `<suite>.<case>@wire`, with the **wire double** (ADR 0073): every `modbus-tcp` device runs the real `modbus-tcp` driver against a Modbus TCP server on loopback that serves the same `[[double]]`, so the steps go through the driver's `read-addr` and `write-addr` and over a socket. The QEMU runner skips these files, and the determinism comparison between hosts leaves the `actions.*` suites out.
 
 ### File format
 
@@ -136,6 +136,7 @@ expect = [{ invocation = "k1", state = "succeeded" }]
 ```
 
 - `[fixture] manifest` is a manifest in ref/01 syntax, verbatim; `[fixture.profiles]` maps each profile reference it uses to the profile's text (ref/03 §2.2).
+- `doubles` in a `[[case]]` lists the doubles it runs against, `register` and `wire` (both by default). On the wire, each address holds one value: FC 1/2 read it as a bit, FC 3/4 as a register (0 when absent), FC 5/6/15/16 write it and are recorded (a multi-register write once, at its first address, with the registers joined in order); `fail` is exception 04 (`device_fault`), no answer (`timeout`) or an answer to another transaction (`comm_failure`), and `link = "down"` a port nobody listens on. `quality` and `native` have no form on the wire, so a case that needs them declares `doubles = ["register"]`.
 - `[[double]]` declares the equipment of one device: `registers` (the value of each address, keyed by the address's `at`), `on_write` (writing `value` at `at` also sets the registers of `set`), `quality` (the quality the double reports for reads of an address, a literal of ref/03 §2.1.3), `fail` (`device_fault`, `timeout` or `comm_failure` for reads and writes of an address), `link = "down"` (every `connect` fails) and `[double.native.<action>]` (`result`, `failure` = `timeout` \| `device` \| `invalid`, `hold` = how long the call runs, checking for cancellation). A device without a `[[double]]` has empty registers.
 - `do` runs in order; `at` is the earliest instant, counted from the start of the case in real time:
   - `{ at, invoke = "<target>.<action>", key, ref, args, timeout, reason, wait, role }` invokes as a principal with `role` (default `operator`); `ref` names the invocation for the expectations (default: the key);
