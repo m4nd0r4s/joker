@@ -1405,7 +1405,7 @@ schema = 1
 
 | Key of `[suite]` | Type | Req. | Default | Meaning |
 |---|---|---|---|---|
-| `kind` | `core` \| `class` \| `driver` \| `action` | yes | — | must agree with the location of the file (`conformance/<area>/`, `classes/`, `conformance/drivers/` or `conformance/actions/`, `J0845`); `driver`: actions, subjects and fixture in ref/06 §6.2–§6.3; `action`: the device and instance actions of the runtime against a register double, fixture, actions and expectations in ADR 0066 §20–§24 (`linux` host only) |
+| `kind` | `core` \| `class` \| `driver` \| `action` | yes | — | must agree with the location of the file (`conformance/<area>/`, `classes/`, `conformance/drivers/` or `conformance/actions/`, `J0845`); `driver`: actions, subjects and fixture in ref/06 §6.2–§6.3; `action`: the device and instance actions of the runtime against a register double, and again with the real `modbus-tcp` driver against a wire double (a case limits itself with `doubles`), fixture, actions and expectations in ADR 0066 §20–§24 and ADR 0073 (`linux` host only) |
 | `id` | id | yes in `core` and `driver` | in `class`, the reference of the class | prefix of the case ids in the reports |
 | `class` | class reference | yes in `class` | — | equal to the file (`classes/std/pump.conformance.toml` → `std/pump@<major of the .jkc>`, `J0845`) |
 | `spec` | list of references (`"16 A7"`, `"01 §7 step 5"`) | no | `[]` | traceability |
