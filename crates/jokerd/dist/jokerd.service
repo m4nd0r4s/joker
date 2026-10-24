@@ -4,13 +4,8 @@ After=network-online.target time-sync.target
 Wants=network-online.target
 
 [Service]
-# Type=notify: jokerd sends READY=1 once the API socket is listening,
-# then WATCHDOG=1 on its own feed interval (AUR-274 phase 4) until its
-# rt/supervisor finds a stale cycle group, at which point it stops —
-# systemd then restarts the daemon when WatchdogSec elapses without a
-# notification, the same escalation the hardware watchdog provides
-# when a board declares one (`--board`, below).
 Type=notify
+NotifyAccess=main
 WatchdogSec=10
 ExecStart=/usr/local/bin/jokerd --state-dir /var/lib/joker --manifest /etc/joker/joker.toml --board /etc/joker/board.toml
 Restart=on-failure
@@ -18,6 +13,7 @@ RestartSec=2
 LimitMEMLOCK=infinity
 LimitRTPRIO=99
 StateDirectory=joker
+RuntimeDirectory=joker
 
 [Install]
 WantedBy=multi-user.target
