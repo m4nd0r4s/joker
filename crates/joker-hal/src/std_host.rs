@@ -15,7 +15,8 @@ use std::os::fd::AsFd;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::string::String;
-use std::sync::{Mutex, PoisonError};
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use joker_core::{Clock, ClockQuality, Instant};
 use rustix::fs::{Mode, OFlags};
@@ -32,19 +33,49 @@ use crate::link::{
 };
 use crate::types::{DriverError, J0852, MonoNs};
 
+/// The node's current clock quality, shared between whoever evaluates it
+/// and every clock that stamps instants with it. Reading it is one atomic
+/// load, so a clock on the tick path can read it on every instant.
+#[derive(Debug)]
+pub struct ClockQualityCell(AtomicU8);
+
+impl ClockQualityCell {
+    /// A cell holding `quality`.
+    pub const fn new(quality: ClockQuality) -> Self {
+        Self(AtomicU8::new(quality as u8))
+    }
+
+    /// The quality held.
+    pub fn get(&self) -> ClockQuality {
+        ClockQuality::from_u8(self.0.load(Ordering::Relaxed)).unwrap_or(ClockQuality::Unsynced)
+    }
+
+    /// Replaces the quality held.
+    pub fn set(&self, quality: ClockQuality) {
+        self.0.store(quality as u8, Ordering::Relaxed);
+    }
+}
+
 /// A host on tokio's clock. Monotonic time starts at 0 when the host is
-/// created; UTC comes from the system clock with the quality given.
+/// created; UTC comes from the system clock, with the quality its
+/// [`ClockQualityCell`] holds when each instant is read.
 #[derive(Debug)]
 pub struct TokioHost {
     start: tokio::time::Instant,
     utc_start_ns: i64,
-    quality: ClockQuality,
+    quality: Arc<ClockQualityCell>,
     sleeps: Mutex<BTreeMap<MonoNs, Pin<Box<tokio::time::Sleep>>>>,
 }
 
 impl TokioHost {
-    /// A host starting now, with the clock quality the node computed.
+    /// A host starting now, with a fixed clock quality.
     pub fn new(quality: ClockQuality) -> Self {
+        Self::tracking(Arc::new(ClockQualityCell::new(quality)))
+    }
+
+    /// A host starting now, whose instants carry the quality `quality`
+    /// holds at the time they are read.
+    pub fn tracking(quality: Arc<ClockQualityCell>) -> Self {
         let utc_start_ns = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| i64::try_from(d.as_nanos()).unwrap_or(i64::MAX));
@@ -69,7 +100,7 @@ impl Clock for TokioHost {
             utc_ns: self
                 .utc_start_ns
                 .saturating_add(i64::try_from(mono_ns).unwrap_or(i64::MAX)),
-            clock: self.quality,
+            clock: self.quality.get(),
         }
     }
 }
@@ -504,6 +535,17 @@ mod tests {
     use crate::cx::Cx;
     use crate::link::SerialPort;
     use std::vec::Vec;
+
+    #[tokio::test]
+    async fn a_tracking_host_stamps_the_quality_its_cell_holds_now() {
+        let cell = Arc::new(ClockQualityCell::new(ClockQuality::Synced));
+        let host = TokioHost::tracking(Arc::clone(&cell));
+        assert_eq!(host.now().clock, ClockQuality::Synced);
+        cell.set(ClockQuality::Holdover);
+        assert_eq!(host.now().clock, ClockQuality::Holdover);
+        cell.set(ClockQuality::Unsynced);
+        assert_eq!(host.now().clock, ClockQuality::Unsynced);
+    }
 
     #[test]
     fn bus_params_follow_ref01() {
