@@ -15,14 +15,19 @@ use std::time::{Duration, Instant as StdInstant};
 use joker_manifest::MemoryFileSystem;
 use serde_json::{Map, Value, json};
 
+use crate::apps::{APP_CWASM, NodeApps, is_prod};
+use crate::blobs::parse_digest;
 use crate::decisions::{SharedLog, lock};
 use crate::devices::{DeviceSet, Devices};
-use crate::generations::{Activation, GenState, Generation, Origin, Store, descriptor_hash};
+use crate::generations::{
+    Activation, DescriptorArtifact, GenArtifact, GenState, Generation, Origin, Store,
+    descriptor_hash,
+};
 use crate::load::{LoadError, Loaded, instantiate, load};
 use crate::pacer::Pacer;
 use crate::plan::Plan;
 use crate::runner::{Running, Start, StartContext};
-use crate::task::TaskProvider;
+use crate::task::{Providers, TaskProvider};
 use crate::trace_ring::digest_bytes;
 
 /// The name of the effective manifest inside a generation.
@@ -113,6 +118,7 @@ pub struct Controller {
     store: Store,
     log: SharedLog,
     tasks: Arc<dyn TaskProvider>,
+    apps: Option<Arc<NodeApps>>,
     devices: Arc<dyn Devices>,
     pacer: PacerFactory,
     config: Config,
@@ -237,6 +243,24 @@ fn lock_digest(lock: &str) -> [u8; 32] {
 
 /// The descriptor hash of an effective manifest and its lock.
 pub fn generation_hash(loaded: &Loaded, lock: &str) -> String {
+    generation_hash_with(loaded, lock, &[])
+}
+
+/// The descriptor hash of an effective manifest, its lock and the
+/// artifacts it refers to. A `.cwasm` is derived from its `.wasm` and stays
+/// out of the descriptor, as it stays out of the lock (ADR 0067).
+pub fn generation_hash_with(loaded: &Loaded, lock: &str, artifacts: &[GenArtifact]) -> String {
+    let artifacts: Vec<DescriptorArtifact> = artifacts
+        .iter()
+        .filter(|a| a.kind != APP_CWASM)
+        .filter_map(|a| {
+            parse_digest(&a.digest).map(|digest| DescriptorArtifact {
+                name: a.name.clone(),
+                media_type: a.kind.clone(),
+                digest,
+            })
+        })
+        .collect();
     let canon = loaded
         .report
         .effective
@@ -245,7 +269,7 @@ pub fn generation_hash(loaded: &Loaded, lock: &str) -> String {
     descriptor_hash(
         canon.as_deref().unwrap_or(&[0xA0]),
         lock_digest(lock),
-        &[],
+        &artifacts,
         loaded.plan.dev,
     )
 }
@@ -266,6 +290,7 @@ impl Controller {
             store: Store::open(&state_dir.join("generations")).map_err(ControlError::io)?,
             log,
             tasks,
+            apps: None,
             devices,
             pacer,
             config,
@@ -277,6 +302,29 @@ impl Controller {
             persistent,
             clock_policy: crate::clock::ClockPolicy::default(),
         })
+    }
+
+    /// Runs the Wasm apps of each generation from its artifacts (ADR 0067);
+    /// without it, the artifacts are stored and the apps come from the
+    /// fixed task provider alone (`jk dev`, tests).
+    pub fn with_apps(mut self, apps: Arc<NodeApps>) -> Self {
+        self.apps = Some(apps);
+        self
+    }
+
+    fn provider(
+        &self,
+        manifest: &str,
+        artifacts: &[GenArtifact],
+    ) -> Result<Arc<dyn TaskProvider>, ControlError> {
+        let Some(apps) = &self.apps else {
+            return Ok(Arc::clone(&self.tasks));
+        };
+        let wasm = apps.provider(artifacts, is_prod(manifest))?;
+        let mut providers = Providers::default();
+        providers.push(Box::new(wasm));
+        providers.push(Box::new(Arc::clone(&self.tasks)));
+        Ok(Arc::new(providers))
     }
 
     /// The persisted trips (docs/01 §7).
@@ -379,6 +427,21 @@ impl Controller {
         dry_run: bool,
         created_by: Option<String>,
     ) -> Result<Generation, ControlError> {
+        self.propose_with(manifest, lock, &[], message, dry_run, created_by)
+    }
+
+    /// [`Controller::propose_by`] with the artifacts the generation refers
+    /// to (ref/09 §5.13): its Wasm apps are loaded and checked now, and the
+    /// artifacts are stored with it.
+    pub fn propose_with(
+        &mut self,
+        manifest: &str,
+        lock: &str,
+        artifacts: &[GenArtifact],
+        message: Option<String>,
+        dry_run: bool,
+        created_by: Option<String>,
+    ) -> Result<Generation, ControlError> {
         if self.confirming.is_some() {
             return Err(ControlError::new(
                 "J-E1608",
@@ -386,8 +449,9 @@ impl Controller {
                 "a generation is waiting for confirmation",
             ));
         }
-        let loaded = loaded_of(manifest, self.tasks.as_ref())?;
-        let hash = generation_hash(&loaded, lock);
+        let tasks = self.provider(manifest, artifacts)?;
+        let loaded = loaded_of(manifest, tasks.as_ref())?;
+        let hash = generation_hash_with(&loaded, lock, artifacts);
         if dry_run {
             return Ok(Generation {
                 number: 0,
@@ -407,9 +471,16 @@ impl Controller {
                     .map_err(ControlError::io)?;
             }
         }
-        self.store
+        let g = self
+            .store
             .create(&hash, manifest, lock, message, created_by)
-            .map_err(ControlError::io)
+            .map_err(ControlError::io)?;
+        if !artifacts.is_empty() {
+            self.store
+                .save_artifacts(g.number, artifacts)
+                .map_err(ControlError::io)?;
+        }
+        Ok(g)
     }
 
     /// Activates a pending generation. With a window it waits for `confirm`
@@ -544,6 +615,7 @@ impl Controller {
     /// Rolls back when the confirmation window has ended; returns the
     /// rollback when one happened.
     pub fn poll(&mut self) -> Result<Option<Switched>, ControlError> {
+        self.log_traps();
         let expired = self
             .confirming
             .as_ref()
@@ -632,8 +704,10 @@ impl Controller {
                 format!("generation {number} is no longer stored"),
             )
         })?;
-        let loaded = loaded_of(&manifest, self.tasks.as_ref())?;
-        let tasks = instantiate(&loaded.plan, &loaded.manifest, self.tasks.as_ref())
+        let artifacts = self.store.artifacts(number).map_err(ControlError::io)?;
+        let provider = self.provider(&manifest, &artifacts)?;
+        let loaded = loaded_of(&manifest, provider.as_ref())?;
+        let tasks = instantiate(&loaded.plan, &loaded.manifest, provider.as_ref())
             .map_err(|e| validation(&e))?;
         let from = self.active.as_ref().map(|a| a.number);
         let inherit = match self.active.take() {
@@ -693,6 +767,43 @@ impl Controller {
             })
             .map_err(ControlError::io)?;
         Ok(())
+    }
+
+    /// Writes the traps the cycle thread reported since the last poll to
+    /// the decision log (`app_trap`, ADR 0067). The outputs of a trapped
+    /// app are not touched here: its writer stops proposing, and they go to
+    /// `safe` when its lease ends (docs/01 §9).
+    pub fn log_traps(&self) {
+        let Some(apps) = &self.apps else {
+            return;
+        };
+        let traps = apps.traps();
+        let generation = self.active.as_ref().map(|a| a.number);
+        for t in traps.drain() {
+            eprintln!(
+                "jokerd: app `{}` trapped in task `{}` at tick {} ({})",
+                t.app, t.task, t.tick, t.code
+            );
+            let mut m = Map::new();
+            m.insert("gen".into(), generation.map_or(Value::Null, |g| json!(g)));
+            m.insert("record".into(), json!("app_trap"));
+            m.insert("app".into(), json!(&*t.app));
+            m.insert("task".into(), json!(&*t.task));
+            m.insert("code".into(), json!(t.code));
+            m.insert("tick".into(), json!(t.tick));
+            m.insert("at_mono_ns".into(), json!(t.at_mono_ns));
+            m.insert(
+                "ts".into(),
+                json!(crate::wire::timestamp(
+                    self.config
+                        .utc_origin_ns
+                        .saturating_add(i64::try_from(t.at_mono_ns).unwrap_or(i64::MAX))
+                )),
+            );
+            if let Err(e) = lock(&self.log).append(m, true) {
+                eprintln!("jokerd: decision log: {e}");
+            }
+        }
     }
 
     fn log_generation(&self, number: u64, event: &str, from: Option<u64>, reason: Option<&str>) {

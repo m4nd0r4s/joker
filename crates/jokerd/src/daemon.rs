@@ -106,8 +106,10 @@ pub fn lock_controller(c: &SharedController) -> std::sync::MutexGuard<'_, Contro
     c.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-/// Builds the controller of a state directory, boots the last confirmed
-/// generation, and, when there is none, proposes and activates `entry`.
+/// Builds the controller of a state directory, with the Wasm apps of its
+/// generations run from their artifacts and the node's AOT cache (ADR
+/// 0067) ahead of `tasks`, boots the last confirmed generation, and, when
+/// there is none, proposes and activates `entry`.
 pub fn controller(
     options: &Options,
     tasks: Arc<dyn TaskProvider>,
@@ -121,7 +123,7 @@ pub fn controller(
     let log = Arc::new(Mutex::new(log));
     quality.refresh(ClockPolicy::default(), crate::wire::utc_now_ns());
     let cell = quality.cell();
-    let mut c = Controller::new(
+    let c = Controller::new(
         &options.state_dir,
         log,
         tasks,
@@ -134,6 +136,9 @@ pub fn controller(
         },
     )
     .map_err(|e| e.to_string())?;
+    let apps = crate::apps::NodeApps::open(&options.state_dir)
+        .map_err(|e| format!("the Wasm engine of this node: {e}"))?;
+    let mut c = c.with_apps(Arc::new(apps));
     if c.boot().map_err(|e| e.to_string())?.is_none()
         && let Some(entry) = &options.entry
     {

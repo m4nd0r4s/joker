@@ -116,6 +116,20 @@ const MANIFEST: &str = "joker.toml";
 const LOCK: &str = "joker.lock";
 const META: &str = "generation.json";
 const ACTIVATIONS: &str = "activations.jsonl";
+const ARTIFACTS: &str = "artifacts.json";
+
+/// One artifact a generation refers to (`ArtifactRef` of ref/09 §5.13),
+/// stored with the generation so that an activation, a rollback or a boot
+/// finds the same files (ADR 0067).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GenArtifact {
+    /// The name the manifest refers to it by (`apps.light`).
+    pub name: String,
+    /// Media type, short form (`joker.app.v1+wasm`).
+    pub kind: String,
+    /// `sha256:<hex>` of its bytes.
+    pub digest: String,
+}
 
 fn utc_now_ns() -> i64 {
     std::time::SystemTime::now()
@@ -201,6 +215,22 @@ impl Store {
         };
         self.save(&g)?;
         Ok(g)
+    }
+
+    /// Stores the artifacts a generation refers to.
+    pub fn save_artifacts(&self, number: u64, artifacts: &[GenArtifact]) -> io::Result<()> {
+        let text = serde_json::to_string_pretty(artifacts).map_err(io::Error::other)?;
+        write_synced(&self.gen_dir(number).join(ARTIFACTS), text.as_bytes())
+    }
+
+    /// The artifacts a generation refers to; none for a generation stored
+    /// without any.
+    pub fn artifacts(&self, number: u64) -> io::Result<Vec<GenArtifact>> {
+        match fs::read_to_string(self.gen_dir(number).join(ARTIFACTS)) {
+            Ok(text) => serde_json::from_str(&text).map_err(io::Error::other),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(Vec::new()),
+            Err(e) => Err(e),
+        }
     }
 
     /// Writes a generation's metadata.
