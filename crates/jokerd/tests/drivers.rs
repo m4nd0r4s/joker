@@ -64,7 +64,7 @@ fn run_driver_reads_and_writes_through_the_real_commit_channel() {
     let plan = GpioPlanner::plan(&views.request()).unwrap();
 
     let (chip, lines) = MemoryGpio::new();
-    lines.drive(17, false); // active_low: physical false -> logical true
+    lines.drive(17, false);
     let link = Link::Gpio(GpioChip::new(chip));
     let driver = GpioDriver::open(
         &joker_hal::OpenArgs::new(views.request(), plan.view()),
@@ -90,7 +90,7 @@ fn run_driver_reads_and_writes_through_the_real_commit_channel() {
     assert_eq!(targets.len(), 1, "only `button` is an input");
 
     let host = Arc::new(VirtualHost::new(0));
-    let stop_at = 200_000_000u64; // 200 ms of virtual time
+    let stop_at = 200_000_000u64;
     let host_for_stop = Arc::clone(&host);
     let result = host.run(run_driver(
         driver,
@@ -111,8 +111,88 @@ fn run_driver_reads_and_writes_through_the_real_commit_channel() {
     let sample = shared.slots[button_id.index()].read(8).unwrap();
     assert_eq!(sample.transport_bits(), 1, "button settled to true");
 
-    // No cycle thread runs in this test (that path is commit_channel.rs's
-    // job); this only confirms Shared::new built the output binding this
-    // driver's write-drain loop reads from.
     assert_eq!(shared.commit_bindings[0].len(), 1);
+}
+
+#[test]
+fn a_read_that_starts_failing_turns_the_slot_bad_instead_of_keeping_the_last_value() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("joker.toml"), JOKER_TOML).unwrap();
+    std::fs::create_dir_all(dir.path().join("apps/light")).unwrap();
+    let loaded = load(&OsFileSystem, &dir.path().join("joker.toml"), &NativeTasks)
+        .unwrap_or_else(|e| panic!("{e}"));
+    let device_plan = loaded.plan.devices[0].clone();
+    let shared = Arc::new(Shared::new(&loaded.plan));
+    let owned = jokerd::bridge::owned_request(&device_plan);
+    let views = owned.views();
+    let plan = GpioPlanner::plan(&views.request()).unwrap();
+
+    let (chip, lines) = MemoryGpio::new();
+    lines.drive(17, false);
+    let driver = GpioDriver::open(
+        &joker_hal::OpenArgs::new(views.request(), plan.view()),
+        Link::Gpio(GpioChip::new(chip)),
+    )
+    .unwrap();
+    let targets = jokerd::drivers::point_targets(&loaded.plan, 0);
+    let button_id = loaded.plan.id("io.button").unwrap();
+
+    let host = Arc::new(VirtualHost::new(0));
+    let host_for_stop = Arc::clone(&host);
+    let shared_for_stop = Arc::clone(&shared);
+    let mut good_before_failure = false;
+    host.run(run_driver(
+        driver,
+        &*host,
+        views.request(),
+        plan.view(),
+        2_000_000_000,
+        &targets,
+        &shared,
+        0,
+        None,
+        tokio::sync::mpsc::channel(1).1,
+        move || {
+            let now = host_for_stop.mono();
+            if now >= 120_000_000 && !good_before_failure {
+                let before = shared_for_stop.slots[button_id.index()].read(8).unwrap();
+                assert_eq!(before.get(), Ok(1), "the line read good before it failed");
+                good_before_failure = true;
+                lines.deny(17);
+            }
+            now >= 300_000_000
+        },
+    ))
+    .unwrap();
+
+    let sample = shared.slots[button_id.index()].read(8).unwrap();
+    assert_eq!(sample.quality().code(), joker_core::QualityCode::Bad);
+    assert_eq!(
+        sample.quality().reason(),
+        joker_core::QualityReason::ConfigError,
+        "a denied line is the gpio driver's own bad(config_error)"
+    );
+    assert!(sample.get().is_err(), "a bad sample carries no value");
+}
+
+#[test]
+fn a_value_that_does_not_convert_to_the_signal_type_is_bad_config_error() {
+    use joker_hal::acquire::{OwnedRaw, Settled};
+    use joker_hal::types::RawStatus;
+    let target = PointTarget {
+        point: 0,
+        signal: joker_core::SignalId(0),
+        ty: joker_core::ValueType::Bool,
+    };
+    let settled = Settled {
+        point: 0,
+        value: OwnedRaw::Text("on".into()),
+        status: RawStatus::OK,
+        invalid: None,
+        ts_hw: None,
+    };
+    let (bits, quality) = jokerd::drivers::settled_sample(&target, &settled);
+    assert_eq!(bits, 0);
+    assert_eq!(quality.code(), joker_core::QualityCode::Bad);
+    assert_eq!(quality.reason(), joker_core::QualityReason::ConfigError);
 }
