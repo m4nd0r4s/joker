@@ -509,6 +509,9 @@ All keys. Reading is strict (ref/00 §1: an unknown key is `J0140`; `x_*` ignore
 | `--log-format <f>` | `JOKERD_LOG_FORMAT` | `log.format` |
 | `--no-generation` | `JOKERD_NO_GENERATION=1` | `generations.boot = "none"`, only for this startup |
 | `--generation <n>` | — | starts on the confirmed generation `n` and marks it as current (rollback without network) |
+| `--manifest <path>` | — | with no confirmed generation to boot, proposes and activates that manifest and its lock (same name, `.lock`) (ADR 0070) |
+| `--socket <path>` | — | path of the API's Unix socket, in place of `<paths.run>/api.sock` (ADR 0070) |
+| `--board <path>` | — | the board profile (ref/03 §2.3.2) whose `[watchdog]` is fed, until `jokerd` resolves the board from the generation's lock; unreadable or without `[watchdog]`, a warning, and only systemd's watchdog is fed (ADR 0070) |
 
 **Precedence:** flag > variable > `node.toml` > default. There are no variables for `trust`, `policy` or `roles`: the security policy only changes through the file, which only `jokerd` writes (§3.2.3).
 

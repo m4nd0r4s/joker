@@ -340,7 +340,7 @@ Legend: minimum **Role**; **M** = mutating (anti-replay over TCP, §2.5). The co
 
 | Method | Path | Role | M | Does |
 |---|---|---|---|---|
-| GET | `/v1/info` | viewer | | node, site, runtime (version, `boot_id`, build features), API, mode, board, kernel, generation, clock, limits, API `features`, and who is calling (`Info`) |
+| GET | `/v1/info` | viewer | | node, site, runtime (version, `boot_id`, `boot_count`, the startup counter of 01 §20 (ADR 0070), build features), API, mode, board, kernel, generation, clock, limits, API `features`, and who is calling (`Info`) |
 | GET | `/v1/version` | viewer | | supported versions: API, current and previous WIT world, `joker:driver`, JDP, manifest schema, lock, `agent/1`, Joker Link, C ABI, trace (`Version`) |
 | GET | `/v1/health` | viewer | | `ok` \| `degraded` \| `failed` with checks; `probe=live` (process responds), `ready` (first tick done), `full`; 503 on `failed` (`Health`) |
 | GET | `/v1/whoami` | viewer | | principal, role, session, rules that matched (`WhoAmI`) |
@@ -505,12 +505,12 @@ The prediction uses the same functions of the core over the current values, outs
 
 | Method | Path | Role | M | Does |
 |---|---|---|---|---|
-| GET | `/v1/trips` | viewer | | tripped outputs: since when, `scope` (`output` or `group`), cause (`range`, `alarm`, `group_overrun`, `runtime`), `reset_when` and its current value (`Trip`) |
+| GET | `/v1/trips` | viewer | | tripped outputs: since when, `scope` (`output` or `group`), cause (`range`, `alarm`, `group_overrun`, `runtime`), `reset_when` and its current value, and `declared: false` for a persisted trip of an output the running generation does not declare (`Trip`, ADR 0070) |
 | POST | `/v1/outputs/{path}/reset` | operator | M | reset of a trip (`ResetRequest`: `reason` required, `wait`) |
 | POST | `/v1/trips/reset` | operator | M | reset of several outputs by selector (`BulkResetRequest`), for example after the trip of a group |
 | GET | `/v1/decisions` | viewer | | decision log (M3): one entry per change of (applied value, result, active level), with `repeats` and `last_ts` (01 §19) |
 
-**Reset (document 16, E7).** The request is a `manual` action that goes to the inbox of the owning group. The response comes after the next tick: `cleared`, or `retripped` (the cause is still present and the output went back to trip at that tick, with the cause). An output that is not tripped is `J-E1120` (409). The trip is persistent (`state/trips`, document 01, §7), and the reset is also recorded with `fsync`, with its principal and reason (decision-log record `reset`, ADR 0061). In a bulk reset, an output that could not be reset (a full reset queue, for example) is `failed`, with its `error` (`code`, `detail`), and the others are still reset (ADR 0061).
+**Reset (document 16, E7).** The request is a `manual` action that goes to the inbox of the owning group. The response comes after the next tick: `cleared`, or `retripped` (the cause is still present and the output went back to trip at that tick, with the cause). An output that is not tripped is `J-E1120` (409). The trip is persistent (`state/trips`, document 01, §7), and the reset is also recorded with `fsync`, with its principal and reason (decision-log record `reset`, ADR 0061). In a bulk reset, an output that could not be reset (a full reset queue, for example) is `failed`, with its `error` (`code`, `detail`), and the others are still reset (ADR 0061). A persisted trip of an output that the running generation does not declare stays in `state/trips` until it is reset: both reset endpoints reach it, remove it without going through a group and answer `cleared` (ADR 0070). A failure to write `state/trips` or `state/manual` while running is recorded in the decision log (`state_write_failed`, ADR 0070).
 
 **Decision log filters:** `output` (selectors), `cause` (only the decisions whose causal set contains that signal: `jk decisions --cause`), `writer`, `outcome`, `kind` (`proposal`, `expiry`, `release`, `takeover`, `safe`, `trip`, `reset`, `method`, `intent`), range, order, pagination.
 
