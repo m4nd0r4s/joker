@@ -1531,6 +1531,7 @@ version = "0.0.0"
 name = "jokerd"
 version = "0.0.0"
 dependencies = [
+ "assert_no_alloc",
  "crossbeam-queue",
  "futures-util",
  "humantime",
