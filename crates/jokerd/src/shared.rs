@@ -8,7 +8,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use crossbeam_queue::ArrayQueue;
 use joker_core::commit::{DecisionRecord, WriteResult};
 use joker_core::image::Proposal;
-use joker_core::{Quality, SignalId, Slot, ValueType};
+use joker_core::value::NO_TS_SRC;
+use joker_core::{Quality, QualityCode, QualityReason, SignalId, Slot, ValueType};
 use joker_hal::{CommitBox, OutputBinding, RawEncoding, WriteKind, WriteStatus};
 
 use crate::plan::Plan;
@@ -167,6 +168,18 @@ pub struct WriteAckRecord {
     pub status: WriteStatus,
     /// Monotonic instant of the answer.
     pub at_mono_ns: u64,
+}
+
+/// Whether the equipment confirmed the last write of an output (ref/06
+/// §2.9), from an io task to the cycle thread, the only writer of the
+/// output's slot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Confirmation {
+    /// The output.
+    pub output: SignalId,
+    /// `false` after a `device-rejected` ack: the output turns
+    /// `uncertain(not_confirmed)`; `true` after a later `ok` ack.
+    pub confirmed: bool,
 }
 
 /// One tick of one group, encoded as a trace segment of one tick.
@@ -336,6 +349,11 @@ pub struct Shared {
     pub write_acks: ArrayQueue<WriteAckRecord>,
     /// Write acks dropped by a full queue.
     pub write_acks_dropped: Counter,
+    /// Confirmations of output writes, for the cycle thread to apply to
+    /// the outputs' slots.
+    pub confirmations: ArrayQueue<Confirmation>,
+    /// Confirmations dropped by a full queue.
+    pub confirmations_dropped: Counter,
 }
 
 fn raw_encoding_of(ty: ValueType) -> Option<RawEncoding> {
@@ -402,6 +420,34 @@ fn commit_channels(plan: &Plan) -> CommitChannels {
 }
 
 impl Shared {
+    /// Applies the pending [`Confirmation`]s to the outputs' slots (cycle
+    /// thread only: the one writer of an output's slot). A rejected output
+    /// keeps its applied value with `uncertain(not_confirmed)`; a confirmed
+    /// one is `good` again. The core rewrites the slot `good` whenever the
+    /// applied value changes, so a new value starts confirmed until its own
+    /// ack says otherwise.
+    pub fn apply_confirmations(&self, now_mono_ns: u64) {
+        let not_confirmed = Quality::new(QualityCode::Uncertain, QualityReason::NotConfirmed);
+        while let Some(c) = self.confirmations.pop() {
+            let Some(slot) = self.slots.get(c.output.index()) else {
+                continue;
+            };
+            let Ok(sample) = slot.read(8) else {
+                continue;
+            };
+            let quality = sample.quality();
+            let next = if c.confirmed {
+                if quality != not_confirmed {
+                    continue;
+                }
+                Quality::GOOD
+            } else {
+                not_confirmed
+            };
+            slot.write(sample.transport_bits(), next, NO_TS_SRC, now_mono_ns);
+        }
+    }
+
     /// Allocates everything a plan needs, before the first tick.
     pub fn new(plan: &Plan) -> Self {
         let slots: Box<[Slot]> = (0..plan.signals.len()).map(|_| Slot::new()).collect();
@@ -455,6 +501,8 @@ impl Shared {
                 .collect(),
             write_acks: ArrayQueue::new(WRITE_ACK_CAPACITY),
             write_acks_dropped: Counter::default(),
+            confirmations: ArrayQueue::new(WRITE_ACK_CAPACITY),
+            confirmations_dropped: Counter::default(),
         }
     }
 

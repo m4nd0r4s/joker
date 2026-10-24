@@ -29,7 +29,7 @@ use joker_hal::{CommitRx, Cx, RxState};
 use joker_manifest::context::Acquisition;
 
 use crate::plan::Plan;
-use crate::shared::{Shared, WriteAckRecord};
+use crate::shared::{Confirmation, Shared, WriteAckRecord};
 
 pub use crate::action_exec::{ActionCall, ActionOutcome};
 
@@ -389,14 +389,34 @@ fn numeric_value(ty: ValueType, bits: u64) -> Option<f64> {
     }
 }
 
+/// The last executions of one batch, as the link counts them (ref/06
+/// §2.12): a batch is affected by a `degraded` link while one of its own
+/// last [`DEGRADED_WINDOW`] executions failed against the link.
+#[derive(Clone, Copy, Debug, Default)]
+struct BatchWindow(u32);
+
+impl BatchWindow {
+    /// Records one execution; true while the batch is affected.
+    fn execute(&mut self, failed: bool) -> bool {
+        self.0 = (self.0 << 1 | u32::from(failed)) & ((1 << DEGRADED_WINDOW) - 1);
+        self.0 != 0
+    }
+}
+
 fn store_settled(
     shared: &Shared,
     target: &PointTarget,
     deadband: &mut Deadband,
     settled: &Settled,
+    stale: bool,
     now: u64,
 ) {
     let (bits, quality) = settled_sample(target, settled);
+    let quality = if stale && quality.is_good() {
+        Quality::new(QualityCode::Uncertain, QualityReason::Stale)
+    } else {
+        quality
+    };
     let bits = deadband.filter(target.acquisition.deadband, target.ty, bits, quality);
     if let Some(slot) = shared.slots.get(target.signal.index()) {
         slot.write(bits, quality, NO_TS_SRC, settled.ts_hw.unwrap_or(now));
@@ -752,6 +772,8 @@ async fn serve<D: Driver>(
     let mut due: Vec<u64> = vec![host.now().mono_ns; plan.len()];
     let mut buf = SampleBuffer::with_capacity(4096);
     let mut deadbands = vec![Deadband::default(); targets.len()];
+    let mut batch_windows = vec![BatchWindow::default(); plan.len()];
+    let mut rejected = vec![false; shared.commit_bindings.get(device_index).map_or(0, Vec::len)];
     let mut next_keepalive = fallback_keepalive_ns.map(|ns| host.now().mono_ns + ns);
     while !stop() {
         if let (Some(ns), Some(next)) = (fallback_keepalive_ns, next_keepalive)
@@ -777,6 +799,7 @@ async fn serve<D: Driver>(
                 let mut cx = Cx::new(host, deadline);
                 driver.write(&mut cx, &writes, &mut acks).await;
                 record_failed_acks(shared, device_index, &writes, &acks, host.now().mono_ns);
+                confirm_outputs(shared, device_index, &writes, &acks, &mut rejected);
                 let mut down = false;
                 for ack in acks.iter() {
                     down |= ack.status == WriteStatus::NotConnected
@@ -835,6 +858,13 @@ async fn serve<D: Driver>(
             }
             let settled = settle(request, &batch, buf.samples(), result);
             let now = host.now().mono_ns;
+            let against_link = result.is_err_and(|f| f.counts_for_link());
+            executed += 1;
+            failed += u32::from(against_link);
+            link.batch(against_link);
+            let stale = batch_windows
+                .get_mut(id as usize)
+                .is_some_and(|w| w.execute(against_link) && link.state == LinkState::Degraded);
             for s in &settled {
                 if s.invalid.is_some()
                     && let Some(stats) = stats
@@ -844,13 +874,9 @@ async fn serve<D: Driver>(
                 if let Some(i) = targets.iter().position(|t| t.point == s.point)
                     && let (Some(target), Some(deadband)) = (targets.get(i), deadbands.get_mut(i))
                 {
-                    store_settled(shared, target, deadband, s, now);
+                    store_settled(shared, target, deadband, s, stale, now);
                 }
             }
-            let against_link = result.is_err_and(|f| f.counts_for_link());
-            executed += 1;
-            failed += u32::from(against_link);
-            link.batch(against_link);
             if matches!(result, Err(BatchFailure::NotConnected)) {
                 return Ended::LinkDown;
             }
@@ -896,6 +922,45 @@ fn record_failed_acks(
         };
         if shared.write_acks.push(record).is_err() {
             shared.write_acks_dropped.bump();
+        }
+    }
+}
+
+/// Tells the cycle thread which outputs the equipment rejected, and which
+/// rejected ones a later write confirmed (ref/06 §2.9): a
+/// `device-rejected` ack leaves the output `uncertain(not_confirmed)`, an
+/// `ok` ack of the same output clears it. `rejected` is per binding of the
+/// device, so only the transitions are sent.
+fn confirm_outputs(
+    shared: &Shared,
+    device_index: usize,
+    writes: &[CommittedWrite<'_>],
+    acks: &WriteAcks<'_>,
+    rejected: &mut [bool],
+) {
+    let bindings = shared
+        .commit_bindings
+        .get(device_index)
+        .map_or(&[][..], Vec::as_slice);
+    for (write, ack) in writes.iter().zip(acks.iter()) {
+        let Some(i) = bindings.iter().position(|b| b.point == write.point) else {
+            continue;
+        };
+        let (Some(binding), Some(flag)) = (bindings.get(i), rejected.get_mut(i)) else {
+            continue;
+        };
+        let confirmed = match ack.status {
+            WriteStatus::DeviceRejected => false,
+            WriteStatus::Ok if *flag => true,
+            _ => continue,
+        };
+        *flag = !confirmed;
+        let confirmation = Confirmation {
+            output: binding.signal,
+            confirmed,
+        };
+        if shared.confirmations.push(confirmation).is_err() {
+            shared.confirmations_dropped.bump();
         }
     }
 }

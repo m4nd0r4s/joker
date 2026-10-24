@@ -28,6 +28,8 @@ struct Script {
     lost_from: Option<u64>,
     lost_until: u64,
     failure: Option<BatchFailure>,
+    fail_every: u32,
+    reads: u32,
     connects: u32,
     disconnects: u32,
 }
@@ -64,7 +66,11 @@ impl Driver for FlakyDriver {
         out: &mut RawSink<'_>,
     ) -> Result<(), BatchFailure> {
         let now = cx.now().mono_ns;
-        let s = self.script.lock().unwrap();
+        let mut s = self.script.lock().unwrap();
+        s.reads += 1;
+        if s.fail_every > 0 && s.reads.is_multiple_of(s.fail_every) {
+            return Err(BatchFailure::Timeout);
+        }
         if let (Some(from), Some(failure)) = (s.lost_from, s.failure)
             && now >= from
             && now < s.lost_until
@@ -131,6 +137,8 @@ fn shared() -> Shared {
         devices: vec![DeviceStats::default()].into_boxed_slice(),
         write_acks: crossbeam_queue::ArrayQueue::new(8),
         write_acks_dropped: Default::default(),
+        confirmations: crossbeam_queue::ArrayQueue::new(16),
+        confirmations_dropped: Default::default(),
     }
 }
 
@@ -277,6 +285,27 @@ fn a_device_fault_does_not_count_against_the_link() {
         (QualityCode::Bad, QualityReason::DeviceFault)
     );
     assert_eq!(link(&shared), LinkState::Up as u64);
+}
+
+#[test]
+fn a_degraded_link_reads_the_affected_batch_as_uncertain_stale() {
+    let mut stale_while_degraded = false;
+    let (_, script) = run(
+        Script {
+            fail_every: 4,
+            ..Script::default()
+        },
+        1_000 * MS,
+        |_, shared| {
+            if link(shared) == LinkState::Degraded as u64 {
+                let q = quality(shared);
+                assert_ne!(q.0, QualityCode::Good, "a degraded batch never reads good");
+                stale_while_degraded |= q == (QualityCode::Uncertain, QualityReason::Stale);
+            }
+        },
+    );
+    assert!(stale_while_degraded);
+    assert_eq!(script.connects, 1, "a degraded link is not taken down");
 }
 
 #[test]
