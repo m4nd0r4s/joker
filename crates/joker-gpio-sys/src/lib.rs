@@ -1,26 +1,28 @@
 #![doc = include_str!("../README.md")]
 
+#[cfg(target_os = "linux")]
+use std::os::fd::{AsRawFd, FromRawFd};
 #[cfg(unix)]
-use std::os::fd::{AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
+use std::os::fd::{BorrowedFd, OwnedFd};
 
 /// Maximum number of lines one request can cover (`GPIOHANDLES_MAX`,
 /// `<linux/gpio.h>`); this crate always requests exactly one.
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 const GPIOHANDLES_MAX: usize = 64;
 
 /// The kernel's fixed consumer-label buffer size (`<linux/gpio.h>`).
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 pub const GPIO_MAX_NAME_SIZE: usize = 32;
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 const GPIOHANDLE_REQUEST_INPUT: u32 = 1 << 0;
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 const GPIOHANDLE_REQUEST_OUTPUT: u32 = 1 << 1;
 
 /// `struct gpiohandle_request` (`<linux/gpio.h>`): field order and types
 /// match the kernel's C declaration exactly, so `#[repr(C)]` gives this
 /// the same layout the kernel's own compiler produced.
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 #[repr(C)]
 struct GpioHandleRequest {
     line_offsets: [u32; GPIOHANDLES_MAX],
@@ -32,7 +34,7 @@ struct GpioHandleRequest {
 }
 
 /// `struct gpiohandle_data` (`<linux/gpio.h>`).
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 #[repr(C)]
 struct GpioHandleData {
     values: [u8; GPIOHANDLES_MAX],
@@ -44,20 +46,20 @@ struct GpioHandleData {
 /// [`libc::Ioctl`] (not a fixed integer type): that alias is `c_ulong` on
 /// glibc but `c_int` on musl (the bench board's own libc), so hardcoding
 /// either one breaks the other target.
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 const fn iowr(ty: u32, nr: u32, size: usize) -> libc::Ioctl {
     const IOC_READ: u32 = 2;
     const IOC_WRITE: u32 = 1;
     (((IOC_READ | IOC_WRITE) << 30) | (ty << 8) | nr | ((size as u32) << 16)) as libc::Ioctl
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 const GPIO_GET_LINEHANDLE_IOCTL: libc::Ioctl =
     iowr(0xB4, 0x03, core::mem::size_of::<GpioHandleRequest>());
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 const GPIOHANDLE_GET_LINE_VALUES_IOCTL: libc::Ioctl =
     iowr(0xB4, 0x08, core::mem::size_of::<GpioHandleData>());
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 const GPIOHANDLE_SET_LINE_VALUES_IOCTL: libc::Ioctl =
     iowr(0xB4, 0x09, core::mem::size_of::<GpioHandleData>());
 
@@ -65,7 +67,7 @@ const GPIOHANDLE_SET_LINE_VALUES_IOCTL: libc::Ioctl =
 /// `consumer_label` buffer (`GPIO_MAX_NAME_SIZE` bytes, always
 /// null-terminated: a 32-byte label is truncated to 31 bytes of content
 /// so the last byte stays `0`).
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 fn consumer_label(label: &str) -> [u8; GPIO_MAX_NAME_SIZE] {
     let mut buf = [0u8; GPIO_MAX_NAME_SIZE];
     let bytes = label.as_bytes();
@@ -82,7 +84,7 @@ fn consumer_label(label: &str) -> [u8; GPIO_MAX_NAME_SIZE] {
 /// is a local, fully-initialized value the kernel only reads from and
 /// writes `lines`/`fd` back into, and the returned `fd` is only trusted
 /// as an owned descriptor after the kernel reports success.
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 #[allow(unsafe_code)]
 pub fn request_line_handle(
     chip: BorrowedFd<'_>,
@@ -114,7 +116,7 @@ pub fn request_line_handle(
 ///
 /// Sound: `handle` is a borrowed, open descriptor for the whole call, and
 /// `data` is a local value the kernel only writes into.
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 #[allow(unsafe_code)]
 pub fn get_line_value(handle: BorrowedFd<'_>) -> std::io::Result<bool> {
     let mut data = GpioHandleData {
@@ -139,7 +141,7 @@ pub fn get_line_value(handle: BorrowedFd<'_>) -> std::io::Result<bool> {
 /// Sound: `handle` is a borrowed, open descriptor for the whole call, and
 /// `data` is a local value that lives across the call, which the kernel
 /// only reads.
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 #[allow(unsafe_code)]
 pub fn set_line_value(handle: BorrowedFd<'_>, value: bool) -> std::io::Result<()> {
     let mut data = GpioHandleData {
@@ -154,7 +156,58 @@ pub fn set_line_value(handle: BorrowedFd<'_>, value: bool) -> std::io::Result<()
     Ok(())
 }
 
-#[cfg(all(test, unix))]
+/// The error every GPIO call returns off Linux: the character device
+/// exists only there.
+#[cfg(all(unix, not(target_os = "linux")))]
+fn unsupported() -> std::io::Error {
+    std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "GPIO character devices exist only on Linux",
+    )
+}
+
+/// Off Linux there is no `gpiochip`: always `Unsupported`.
+#[cfg(all(unix, not(target_os = "linux")))]
+pub fn request_line_handle(
+    _chip: BorrowedFd<'_>,
+    _line: u32,
+    _output: bool,
+    _consumer: &str,
+) -> std::io::Result<OwnedFd> {
+    Err(unsupported())
+}
+
+/// Off Linux there is no `gpiochip`: always `Unsupported`.
+#[cfg(all(unix, not(target_os = "linux")))]
+pub fn get_line_value(_handle: BorrowedFd<'_>) -> std::io::Result<bool> {
+    Err(unsupported())
+}
+
+/// Off Linux there is no `gpiochip`: always `Unsupported`.
+#[cfg(all(unix, not(target_os = "linux")))]
+pub fn set_line_value(_handle: BorrowedFd<'_>, _value: bool) -> std::io::Result<()> {
+    Err(unsupported())
+}
+
+#[cfg(all(test, unix, not(target_os = "linux")))]
+mod off_linux_tests {
+    use super::*;
+    use std::os::fd::AsFd;
+
+    #[test]
+    fn off_linux_every_call_fails_as_unsupported() {
+        let file = std::fs::File::open("/dev/null").unwrap();
+        for err in [
+            request_line_handle(file.as_fd(), 0, true, "joker-test").unwrap_err(),
+            get_line_value(file.as_fd()).unwrap_err(),
+            set_line_value(file.as_fd(), true).unwrap_err(),
+        ] {
+            assert_eq!(err.kind(), std::io::ErrorKind::Unsupported);
+        }
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::*;
     use std::os::fd::AsFd;
