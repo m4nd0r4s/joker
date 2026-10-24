@@ -91,6 +91,40 @@ pub fn spawn_jokerd(dir: &Path) -> Daemon {
     Daemon { child, socket }
 }
 
+/// Starts a real `jokerd` over the state directory `dir` with no entry
+/// manifest, as a node waits for its first `jk apply`, and waits for its
+/// socket to come up.
+pub fn spawn_empty_jokerd(dir: &Path) -> Daemon {
+    let socket = dir.join("api.sock");
+    let child = Command::new(jokerd_bin())
+        .args([
+            "--state-dir",
+            dir.to_str().unwrap(),
+            "--socket",
+            socket.to_str().unwrap(),
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .unwrap();
+    for _ in 0..500 {
+        if socket.exists() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    std::thread::sleep(Duration::from_millis(100));
+    Daemon { child, socket }
+}
+
+/// Stops a `jokerd` the way systemd does (`SIGTERM`) and waits for it.
+pub fn terminate(mut daemon: Daemon) {
+    let _ = Command::new("kill")
+        .args(["-TERM", &daemon.child.id().to_string()])
+        .status();
+    let _ = daemon.child.wait();
+}
+
 /// Spawns `jk` with `args`, collects everything it prints to stdout
 /// until `window` elapses, then kills it. For commands that run
 /// forever on purpose (`--watch`, `jk top`).

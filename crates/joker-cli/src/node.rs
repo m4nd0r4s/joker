@@ -123,10 +123,11 @@ impl Node {
             println!("{}", self.header()?);
         }
         let base = self.current_hash()?;
+        let artifacts = self.upload_apps(entry)?;
         let mut proposal = json!({
             "manifest": {"content": manifest},
             "lock": {"content": project::lock_text(entry)},
-            "artifacts": [],
+            "artifacts": artifacts,
             "base": base,
         });
         if let Some(m) = message {
@@ -183,6 +184,65 @@ impl Node {
             );
         }
         Ok(0)
+    }
+
+    /// Builds the Wasm apps, precompiles them for the node's triple, and
+    /// uploads what the node lacks (ref/09 §5.13, ADR 0067). Returns the
+    /// `artifacts` of the proposal: per app, its `.wasm` and, when the
+    /// triple has an engine, its `.cwasm`.
+    fn upload_apps(&self, entry: &Entry) -> Result<Vec<Value>, Failure> {
+        let triple = crate::apps::node_triple(entry).map_err(Failure::usage)?;
+        let built = match crate::apps::build_all(entry, Some(&triple)) {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("warning: no AOT artifact for {triple}: {e}");
+                crate::apps::build_all(entry, None).map_err(Failure::usage)?
+            }
+        };
+        let mut files: Vec<(String, &'static str, &[u8])> = Vec::new();
+        for app in &built {
+            let name = format!("{}{}", jokerd::apps::APP_PREFIX, app.name);
+            files.push((name.clone(), jokerd::apps::APP_WASM, &app.wasm));
+            if let Some((cwasm, _)) = &app.cwasm {
+                files.push((name, jokerd::apps::APP_CWASM, cwasm));
+            }
+        }
+        if files.is_empty() {
+            return Ok(Vec::new());
+        }
+        let digests: Vec<String> = files
+            .iter()
+            .map(|(_, _, b)| jokerd::blobs::digest_of(b))
+            .collect();
+        let missing = checked(self.client.post(
+            "/v1/blobs/missing",
+            &json!({ "digests": digests }),
+            &[],
+        )?)?
+        .json();
+        let missing: Vec<&str> = missing["missing"]
+            .as_array()
+            .map(|m| m.iter().filter_map(Value::as_str).collect())
+            .unwrap_or_default();
+        let mut out = Vec::with_capacity(files.len());
+        for ((name, kind, bytes), digest) in files.iter().zip(&digests) {
+            if missing.contains(&digest.as_str()) {
+                checked(self.client.post_bytes(
+                    &format!(
+                        "/v1/blobs/uploads?digest={digest}&kind={}",
+                        kind.replace('+', "%2B")
+                    ),
+                    bytes,
+                )?)?;
+            }
+            out.push(json!({
+                "name": name,
+                "kind": kind,
+                "digest": digest,
+                "size": bytes.len(),
+            }));
+        }
+        Ok(out)
     }
 
     /// `jk confirm`.
