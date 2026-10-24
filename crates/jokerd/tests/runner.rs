@@ -202,16 +202,23 @@ fn real_time_ticks_and_overruns() {
 /// Blocks the whole tick well past `supervisor::STALE_FACTOR` periods,
 /// once: a stand-in for a genuine host-level hang (a blocking driver
 /// call, a deadlock) that epoch interruption does not cover, since it
-/// never touches Wasm at all.
+/// never touches Wasm at all. The plan's only group is the implicit
+/// `default` one (docs/16 A11, period 100 ms), so 500 ms is well past
+/// three periods.
 struct Frozen;
 
 impl CycleTask for Frozen {
     fn run(&mut self, _cx: &mut TaskContext<'_, '_, '_>) -> Result<(), TaskError> {
-        // No task writes "pcs.a", so it falls into the implicit
-        // `default` group (docs/16 A11, period 100ms) — the only group
-        // of this plan, so one task list suffices. 3x its period is
-        // 300ms; sleep well past that.
-        std::thread::sleep(Duration::from_millis(350));
+        std::thread::sleep(Duration::from_millis(500));
+        Ok(())
+    }
+}
+
+/// A task that does nothing: a healthy generation.
+struct Idle;
+
+impl CycleTask for Idle {
+    fn run(&mut self, _cx: &mut TaskContext<'_, '_, '_>) -> Result<(), TaskError> {
         Ok(())
     }
 }
@@ -258,23 +265,43 @@ fn plan_with_one_bound_output() -> jokerd::plan::Plan {
     plan
 }
 
-/// A real hang (not a fake one calling `check_and_respond` directly):
-/// `Running::start`'s own `rt/supervisor` thread, polling in the
-/// background on a real wall clock, must notice a tick that blocks
-/// past `STALE_FACTOR` periods and force every output's `force_safe`
-/// bit on its own, with nobody driving it from the test (AUR-274).
+/// A real hang after a generation switch: the daemon's clock started
+/// long before the hanging generation did, exactly as in `jokerd`, where
+/// one `Monotonic` spans every generation. `Running::start`'s own
+/// `rt/supervisor` thread must compare tick stamps on that same clock,
+/// notice the tick that blocks past `STALE_FACTOR` periods, force every
+/// output's `force_safe` bit and record it in the decision log (AUR-274).
 #[test]
-fn a_real_hang_is_caught_by_the_background_supervisor_thread() {
+fn a_hang_after_a_generation_switch_is_caught_by_the_supervisor() {
     let plan = Arc::new(plan_with_one_bound_output());
     let dir = tempfile::tempdir().unwrap();
     let clock = Monotonic::start();
-    let pacer = Box::new(SystemPacer::new(clock, ClockQuality::Unsynced));
+    let idle: Vec<GroupTasks> = vec![vec![(
+        joker_core::WriterId(0),
+        Box::new(Idle) as Box<dyn CycleTask>,
+    )]];
+    let first = Running::start(
+        Arc::clone(&plan),
+        idle,
+        Box::new(SystemPacer::new(clock, ClockQuality::Unsynced)),
+        log(&dir),
+        start(Some(6)),
+    )
+    .unwrap();
+    first.join().unwrap();
+
     let tasks: Vec<GroupTasks> = vec![vec![(
         joker_core::WriterId(0),
         Box::new(Frozen) as Box<dyn CycleTask>,
     )]];
-    let running =
-        Running::start(Arc::clone(&plan), tasks, pacer, log(&dir), start(Some(1))).unwrap();
+    let running = Running::start(
+        Arc::clone(&plan),
+        tasks,
+        Box::new(SystemPacer::new(clock, ClockQuality::Unsynced)),
+        log(&dir),
+        start(Some(1)),
+    )
+    .unwrap();
     let shared = Arc::clone(&running.shared);
     running.join().unwrap();
 
@@ -296,4 +323,12 @@ fn a_real_hang_is_caught_by_the_background_supervisor_thread() {
         }
     }
     assert!(any_forced, "the supervisor never forced any output safe");
+
+    let entries = DecisionLog::read_all(&dir.path().join("decisions.jsonl")).unwrap();
+    assert!(
+        entries
+            .iter()
+            .any(|e| e["record"] == "supervisor_force_safe" && e["groups"][0] == "default"),
+        "no supervisor_force_safe entry in {entries:?}"
+    );
 }

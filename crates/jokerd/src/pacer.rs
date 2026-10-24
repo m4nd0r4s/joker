@@ -14,6 +14,13 @@ pub trait Pacer: Send {
     fn now(&self) -> Instant;
     /// Waits until the monotonic time reaches `mono_ns`.
     fn wait_until(&mut self, mono_ns: u64);
+    /// The real monotonic clock behind [`Pacer::now`], when there is one:
+    /// `rt/supervisor` reads it to judge the tick stamps on the same
+    /// origin. `None` for a virtual clock, which has no real time to
+    /// supervise.
+    fn monotonic(&self) -> Option<Monotonic> {
+        None
+    }
 }
 
 /// The daemon's monotonic clock: nanoseconds since the daemon started,
@@ -82,6 +89,10 @@ impl Pacer for SystemPacer {
         if mono_ns > now {
             std::thread::sleep(std::time::Duration::from_nanos(mono_ns - now));
         }
+    }
+
+    fn monotonic(&self) -> Option<Monotonic> {
+        Some(self.mono)
     }
 }
 
