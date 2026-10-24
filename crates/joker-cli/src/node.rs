@@ -339,20 +339,7 @@ impl Node {
             print_json(&v);
             return Ok(0);
         }
-        for s in v["items"].as_array().cloned().unwrap_or_default() {
-            let quality = match s["reason"].as_str() {
-                Some("none") | None => s["quality"].as_str().unwrap_or("").to_owned(),
-                Some(r) => format!("{}({r})", s["quality"].as_str().unwrap_or("")),
-            };
-            println!(
-                "{:<32} {:>12} {:<6} {:<20} age {}",
-                s["path"].as_str().unwrap_or(""),
-                s["value"].to_string(),
-                s["unit"].as_str().unwrap_or(""),
-                quality,
-                s["age"].as_str().unwrap_or("")
-            );
-        }
+        print_samples(&v["items"]);
         Ok(0)
     }
 
@@ -729,15 +716,43 @@ fn parse_args(pairs: &[String]) -> Result<Value, Failure> {
     Ok(Value::Object(map))
 }
 
-async fn watch_signals(socket: &Path, sel: &[String], json_mode: bool) -> Result<u8, Failure> {
-    use futures_util::{SinkExt, StreamExt};
+/// How often `jk read --watch` asks the node for changes: a reading a
+/// person can follow, not the 100 ms default of a program (ref/09 §6.5).
+const WATCH_INTERVAL: &str = "1s";
+
+fn lost(message: String) -> Failure {
+    Failure { message, exit: 4 }
+}
+
+fn print_samples(items: &Value) {
+    for s in items.as_array().cloned().unwrap_or_default() {
+        let quality = match s["reason"].as_str() {
+            Some("none") | None => s["quality"].as_str().unwrap_or("").to_owned(),
+            Some(r) => format!("{}({r})", s["quality"].as_str().unwrap_or("")),
+        };
+        println!(
+            "{:<32} {:>12} {:<6} {:<20} age {}",
+            s["path"].as_str().unwrap_or(""),
+            s["value"].to_string(),
+            s["unit"].as_str().unwrap_or(""),
+            quality,
+            s["age"].as_str().unwrap_or("")
+        );
+    }
+}
+
+type UnixWs = tokio_tungstenite::WebSocketStream<tokio::net::UnixStream>;
+
+/// Opens `GET /v1/ws` on `socket` and waits for its `welcome`.
+async fn open_ws(socket: &Path) -> Result<UnixWs, Failure> {
+    use futures_util::StreamExt;
     use tokio_tungstenite::tungstenite::Message;
     use tokio_tungstenite::tungstenite::client::IntoClientRequest;
     use tokio_tungstenite::tungstenite::http::HeaderValue;
 
     let stream = tokio::net::UnixStream::connect(socket)
         .await
-        .map_err(|e| Failure::usage(format!("{}: {e}", socket.display())))?;
+        .map_err(|e| lost(format!("{}: {e}", socket.display())))?;
     let mut request = "ws://joker/v1/ws"
         .into_client_request()
         .map_err(|e| Failure::usage(e.to_string()))?;
@@ -747,59 +762,113 @@ async fn watch_signals(socket: &Path, sel: &[String], json_mode: bool) -> Result
     );
     let (mut ws, _) = tokio_tungstenite::client_async(request, stream)
         .await
-        .map_err(|e| Failure::usage(format!("connecting: {e}")))?;
-
-    // The `welcome` message; nothing to do with it here.
-    let _ = ws.next().await;
-
-    ws.send(Message::Text(
-        json!({"op": "subscribe", "id": "watch", "topic": "signals", "sel": sel})
-            .to_string()
-            .into(),
-    ))
-    .await
-    .map_err(|e| Failure::usage(e.to_string()))?;
-
-    while let Some(msg) = ws.next().await {
-        let Ok(Message::Text(text)) = msg else {
-            continue;
-        };
-        let Ok(v) = serde_json::from_str::<Value>(&text) else {
-            continue;
-        };
-        match v["op"].as_str() {
-            Some("error") => {
-                return Err(Failure::usage(
-                    v["problem"]["detail"]
-                        .as_str()
-                        .unwrap_or("error")
-                        .to_owned(),
-                ));
-            }
-            Some("data") | Some("resync") => {
-                if json_mode {
-                    print_json(&v["items"]);
-                    continue;
+        .map_err(|e| lost(format!("connecting: {e}")))?;
+    loop {
+        match ws.next().await {
+            Some(Ok(Message::Text(text))) => {
+                let v: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
+                if v["op"] == "welcome" {
+                    return Ok(ws);
                 }
-                for s in v["items"].as_array().cloned().unwrap_or_default() {
-                    let quality = match s["reason"].as_str() {
-                        Some("none") | None => s["quality"].as_str().unwrap_or("").to_owned(),
-                        Some(r) => format!("{}({r})", s["quality"].as_str().unwrap_or("")),
-                    };
-                    println!(
-                        "{:<32} {:>12} {:<6} {:<20} age {}",
-                        s["path"].as_str().unwrap_or(""),
-                        s["value"].to_string(),
-                        s["unit"].as_str().unwrap_or(""),
-                        quality,
-                        s["age"].as_str().unwrap_or("")
-                    );
-                }
+                return Err(lost(format!(
+                    "the node did not welcome the connection: {text}"
+                )));
             }
-            _ => {}
+            Some(Ok(Message::Ping(_) | Message::Pong(_))) => {}
+            Some(Ok(other)) => {
+                return Err(lost(format!(
+                    "the node did not welcome the connection: {other:?}"
+                )));
+            }
+            Some(Err(e)) => return Err(lost(format!("connection lost: {e}"))),
+            None => return Err(lost("the node closed the connection".into())),
         }
     }
-    Ok(0)
+}
+
+/// One server message of a subscription, or why the subscription ended
+/// (ref/09 §6.10): a close frame, a `closing` notice or a lost socket all
+/// end with exit 4 and the node's own code and detail.
+async fn next_message(ws: &mut UnixWs, closing: &mut Option<Value>) -> Result<Value, Failure> {
+    use futures_util::StreamExt;
+    use tokio_tungstenite::tungstenite::Message;
+
+    loop {
+        match ws.next().await {
+            Some(Ok(Message::Text(text))) => {
+                let Ok(v) = serde_json::from_str::<Value>(&text) else {
+                    continue;
+                };
+                match v["op"].as_str() {
+                    Some("closing") => *closing = Some(v),
+                    Some("error") => {
+                        let p = &v["problem"];
+                        return Err(Failure::usage(format!(
+                            "{} {}",
+                            p["code"].as_str().unwrap_or("error"),
+                            p["detail"].as_str().unwrap_or("")
+                        )));
+                    }
+                    Some("gap") => eprintln!(
+                        "jk: {} update(s) lost ({})",
+                        v["lost"],
+                        v["reason"].as_str().unwrap_or("?")
+                    ),
+                    _ => return Ok(v),
+                }
+            }
+            Some(Ok(Message::Close(frame))) => {
+                let (code, reason) = frame
+                    .map(|f| (u16::from(f.code), f.reason.to_string()))
+                    .unwrap_or((1005, String::new()));
+                let detail = closing
+                    .as_ref()
+                    .and_then(|c| c["problem"]["detail"].as_str())
+                    .map(|d| format!(": {d}"))
+                    .unwrap_or_default();
+                return Err(lost(format!(
+                    "the node closed the subscription ({code} {reason}){detail}"
+                )));
+            }
+            Some(Ok(_)) => {}
+            Some(Err(e)) => return Err(lost(format!("connection lost: {e}"))),
+            None => return Err(lost("the node closed the connection".into())),
+        }
+    }
+}
+
+async fn watch_signals(socket: &Path, sel: &[String], json_mode: bool) -> Result<u8, Failure> {
+    use futures_util::SinkExt;
+    use tokio_tungstenite::tungstenite::Message;
+
+    let mut ws = open_ws(socket).await?;
+    ws.send(Message::Text(
+        json!({
+            "op": "subscribe",
+            "id": "watch",
+            "topic": "signals",
+            "sel": sel,
+            "min_interval": WATCH_INTERVAL,
+        })
+        .to_string()
+        .into(),
+    ))
+    .await
+    .map_err(|e| lost(e.to_string()))?;
+
+    let mut closing = None;
+    loop {
+        let v = next_message(&mut ws, &mut closing).await?;
+        if !matches!(v["op"].as_str(), Some("data" | "resync")) {
+            continue;
+        }
+        if json_mode {
+            print_json(&v["items"]);
+        } else {
+            print_samples(&v["items"]);
+        }
+        std::io::stdout().flush().ok();
+    }
 }
 
 #[cfg(test)]
