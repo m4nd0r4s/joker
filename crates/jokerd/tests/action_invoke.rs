@@ -84,6 +84,7 @@ fn empty_shared(
         running: Default::default(),
         commit_bindings: vec![bindings],
         commit_boxes: vec![boxes],
+        devices: vec![jokerd::shared::DeviceStats::default()].into_boxed_slice(),
     }
 }
 
