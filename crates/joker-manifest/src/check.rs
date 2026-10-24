@@ -931,6 +931,16 @@ impl Checker<'_> {
             }
         }
         if let Some(verify) = envelope.verify.as_ref().and_then(Node::as_table)
+            && matches!(info.ty, SignalType::Float)
+            && !verify.contains_key("tolerance")
+        {
+            self.push(
+                Diagnostic::new("J0235", "invalid `verify`")
+                    .at(envelope.key)
+                    .label(format!("`{path}` is a float: `verify` needs a `tolerance`")),
+            );
+        }
+        if let Some(verify) = envelope.verify.as_ref().and_then(Node::as_table)
             && let Some(readback) = verify.get("readback")
             && let Some(text) = readback.node.as_str()
         {
