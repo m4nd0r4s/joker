@@ -43,6 +43,7 @@ pub fn table_to_cbor(table: &BTreeMap<String, Node>) -> Vec<u8> {
 }
 
 use joker_hal::types::{Direction, RawKind};
+use joker_manifest::check::PathRegistry;
 use joker_manifest::context::{Context, Direction as ManifestDirection, PointPoll};
 use joker_manifest::model::{Device, Manifest};
 use joker_units::Duration;
@@ -596,6 +597,125 @@ pub(crate) fn permit_sources(
     out
 }
 
+/// The acquisition steps of `<device>.<signal>`: `base`'s (the profile's,
+/// or none for a declared signal) composed with the manifest's
+/// adjustments of the signal (ADR 0075). The check already reported what
+/// does not fit; an error here is the first of them.
+fn adjusted(
+    base: &joker_manifest::context::SignalInfo,
+    from_profile: bool,
+    manifest: &Manifest,
+    paths: &PathRegistry,
+    device: &str,
+    signal: &str,
+) -> Result<joker_manifest::context::Acquisition, BridgeError> {
+    let tuning = joker_manifest::adjust::tuning(manifest, paths, device, signal);
+    let tuning_unit = tuning
+        .get("unit")
+        .and_then(Node::as_str)
+        .and_then(|u| joker_units::Unit::parse(u).ok());
+    let base = if from_profile {
+        base.clone()
+    } else {
+        let mut declared = base.clone();
+        declared.acquisition = joker_manifest::context::Acquisition::NONE;
+        declared.unit = tuning_unit;
+        declared
+    };
+    joker_manifest::adjust::adjust(&base, from_profile, &tuning)
+        .map(|a| a.info.acquisition)
+        .map_err(|errors| {
+            err(errors
+                .first()
+                .map_or_else(String::new, |e| format!("{device}.{signal}: {e:?}")))
+        })
+}
+
+/// What the output stage needs to write one output point (ref/06 §2.7,
+/// ADR 0075): its raw type, the composed `scale` and `offset`, `invert`,
+/// the `enum` integers and the register layout. `None` for a point whose
+/// raw type the core does not convert (a typed family's `string`, an
+/// already typed value of another family).
+#[derive(Debug, Clone, PartialEq)]
+pub struct OutputConversion {
+    /// `invert` of a `bool`.
+    pub invert: bool,
+    /// The raw integer of each `enum` variant.
+    pub enum_raw: Vec<i64>,
+    /// Engineering value = raw × `scale` + `offset`.
+    pub scale: f64,
+    /// See `scale`.
+    pub offset: f64,
+    /// The raw type.
+    pub raw: joker_hal::encode::RawNumber,
+    /// The registers of a register point.
+    pub regs: Option<joker_hal::encode::RegLayout>,
+}
+
+impl OutputConversion {
+    /// The codec that borrows this conversion.
+    pub fn codec(&self) -> joker_hal::encode::OutputCodec<'_> {
+        joker_hal::encode::OutputCodec {
+            invert: self.invert,
+            enum_raw: &self.enum_raw,
+            scale: self.scale,
+            offset: self.offset,
+            raw: self.raw,
+            regs: self.regs,
+        }
+    }
+}
+
+/// The [`OutputConversion`] of an output point; an error for a point the
+/// output stage cannot write (a `bool` in a register bit, which would need
+/// a read-modify-write).
+pub fn output_conversion(point: &DevicePointPlan) -> Result<Option<OutputConversion>, String> {
+    use crate::drivers::RawType;
+    use joker_hal::encode::{RawNumber, RegLayout};
+    let raw = match RawType::parse(&point.type_name) {
+        RawType::Bool => RawNumber::Bool,
+        RawType::U8 => RawNumber::Unsigned(8),
+        RawType::I8 => RawNumber::Signed(8),
+        RawType::U16 => RawNumber::Unsigned(16),
+        RawType::I16 => RawNumber::Signed(16),
+        RawType::U32 => RawNumber::Unsigned(32),
+        RawType::I32 => RawNumber::Signed(32),
+        RawType::U64 => RawNumber::Unsigned(64),
+        RawType::I64 => RawNumber::Signed(64),
+        RawType::F32 => RawNumber::F32,
+        RawType::F64 => RawNumber::F64,
+        RawType::Other => return Ok(None),
+    };
+    let regs = match point.expect {
+        RawKind::Regs => {
+            if raw == RawNumber::Bool {
+                return Err(format!(
+                    "`{}`: a `bool` output in a register bit is not supported by this runtime yet (ADR 0075)",
+                    point.path
+                ));
+            }
+            let decode = crate::drivers::Decode::of_point(&point.type_name, &point.addr);
+            Some(RegLayout {
+                words: u8::try_from(point.width)
+                    .map_err(|_| format!("`{}`: too many registers", point.path))?,
+                words_little: decode.words_little,
+                bytes_little: decode.bytes_little,
+            })
+        }
+        RawKind::Bool | RawKind::Int | RawKind::Uint | RawKind::Float => None,
+        _ => return Ok(None),
+    };
+    let a = &point.acquisition;
+    Ok(Some(OutputConversion {
+        invert: a.invert,
+        enum_raw: a.enum_values.clone(),
+        scale: a.scale.unwrap_or(1.0),
+        offset: a.offset.unwrap_or(0.0),
+        raw,
+        regs,
+    }))
+}
+
 #[allow(
     clippy::too_many_arguments,
     reason = "the resolved pieces of one point, each from a different place of the manifest or the profile"
@@ -643,6 +763,7 @@ pub fn device_plan(
     device: &Device,
     manifest: &Manifest,
     context: &Context,
+    paths: &PathRegistry,
 ) -> Result<DevicePlan, BridgeError> {
     let driver = device
         .driver
@@ -691,6 +812,7 @@ pub fn device_plan(
                 (None, Some(PointPoll::OnDemand)) => None,
                 (None, None) => device_poll_ns.or(profile_poll_ns),
             };
+            let acquisition = adjusted(info, true, manifest, paths, name, signal)?;
             points.push(point_from_raw(
                 &driver,
                 name,
@@ -699,7 +821,7 @@ pub fn device_plan(
                 direction_of(info.direction),
                 poll_ns,
                 &info.raw,
-                info.acquisition.clone(),
+                acquisition,
             )?);
         }
     } else {
@@ -716,6 +838,10 @@ pub fn device_plan(
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect();
             let poll_ns = parse_poll(raw).map(Duration::as_nanos).or(device_poll_ns);
+            let acquisition = match paths.get(&format!("{name}.{signal}")) {
+                Some(r) => adjusted(&r.info, false, manifest, paths, name, signal)?,
+                None => joker_manifest::context::Acquisition::NONE,
+            };
             points.push(point_from_raw(
                 &driver,
                 name,
@@ -724,7 +850,7 @@ pub fn device_plan(
                 parse_direction(raw),
                 poll_ns,
                 &address_only,
-                joker_manifest::context::Acquisition::NONE,
+                acquisition,
             )?);
         }
     }
@@ -822,14 +948,18 @@ pub fn owned_request(plan: &DevicePlan) -> joker_hal::spec::owned::OwnedRequest 
 /// the second element and otherwise skipped, the same leniency
 /// `catalog::profiles_from_dir` uses for a broken profile file: one
 /// device's gap does not stop the rest of the generation from planning.
-pub fn device_plans(manifest: &Manifest, context: &Context) -> (Vec<DevicePlan>, Vec<String>) {
+pub fn device_plans(
+    manifest: &Manifest,
+    context: &Context,
+    paths: &PathRegistry,
+) -> (Vec<DevicePlan>, Vec<String>) {
     let mut plans = Vec::new();
     let mut errors = Vec::new();
     for (name, device) in &manifest.devices {
         if device.driver.as_ref().is_some_and(|d| d.value == "sim") {
             continue;
         }
-        match device_plan(name, device, manifest, context) {
+        match device_plan(name, device, manifest, context, paths) {
             Ok(plan) => plans.push(plan),
             Err(e) => errors.push(format!("device `{name}`: {e}")),
         }

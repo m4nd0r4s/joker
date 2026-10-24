@@ -315,6 +315,7 @@ impl Plan {
 
         let canonical =
             |path: &str| -> Option<String> { paths.get(path).map(|r| r.canonical.clone()) };
+        check_adjustments(manifest, context, paths)?;
 
         let mut writers = Vec::new();
         let mut app_writer: BTreeMap<String, WriterId> = BTreeMap::new();
@@ -435,7 +436,8 @@ impl Plan {
                     .map_or_else(|| "1".to_owned(), |u| u.symbol().to_owned()),
                 direction,
                 group,
-                max_age_ns: max_age(manifest, context, reg.device.as_deref()),
+                max_age_ns: adjusted_max_age(manifest, paths, path, reg.device.as_deref())
+                    .or_else(|| max_age(manifest, context, reg.device.as_deref())),
                 device: reg.device.clone(),
                 variants,
                 enum_name,
@@ -536,7 +538,7 @@ impl Plan {
             }
         }
 
-        let (devices, device_errors) = crate::bridge::device_plans(manifest, context);
+        let (devices, device_errors) = crate::bridge::device_plans(manifest, context, paths);
         for e in &device_errors {
             eprintln!("warning: {e}");
         }
@@ -568,6 +570,7 @@ impl Plan {
             }
         }
         crate::expr_plan::bind(&mut plan, manifest)?;
+        representable_outputs(&mut plan)?;
         plan.index()?;
         Ok(plan)
     }
@@ -727,6 +730,138 @@ fn device_poll(manifest: &Manifest, context: &Context, device: Option<&str>) -> 
 fn max_age(manifest: &Manifest, context: &Context, device: Option<&str>) -> Option<u64> {
     let poll = device_poll(manifest, context, device)?;
     Some(poll.as_nanos().saturating_mul(3))
+}
+
+/// The signal name of `path` within `device`.
+fn signal_of<'p>(path: &'p str, device: &str) -> Option<&'p str> {
+    path.strip_prefix(device)?.strip_prefix('.')
+}
+
+fn adjusted_max_age(
+    manifest: &Manifest,
+    paths: &PathRegistry,
+    path: &str,
+    device: Option<&str>,
+) -> Option<u64> {
+    let device = device?;
+    let signal = signal_of(path, device)?;
+    let tuning = joker_manifest::adjust::tuning(manifest, paths, device, signal);
+    let node = tuning.get("max_age")?;
+    node.as_str()
+        .and_then(|t| Duration::parse(t).ok())
+        .map(Duration::as_nanos)
+}
+
+/// Every manifest adjustment of a device signal, `[signals."<path>"]`
+/// included, composed with the profile (ADR 0075): one that does not fit
+/// stops the plan with its code.
+fn check_adjustments(
+    manifest: &Manifest,
+    context: &Context,
+    paths: &PathRegistry,
+) -> Result<(), PlanError> {
+    for (path, reg) in paths {
+        if reg.canonical != *path {
+            continue;
+        }
+        let Some(device) = reg.device.as_deref() else {
+            continue;
+        };
+        let Some(signal) = signal_of(path, device) else {
+            continue;
+        };
+        let tuning = joker_manifest::adjust::tuning(manifest, paths, device, signal);
+        if tuning.is_empty() {
+            continue;
+        }
+        let profile = manifest
+            .devices
+            .get(device)
+            .and_then(|d| d.profile.as_ref())
+            .and_then(|p| context.profiles.get(&p.value))
+            .and_then(|p| p.signals.get(signal));
+        let base = match profile {
+            Some(info) => info.clone(),
+            None => {
+                let mut declared = reg.info.clone();
+                declared.acquisition = joker_manifest::context::Acquisition::NONE;
+                declared.unit = tuning
+                    .get("unit")
+                    .and_then(Node::as_str)
+                    .and_then(|u| Unit::parse(u).ok());
+                declared
+            }
+        };
+        if let Err(errors) = joker_manifest::adjust::adjust(&base, profile.is_some(), &tuning)
+            && let Some(first) = errors.first()
+        {
+            return Err(PlanError::new(
+                Some(first.code),
+                format!("adjustment of `{path}`: {}", first.title),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The output stage writes a value only if its raw type can carry it
+/// (ref/06 §2.7, ADR 0075). An output without a `range` gets the range of
+/// its raw type, with `on_range = "reject"`, so the envelope rejects what
+/// does not fit (`Rejected(Range)`); a `safe`, a constant `range` or an
+/// `enum` the raw type cannot carry, or an expression `range` on such an
+/// output, is `J0858`; a form the output stage cannot write is `J0807`.
+fn representable_outputs(plan: &mut Plan) -> Result<(), PlanError> {
+    let not_representable = |path: &str, what: &str| {
+        PlanError::new(
+            Some("J0858"),
+            format!("{what} of `{path}` is not representable in its raw type"),
+        )
+    };
+    let mut points = Vec::new();
+    for device in &plan.devices {
+        for point in &device.points {
+            if point.direction == joker_hal::Direction::Output {
+                points.push(point.clone());
+            }
+        }
+    }
+    for point in points {
+        let conversion = crate::bridge::output_conversion(&point)
+            .map_err(|why| PlanError::new(Some("J0807"), why))?;
+        let Some(conversion) = conversion else {
+            continue;
+        };
+        let codec = conversion.codec();
+        let Some(output) = plan.outputs.iter_mut().find(|o| o.path == point.path) else {
+            continue;
+        };
+        if !codec.enum_fits() {
+            return Err(not_representable(&output.path, "an `enum` value"));
+        }
+        let Some((lo, hi)) = codec.bounds() else {
+            continue;
+        };
+        let fits = |v: f64| lo <= v && v <= hi;
+        if let SafeValue::Value(bits) = output.safe
+            && output.ty.bits_to_f64(bits).is_some_and(|v| !fits(v))
+        {
+            return Err(not_representable(&output.path, "the `safe`"));
+        }
+        if output.exprs.range.is_some() {
+            return Err(not_representable(&output.path, "the expression `range`"));
+        }
+        match output.range {
+            Some((a, b)) if !(fits(a) && fits(b)) => {
+                return Err(not_representable(&output.path, "the `range`"));
+            }
+            Some(_) => {}
+            None => {
+                output.range = Some((lo, hi));
+                output.on_range = OnRange::Reject;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// The default poll of a device without one (ref/01 §5.8).

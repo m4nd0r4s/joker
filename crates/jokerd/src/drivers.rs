@@ -27,6 +27,7 @@ use joker_hal::spec::PlanRequest;
 use joker_hal::types::{BatchFailure, BatchKind, LinkState, WriteKind, WriteStatus};
 use joker_hal::{CommitRx, Cx, OutputBinding, RxState};
 use joker_manifest::context::Acquisition;
+use joker_units::Duration;
 
 use crate::plan::Plan;
 use crate::shared::{Confirmation, OutputStage, Shared, WriteAckRecord};
@@ -319,6 +320,17 @@ pub fn acquire(
     {
         return Err(QualityReason::Nan);
     }
+    if let Some((lo, hi)) = acquisition.limits {
+        let value = match number {
+            Number::Int(i) => i as f64,
+            Number::Uint(u) => u as f64,
+            Number::Float(f) => f,
+            Number::Bool(_) => return Err(QualityReason::ConfigError),
+        };
+        if value < lo || value > hi {
+            return Err(QualityReason::OutOfRange);
+        }
+    }
     number_to_bits(number, ty)
 }
 
@@ -380,6 +392,108 @@ impl Deadband {
     }
 }
 
+/// `stuck_detect` of one point (ref/03 §2.2.4, ADR 0075): a `good` value
+/// that stays bit for bit equal for the window is `uncertain(frozen)`. The
+/// value compared is the acquired one, before the deadband, so a value
+/// that moves inside its deadband is not frozen.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Stuck {
+    last: Option<(u64, u64)>,
+}
+
+impl Stuck {
+    /// The quality to publish for `bits` read at `now` with `quality`.
+    pub fn filter(
+        &mut self,
+        window_ns: Option<u64>,
+        bits: u64,
+        quality: Quality,
+        now: u64,
+    ) -> Quality {
+        let Some(window) = window_ns else {
+            return quality;
+        };
+        if !quality.is_good() {
+            self.last = None;
+            return quality;
+        }
+        match self.last {
+            Some((last, since)) if last == bits => {
+                if now.saturating_sub(since) >= window {
+                    Quality::new(QualityCode::Uncertain, QualityReason::Frozen)
+                } else {
+                    quality
+                }
+            }
+            _ => {
+                self.last = Some((bits, now));
+                quality
+            }
+        }
+    }
+}
+
+/// The `debounce` of a `bool` read by poll (docs/16 §3.4, D1–D5).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Debounce {
+    published: Option<bool>,
+    candidate: Option<(bool, u64)>,
+}
+
+impl Debounce {
+    /// What to publish for `bits` read at `ts` with `quality`: the bits and
+    /// the instant to write, or `None` while a change waits for its
+    /// confirmation (the slot is not written, D3).
+    pub fn filter(
+        &mut self,
+        window_ns: Option<u64>,
+        bits: u64,
+        quality: Quality,
+        ts: u64,
+    ) -> Option<(u64, u64)> {
+        let Some(window) = window_ns else {
+            return Some((bits, ts));
+        };
+        if quality.is_bad() {
+            self.candidate = None;
+            return Some((bits, ts));
+        }
+        let value = bits != 0;
+        match self.published {
+            Some(p) if p != value => {
+                let first = self
+                    .candidate
+                    .filter(|(v, _)| *v == value)
+                    .map_or(ts, |(_, first)| first);
+                if ts.saturating_sub(first) >= window {
+                    self.published = Some(value);
+                    self.candidate = None;
+                    Some((bits, first))
+                } else {
+                    self.candidate = Some((value, first));
+                    None
+                }
+            }
+            _ => {
+                self.published = Some(value);
+                self.candidate = None;
+                Some((bits, ts))
+            }
+        }
+    }
+}
+
+/// The per-point state of the acquisition stage.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PointFilters {
+    /// `deadband`.
+    pub deadband: Deadband,
+    /// `stuck_detect`.
+    pub stuck: Stuck,
+    /// `debounce`.
+    pub debounce: Debounce,
+}
+
 fn numeric_value(ty: ValueType, bits: u64) -> Option<f64> {
     match ty {
         ValueType::I64 => Some(bits as i64 as f64),
@@ -406,7 +520,7 @@ impl BatchWindow {
 fn store_settled(
     shared: &Shared,
     target: &PointTarget,
-    deadband: &mut Deadband,
+    filters: &mut PointFilters,
     settled: &Settled,
     stale: bool,
     now: u64,
@@ -417,9 +531,19 @@ fn store_settled(
     } else {
         quality
     };
-    let bits = deadband.filter(target.acquisition.deadband, target.ty, bits, quality);
+    let acquisition = &target.acquisition;
+    let stuck_ns = acquisition.stuck_detect.map(Duration::as_nanos);
+    let quality = filters.stuck.filter(stuck_ns, bits, quality, now);
+    let bits = filters
+        .deadband
+        .filter(acquisition.deadband, target.ty, bits, quality);
+    let debounce_ns = acquisition.debounce.map(Duration::as_nanos);
+    let ts = settled.ts_hw.unwrap_or(now);
+    let Some((bits, ts)) = filters.debounce.filter(debounce_ns, bits, quality, ts) else {
+        return;
+    };
     if let Some(slot) = shared.slots.get(target.signal.index()) {
-        slot.write(bits, quality, NO_TS_SRC, settled.ts_hw.unwrap_or(now));
+        slot.write(bits, quality, NO_TS_SRC, ts);
     }
 }
 
@@ -775,7 +899,7 @@ async fn serve<D: Driver>(
     publish_link(shared, device_index, link.state);
     let mut due: Vec<u64> = vec![host.now().mono_ns; plan.len()];
     let mut buf = SampleBuffer::with_capacity(4096);
-    let mut deadbands = vec![Deadband::default(); targets.len()];
+    let mut filters = vec![PointFilters::default(); targets.len()];
     let mut batch_windows = vec![BatchWindow::default(); plan.len()];
     let mut rejected = vec![false; shared.commit_bindings.get(device_index).map_or(0, Vec::len)];
     let stages = shared
@@ -795,6 +919,20 @@ async fn serve<D: Driver>(
                 .map_or(&[][..], Vec::as_slice),
             rx,
             &mut writes,
+        );
+        let bindings = shared
+            .commit_bindings
+            .get(device_index)
+            .map_or(&[][..], Vec::as_slice);
+        let mut words = vec![[0u16; 4]; writes.len()];
+        let writes = encode_writes(
+            shared,
+            device_index,
+            bindings,
+            stages,
+            &writes,
+            &mut words,
+            &mut rejected,
         );
         if !writes.is_empty() {
             let mut slots = vec![AckSlot::default(); writes.len()];
@@ -876,9 +1014,9 @@ async fn serve<D: Driver>(
                     stats.invalid_samples.bump();
                 }
                 if let Some(i) = targets.iter().position(|t| t.point == s.point)
-                    && let (Some(target), Some(deadband)) = (targets.get(i), deadbands.get_mut(i))
+                    && let (Some(target), Some(state)) = (targets.get(i), filters.get_mut(i))
                 {
-                    store_settled(shared, target, deadband, s, stale, now);
+                    store_settled(shared, target, state, s, stale, now);
                 }
             }
             if matches!(result, Err(BatchFailure::NotConnected)) {
@@ -896,6 +1034,58 @@ async fn serve<D: Driver>(
         publish_link(shared, device_index, link.state);
     }
     Ended::Stopped
+}
+
+/// The writes as the driver receives them (ref/06 §2.7, ADR 0075): each
+/// output with a conversion gets its raw value, encoded into `words` for a
+/// register point. A value its raw type cannot carry never reaches the
+/// driver: the plan gives such an output the range of its raw type, so
+/// this only happens on a configuration the plan should have refused; the
+/// write is dropped, reported, and the output is left
+/// `uncertain(not_confirmed)`.
+fn encode_writes<'w>(
+    shared: &Shared,
+    device_index: usize,
+    bindings: &[OutputBinding],
+    stages: &[OutputStage],
+    writes: &[CommittedWrite<'static>],
+    words: &'w mut [[u16; 4]],
+    rejected: &mut [bool],
+) -> Vec<CommittedWrite<'w>> {
+    let mut out = Vec::with_capacity(writes.len());
+    for (w, buf) in writes.iter().zip(words.iter_mut()) {
+        let i = bindings.iter().position(|b| b.point == w.point);
+        let conversion = i
+            .and_then(|i| stages.get(i))
+            .and_then(|s| s.conversion.as_ref());
+        let Some(conversion) = conversion else {
+            out.push(*w);
+            continue;
+        };
+        match conversion.codec().encode(w, buf) {
+            Ok(raw) => out.push(raw),
+            Err(e) => {
+                let Some(binding) = i.and_then(|i| bindings.get(i)) else {
+                    continue;
+                };
+                eprintln!(
+                    "warning: device {device_index}: output {:?} not written: {e:?}",
+                    binding.signal
+                );
+                if let Some(flag) = i.and_then(|i| rejected.get_mut(i)) {
+                    *flag = true;
+                }
+                let confirmation = Confirmation {
+                    output: binding.signal,
+                    confirmed: false,
+                };
+                if shared.confirmations.push(confirmation).is_err() {
+                    shared.confirmations_dropped.bump();
+                }
+            }
+        }
+    }
+    out
 }
 
 /// The timers of the output stage of one device (ref/06 §2.9, ADR 0072):

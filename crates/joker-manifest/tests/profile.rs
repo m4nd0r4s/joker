@@ -143,13 +143,6 @@ fn cases() -> Vec<Case> {
             "fallback register",
         ),
         (
-            "J0807",
-            format!(
-                "{HEADER}[signals.p]\nat = 0\nfc = 6\ntype = \"i16\"\nscale = 0.1\nunit = \"kW\"\ndirection = \"output\"\n"
-            ),
-            "scaled output",
-        ),
-        (
             "J0140",
             format!("{HEADER}[signals.p]\nat = 0\ntype = \"i16\"\n[nonsense]\nx = 1\n"),
             "unknown section",

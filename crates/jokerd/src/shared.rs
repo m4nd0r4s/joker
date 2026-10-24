@@ -357,7 +357,7 @@ pub struct Shared {
 
 /// What the output stage does with one output besides writing its
 /// applied value (ref/06 §2.9, ADR 0072).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct OutputStage {
     /// The device fallback covers the output (ref/03 §2.2.11
     /// `applies_to`), so its io task renews it with `keepalive`.
@@ -368,14 +368,18 @@ pub struct OutputStage {
     /// `pulse`, ns: the output stage writes `safe` once it has elapsed
     /// after a write of any other value.
     pub pulse_ns: Option<u64>,
+    /// How the applied value becomes the point's raw value (ref/06 §2.7,
+    /// ADR 0075); `None` writes it as it is.
+    pub conversion: Option<crate::bridge::OutputConversion>,
 }
 
 impl OutputStage {
-    /// A covered output with no keepalive or pulse of its own.
+    /// A covered output with no keepalive, pulse or conversion of its own.
     pub const COVERED: Self = Self {
         covered: true,
         keepalive_ns: None,
         pulse_ns: None,
+        conversion: None,
     };
 
     /// The period this output is renewed at, given its device's
@@ -450,6 +454,7 @@ fn commit_channels(plan: &Plan) -> CommitChannels {
                     .is_none_or(|covered| covered.contains(relative)),
                 keepalive_ns: output.and_then(|o| o.keepalive_ns),
                 pulse_ns: output.and_then(|o| o.pulse_ns),
+                conversion: crate::bridge::output_conversion(point).ok().flatten(),
             });
         }
         bindings.push(device_bindings);
