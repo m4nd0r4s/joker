@@ -79,3 +79,19 @@ fn a_denied_address_surfaces_as_a_bad_read() {
     let settled = bench.read(0).unwrap();
     assert_ne!(settled[0].status, RawStatus::OK);
 }
+
+#[test]
+fn a_full_sample_ring_counts_the_dropped_sample() {
+    let (chip, handle) = MemoryI2c::new();
+    handle.preload(0x40, &[0xAB, 0xCD]);
+    let req = request();
+    let views = req.views();
+    let plan = I2cPlanner::plan(&views.request()).unwrap();
+    let link = Link::I2c(I2cBus::new(chip));
+    let host = Arc::new(VirtualHost::new(0));
+    let mut bench: Bench<'_, I2cDriver> =
+        Bench::open(host, views.request(), plan.view(), link).unwrap();
+    bench.connect().unwrap();
+    assert_eq!(bench.read_into_full_ring(0).unwrap(), 1);
+    assert!(bench.counters().contains(&("dropped_samples", 1)));
+}

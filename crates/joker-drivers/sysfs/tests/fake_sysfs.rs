@@ -275,3 +275,21 @@ fn plan_checks_types_and_addresses() {
         other => panic!("{other:?}"),
     }
 }
+
+#[test]
+fn a_full_sample_ring_counts_every_dropped_sample() {
+    let sys = FakeSys::new();
+    let req = request();
+    let views = req.views();
+    let plan = SysfsPlanner::plan(&views.request()).unwrap();
+    let dirs = grants(&views.request());
+    let grants: Vec<&str> = dirs.iter().map(String::as_str).collect();
+    let link = Link::Paths(DevicePaths::new(&sys.0, &grants));
+    let host = Arc::new(VirtualHost::new(0));
+    let mut bench: Bench<'_, SysfsDriver> =
+        Bench::open(host, views.request(), plan.view(), link).unwrap();
+    bench.connect().unwrap();
+    let points = plan.view().batch(0).unwrap().points.len() as u64;
+    assert_eq!(u64::from(bench.read_into_full_ring(0).unwrap()), points);
+    assert!(bench.counters().contains(&("dropped_samples", points)));
+}

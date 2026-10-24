@@ -28,6 +28,7 @@ pub struct I2cDriver {
     addr: u8,
     points: Vec<Point>,
     errors: u64,
+    dropped_samples: u64,
 }
 
 fn io_status(e: IoError) -> RawStatus {
@@ -71,6 +72,7 @@ impl Driver for I2cDriver {
             addr,
             points,
             errors: 0,
+            dropped_samples: 0,
         })
     }
 
@@ -105,7 +107,9 @@ impl Driver for I2cDriver {
                     RawSample::failed(id, io_status(e))
                 }
             };
-            let _ = out.push(sample);
+            if out.push(sample).is_err() {
+                self.dropped_samples += 1;
+            }
         }
         Ok(())
     }
@@ -126,5 +130,6 @@ impl Driver for I2cDriver {
 
     fn health(&self, out: &mut HealthOut<'_>) {
         out.counter("errors", self.errors);
+        out.counter("dropped_samples", self.dropped_samples);
     }
 }

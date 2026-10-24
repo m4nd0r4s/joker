@@ -177,3 +177,18 @@ fn a_drive_on_an_input_line_is_a_plan_error() {
     assert_eq!(errors[0].code.as_str(), "J0853");
     assert!(errors[0].message.contains("output lines only"));
 }
+
+#[test]
+fn a_full_sample_ring_counts_the_dropped_sample() {
+    let (chip, _lines) = MemoryGpio::new();
+    let req = request();
+    let views = req.views();
+    let plan = GpioPlanner::plan(&views.request()).unwrap();
+    let link = Link::Gpio(GpioChip::new(chip));
+    let host = Arc::new(VirtualHost::new(0));
+    let mut bench: Bench<'_, GpioDriver> =
+        Bench::open(host, views.request(), plan.view(), link).unwrap();
+    bench.connect().unwrap();
+    assert_eq!(bench.read_into_full_ring(0).unwrap(), 1);
+    assert!(bench.counters().contains(&("dropped_samples", 1)));
+}
