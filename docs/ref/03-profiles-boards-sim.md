@@ -381,7 +381,7 @@ steps = [{ write = { at = 40300, fc = 6, value = 1 } }, { wait = "500ms" }, { wr
 |---|---|---|---|---|
 | `steps` | list of steps | one of `steps` or `native` | — | executed in order in the serialized queue of the device (02 §8) |
 | `native` | opaque table | same | — | operation of the driver itself (OPC UA method, CANopen SDO), validated by `plan` |
-| `args` | table `name → type` (`"f64 %"`, `"bool"`, `"u64"`, `"Enum"`) | no | `{}` | typed arguments; `"$name"` in a step is the value of the argument |
+| `args` | table `name → type` (`"f64 %"`, `"bool"`, `"u64"`, `"i64"`, `"Enum"`) | no | `{}` | typed arguments, all required; `"$name"` in a step is the value of the argument, converted as ADR 0066 §5 says (a quantity to the declared unit, an enum variant to its value) |
 | `result` | table `name → type` | no | `{}` | fields of the result, filled by `read` steps with `into` |
 | `timeout` | duration | no | sum of the `wait`s + 1 s per step | the action's default; the manifest wins (17 §4.2) |
 | `long` | bool | no | `false` | returns an `ActionHandle` with progress (M19) |
@@ -1388,7 +1388,7 @@ state = "unknown"
 
 ### 2.6 Conformance cases
 
-A single schema for the three batteries: that of the **core** (16 §8, runs against `joker-core` with a virtual clock, on Linux and on an MCU), that of the **classes** (14 §7.3, runs against an instance, in simulation or on a device) and that of the **drivers** (ref/06 §6, runs against an N, W or X driver and a double of the equipment). What differs is the *fixture*; the timeline (`do`, `expect`), the literals and the predicates are the same.
+A single schema for the four batteries: that of the **core** (16 §8, runs against `joker-core` with a virtual clock, on Linux and on an MCU), that of the **classes** (14 §7.3, runs against an instance, in simulation or on a device), that of the **drivers** (ref/06 §6, runs against an N, W or X driver and a double of the equipment) and that of the **actions** (ADR 0066, runs the runtime's device and instance actions against a register double, on Linux). What differs is the *fixture*; the timeline (`do`, `expect`), the literals and the predicates are the same.
 
 #### 2.6.1 Common envelope
 
@@ -1403,7 +1403,7 @@ schema = 1
 
 | Key of `[suite]` | Type | Req. | Default | Meaning |
 |---|---|---|---|---|
-| `kind` | `core` \| `class` \| `driver` | yes | — | must agree with the location of the file (`conformance/<area>/`, `classes/` or `conformance/drivers/`, `J0845`); `driver`: actions, subjects and fixture in ref/06 §6.2–§6.3 |
+| `kind` | `core` \| `class` \| `driver` \| `action` | yes | — | must agree with the location of the file (`conformance/<area>/`, `classes/`, `conformance/drivers/` or `conformance/actions/`, `J0845`); `driver`: actions, subjects and fixture in ref/06 §6.2–§6.3; `action`: the device and instance actions of the runtime against a register double, fixture, actions and expectations in ADR 0066 §20–§24 (`linux` host only) |
 | `id` | id | yes in `core` and `driver` | in `class`, the reference of the class | prefix of the case ids in the reports |
 | `class` | class reference | yes in `class` | — | equal to the file (`classes/std/pump.conformance.toml` → `std/pump@<major of the .jkc>`, `J0845`) |
 | `spec` | list of references (`"16 A7"`, `"01 §7 step 5"`) | no | `[]` | traceability |
