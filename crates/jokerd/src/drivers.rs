@@ -14,8 +14,8 @@
 use std::sync::Arc;
 
 use joker_core::value::NO_TS_SRC;
-use joker_core::{SignalId, ValueType};
-use joker_hal::acquire::{OwnedRaw, SampleBuffer, settle};
+use joker_core::{Quality, QualityCode, QualityReason, SignalId, ValueType};
+use joker_hal::acquire::{OwnedRaw, SampleBuffer, Settled, settle};
 use joker_hal::cx::Host;
 use joker_hal::driver::{AckSlot, ConnectOut, Driver, RawSink, ReadBatch, WriteAcks};
 use joker_hal::plan::PlanView;
@@ -72,6 +72,34 @@ pub fn raw_to_bits(value: &OwnedRaw, ty: ValueType) -> Option<u64> {
     }
 }
 
+/// What one settled point becomes in its slot (ref/06 §2.8, docs/16 §3):
+/// the value's bits and the driver's quality when the value converts to
+/// the signal's type, otherwise no value at all. A `bad` sample keeps its
+/// own reason; a value that does not convert, or a non-`bad` sample
+/// without a value, is `bad(config_error)`. Quality never disappears: a
+/// failed read always reaches the slot, it never leaves the last good
+/// value in place.
+pub fn settled_sample(target: &PointTarget, settled: &Settled) -> (u64, Quality) {
+    let status: Quality = settled.status.into();
+    if status.is_bad() {
+        return (0, status);
+    }
+    match raw_to_bits(&settled.value, target.ty) {
+        Some(bits) => (bits, status),
+        None => (
+            0,
+            Quality::new(QualityCode::Bad, QualityReason::ConfigError),
+        ),
+    }
+}
+
+fn store_settled(shared: &Shared, target: &PointTarget, settled: &Settled, now: u64) {
+    let (bits, quality) = settled_sample(target, settled);
+    if let Some(slot) = shared.slots.get(target.signal.index()) {
+        slot.write(bits, quality, NO_TS_SRC, settled.ts_hw.unwrap_or(now));
+    }
+}
+
 /// One point's signal id and core type, for [`run_driver`] to write a
 /// settled read into the right slot.
 #[derive(Clone, Copy, Debug)]
@@ -117,9 +145,9 @@ pub fn point_targets(plan: &Plan, device_index: usize) -> Vec<PointTarget> {
 /// `joker_hal::testing::Bench::run_until`, but for real (`host` is a
 /// `TokioHost` in production; a test can still use `VirtualHost` plus its
 /// own `run`, since this is a plain `async fn`). Reads land in
-/// `shared.slots` through `targets` (only the scalar raw kinds
-/// `raw_to_bits` covers settle into a value; everything else is dropped,
-/// not guessed at). Writes are drained from the `CommitRx` on
+/// `shared.slots` through `targets`, every settled point of every read
+/// (a failed read or a value that does not convert writes a `bad` sample,
+/// see [`settled_sample`]). Writes are drained from the `CommitRx` on
 /// `shared.commit_bindings[device_index]`/`commit_boxes[device_index]`.
 #[allow(
     clippy::too_many_arguments,
@@ -234,15 +262,9 @@ pub async fn run_driver<D: Driver>(
             let result = driver.read(&mut cx, &batch, &mut sink).await;
             let settled = settle(&request, &batch, buf.samples(), result);
             let now = host.now().mono_ns;
-            for s in settled {
-                let Some(target) = targets.iter().find(|t| t.point == s.point) else {
-                    continue;
-                };
-                let Some(bits) = raw_to_bits(&s.value, target.ty) else {
-                    continue;
-                };
-                if let Some(slot) = shared.slots.get(target.signal.index()) {
-                    slot.write(bits, s.status.into(), NO_TS_SRC, s.ts_hw.unwrap_or(now));
+            for s in &settled {
+                if let Some(target) = targets.iter().find(|t| t.point == s.point) {
+                    store_settled(shared, target, s, now);
                 }
             }
             // One step, not a catch-up loop: an on-demand batch's period
