@@ -162,6 +162,11 @@ criteria = "safe-to-deploy"
 version = "0.1.7"
 criteria = "safe-to-deploy"
 
+[[exemptions.data-encoding]]
+version = "2.11.1"
+criteria = "safe-to-deploy"
+notes = "Reached only through tungstenite (Sec-WebSocket-Key base64). Six unsafe blocks, all bounded slice writes in the codec; Google audits 2.6.0 and 2.7.0 for UB risk but no import holds a safe-to-deploy audit. Audit before the end of Phase 1 (policy §2)."
+
 [[exemptions.digest]]
 version = "0.10.7"
 criteria = "safe-to-deploy"
@@ -233,6 +238,11 @@ criteria = "safe-to-deploy"
 [[exemptions.generic-array]]
 version = "0.14.7"
 criteria = "safe-to-deploy"
+
+[[exemptions.getrandom]]
+version = "0.3.4"
+criteria = "safe-to-deploy"
+notes = "Older line pulled by rand_core 0.9 for tungstenite's frame masks; same maintainers and same OS entropy calls as the exempted 0.4.3. The delta from 0.4.3 is a downgrade the imports do not cover. Audit or drop with the per-phase update."
 
 [[exemptions.getrandom]]
 version = "0.4.3"
@@ -430,6 +440,11 @@ criteria = "safe-to-deploy"
 version = "0.1.6"
 criteria = "safe-to-deploy"
 
+[[exemptions.ppv-lite86]]
+version = "0.2.21"
+criteria = "safe-to-deploy"
+notes = "SIMD helper of rand_chacha, reached through tungstenite. Google audits it up to 0.2.21 but only as safe-to-run; no import holds safe-to-deploy. Audit before the end of Phase 1."
+
 [[exemptions.proptest]]
 version = "1.12.0"
 criteria = "safe-to-run"
@@ -439,11 +454,12 @@ version = "5.2.0"
 criteria = "safe-to-run"
 
 [[exemptions.r-efi]]
-version = "6.0.0"
+version = "5.3.0"
 criteria = "safe-to-deploy"
+notes = "Only a dependency of getrandom 0.3 under target_os = uefi, so it is never compiled for a Joker target; Zcash audits the 5.2.0 -> 5.3.0 delta."
 
-[[exemptions.rand]]
-version = "0.10.3"
+[[exemptions.r-efi]]
+version = "6.0.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.rand_core]]
@@ -506,6 +522,11 @@ criteria = "safe-to-deploy"
 version = "0.1.20"
 criteria = "safe-to-deploy"
 
+[[exemptions.serde_urlencoded]]
+version = "0.7.1"
+criteria = "safe-to-deploy"
+notes = "axum's query extractor on the local Unix-socket API. One unsafe block (UTF-8 of already validated percent-decoded bytes); Google audits it as safe-to-run only."
+
 [[exemptions.signal-hook-registry]]
 version = "1.4.8"
 criteria = "safe-to-deploy"
@@ -526,9 +547,19 @@ criteria = "safe-to-deploy"
 version = "0.14.0"
 criteria = "safe-to-deploy"
 
+[[exemptions.thread-priority]]
+version = "3.1.1"
+criteria = "safe-to-deploy"
+notes = "Review note in docs/policies/dependencies.md §4: unsafe limited to libc scheduling calls and errno access, used by jokerd only to put the cycle thread on SCHED_FIFO."
+
 [[exemptions.tinystr]]
 version = "0.8.4"
 criteria = "safe-to-deploy"
+
+[[exemptions.tokio-tungstenite]]
+version = "0.29.0"
+criteria = "safe-to-deploy"
+notes = "Review note in docs/policies/dependencies.md §4: no unsafe, a thin async adapter of tungstenite over tokio streams."
 
 [[exemptions.tower]]
 version = "0.5.3"
@@ -553,6 +584,11 @@ criteria = "safe-to-deploy"
 [[exemptions.tracing-subscriber]]
 version = "0.3.23"
 criteria = "safe-to-deploy"
+
+[[exemptions.tungstenite]]
+version = "0.29.0"
+criteria = "safe-to-deploy"
+notes = "Review note in docs/policies/dependencies.md §4: five unsafe blocks (UTF-8 after validation, u32 alignment for masking), no build script, no file or process access; serves only the local Unix-socket API."
 
 [[exemptions.typenum]]
 version = "1.20.1"
@@ -612,11 +648,13 @@ criteria = "safe-to-deploy"
 
 [[exemptions.zerocopy]]
 version = "0.8.63"
-criteria = "safe-to-run"
+criteria = "safe-to-deploy"
+notes = "Raised from safe-to-run: tungstenite and ahash now reach it from deployed code. Maintained by Google with formal verification of its unsafe core; Mozilla audits it up to 0.8.27 as safe-to-deploy. The 0.8.27 -> 0.8.63 delta (about 27k lines) is audited in the per-phase update."
 
 [[exemptions.zerocopy-derive]]
 version = "0.8.63"
-criteria = "safe-to-run"
+criteria = "safe-to-deploy"
+notes = "Raised from safe-to-run: tungstenite and ahash now reach it from deployed code. Maintained by Google with formal verification of its unsafe core; Mozilla audits it up to 0.8.27 as safe-to-deploy. The 0.8.27 -> 0.8.63 delta (about 27k lines) is audited in the per-phase update."
 
 [[exemptions.zerofrom]]
 version = "0.1.8"

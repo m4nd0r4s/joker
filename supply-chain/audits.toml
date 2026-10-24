@@ -1,7 +1,17 @@
 
 # cargo-vet audits file
 
-[audits]
+[[audits.rand]]
+who = "Diogo Leite <diogo.r.leite27@gmail.com>"
+criteria = "safe-to-deploy"
+delta = "0.9.4 -> 0.9.5"
+notes = "The only code change rejects a deserialized UniformChar sampler whose range exceeds the char space, closing a memory-safety hole; no new unsafe, no new dependencies, no I/O."
+
+[[audits.sha1]]
+who = "Diogo Leite <diogo.r.leite27@gmail.com>"
+criteria = "safe-to-deploy"
+delta = "0.10.6 -> 0.10.7"
+notes = "Drops the optional sha1-asm backend and makes the asm feature a no-op; the remaining code paths are the already audited portable and intrinsics backends. No new unsafe, no new dependencies."
 
 [[trusted.aho-corasick]]
 criteria = "safe-to-deploy"
@@ -177,6 +187,12 @@ user-id = 3618 # David Tolnay (dtolnay)
 start = "2019-07-08"
 end = "2027-10-21"
 
+[[trusted.ryu]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-05-02"
+end = "2027-10-21"
+
 [[trusted.scoped-tls]]
 criteria = "safe-to-deploy"
 user-id = 1 # Alex Crichton (alexcrichton)
@@ -279,6 +295,12 @@ user-id = 6741 # Alice Ryhl (Darksonn)
 start = "2020-10-26"
 end = "2027-10-21"
 
+[[trusted.tokio-stream]]
+criteria = "safe-to-deploy"
+user-id = 6741 # Alice Ryhl (Darksonn)
+start = "2021-01-04"
+end = "2027-10-21"
+
 [[trusted.toml]]
 criteria = "safe-to-deploy"
 user-id = 6743 # Ed Page (epage)
@@ -321,7 +343,55 @@ user-id = 189 # Andrew Gallant (BurntSushi)
 start = "2020-01-11"
 end = "2027-10-21"
 
+[[trusted.windows]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2021-01-15"
+end = "2027-10-21"
+
+[[trusted.windows-collections]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2025-02-06"
+end = "2027-10-21"
+
+[[trusted.windows-core]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2021-11-15"
+end = "2027-10-21"
+
+[[trusted.windows-future]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2025-02-10"
+end = "2027-10-21"
+
+[[trusted.windows-implement]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2022-01-27"
+end = "2027-10-21"
+
+[[trusted.windows-interface]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2022-02-18"
+end = "2027-10-21"
+
+[[trusted.windows-numerics]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2023-05-15"
+end = "2027-10-21"
+
 [[trusted.windows-result]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2024-02-02"
+end = "2027-10-21"
+
+[[trusted.windows-strings]]
 criteria = "safe-to-deploy"
 user-id = 64539 # Kenny Kerr (kennykerr)
 start = "2024-02-02"
@@ -337,6 +407,12 @@ end = "2027-10-21"
 criteria = "safe-to-deploy"
 user-id = 64539 # Kenny Kerr (kennykerr)
 start = "2022-09-09"
+end = "2027-10-21"
+
+[[trusted.windows-threading]]
+criteria = "safe-to-deploy"
+user-id = 64539 # Kenny Kerr (kennykerr)
+start = "2025-04-29"
 end = "2027-10-21"
 
 [[trusted.windows_aarch64_gnullvm]]
