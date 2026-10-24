@@ -645,6 +645,67 @@ async fn manual_writes_follow_a10_and_a13() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_device_write_ack_is_served_as_a_decision() {
+    let f = start().await;
+    let path = f._dir.path().join("decisions.jsonl");
+    let mut log = DecisionLog::open(&path).unwrap();
+    let mut entry = serde_json::Map::new();
+    for (k, v) in [
+        ("gen", json!(1)),
+        ("record", json!("write_ack")),
+        ("output", json!("pi.act_led")),
+        ("device", json!("pi")),
+        ("write_seq", json!(3)),
+        ("kind", json!("set")),
+        ("status", json!("device_rejected")),
+        ("code", json!("J0877")),
+        ("at_mono_ns", json!(5)),
+        ("ts", json!("2026-10-24T12:00:00.000000000Z")),
+    ] {
+        entry.insert(k.into(), v);
+    }
+    log.append(entry, true).unwrap();
+
+    let d = f
+        .call(
+            "GET",
+            "/v1/decisions",
+            "/v1/decisions?kind=write_ack&output=pi.act_led",
+            None,
+        )
+        .await;
+    assert_eq!(d.status, 200);
+    let items = d.json()["items"].as_array().unwrap().clone();
+    assert_eq!(items.len(), 1, "{items:?}");
+    let ack = &items[0];
+    assert_eq!(ack["kind"], "write_ack");
+    assert_eq!(ack["output"], "pi.act_led");
+    assert_eq!(ack["ack"]["device"], "pi");
+    assert_eq!(ack["ack"]["write_seq"], 3);
+    assert_eq!(ack["ack"]["write_kind"], "set");
+    assert_eq!(ack["ack"]["status"], "device_rejected");
+    assert_eq!(ack["ack"]["code"], "J0877");
+    assert_eq!(ack["generation"]["gen"], 1);
+
+    let by_outcome = f
+        .call(
+            "GET",
+            "/v1/decisions",
+            "/v1/decisions?outcome=applied",
+            None,
+        )
+        .await;
+    assert!(
+        by_outcome.json()["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|i| i["kind"] != "write_ack"),
+        "an ack has no outcome"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn generations_follow_the_contract() {
     let f = start().await;
     let list = f

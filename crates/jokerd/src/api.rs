@@ -1606,8 +1606,14 @@ impl Backend for Node {
             .collect();
         let mut items: Vec<(u64, Value)> = entries
             .iter()
-            .filter(|e| e["record"] == "output" || e["record"] == "write")
-            .filter_map(|e| decision_json(e, &hashes).map(|d| (e["seq"].as_u64().unwrap_or(0), d)))
+            .filter_map(|e| {
+                let d = match e["record"].as_str() {
+                    Some("output" | "write") => decision_json(e, &hashes),
+                    Some("write_ack") => ack_decision_json(e, &hashes),
+                    _ => None,
+                }?;
+                Some((e["seq"].as_u64().unwrap_or(0), d))
+            })
             .filter(|(_, d)| {
                 let out = d["output"].as_str().unwrap_or("");
                 (outputs.is_empty() || outputs.iter().any(|s| wire::matches(s, out)))
@@ -2025,7 +2031,12 @@ fn trace_json(e: &TraceEntry) -> Value {
     Value::Object(m)
 }
 
-fn decision_json(e: &Value, hashes: &std::collections::BTreeMap<u64, String>) -> Option<Value> {
+/// The `id`, `ts` and `generation` of a decision-log entry, common to
+/// every kind of `Decision`.
+fn decision_head(
+    e: &Value,
+    hashes: &std::collections::BTreeMap<u64, String>,
+) -> Option<Map<String, Value>> {
     let number = e["gen"].as_u64()?;
     let ts = e["ts"]
         .as_str()
@@ -2036,7 +2047,38 @@ fn decision_json(e: &Value, hashes: &std::collections::BTreeMap<u64, String>) ->
         .ok()
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
         .map_or(0, |d| d.as_millis() as u64);
-    let id = joker_api::server::ulid_from(ms, u128::from(seq));
+    let mut m = Map::new();
+    m.insert(
+        "id".into(),
+        json!(joker_api::server::ulid_from(ms, u128::from(seq))),
+    );
+    m.insert("ts".into(), json!(ts));
+    if let Some(h) = hashes.get(&number) {
+        m.insert("generation".into(), json!({"gen": number, "hash": h}));
+    }
+    Some(m)
+}
+
+/// A `write_ack` record as a `Decision` of kind `write_ack` (ADR 0065).
+fn ack_decision_json(e: &Value, hashes: &std::collections::BTreeMap<u64, String>) -> Option<Value> {
+    let mut m = decision_head(e, hashes)?;
+    m.insert("output".into(), e["output"].clone());
+    m.insert("kind".into(), json!("write_ack"));
+    m.insert(
+        "ack".into(),
+        json!({
+            "device": e["device"],
+            "write_seq": e["write_seq"],
+            "write_kind": e["kind"],
+            "status": e["status"],
+            "code": e["code"],
+        }),
+    );
+    Some(Value::Object(m))
+}
+
+fn decision_json(e: &Value, hashes: &std::collections::BTreeMap<u64, String>) -> Option<Value> {
+    let mut m = decision_head(e, hashes)?;
     let kind = match e["cause"]["kind"].as_str() {
         Some("expiry") => "expiry",
         Some("reset") => "reset",
@@ -2052,13 +2094,7 @@ fn decision_json(e: &Value, hashes: &std::collections::BTreeMap<u64, String>) ->
     if let Some(b) = e.get("by") {
         outcome.insert("level".into(), b.clone());
     }
-    let mut m = Map::new();
-    m.insert("id".into(), json!(id));
-    m.insert("ts".into(), json!(ts));
     m.insert("tick".into(), json!({"seq": e["tick"]}));
-    if let Some(h) = hashes.get(&number) {
-        m.insert("generation".into(), json!({"gen": number, "hash": h}));
-    }
     m.insert("output".into(), e["output"].clone());
     m.insert("kind".into(), json!(kind));
     if e["record"] == "write"
