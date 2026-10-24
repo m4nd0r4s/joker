@@ -71,5 +71,6 @@
 | [0072](0072-output-envelope-keys-in-jokerd.md) | Every output envelope key takes effect in `jokerd`: step 6, `verify`, `keepalive` and `pulse` |
 | [0073](0073-raw-access-in-the-catalog-drivers-and-the-wire-double.md) | Access by address in the catalog drivers, and the wire double of the action suites |
 | [0074](0074-subscription-resume-re-resolution-and-sampling-budget.md) | Subscription resumption, re-resolution on a generation swap, and the sampling budget |
+| [0075](0075-manifest-signal-adjustments-and-the-output-stage.md) | Manifest signal adjustments take effect, and the output stage converts values to raw |
 
 Changing a decision = writing a new ADR that replaces it, and updating the affected documents in the same set of commits.
