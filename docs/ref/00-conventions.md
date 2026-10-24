@@ -127,7 +127,7 @@ unit     := "ns" | "us" | "µs" | "ms" | "s" | "m" | "min" | "h" | "d"
 | `f64`, `f32` | IEEE 754 bits of `f64` (`f32` promoted) | number; `NaN` and infinities do not exist in JSON and only appear with quality `bad(nan)` and `"value": null` |
 | `enum<N>` | numeric value of the variant | variant name (`"run"`) |
 | `bits<N>` | the word | number, and `"bits": ["alarm_overtemp", …]` with the active bits named |
-| `string`, `bytes` | separate arena (does not fit in `u64`) | UTF-8 string; `bytes` in base64 |
+| `string`, `bytes` | the wide slot (≤ 64 B, does not fit in `u64`; ADR 0062); in the trace v1, the length in bytes | UTF-8 string; `bytes` in base64 with the standard alphabet and padding (RFC 4648 §4), the only form accepted on input |
 | record (events, arguments and results of actions and methods, `Internal<T>`, mailbox messages) | **deterministic CBOR** (RFC 8949, §4.2.1), map with **integer keys = position of the field in the schema** (`joker:meta` or `.jkc` contract); within a major, fields are only added at the end | JSON object with the field **names** |
 
 **Unit:** a numeric value is always expressed in the **declared unit of the signal**. Text interfaces show the unit alongside (`"unit": "kW"`) and accept, on input, a number (in the signal's unit) or a quantity literal (`"50 kW"`, converted; a wrong dimension is `J0107`).

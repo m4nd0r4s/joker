@@ -361,7 +361,7 @@ An unbound port (`UNBOUND`) has `quality = bad(not_connected)`. A sample that ne
 | 8 | 8 | `applied` | value applied in that commit |
 | 16 | 8 | `mine` | the active proposal of this writer (`mine()`, 17 §11), valid with `MINE_ACTIVE` |
 
-**Wide section:** the values of `string`, `bytes` and `Internal<T>` (≤ 64 B each, ref/00 §10), each one at an offset that is a multiple of 8. `string` in UTF-8, `bytes` raw, records in CBOR (§4.10).
+**Wide section:** the values of `string`, `bytes` and `Internal<T>` (≤ 64 B each, ref/00 §10), each one at an offset that is a multiple of 8. `string` in UTF-8, `bytes` raw, records in CBOR (§4.10). The latch copies them from the wide slots of those signals (document 01, §3.2; ADR 0062), with the sample's quality, timestamps and `seq` in the 24 B sample.
 
 The `image-len` stays fixed during the generation: it is `64 + 24 × (n_slots + n_outcomes) + 64 × n_wide`, rounded up to 8.
 

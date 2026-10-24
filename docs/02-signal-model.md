@@ -33,6 +33,8 @@ Rule of choice: if what matters is *the value now*, it is a scalar. If what matt
 | `string` | ≤ 64 bytes UTF-8 (serial numbers, textual states) |
 | `bytes` | ≤ 64 bytes |
 
+`string` and `bytes` values live in a wide slot (document 01, §3.2; ADR 0062). Expressions cannot read them; `requires_good` can, because it reads only the quality.
+
 Device signals have no `struct`. Related quantities share a path prefix (`inv1.ac.p`, `inv1.ac.q`, `inv1.ac.f`), and the coherence between them is given by **acquisition coherence** (§6.2). The only exception is **internal signals of apps** (`Internal<T>`, document 04, §3.4): they may be records of up to 64 bytes with scalars only, stored in a wide slot with the same seqlock protocol.
 
 Events and action arguments use **records** with scalar fields, `string` up to 1 KiB and bounded lists (`list<T, 64>`). The schema is declared in the app code (`joker:meta`), in the profile or in the class contract. In binary, a record is deterministic CBOR with integer keys equal to the field position; in JSON, it carries the names (`ref/00` §4.1).
