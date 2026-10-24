@@ -27,7 +27,9 @@ use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::cbor::Cbor;
 use crate::cx::Host;
-use crate::link::{GpioLines, IoError, Parity, SerialInfo, SerialIo};
+use crate::link::{
+    GpioBias, GpioDrive, GpioLineConfig, GpioLines, IoError, Parity, SerialInfo, SerialIo,
+};
 use crate::types::{DriverError, J0852, MonoNs};
 
 /// A host on tokio's clock. Monotonic time starts at 0 when the host is
@@ -436,18 +438,41 @@ impl core::fmt::Debug for LinuxGpio {
 
 impl LinuxGpio {
     /// Opens `chip_path` (e.g. `/dev/gpiochip0`) and requests a handle
-    /// for each `(line, output)` pair the manifest granted. Fails the
-    /// whole chip if the device or any one line's handle cannot be
-    /// opened: a device the manifest expects known-good lines from is
-    /// better refused here than left half-granted.
-    pub fn open(chip_path: &Path, lines: &[(u32, bool)]) -> io::Result<Self> {
+    /// for each line the manifest granted, with its direction, bias and
+    /// drive; an output starts at the physical level its config carries
+    /// (its declared `safe`), set by the kernel in the request itself.
+    /// Fails the whole chip if the device or any one line's handle cannot
+    /// be opened, a bias the kernel does not support (v1 bias flags need
+    /// Linux 5.5+) included: a device the manifest expects known-good
+    /// lines from is better refused here than left half-granted.
+    pub fn open(chip_path: &Path, lines: &[GpioLineConfig]) -> io::Result<Self> {
         let chip = File::open(chip_path)?;
         let mut handles = BTreeMap::new();
-        for &(line, output) in lines {
-            let handle = joker_gpio_sys::request_line_handle(chip.as_fd(), line, output, "jokerd")?;
-            handles.insert(line, handle);
+        for config in lines {
+            let handle =
+                joker_gpio_sys::request_line_handle(chip.as_fd(), &line_request(config), "jokerd")?;
+            handles.insert(config.line, handle);
         }
         Ok(Self { handles })
+    }
+}
+
+/// The chardev request of one granted line.
+fn line_request(config: &GpioLineConfig) -> joker_gpio_sys::LineRequest {
+    joker_gpio_sys::LineRequest {
+        line: config.line,
+        output: config.output,
+        bias: match config.bias {
+            GpioBias::AsIs => joker_gpio_sys::LineBias::AsIs,
+            GpioBias::PullUp => joker_gpio_sys::LineBias::PullUp,
+            GpioBias::PullDown => joker_gpio_sys::LineBias::PullDown,
+            GpioBias::Disabled => joker_gpio_sys::LineBias::Disabled,
+        },
+        drive: match config.drive {
+            GpioDrive::PushPull => joker_gpio_sys::LineDrive::PushPull,
+            GpioDrive::OpenDrain => joker_gpio_sys::LineDrive::OpenDrain,
+            GpioDrive::OpenSource => joker_gpio_sys::LineDrive::OpenSource,
+        },
     }
 }
 
@@ -574,22 +599,58 @@ mod tests {
         assert_eq!(buf, [9, 9]);
     }
 
+    fn input(line: u32) -> GpioLineConfig {
+        GpioLineConfig {
+            line,
+            output: None,
+            bias: GpioBias::AsIs,
+            drive: GpioDrive::PushPull,
+        }
+    }
+
     #[test]
     fn opening_a_non_gpiochip_path_is_refused() {
-        assert!(LinuxGpio::open(Path::new("/dev/null"), &[(0, false)]).is_err());
+        assert!(LinuxGpio::open(Path::new("/dev/null"), &[input(0)]).is_err());
+    }
+
+    #[test]
+    fn a_line_config_becomes_the_same_chardev_request() {
+        let config = GpioLineConfig {
+            line: 17,
+            output: Some(true),
+            bias: GpioBias::PullDown,
+            drive: GpioDrive::OpenDrain,
+        };
+        let request = line_request(&config);
+        assert_eq!(request.line, 17);
+        assert_eq!(request.output, Some(true));
+        assert_eq!(request.default_value(), 1);
+        assert_eq!(request.bias, joker_gpio_sys::LineBias::PullDown);
+        assert_eq!(request.drive, joker_gpio_sys::LineDrive::OpenDrain);
+        let request = line_request(&GpioLineConfig {
+            bias: GpioBias::Disabled,
+            drive: GpioDrive::OpenSource,
+            output: Some(false),
+            ..input(3)
+        });
+        assert_eq!(request.default_value(), 0);
+        assert_eq!(request.bias, joker_gpio_sys::LineBias::Disabled);
+        assert_eq!(request.drive, joker_gpio_sys::LineDrive::OpenSource);
+        assert_eq!(
+            line_request(&GpioLineConfig {
+                bias: GpioBias::PullUp,
+                ..input(3)
+            })
+            .bias,
+            joker_gpio_sys::LineBias::PullUp
+        );
     }
 
     #[test]
     fn a_line_outside_the_granted_set_is_unsupported() {
-        // `/dev/null` fails to open as a chip for any line, so a line that
-        // was never granted at all would also have no handle; this only
-        // exercises the lookup path once a `LinuxGpio` with zero granted
-        // lines exists, built the same way `DevicePaths::new(&[])` would
-        // for an empty grant set, without needing a real gpiochip.
-        let empty = LinuxGpio {
+        let mut empty = LinuxGpio {
             handles: std::collections::BTreeMap::new(),
         };
-        let mut empty = empty;
         assert_eq!(empty.get(0), Err(IoError::Unsupported));
         assert_eq!(empty.set(0, true), Err(IoError::Unsupported));
     }

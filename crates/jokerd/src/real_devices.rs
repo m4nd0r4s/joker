@@ -173,6 +173,33 @@ async fn run_modbus_tcp(
     .await;
 }
 
+/// The logical level a gpio output is requested at: its declared `safe`
+/// (AGENTS.md invariant 5). A line has no state to hand back to, so
+/// `safe = "relinquish"` and an output without an envelope refuse the
+/// device instead of starting the line at an undeclared level.
+fn gpio_safe_level(plan: &Plan, path: &str) -> Result<bool, String> {
+    let output = plan
+        .outputs
+        .iter()
+        .find(|o| o.path == path)
+        .ok_or_else(|| format!("output `{path}` has no envelope, so no `safe` to start at"))?;
+    gpio_safe(output.safe, path)
+}
+
+/// A gpio output's `safe` as a logical level; see [`gpio_safe_level`].
+fn gpio_safe(safe: joker_core::SafeValue, path: &str) -> Result<bool, String> {
+    match safe {
+        joker_core::SafeValue::Value(0) => Ok(false),
+        joker_core::SafeValue::Value(1) => Ok(true),
+        joker_core::SafeValue::Value(_) => {
+            Err(format!("output `{path}`: a gpio line's `safe` is a bool"))
+        }
+        joker_core::SafeValue::Relinquish => Err(format!(
+            "output `{path}`: a gpio line cannot relinquish; declare `safe = true` or `false`"
+        )),
+    }
+}
+
 #[allow(
     clippy::too_many_arguments,
     reason = "each parameter is a distinct, independently-sourced piece of one device's dispatch; see run_sysfs's own allow"
@@ -199,10 +226,28 @@ async fn run_gpio(
         let Ok(addr) = joker_driver_gpio::plan::check_point(p) else {
             return;
         };
-        lines.push((addr.line, p.direction == Direction::Output));
+        let safe = if p.direction == Direction::Output {
+            match gpio_safe_level(&plan, p.path) {
+                Ok(level) => Some(level),
+                Err(e) => {
+                    eprintln!("error: device `{}`: {e}", device.name);
+                    return;
+                }
+            }
+        } else {
+            None
+        };
+        lines.push(addr.line_config(safe));
     }
-    let Ok(gpio) = LinuxGpio::open(&PathBuf::from("/dev").join(chip), &lines) else {
-        return;
+    let gpio = match LinuxGpio::open(&PathBuf::from("/dev").join(&chip), &lines) {
+        Ok(gpio) => gpio,
+        Err(e) => {
+            eprintln!(
+                "error: device `{}`: cannot request the lines of `{chip}`: {e}",
+                device.name
+            );
+            return;
+        }
     };
     let Ok(driver) = GpioDriver::open(
         &OpenArgs::new(views.request(), hal_plan.view()),
@@ -334,5 +379,20 @@ impl Devices for RealDevices {
             }
         }
         Box::new(RealSet { stop: tx, actions })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::gpio_safe;
+    use joker_core::SafeValue;
+
+    #[test]
+    fn a_gpio_output_starts_at_its_bool_safe_and_refuses_anything_else() {
+        assert_eq!(gpio_safe(SafeValue::Value(0), "pi.relay"), Ok(false));
+        assert_eq!(gpio_safe(SafeValue::Value(1), "pi.relay"), Ok(true));
+        assert!(gpio_safe(SafeValue::Value(2), "pi.relay").is_err());
+        let relinquish = gpio_safe(SafeValue::Relinquish, "pi.relay").unwrap_err();
+        assert!(relinquish.contains("cannot relinquish"), "{relinquish}");
     }
 }

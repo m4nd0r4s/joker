@@ -34,7 +34,7 @@ use crate::cx::{Cx, Host, LogLevel};
 use crate::driver::{
     AckSlot, CommittedWrite, ConnectOut, Driver, OpenArgs, RawSink, ReadBatch, WriteAck, WriteAcks,
 };
-use crate::link::{GpioLines, IoError, Link, SerialInfo, SerialIo};
+use crate::link::{GpioLineConfig, GpioLines, IoError, Link, SerialInfo, SerialIo};
 use crate::plan::PlanView;
 use crate::spec::PlanRequest;
 use crate::types::{BatchId, BatchKind, DriverError, MonoNs};
@@ -318,6 +318,19 @@ impl MemoryGpio {
             },
             GpioHandle { state },
         )
+    }
+
+    /// A set of lines requested the way a host requests real ones
+    /// (`LinuxGpio::open`): each output already sits at the physical level
+    /// its config carries, before the driver opens or writes.
+    pub fn with_lines(lines: &[GpioLineConfig]) -> (Self, GpioHandle) {
+        let (gpio, handle) = Self::new();
+        for config in lines {
+            if let Some(level) = config.output {
+                handle.drive(config.line, level);
+            }
+        }
+        (gpio, handle)
     }
 }
 

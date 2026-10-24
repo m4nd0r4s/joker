@@ -304,6 +304,49 @@ impl TcpEndpoint {
     }
 }
 
+/// The pull a host requests a digital line with (ref/03 §2.2.5 `bias`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GpioBias {
+    /// `as-is` (default): leaves the line's current pull.
+    AsIs,
+    /// `pull-up`.
+    PullUp,
+    /// `pull-down`.
+    PullDown,
+    /// `disabled`.
+    Disabled,
+}
+
+/// The output stage a host requests a digital line with (ref/03 §2.2.5
+/// `drive`, outputs only).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GpioDrive {
+    /// `push-pull` (default).
+    PushPull,
+    /// `open-drain`.
+    OpenDrain,
+    /// `open-source`.
+    OpenSource,
+}
+
+/// How a host requests one granted line before the driver opens: an
+/// output carries the physical level it starts at, which is its declared
+/// `safe` resolved against `active_low` (AGENTS.md invariant 5), so the
+/// line never shows an undeclared level between the request and the
+/// first committed write.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GpioLineConfig {
+    /// The line offset on the chip.
+    pub line: u32,
+    /// `None` for an input; `Some(level)` for an output, at that physical
+    /// level.
+    pub output: Option<bool>,
+    /// The requested pull.
+    pub bias: GpioBias,
+    /// The requested output stage.
+    pub drive: GpioDrive,
+}
+
 /// The host side of a set of digital lines (ref/06 §3.4, `Link::Gpio`,
 /// ADR 0047): a tier N driver never opens `/dev/gpiochipN` itself, it asks
 /// the host for the lines the manifest granted. Synchronous: unlike a
