@@ -571,6 +571,8 @@ a0 = { alias = "tank.level", scale = { from = ["0.6 V", "3.0 V"], to = ["0 m", "
 
 **Adjusting a profile signal or declaring a signal.** On a signal that comes from a profile, the manifest only accepts `alias`, `max_age`, `limits`, `stuck_detect`, `deadband`, `debounce`, `scale`, `offset`, `unit` (same dimension), `poll` and `record`; it is the list of `ref/03` §2.2.4. The other keys (`type`, `direction`, address keys) are only used in the drivers without a profile, and the address keys are the `address` schema of the driver's descriptor (`ref/06` §2.3), with the same names as in `ref/03` §2.2.5.
 
+**How the adjustments compose** (ADR 0075). The adjustments of a signal are those of its `[devices.<d>.signals.<s>]` table and of the `[signals."<path>"]` entries that reach it (§5.9). On top of the profile's `raw × scale + offset`, in the profile's unit: the manifest's `scale` (a factor) and `offset` apply in that order, still in the profile's unit; `scale = { from, to }` maps `from` onto `to` instead, and the signal takes the unit of `to`; `unit` then converts to another unit of the same dimension. The chain is one `raw × scale + offset` in the signal's final unit, which the acquisition stage applies and the output stage inverts (`ref/06` §2.7). An integer signal that gains a `scale` or `offset` becomes `f64` (`ref/03` §2.2.7). `limits`, `deadband`, `stuck_detect` and `debounce` are in the final unit and replace the profile's; a profile `deadband` the manifest does not replace follows its `scale` and `unit`. `max_age` replaces 3 × `poll`. `stuck_detect` compares the value before the deadband. An adjustment that does not fit stops the generation from loading with its code.
+
 #### 5.8.2 `[devices.<d>.actions.<a>]`
 
 ```toml
