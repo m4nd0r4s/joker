@@ -90,7 +90,7 @@ admin    = ["cert:CN=admin-*", "local:user=deploy"]
 | `deck:<deck_id>/user:<id>`, `deck:<deck_id>/group:<g>` | a user or a group of the `user-claim` of a remote session (ref/10 §3.10) |
 
 - **With no matching rule, the role is `viewer`.** Reaching the socket (file permissions) or presenting a valid certificate from the client CA is already a trust decision; the role only raises it.
-- **Implicit on the socket:** uid 0 and the `joker` user are `admin`. Whoever is root already has the node.
+- **Implicit on the socket:** uid 0, the `joker` user and the user that `jokerd` itself runs as (the `joker` service account in production, the developer under `jk dev`) are `admin` (ADR 0063). Whoever is root already has the node.
 - **The role in the certificate** is done with a `cert:SAN=urn:joker:role:operator` rule issued by the CA of the organization: the node does not trust a field of the certificate without a rule that names it.
 - **Tunnel (1.3):** the effective role is the **lowest** of three: the one requested in `session-open-args`, `[agent.remote] max_role` of the node, and what `[security.roles]` gives the `deck:` principals (ref/10 §3.10; with no rule, `default_role`, and empty refuses). **Forbidden in a session, with any role** (`J0986`, 403): `/v1/node/*` (identity, enrollment and trust), `/v1/agent/*` except `GET /v1/agent` and `GET /v1/agent/desired`, and `/v1/secrets`. In 1.0 the `tunnel` transport does not exist.
 - The role is computed on each HTTP request and, on a WebSocket or SSE connection, at opening and at each generation swap (§6.9).
@@ -344,7 +344,7 @@ Legend: minimum **Role**; **M** = mutating (anti-replay over TCP, §2.5). The co
 | GET | `/v1/version` | viewer | | supported versions: API, current and previous WIT world, `joker:driver`, JDP, manifest schema, lock, `agent/1`, Joker Link, C ABI, trace (`Version`) |
 | GET | `/v1/health` | viewer | | `ok` \| `degraded` \| `failed` with checks; `probe=live` (process responds), `ready` (first tick done), `full`; 503 on `failed` (`Health`) |
 | GET | `/v1/whoami` | viewer | | principal, role, session, rules that matched (`WhoAmI`) |
-| GET | `/v1/status` | viewer | | summary of `jk status`: generation (and confirmation deadline), clock, groups, devices, apps, alarms (counts and the first 20), trips, manual levels, uplinks, MCUs; `instances=true` adds the instances (`Status`) |
+| GET | `/v1/status` | viewer | | summary of `jk status`: generation (and confirmation deadline), clock, groups, devices (link state, reconnections, dropped and invalid samples, ADR 0063), apps, alarms (counts and the first 20), trips, manual levels, uplinks, MCUs; `instances=true` adds the instances (`Status`) |
 | GET | `/v1/openapi.json`, `/v1/openapi.yaml` | viewer | | this contract |
 
 `features` in 1.0: `sse`, `intents` (the API; empty until 1.1), `micro` (if there are `joker-link` devices), `sim` (in `mode = "dev"` with `sim` devices), `agent` (an agent is configured), `enroll.code` (there is an active enrollment code, waiting to be used). 1.1 adds `shadow.apps` (ADR 0035), `models`, `blocks`, `streams`, `schedule`; 1.3, `tunnel`. It is the list that the client libraries read on `connect` (ref/05 §21).
@@ -360,7 +360,7 @@ Legend: minimum **Role**; **M** = mutating (anti-replay over TCP, §2.5). The co
 | POST | `/v1/node/renew` | admin | M | renews the certificate now (through the Deck, or returns a CSR with the **same** KEM key, without a Deck) → job `renew` |
 | GET | `/v1/node/hardware` | viewer | | inventory of the hardware of the node, **with reads only** of the file system (`/proc`, `/sys`, `/dev`): architecture, model, CPUs, memory, kernel, boot command line, GPIO chips, LEDs, thermal zones, watchdogs, serial ports, I²C, SPI, network, USB, TPM (`NodeHardware`). It is what `jk board probe` and `jk board check --node` use (ref/03 §2.3.7) |
 | GET | `/v1/groups`, `/v1/groups/{group}` | viewer | | period, CPUs, priority, overrun policy, trip, order, tasks (WCET declared, from the lock, measured), jitter and duration (p50, p99, p99.9, max.), trace ring coverage (`Group`) |
-| GET | `/v1/metrics` | viewer | | snapshot of the metrics of document 01, §19, with the histograms that do not fit in scalar signals; `ml` is `null` in 1.0 (`Metrics`) |
+| GET | `/v1/metrics` | viewer | | snapshot of the metrics of document 01, §19, with the histograms that do not fit in scalar signals; per device, the link state, reconnections and the dropped and invalid samples (ADR 0063); `ml` is `null` in 1.0 (`Metrics`) |
 | GET | `/v1/logs` | viewer | | structured logs from the API ring (16 MiB by default), filters `source`, `app`, `level` (minimum), range; to follow, topic `logs` (§6) |
 
 **`NodeHardware`** (`GET /v1/node/hardware`). Each field says where it comes from; a field that the node cannot read (permissions, a system without `device-tree`) comes as `null`, and the `unreadable` list says which and why. Nothing here opens a device for writing, requests a GPIO or touches a bus: `jokerd` reads directories and attributes, and the GPIO lines only through the information `ioctl` of the chardev (`GPIO_V2_GET_LINEINFO_IOCTL`), which does not reserve them.
@@ -853,8 +853,8 @@ An unknown `op` is `J-E1901`; an unknown topic, `J-E1902`; a malformed message, 
 |---|---|---|---|---|
 | `signals` | state | `Sample` | `sel`, `mode`, `fields`, `mono` | viewer |
 | `outputs` | state | summarized `OutputState` (effective, applied, active level, last result, trip) | `sel` | viewer |
-| `status` | state | `Status` | — | viewer |
-| `metrics` | state | `Metrics` | — | viewer |
+| `status` | state | `Status` (one item, ADR 0063) | — | viewer |
+| `metrics` | state | `Metrics` (one item, ADR 0063) | — | viewer |
 | `signal_trace` | state | one record per tick with changes in the signal: acquired sample, readers, proposals, arbiter, envelope, commit, readback; `skipped_ticks` | `path` | viewer |
 | `alarms` | events | `AlarmEvent` | `sel`, `severity`, `states` | viewer |
 | `events` | events | `EventRecord` | `sel` | viewer |
@@ -889,7 +889,7 @@ An unknown `op` is `J-E1901`; an unknown topic, `J-E1902`; a malformed message, 
 1. **The core does not know clients.** The state topics read the slots with the seqlock protocol (document 01, §3.2), without waiting and without writing anything that the core reads. The event topics consume the bounded lock-free queues that already exist for the historian and the uplinks (ADR 0013). No action of a client reaches an `rt` thread.
 2. **State:** a slow client only receives less often. The sampler does not generate the next message while the previous one has not left the queue of the connection, and the effective rate drops on its own.
 3. **Events:** each subscription has a ring of `buffer` items (64–4,096, default 1,024). When it is full, the oldest go and the client receives a `gap` with `lost`. In `alarms`, the `gap` is followed by a `resync` with the current table of alarms, so that the state is never wrong.
-4. **Connection:** if the output queue (1 MiB) stays full for more than **30 s**, the server sends `closing` and closes with **4008** (`J-E1906`). A client that does not read does not hold memory forever.
+4. **Connection:** if the output queue (1 MiB) stays full for more than **30 s**, the server sends `closing` and closes with **4008** (`J-E1906`). The queue counts the bytes of the messages it holds; it is full when a message did not fit, until it drains below 1 MiB, and the server waits at most 5 s for the `closing` and the close frame to leave before it drops the connection (ADR 0063). A client that does not read does not hold memory forever.
 5. **Node budget:** the sum of the sampling rates of all subscriptions is limited to 1,000,000 samples/s. A subscription that exceeds it is refused (`J-E1903`), with the rate that still fits in the `detail`.
 
 ### 6.7 Resumption after a reconnection

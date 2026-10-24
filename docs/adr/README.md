@@ -59,6 +59,7 @@
 | [0060](0060-fail-closed-permits-and-step-quality.md) | Action permits fail closed; step conditions honour quality |
 | [0061](0061-runtime-state-files-supervisor-records-and-bulk-reset-errors.md) | Runtime state files, supervisor and restore records, and per-output errors of a bulk reset |
 | [0062](0062-wide-signal-values.md) | Wide signal values: the wide slot, decoding, the envelope, the API, the decision log and the trace |
+| [0063](0063-socket-roles-subscription-limits-and-device-counters.md) | Socket roles, subscription limits and device counters in status and metrics |
 | [0068](0068-expression-evaluation-groups-and-window-periods.md) | Evaluation groups and window periods of manifest expressions |
 | [0069](0069-clock-quality-re-evaluation.md) | How `jokerd` derives and re-evaluates the clock quality |
 | [0070](0070-state-write-failures-orphaned-trips-boot-count-and-jokerd-flags.md) | State write failures, trips of outputs a generation removed, the startup counter in the API, and `jokerd`'s bench flags |
