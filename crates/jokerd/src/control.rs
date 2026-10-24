@@ -83,6 +83,9 @@ pub struct Config {
     /// The node's clock quality, which [`Controller::refresh_clock`]
     /// re-evaluates under the running generation's `[clock]` (ADR 0069).
     pub clock: Arc<crate::clock::ClockMonitor>,
+    /// Where a generation's profiles and boards are looked up
+    /// (`profiles/`, `boards/`); empty is the working directory.
+    pub project_root: std::path::PathBuf,
 }
 
 impl Default for Config {
@@ -93,6 +96,7 @@ impl Default for Config {
             retention: crate::trace_ring::DEFAULT_RETENTION,
             utc_origin_ns: 0,
             clock: Arc::default(),
+            project_root: std::path::PathBuf::new(),
         }
     }
 }
@@ -149,13 +153,18 @@ pub struct Switched {
     pub from: Option<u64>,
 }
 
-fn loaded_of(manifest: &str, tasks: &dyn TaskProvider) -> Result<Loaded, ControlError> {
+fn loaded_of(
+    manifest: &str,
+    tasks: &dyn TaskProvider,
+    root: &Path,
+) -> Result<Loaded, ControlError> {
     let mut fs = MemoryFileSystem::default();
-    fs.file(EFFECTIVE, manifest);
+    let entry = root.join(EFFECTIVE);
+    fs.file(&entry, manifest);
     for path in app_paths(manifest) {
-        fs.dir(path);
+        fs.dir(root.join(path));
     }
-    load(&fs, Path::new(EFFECTIVE), tasks).map_err(|e| validation(&e))
+    load(&fs, &entry, tasks).map_err(|e| validation(&e))
 }
 
 /// The `path` of every app: on the node, an app is an artifact of the
@@ -416,7 +425,7 @@ impl Controller {
             ));
         }
         let tasks = self.provider(manifest, artifacts)?;
-        let loaded = loaded_of(manifest, tasks.as_ref())?;
+        let loaded = loaded_of(manifest, tasks.as_ref(), &self.config.project_root)?;
         let hash = generation_hash_with(&loaded, lock, artifacts);
         if dry_run {
             return Ok(Generation {
@@ -672,7 +681,7 @@ impl Controller {
         })?;
         let artifacts = self.store.artifacts(number).map_err(ControlError::io)?;
         let provider = self.provider(&manifest, &artifacts)?;
-        let loaded = loaded_of(&manifest, provider.as_ref())?;
+        let loaded = loaded_of(&manifest, provider.as_ref(), &self.config.project_root)?;
         let tasks = instantiate(&loaded.plan, &loaded.manifest, provider.as_ref())
             .map_err(|e| validation(&e))?;
         let from = self.active.as_ref().map(|a| a.number);

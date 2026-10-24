@@ -1,7 +1,10 @@
 //! `cargo xtask conformance`: runs the core suites of `conformance/`
 //! against `joker-core` with a virtual clock and compares result by result
-//! (docs/13 §3, docs/16 §8, ref/03 §2.6).
+//! (docs/13 §3, docs/16 §8, ref/03 §2.6), and the `action` suites of
+//! `conformance/actions/` against the daemon with a register double (ADR
+//! 0066).
 
+pub mod actions;
 pub mod eval;
 pub mod exec;
 pub mod expr;
@@ -74,6 +77,9 @@ pub fn run_file(
     filters: &[String],
     guard: &impl TickGuard,
 ) -> SuiteReport {
+    if actions::is_action_suite(text) {
+        return actions::run_file(path, text, filters);
+    }
     let file = path.display().to_string();
     match load::load(path, text) {
         Err(diagnostics) => SuiteReport {

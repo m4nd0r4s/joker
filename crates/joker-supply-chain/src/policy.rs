@@ -35,8 +35,10 @@ pub const CORE_EDGES: &[(&str, &[&str])] = &[
 pub const DAEMON: &str = "jokerd";
 
 /// The crates that may depend on the daemon: the `jk` binary, which embeds
-/// the runtime (ADR 0057). No crate may depend on them.
-pub const DAEMON_USERS: &[&str] = &["joker-cli"];
+/// the runtime (ADR 0057), and the repository's task binary, which runs
+/// the `action` conformance suites against it (ADR 0066 §25). No crate
+/// may depend on them.
+pub const DAEMON_USERS: &[&str] = &["joker-cli", "xtask"];
 
 /// The external crates the core may depend on (policy §3).
 pub const CORE_ALLOWLIST: &[&str] = &[

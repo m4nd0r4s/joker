@@ -1,0 +1,224 @@
+schema = 1
+
+[suite]
+kind  = "action"
+id    = "actions.dispatch"
+spec  = ["docs/02 §8", "ref/01 §5.8.2", "ref/09 §5.10", "docs/16 E9", "ADR 0058 §7", "ADR 0060", "ADR 0066"]
+hosts = ["linux"]
+
+[fixture]
+manifest = """
+[project]
+name  = "actions-dispatch"
+joker = "1.0"
+mode  = "dev"
+
+[devices.pcs]
+driver  = "modbus-tcp"
+address = "127.0.0.1:1502"
+unit_id = 1
+profile = "acme/pcs@1"
+poll    = "20ms"
+timeout = "200ms"
+
+[devices.pcs.actions.clear]
+permit = "pcs.state == 2"
+
+[devices.pcs.actions.reset_fault]
+permit = "pcs.state == 1"
+
+[devices.pcs.actions.admin_only]
+role = "admin"
+
+[devices.pcs.actions.viewer_ok]
+role = "viewer"
+
+[devices.pcs.actions.quick]
+dedup_window = "100ms"
+
+[devices.off]
+driver  = "modbus-tcp"
+address = "127.0.0.1:1503"
+unit_id = 1
+profile = "acme/pcs@1"
+poll    = "20ms"
+timeout = "200ms"
+"""
+
+[fixture.profiles]
+"acme/pcs@1" = """
+[profile]
+name    = "acme/pcs"
+version = "1.0.0"
+driver  = "modbus"
+
+[signals.state]
+at   = 30001
+fc   = 4
+type = "u16"
+
+[actions.reset_fault]
+steps = [
+    { write = { at = 40300, fc = 6, type = "u16", value = 1 } },
+    { write = { at = 40300, fc = 6, type = "u16", value = 0 } },
+]
+
+[actions.clear]
+steps = [{ write = { at = 40301, fc = 6, type = "u16", value = 1 } }]
+
+[actions.admin_only]
+steps = [{ write = { at = 40302, fc = 6, type = "u16", value = 1 } }]
+
+[actions.viewer_ok]
+steps = [{ write = { at = 40303, fc = 6, type = "u16", value = 1 } }]
+
+[actions.quick]
+steps = [{ write = { at = 40304, fc = 6, type = "u16", value = 1 } }]
+
+[actions.set_level]
+args  = { level = "u64" }
+steps = [{ write = { at = 40330, fc = 6, type = "u16", value = "$level" } }]
+"""
+
+[[double]]
+device    = "pcs"
+registers = { "30001" = 1 }
+
+[[double]]
+device    = "off"
+registers = { "30001" = 1 }
+link      = "down"
+
+[[case]]
+id     = "the_same_key_replays_without_running_again"
+name   = "the same key within dedup_window returns the earlier invocation and the program does not run again"
+spec   = ["docs/02 §8", "docs/16 E9", "ref/09 §5.10", "ADR 0058 §7", "ADR 0066 §3", "ADR 0066 §15"]
+do     = [
+    { at = "100ms", invoke = "pcs.reset_fault", key = "k1" },
+    { at = "200ms", invoke = "pcs.reset_fault", key = "k1", ref = "again" },
+]
+expect = [
+    { invocation = "k1", state = "succeeded", replay = false },
+    { invocation = "again", state = "succeeded", replay = true },
+    { writes = "pcs", equals = [[40300, 1], [40300, 0]] },
+    { decision = "k1", outcome = "ok", count = 1 },
+    { decision = "again", outcome = "ok", duplicate = true, count = 1 },
+]
+
+[[case]]
+id     = "the_same_key_with_other_arguments_conflicts"
+name   = "a key reused with other arguments is refused"
+spec   = ["ref/09 §3.10", "ref/09 §5.10", "ADR 0066 §3"]
+do     = [
+    { at = "100ms", invoke = "pcs.set_level", key = "k1", args = { level = 1 } },
+    { at = "200ms", invoke = "pcs.set_level", key = "k1", args = { level = 2 }, ref = "other" },
+]
+expect = [
+    { invocation = "k1", state = "succeeded" },
+    { invocation = "other", rejected = "J-E1024" },
+    { decision = "other", outcome = "rejected_conflict", code = "J-E1024" },
+    { writes = "pcs", equals = [[40330, 1]] },
+]
+
+[[case]]
+id     = "after_the_window_the_key_runs_again"
+name   = "the same key after its dedup_window runs the action again"
+spec   = ["ref/01 §5.8.2", "docs/16 E9"]
+do     = [
+    { at = "100ms", invoke = "pcs.quick", key = "k1" },
+    { at = "400ms", invoke = "pcs.quick", key = "k1", ref = "later" },
+]
+expect = [
+    { invocation = "k1", state = "succeeded" },
+    { invocation = "later", state = "succeeded", replay = false },
+    { writes = "pcs", equals = [[40304, 1], [40304, 1]] },
+]
+
+[[case]]
+id     = "a_true_permissive_admits"
+name   = "a permissive that holds lets the invocation run"
+spec   = ["ref/01 §5.8.2"]
+do     = [{ at = "150ms", invoke = "pcs.reset_fault", key = "k1" }]
+expect = [{ invocation = "k1", state = "succeeded" }]
+
+[[case]]
+id     = "a_false_permissive_refuses"
+name   = "a false permissive refuses the invocation and nothing reaches the equipment"
+spec   = ["ref/01 §5.8.2", "ref/09 §5.10", "ADR 0060 §2"]
+do     = [{ at = "150ms", invoke = "pcs.clear", key = "k1" }]
+expect = [
+    { invocation = "k1", rejected = "J-E1402" },
+    { decision = "k1", outcome = "rejected_not_permitted", code = "J-E1402" },
+    { writes = "pcs", equals = [] },
+]
+
+[[case]]
+id     = "a_role_below_the_action_role_is_refused"
+name   = "the caller's role must reach the action's role"
+spec   = ["ref/01 §5.8.2", "ref/09 §5.10", "ADR 0066 §1"]
+do     = [
+    { at = "100ms", invoke = "pcs.admin_only", key = "k1", role = "operator" },
+    { at = "100ms", invoke = "pcs.admin_only", key = "k2", role = "admin" },
+]
+expect = [
+    { invocation = "k1", rejected = "J-E1002" },
+    { decision = "k1", outcome = "rejected_forbidden", code = "J-E1002" },
+    { invocation = "k2", state = "succeeded" },
+    { writes = "pcs", equals = [[40302, 1]] },
+]
+
+[[case]]
+id     = "viewer_counts_as_operator"
+name   = "an action declared for viewer still requires operator"
+spec   = ["ref/01 §5.8.2", "ref/09 §5.10"]
+do     = [
+    { at = "100ms", invoke = "pcs.viewer_ok", key = "k1", role = "viewer" },
+    { at = "100ms", invoke = "pcs.viewer_ok", key = "k2", role = "operator" },
+]
+expect = [
+    { invocation = "k1", rejected = "J-E1002" },
+    { invocation = "k2", state = "succeeded" },
+]
+
+[[case]]
+id     = "invalid_arguments_are_refused"
+name   = "a missing, mistyped or undeclared argument is refused"
+spec   = ["ref/03 §2.2.12", "ref/09 §5.10", "ADR 0066 §5"]
+do     = [
+    { at = "100ms", invoke = "pcs.set_level", key = "k1" },
+    { at = "100ms", invoke = "pcs.set_level", key = "k2", args = { level = "high" } },
+    { at = "100ms", invoke = "pcs.set_level", key = "k3", args = { level = 1, extra = 2 } },
+    { at = "100ms", invoke = "pcs.reset_fault", key = "k4", args = { level = 1 } },
+]
+expect = [
+    { invocation = "k1", rejected = "J-E1401" },
+    { invocation = "k2", rejected = "J-E1401" },
+    { invocation = "k3", rejected = "J-E1401" },
+    { invocation = "k4", rejected = "J-E1401" },
+    { decision = "k1", outcome = "rejected_invalid", code = "J-E1401" },
+    { writes = "pcs", equals = [] },
+]
+
+[[case]]
+id     = "an_unknown_action_is_refused"
+name   = "an action the device does not have is unknown"
+spec   = ["ref/09 §5.10"]
+do     = [
+    { at = "100ms", invoke = "pcs.nope", key = "k1" },
+    { at = "100ms", invoke = "nobody.reset_fault", key = "k2" },
+]
+expect = [
+    { invocation = "k1", rejected = "J-E1400" },
+    { invocation = "k2", rejected = "J-E1400" },
+]
+
+[[case]]
+id     = "a_device_that_is_not_connected_fails_the_action"
+name   = "an action on a device whose link is down ends failed with J-E1415"
+spec   = ["ref/04 §7.1", "ref/09 §5.10", "ADR 0066 §13"]
+do     = [{ at = "100ms", invoke = "off.reset_fault", key = "k1" }]
+expect = [
+    { invocation = "k1", state = "failed", error = "device", code = "J-E1415" },
+    { decision = "k1", outcome = "failed", kind = "device", code = "J-E1415", device = "off" },
+    { writes = "off", equals = [] },
+]
