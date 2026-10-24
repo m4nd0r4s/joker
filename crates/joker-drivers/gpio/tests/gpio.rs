@@ -192,3 +192,88 @@ fn a_full_sample_ring_counts_the_dropped_sample() {
     assert_eq!(bench.read_into_full_ring(0).unwrap(), 1);
     assert!(bench.counters().contains(&("dropped_samples", 1)));
 }
+
+#[test]
+fn steps_read_and_drive_the_lines_the_points_request() {
+    use joker_hal::cbor::Cbor;
+    use joker_hal::interpreter::{Failure, NoArgs, Scalar};
+    use joker_hal::steps::{Step, StepValue};
+    use joker_hal::{BatchFailure, RawValue};
+
+    let req = request();
+    let views = req.views();
+    let plan = GpioPlanner::plan(&views.request()).unwrap();
+    let (gpio, handle) = MemoryGpio::new();
+    let host = Arc::new(VirtualHost::new(0));
+    let mut bench: Bench<'_, GpioDriver> = Bench::open(
+        host,
+        views.request(),
+        plan.view(),
+        Link::Gpio(GpioChip::new(gpio)),
+    )
+    .unwrap();
+    bench.connect().unwrap();
+    handle.drive(17, false);
+
+    let relay = addr(22, false);
+    let button = addr(17, true);
+    let program = [
+        Step::FailIf {
+            addr: Cbor::new(&button),
+            type_name: "bool",
+            equals: RawValue::Bool(false),
+            message: "the button is not pressed",
+        },
+        Step::Write {
+            addr: Cbor::new(&relay),
+            type_name: "bool",
+            value: StepValue::Literal(RawValue::Bool(true)),
+        },
+        Step::Wait(joker_units::Duration::from_millis(50)),
+        Step::Read {
+            addr: Cbor::new(&relay),
+            type_name: "bool",
+            into: "relay",
+        },
+    ];
+    let read = bench.steps(&program, &NoArgs, 2_000 * MS).unwrap().unwrap();
+    assert_eq!(read[0].0, "relay");
+    assert_eq!(read[0].1.value, Scalar::Bool(true));
+    assert!(handle.level(22));
+
+    handle.drive(17, true);
+    assert_eq!(
+        bench.steps(&program, &NoArgs, 2_000 * MS).unwrap(),
+        Err(Failure::FailedCondition("the button is not pressed"))
+    );
+
+    let to_input = [Step::Write {
+        addr: Cbor::new(&button),
+        type_name: "bool",
+        value: StepValue::Literal(RawValue::Bool(true)),
+    }];
+    assert!(matches!(
+        bench.steps(&to_input, &NoArgs, 2_000 * MS).unwrap(),
+        Err(Failure::Device(BatchFailure::ConfigError(_)))
+    ));
+    let elsewhere = addr(5, false);
+    let read_elsewhere = [Step::Read {
+        addr: Cbor::new(&elsewhere),
+        type_name: "bool",
+        into: "x",
+    }];
+    assert!(matches!(
+        bench.steps(&read_elsewhere, &NoArgs, 2_000 * MS).unwrap(),
+        Err(Failure::Device(BatchFailure::ConfigError(_)))
+    ));
+    handle.deny(22);
+    let relay_read = [Step::Read {
+        addr: Cbor::new(&relay),
+        type_name: "bool",
+        into: "relay",
+    }];
+    assert!(matches!(
+        bench.steps(&relay_read, &NoArgs, 2_000 * MS).unwrap(),
+        Err(Failure::Device(BatchFailure::ConfigError(_)))
+    ));
+}

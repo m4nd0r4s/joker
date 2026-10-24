@@ -7,12 +7,12 @@ pub use plan::{DESCRIPTOR, GpioPlanner};
 use std::vec::Vec;
 
 use joker_hal::{
-    BatchFailure, CommittedWrite, ConnectOut, Cx, Direction, Driver, DriverError, GpioChip,
-    HealthOut, Link, OpenArgs, PointId, RawSample, RawSink, RawStatus, RawValue, ReadBatch, Reason,
-    WriteAcks, WriteKind, WriteStatus, code,
+    AddrRead, AddrWrite, BatchFailure, CommittedWrite, ConnectOut, Cx, Direction, Driver,
+    DriverError, GpioChip, HealthOut, Link, OpenArgs, PointId, RawKind, RawSample, RawSink,
+    RawStatus, RawValue, ReadBatch, Reason, WriteAcks, WriteKind, WriteStatus, code,
 };
 
-use crate::plan::check_point;
+use crate::plan::{Address, check_point};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Point {
@@ -39,9 +39,36 @@ fn io_status(e: joker_hal::IoError) -> RawStatus {
     }
 }
 
+fn io_failure(e: joker_hal::IoError) -> BatchFailure {
+    match e {
+        joker_hal::IoError::Denied => BatchFailure::ConfigError("the line is not granted"),
+        joker_hal::IoError::Disconnected => BatchFailure::CommFailure("the chip is gone"),
+        _ => BatchFailure::DeviceFault("the line failed"),
+    }
+}
+
 impl GpioDriver {
     fn point(&self, id: PointId) -> Option<Point> {
         self.points.iter().copied().find(|p| p.id == id)
+    }
+
+    fn step_line(&self, addr: joker_hal::Cbor<'_>, write: bool) -> Result<Address, BatchFailure> {
+        let a = Address::parse(addr).map_err(BatchFailure::ConfigError)?;
+        let requested = self
+            .points
+            .iter()
+            .any(|p| p.line == a.line && (p.output || !write));
+        if requested {
+            Ok(a)
+        } else if write {
+            Err(BatchFailure::ConfigError(
+                "a step writes a line one of the device's outputs requests",
+            ))
+        } else {
+            Err(BatchFailure::ConfigError(
+                "a step reads a line one of the device's points requests",
+            ))
+        }
     }
 }
 
@@ -130,6 +157,51 @@ impl Driver for GpioDriver {
             };
             acks.set(k, status, Some(now));
         }
+    }
+
+    async fn read_addr(
+        &mut self,
+        cx: &mut Cx<'_>,
+        req: &AddrRead<'_>,
+        out: &mut RawSink<'_>,
+    ) -> Result<(), BatchFailure> {
+        let a = self.step_line(req.addr, false)?;
+        let level = self.chip.get(a.line).map_err(|e| {
+            self.errors += 1;
+            io_failure(e)
+        })?;
+        let on = level != a.active_low;
+        let value = match req.expect {
+            RawKind::Int => RawValue::Int(i64::from(on)),
+            RawKind::Uint => RawValue::Uint(u64::from(on)),
+            _ => RawValue::Bool(on),
+        };
+        let sample = RawSample {
+            ts_hw: Some(cx.now().mono_ns),
+            ..RawSample::good(0, value)
+        };
+        if out.push(sample).is_err() {
+            self.dropped_samples += 1;
+        }
+        Ok(())
+    }
+
+    async fn write_addr(
+        &mut self,
+        _cx: &mut Cx<'_>,
+        req: &AddrWrite<'_>,
+    ) -> Result<(), BatchFailure> {
+        let a = self.step_line(req.addr, true)?;
+        let on = match req.value {
+            RawValue::Bool(b) => b,
+            RawValue::Uint(u) if u <= 1 => u == 1,
+            RawValue::Int(i) if (0..=1).contains(&i) => i == 1,
+            _ => return Err(BatchFailure::ConfigError("a line takes a bool")),
+        };
+        self.chip.set(a.line, on != a.active_low).map_err(|e| {
+            self.errors += 1;
+            io_failure(e)
+        })
     }
 
     fn health(&self, out: &mut HealthOut<'_>) {
