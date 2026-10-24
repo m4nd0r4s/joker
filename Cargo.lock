@@ -1403,6 +1403,7 @@ dependencies = [
  "joker-core",
  "joker-gpio-sys",
  "joker-hal",
+ "joker-i2c-sys",
  "joker-serial-sys",
  "joker-units",
  "portable-atomic",
@@ -1427,6 +1428,13 @@ name = "joker-host-fixture-echo"
 version = "0.0.0"
 dependencies = [
  "joker-sdk-sys",
+]
+
+[[package]]
+name = "joker-i2c-sys"
+version = "0.0.0"
+dependencies = [
+ "libc",
 ]
 
 [[package]]

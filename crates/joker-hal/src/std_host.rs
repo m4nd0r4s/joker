@@ -29,7 +29,8 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use crate::cbor::Cbor;
 use crate::cx::Host;
 use crate::link::{
-    GpioBias, GpioDrive, GpioLineConfig, GpioLines, IoError, Parity, SerialInfo, SerialIo,
+    GpioBias, GpioDrive, GpioLineConfig, GpioLines, I2cTransfers, IoError, Parity, SerialInfo,
+    SerialIo,
 };
 use crate::types::{DriverError, J0852, MonoNs};
 
@@ -528,6 +529,61 @@ impl GpioLines for LinuxGpio {
     }
 }
 
+/// A Linux `i2c-dev` bus (`Link::I2c`, ref/06 §3.4): `/dev/i2c-N`, the
+/// `dev` of an `i2c` bus (ref/01 §5.6), opened read-write. Each transfer
+/// is one `I2C_RDWR` call (`joker-i2c-sys`): the register write and the
+/// data read reach the chip joined by a repeated start, and the kernel
+/// serializes them with every other user of the adapter.
+#[derive(Debug)]
+pub struct LinuxI2c {
+    bus: File,
+}
+
+impl LinuxI2c {
+    /// Opens `dev` (e.g. `/dev/i2c-1`) for reading and writing. A path
+    /// that is not an `i2c-dev` node opens, but its first transfer fails.
+    pub fn open(dev: &Path) -> io::Result<Self> {
+        let bus = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(dev)?;
+        Ok(Self { bus })
+    }
+}
+
+impl I2cTransfers for LinuxI2c {
+    fn transfer(&mut self, addr: u8, write: &[u8], read: &mut [u8]) -> Result<(), IoError> {
+        joker_i2c_sys::transfer(self.bus.as_fd(), addr, write, read).map_err(|e| i2c_error(&e))
+    }
+}
+
+/// An `i2c-dev` failure as an [`IoError`]: a chip that does not
+/// acknowledge (`ENXIO`, `EREMOTEIO`) or a bus timeout is a device fault
+/// ([`IoError::Other`]), not a lost link; a refused open or an address
+/// another driver owns (`EBUSY`) is [`IoError::Denied`].
+fn i2c_error(e: &io::Error) -> IoError {
+    let errno = e.raw_os_error();
+    if errno.is_some_and(no_acknowledge) {
+        return IoError::Other;
+    }
+    if errno == Some(rustix::io::Errno::BUSY.raw_os_error()) {
+        return IoError::Denied;
+    }
+    io_error(e)
+}
+
+/// The errors of a chip that did not answer: `ENXIO`, `EREMOTEIO` (Linux
+/// only) and `ETIMEDOUT`.
+fn no_acknowledge(errno: i32) -> bool {
+    #[cfg(target_os = "linux")]
+    let remote = errno == rustix::io::Errno::REMOTEIO.raw_os_error();
+    #[cfg(not(target_os = "linux"))]
+    let remote = false;
+    remote
+        || errno == rustix::io::Errno::NXIO.raw_os_error()
+        || errno == rustix::io::Errno::TIMEDOUT.raw_os_error()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -545,6 +601,24 @@ mod tests {
         assert_eq!(host.now().clock, ClockQuality::Holdover);
         cell.set(ClockQuality::Unsynced);
         assert_eq!(host.now().clock, ClockQuality::Unsynced);
+    }
+
+    #[test]
+    fn a_chip_that_does_not_answer_is_a_device_fault_and_a_busy_address_is_denied() {
+        let nxio = io::Error::from_raw_os_error(rustix::io::Errno::NXIO.raw_os_error());
+        assert_eq!(i2c_error(&nxio), IoError::Other);
+        let busy = io::Error::from_raw_os_error(rustix::io::Errno::BUSY.raw_os_error());
+        assert_eq!(i2c_error(&busy), IoError::Denied);
+        let denied = io::Error::from(io::ErrorKind::PermissionDenied);
+        assert_eq!(i2c_error(&denied), IoError::Denied);
+    }
+
+    #[test]
+    fn a_transfer_on_a_node_that_is_not_an_i2c_bus_fails() {
+        let mut bus = LinuxI2c::open(Path::new("/dev/null")).unwrap();
+        let mut read = [0u8; 2];
+        assert!(bus.transfer(0x48, &[0], &mut read).is_err());
+        assert!(LinuxI2c::open(Path::new("/nonexistent/i2c-9")).is_err());
     }
 
     #[test]
