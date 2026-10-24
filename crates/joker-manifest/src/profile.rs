@@ -754,18 +754,6 @@ fn signal_of(
         },
         None => None,
     };
-    let converted = scale.is_some()
-        || offset.is_some()
-        || invert
-        || enum_name.is_some()
-        || (is_integer_raw(type_name) && ty == SignalType::Float);
-    if direction == Direction::Output && converted {
-        keys.error(
-            "J0807",
-            "an output whose value is converted to raw (`scale`, `offset`, `invert`, `enum`, or a float on an integer raw type) is not supported by this runtime yet (ADR 0064)".to_owned(),
-            span,
-        );
-    }
     let mut info = SignalInfo::new(ty, direction);
     info.type_name = Some(type_name.to_owned());
     info.raw = point

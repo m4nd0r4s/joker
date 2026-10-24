@@ -186,7 +186,14 @@ steps = [
         let (context, errors) = jokerd::catalog::context_for_project(&NativeTasks, dir.path());
         assert!(errors.is_empty(), "{errors:?}");
         let device = &loaded.manifest.devices["pcs"];
-        let plan = jokerd::bridge::device_plan("pcs", device, &loaded.manifest, &context).unwrap();
+        let plan = jokerd::bridge::device_plan(
+            "pcs",
+            device,
+            &loaded.manifest,
+            &context,
+            &loaded.report.paths,
+        )
+        .unwrap();
         assert_eq!(plan.fallback_keepalive_ns, Some(2_000_000_000));
     }
 
@@ -200,7 +207,14 @@ steps = [
             .unwrap_or_else(|e| panic!("{e}"));
         let (context, _) = jokerd::catalog::context_for_project(&NativeTasks, dir.path());
         let device = &loaded.manifest.devices["pcs"];
-        let plan = jokerd::bridge::device_plan("pcs", device, &loaded.manifest, &context).unwrap();
+        let plan = jokerd::bridge::device_plan(
+            "pcs",
+            device,
+            &loaded.manifest,
+            &context,
+            &loaded.report.paths,
+        )
+        .unwrap();
         assert_eq!(plan.fallback_keepalive_ns, None);
     }
 
@@ -220,7 +234,14 @@ steps = [
         let (context, errors) = jokerd::catalog::context_for_project(&NativeTasks, dir.path());
         assert!(errors.is_empty(), "{errors:?}");
         let device = &loaded.manifest.devices["pcs"];
-        let plan = jokerd::bridge::device_plan("pcs", device, &loaded.manifest, &context).unwrap();
+        let plan = jokerd::bridge::device_plan(
+            "pcs",
+            device,
+            &loaded.manifest,
+            &context,
+            &loaded.report.paths,
+        )
+        .unwrap();
         assert_eq!(plan.driver, "modbus-rtu");
         assert_eq!(plan.bus.as_deref(), Some("line0"));
         assert_eq!(plan.bus_kind, Some(joker_manifest::model::BusKind::Serial));
@@ -252,7 +273,14 @@ steps = [
         let (context, errors) = jokerd::catalog::context_for_project(&NativeTasks, dir.path());
         assert!(errors.is_empty(), "{errors:?}");
         let device = &loaded.manifest.devices["pcs"];
-        let plan = jokerd::bridge::device_plan("pcs", device, &loaded.manifest, &context).unwrap();
+        let plan = jokerd::bridge::device_plan(
+            "pcs",
+            device,
+            &loaded.manifest,
+            &context,
+            &loaded.report.paths,
+        )
+        .unwrap();
         assert_eq!(plan.actions.len(), 1);
         let action = &plan.actions[0];
         assert_eq!(action.name, "reset_fault");
@@ -348,7 +376,14 @@ role = "viewer"
         let (context, errors) = jokerd::catalog::context_for_project(&NativeTasks, dir.path());
         assert!(errors.is_empty(), "{errors:?}");
         let device = &loaded.manifest.devices["pcs"];
-        let plan = jokerd::bridge::device_plan("pcs", device, &loaded.manifest, &context).unwrap();
+        let plan = jokerd::bridge::device_plan(
+            "pcs",
+            device,
+            &loaded.manifest,
+            &context,
+            &loaded.report.paths,
+        )
+        .unwrap();
         assert_eq!(plan.actions.len(), 1);
         assert_eq!(plan.actions[0].dedup_window_ns, Some(30_000_000_000));
         assert_eq!(plan.actions[0].role, "admin");
@@ -366,7 +401,14 @@ role = "viewer"
         let (context, errors) = jokerd::catalog::context_for_project(&NativeTasks, dir.path());
         assert!(errors.is_empty(), "{errors:?}");
         let device = &loaded.manifest.devices["pcs"];
-        let plan = jokerd::bridge::device_plan("pcs", device, &loaded.manifest, &context).unwrap();
+        let plan = jokerd::bridge::device_plan(
+            "pcs",
+            device,
+            &loaded.manifest,
+            &context,
+            &loaded.report.paths,
+        )
+        .unwrap();
         assert_eq!(plan.actions[0].role, "operator", "J0298's own floor rule");
     }
 
@@ -495,7 +537,14 @@ button = { type = "bool", direction = "input", line = 17, active_low = true }
         let (context, errors) = jokerd::catalog::context_for_project(&NativeTasks, dir.path());
         assert!(errors.is_empty(), "{errors:?}");
         let device = &loaded.manifest.devices["io"];
-        let plan = jokerd::bridge::device_plan("io", device, &loaded.manifest, &context).unwrap();
+        let plan = jokerd::bridge::device_plan(
+            "io",
+            device,
+            &loaded.manifest,
+            &context,
+            &loaded.report.paths,
+        )
+        .unwrap();
         assert_eq!(plan.driver, "gpio");
         assert!(plan.bus.is_none());
         let cbor = joker_hal::cbor::Cbor::new(&plan.config);
@@ -551,7 +600,14 @@ button = { type = "bool", direction = "input", line = 17, active_low = true }
             .unwrap_or_else(|e| panic!("{e}"));
         let (context, _) = jokerd::catalog::context_for_project(&NativeTasks, dir.path());
         let device = &loaded.manifest.devices["pcs"];
-        let plan = jokerd::bridge::device_plan("pcs", device, &loaded.manifest, &context).unwrap();
+        let plan = jokerd::bridge::device_plan(
+            "pcs",
+            device,
+            &loaded.manifest,
+            &context,
+            &loaded.report.paths,
+        )
+        .unwrap();
         let owned = jokerd::bridge::owned_request(&plan);
         let views = owned.views();
         let req = views.request();
