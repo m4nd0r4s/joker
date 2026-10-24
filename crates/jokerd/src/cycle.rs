@@ -19,7 +19,9 @@ use joker_core::{GroupId, Outputs, OutputsStorage, Sample, SignalId, WriterId};
 
 use crate::pacer::Pacer;
 use crate::plan::Plan;
-use crate::shared::{OutputMeta, ResetKind, ResetOutcome, STAGING_CAPACITY, Shared, TraceChunk};
+use crate::shared::{
+    OutputMeta, RESET_CAPACITY, ResetKind, ResetOutcome, STAGING_CAPACITY, Shared, TraceChunk,
+};
 use crate::task::{CycleTask, Prepare, TaskContext};
 
 /// Why the cycle thread could not start.
@@ -61,6 +63,10 @@ pub struct RunOptions {
     /// (docs/01 §7), which hold across restarts and generations until a
     /// reset (ADR 0061).
     pub initial_trips: Vec<SignalId>,
+    /// Runs every tick of every group inside this wrapper (tests: an
+    /// allocation guard that proves the tick does not allocate, AGENTS.md
+    /// invariant 6); `None` runs it directly.
+    pub tick_guard: Option<fn(&mut dyn FnMut())>,
 }
 
 struct Sink<'s> {
@@ -69,9 +75,11 @@ struct Sink<'s> {
     tick: u64,
     at_mono_ns: u64,
     /// Reset requests admitted this tick (`Outputs::reset` returned
-    /// true), by signal, awaiting this same tick's own `output()` to
-    /// learn whether the output cleared or retripped (docs/16 E7).
-    pending_resets: &'s mut BTreeMap<SignalId, u32>,
+    /// true), as (signal, ticket), awaiting this same tick's own
+    /// `output()` to learn whether the output cleared or retripped
+    /// (docs/16 E7). Preallocated with [`RESET_CAPACITY`] and never
+    /// grown, so the tick does not allocate (AGENTS.md invariant 6).
+    pending_resets: &'s mut Vec<(SignalId, u32)>,
 }
 
 impl CommitSink for Sink<'_> {
@@ -109,15 +117,22 @@ impl CommitSink for Sink<'_> {
                 self.at_mono_ns,
             );
         }
-        if let Some(ticket) = self.pending_resets.remove(&result.signal) {
-            let kind = if result.tripped {
-                ResetKind::Retripped
-            } else {
-                ResetKind::Cleared
-            };
+        let kind = if result.tripped {
+            ResetKind::Retripped
+        } else {
+            ResetKind::Cleared
+        };
+        let mut i = 0;
+        while i < self.pending_resets.len() {
+            let (signal, ticket) = self.pending_resets[i];
+            if signal != result.signal {
+                i += 1;
+                continue;
+            }
+            self.pending_resets.remove(i);
             let outcome = ResetOutcome {
                 ticket,
-                signal: result.signal,
+                signal,
                 kind,
             };
             if self.shared.reset_results.push(outcome).is_err() {
@@ -141,11 +156,19 @@ struct GroupRun<'a> {
     image: ProcessImage<'a>,
     tasks: GroupTasks,
     results: Vec<TraceResult>,
+    pending_resets: Vec<(SignalId, u32)>,
 }
 
 /// Runs a plan on the current thread until `shared.stop` is set or
 /// `options.max_ticks` is reached. `tasks` has one entry per group of the
 /// plan, in plan order.
+///
+/// There is one `CommitTx` per real-driver device (ref/06 §2.9, step 7):
+/// after each group's commit, it publishes every output that device owns
+/// and that changed, for that device's io task to drain through a
+/// matching `CommitRx` on the same boxes. A device with no output
+/// bindings (no real driver, or no output points) gets an empty, harmless
+/// `CommitTx`.
 pub fn run(
     plan: &Plan,
     shared: &Shared,
@@ -179,11 +202,6 @@ pub fn run(
         outputs.trip(*signal);
     }
 
-    // One `CommitTx` per real-driver device (ref/06 §2.9, step 7): after
-    // each group's commit, publishes every output that device owns and
-    // that changed, for that device's io task to drain through a matching
-    // `CommitRx` on the same boxes. A device with no output bindings (no
-    // real driver, or no output points) gets an empty, harmless `CommitTx`.
     let mut commit_last: Vec<Vec<Option<Applied>>> = shared
         .commit_bindings
         .iter()
@@ -259,6 +277,7 @@ pub fn run(
             image,
             tasks,
             results: Vec::with_capacity(plan.outputs.len()),
+            pending_resets: Vec::with_capacity(RESET_CAPACITY),
         });
     }
 
@@ -286,15 +305,21 @@ pub fn run(
             index = current;
         }
         g.next_index = index + 1;
-        tick(
-            g,
-            index,
-            started,
-            shared,
-            &registry,
-            &mut outputs,
-            &mut commit_tx,
-        );
+        let mut one = || {
+            tick(
+                g,
+                index,
+                started,
+                shared,
+                &registry,
+                &mut outputs,
+                &mut commit_tx,
+            )
+        };
+        match options.tick_guard {
+            Some(guard) => guard(&mut one),
+            None => one(),
+        }
         export_state(g, plan, shared);
         let ended = pacer.now().mono_ns;
         stats
@@ -339,11 +364,14 @@ fn tick(
             }
         }
     }
-    let mut pending_resets: BTreeMap<SignalId, u32> = BTreeMap::new();
+    g.pending_resets.clear();
     if let Some(resets) = shared.resets.get(g.index) {
-        while let Some(req) = resets.pop() {
+        while g.pending_resets.len() < g.pending_resets.capacity() {
+            let Some(req) = resets.pop() else {
+                break;
+            };
             if outputs.reset(req.signal) {
-                pending_resets.insert(req.signal, req.ticket);
+                g.pending_resets.push((req.signal, req.ticket));
             } else {
                 let outcome = ResetOutcome {
                     ticket: req.ticket,
@@ -374,7 +402,7 @@ fn tick(
         results: &mut g.results,
         tick: index,
         at_mono_ns: at.mono_ns,
-        pending_resets: &mut pending_resets,
+        pending_resets: &mut g.pending_resets,
     };
     if outputs.commit(&g.image, &shared.slots, &mut sink).is_err() {
         stats.task_errors.bump();

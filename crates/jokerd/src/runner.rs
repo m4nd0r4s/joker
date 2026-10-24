@@ -185,6 +185,7 @@ impl Running {
                 max_ticks: start.max_ticks,
                 epoch_mono_ns: None,
                 initial_trips: context.restore.trips,
+                tick_guard: None,
             };
             let cpus = start.cpus;
             std::thread::Builder::new()
