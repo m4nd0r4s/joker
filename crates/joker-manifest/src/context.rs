@@ -225,6 +225,34 @@ pub struct ProfileInfo {
     /// `jokerd::bridge`, not here). An action using `native` instead of
     /// `steps` has no entry here.
     pub action_steps: BTreeMap<String, Vec<ActionStep>>,
+    /// `[actions.<a>]`'s `args`, `result`, `long` and `native`, by name
+    /// (ref/03 §2.2.12).
+    pub action_decls: BTreeMap<String, ActionDecl>,
+    /// The class `action` members of every `[implements."<class>"]`
+    /// whose `map` names one of this profile's actions (`m =
+    /// "actions.<a>"`, ref/03 §2.2.14): member name to action name.
+    pub implemented_actions: BTreeMap<String, String>,
+    /// `[enums]`: each enum's variants and their integer values (ref/03
+    /// §2.2.8).
+    pub enums: BTreeMap<String, BTreeMap<String, i64>>,
+}
+
+/// What `[actions.<a>]` declares besides its steps and its timeout
+/// (ref/03 §2.2.12).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ActionDecl {
+    /// `args`: argument name to its type (`"f64 %"`, `"bool"`, `"u64"`,
+    /// `"i64"`, an enum name).
+    pub args: BTreeMap<String, String>,
+    /// `result`: field name to its type.
+    pub result: BTreeMap<String, String>,
+    /// `long`: the action reports progress and can be cancelled.
+    pub long: bool,
+    /// `native`: the driver's own operation, as written; `None` for an
+    /// action run by `steps`.
+    pub native: Option<BTreeMap<String, crate::value::Node>>,
+    /// `description`.
+    pub description: Option<String>,
 }
 
 /// One step of a profile action's `steps` program (ref/03 §2.2.12).
