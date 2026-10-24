@@ -123,7 +123,7 @@ impl Node {
             println!("{}", self.header()?);
         }
         let base = self.current_hash()?;
-        let artifacts = self.upload_apps(entry)?;
+        let artifacts = self.upload_artifacts(entry)?;
         let mut proposal = json!({
             "manifest": {"content": manifest},
             "lock": {"content": project::lock_text(entry)},
@@ -187,10 +187,22 @@ impl Node {
     }
 
     /// Builds the Wasm apps, precompiles them for the node's triple, and
-    /// uploads what the node lacks (ref/09 §5.13, ADR 0067). Returns the
-    /// `artifacts` of the proposal: per app, its `.wasm` and, when the
-    /// triple has an engine, its `.cwasm`.
-    fn upload_apps(&self, entry: &Entry) -> Result<Vec<Value>, Failure> {
+    /// uploads what the node lacks (ref/09 §5.13, ADR 0067), with the
+    /// project's profile and board files. Returns the `artifacts` of the
+    /// proposal: per app, its `.wasm` and, when the triple has an engine,
+    /// its `.cwasm`; per profile or board, its file by its path in the
+    /// project (`profiles/acme/pcs@1.profile.toml`), so the generation
+    /// carries them (ref/10 §2.6.2).
+    fn upload_artifacts(&self, entry: &Entry) -> Result<Vec<Value>, Failure> {
+        let root = entry
+            .manifest
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or(std::path::Path::new("."));
+        let (catalog, errors) = jokerd::catalog::catalog_files(root);
+        if let Some(e) = errors.first() {
+            return Err(Failure::usage(e.clone()));
+        }
         let triple = crate::apps::node_triple(entry).map_err(Failure::usage)?;
         let built = match crate::apps::build_all(entry, Some(&triple)) {
             Ok(b) => b,
@@ -206,6 +218,13 @@ impl Node {
             if let Some((cwasm, _)) = &app.cwasm {
                 files.push((name, jokerd::apps::APP_CWASM, cwasm));
             }
+        }
+        for (name, text) in &catalog {
+            files.push((
+                name.clone(),
+                jokerd::catalog::kind_of(name),
+                text.as_bytes(),
+            ));
         }
         if files.is_empty() {
             return Ok(Vec::new());

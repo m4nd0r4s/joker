@@ -181,75 +181,172 @@ pub fn context(tasks: &dyn TaskProvider) -> Context {
     }
 }
 
-/// [`context`], extended with every `.profile.toml`/`.board.toml` found
-/// under `root` (`profiles_from_dir`/`boards_from_dir`): a real project's
-/// own files win over the M0 bench catalogue on a name collision. Errors
-/// from broken files are returned alongside, for the caller to report;
-/// they do not stop the daemon from starting.
-pub fn context_for_project(tasks: &dyn TaskProvider, root: &Path) -> (Context, Vec<String>) {
+/// The profile and board files of a project or of a generation, by their
+/// path relative to its root (`profiles/acme/pcs@1.profile.toml`,
+/// `boards/rpi5.board.toml`, docs/15 §2), with their text.
+pub type CatalogFiles = BTreeMap<String, String>;
+
+/// The media type of a profile file (ref/00 §7.1).
+pub const PROFILE_KIND: &str = "joker.profile.v1+toml";
+
+/// The media type of a board file (ref/00 §7.1).
+pub const BOARD_KIND: &str = "joker.board.v1+toml";
+
+/// The media type of the catalog file `name` (`profiles/…` or `boards/…`).
+pub fn kind_of(name: &str) -> &'static str {
+    if name.starts_with("boards/") {
+        BOARD_KIND
+    } else {
+        PROFILE_KIND
+    }
+}
+
+/// Whether `name` is the path of a profile or a board file relative to a
+/// project or generation root: `profiles/<vendor>/…/<model>@<major>.profile.toml`
+/// or `boards/<name>.board.toml`, `/`-separated, each segment made of
+/// `a-z`, `0-9`, `.`, `_`, `@` and `-` and none of them `.` or `..`. A name
+/// a generation receives is written under the generation's root, so a
+/// path that could leave it is refused here.
+pub fn is_catalog_path(name: &str) -> bool {
+    let segments: Vec<&str> = name.split('/').collect();
+    let well_formed = segments.iter().all(|s| {
+        !s.is_empty()
+            && *s != "."
+            && *s != ".."
+            && s.bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"._@-".contains(&b))
+    });
+    well_formed
+        && match segments.as_slice() {
+            ["profiles", .., file] if segments.len() >= 3 => {
+                file.ends_with(".profile.toml") && file.contains('@')
+            }
+            ["boards", file] => file.ends_with(".board.toml"),
+            _ => false,
+        }
+}
+
+/// The profiles and boards of `files`, keyed as the manifest refers to
+/// them (`acme/pcs@1`, `rpi5`); a file that does not parse is reported in
+/// the third element and left out, and does not stop the others.
+type Parsed = (
+    BTreeMap<String, ProfileInfo>,
+    BTreeMap<String, BoardInfo>,
+    Vec<String>,
+);
+
+fn parse_catalog(files: &CatalogFiles) -> Parsed {
+    let mut profiles = BTreeMap::new();
+    let mut boards = BTreeMap::new();
+    let mut errors = Vec::new();
+    for (name, text) in files {
+        let path = Path::new(name);
+        if let Some(key) = name
+            .strip_prefix("profiles/")
+            .and_then(|n| n.strip_suffix(".profile.toml"))
+        {
+            let report = joker_manifest::profile::parse(path, text);
+            match report.profile {
+                Some(p) => {
+                    profiles.insert(key.to_owned(), p);
+                }
+                None => errors.push(format!("{name}:\n{}", report.render())),
+            }
+        } else if let Some(key) = name
+            .strip_prefix("boards/")
+            .and_then(|n| n.strip_suffix(".board.toml"))
+        {
+            let report = joker_manifest::board::parse(path, text);
+            match report.board {
+                Some(b) => {
+                    boards.insert(key.to_owned(), b);
+                }
+                None => errors.push(format!("{name}:\n{}", report.render())),
+            }
+        }
+    }
+    (profiles, boards, errors)
+}
+
+/// The context of the manifest checks: the M0 catalogue, the apps of
+/// `tasks`, and every profile and board of `files` (a file of `files`
+/// wins over the M0 catalogue on a name collision). Files that do not
+/// parse are reported in the second element and left out.
+pub fn context_for_files(tasks: &dyn TaskProvider, files: &CatalogFiles) -> (Context, Vec<String>) {
     let mut context = context(tasks);
-    let (profiles, mut errors) = profiles_from_dir(root);
+    let (profiles, boards, errors) = parse_catalog(files);
     context.profiles.extend(profiles);
-    let (boards, board_errors) = boards_from_dir(root);
     context.boards.extend(boards);
-    errors.extend(board_errors);
     (context, errors)
 }
 
-/// `profiles/<vendor>/<model>@<major>.profile.toml` under `root` (docs/15
-/// §2), parsed into the registry key the manifest's `profile = "…"` uses.
-/// A file that fails to parse is skipped and reported by name; it does not
-/// stop the rest of the scan.
-pub fn profiles_from_dir(root: &Path) -> (BTreeMap<String, ProfileInfo>, Vec<String>) {
-    let mut found = BTreeMap::new();
+/// Every profile and board file under `root` (`profiles/**.profile.toml`,
+/// `boards/*.board.toml`), keyed by its path relative to `root`. A file
+/// that cannot be read is reported in the second element.
+pub fn catalog_files(root: &Path) -> (CatalogFiles, Vec<String>) {
+    let mut files = CatalogFiles::new();
     let mut errors = Vec::new();
-    let dir = root.join("profiles");
-    for path in toml_files(&dir, ".profile.toml") {
-        let Some(key) = profile_key(&dir, &path) else {
-            continue;
-        };
-        let Ok(text) = std::fs::read_to_string(&path) else {
-            errors.push(format!("{}: could not read", path.display()));
-            continue;
-        };
-        let report = joker_manifest::profile::parse(&path, &text);
-        match report.profile {
-            Some(p) => {
-                found.insert(key, p);
-            }
-            None => errors.push(format!("{}:\n{}", path.display(), report.render())),
-        }
-    }
-    (found, errors)
-}
-
-/// `boards/<name>.board.toml` under `root`, parsed into the registry key
-/// the manifest's `[target] board = "…"` uses (the file stem).
-pub fn boards_from_dir(root: &Path) -> (BTreeMap<String, BoardInfo>, Vec<String>) {
-    let mut found = BTreeMap::new();
-    let mut errors = Vec::new();
-    let dir = root.join("boards");
-    for path in toml_files(&dir, ".board.toml") {
+    let found = toml_files(&root.join("profiles"), ".profile.toml")
+        .into_iter()
+        .chain(
+            toml_files(&root.join("boards"), ".board.toml")
+                .into_iter()
+                .filter(|p| p.parent() == Some(root.join("boards").as_path())),
+        );
+    for path in found {
         let Some(name) = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .and_then(|n| n.strip_suffix(".board.toml"))
+            .strip_prefix(root)
+            .ok()
+            .and_then(|r| r.to_str())
+            .map(|r| r.replace(std::path::MAIN_SEPARATOR, "/"))
         else {
             continue;
         };
-        let Ok(text) = std::fs::read_to_string(&path) else {
-            errors.push(format!("{}: could not read", path.display()));
-            continue;
-        };
-        let report = joker_manifest::board::parse(&path, &text);
-        match report.board {
-            Some(b) => {
-                found.insert(name.to_owned(), b);
+        match std::fs::read_to_string(&path) {
+            Ok(text) => {
+                files.insert(name, text);
             }
-            None => errors.push(format!("{}:\n{}", path.display(), report.render())),
+            Err(_) => errors.push(format!("{}: could not read", path.display())),
         }
     }
-    (found, errors)
+    (files, errors)
+}
+
+/// [`context_for_files`] over the [`catalog_files`] of the project at
+/// `root`: what `jk check` and a project-side `load` see. Errors from
+/// files that cannot be read or parsed are returned alongside.
+pub fn context_for_project(tasks: &dyn TaskProvider, root: &Path) -> (Context, Vec<String>) {
+    let (files, mut errors) = catalog_files(root);
+    let (context, parse_errors) = context_for_files(tasks, &files);
+    errors.extend(parse_errors);
+    (context, errors)
+}
+
+/// The profiles of the project at `root`, keyed as the manifest's
+/// `profile = "…"` refers to them; files that cannot be read or parsed
+/// are reported and left out.
+pub fn profiles_from_dir(root: &Path) -> (BTreeMap<String, ProfileInfo>, Vec<String>) {
+    let (files, mut errors) = catalog_files(root);
+    let (profiles, _, parse_errors) = parse_catalog(&files);
+    errors.extend(
+        parse_errors
+            .into_iter()
+            .filter(|e| e.starts_with("profiles/")),
+    );
+    (profiles, errors)
+}
+
+/// The boards of the project at `root`, keyed by file stem; files that
+/// cannot be read or parsed are reported and left out.
+pub fn boards_from_dir(root: &Path) -> (BTreeMap<String, BoardInfo>, Vec<String>) {
+    let (files, mut errors) = catalog_files(root);
+    let (_, boards, parse_errors) = parse_catalog(&files);
+    errors.extend(
+        parse_errors
+            .into_iter()
+            .filter(|e| e.starts_with("boards/")),
+    );
+    (boards, errors)
 }
 
 /// Every file under `dir` (recursively) whose name ends with `suffix`.
@@ -271,14 +368,6 @@ fn toml_files(dir: &std::path::Path, suffix: &str) -> Vec<std::path::PathBuf> {
     }
     out.sort();
     out
-}
-
-/// `profiles/acme/pcs@1.profile.toml` -> `"acme/pcs@1"`.
-fn profile_key(profiles_dir: &std::path::Path, file: &std::path::Path) -> Option<String> {
-    let relative = file.strip_prefix(profiles_dir).ok()?;
-    let text = relative.to_str()?;
-    let without_suffix = text.strip_suffix(".profile.toml")?;
-    Some(without_suffix.replace(std::path::MAIN_SEPARATOR, "/"))
 }
 
 #[cfg(test)]
