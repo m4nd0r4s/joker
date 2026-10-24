@@ -344,7 +344,7 @@ The OCI manifest of the runtime carries the annotations `org.joker.version`, `or
 | 3 | `manifest` | CBOR map | yes | the effective manifest **with the defaults materialized and without the `x_*` keys** (ref/01 §8.3), in deterministic CBOR with the TOML keys as `tstr` |
 | 4 | `lock` | digest | yes | the **canonical digest** of `joker.lock` (ref/02 §2.1: SHA-256 of the canonical serialization, and not of the bytes of the file) |
 | 5 | `contracts` | `[* digest]` | yes | the hashes of the contracts of the classes used (document 17, §6), in byte order |
-| 6 | `artifacts` | `[* gen-artifact]` | yes | each file that the generation refers to and that changes behavior (apps, drivers, profiles, boards, simulation models, trust keys, EDS, …; ref/01 §8.3, point 4): `name` (1, as the manifest refers to it: `apps.peak_shaver`, `profiles/local/xy-md02@1.profile.toml`), `media_type` (2, short form of ref/00 §7.1), `digest` (3); in order of `name` |
+| 6 | `artifacts` | `[* gen-artifact]` | yes | each file that the generation refers to and that changes behavior (apps, drivers, profiles, boards, simulation models, trust keys, EDS, …; ref/01 §8.3, point 4): `name` (1, as the manifest refers to it: `apps.peak_shaver`, `profiles/local/xy-md02@1.profile.toml`), `media_type` (2, short form of ref/00 §7.1), `digest` (3); in order of `name`. A `joker.app.v1+cwasm` does not enter: it is derived from the `.wasm` of the same name and differs per engine, as it stays out of the lock (ADR 0067) |
 | 7 | `mode` | `mode` | yes | the `mode` of the manifest (for V19 without opening the manifest) |
 
 ```
