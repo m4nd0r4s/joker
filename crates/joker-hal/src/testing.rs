@@ -673,6 +673,11 @@ impl<D: Driver> core::fmt::Debug for Bench<'_, D> {
     }
 }
 
+/// What a step program run by [`Bench::steps`] ended with: the values
+/// its `read` steps stored, or why it stopped.
+pub type StepsOutcome<'p> =
+    Result<Vec<(&'p str, crate::interpreter::Reading)>, crate::interpreter::Failure<'p>>;
+
 /// Why a bench step failed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BenchError {
@@ -764,6 +769,36 @@ impl<'r, D: Driver> Bench<'r, D> {
             .run(self.driver.read(&mut cx, &batch, &mut sink))
             .map_err(|_| BenchError::Stalled)?;
         Ok(sink.dropped())
+    }
+
+    /// Runs the step `program` against device 0 through the interpreter
+    /// (ADR 0058), with `args`, every driver call bounded by the device's
+    /// `timeout` and the whole program by `budget_ns`. Returns what its
+    /// `read` steps stored, or why it stopped.
+    pub fn steps<'p>(
+        &mut self,
+        program: &'p [crate::steps::Step<'p>],
+        args: &dyn crate::interpreter::Args,
+        budget_ns: u64,
+    ) -> Result<StepsOutcome<'p>, BenchError> {
+        let host = self.host.clone();
+        let mut cx = Cx::new(&*host, host.mono() + budget_ns);
+        let call = crate::interpreter::Call {
+            device: 0,
+            args,
+            step_timeout_ns: self.timeout_ns,
+        };
+        let mut results = Vec::new();
+        let outcome = host
+            .run(crate::interpreter::run_into(
+                &mut self.driver,
+                &mut cx,
+                &call,
+                program,
+                &mut results,
+            ))
+            .map_err(|_| BenchError::Stalled)?;
+        Ok(outcome.map(|()| results))
     }
 
     /// The counters the driver reports in `health` now.
