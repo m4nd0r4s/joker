@@ -115,6 +115,7 @@ pub struct Controller {
     active: Option<Active>,
     confirming: Option<Confirming>,
     actions: crate::actions::Dispatcher<ActionResult>,
+    permit_state: std::collections::BTreeMap<(String, String), Vec<u64>>,
 }
 
 /// What invoking an action produced (ref/09 §5.10, ADR 0058). Mirrors
@@ -262,6 +263,7 @@ impl Controller {
             active: None,
             confirming: None,
             actions: crate::actions::Dispatcher::new(),
+            permit_state: std::collections::BTreeMap::new(),
         })
     }
 
@@ -592,6 +594,7 @@ impl Controller {
         )
         .map_err(|e| ControlError::new("J-E1000", 500, e.0))?;
         let devices = self.devices.start(&plan, &running.shared);
+        self.permit_state.clear();
         self.active = Some(Active {
             number,
             hash: g.hash.clone(),
@@ -674,8 +677,13 @@ impl Controller {
             let name = (device.to_owned(), action.to_owned());
             let permitted = match (plan.permit_sources.get(&name), plan.permits.get(&name)) {
                 (_, Some(program)) => {
-                    match crate::expr_plan::eval_bool(program, &active.running.shared, now_mono_ns)
-                    {
+                    let state = self.permit_state.entry(name.clone()).or_default();
+                    match crate::expr_plan::eval_bool(
+                        program,
+                        &active.running.shared,
+                        now_mono_ns,
+                        state,
+                    ) {
                         Ok(output) if output.permits(false) => Ok(()),
                         Ok(_) => Err(None),
                         Err(e) => Err(Some(format!("the permit could not be evaluated: {e:?}"))),
@@ -962,7 +970,7 @@ mod action_tests {
     /// wired to reference it directly (`Plan::permits`) — for proving
     /// `invoke_action` evaluates a real `permit` rather than defaulting
     /// to always-permitted.
-    fn plan_with_permit_on_act_led() -> Plan {
+    fn plan_with_permit_on_act_led(permit: &str) -> Plan {
         let mut fs = MemoryFileSystem::default();
         fs.file(
             "joker.toml",
@@ -993,12 +1001,9 @@ mod action_tests {
                 steps: Vec::new(),
             }],
         });
-        let program = crate::expr_plan::compile_bool(
-            "pi.act_led",
-            &plan,
-            joker_units::Duration::from_millis(20),
-        )
-        .unwrap_or_else(|e| panic!("{e:?}"));
+        let program =
+            crate::expr_plan::compile_bool(permit, &plan, joker_units::Duration::from_millis(20))
+                .unwrap_or_else(|e| panic!("{e:?}"));
         plan.permits
             .insert(("pcs".to_owned(), "reset_fault".to_owned()), program);
         plan
@@ -1008,6 +1013,15 @@ mod action_tests {
     /// has a real, compiled `permit` referencing `pi.act_led`, already
     /// set to `write_led`.
     fn controller_with_permit(dir: &std::path::Path, write_led: bool) -> Controller {
+        controller_with_permit_source(dir, write_led, "pi.act_led")
+    }
+
+    /// Like [`controller_with_permit`], with `permit` as the source.
+    fn controller_with_permit_source(
+        dir: &std::path::Path,
+        write_led: bool,
+        permit: &str,
+    ) -> Controller {
         let log = Arc::new(Mutex::new(
             DecisionLog::open(&dir.join("decisions.jsonl")).unwrap(),
         ));
@@ -1022,7 +1036,7 @@ mod action_tests {
         )
         .unwrap();
 
-        let plan = Arc::new(plan_with_permit_on_act_led());
+        let plan = Arc::new(plan_with_permit_on_act_led(permit));
         let running = Running::start(
             Arc::clone(&plan),
             Vec::new(),
@@ -1082,6 +1096,23 @@ mod action_tests {
             result,
             Invoked::Rejected(crate::actions::Rejected::NotPermitted)
         );
+    }
+
+    #[test]
+    fn a_windowed_permit_keeps_its_state_between_invocations() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut c = controller_with_permit_source(dir.path(), true, "held(pi.act_led, 1s)");
+        let result = c
+            .invoke_action("pcs", "reset_fault", "k1", 0, "user:test")
+            .unwrap();
+        assert_eq!(
+            result,
+            Invoked::Rejected(crate::actions::Rejected::NotPermitted)
+        );
+        let result = c
+            .invoke_action("pcs", "reset_fault", "k2", 1_500_000_000, "user:test")
+            .unwrap();
+        assert_eq!(result, Invoked::Ran(ActionResult::Succeeded));
     }
 
     #[test]

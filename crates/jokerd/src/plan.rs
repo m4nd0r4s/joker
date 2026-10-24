@@ -100,6 +100,10 @@ pub struct SignalPlan {
     pub device: Option<String>,
     /// Enum variants, in value order.
     pub variants: Vec<String>,
+    /// The enum's name (`PcsState`, `AlarmState`), as expressions spell
+    /// its constants (`PcsState.fault`, ref/01 §3.7); `None` for any
+    /// other type.
+    pub enum_name: Option<String>,
 }
 
 /// One output and its envelope.
@@ -361,9 +365,9 @@ impl Plan {
                 })?),
                 _ => None,
             };
-            let variants = match &reg.info.ty {
-                SignalType::Enum { variants, .. } => variants.clone(),
-                _ => Vec::new(),
+            let (variants, enum_name) = match &reg.info.ty {
+                SignalType::Enum { name, variants } => (variants.clone(), Some(name.clone())),
+                _ => (Vec::new(), None),
             };
             signals.push(SignalPlan {
                 path: path.clone(),
@@ -378,6 +382,7 @@ impl Plan {
                 max_age_ns: max_age(manifest, context, reg.device.as_deref()),
                 device: reg.device.clone(),
                 variants,
+                enum_name,
             });
         }
 
