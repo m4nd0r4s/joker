@@ -2,15 +2,16 @@
 //! `Driver`, polls it on a real clock, and feeds `Shared`'s slots and a
 //! device's `CommitRx` (docs/01 §3.4, ref/06 §2.1).
 //!
-//! The acquisition step of ref/06 §3.6 lives here: [`raw_to_bits`]
-//! carries the already typed scalar raw kinds (`Bool`/`Int`/`Uint`/
-//! `Float`) as the core's transport bits, and [`decode_to_bits`] decodes
-//! `Regs` (modbus registers) and `Bytes` (i2c buffers) from the point's
-//! raw `type`, `word_order`, `byte_order` and `bit` (ref/03 §3, step 1).
-//! A value that cannot become the signal's type reads as
-//! `bad(config_error)`. `scale`, `offset` and `invert` are not applied:
-//! the manifest does not carry them to the device plan yet, so a profile
-//! point that declares them is decoded unscaled.
+//! The acquisition stage of ref/06 §3.6 lives here, in the order of
+//! ref/03 §3 (ADR 0064): [`Decode`] turns `Regs` (modbus registers) and
+//! `Bytes` (i2c buffers) into a number from the point's raw `type`,
+//! `word_order`, `byte_order` and `bit`; [`acquire`] then applies the
+//! profile's `invert`, maps an `enum` integer to its variant, applies
+//! `scale` and `offset`, and checks the result against the signal's type;
+//! [`Deadband`] keeps the last published value while a new one stays
+//! within the point's `deadband`. A value that cannot become the signal's
+//! value reads as `bad` with the reason of ref/03 §2.2.7–§2.2.8, never as a
+//! number.
 
 use std::sync::Arc;
 
@@ -25,6 +26,7 @@ use joker_hal::plan::PlanView;
 use joker_hal::spec::PlanRequest;
 use joker_hal::types::{BatchFailure, BatchKind, LinkState, WriteStatus};
 use joker_hal::{CommitRx, Cx, RxState};
+use joker_manifest::context::Acquisition;
 
 use crate::plan::Plan;
 use crate::shared::{Shared, WriteAckRecord};
@@ -163,19 +165,26 @@ enum Number {
     Float(f64),
 }
 
-fn number_to_bits(number: Number, ty: ValueType) -> Option<u64> {
+fn number_to_bits(number: Number, ty: ValueType) -> Result<u64, QualityReason> {
+    use QualityReason::{ConfigError, OutOfRange};
     match (number, ty) {
-        (Number::Bool(b), ValueType::Bool) => Some(u64::from(b)),
-        (Number::Int(i), ValueType::I64) => Some(i as u64),
+        (Number::Bool(b), ValueType::Bool) => Ok(u64::from(b)),
+        (Number::Int(i), ValueType::I64) => Ok(i as u64),
         (Number::Int(i), ValueType::U64 | ValueType::Enum | ValueType::Bits) => {
-            u64::try_from(i).ok()
+            u64::try_from(i).map_err(|_| OutOfRange)
         }
-        (Number::Uint(u), ValueType::U64 | ValueType::Enum | ValueType::Bits) => Some(u),
-        (Number::Uint(u), ValueType::I64) => i64::try_from(u).ok().map(|i| i as u64),
-        (Number::Int(i), ValueType::F64 | ValueType::F32) => ty.f64_to_bits(i as f64),
-        (Number::Uint(u), ValueType::F64 | ValueType::F32) => ty.f64_to_bits(u as f64),
-        (Number::Float(f), ValueType::F64 | ValueType::F32) => ty.f64_to_bits(f),
-        _ => None,
+        (Number::Uint(u), ValueType::U64 | ValueType::Enum | ValueType::Bits) => Ok(u),
+        (Number::Uint(u), ValueType::I64) => {
+            i64::try_from(u).map(|i| i as u64).map_err(|_| OutOfRange)
+        }
+        (Number::Int(i), ValueType::F64 | ValueType::F32) => {
+            ty.f64_to_bits(i as f64).ok_or(OutOfRange)
+        }
+        (Number::Uint(u), ValueType::F64 | ValueType::F32) => {
+            ty.f64_to_bits(u as f64).ok_or(OutOfRange)
+        }
+        (Number::Float(f), ValueType::F64 | ValueType::F32) => ty.f64_to_bits(f).ok_or(OutOfRange),
+        _ => Err(ConfigError),
     }
 }
 
@@ -221,14 +230,12 @@ fn typed(bits: u64, decode: &Decode) -> Option<Number> {
     })
 }
 
-/// The core's transport bits for a settled raw value of a point decoded
-/// as `decode`: register words and byte buffers are decoded first (raw
-/// type, word and byte order, `bit`; ref/03 §3 step 1), already typed
-/// scalars go through [`raw_to_bits`]. `None` when the value does not
-/// match the point's raw type (wrong length, an unknown `type`) or cannot
-/// become `ty` (a negative value for an unsigned signal, a float for an
-/// integer one).
-pub fn decode_to_bits(value: &OwnedRaw, decode: &Decode, ty: ValueType) -> Option<u64> {
+/// The number a raw value carries: register words and byte buffers are
+/// decoded first (raw type, word and byte order, `bit`; ref/03 §3 step
+/// 1), already typed scalars are taken as they are. `None` when the value
+/// does not match the point's raw type (wrong length, an unknown `type`)
+/// or is not a number (`Text`, `None`).
+fn number_of(value: &OwnedRaw, decode: &Decode) -> Option<Number> {
     let bits = match value {
         OwnedRaw::Regs(words) => {
             let expected = decode.raw.bytes().map_or(1, |n| n / 2).max(1);
@@ -247,34 +254,150 @@ pub fn decode_to_bits(value: &OwnedRaw, decode: &Decode, ty: ValueType) -> Optio
             }
             byte_bits(bytes, decode)
         }
-        _ => return raw_to_bits(value, ty),
+        OwnedRaw::Bool(b) => return Some(Number::Bool(*b)),
+        OwnedRaw::Int(i) => return Some(Number::Int(*i)),
+        OwnedRaw::Uint(u) => return Some(Number::Uint(*u)),
+        OwnedRaw::Float(f) => return Some(Number::Float(*f)),
+        _ => return None,
     };
-    number_to_bits(typed(bits, decode)?, ty)
+    typed(bits, decode)
+}
+
+/// The core's transport bits for a settled raw value of a point decoded
+/// as `decode`, without any acquisition step: [`acquire`] with
+/// [`Acquisition::NONE`]. `None` when the value does not match the point's
+/// raw type or cannot become `ty`.
+pub fn decode_to_bits(value: &OwnedRaw, decode: &Decode, ty: ValueType) -> Option<u64> {
+    acquire(value, decode, &Acquisition::NONE, ty).ok()
+}
+
+/// The core's transport bits for a settled raw value of a point, after
+/// the acquisition steps of ref/03 §3 (ADR 0064): decoding, `invert`, the
+/// `enum` mapping (the raw integer becomes the position of its variant),
+/// `scale` and `offset`, then the NaN check and the range of the signal's
+/// type. The error is the quality reason of the sample: `config_error`
+/// for a value of the wrong form, `nan` for a NaN or an infinity,
+/// `out_of_range` for an integer that does not fit or an enum integer
+/// without a variant.
+pub fn acquire(
+    value: &OwnedRaw,
+    decode: &Decode,
+    acquisition: &Acquisition,
+    ty: ValueType,
+) -> Result<u64, QualityReason> {
+    let number = number_of(value, decode).ok_or(QualityReason::ConfigError)?;
+    let number = match number {
+        Number::Bool(b) if acquisition.invert => Number::Bool(!b),
+        other => other,
+    };
+    if ty == ValueType::Enum && !acquisition.enum_values.is_empty() {
+        let raw = match number {
+            Number::Int(i) => i,
+            Number::Uint(u) => i64::try_from(u).map_err(|_| QualityReason::OutOfRange)?,
+            Number::Bool(_) | Number::Float(_) => return Err(QualityReason::ConfigError),
+        };
+        return acquisition
+            .enum_values
+            .iter()
+            .position(|v| *v == raw)
+            .map(|i| i as u64)
+            .ok_or(QualityReason::OutOfRange);
+    }
+    let number = if acquisition.scale.is_some() || acquisition.offset.is_some() {
+        let raw = match number {
+            Number::Int(i) => i as f64,
+            Number::Uint(u) => u as f64,
+            Number::Float(f) => f,
+            Number::Bool(_) => return Err(QualityReason::ConfigError),
+        };
+        Number::Float(raw * acquisition.scale.unwrap_or(1.0) + acquisition.offset.unwrap_or(0.0))
+    } else {
+        number
+    };
+    if let Number::Float(f) = number
+        && !f.is_finite()
+    {
+        return Err(QualityReason::Nan);
+    }
+    number_to_bits(number, ty)
 }
 
 /// What one settled point becomes in its slot (ref/06 §2.8, docs/16 §3):
-/// the value's bits and the driver's quality when the value converts to
-/// the signal's type, otherwise no value at all. A `bad` sample keeps its
-/// own reason; a value that does not convert, or a non-`bad` sample
-/// without a value, is `bad(config_error)`. Quality never disappears: a
-/// failed read always reaches the slot, it never leaves the last good
-/// value in place.
+/// the acquired value's bits and the driver's quality when the value
+/// converts (see [`acquire`]), otherwise no value at all. A `bad` sample
+/// keeps its own reason; a value that does not convert is `bad` with the
+/// reason [`acquire`] gives. Quality never disappears: a failed read always
+/// reaches the slot, it never leaves the last good value in place.
 pub fn settled_sample(target: &PointTarget, settled: &Settled) -> (u64, Quality) {
     let status: Quality = settled.status.into();
     if status.is_bad() {
         return (0, status);
     }
-    match decode_to_bits(&settled.value, &target.decode, target.ty) {
-        Some(bits) => (bits, status),
-        None => (
-            0,
-            Quality::new(QualityCode::Bad, QualityReason::ConfigError),
-        ),
+    match acquire(
+        &settled.value,
+        &target.decode,
+        &target.acquisition,
+        target.ty,
+    ) {
+        Ok(bits) => (bits, status),
+        Err(reason) => (0, Quality::new(QualityCode::Bad, reason)),
     }
 }
 
-fn store_settled(shared: &Shared, target: &PointTarget, settled: &Settled, now: u64) {
+/// The acquisition deadband of one point (ref/03 §2.2.4, ADR 0064): the
+/// last value published while it was `good`. A new `good` value closer to
+/// it than the point's `deadband` publishes the last value again, with the
+/// new acquisition time, so the signal stays fresh without moving; any
+/// other sample is published as it is and becomes the new reference.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Deadband {
+    last: Option<(f64, u64)>,
+}
+
+impl Deadband {
+    /// What to publish for `bits` with `quality`, for a point of type `ty`
+    /// with a deadband of `band`.
+    pub fn filter(&mut self, band: Option<f64>, ty: ValueType, bits: u64, quality: Quality) -> u64 {
+        let Some(band) = band else {
+            return bits;
+        };
+        let value = if quality.is_good() {
+            numeric_value(ty, bits)
+        } else {
+            None
+        };
+        match (value, self.last) {
+            (Some(v), Some((last, last_bits))) if (v - last).abs() < band => last_bits,
+            (Some(v), _) => {
+                self.last = Some((v, bits));
+                bits
+            }
+            (None, _) => {
+                self.last = None;
+                bits
+            }
+        }
+    }
+}
+
+fn numeric_value(ty: ValueType, bits: u64) -> Option<f64> {
+    match ty {
+        ValueType::I64 => Some(bits as i64 as f64),
+        ValueType::U64 => Some(bits as f64),
+        ValueType::F64 | ValueType::F32 => ty.bits_to_f64(bits),
+        _ => None,
+    }
+}
+
+fn store_settled(
+    shared: &Shared,
+    target: &PointTarget,
+    deadband: &mut Deadband,
+    settled: &Settled,
+    now: u64,
+) {
     let (bits, quality) = settled_sample(target, settled);
+    let bits = deadband.filter(target.acquisition.deadband, target.ty, bits, quality);
     if let Some(slot) = shared.slots.get(target.signal.index()) {
         slot.write(bits, quality, NO_TS_SRC, settled.ts_hw.unwrap_or(now));
     }
@@ -282,7 +405,7 @@ fn store_settled(shared: &Shared, target: &PointTarget, settled: &Settled, now: 
 
 /// One point's signal id and core type, for [`run_driver`] to write a
 /// settled read into the right slot.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct PointTarget {
     /// The point's id in the request (matches `OwnedPoint::id`).
     pub point: joker_hal::types::PointId,
@@ -294,6 +417,9 @@ pub struct PointTarget {
     pub ty: ValueType,
     /// How the point's raw value is decoded.
     pub decode: Decode,
+    /// The acquisition steps after decoding (scale, offset, invert, enum,
+    /// deadband), from the point's profile.
+    pub acquisition: Acquisition,
 }
 
 /// The [`PointTarget`]s of `plan.devices[device_index]`'s read points
@@ -318,6 +444,7 @@ pub fn point_targets(plan: &Plan, device_index: usize) -> Vec<PointTarget> {
                 signal,
                 ty,
                 decode: Decode::of_point(&p.type_name, &p.addr),
+                acquisition: p.acquisition.clone(),
             })
         })
         .collect()
@@ -624,14 +751,20 @@ async fn serve<D: Driver>(
     publish_link(shared, device_index, link.state);
     let mut due: Vec<u64> = vec![host.now().mono_ns; plan.len()];
     let mut buf = SampleBuffer::with_capacity(4096);
+    let mut deadbands = vec![Deadband::default(); targets.len()];
     let mut next_keepalive = fallback_keepalive_ns.map(|ns| host.now().mono_ns + ns);
     while !stop() {
         if let (Some(ns), Some(next)) = (fallback_keepalive_ns, next_keepalive)
             && host.now().mono_ns >= next
         {
-            let mut i = 0;
-            while rx.keepalive(i) {
-                i += 1;
+            let covered = shared
+                .keepalive
+                .get(device_index)
+                .map_or(&[][..], Vec::as_slice);
+            for (i, on) in covered.iter().enumerate() {
+                if *on {
+                    rx.keepalive(i);
+                }
             }
             next_keepalive = Some(host.now().mono_ns + ns);
         }
@@ -708,8 +841,10 @@ async fn serve<D: Driver>(
                 {
                     stats.invalid_samples.bump();
                 }
-                if let Some(target) = targets.iter().find(|t| t.point == s.point) {
-                    store_settled(shared, target, s, now);
+                if let Some(i) = targets.iter().position(|t| t.point == s.point)
+                    && let (Some(target), Some(deadband)) = (targets.get(i), deadbands.get_mut(i))
+                {
+                    store_settled(shared, target, deadband, s, now);
                 }
             }
             let against_link = result.is_err_and(|f| f.counts_for_link());

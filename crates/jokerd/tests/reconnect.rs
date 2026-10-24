@@ -127,6 +127,7 @@ fn shared() -> Shared {
         running: Default::default(),
         commit_bindings: vec![Vec::new()],
         commit_boxes: vec![Vec::new()],
+        keepalive: vec![Vec::new()],
         devices: vec![DeviceStats::default()].into_boxed_slice(),
         write_acks: crossbeam_queue::ArrayQueue::new(8),
         write_acks_dropped: Default::default(),
@@ -147,6 +148,7 @@ fn run(script: Script, end: u64, mut probe: impl FnMut(u64, &Shared)) -> (Arc<Sh
         signal: SignalId(0),
         ty: ValueType::Bool,
         decode: Decode::TYPED,
+        acquisition: joker_manifest::context::Acquisition::NONE,
     }];
     let host = Arc::new(VirtualHost::new(0));
     let host_for_stop = Arc::clone(&host);

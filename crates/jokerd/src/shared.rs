@@ -326,6 +326,10 @@ pub struct Shared {
     pub commit_bindings: Vec<Vec<OutputBinding>>,
     /// The boxes matching [`Shared::commit_bindings`], one per device.
     pub commit_boxes: Vec<Vec<CommitBox>>,
+    /// Per device, matching [`Shared::commit_bindings`]: whether the
+    /// device fallback covers that output, so its io task renews it with
+    /// `keepalive` (ref/03 §2.2.11 `applies_to`).
+    pub keepalive: Vec<Vec<bool>>,
     /// Per device (`plan.devices` order): its link and its counters.
     pub devices: Box<[DeviceStats]>,
     /// Writes the real drivers did not confirm, for the decision log.
@@ -344,12 +348,18 @@ fn raw_encoding_of(ty: ValueType) -> Option<RawEncoding> {
     }
 }
 
-fn commit_channels(plan: &Plan) -> (Vec<Vec<OutputBinding>>, Vec<Vec<CommitBox>>) {
+/// Per device: the output bindings, their boxes, and whether the device
+/// fallback covers each output.
+type CommitChannels = (Vec<Vec<OutputBinding>>, Vec<Vec<CommitBox>>, Vec<Vec<bool>>);
+
+fn commit_channels(plan: &Plan) -> CommitChannels {
     let mut bindings = Vec::with_capacity(plan.devices.len());
     let mut boxes = Vec::with_capacity(plan.devices.len());
+    let mut keepalive = Vec::with_capacity(plan.devices.len());
     for device in &plan.devices {
         let mut device_bindings = Vec::new();
         let mut device_boxes = Vec::new();
+        let mut device_keepalive = Vec::new();
         for (i, point) in device.points.iter().enumerate() {
             if point.direction != joker_hal::Direction::Output {
                 continue;
@@ -372,11 +382,23 @@ fn commit_channels(plan: &Plan) -> (Vec<Vec<OutputBinding>>, Vec<Vec<CommitBox>>
                 encoding,
             });
             device_boxes.push(CommitBox::new());
+            let relative = point
+                .path
+                .strip_prefix(device.name.as_str())
+                .and_then(|rest| rest.strip_prefix('.'))
+                .unwrap_or(&point.path);
+            device_keepalive.push(
+                device
+                    .fallback_outputs
+                    .as_ref()
+                    .is_none_or(|covered| covered.contains(relative)),
+            );
         }
         bindings.push(device_bindings);
         boxes.push(device_boxes);
+        keepalive.push(device_keepalive);
     }
-    (bindings, boxes)
+    (bindings, boxes, keepalive)
 }
 
 impl Shared {
@@ -394,7 +416,7 @@ impl Shared {
         for _ in 0..TRACE_BUFFERS {
             let _ = trace_free.push(Vec::with_capacity(trace_len));
         }
-        let (commit_bindings, commit_boxes) = commit_channels(plan);
+        let (commit_bindings, commit_boxes, keepalive) = commit_channels(plan);
         Self {
             slots,
             inboxes: (0..plan.groups.len())
@@ -425,6 +447,7 @@ impl Shared {
             running: AtomicBool::new(false),
             commit_bindings,
             commit_boxes,
+            keepalive,
             devices: plan
                 .devices
                 .iter()

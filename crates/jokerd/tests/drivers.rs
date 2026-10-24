@@ -85,6 +85,7 @@ fn run_driver_reads_and_writes_through_the_real_commit_channel() {
                 signal: loaded.plan.id(&p.path)?,
                 ty: joker_core::ValueType::Bool,
                 decode: jokerd::drivers::Decode::TYPED,
+                acquisition: joker_manifest::context::Acquisition::NONE,
             })
         })
         .collect();
@@ -185,6 +186,7 @@ fn a_value_that_does_not_convert_to_the_signal_type_is_bad_config_error() {
         signal: joker_core::SignalId(0),
         ty: joker_core::ValueType::Bool,
         decode: jokerd::drivers::Decode::TYPED,
+        acquisition: joker_manifest::context::Acquisition::NONE,
     };
     let settled = Settled {
         point: 0,

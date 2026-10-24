@@ -415,6 +415,7 @@ mod tests {
             quirks: Vec::new(),
             timeout_ns: 1_000_000_000,
             fallback_keepalive_ns: None,
+            fallback_outputs: None,
             points: vec![crate::bridge::DevicePointPlan {
                 path: "pcs.a".into(),
                 addr: Vec::new(),
@@ -423,6 +424,7 @@ mod tests {
                 poll_ns: None,
                 expect: joker_hal::types::RawKind::Bool,
                 width: 0,
+                acquisition: joker_manifest::context::Acquisition::NONE,
             }],
             actions: Vec::new(),
         });

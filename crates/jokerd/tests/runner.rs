@@ -251,6 +251,7 @@ fn plan_with_one_bound_output() -> jokerd::plan::Plan {
         quirks: Vec::new(),
         timeout_ns: 1_000_000_000,
         fallback_keepalive_ns: None,
+        fallback_outputs: None,
         points: vec![jokerd::bridge::DevicePointPlan {
             path: "pcs.a".into(),
             addr: Vec::new(),
@@ -259,6 +260,7 @@ fn plan_with_one_bound_output() -> jokerd::plan::Plan {
             poll_ns: None,
             expect: joker_hal::types::RawKind::Bool,
             width: 0,
+            acquisition: joker_manifest::context::Acquisition::NONE,
         }],
         actions: Vec::new(),
     });
