@@ -10,7 +10,7 @@ publish.workspace = true
 
 [features]
 default = ["server"]
-server = ["dep:axum", "dep:tokio", "dep:nix", "dep:form_urlencoded", "dep:futures-util", "dep:tokio-stream"]
+server = ["dep:axum", "dep:tokio", "dep:nix", "dep:form_urlencoded", "dep:futures-util", "dep:tokio-stream", "dep:humantime"]
 
 [dependencies]
 joker-manifest = { path = "../joker-manifest" }
@@ -18,13 +18,20 @@ joker-units = { path = "../joker-units" }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
 axum = { version = "0.8.9", optional = true, default-features = false, features = ["http1", "json", "tokio", "ws", "query"] }
-tokio = { version = "1.48", optional = true, features = ["net", "rt", "fs", "time", "sync"] }
+tokio = { version = "1.48", optional = true, features = ["net", "rt", "fs", "time", "sync", "macros"] }
+humantime = { version = "2.3", optional = true }
 form_urlencoded = { version = "1.2", optional = true }
 futures-util = { version = "0.3", default-features = false, features = ["async-await", "sink", "std"], optional = true }
 tokio-stream = { version = "0.1", default-features = false, optional = true }
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.31", optional = true, default-features = false, features = ["user"] }
+
+[dev-dependencies]
+tempfile = "3.23"
+tokio = { version = "1.48", features = ["rt-multi-thread", "macros", "net", "time"] }
+tokio-tungstenite = "0.29"
+futures-util = { version = "0.3", default-features = false, features = ["async-await", "sink", "std"] }
 
 [lints]
 workspace = true

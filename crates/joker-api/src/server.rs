@@ -4,7 +4,6 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use axum::Router;
 use axum::body::{Body, Bytes};
 use axum::extract::connect_info::{ConnectInfo, Connected};
 use axum::extract::{Path as UrlPath, RawQuery, State};
@@ -12,6 +11,7 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::serve::IncomingStream;
+use axum::{Extension, Router};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use tokio::net::UnixListener;
@@ -48,6 +48,57 @@ pub(crate) fn principal(peer: Peer) -> Principal {
         transport: "unix",
         uid: peer.uid,
     }
+}
+
+/// The roles of ref/09 §2.3, lowest first.
+pub const ROLES: [&str; 3] = ["viewer", "operator", "admin"];
+
+/// The rank of `role` in [`ROLES`]; an unknown role ranks below `viewer`.
+pub fn role_rank(role: &str) -> Option<usize> {
+    ROLES.iter().position(|r| *r == role)
+}
+
+/// The role of a principal (ref/09 §2.3, ADR 0063): on the socket, uid 0,
+/// the `joker` user and the user `jokerd` runs as are `admin`; members of
+/// `joker-admin` are `admin` and of `joker-ops` `operator` (the default
+/// rules of ref/01 §5.20); anyone else is `viewer`.
+pub fn role_of(who: &Principal) -> &'static str {
+    match who.uid {
+        Some(uid) => socket_role(uid),
+        None => "viewer",
+    }
+}
+
+#[cfg(unix)]
+fn socket_role(uid: u32) -> &'static str {
+    use nix::unistd::{Group, Uid, User, geteuid};
+    if uid == 0 || uid == geteuid().as_raw() {
+        return "admin";
+    }
+    let Ok(Some(user)) = User::from_uid(Uid::from_raw(uid)) else {
+        return "viewer";
+    };
+    if user.name == "joker" {
+        return "admin";
+    }
+    let member = |group: &str| {
+        Group::from_name(group)
+            .ok()
+            .flatten()
+            .is_some_and(|g| g.gid == user.gid || g.mem.contains(&user.name))
+    };
+    if member("joker-admin") {
+        "admin"
+    } else if member("joker-ops") {
+        "operator"
+    } else {
+        "viewer"
+    }
+}
+
+#[cfg(not(unix))]
+fn socket_role(_uid: u32) -> &'static str {
+    "viewer"
 }
 
 #[cfg(unix)]
@@ -234,8 +285,15 @@ async fn status(State(b): State<Shared>, RawQuery(raw): RawQuery) -> Response {
     }
 }
 
-async fn metrics(State(b): State<Shared>) -> Response {
-    run(b, |b| b.metrics()).await
+async fn metrics(State(b): State<Shared>, Extension(engine): Extension<ws::Engine>) -> Response {
+    let stats = Arc::clone(&engine.stats);
+    run(b, move |b| {
+        b.metrics().map(|mut r| {
+            r.body = ws::with_api(r.body, &stats);
+            r
+        })
+    })
+    .await
 }
 
 async fn signal(State(b): State<Shared>, UrlPath(path): UrlPath<String>) -> Response {
@@ -456,6 +514,16 @@ async fn not_found(State(b): State<Shared>) -> Response {
 
 /// The router of the M0 subset.
 pub fn router(backend: Arc<dyn Backend>) -> Router {
+    router_with(backend, ws::Limits::default())
+}
+
+/// The router with the given subscription limits instead of those of ref/09
+/// (tests use short ones).
+pub fn router_with(backend: Arc<dyn Backend>, limits: ws::Limits) -> Router {
+    let engine = ws::Engine {
+        limits,
+        stats: Arc::default(),
+    };
     Router::new()
         .route("/v1/info", get(info))
         .route("/v1/health", get(health))
@@ -487,6 +555,7 @@ pub fn router(backend: Arc<dyn Backend>) -> Router {
         .route("/v1/ws", get(ws::ws_handler))
         .route("/v1/stream", get(ws::sse_handler))
         .fallback(not_found)
+        .layer(Extension(engine))
         .with_state(backend)
 }
 
@@ -528,7 +597,17 @@ pub async fn serve_listener(
     backend: Arc<dyn Backend>,
     shutdown: impl std::future::Future<Output = ()> + Send + 'static,
 ) -> std::io::Result<()> {
-    let app = router(backend).into_make_service_with_connect_info::<Peer>();
+    serve_router(listener, router(backend), shutdown).await
+}
+
+/// Serves `app`, a router from [`router`] or [`router_with`], on a socket
+/// bound by [`bind_unix`] until `shutdown` resolves.
+pub async fn serve_router(
+    listener: UnixListener,
+    app: Router,
+    shutdown: impl std::future::Future<Output = ()> + Send + 'static,
+) -> std::io::Result<()> {
+    let app = app.into_make_service_with_connect_info::<Peer>();
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown)
         .await

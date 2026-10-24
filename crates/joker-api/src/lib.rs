@@ -7,7 +7,7 @@ pub mod problem;
 #[cfg(feature = "server")]
 pub mod server;
 #[cfg(feature = "server")]
-mod ws;
+pub mod ws;
 
 pub use backend::{Backend, Headers, Principal, Query, Reply};
 pub use problem::Problem;
