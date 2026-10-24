@@ -7330,8 +7330,16 @@ components:
           description: signal_trace - ticks without changes or coalesced
           type: integer
         subs:
+          description: resumed - one entry per requested subscription, in the order of the request (ADR 0074)
           type: array
-          items: {type: object}
+          items:
+            type: object
+            required: [sub, result]
+            properties:
+              sub: {type: string}
+              result:
+                type: string
+                enum: [replayed, resync, unknown]
         ts: {$ref: '#/components/schemas/Timestamp'}
         code:
           description: closing - WebSocket close code
