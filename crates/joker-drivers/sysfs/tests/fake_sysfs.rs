@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use joker_core::ValueType;
-use joker_driver_sysfs::{SysfsDriver, SysfsPlanner, grants};
+use joker_driver_sysfs::{SysfsDriver, SysfsPlanner, grants, grants_with};
 use joker_hal::acquire::OwnedRaw;
 use joker_hal::cbor::Value;
 use joker_hal::link::DevicePaths;
@@ -292,4 +292,108 @@ fn a_full_sample_ring_counts_every_dropped_sample() {
     let points = plan.view().batch(0).unwrap().points.len() as u64;
     assert_eq!(u64::from(bench.read_into_full_ring(0).unwrap()), points);
     assert!(bench.counters().contains(&("dropped_samples", points)));
+}
+
+#[test]
+fn steps_read_and_write_leds_and_zones_by_address() {
+    use joker_hal::cbor::Cbor;
+    use joker_hal::interpreter::{Failure, NoArgs, Scalar};
+    use joker_hal::steps::{Step, StepValue};
+    use joker_hal::{BatchFailure, RawValue};
+
+    let sys = FakeSys::new();
+    let pwr = sys.0.join("class/leds/PWR");
+    fs::create_dir_all(&pwr).unwrap();
+    fs::write(pwr.join("brightness"), "0\n").unwrap();
+    fs::write(pwr.join("max_brightness"), "1\n").unwrap();
+    let req = request();
+    let views = req.views();
+    let plan = SysfsPlanner::plan(&views.request()).unwrap();
+    let led = addr("led", "ACT");
+    let other = addr("led", "PWR");
+    let zone = addr("thermal", "thermal_zone0");
+    let dirs = grants_with(&views.request(), &[Cbor::new(&other)]);
+    assert_eq!(
+        dirs,
+        [
+            "class/leds/ACT",
+            "class/leds/PWR",
+            "class/thermal/thermal_zone0"
+        ]
+    );
+    let granted: Vec<&str> = dirs.iter().map(String::as_str).collect();
+    let link = Link::Paths(DevicePaths::new(&sys.0, &granted));
+    let host = Arc::new(VirtualHost::new(0));
+    let mut bench: Bench<'_, SysfsDriver> =
+        Bench::open(host, views.request(), plan.view(), link).unwrap();
+    bench.connect().unwrap();
+
+    let program = [
+        Step::Write {
+            addr: Cbor::new(&led),
+            type_name: "u16",
+            value: StepValue::Literal(RawValue::Uint(128)),
+        },
+        Step::Read {
+            addr: Cbor::new(&led),
+            type_name: "u16",
+            into: "level",
+        },
+        Step::Write {
+            addr: Cbor::new(&other),
+            type_name: "bool",
+            value: StepValue::Literal(RawValue::Bool(true)),
+        },
+        Step::Until {
+            addr: Cbor::new(&other),
+            type_name: "bool",
+            equals: RawValue::Bool(true),
+            timeout: joker_units::Duration::from_millis(100),
+        },
+        Step::Read {
+            addr: Cbor::new(&zone),
+            type_name: "f64",
+            into: "temp",
+        },
+    ];
+    let read = bench.steps(&program, &NoArgs, 2 * S).unwrap().unwrap();
+    let values: Vec<_> = read.iter().map(|(k, r)| (*k, r.value)).collect();
+    assert_eq!(
+        values,
+        [
+            ("level", Scalar::Uint(128)),
+            ("temp", Scalar::Float(48.312))
+        ]
+    );
+    assert_eq!(sys.read("class/leds/ACT/brightness"), "128");
+    assert_eq!(sys.read("class/leds/PWR/brightness"), "1");
+
+    let too_bright = [Step::Write {
+        addr: Cbor::new(&led),
+        type_name: "u16",
+        value: StepValue::Literal(RawValue::Uint(256)),
+    }];
+    assert!(matches!(
+        bench.steps(&too_bright, &NoArgs, 2 * S).unwrap(),
+        Err(Failure::Device(BatchFailure::ConfigError(_)))
+    ));
+    let to_zone = [Step::Write {
+        addr: Cbor::new(&zone),
+        type_name: "f64",
+        value: StepValue::Literal(RawValue::Float(1.0)),
+    }];
+    assert!(matches!(
+        bench.steps(&to_zone, &NoArgs, 2 * S).unwrap(),
+        Err(Failure::Device(BatchFailure::ConfigError(_)))
+    ));
+    let ungranted = addr("led", "OTHER");
+    let read_ungranted = [Step::Read {
+        addr: Cbor::new(&ungranted),
+        type_name: "bool",
+        into: "x",
+    }];
+    assert!(matches!(
+        bench.steps(&read_ungranted, &NoArgs, 2 * S).unwrap(),
+        Err(Failure::Device(BatchFailure::ConfigError(_)))
+    ));
 }

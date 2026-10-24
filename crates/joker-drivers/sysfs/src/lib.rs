@@ -9,10 +9,11 @@ use joker_hal::link::DevicePaths;
 use joker_hal::plan::Plan;
 use joker_hal::types::{Diagnostic, J0809, J0853};
 use joker_hal::{
-    BatchFailure, BatchKind, BusKind, Capabilities, Capability, Cbor, CommittedWrite, ConnectOut,
-    Cx, Descriptor, Direction, Driver, DriverError, HealthOut, InstanceMode, Link, LinkState,
-    OpenArgs, PlanRequest, Planner, PointId, PointSpec, Poll, RawKind, RawSample, RawSink,
-    RawStatus, RawValue, ReadBatch, Reason, Tier, WriteAcks, WriteKind, WriteStatus,
+    AddrRead, AddrWrite, BatchFailure, BatchKind, BusKind, Capabilities, Capability, Cbor,
+    CommittedWrite, ConnectOut, Cx, Descriptor, Direction, Driver, DriverError, HealthOut,
+    InstanceMode, Link, LinkState, OpenArgs, PlanRequest, Planner, PointId, PointSpec, Poll,
+    RawKind, RawSample, RawSink, RawStatus, RawValue, ReadBatch, Reason, Tier, WriteAcks,
+    WriteKind, WriteStatus,
 };
 
 /// The descriptor of `sysfs`.
@@ -23,7 +24,7 @@ pub const DESCRIPTOR: Descriptor = Descriptor {
     protocols: &["sysfs"],
     buses: &[BusKind::None],
     instance: InstanceMode::Device,
-    capabilities: Capabilities::of(&[Capability::Write]),
+    capabilities: Capabilities::of(&[Capability::Write, Capability::RawAccess]),
     interface: INTERFACE,
     micro: false,
     license: "Apache-2.0 OR MIT",
@@ -89,10 +90,18 @@ impl Address {
 
 /// The directories to grant for `request`, for the host's [`DevicePaths`].
 pub fn grants(request: &PlanRequest<'_>) -> Vec<String> {
+    grants_with(request, &[])
+}
+
+/// The directories to grant for `request` and for the addresses `steps`
+/// of its action steps reach (ADR 0073), for the host's [`DevicePaths`].
+pub fn grants_with(request: &PlanRequest<'_>, steps: &[Cbor<'_>]) -> Vec<String> {
     let mut dirs: Vec<String> = request
         .points
         .iter()
-        .filter_map(|p| Address::parse(p.addr).ok().map(|a| a.dir()))
+        .map(|p| p.addr)
+        .chain(steps.iter().copied())
+        .filter_map(|addr| Address::parse(addr).ok().map(|a| a.dir()))
         .collect();
     dirs.sort();
     dirs.dedup();
@@ -215,6 +224,16 @@ fn read_number(paths: &DevicePaths, file: &str) -> Result<i64, std::io::Error> {
     text.trim()
         .parse()
         .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "not a number"))
+}
+
+fn io_failure(e: &std::io::Error) -> BatchFailure {
+    match e.kind() {
+        std::io::ErrorKind::NotFound | std::io::ErrorKind::PermissionDenied => {
+            BatchFailure::ConfigError("the file is missing or not granted")
+        }
+        std::io::ErrorKind::InvalidData => BatchFailure::DeviceFault("not a number"),
+        _ => BatchFailure::CommFailure("the file could not be read or written"),
+    }
 }
 
 fn io_status(e: &std::io::Error) -> RawStatus {
@@ -416,6 +435,85 @@ impl Driver for SysfsDriver {
         }
     }
 
+    async fn read_addr(
+        &mut self,
+        cx: &mut Cx<'_>,
+        req: &AddrRead<'_>,
+        out: &mut RawSink<'_>,
+    ) -> Result<(), BatchFailure> {
+        let addr = Address::parse(req.addr).map_err(BatchFailure::ConfigError)?;
+        let value = match &addr {
+            Address::Led(_) => {
+                let b = read_number(&self.paths, &std::format!("{}/brightness", addr.dir()))
+                    .map_err(|e| self.failed(&e))?;
+                match req.expect {
+                    RawKind::Bool => RawValue::Bool(b > 0),
+                    RawKind::Int => RawValue::Int(b),
+                    RawKind::Uint => RawValue::Uint(u64::try_from(b).unwrap_or(0)),
+                    _ => RawValue::Float(b as f64),
+                }
+            }
+            Address::Thermal(_) => {
+                let m = read_number(&self.paths, &std::format!("{}/temp", addr.dir()))
+                    .map_err(|e| self.failed(&e))?;
+                RawValue::Float(m as f64 / 1000.0)
+            }
+        };
+        let sample = RawSample {
+            ts_hw: Some(cx.now().mono_ns),
+            ..RawSample::good(0, value)
+        };
+        if out.push(sample).is_err() {
+            self.dropped_samples += 1;
+        }
+        Ok(())
+    }
+
+    async fn write_addr(
+        &mut self,
+        _cx: &mut Cx<'_>,
+        req: &AddrWrite<'_>,
+    ) -> Result<(), BatchFailure> {
+        let addr = Address::parse(req.addr).map_err(BatchFailure::ConfigError)?;
+        if let Address::Thermal(_) = addr {
+            return Err(BatchFailure::ConfigError("a thermal zone is read only"));
+        }
+        let dir = addr.dir();
+        let max = read_number(&self.paths, &std::format!("{dir}/max_brightness"))
+            .map_err(|e| self.failed(&e))?;
+        let level = match req.value {
+            RawValue::Bool(on) => {
+                if on {
+                    max
+                } else {
+                    0
+                }
+            }
+            RawValue::Uint(u) => i64::try_from(u).unwrap_or(i64::MAX),
+            RawValue::Int(i) => i,
+            _ => {
+                return Err(BatchFailure::ConfigError(
+                    "a LED takes a bool or a brightness",
+                ));
+            }
+        };
+        if !(0..=max).contains(&level) {
+            return Err(BatchFailure::ConfigError(
+                "the brightness is outside 0..max_brightness",
+            ));
+        }
+        self.paths
+            .write(&std::format!("{dir}/brightness"), &std::format!("{level}"))
+            .map_err(|e| self.failed(&e))?;
+        match read_number(&self.paths, &std::format!("{dir}/brightness")) {
+            Ok(b) if b == level => Ok(()),
+            Ok(_) => Err(BatchFailure::DeviceFault(
+                "the LED did not take the brightness",
+            )),
+            Err(e) => Err(self.failed(&e)),
+        }
+    }
+
     fn health(&self, out: &mut HealthOut<'_>) {
         out.counter("errors", self.errors);
         out.counter("dropped_samples", self.dropped_samples);
@@ -435,6 +533,11 @@ impl Driver for SysfsDriver {
 }
 
 impl SysfsDriver {
+    fn failed(&mut self, e: &std::io::Error) -> BatchFailure {
+        self.errors += 1;
+        io_failure(e)
+    }
+
     /// The point of LED `name`, if this instance drives it.
     pub fn led_point(&self, name: &str) -> Option<PointId> {
         let dir = Address::Led(String::from(name)).dir();
