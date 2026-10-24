@@ -5,6 +5,7 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use crate::clock::{ClockMonitor, ClockPolicy};
 use crate::control::{Config, Controller};
 use crate::decisions::DecisionLog;
 use crate::devices::{Combined, Devices, SimDevices};
@@ -113,19 +114,22 @@ pub fn controller(
     devices: Arc<dyn Devices>,
     clock: Monotonic,
     utc_origin_ns: i64,
+    quality: Arc<ClockMonitor>,
 ) -> Result<Controller, String> {
     let log = DecisionLog::open(&options.state_dir.join("decisions.jsonl"))
         .map_err(|e| format!("decision log: {e}"))?;
     let log = Arc::new(Mutex::new(log));
-    let quality = SystemPacer::host_clock_quality();
+    quality.refresh(ClockPolicy::default(), crate::wire::utc_now_ns());
+    let cell = quality.cell();
     let mut c = Controller::new(
         &options.state_dir,
         log,
         tasks,
         devices,
-        Box::new(move || Box::new(SystemPacer::new(clock, quality))),
+        Box::new(move || Box::new(SystemPacer::tracking(clock, Arc::clone(&cell)))),
         Config {
             utc_origin_ns,
+            clock: quality,
             ..Config::default()
         },
     )
@@ -169,6 +173,10 @@ pub fn bind_then_ready(
     Ok(listener)
 }
 
+/// How many service-loop polls (100 ms each) pass between two
+/// re-evaluations of the clock quality (ADR 0069): once a second.
+pub const CLOCK_REFRESH_POLLS: u32 = 10;
+
 /// Runs the daemon until a termination signal.
 pub fn run(options: Options, tasks: Arc<dyn TaskProvider>) -> Result<(), String> {
     std::fs::create_dir_all(&options.state_dir)
@@ -177,6 +185,7 @@ pub fn run(options: Options, tasks: Arc<dyn TaskProvider>) -> Result<(), String>
         eprintln!("warning: {e}; the cycle thread may page");
     }
     let clock = Monotonic::start();
+    let quality = Arc::new(ClockMonitor::default());
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .thread_name("io")
         .enable_all()
@@ -188,7 +197,7 @@ pub fn run(options: Options, tasks: Arc<dyn TaskProvider>) -> Result<(), String>
             clock,
             std::time::Duration::from_millis(10),
         ),
-        RealDevices::new(runtime.handle().clone()),
+        RealDevices::new(runtime.handle().clone()).with_clock(quality.cell()),
     ));
     let utc_origin_ns = crate::wire::utc_now_ns().saturating_sub(clock.now_ns() as i64);
     let controller: SharedController = Arc::new(Mutex::new(controller(
@@ -197,6 +206,7 @@ pub fn run(options: Options, tasks: Arc<dyn TaskProvider>) -> Result<(), String>
         devices,
         clock,
         utc_origin_ns,
+        quality,
     )?));
     let node = crate::api::Node::new(
         Arc::clone(&controller),
@@ -227,13 +237,23 @@ pub fn run(options: Options, tasks: Arc<dyn TaskProvider>) -> Result<(), String>
         let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
             .map_err(|e| format!("signal: {e}"))?;
         let mut poll = tokio::time::interval(std::time::Duration::from_millis(100));
+        let mut polls: u32 = 0;
         loop {
             tokio::select! {
                 _ = term.recv() => break,
                 _ = tokio::signal::ctrl_c() => break,
                 _ = poll.tick() => {
                     let timer = Arc::clone(&timer);
-                    let result = tokio::task::spawn_blocking(move || lock_controller(&timer).poll()).await;
+                    polls = polls.wrapping_add(1);
+                    let refresh = polls.is_multiple_of(CLOCK_REFRESH_POLLS);
+                    let result = tokio::task::spawn_blocking(move || {
+                        let mut c = lock_controller(&timer);
+                        if refresh {
+                            c.refresh_clock();
+                        }
+                        c.poll()
+                    })
+                    .await;
                     if let Ok(Err(e)) = result {
                         eprintln!("jokerd: {e}");
                     }
