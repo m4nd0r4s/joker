@@ -905,15 +905,19 @@ async fn traces_are_cut_from_the_ring() {
     assert_eq!(unsupported.json()["code"], "J-E1017");
 }
 
+/// The fixture's only device is `sim`, which declares no actions.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_action_catalog_follows_the_contract() {
     let f = start().await;
     let catalog = f.call("GET", "/v1/actions", "/v1/actions", None).await;
     assert_eq!(catalog.status, 200, "{}", catalog.json());
-    // The fixture's only device is `sim`, which declares no actions.
     assert_eq!(catalog.json()["items"].as_array().unwrap().len(), 0);
 }
 
+/// An out-of-range manual write trips the output (`on_range = "trip"`).
+/// While that write still holds, a reset clears the trip for a tick but
+/// the same condition re-trips it (docs/16 E7); once the write is
+/// released, a reset clears it. A reset without a reason is refused.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn resetting_a_trip_follows_the_contract() {
     let f = start_with(&effective_with_trippable_output()).await;
@@ -929,7 +933,6 @@ async fn resetting_a_trip_follows_the_contract() {
     assert_eq!(not_tripped.status, 409, "{}", not_tripped.json());
     assert_eq!(not_tripped.json()["code"], "J-E1120");
 
-    // An out-of-range manual write trips it (on_range = "trip").
     let write = f
         .call(
             "POST",
@@ -941,8 +944,6 @@ async fn resetting_a_trip_follows_the_contract() {
     assert_eq!(write.status, 200, "{}", write.json());
     assert_eq!(write.json()["outcome"]["outcome"], "tripped");
 
-    // Still held by the same out-of-range write: reset clears the trip
-    // for a tick, but the same condition re-trips it (docs/16 E7).
     let retripped = f
         .call(
             "POST",
@@ -954,7 +955,6 @@ async fn resetting_a_trip_follows_the_contract() {
     assert_eq!(retripped.status, 200, "{}", retripped.json());
     assert_eq!(retripped.json()["result"], "retripped");
 
-    // Release the bad write, then reset again: this time it clears.
     let released = f
         .call(
             "POST",
@@ -975,7 +975,6 @@ async fn resetting_a_trip_follows_the_contract() {
     assert_eq!(cleared.status, 200, "{}", cleared.json());
     assert_eq!(cleared.json()["result"], "cleared");
 
-    // A reason is mandatory.
     let no_reason = f
         .call(
             "POST",
