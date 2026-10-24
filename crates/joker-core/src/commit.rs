@@ -1179,9 +1179,10 @@ fn facts(config: &OutputConfig<'_>, inputs: &dyn Inputs, now: u64, arena: &mut [
     let range = match config.range_exprs {
         None => config.range,
         Some((lo, hi)) => {
-            let bound = |b: Bound<'_>, value| match b {
+            let bound = |b: Bound<'_>, value: Option<f64>| match b {
                 Bound::Const(c) => Some(c),
                 Bound::Expr(_) => value,
+                Bound::Converted(_, conversion) => value.map(|v| conversion.apply(v)),
             };
             match (bound(lo, usable(low)), bound(hi, usable(high))) {
                 (Some(l), Some(h)) if l <= h => Some((l, h)),

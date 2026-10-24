@@ -105,6 +105,29 @@ fn requires_good_without_grace_fails_at_once() {
 }
 
 #[test]
+fn a_converted_range_limit_is_applied_in_the_outputs_unit() {
+    let mut h = Harness::new(vec![app("optimizer:13", 5_000)], |c| {
+        c.rate = None;
+        c.range = None;
+        c.range_exprs = Some((
+            Bound::Const(-100.0),
+            Bound::Converted(
+                program("if x.f > 50 Hz then 10000 else 20000"),
+                joker_units::Conversion {
+                    scale: 0.001,
+                    offset: 0.0,
+                },
+            ),
+        ));
+    });
+    h.set_input(49.0, Quality::GOOD, 0);
+    assert_eq!(
+        summary(&h.tick(0, &[(0, 50.0, true)])),
+        (Outcome::ClampedRange, kw(20.0), Some(13))
+    );
+}
+
+#[test]
 fn expression_range_limits_follow_their_inputs() {
     let mut h = Harness::new(vec![app("optimizer:13", 5_000)], |c| {
         c.rate = None;

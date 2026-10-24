@@ -4,6 +4,7 @@
 use core::fmt;
 
 use joker_expr::Program;
+use joker_units::Conversion;
 
 use crate::image::WriterId;
 use crate::registry::{GroupId, SignalId};
@@ -264,6 +265,11 @@ pub enum Bound<'a> {
     Const(f64),
     /// An expression evaluated in every tick, in the output's unit.
     Expr(&'a Program),
+    /// An expression evaluated in every tick whose result is in another
+    /// unit of the output's dimension, with the conversion into the
+    /// output's unit (ref/01 §3.7: a limit has the dimension of the
+    /// output, not necessarily its unit).
+    Converted(&'a Program, Conversion),
 }
 
 /// An actuation budget: at most `count` actuations in any `window_ns`
@@ -384,7 +390,7 @@ impl<'a> OutputConfig<'a> {
     /// (ADR 0038 §1): interlock, low limit, high limit, `reset_when`.
     pub fn programs(&self) -> [Option<&'a Program>; 4] {
         let bound = |b: Bound<'a>| match b {
-            Bound::Expr(p) => Some(p),
+            Bound::Expr(p) | Bound::Converted(p, _) => Some(p),
             Bound::Const(_) => None,
         };
         let (low, high) = match self.range_exprs {
