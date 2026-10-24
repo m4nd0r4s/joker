@@ -36,7 +36,7 @@ pub struct PlanError {
 }
 
 impl PlanError {
-    fn new(code: Option<&'static str>, message: impl Into<String>) -> Self {
+    pub(crate) fn new(code: Option<&'static str>, message: impl Into<String>) -> Self {
         Self {
             code,
             message: message.into(),
@@ -170,14 +170,17 @@ pub struct Plan {
     /// not know how to run for real stay here regardless: `Shared::new`
     /// and the device dispatcher decide what to do with each one.
     pub devices: Vec<crate::bridge::DevicePlan>,
-    /// Every device action's compiled `permit` expression, by `(device,
-    /// action)` name (ref/01 §5.8.2, AUR-416/AUR-417). Populated by
-    /// [`crate::load::load`] once this `Plan`'s own `ids` exist — not
-    /// here in [`Plan::new`], since compiling against [`PlanEnv`]
-    /// (`crate::expr_plan`) needs a finished registry to source ids
-    /// from. An action with no declared `permit` has no entry here, not
-    /// a trivially-true one; `Controller::invoke_action` treats a
-    /// missing entry as always permitted.
+    /// Every device action's declared `permit` source, by `(device,
+    /// action)` name (ref/01 §5.8.2). An action with no entry here
+    /// declared none and is always permitted; one with an entry is gated
+    /// by its compiled program in [`Plan::permits`], and denied when
+    /// that program is missing (ADR 0060).
+    pub permit_sources: BTreeMap<(String, String), String>,
+    /// Every declared `permit`, compiled against this plan's own signals
+    /// ([`PlanEnv`]) by [`Plan::new`] once the registry is finished. A
+    /// permit that does not compile fails [`Plan::new`] with the
+    /// expression's own code (ADR 0060), so after a successful plan every
+    /// key of [`Plan::permit_sources`] has a program here.
     ///
     /// [`PlanEnv`]: crate::expr_plan::PlanEnv
     pub permits: BTreeMap<(String, String), joker_expr::Program>,
@@ -487,6 +490,7 @@ impl Plan {
             ids: BTreeMap::new(),
             registry_hash: [0; 32],
             devices,
+            permit_sources: BTreeMap::new(),
             permits: BTreeMap::new(),
         };
         let (ids, hash) = {
@@ -512,6 +516,8 @@ impl Plan {
             g.ports.sort_by_key(|p| ids.get(p).copied());
             g.ports.dedup();
         }
+        plan.permit_sources = crate::bridge::permit_sources(manifest, &plan.devices);
+        plan.permits = crate::bridge::compile_permits(&plan)?;
         Ok(plan)
     }
 

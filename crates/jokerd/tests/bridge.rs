@@ -420,6 +420,53 @@ permit = "pcs.p_ac > 0 kW"
         let loaded = load(&OsFileSystem, &dir.path().join("joker.toml"), &NativeTasks)
             .unwrap_or_else(|e| panic!("{e}"));
         assert!(loaded.plan.permits.is_empty());
+        assert!(loaded.plan.permit_sources.is_empty());
+    }
+
+    const JOKER_TOML_WITH_PERMIT_ON_A_PARAM: &str = r#"
+[project]
+name  = "bridge-test"
+joker = "1.0"
+mode  = "dev"
+
+[buses.line0]
+kind = "serial"
+port = "/dev/ttyUSB0"
+baud = 9600
+
+[devices.pcs]
+driver  = "modbus-rtu"
+bus     = "line0"
+profile = "acme/pcs@1"
+timeout = "1s"
+unit_id = 1
+
+[devices.pcs.actions.reset_fault]
+permit = "pi.armed"
+
+[devices.pi]
+driver = "sim"
+
+[devices.pi.signals]
+armed = { type = "bool", direction = "param" }
+"#;
+
+    #[test]
+    fn a_permit_that_does_not_compile_against_the_plan_fails_the_load() {
+        let dir = project(&[
+            ("joker.toml", JOKER_TOML_WITH_PERMIT_ON_A_PARAM),
+            ("profiles/acme/pcs@1.profile.toml", PROFILE_WITH_ACTION_TOML),
+        ]);
+        let err = load(&OsFileSystem, &dir.path().join("joker.toml"), &NativeTasks)
+            .expect_err("a permit the plan cannot compile must not load (ADR 0060)");
+        let jokerd::load::LoadError::Plan(e) = err else {
+            panic!("expected a plan error, got {err}");
+        };
+        assert_eq!(e.code, Some("J0302"), "{e}");
+        assert!(
+            e.message.contains("devices.pcs.actions.reset_fault.permit"),
+            "{e}"
+        );
     }
 
     const GPIO_JOKER_TOML: &str = r#"

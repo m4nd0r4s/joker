@@ -482,7 +482,7 @@ fn dedup_window_override(device: &Device, action: &str) -> Option<u64> {
 /// (same raw-`Node` reasoning as [`dedup_window_override`]/[`role_of`]).
 /// Compiling it against a real `SignalId` space needs a finished
 /// `Plan`, which does not exist yet while this device is being built;
-/// see [`wire_permits`].
+/// see [`compile_permits`].
 fn permit_source_of(device: &Device, action: &str) -> Option<String> {
     device
         .actions
@@ -494,41 +494,53 @@ fn permit_source_of(device: &Device, action: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// Compiles every device action's declared `permit` against `plan`'s
-/// own signals (AUR-416/AUR-417) and fills `plan.permits`. Run once,
-/// after `Plan::new` has a finished registry (`plan.id()` resolves) —
-/// `device_plan`/`actions_of_profile` run too early for this, since
-/// they build the very `Plan` a compiled `Program` needs to read from.
-/// A `permit` that fails to compile (should not happen: the manifest
-/// already type-checked it) is skipped, not panicked on; the action
-/// then has no entry and `Controller::invoke_action` treats that the
-/// same as "no permit declared" — logged so it is not silently wrong.
-pub(crate) fn wire_permits(plan: &mut crate::plan::Plan, manifest: &Manifest) {
-    // No single cycle group owns an action's `permit`, so there is no
-    // natural window-sizing period for it (ADR 0034) — a representative
-    // default is used until AUR-417 settles this for real.
-    const DEFAULT_PERIOD: Duration = Duration::from_secs(1);
-    let mut compiled = BTreeMap::new();
-    for device_plan in &plan.devices {
+/// Every declared `permit` source of `devices`' actions, by `(device,
+/// action)` name, read from `manifest` (ref/01 §5.8.2).
+pub(crate) fn permit_sources(
+    manifest: &Manifest,
+    devices: &[DevicePlan],
+) -> BTreeMap<(String, String), String> {
+    let mut out = BTreeMap::new();
+    for device_plan in devices {
         let Some(device) = manifest.devices.get(&device_plan.name) else {
             continue;
         };
         for action in &device_plan.actions {
-            let Some(source) = permit_source_of(device, &action.name) else {
-                continue;
-            };
-            match crate::expr_plan::compile_bool(&source, plan, DEFAULT_PERIOD) {
-                Ok(program) => {
-                    compiled.insert((device_plan.name.clone(), action.name.clone()), program);
-                }
-                Err(e) => eprintln!(
-                    "warning: {}.{}: `permit` failed to compile ({e:?}); treated as not declared",
-                    device_plan.name, action.name
-                ),
+            if let Some(source) = permit_source_of(device, &action.name) {
+                out.insert((device_plan.name.clone(), action.name.clone()), source);
             }
         }
     }
-    plan.permits = compiled;
+    out
+}
+
+/// Compiles every source of `plan.permit_sources` against `plan`'s own
+/// signals (AUR-416/AUR-417). Run by `Plan::new` once its registry is
+/// finished (`plan.id()` resolves). A `permit` that does not compile
+/// fails the plan with the expression's own registry code (ADR 0060):
+/// the manifest's own check runs against a different path registry, and
+/// a permissive that cannot be evaluated is never treated as absent.
+pub(crate) fn compile_permits(
+    plan: &crate::plan::Plan,
+) -> Result<BTreeMap<(String, String), joker_expr::Program>, crate::plan::PlanError> {
+    /// No cycle group owns an action's `permit`, so its window-sizing
+    /// period (ADR 0034) is a representative one until AUR-417 settles it.
+    const DEFAULT_PERIOD: Duration = Duration::from_secs(1);
+    let mut compiled = BTreeMap::new();
+    for ((device, action), source) in &plan.permit_sources {
+        let program =
+            crate::expr_plan::compile_bool(source, plan, DEFAULT_PERIOD).map_err(|e| {
+                crate::plan::PlanError::new(
+                    Some(e.code()),
+                    format!(
+                        "devices.{device}.actions.{action}.permit: {} in `{source}`",
+                        e.kind
+                    ),
+                )
+            })?;
+        compiled.insert((device.clone(), action.clone()), program);
+    }
+    Ok(compiled)
 }
 
 fn point_from_raw(

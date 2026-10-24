@@ -633,9 +633,10 @@ impl Controller {
     /// used when declared, ref/09 §5.10's 60s default otherwise. The
     /// action's own declared `permit` (`Plan::permits`, AUR-416/
     /// AUR-417) is evaluated for real against live `Shared.slots`
-    /// values; an action with none declared is always permitted, and
-    /// an evaluation failure fails safe (not permitted), never silently
-    /// `true`. `$arg` substitution into a step's value is still a
+    /// values; an action with none declared is always permitted, while
+    /// a declared permit whose program is missing or fails to evaluate
+    /// denies the invocation and names the cause in its decision record
+    /// (ADR 0060), never silently `true`. `$arg` substitution into a step's value is still a
     /// flagged, separate gap (AUR-405).
     ///
     /// [`Dispatcher`]: crate::actions::Dispatcher
@@ -647,8 +648,8 @@ impl Controller {
         now_mono_ns: u64,
         writer: &str,
     ) -> Result<Invoked, ControlError> {
-        // ref/09 §5.10's own documented default when the manifest
-        // declares no `dedup_window` override.
+        /// ref/09 §5.10's own documented default when the manifest
+        /// declares no `dedup_window` override.
         const DEFAULT_DEDUP_WINDOW_NS: u64 = 60_000_000_000;
         let (generation, steps, dedup_window_ns, permitted, sender) = {
             let active = self
@@ -669,25 +670,21 @@ impl Controller {
                     format!("unknown action `{device}.{action}`"),
                 ));
             };
-            // No declared `permit` means always permitted (ref/01
-            // §5.8.2: `permit` is optional). Actions have no
-            // `permit_uncertain` override key (unlike an output's own
-            // `interlock`, docs/02 §4), so `Uncertain` quality always
-            // fails the permit, with no way to relax that.
-            let permitted = match active
-                .running
-                .plan
-                .permits
-                .get(&(device.to_owned(), action.to_owned()))
-            {
-                Some(program) => {
+            let plan = &active.running.plan;
+            let name = (device.to_owned(), action.to_owned());
+            let permitted = match (plan.permit_sources.get(&name), plan.permits.get(&name)) {
+                (_, Some(program)) => {
                     match crate::expr_plan::eval_bool(program, &active.running.shared, now_mono_ns)
                     {
-                        Ok(output) => output.permits(false),
-                        Err(_) => false,
+                        Ok(output) if output.permits(false) => Ok(()),
+                        Ok(_) => Err(None),
+                        Err(e) => Err(Some(format!("the permit could not be evaluated: {e:?}"))),
                     }
                 }
-                None => true,
+                (Some(_), None) => Err(Some(
+                    "the declared permit has no compiled program".to_owned(),
+                )),
+                (None, None) => Ok(()),
             };
             (
                 active.running.generation,
@@ -697,14 +694,20 @@ impl Controller {
                 active.devices.action_sender(device),
             )
         };
+        let allowed = permitted.is_ok();
+        let denial = permitted.err().flatten();
         let decision =
             self.actions
-                .begin(device, action, key, now_mono_ns, dedup_window_ns, permitted);
+                .begin(device, action, key, now_mono_ns, dedup_window_ns, allowed);
         match decision {
             crate::actions::Decision::Rejected(r) => {
                 let tag = match r {
                     crate::actions::Rejected::Busy => "rejected_busy",
                     crate::actions::Rejected::NotPermitted => "rejected_not_permitted",
+                };
+                let failure = match r {
+                    crate::actions::Rejected::NotPermitted => denial.as_deref(),
+                    crate::actions::Rejected::Busy => None,
                 };
                 self.log_action(
                     generation,
@@ -714,7 +717,7 @@ impl Controller {
                     now_mono_ns,
                     writer,
                     tag,
-                    None,
+                    failure,
                 );
                 Ok(Invoked::Rejected(r))
             }
@@ -1078,6 +1081,39 @@ mod action_tests {
         assert_eq!(
             result,
             Invoked::Rejected(crate::actions::Rejected::NotPermitted)
+        );
+    }
+
+    #[test]
+    fn a_declared_permit_without_a_compiled_program_denies_and_logs_why() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut c = controller_with_action(dir.path());
+        let active = c.active.as_mut().unwrap();
+        let mut plan = (*active.running.plan).clone();
+        plan.permit_sources.insert(
+            ("pcs".to_owned(), "reset_fault".to_owned()),
+            "pi.act_led".to_owned(),
+        );
+        active.running.plan = Arc::new(plan);
+
+        let result = c
+            .invoke_action("pcs", "reset_fault", "k1", 0, "user:test")
+            .unwrap();
+        assert_eq!(
+            result,
+            Invoked::Rejected(crate::actions::Rejected::NotPermitted)
+        );
+        let entries =
+            DecisionLog::read_all(&dir.path().join("decisions.jsonl")).unwrap_or_default();
+        let action_entries: Vec<_> = entries.iter().filter(|e| e["record"] == "action").collect();
+        assert_eq!(action_entries.len(), 1);
+        assert_eq!(action_entries[0]["outcome"], "rejected_not_permitted");
+        assert!(
+            action_entries[0]["failure"]
+                .as_str()
+                .is_some_and(|f| f.contains("no compiled program")),
+            "{}",
+            action_entries[0]
         );
     }
 
