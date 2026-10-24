@@ -215,3 +215,105 @@ fn the_dispatched_device_has_a_real_action_channel_and_an_undeclared_name_does_n
     set.stop();
     runtime.shutdown_timeout(Duration::from_secs(1));
 }
+
+fn tcp_config(address: &str) -> Vec<u8> {
+    joker_hal::cbor::Value::map([("address", joker_hal::cbor::Value::text(address))]).encode()
+}
+
+#[test]
+fn a_modbus_tcp_address_is_host_and_port_with_502_by_default() {
+    use jokerd::real_devices::modbus_tcp_address;
+    let parse = |a: &str| modbus_tcp_address(&tcp_config(a));
+    assert_eq!(parse("192.168.10.20:502").unwrap(), "192.168.10.20:502");
+    assert_eq!(parse("192.168.10.20").unwrap(), "192.168.10.20:502");
+    assert_eq!(
+        parse("meter.plant.local:1502").unwrap(),
+        "meter.plant.local:1502"
+    );
+    assert_eq!(parse("esp32").unwrap(), "esp32:502");
+    assert_eq!(parse("[fd00::7]:503").unwrap(), "[fd00::7]:503");
+    assert_eq!(parse("[fd00::7]").unwrap(), "[fd00::7]:502");
+    assert_eq!(parse("fd00::7").unwrap(), "[fd00::7]:502");
+    assert!(parse(":502").is_err());
+    assert!(parse("host:0").is_err());
+    assert!(parse("host:70000").is_err());
+    assert!(parse("[fd00::7").is_err());
+    assert!(
+        modbus_tcp_address(&[0xa0]).is_err(),
+        "`address` is required"
+    );
+}
+
+fn modbus_tcp_toml(device_keys: &str) -> String {
+    format!(
+        r#"
+[project]
+name  = "modbus-tcp-test"
+joker = "1.0"
+mode  = "dev"
+
+[outputs."esp.led"]
+safe = false
+
+[devices.esp]
+driver  = "modbus-tcp"
+profile = "local/bench-esp32@1"
+unit_id = 1
+{device_keys}
+"#
+    )
+}
+
+#[test]
+fn modbus_tcp_takes_the_address_key_of_ref01_and_not_host_and_port() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("joker.toml");
+    std::fs::write(&path, modbus_tcp_toml(r#"address = "192.168.1.57:502""#)).unwrap();
+    let loaded = load(&OsFileSystem, &path, &NativeTasks).unwrap_or_else(|e| panic!("{e}"));
+    assert!(!loaded.report.has_errors(), "{}", loaded.report.render());
+
+    std::fs::write(
+        &path,
+        modbus_tcp_toml("host = \"192.168.1.57\"\nport = 502"),
+    )
+    .unwrap();
+    let refused = match load(&OsFileSystem, &path, &NativeTasks) {
+        Ok(loaded) => loaded.report.render(),
+        Err(e) => e.to_string(),
+    };
+    assert!(refused.contains("J0140"), "{refused}");
+}
+
+#[test]
+fn a_modbus_tcp_device_connects_to_a_host_name() {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let listener = runtime
+        .block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))
+        .unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("joker.toml");
+    std::fs::write(
+        &path,
+        modbus_tcp_toml(&format!("address = \"localhost:{port}\"")),
+    )
+    .unwrap();
+    let loaded = load(&OsFileSystem, &path, &NativeTasks).unwrap_or_else(|e| panic!("{e}"));
+    assert!(!loaded.report.has_errors(), "{}", loaded.report.render());
+    let plan = Arc::new(loaded.plan);
+    let shared = Arc::new(Shared::new(&plan));
+    let set = RealDevices::new(runtime.handle().clone()).start(&plan, &shared);
+
+    let accepted = runtime.block_on(async {
+        tokio::time::timeout(Duration::from_secs(2), listener.accept())
+            .await
+            .is_ok_and(|r| r.is_ok())
+    });
+    assert!(accepted, "the device connected to localhost:{port}");
+
+    set.stop();
+    runtime.shutdown_timeout(Duration::from_secs(1));
+}

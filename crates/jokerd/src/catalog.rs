@@ -1,9 +1,11 @@
 //! The drivers, profiles and boards the daemon knows, as the manifest
 //! checks see them (`Context`, ref/01 §8.1).
 //!
-//! This is the M0 catalogue: `sim`, `sysfs` and `modbus-rtu`, the bench
-//! profile `local/bench-esp32@1` and the bench boards (docs/26 §6, docs/23
-//! §1). The driver crates will
+//! This is the M0 catalogue: `sim`, `sysfs`, `modbus-rtu`, `modbus-tcp`
+//! (device keys of ref/01 appendix A: `address = "<host>:<port>"` and
+//! `unit_id`; a TCP device without a shared bus needs no `bus`, ADR 0049),
+//! `gpio` and `i2c`, the bench profile `local/bench-esp32@1` and the bench
+//! boards (docs/26 §6, docs/23 §1). The driver crates will
 //! describe themselves once `joker-hal` lands; this module then only merges
 //! their descriptions.
 
@@ -64,11 +66,7 @@ pub fn drivers() -> BTreeMap<String, DriverInfo> {
             buses: vec![BusKind::Ethernet],
             bus_required: false,
             profile_required: true,
-            // ADR 0049: a TCP device without a shared bus is not budgeted
-            // and needs no declared bus; `host`/`port` give the endpoint
-            // directly (no appendix A to confirm against; `port` default
-            // 502 per ref/03 §2.2.20's URI table).
-            config: ["unit_id".to_owned(), "host".to_owned(), "port".to_owned()]
+            config: ["unit_id".to_owned(), "address".to_owned()]
                 .into_iter()
                 .collect(),
             ..DriverInfo::default()
@@ -343,7 +341,6 @@ mod tests {
         .unwrap();
         let (context, errors) = context_for_project(&crate::native::NativeTasks, dir.path());
         assert!(errors.is_empty(), "{errors:?}");
-        // The scanned profile is there, alongside the M0 bench one.
         assert!(context.profiles.contains_key("acme/pcs@1"));
         assert!(context.profiles.contains_key("local/bench-esp32@1"));
     }
