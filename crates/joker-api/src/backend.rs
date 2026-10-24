@@ -30,6 +30,8 @@ pub struct Reply {
     pub body: Value,
     /// An `ETag`, when the resource has one.
     pub etag: Option<String>,
+    /// Further headers (`Location`, `Joker-Idempotent-Replay`).
+    pub headers: Vec<(&'static str, String)>,
 }
 
 impl Reply {
@@ -39,6 +41,7 @@ impl Reply {
             status: 200,
             body,
             etag: None,
+            headers: Vec::new(),
         }
     }
 
@@ -48,7 +51,14 @@ impl Reply {
             status,
             body,
             etag: None,
+            headers: Vec::new(),
         }
+    }
+
+    /// This reply with the header `name: value`.
+    pub fn with_header(mut self, name: &'static str, value: impl Into<String>) -> Self {
+        self.headers.push((name, value.into()));
+        self
     }
 }
 
@@ -71,6 +81,11 @@ pub type Query = Vec<(String, String)>;
 pub trait Backend: Send + Sync + 'static {
     /// Headers of every response.
     fn headers(&self) -> Headers;
+    /// The `[security.roles]` of the running generation, for the role of
+    /// each caller (ref/09 §2.3, ADR 0066); the defaults without one.
+    fn socket_roles(&self) -> crate::server::SocketRoles {
+        crate::server::SocketRoles::default()
+    }
     /// `GET /v1/info`.
     fn info(&self, who: &Principal) -> Result<Reply>;
     /// `GET /v1/health`.
@@ -171,4 +186,11 @@ pub trait Backend: Send + Sync + 'static {
         idempotency_key: Option<&str>,
         request: InvokeActionRequest,
     ) -> Result<Reply>;
+    /// `GET /v1/invocations` (ref/09 §5.10).
+    fn invocations(&self, query: &Query) -> Result<Reply>;
+    /// `GET /v1/invocations/{invocation}`.
+    fn invocation(&self, id: &str) -> Result<Reply>;
+    /// `POST /v1/invocations/{invocation}/cancel`: cancels a long action
+    /// (ADR 0066 §9).
+    fn cancel_invocation(&self, who: &Principal, id: &str, request: ReasonBody) -> Result<Reply>;
 }

@@ -201,6 +201,12 @@ pub struct Plan {
     pub calcs: Vec<CalcPlan>,
     /// Every alarm of the manifest, compiled, in name order.
     pub alarms: Vec<AlarmPlan>,
+    /// The actions of the composite instances (ADR 0066 §18); their
+    /// permits are in [`Plan::permit_sources`] under `(instance,
+    /// action)`.
+    pub instance_actions: Vec<crate::actions::InstanceAction>,
+    /// `[security.roles]` (ref/09 §2.2).
+    pub roles: joker_api::server::SocketRoles,
 }
 
 /// The borrowed core tables of a plan.
@@ -515,9 +521,18 @@ impl Plan {
             permits: BTreeMap::new(),
             calcs: Vec::new(),
             alarms: Vec::new(),
+            instance_actions: Vec::new(),
+            roles: crate::actions::socket_roles(manifest),
         };
         plan.index()?;
         plan.permit_sources = crate::bridge::permit_sources(manifest, &plan.devices);
+        plan.instance_actions = crate::actions::instance_actions(manifest, &plan.devices);
+        for a in &plan.instance_actions {
+            if let Some(source) = &a.permit {
+                plan.permit_sources
+                    .insert((a.instance.clone(), a.action.clone()), source.clone());
+            }
+        }
         crate::expr_plan::bind(&mut plan, manifest)?;
         plan.index()?;
         Ok(plan)

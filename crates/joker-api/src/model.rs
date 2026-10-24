@@ -247,21 +247,18 @@ pub struct BulkResetRequest {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InvokeActionRequest {
-    /// The action's declared arguments, by name. `$arg` substitution in
-    /// a compiled step isn't wired yet (AUR-405's own flagged gap), so
-    /// these are accepted and recorded but not yet applied to any step.
+    /// The action's declared arguments, by name; quantities accept
+    /// literals (ADR 0066 §5).
     #[serde(default)]
     pub args: Map<String, Value>,
-    /// May shorten, never lengthen, the action's configured timeout.
-    /// Accepted for contract compatibility; not applied yet (the
-    /// device's own `timeout_ns` is always used, see `jokerd::drivers`).
+    /// May shorten, never lengthen, the action's configured timeout
+    /// (ADR 0066 §4).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout: Option<String>,
-    /// Free-text reason, for the decision log. Not recorded yet.
+    /// Why, recorded with the invocation and its decision record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
-    /// Wait for the result. Always true in this build: there is no
-    /// long-running/async action path yet, only short ones.
+    /// Wait for a short action's result (ADR 0066 §6).
     #[serde(default = "yes")]
     pub wait: bool,
 }

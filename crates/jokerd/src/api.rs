@@ -17,9 +17,9 @@ use joker_core::output::Band;
 use joker_core::{Level, WriterKind};
 use serde_json::{Map, Value, json};
 
-use crate::actions::Rejected;
+use crate::actions::{Hub, Refusal, Role};
 use crate::blobs::{Blobs, PutError, parse_digest};
-use crate::control::{ActionResult, ControlError, Invoked};
+use crate::control::ControlError;
 use crate::daemon::{SharedController, lock_controller};
 use crate::decisions::{DecisionLog, SharedLog, StateWriteFailure, lock};
 use crate::generations::{Activation, GenArtifact, GenState, Generation, Origin};
@@ -53,12 +53,17 @@ pub struct Node {
     log: SharedLog,
     quality: Arc<crate::clock::ClockMonitor>,
     blobs: Blobs,
+    hub: Arc<Hub>,
 }
 
 impl std::fmt::Debug for Node {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Node").field("name", &self.name).finish()
     }
+}
+
+fn refused(r: Refusal) -> Problem {
+    Problem::new(r.code, r.status, r.detail)
 }
 
 fn problem(e: ControlError) -> Problem {
@@ -157,9 +162,9 @@ impl Node {
         utc_origin_ns: i64,
         state_dir: &Path,
     ) -> std::io::Result<Self> {
-        let (manual, trips, log, quality) = {
+        let (manual, trips, log, quality, hub) = {
             let c = lock_controller(&controller);
-            (c.manual(), c.trips(), c.log(), c.clock())
+            (c.manual(), c.trips(), c.log(), c.clock(), c.actions())
         };
         let boot_count = state_file::bump_counter(state_dir, "boot_count")?;
         Ok(Self {
@@ -178,6 +183,7 @@ impl Node {
             log,
             blobs: Blobs::new(state_dir),
             quality,
+            hub,
         })
     }
 
@@ -236,6 +242,12 @@ impl Node {
 
     fn now_mono(&self) -> u64 {
         self.clock.now_ns()
+    }
+
+    /// The role of `who` under the running generation's `[security.roles]`
+    /// (ref/09 §2.3, ADR 0063, ADR 0066), through the API's one resolver.
+    fn role_of(&self, who: &Principal) -> Role {
+        Role::parse(joker_api::server::role_with(who, &self.socket_roles())).unwrap_or(Role::Viewer)
     }
 
     fn clock_json(&self) -> Value {
@@ -670,75 +682,52 @@ fn kind_name(kind: WriterKind) -> &'static str {
 }
 
 /// An `ActionDecl` (openapi `#/components/schemas/ActionDecl`, ref/09
-/// §5.10): the catalog entry `GET /v1/actions` lists. `args`/`result`/
-/// `permit`/`permit_now` are omitted (optional in the schema): no
-/// declared-argument schema is carried through `DeviceActionPlan` yet,
-/// and `permit` is neither stored nor evaluated here (see
-/// `Controller::invoke_action`'s own doc comment).
-fn action_decl_json(target: &str, decl: &crate::bridge::DeviceActionPlan) -> Value {
+/// §5.10) of `target`'s `action`, run by `decl`. `permit` is the
+/// declared source and `permit_now` its value now, when one is declared.
+fn action_decl_json(
+    target: &str,
+    kind: &str,
+    action: &str,
+    decl: &crate::bridge::DeviceActionPlan,
+    permit: Option<(&str, Option<bool>)>,
+) -> Value {
+    let args: Map<String, Value> = decl
+        .args
+        .iter()
+        .map(|(name, ty)| {
+            let mut parts = ty.splitn(2, ' ');
+            let base = parts.next().unwrap_or("");
+            let mut arg = json!({"type": base});
+            if let Some(unit) = parts.next().map(str::trim).filter(|u| !u.is_empty()) {
+                arg["unit"] = json!(unit);
+            }
+            (name.clone(), arg)
+        })
+        .collect();
+    let result: Map<String, Value> = decl
+        .result
+        .iter()
+        .map(|(name, ty)| (name.clone(), json!({"type": ty})))
+        .collect();
     let mut m = json!({
         "target": target,
-        "target_kind": "device",
-        "action": decl.name,
+        "target_kind": kind,
+        "action": action,
+        "args": args,
+        "result": result,
         "role": decl.role,
         "timeout": duration(decl.timeout_ns),
-        "long": false,
+        "long": decl.long,
+        "dedup_window": duration(
+            decl.dedup_window_ns
+                .unwrap_or(crate::actions::DEFAULT_DEDUP_WINDOW_NS)
+        ),
     });
-    if let Some(ns) = decl.dedup_window_ns {
-        m["dedup_window"] = json!(duration(ns));
+    if let Some((source, now)) = permit {
+        m["permit"] = json!(source);
+        m["permit_now"] = now.map_or(Value::Null, |b| json!(b));
     }
     m
-}
-
-/// An action result's `error.kind`/`code`, or `None` on success
-/// (ref/04 §7.1's table: `TimedOut` → `timeout`/`J-E1406`, `Device` →
-/// `device`/`J-E1407`, anything else the interpreter failed on →
-/// `device`/`J-E1408`, the catch-all).
-fn action_error(result: &ActionResult) -> Option<(&'static str, &'static str, String)> {
-    match result {
-        ActionResult::Succeeded => None,
-        ActionResult::TimedOut => Some((
-            "timeout",
-            "J-E1406",
-            "the action exceeded its timeout".to_owned(),
-        )),
-        ActionResult::Device(m) => Some(("device", "J-E1407", m.clone())),
-        ActionResult::Failed(m) => Some(("device", "J-E1408", m.clone())),
-    }
-}
-
-/// An `Invocation` (openapi `#/components/schemas/Invocation`, ref/09
-/// §5.10): `error` is `(kind, code, message)` on failure, `None` on
-/// success.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "each parameter is a distinct required or near-required field of the openapi Invocation schema; a wrapper struct would only rename this list"
-)]
-fn invocation_json(
-    target: &str,
-    action: &str,
-    key: &str,
-    principal: &str,
-    created_at: &str,
-    replay: bool,
-    state: &str,
-    error: Option<(&str, &str, &str)>,
-) -> Value {
-    let id = joker_api::server::ulid(u128::try_from(utc_now_ns()).unwrap_or(0));
-    json!({
-        "id": id,
-        "target": target,
-        "action": action,
-        "key": key,
-        "state": state,
-        "principal": principal,
-        "created_at": created_at,
-        "replay": replay,
-        "result": if error.is_none() { json!({}) } else { Value::Null },
-        "error": error.map_or(Value::Null, |(kind, code, message)| {
-            json!({"kind": kind, "code": code, "message": message})
-        }),
-    })
 }
 
 fn outcome_json(outcome: Outcome, applied: Option<Value>) -> Value {
@@ -760,6 +749,12 @@ fn outcome_json(outcome: Outcome, applied: Option<Value>) -> Value {
 }
 
 impl Backend for Node {
+    fn socket_roles(&self) -> joker_api::server::SocketRoles {
+        self.view()
+            .map(|v| v.plan.roles.clone())
+            .unwrap_or_default()
+    }
+
     fn headers(&self) -> Headers {
         Headers {
             generation: self.view().map(|v| format!("{} {}", v.number, v.hash)),
@@ -815,7 +810,7 @@ impl Backend for Node {
             "caller".into(),
             json!({
                 "principal": {"id": user(who), "transport": who.transport, "uid": who.uid},
-                "role": joker_api::server::role_of(who),
+                "role": joker_api::server::role_with(who, &self.socket_roles()),
                 "session": joker_api::server::ulid(u128::try_from(utc_now_ns()).unwrap_or(0)),
             }),
         );
@@ -1405,13 +1400,66 @@ impl Backend for Node {
     fn actions(&self, query: &Query) -> Result<Reply, Problem> {
         let v = self.need_view()?;
         let target = one(query, "target");
-        let items: Vec<Value> = v
+        let wanted = |name: &str| target.as_deref().is_none_or(|t| t == name);
+        let now = self.now_mono();
+        let mut c = lock_controller(&self.controller);
+        let mut permit_of = |t: &str, a: &str, key: (&str, &str)| {
+            let source = v
+                .plan
+                .permit_sources
+                .get(&(key.0.to_owned(), key.1.to_owned()))?
+                .clone();
+            let value = c.permit_now(t, a, now);
+            Some((source, value))
+        };
+        let mut items = Vec::new();
+        for d in v.plan.devices.iter().filter(|d| wanted(&d.name)) {
+            for a in &d.actions {
+                let p = permit_of(&d.name, &a.name, (&d.name, &a.name));
+                let p = p.as_ref().map(|(s, n)| (s.as_str(), *n));
+                items.push(action_decl_json(&d.name, "device", &a.name, a, p));
+                for member in &a.implements {
+                    let p = permit_of(&d.name, member, (&d.name, &a.name));
+                    let p = p.as_ref().map(|(s, n)| (s.as_str(), *n));
+                    items.push(action_decl_json(&d.name, "instance", member, a, p));
+                }
+            }
+        }
+        for i in v
             .plan
-            .devices
+            .instance_actions
             .iter()
-            .filter(|d| target.as_deref().is_none_or(|t| t == d.name))
-            .flat_map(|d| d.actions.iter().map(move |a| action_decl_json(&d.name, a)))
-            .collect();
+            .filter(|i| wanted(&i.instance))
+        {
+            let Some(mut decl) = v
+                .plan
+                .devices
+                .iter()
+                .find(|d| d.name == i.device)
+                .and_then(|d| d.actions.iter().find(|a| a.name == i.device_action))
+                .cloned()
+            else {
+                continue;
+            };
+            if let Some(t) = i.timeout_ns {
+                decl.timeout_ns = t;
+            }
+            if i.dedup_window_ns.is_some() {
+                decl.dedup_window_ns = i.dedup_window_ns;
+            }
+            if let Some(r) = &i.role {
+                decl.role.clone_from(r);
+            }
+            let p = permit_of(&i.instance, &i.action, (&i.instance, &i.action));
+            let p = p.as_ref().map(|(s, n)| (s.as_str(), *n));
+            items.push(action_decl_json(
+                &i.instance,
+                "instance",
+                &i.action,
+                &decl,
+                p,
+            ));
+        }
         Ok(Reply::ok(json!({"items": items})))
     }
 
@@ -1421,52 +1469,110 @@ impl Backend for Node {
         target: &str,
         action: &str,
         idempotency_key: Option<&str>,
-        _request: InvokeActionRequest,
+        request: InvokeActionRequest,
     ) -> Result<Reply, Problem> {
         let key = idempotency_key
             .ok_or_else(|| Problem::new("J-E1023", 400, "`Idempotency-Key` is required"))?;
-        let now = self.now_mono();
-        let principal = user(who);
-        let outcome =
-            lock_controller(&self.controller).invoke_action(target, action, key, now, &principal);
-        let created_at = timestamp(utc_now_ns());
-        let invocation = |replay: bool, state: &str, error: Option<(&str, &str, &str)>| {
-            invocation_json(
-                target,
-                action,
-                key,
-                &principal,
-                &created_at,
-                replay,
-                state,
-                error,
-            )
+        let timeout_ns = request
+            .timeout
+            .as_deref()
+            .map(parse_duration)
+            .transpose()
+            .map_err(|e| bad("J-E1401", format!("`timeout`: {e}")))?;
+        let role = self.role_of(who);
+        let req = crate::actions::Request {
+            key: key.to_owned(),
+            args: request.args,
+            timeout_ns,
+            reason: request.reason,
+            wait: request.wait,
+            principal: user(who),
+            role: Some(role),
         };
-        match outcome {
-            Ok(Invoked::Ran(result)) => Ok(Reply::ok(match action_error(&result) {
-                None => invocation(false, "succeeded", None),
-                Some((kind, code, msg)) => invocation(false, "failed", Some((kind, code, &msg))),
-            })),
-            Ok(Invoked::Duplicate(result)) => Ok(Reply::ok(match action_error(&result) {
-                None => invocation(true, "succeeded", None),
-                Some((kind, code, msg)) => invocation(true, "failed", Some((kind, code, &msg))),
-            })),
-            Ok(Invoked::Rejected(Rejected::Busy)) => {
-                Err(Problem::new("J-E1403", 503, "device action queue full"))
-            }
-            Ok(Invoked::Rejected(Rejected::NotPermitted)) => {
-                Err(Problem::new("J-E1402", 409, "action permissive false"))
-            }
-            // The device not being connected is one of the action's own
-            // result outcomes (ref/09 §5.10's `error.kind = "device"`),
-            // not an HTTP-level failure of the request itself.
-            Err(e) if e.code == "J-E1415" => Ok(Reply::ok(invocation(
-                false,
-                "failed",
-                Some(("device", "J-E1415", &e.detail)),
-            ))),
-            Err(e) => Err(problem(e)),
+        let answer = crate::actions::invoke(&self.controller, &self.hub, target, action, req)
+            .map_err(refused)?;
+        let wait = request.wait
+            && self
+                .hub
+                .get(&answer.id)
+                .is_some_and(|i| !i.long || answer.replay);
+        let inv = if wait {
+            self.hub.wait(&answer.id, MAX_WAIT)
+        } else {
+            self.hub.get(&answer.id)
         }
+        .ok_or_else(|| Problem::new("J-E1404", 404, "the invocation is no longer kept"))?;
+        if let Some(e) = &inv.log_error {
+            return Err(Problem::new(
+                "J-E1000",
+                500,
+                format!(
+                    "the action ended `{}` but its decision record was refused: {e}",
+                    inv.state.name()
+                ),
+            ));
+        }
+        let body = inv.json(answer.replay);
+        let mut reply = if inv.state.finished() {
+            Reply::ok(body)
+        } else {
+            Reply::with_status(202, body)
+                .with_header("location", format!("/v1/invocations/{}", inv.id))
+        };
+        if answer.replay {
+            reply = reply.with_header("joker-idempotent-replay", "true");
+        }
+        Ok(reply)
+    }
+
+    fn invocations(&self, query: &Query) -> Result<Reply, Problem> {
+        let target = one(query, "target");
+        let state = one(query, "state");
+        let limit = one(query, "limit")
+            .map(|l| {
+                l.parse::<usize>()
+                    .map_err(|_| bad("J-E1012", "bad `limit`"))
+            })
+            .transpose()?
+            .unwrap_or(100)
+            .clamp(1, 1000);
+        let items: Vec<Value> = self
+            .hub
+            .list(|i| {
+                target.as_deref().is_none_or(|t| t == i.target)
+                    && state.as_deref().is_none_or(|s| s == i.state.name())
+            })
+            .iter()
+            .take(limit)
+            .map(|i| i.json(false))
+            .collect();
+        Ok(Reply::ok(json!({"items": items, "next_cursor": null})))
+    }
+
+    fn invocation(&self, id: &str) -> Result<Reply, Problem> {
+        self.hub
+            .get(id)
+            .map(|i| Reply::ok(i.json(false)))
+            .ok_or_else(|| Problem::new("J-E1404", 404, format!("unknown invocation `{id}`")))
+    }
+
+    fn cancel_invocation(
+        &self,
+        who: &Principal,
+        id: &str,
+        _request: ReasonBody,
+    ) -> Result<Reply, Problem> {
+        if self.role_of(who) < Role::Operator {
+            return Err(Problem::new(
+                "J-E1002",
+                403,
+                "cancelling an invocation requires the role `operator`",
+            ));
+        }
+        self.hub
+            .cancel(id)
+            .map(|i| Reply::ok(i.json(false)))
+            .map_err(refused)
     }
 
     fn decisions(&self, query: &Query) -> Result<Reply, Problem> {
@@ -1993,22 +2099,28 @@ mod tests {
     }
 
     #[test]
-    fn an_action_decl_carries_its_role_and_timeout_but_omits_an_undeclared_dedup_window() {
-        let decl = DeviceActionPlan {
-            name: "reset_fault".into(),
+    fn an_action_decl_carries_its_arguments_role_timeout_and_default_dedup_window() {
+        let mut decl = DeviceActionPlan {
+            name: "set".into(),
             timeout_ns: 1_000_000_000,
-            dedup_window_ns: None,
             role: "operator".into(),
-            steps: Vec::new(),
+            long: true,
+            ..DeviceActionPlan::default()
         };
-        let json = action_decl_json("pcs", &decl);
+        decl.args.insert("level".into(), "f64 %".into());
+        decl.result.insert("offset".into(), "i64".into());
+        let json = action_decl_json("pcs", "device", "set", &decl, Some(("pcs.ok", Some(true))));
         assert_eq!(json["target"], "pcs");
         assert_eq!(json["target_kind"], "device");
-        assert_eq!(json["action"], "reset_fault");
+        assert_eq!(json["action"], "set");
         assert_eq!(json["role"], "operator");
         assert_eq!(json["timeout"], "1s");
-        assert_eq!(json["long"], false);
-        assert!(json.get("dedup_window").is_none());
+        assert_eq!(json["long"], true);
+        assert_eq!(json["dedup_window"], "1m");
+        assert_eq!(json["args"]["level"], json!({"type": "f64", "unit": "%"}));
+        assert_eq!(json["result"]["offset"]["type"], "i64");
+        assert_eq!(json["permit"], "pcs.ok");
+        assert_eq!(json["permit_now"], true);
     }
 
     #[test]
@@ -2018,26 +2130,12 @@ mod tests {
             timeout_ns: 1_000_000_000,
             dedup_window_ns: Some(30_000_000_000),
             role: "admin".into(),
-            steps: Vec::new(),
+            ..DeviceActionPlan::default()
         };
-        let json = action_decl_json("pcs", &decl);
+        let json = action_decl_json("p1", "instance", "reset", &decl, None);
         assert_eq!(json["role"], "admin");
+        assert_eq!(json["target_kind"], "instance");
         assert_eq!(json["dedup_window"], "30s");
-    }
-
-    /// Each `ActionResult` failure cause gets its own documented code
-    /// (ref/04 §7.1): a timeout is `J-E1406`/`kind=timeout`, a driver's
-    /// own comm failure is `J-E1407`/`kind=device`, and anything else
-    /// the interpreter failed on falls back to `J-E1408`/`kind=device`
-    /// — never the same code for all three (AUR-265).
-    #[test]
-    fn action_error_maps_each_failure_cause_to_its_own_code() {
-        assert_eq!(action_error(&ActionResult::Succeeded), None);
-        let (kind, code, _) = action_error(&ActionResult::TimedOut).unwrap();
-        assert_eq!((kind, code), ("timeout", "J-E1406"));
-        let (kind, code, msg) = action_error(&ActionResult::Device("comm".into())).unwrap();
-        assert_eq!((kind, code, msg.as_str()), ("device", "J-E1407", "comm"));
-        let (kind, code, msg) = action_error(&ActionResult::Failed("trapped".into())).unwrap();
-        assert_eq!((kind, code, msg.as_str()), ("device", "J-E1408", "trapped"));
+        assert!(json.get("permit").is_none());
     }
 }
