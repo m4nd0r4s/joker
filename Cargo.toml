@@ -24,6 +24,7 @@ zstd = { version = "0.13", default-features = false }
 joker-hal = { path = "crates/joker-hal", default-features = false }
 joker-serial-sys = { path = "crates/joker-serial-sys" }
 joker-gpio-sys = { path = "crates/joker-gpio-sys" }
+joker-i2c-sys = { path = "crates/joker-i2c-sys" }
 embedded-io = { version = "0.7.1", default-features = false }
 embedded-io-async = { version = "0.7.0", default-features = false }
 tokio = { version = "1.54.1", default-features = false }

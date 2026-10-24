@@ -11,7 +11,7 @@ publish.workspace = true
 [features]
 default = []
 alloc = ["embedded-io/alloc", "embedded-io-async/alloc"]
-std = ["alloc", "embedded-io/std", "embedded-io-async/std", "dep:tokio", "dep:rustix", "dep:joker-serial-sys", "dep:joker-gpio-sys"]
+std = ["alloc", "embedded-io/std", "embedded-io-async/std", "dep:tokio", "dep:rustix", "dep:joker-serial-sys", "dep:joker-gpio-sys", "dep:joker-i2c-sys"]
 plan = ["alloc"]
 testing = ["std", "plan"]
 
@@ -25,6 +25,7 @@ tokio = { workspace = true, optional = true, features = ["net", "time"] }
 rustix = { workspace = true, optional = true, features = ["fs", "termios"] }
 joker-serial-sys = { workspace = true, optional = true }
 joker-gpio-sys = { workspace = true, optional = true }
+joker-i2c-sys = { workspace = true, optional = true }
 
 [dev-dependencies]
 joker-hal = { path = ".", features = ["testing"] }
