@@ -110,6 +110,14 @@ impl<'a> Cx<'a> {
         self.deadline
     }
 
+    /// A context for a call made inside this one, on the same host, whose
+    /// deadline is the earlier of `deadline` and this call's own (ref/06
+    /// §2.14: a step of an action is bounded by both). It starts with no
+    /// link or progress report.
+    pub fn narrowed(&self, deadline: MonoNs) -> Cx<'a> {
+        Cx::new(self.host, deadline.min(self.deadline))
+    }
+
     /// Sleeps until the monotonic instant `at`.
     pub fn sleep_until(&self, at: MonoNs) -> impl Future<Output = ()> + MaybeSend + '_ {
         let host = self.host;
