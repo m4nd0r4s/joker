@@ -4355,6 +4355,15 @@ components:
               quality: {$ref: '#/components/schemas/QualityCode'}
               reason: {$ref: '#/components/schemas/QualityReason'}
               timeouts: {type: string, examples: [3/3]}
+              reconnects:
+                description: successful connects after the first one, since the generation started (ADR 0063)
+                type: integer
+              dropped_samples:
+                description: samples the sample ring of the device refused (ADR 0063)
+                type: integer
+              invalid_samples:
+                description: samples that broke ref/06 §2.8, J0869 (ADR 0063)
+                type: integer
         apps:
           type: array
           items:
@@ -4460,9 +4469,16 @@ components:
             type: object
             properties:
               device: {$ref: '#/components/schemas/Name'}
+              link: {$ref: '#/components/schemas/LinkState'}
               latency: {$ref: '#/components/schemas/Percentiles'}
               timeouts: {type: integer}
               reconnects: {type: integer}
+              dropped_samples:
+                description: samples the sample ring of the device refused (ADR 0063)
+                type: integer
+              invalid_samples:
+                description: samples that broke ref/06 §2.8, J0869 (ADR 0063)
+                type: integer
               bytes_rx: {type: integer}
               bytes_tx: {type: integer}
               coalescing: {type: number, description: useful / read registers}
@@ -7255,7 +7271,7 @@ components:
           type: integer
         topic: {$ref: '#/components/schemas/Topic'}
         items:
-          description: samples (Sample), output states (OutputState) or topic events
+          description: samples (Sample), output states (OutputState), one Status or one Metrics (ADR 0063), or topic events
           type: array
           items: {type: object}
         session: {$ref: '#/components/schemas/Ulid'}
