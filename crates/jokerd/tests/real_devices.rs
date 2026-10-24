@@ -199,10 +199,11 @@ fn the_dispatched_device_has_a_real_action_channel_and_an_undeclared_name_does_n
     let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
     let outcome = runtime.block_on(async {
         sender
-            .send(jokerd::drivers::ActionCall {
-                steps: Vec::new(),
-                reply: reply_tx,
-            })
+            .send(jokerd::drivers::ActionCall::new(
+                jokerd::action_exec::ActionProgram::Steps(Vec::new()),
+                1_000_000_000,
+                reply_tx,
+            ))
             .await
             .unwrap();
         tokio::time::timeout(Duration::from_secs(1), reply_rx)
@@ -210,7 +211,10 @@ fn the_dispatched_device_has_a_real_action_channel_and_an_undeclared_name_does_n
             .expect("the driver task answered before the deadline")
             .unwrap()
     });
-    assert_eq!(outcome, jokerd::drivers::ActionOutcome::Ok);
+    assert_eq!(
+        outcome,
+        jokerd::drivers::ActionOutcome::Ok(serde_json::json!({}))
+    );
 
     set.stop();
     runtime.shutdown_timeout(Duration::from_secs(1));

@@ -14,6 +14,7 @@ use joker_hal::{
     ReadBatch,
 };
 
+use jokerd::action_exec::{ActionProgram, FailureKind};
 use jokerd::bridge::{DeviceStep, DeviceStepValue};
 use jokerd::drivers::{ActionCall, ActionOutcome, PointTarget, run_driver};
 use jokerd::shared::Shared;
@@ -130,10 +131,11 @@ fn an_action_call_runs_its_steps_against_the_real_driver() {
         },
     ];
     action_tx
-        .try_send(ActionCall {
-            steps,
-            reply: reply_tx,
-        })
+        .try_send(ActionCall::new(
+            ActionProgram::Steps(steps),
+            1_000_000_000,
+            reply_tx,
+        ))
         .unwrap();
 
     let stop_at = 10_000_000u64;
@@ -154,7 +156,7 @@ fn an_action_call_runs_its_steps_against_the_real_driver() {
     .unwrap();
 
     let outcome = reply_rx.try_recv().expect("the call was answered");
-    assert_eq!(outcome, ActionOutcome::Ok);
+    assert_eq!(outcome, ActionOutcome::Ok(serde_json::json!({})));
     assert_eq!(writes_seen.load(Ordering::SeqCst), 2);
 }
 
@@ -230,10 +232,11 @@ fn an_action_call_that_times_out_reports_timed_out() {
         timeout: joker_units::Duration::from_millis(50),
     }];
     action_tx
-        .try_send(ActionCall {
-            steps,
-            reply: reply_tx,
-        })
+        .try_send(ActionCall::new(
+            ActionProgram::Steps(steps),
+            1_000_000_000,
+            reply_tx,
+        ))
         .unwrap();
 
     let stop_at = 10_000_000_000u64;
@@ -254,5 +257,8 @@ fn an_action_call_that_times_out_reports_timed_out() {
     .unwrap();
 
     let outcome = reply_rx.try_recv().expect("the call was answered");
-    assert_eq!(outcome, ActionOutcome::TimedOut);
+    let ActionOutcome::Failed { kind, .. } = outcome else {
+        panic!("expected a failure, got {outcome:?}");
+    };
+    assert_eq!(kind, FailureKind::Timeout);
 }

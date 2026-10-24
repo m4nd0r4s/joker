@@ -106,23 +106,44 @@ pub struct DevicePlan {
 }
 
 /// One compiled `[actions.<a>]` of a device.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct DeviceActionPlan {
     /// Action name.
     pub name: String,
-    /// The action's default timeout (explicit, or derived from its
-    /// steps' `wait`/`until` budgets, ref/03 §2.2.12).
+    /// The action's timeout: the manifest's `[devices.<d>.actions.<a>]
+    /// .timeout` when declared, else the profile's (explicit, or derived
+    /// from its steps' `wait`/`until` budgets, ref/03 §2.2.12).
     pub timeout_ns: u64,
     /// `[devices.<d>.actions.<a>].dedup_window`, the manifest's own
-    /// override (ref/09 §5.10); `None` falls back to the API's own
-    /// 60s default (`jokerd::control::Controller::invoke_action`).
+    /// override (ref/09 §5.10); `None` falls back to the 60s default of
+    /// document 16 E9.
     pub dedup_window_ns: Option<u64>,
     /// The minimum caller role to invoke this action: the manifest's
     /// own `role`, with `viewer` already floored to `operator`
     /// (`J0298`, ref/09 §5.10). Defaults to `operator` undeclared.
     pub role: String,
-    /// The compiled steps, in order.
+    /// The compiled steps, in order; empty for a native action.
     pub steps: Vec<DeviceStep>,
+    /// `args`: argument name to its declared type (ref/03 §2.2.12).
+    pub args: BTreeMap<String, String>,
+    /// The enums of the profile, by name, for an argument whose type is
+    /// one (ADR 0066 §5).
+    pub enums: BTreeMap<String, BTreeMap<String, i64>>,
+    /// `result`: field name to its declared type.
+    pub result: BTreeMap<String, String>,
+    /// `long`: progress and cancellation (M19).
+    pub long: bool,
+    /// `native`, as CBOR, for an action the driver runs itself
+    /// (`invoke`, ref/06 §2.10); `None` for a step program.
+    pub native: Option<Vec<u8>>,
+    /// The `ActionSpec::id` of a native action: its position among the
+    /// device's native actions.
+    pub native_id: u32,
+    /// `description`.
+    pub description: Option<String>,
+    /// The class `action` members of the device's implicit instance that
+    /// run this action (`[implements] map`, ref/03 §2.2.14, ADR 0066 §17).
+    pub implements: Vec<String>,
 }
 
 /// One step of a compiled device action, address-resolved into the
@@ -406,41 +427,79 @@ fn compile_action_step(
     })
 }
 
-/// Compiles every `[actions.<a>]` of `profile` with `steps` into
-/// [`DeviceActionPlan`]s. An action using `native` instead of `steps`
-/// (no entry in `action_steps`) is skipped, not an error.
+/// Compiles every `[actions.<a>]` of `profile` into
+/// [`DeviceActionPlan`]s: a step program, or a native action. An action
+/// with neither (an empty `steps`) is skipped.
 fn actions_of_profile(
     device_name: &str,
     device: &Device,
     profile: &joker_manifest::context::ProfileInfo,
 ) -> Result<Vec<DeviceActionPlan>, BridgeError> {
     let mut out = Vec::new();
-    for (name, steps) in &profile.action_steps {
-        if steps.is_empty() {
+    let mut native_id = 0u32;
+    for name in profile.actions.keys() {
+        let decl = profile.action_decls.get(name).cloned().unwrap_or_default();
+        let steps = profile
+            .action_steps
+            .get(name)
+            .map_or(&[][..], Vec::as_slice);
+        let native = decl.native.as_ref().map(table_to_cbor);
+        if steps.is_empty() && native.is_none() {
             continue;
         }
         let compiled: Vec<DeviceStep> = steps
             .iter()
             .map(|s| compile_action_step(device_name, name, s))
             .collect::<Result<_, _>>()?;
-        let timeout_ns = profile
-            .actions
-            .get(name)
-            .copied()
-            .flatten()
-            .map(Duration::as_nanos)
+        let timeout_ns = timeout_override(device, name)
+            .or_else(|| {
+                profile
+                    .actions
+                    .get(name)
+                    .copied()
+                    .flatten()
+                    .map(Duration::as_nanos)
+            })
             .unwrap_or(1_000_000_000);
-        let dedup_window_ns = dedup_window_override(device, name);
-        let role = role_of(device, name);
+        let id = native_id;
+        if native.is_some() {
+            native_id += 1;
+        }
         out.push(DeviceActionPlan {
             name: name.clone(),
             timeout_ns,
-            dedup_window_ns,
-            role,
+            dedup_window_ns: dedup_window_override(device, name),
+            role: role_of(device, name),
             steps: compiled,
+            args: decl.args,
+            enums: profile.enums.clone(),
+            result: decl.result,
+            long: decl.long,
+            native,
+            native_id: id,
+            description: decl.description,
+            implements: profile
+                .implemented_actions
+                .iter()
+                .filter(|(_, action)| *action == name)
+                .map(|(member, _)| member.clone())
+                .collect(),
         });
     }
     Ok(out)
+}
+
+/// `[devices.<d>.actions.<a>].timeout`: the manifest wins over the
+/// profile (ref/01 §5.8.2, document 17 §4.2).
+fn timeout_override(device: &Device, action: &str) -> Option<u64> {
+    let text = device
+        .actions
+        .get(action)?
+        .as_table()?
+        .get("timeout")?
+        .node
+        .as_str()?;
+    Duration::parse(text).ok().map(Duration::as_nanos)
 }
 
 /// `[devices.<d>.actions.<a>].role`, floored to `operator` (`J0298`: a

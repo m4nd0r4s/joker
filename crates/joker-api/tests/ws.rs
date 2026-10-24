@@ -207,6 +207,23 @@ impl Backend for Stub {
     ) -> Result<Reply, Problem> {
         none()
     }
+
+    fn invocations(&self, _query: &Query) -> Result<Reply, Problem> {
+        none()
+    }
+
+    fn invocation(&self, _id: &str) -> Result<Reply, Problem> {
+        none()
+    }
+
+    fn cancel_invocation(
+        &self,
+        _who: &Principal,
+        _id: &str,
+        _request: ReasonBody,
+    ) -> Result<Reply, Problem> {
+        none()
+    }
 }
 
 fn rand_age() -> u128 {

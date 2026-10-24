@@ -1,5 +1,6 @@
 //! The Joker daemon (docs/01 §2, ADR 0016).
 
+pub mod action_exec;
 pub mod actions;
 pub mod api;
 pub mod apps;

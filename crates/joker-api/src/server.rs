@@ -59,46 +59,96 @@ pub fn role_rank(role: &str) -> Option<usize> {
     ROLES.iter().position(|r| *r == role)
 }
 
-/// The role of a principal (ref/09 §2.3, ADR 0063): on the socket, uid 0,
-/// the `joker` user and the user `jokerd` runs as are `admin`; members of
-/// `joker-admin` are `admin` and of `joker-ops` `operator` (the default
-/// rules of ref/01 §5.20); anyone else is `viewer`.
+/// `[security.roles]` of the running generation (ref/01 §5.20): the
+/// rules that raise a principal to `operator` and to `admin`, `None` for
+/// a role the manifest does not declare. The default is no generation:
+/// the defaults of `prod` hold.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SocketRoles {
+    /// The generation runs in `mode = "dev"`.
+    pub dev: bool,
+    /// `operator`.
+    pub operator: Option<Vec<String>>,
+    /// `admin`.
+    pub admin: Option<Vec<String>>,
+}
+
+impl SocketRoles {
+    /// The role of the local `user` for whom `member(group)` says whether
+    /// it belongs to `group`, under these rules (ref/01 §5.20, ADR 0063,
+    /// ADR 0066): `joker` is `admin`; in `dev` without
+    /// `[security.roles]` anyone is `admin`; otherwise the highest role
+    /// whose rules match, `operator` defaulting to members of `joker-ops`
+    /// and `admin` to members of `joker-admin`; `viewer` when none does.
+    pub fn local_role(&self, user: &str, member: &dyn Fn(&str) -> bool) -> &'static str {
+        if user == "joker" || (self.dev && self.operator.is_none() && self.admin.is_none()) {
+            return "admin";
+        }
+        let matches = |rules: &Option<Vec<String>>, default: &str| {
+            let rules = rules
+                .clone()
+                .unwrap_or_else(|| vec![format!("local:group={default}")]);
+            rules.iter().any(|rule| {
+                if let Some(u) = rule.strip_prefix("local:user=") {
+                    u == user
+                } else if let Some(g) = rule.strip_prefix("local:group=") {
+                    member(g)
+                } else {
+                    false
+                }
+            })
+        };
+        if matches(&self.admin, "joker-admin") {
+            "admin"
+        } else if matches(&self.operator, "joker-ops") {
+            "operator"
+        } else {
+            "viewer"
+        }
+    }
+}
+
+/// The role of a principal with no generation's rules (ref/09 §2.3, ADR
+/// 0063): see [`role_with`].
 pub fn role_of(who: &Principal) -> &'static str {
+    role_with(who, &SocketRoles::default())
+}
+
+/// The role of a principal under `roles` (ref/09 §2.3, ADR 0063, ADR
+/// 0066): on the socket, uid 0 and the user `jokerd` runs as are `admin`;
+/// any other local user gets [`SocketRoles::local_role`]; a principal
+/// without a uid is `viewer`.
+pub fn role_with(who: &Principal, roles: &SocketRoles) -> &'static str {
     match who.uid {
-        Some(uid) => socket_role(uid),
+        Some(uid) => socket_role(uid, roles),
         None => "viewer",
     }
 }
 
 #[cfg(unix)]
-fn socket_role(uid: u32) -> &'static str {
+fn socket_role(uid: u32, roles: &SocketRoles) -> &'static str {
     use nix::unistd::{Group, Uid, User, geteuid};
     if uid == 0 || uid == geteuid().as_raw() {
         return "admin";
     }
     let Ok(Some(user)) = User::from_uid(Uid::from_raw(uid)) else {
-        return "viewer";
+        return if roles.dev && roles.operator.is_none() && roles.admin.is_none() {
+            "admin"
+        } else {
+            "viewer"
+        };
     };
-    if user.name == "joker" {
-        return "admin";
-    }
     let member = |group: &str| {
         Group::from_name(group)
             .ok()
             .flatten()
             .is_some_and(|g| g.gid == user.gid || g.mem.contains(&user.name))
     };
-    if member("joker-admin") {
-        "admin"
-    } else if member("joker-ops") {
-        "operator"
-    } else {
-        "viewer"
-    }
+    roles.local_role(&user.name, &member)
 }
 
 #[cfg(not(unix))]
-fn socket_role(_uid: u32) -> &'static str {
+fn socket_role(_uid: u32, _roles: &SocketRoles) -> &'static str {
     "viewer"
 }
 
@@ -163,6 +213,11 @@ fn reply_response(backend: &dyn Backend, reply: Reply) -> Response {
         .and_then(|e| HeaderValue::from_str(&format!("\"{e}\"")).ok())
     {
         headers.insert("etag", etag);
+    }
+    for (name, value) in &reply.headers {
+        if let Ok(value) = HeaderValue::from_str(value) {
+            headers.insert(*name, value);
+        }
     }
     let status = StatusCode::from_u16(reply.status).unwrap_or(StatusCode::OK);
     (status, headers, reply.body.to_string()).into_response()
@@ -394,6 +449,35 @@ async fn invoke_action(
     }
 }
 
+async fn invocations(State(b): State<Shared>, RawQuery(raw): RawQuery) -> Response {
+    match parse_query(
+        raw.as_deref(),
+        &["target", "state", "since", "from", "to", "limit", "cursor"],
+    ) {
+        Ok(q) => run(b, move |b| b.invocations(&q)).await,
+        Err(p) => problem_response(b.as_ref(), &p),
+    }
+}
+
+async fn invocation(State(b): State<Shared>, UrlPath(id): UrlPath<String>) -> Response {
+    run(b, move |b| b.invocation(&id)).await
+}
+
+async fn cancel_invocation(
+    State(b): State<Shared>,
+    ConnectInfo(peer): ConnectInfo<Peer>,
+    UrlPath(id): UrlPath<String>,
+    body: Bytes,
+) -> Response {
+    match decode(&body) {
+        Ok(req) => {
+            let who = principal(peer);
+            run(b, move |b| b.cancel_invocation(&who, &id, req)).await
+        }
+        Err(p) => problem_response(b.as_ref(), &p),
+    }
+}
+
 async fn create_generation(
     State(b): State<Shared>,
     ConnectInfo(peer): ConnectInfo<Peer>,
@@ -613,6 +697,12 @@ pub fn router_with(backend: Arc<dyn Backend>, limits: ws::Limits) -> Router {
         .route("/v1/trips/reset", post(reset_trips))
         .route("/v1/actions", get(actions))
         .route("/v1/actions/{target}/{action}", post(invoke_action))
+        .route("/v1/invocations", get(invocations))
+        .route("/v1/invocations/{invocation}", get(invocation))
+        .route(
+            "/v1/invocations/{invocation}/cancel",
+            post(cancel_invocation),
+        )
         .route("/v1/decisions", get(decisions))
         .route("/v1/blobs/missing", post(missing_blobs))
         .route("/v1/blobs/{digest}", head(blob_head))
@@ -687,4 +777,58 @@ pub async fn serve_router(
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown)
         .await
+}
+
+#[cfg(test)]
+mod role_tests {
+    use super::SocketRoles;
+
+    fn member_of(groups: &'static [&'static str]) -> impl Fn(&str) -> bool {
+        move |g| groups.contains(&g)
+    }
+
+    #[test]
+    fn without_a_generation_the_prod_defaults_hold() {
+        let roles = SocketRoles::default();
+        assert_eq!(roles.local_role("ana", &member_of(&[])), "viewer");
+        assert_eq!(
+            roles.local_role("ana", &member_of(&["joker-ops"])),
+            "operator"
+        );
+        assert_eq!(
+            roles.local_role("ana", &member_of(&["joker-admin"])),
+            "admin"
+        );
+        assert_eq!(roles.local_role("joker", &member_of(&[])), "admin");
+    }
+
+    #[test]
+    fn declared_rules_replace_the_defaults_of_their_role() {
+        let roles = SocketRoles {
+            dev: false,
+            operator: Some(vec!["local:user=ana".into()]),
+            admin: Some(vec!["local:group=deploy".into()]),
+        };
+        assert_eq!(roles.local_role("ana", &member_of(&[])), "operator");
+        assert_eq!(
+            roles.local_role("rui", &member_of(&["joker-ops"])),
+            "viewer"
+        );
+        assert_eq!(roles.local_role("rui", &member_of(&["deploy"])), "admin");
+    }
+
+    #[test]
+    fn dev_without_roles_makes_anyone_admin() {
+        let dev = SocketRoles {
+            dev: true,
+            ..SocketRoles::default()
+        };
+        assert_eq!(dev.local_role("ana", &member_of(&[])), "admin");
+        let declared = SocketRoles {
+            dev: true,
+            operator: Some(Vec::new()),
+            admin: None,
+        };
+        assert_eq!(declared.local_role("ana", &member_of(&[])), "viewer");
+    }
 }

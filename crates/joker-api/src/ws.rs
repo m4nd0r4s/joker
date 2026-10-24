@@ -41,7 +41,7 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use crate::backend::{Principal, Query};
 use crate::id::ulid;
 use crate::problem::Problem;
-use crate::server::{API_VERSION, Peer, Shared, parse_query, principal, role_of, role_rank};
+use crate::server::{API_VERSION, Peer, Shared, parse_query, principal, role_rank, role_with};
 
 /// The limits of the subscription engine (ref/09 §3.11, §6.6, §6.8).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -816,7 +816,7 @@ async fn finish(
 async fn handle_socket(socket: WebSocket, backend: Shared, engine: Engine, who: Principal) {
     let _guard = ConnectionGuard::new(&engine.stats);
     let limits = engine.limits;
-    let role = role_of(&who);
+    let role = role_with(&who, &backend.socket_roles());
     let (mut session, rx, bytes) = Session::new(Arc::clone(&backend), &engine, role);
     let (sink, mut stream) = socket.split();
     let (close_tx, close_rx) = oneshot::channel::<Closing>();
@@ -1057,7 +1057,8 @@ pub async fn sse_handler(
     };
     let who = principal(peer);
     let limits = engine.limits;
-    let (mut session, rx, bytes) = Session::new(backend, &engine, role_of(&who));
+    let role = role_with(&who, &backend.socket_roles());
+    let (mut session, rx, bytes) = Session::new(backend, &engine, role);
     let sub_id = match session.subscribe(None, &topic, options).await {
         Ok(s) => s,
         Err(p) => return problem_response(&p),

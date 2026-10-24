@@ -800,15 +800,23 @@ pub fn permit_period(plan: &Plan, device: &str) -> Duration {
 /// Compiles every `plan.permit_sources` (ADR 0060 rule 1, ADR 0068 rule 4).
 fn compile_permits(plan: &Plan) -> Result<BTreeMap<(String, String), Program>, PlanError> {
     let mut compiled = BTreeMap::new();
-    for ((device, action), source) in &plan.permit_sources {
+    for ((target, action), source) in &plan.permit_sources {
+        let instance = plan
+            .instance_actions
+            .iter()
+            .find(|i| &i.instance == target && &i.action == action);
+        let (section, device) = match instance {
+            Some(i) => ("instances", i.device.as_str()),
+            None => ("devices", target.as_str()),
+        };
         let program = compile_bool(source, plan, permit_period(plan, device)).map_err(|e| {
             plan_error(
-                &format!("devices.{device}.actions.{action}.permit"),
+                &format!("{section}.{target}.actions.{action}.permit"),
                 source,
                 &e,
             )
         })?;
-        compiled.insert((device.clone(), action.clone()), program);
+        compiled.insert((target.clone(), action.clone()), program);
     }
     Ok(compiled)
 }

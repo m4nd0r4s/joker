@@ -26,40 +26,10 @@ use joker_hal::spec::PlanRequest;
 use joker_hal::types::{BatchFailure, BatchKind, LinkState, WriteStatus};
 use joker_hal::{CommitRx, Cx, RxState};
 
-use crate::bridge::DeviceStep;
 use crate::plan::Plan;
 use crate::shared::{Shared, WriteAckRecord};
 
-/// A request to run a device action's compiled program against the
-/// device's real driver, from inside the io-domain task's own loop — the
-/// only place that owns the driver instance (ref/06 §2.10, ADR 0058).
-#[derive(Debug)]
-pub struct ActionCall {
-    /// The action's compiled steps (`jokerd::bridge::DeviceStep`).
-    pub steps: Vec<DeviceStep>,
-    /// Where the outcome goes; dropped silently if the caller stopped
-    /// waiting.
-    pub reply: tokio::sync::oneshot::Sender<ActionOutcome>,
-}
-
-/// What an action invocation produced. Distinguishes the two causes the
-/// API maps to their own documented code (ref/04 §7.1): a timeout
-/// (`J-E1406`) and an equipment/comm failure (`J-E1407`), from every
-/// other interpreter failure (`J-E1408`, the catch-all).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ActionOutcome {
-    /// Every step completed.
-    Ok,
-    /// An `until` step never saw its target before its own `timeout`
-    /// (`joker_hal::interpreter::Failure::TimedOut`, ref/06 §2.10).
-    TimedOut,
-    /// The driver reported a communication failure
-    /// (`Failure::Device`); the message is its `Debug` rendering.
-    Device(String),
-    /// Any other interpreter failure (`FailedCondition`/`Unsupported`);
-    /// the message is `Failure`'s own `Debug` rendering.
-    Failed(String),
-}
+pub use crate::action_exec::{ActionCall, ActionOutcome};
 
 /// The core's transport bits for a settled scalar raw value, or `None`
 /// when `value`'s kind cannot become `ty` without scale/word decoding
@@ -482,12 +452,6 @@ enum Ended {
     LinkDown,
 }
 
-fn reply_not_connected(call: ActionCall) {
-    let _ = call
-        .reply
-        .send(ActionOutcome::Device(String::from("not connected")));
-}
-
 /// Waits until `until` on `host`'s clock, answering every action call
 /// with a device failure (the link is not up), and polling `stop` at
 /// least every 100 ms. True when `stop` asked to end.
@@ -512,7 +476,7 @@ async fn pause(
             tokio::select! {
                 () = sleep => {}
                 call = action_rx.recv() => match call {
-                    Some(call) => reply_not_connected(call),
+                    Some(call) => crate::action_exec::not_connected(call),
                     None => *actions_open = false,
                 },
             }
@@ -705,7 +669,7 @@ async fn serve<D: Driver>(
                 () = sleep => {}
                 call = action_rx.recv() => {
                     match call {
-                        Some(call) => run_action(driver, host, timeout_ns, call).await,
+                        Some(call) => crate::action_exec::run(driver, host, timeout_ns, call).await,
                         None => *actions_open = false,
                     }
                     continue;
@@ -799,19 +763,4 @@ fn record_failed_acks(
             shared.write_acks_dropped.bump();
         }
     }
-}
-
-async fn run_action<D: Driver>(driver: &mut D, host: &dyn Host, timeout_ns: u64, call: ActionCall) {
-    let views: Vec<_> = call.steps.iter().map(DeviceStep::view).collect();
-    let deadline = host.now().mono_ns + timeout_ns;
-    let mut acx = Cx::new(host, deadline);
-    let result = joker_hal::interpreter::run(driver, &mut acx, 0, &views).await;
-    let _ = call.reply.send(match result {
-        Ok(()) => ActionOutcome::Ok,
-        Err(joker_hal::interpreter::Failure::TimedOut) => ActionOutcome::TimedOut,
-        Err(e @ joker_hal::interpreter::Failure::Device(_)) => {
-            ActionOutcome::Device(format!("{e:?}"))
-        }
-        Err(e) => ActionOutcome::Failed(format!("{e:?}")),
-    });
 }

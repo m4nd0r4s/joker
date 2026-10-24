@@ -1024,6 +1024,27 @@ async fn invoking_an_action_follows_the_contract() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_invocations_follow_the_contract() {
+    let f = start().await;
+    let list = f
+        .call("GET", "/v1/invocations", "/v1/invocations", None)
+        .await;
+    assert_eq!(list.status, 200, "{}", list.json());
+    assert_eq!(list.json()["items"].as_array().map(Vec::len), Some(0));
+
+    let unknown = f
+        .call(
+            "GET",
+            "/v1/invocations/{invocation}",
+            "/v1/invocations/01HZZZZZZZZZZZZZZZZZZZZZZZ",
+            None,
+        )
+        .await;
+    assert_eq!(unknown.status, 404, "{}", unknown.json());
+    assert_eq!(unknown.json()["code"], "J-E1404");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_manual_write_survives_a_jokerd_restart_within_its_ttl() {
     let dir = tempfile::tempdir().unwrap();
     let manifest = effective();

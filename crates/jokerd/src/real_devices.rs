@@ -392,9 +392,9 @@ fn setup_failed(
     stopped(shared, plan, device_index, host, QualityReason::ConfigError);
 }
 
-/// How many pending action calls a device's channel buffers before a
-/// caller sees the device's queue as full (`J-E1403`).
-const ACTION_CHANNEL_CAPACITY: usize = 4;
+/// How many pending action calls a device's channel buffers: the
+/// device queue of ADR 0066 §2, beyond which a caller sees `J-E1403`.
+const ACTION_CHANNEL_CAPACITY: usize = crate::actions::QUEUE_DEPTH;
 
 /// Every real device as its real driver, on a tokio runtime.
 #[derive(Clone)]
