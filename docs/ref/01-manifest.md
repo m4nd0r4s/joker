@@ -396,7 +396,7 @@ max_holdover = "24h"
 | `iface` | string (interface) | cond. | — | required with `ptp` (`J0142`) | new | 1.0 |
 | `max_holdover` | `Duration` | no | `"24h"` | ≤ `"30d"` | 03 §3 | 1.0 |
 
-`jokerd` does not implement NTP or PTP: it reads the state of the system daemon (chrony, systemd-timesyncd, linuxptp) and derives the quality of the clock (document 01, §18). With `sync = "none"`, the quality is always `unsynced`. The time of the Deck only serves as a coarse source, never beyond `holdover` (`ref/02` §3.2.4). On a Joker Micro, synchronization comes from the `TIME` message of Joker Link, or from the firmware with `extern`.
+`jokerd` does not implement NTP or PTP: it reads the state of the system daemon (chrony, systemd-timesyncd, linuxptp) and derives the quality of the clock (document 01, §18): `synced` up to 4096 s after the last synchronisation, `holdover` up to `max_holdover` after it, `unsynced` after that or before any synchronisation since boot, re-evaluated once a second and at each generation start, with each change recorded in the decision log (ADR 0069). With `sync = "none"`, the quality is always `unsynced`. The time of the Deck only serves as a coarse source, never beyond `holdover` (`ref/02` §3.2.4). On a Joker Micro, synchronization comes from the `TIME` message of Joker Link, or from the firmware with `extern`.
 
 ### 5.6 `[buses.<bus>]`
 
