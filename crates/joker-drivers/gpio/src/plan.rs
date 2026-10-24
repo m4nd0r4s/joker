@@ -2,15 +2,17 @@
 //! §2.2.5) and device config (`chip`, ref/01 appendix A).
 //!
 //! Scoped deliberately: only integer `line` indices (named lines need the
-//! real chip's name→offset map, not available without the Linux adapter);
-//! `bias` and `drive` are parsed and kept on the point (for the host's real
-//! line configuration) but not applied by this crate's own logic, which
-//! only inverts on `active_low`. `edges`, `timestamp` and `debounce` are a
+//! real chip's name→offset map, not available without the Linux adapter).
+//! `bias` and `drive` go to the host in each line's [`GpioLineConfig`]
+//! ([`Address::line_config`]), which requests them from the kernel, and
+//! `drive` on an input is a manifest error; this crate's own logic only
+//! inverts on `active_low`. `edges`, `timestamp` and `debounce` are a
 //! manifest error here (push/interrupt-driven reads are not implemented).
 
 use std::collections::BTreeMap;
 use std::vec::Vec;
 
+use joker_hal::GpioLineConfig;
 use joker_hal::descriptor::INTERFACE;
 use joker_hal::plan::Plan;
 use joker_hal::types::{Diagnostic, J0809, J0810, J0852, J0853};
@@ -35,29 +37,7 @@ pub const DESCRIPTOR: Descriptor = Descriptor {
         v1, not v2 — the bench board's kernel predates v2, which needs Linux 5.10+)",
 };
 
-/// `bias` (ref/03 §2.2.5).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Bias {
-    /// `as-is` (default): leaves the line's current pull.
-    AsIs,
-    /// `pull-up`.
-    PullUp,
-    /// `pull-down`.
-    PullDown,
-    /// `disabled`.
-    Disabled,
-}
-
-/// `drive` (ref/03 §2.2.5), outputs only.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Drive {
-    /// `push-pull` (default).
-    PushPull,
-    /// `open-drain`.
-    OpenDrain,
-    /// `open-source`.
-    OpenSource,
-}
+pub use joker_hal::link::{GpioBias as Bias, GpioDrive as Drive};
 
 /// A point's address (ref/03 §2.2.5).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -66,9 +46,9 @@ pub struct Address {
     pub line: u32,
     /// Inverts the logical value against the physical one.
     pub active_low: bool,
-    /// Kept for the host's real line configuration; not applied here.
+    /// The pull the host requests the line with.
     pub bias: Bias,
-    /// Kept for the host's real line configuration; not applied here.
+    /// The output stage the host requests the line with.
     pub drive: Drive,
 }
 
@@ -124,6 +104,20 @@ impl Address {
             drive,
         })
     }
+
+    /// The host request of this line. `safe` is `None` for an input and,
+    /// for an output, its declared safe state as a logical value: the
+    /// line is requested already at that state's physical level (inverted
+    /// when `active_low`), so it never starts at a level the manifest did
+    /// not declare (AGENTS.md invariant 5).
+    pub fn line_config(&self, safe: Option<bool>) -> GpioLineConfig {
+        GpioLineConfig {
+            line: self.line,
+            output: safe.map(|logical| logical != self.active_low),
+            bias: self.bias,
+            drive: self.drive,
+        }
+    }
 }
 
 /// Checks one point against ref/03 §2.2.5: a gpio line is always `bool`.
@@ -137,6 +131,13 @@ pub fn check_point(p: &PointSpec<'_>) -> Result<Address, Diagnostic<'static>> {
             J0810,
             p.id,
             "a gpio line is `input` or `output`, not `param`",
+        ));
+    }
+    if p.direction == Direction::Input && addr.drive != Drive::PushPull {
+        return Err(Diagnostic::at(
+            J0853,
+            p.id,
+            "`drive` applies to output lines only",
         ));
     }
     Ok(addr)
@@ -247,6 +248,29 @@ mod tests {
         assert!(a.active_low);
         assert_eq!(a.bias, Bias::PullUp);
         assert_eq!(a.drive, Drive::OpenDrain);
+    }
+
+    #[test]
+    fn an_output_line_starts_at_its_safe_state_through_active_low() {
+        let bytes = addr(&[
+            ("line", Value::Uint(5)),
+            ("bias", Value::text("pull-down")),
+            ("drive", Value::text("open-source")),
+        ]);
+        let high = Address::parse(Cbor::new(&bytes)).unwrap();
+        let config = high.line_config(Some(true));
+        assert_eq!(config.line, 5);
+        assert_eq!(config.output, Some(true));
+        assert_eq!(config.bias, Bias::PullDown);
+        assert_eq!(config.drive, Drive::OpenSource);
+        assert_eq!(high.line_config(Some(false)).output, Some(false));
+        let low = Address {
+            active_low: true,
+            ..high
+        };
+        assert_eq!(low.line_config(Some(false)).output, Some(true));
+        assert_eq!(low.line_config(Some(true)).output, Some(false));
+        assert_eq!(low.line_config(None).output, None);
     }
 
     #[test]

@@ -4,6 +4,7 @@
 
 use std::sync::Arc;
 
+use joker_driver_gpio::plan::check_point;
 use joker_driver_gpio::{GpioDriver, GpioPlanner};
 use joker_hal::acquire::OwnedRaw;
 use joker_hal::cbor::Value;
@@ -88,8 +89,6 @@ fn reads_a_button_inverted_and_writes_a_relay() {
         Bench::open(host, views.request(), plan.view(), link).unwrap();
     bench.connect().unwrap();
 
-    // Button is active_low: a physical `false` (pressed, pulled to ground)
-    // reads as the logical `true`.
     lines.drive(17, false);
     let settled = bench.read(0).unwrap();
     assert_eq!(settled[0].status, RawStatus::OK);
@@ -115,4 +114,66 @@ fn a_denied_line_surfaces_as_a_bad_read() {
     bench.connect().unwrap();
     let settled = bench.read(0).unwrap();
     assert_ne!(settled[0].status, RawStatus::OK);
+}
+
+#[test]
+fn outputs_are_requested_at_their_safe_state_before_any_write() {
+    let req = OwnedRequest {
+        points: vec![
+            OwnedPoint::output(0, "gpio.relay", RawKind::Bool, 0, "bool", addr(22, false)),
+            OwnedPoint::output(1, "gpio.lamp", RawKind::Bool, 0, "bool", addr(23, true)),
+            OwnedPoint::output(2, "gpio.fan", RawKind::Bool, 0, "bool", addr(24, false)),
+        ],
+        ..request()
+    };
+    let views = req.views();
+    let safe = [Some(false), Some(false), Some(true)];
+    let configs: Vec<_> = views
+        .request()
+        .points
+        .iter()
+        .zip(safe)
+        .map(|(p, safe)| check_point(p).unwrap().line_config(safe))
+        .collect();
+    let (chip, lines) = MemoryGpio::with_lines(&configs);
+    assert!(!lines.level(22), "safe false, active high: low");
+    assert!(lines.level(23), "safe false, active low: high");
+    assert!(lines.level(24), "safe true, active high: high");
+    let plan = GpioPlanner::plan(&views.request()).unwrap();
+    let host = Arc::new(VirtualHost::new(0));
+    let bench: Bench<'_, GpioDriver> = Bench::open(
+        host,
+        views.request(),
+        plan.view(),
+        Link::Gpio(GpioChip::new(chip)),
+    )
+    .unwrap();
+    drop(bench);
+    assert!(lines.level(23), "opening the driver writes nothing");
+}
+
+#[test]
+fn a_drive_on_an_input_line_is_a_plan_error() {
+    let drive_on_input = Value::map([
+        ("line", Value::Uint(17)),
+        ("drive", Value::text("open-drain")),
+    ])
+    .encode();
+    let req = OwnedRequest {
+        points: vec![OwnedPoint::input(
+            0,
+            "gpio.button",
+            RawKind::Bool,
+            0,
+            "bool",
+            drive_on_input,
+            100 * MS,
+        )],
+        ..request()
+    };
+    let views = req.views();
+    let errors = GpioPlanner::plan(&views.request()).unwrap_err();
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0].code.as_str(), "J0853");
+    assert!(errors[0].message.contains("output lines only"));
 }
