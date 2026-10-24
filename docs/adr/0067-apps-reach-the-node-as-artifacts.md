@@ -1,0 +1,28 @@
+# ADR 0067 — How Wasm apps reach a node, run from its AOT cache, and report traps
+
+**Status:** accepted (v1) · **Date:** 2026-10
+
+## Context
+
+Gate 1 of the M0 slice (document 26 §6) asks that the same `light.wasm` run in the simulator and on the Pi 3 with only the manifest changing. Until now only `jk dev`, `jk replay` and the tests hosted Wasm apps: they build the component on the laptop and hand it to the daemon in process. The deployed `jokerd` had no way to receive a component, and the specification leaves four things open on the way there:
+
+1. ref/09 §5.13 lists `joker.app.v1+wasm` and `joker.app.v1+cwasm` among the artifact kinds and names an app artifact `apps.<app>`, but it does not say how the `.cwasm` of an app is paired with its `.wasm`, nor whether the `.cwasm` enters the generation descriptor (ref/10 §2.6.2, key 6) — the lock already keeps it out (ref/02 §2.1, "the `.cwasm` is not pinned").
+2. ADR 0052 keys the AOT cache by engine and makes the laptop's cross engine the node's engine, but does not say which triple `jk apply` precompiles for, nor where `jk build --target` leaves the `.cwasm` on the laptop (ref/02 §2.3.1 lists no such place).
+3. ref/04 §7 and ADR 0052 say that `prod` refuses an app with no usable AOT artifact (`J-E0010`), without saying when the node decides: at the proposal, at the activation, or at the first tick.
+4. docs/01 §9 says a trap is reported and the app's outputs follow their lease to `safe`, but the M0 node has no `/v1/apps` and no alarms (M9) to report it with, and the cycle thread may not allocate or block to report anything.
+
+## Decision
+
+1. **Upload.** `jk apply` builds each Wasm app, precompiles it, asks `POST /v1/blobs/missing` which digests the node lacks and uploads only those with the monolithic `POST /v1/blobs/uploads?digest=&kind=` (ref/09 §5.13). The proposal lists, per app, one `joker.app.v1+wasm` artifact named `apps.<app>` and, when there is one, one `joker.app.v1+cwasm` artifact with the **same name**: the name pairs them. The node stores blobs at `artifacts/sha256/<hex>` (ref/02 §2.2.4) and the artifact list with the generation, so that an activation, a rollback and a boot find the same files.
+2. **Descriptor.** A `joker.app.v1+cwasm` artifact stays out of the generation descriptor (ref/10 §2.6.2, key 6), as it stays out of the lock: it is derived from the `.wasm` of the same name and differs per engine. Every other artifact of the proposal enters it.
+3. **The node's AOT cache.** When it validates a proposal, the node checks that every artifact is in the blob store (`J-E1602`, listing the missing digests), installs into `aot/<engine>/<hex of the .wasm>.cwasm` the `.cwasm` that its own engine accepts, and leaves out one built for another engine. It then loads each app from the cache: in `prod` an app with nothing there makes the proposal fail validation (`J-E1601` carrying `J-E0010`, with the reason a `.cwasm` was refused, if one was); in `dev` the node compiles it once and fills the cache (ADR 0052). A generation that did not load its apps is never stored, so activation and boot only read the cache. The cycle instance of each task is created before the first tick of its group, as for `jk dev`.
+4. **Trust.** Until signatures are checked (ADR 0025, `J-E1607`), the node installs a `.cwasm` uploaded by an `admin` of the local API: the same role that may upload the runtime itself (`jk runtime upgrade`, ref/09 §5.13). Wasmtime still checks the header against the engine before any code is loaded.
+5. **Which triple.** `jk build --target <board|triple>` precompiles for a target triple or for the `arch` of a board (`aarch64` → `aarch64-unknown-linux-gnu`, `x86_64` → `x86_64-unknown-linux-gnu`, `armv7` → `armv7-unknown-linux-gnueabihf`, `armv6` → `arm-unknown-linux-gnueabihf`, `riscv64` → `riscv64gc-unknown-linux-gnu`). `jk apply` precompiles for the board of `[target]`, and, without one (only in `dev`), for the machine `jk` runs on. When the triple has no engine, `jk apply` warns and sends the `.wasm` alone.
+6. **Where `jk` keeps them.** `jk` caches the `.cwasm` in `$XDG_CACHE_HOME/joker/aot/<engine>/<hex>.cwasm` (default `~/.cache/joker/aot`), the node's layout: it is a function of the engine and of the `.wasm` only, so one cache serves every project, and nothing is written into the project.
+7. **Trap report.** A trap of a cycle task discards the task's proposals of that tick (docs/01 §9) and puts the instance aside; its writer stops proposing and its outputs go to `safe` when their lease ends. The cycle thread reports the trap into a bounded, pre-allocated queue (a full queue drops it and counts it), and the daemon writes it to the decision log on its next poll as an `app_trap` record, **immediate** (`fsync`), with `gen`, `ts`, `app`, `task`, `code` (the `J-E09xx`), `tick` and `at_mono_ns`, next to the records of ADR 0061. It stands for the app state and alarm of ref/09 §5.14 until those exist; `GET /v1/decisions` keeps serving only `output` and `write` records.
+
+## Consequences
+
+- ref/09 §5.13, ref/10 §2.6.2, ref/02 §2.3.1 and document 07 §2 say the above.
+- The deployed `jokerd` runs the generation's Wasm apps ahead of the native tasks built into it; a generation sent without app artifacts still finds the native `light` of the M0 slice.
+- Not built yet, and outside this decision: upload sessions (`PATCH`/`PUT /v1/blobs/uploads/{upload}`, so a blob above 8 MiB cannot be uploaded), `GET /v1/blobs/{digest}`, deleting blobs no stored generation uses, the crashloop and re-creation of a trapped instance with backoff (docs/01 §9), `export-state` of a Wasm cycle instance (a recording that starts after tick 0 replays the app from `init`), and signature checks of app artifacts.

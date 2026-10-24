@@ -587,7 +587,7 @@ All keys. Reading is strict (ref/00 §1: an unknown key is `J0140`; `x_*` ignore
 | `<project>/.joker/state/`, `.joker/run/api.sock` | state and socket of the local runtime of `jk dev` (same layout as §2.2.4) | no |
 | `<project>/.joker/secrets.dev.toml` | plaintext secrets **only for the local runtime** (format of §2.4.2) | no |
 | `$XDG_DATA_HOME/joker/` (`~/.local/share/joker/`) | `certs/` (user certificates), `keys/` (private signing and secrets keys) | no |
-| `$XDG_CACHE_HOME/joker/` (`~/.cache/joker/`) | OCI cache by digest, registry indexes | no |
+| `$XDG_CACHE_HOME/joker/` (`~/.cache/joker/`) | OCI cache by digest, registry indexes; `aot/<engine>/<hex>.cwasm`, the apps precompiled by `jk build --target` and `jk apply`, with the node's layout (§2.2.4, ADR 0067) | no |
 
 The project root is the nearest directory, going up from the current directory, that has `.joker/` or `.git/`; with neither, it is the directory of the input manifest.
 
