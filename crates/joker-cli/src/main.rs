@@ -2,6 +2,7 @@
 
 mod apps;
 mod board;
+mod class;
 mod dev;
 mod node;
 mod profile;
@@ -205,6 +206,31 @@ enum Command {
         #[command(subcommand)]
         command: BoardCommand,
     },
+    /// Equipment classes (docs/14, docs/17).
+    Class {
+        #[command(subcommand)]
+        command: ClassCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum ClassCommand {
+    /// The available classes, with versions.
+    List {
+        /// Only the classes of `std/`.
+        #[arg(long, conflicts_with = "project")]
+        std: bool,
+        /// Only the classes of the project's `classes/`.
+        #[arg(long)]
+        project: bool,
+    },
+    /// Members, capabilities, methods, queries and reference standards of a class.
+    Show {
+        /// The class (`std/led@1`; `std/` may be omitted).
+        class: String,
+    },
+    /// Validates the classes of `std/` and of the project (JC codes).
+    Check,
 }
 
 #[derive(Debug, Subcommand)]
@@ -399,5 +425,18 @@ fn run(cli: Cli) -> Result<u8, Failure> {
         Command::Board {
             command: BoardCommand::Show { file },
         } => board::show(&file),
+        Command::Class { command } => {
+            let entry = entry()?;
+            let root = entry
+                .manifest
+                .parent()
+                .filter(|p| !p.as_os_str().is_empty())
+                .map_or_else(|| PathBuf::from("."), PathBuf::from);
+            match command {
+                ClassCommand::List { std, project } => class::list(&root, std, project),
+                ClassCommand::Show { class } => class::show(&root, &class),
+                ClassCommand::Check => class::check(&root),
+            }
+        }
     }
 }
