@@ -1289,6 +1289,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "joker-classes-std"
+version = "0.0.0"
+dependencies = [
+ "joker-jkc",
+]
+
+[[package]]
 name = "joker-cli"
 version = "0.0.0"
 dependencies = [
