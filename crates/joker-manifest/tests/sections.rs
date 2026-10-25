@@ -448,7 +448,15 @@ fn every_1_1_case_reports_its_code() {
 
 #[test]
 fn every_ref01_code_is_emitted_or_deferred() {
-    let deferred: [(&str, &str); 5] = [
+    let deferred: [(&str, &str); 7] = [
+        (
+            "J0260",
+            "reserved: data classes are not implemented yet (ADR 0079)",
+        ),
+        (
+            "J0261",
+            "reserved: data classes are not implemented yet (ADR 0079)",
+        ),
         (
             "J0381",
             "storage write load: no endurance model yet (ADR 0048)",
