@@ -1563,6 +1563,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "joker-spec-tests"
+version = "0.0.0"
+dependencies = [
+ "joker-manifest",
+ "jsonschema",
+ "regex",
+ "serde_json",
+ "sha2",
+ "syn 2.0.119",
+ "toml",
+ "yaml-rust2",
+]
+
+[[package]]
 name = "joker-store"
 version = "0.0.0"
 dependencies = [
