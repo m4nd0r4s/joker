@@ -504,6 +504,9 @@ models = [1, 101, 102, 103, 120, 121, 122, 123, 160, 701, 702, 703, 704]
 - The scales come from the `*_SF` points as `scale_factor`, read in the same batch (05 §3).
 - The result (models, addresses, firmware, digest of the effective map) goes to the lock (`[discovered.<d>]` with the `models` field, which is the `discovered` schema of the Modbus drivers; ref/02 §2.1.11, ref/06 §2.11) and is only used in `prod` if it is pinned (05 §7).
 - Invalid configuration: `J0825`.
+- **The walk** (ADR 0077) reads only, with FC 3: the marker `SunS` at each of `bases` in order; then each model header (`id`, `len`), the next one at `at + 2 + len`, until the id `0xFFFF` or an exception on a header; then the body of each accepted model the driver knows (1, 101–103, the head of 201–204). No marker, more than `max_models` models, or a failed read: `J0876` at `connect`.
+- **The effective map** is `{ models, scales }`: the accepted models in chain order (`at` is the address of the id register) and every `*_SF` read, keyed `<prefix>.<point>`, where the prefix is `m<id>` and `m<id>_<n>` for the n-th repetition of a model. Its digest covers the scale factors, so a changed factor is a drift of the map. A chain whose digest differs from the pinned one fails `connect` with `J0401 kind=map`.
+- **Generated profile.** From a map, `jk profile import`-style output (§2.2.19): one input per point of each known model at its absolute address, with type, unit and `label`; the scale factor read at discovery is written as `scale` (this runtime does not read `scale_factor`, ADR 0064), with a `# REVIEW` line. In this runtime, the drivers discover when the device's quirks carry `discovery`, and `[discovery]` in a profile is still refused (`J0807`) until jokerd pins and passes the map (ADR 0077 §8).
 
 #### 2.2.16 Generated profiles (Joker Link)
 
