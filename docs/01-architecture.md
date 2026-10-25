@@ -312,6 +312,8 @@ A frame is never copied between the producer and native consumers. Wasm apps rec
 
 Target: 200 k samples/s of ingestion on a CM4 with eMMC, with 1–2 bytes per compressed sample on typical process signals.
 
+The on-disk layout, the checkpoints that bound the WAL, the aggregate rules (a `Bad` sample only counts; the dominant quality is the most frequent code, the worse one on a tie), the order of retention by size and the critical disk are in ADR 0081.
+
 **The storage medium matters.** The board declares `storage = "sd" | "emmc" | "ssd"` (`ref/03` §2.3.1). `jk check` projects the write load of the manifest (historian, decision log, `kv`, continuous trace, and the number of fsyncs) and `jk doctor` measures it on the node; above what the medium can take, the warning `J0381` says how much and where it comes from. An SD card is the most fragile case, and it is the bench's (document 23).
 
 ---
@@ -390,7 +392,7 @@ Joker **does not update the OS**. It integrates with RAUC, SWUpdate or Mender fo
 ## 18. Time (M14)
 
 - **Scheduling:** `CLOCK_MONOTONIC`. Never the wall clock.
-- **Timestamps:** UTC in ns, with **clock quality** per time generation: `Synced(ntp|ptp|gnss)`, `Holdover(since)`, `Unsynced`. Each sample stores `ts_acq` in relative monotonic time, and the translation to UTC uses the historian's correspondence table. A clock jump (NTP correcting 3 hours after a boot without an RTC) does not scramble the series: the correspondence is corrected retroactively, without rewriting samples.
+- **Timestamps:** UTC in ns, with **clock quality** per time generation: `Synced(ntp|ptp|gnss)`, `Holdover(since)`, `Unsynced`. Each sample stores `ts_acq` in relative monotonic time, and the translation to UTC uses the historian's correspondence table. A clock jump (NTP correcting 3 hours after a boot without an RTC) does not scramble the series: the correspondence is corrected retroactively, without rewriting samples. **Reserved in 1.0** (ADR 0081): the 1.0 historian stores the UTC instant computed at acquisition, and a clock correction does not change samples already recorded.
 - **Apps:** `cx.now()` returns the tick time (monotonic and UTC, plus the quality). An app may declare `requires_clock = "synced"`, and in that case its outputs stay blocked while the clock is not synchronized: `Rejected(ClockUnsynced)` at step 0 of the envelope, and the output goes to `safe` (§7; 16, E1). This is the case of an hourly tariff.
 - **PTP** (IEEE 1588 via `linuxptp`) for sites that need sub-ms correlation between devices.
 

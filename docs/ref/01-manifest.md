@@ -1031,7 +1031,7 @@ fsync    = "batch"
 | Key | Type | Req. | Default | Validation | Origin | Phase |
 |---|---|---|---|---|---|---|
 | `max_disk` | `Size` | no | 25% of the node's data partition, measured at `jk apply` | retention by size beats retention by time (document 01, §12) | 03 §11 | 1.0 |
-| `fsync` | `"batch"` \| `"always"` \| `"never"` | no | `"batch"` | | 03 §11 | 1.0 |
+| `fsync` | `"batch"` \| `"always"` \| `"never"` | no | `"batch"` | `batch` also syncs at once after alarm and decision records; `never` syncs only at checkpoints (ADR 0081) | 03 §11 | 1.0 |
 | `fsync_interval` | `Duration` | no | `"1s"` | only with `batch` | 01 §12, new | 1.0 |
 
 The on-disk path of the historian is node configuration (`ref/02`), not site configuration.

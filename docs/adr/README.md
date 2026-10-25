@@ -75,5 +75,6 @@
 | [0076](0076-modbus-register-outputs-and-bit-read-modify-write.md) | Modbus register outputs, and a `bool` output in a register bit by read-modify-write |
 | [0077](0077-sunspec-discovery-over-modbus.md) | SunSpec discovery in the Modbus drivers, its effective map, and the profile generated from it |
 | [0078](0078-revpi-driver-over-picontrol.md) | The `revpi` driver over piControl |
+| [0081](0081-historian-storage-wal-segments-and-retention.md) | Historian storage: WAL, segments, checkpoints and retention |
 
 Changing a decision = writing a new ADR that replaces it, and updating the affected documents in the same set of commits.
