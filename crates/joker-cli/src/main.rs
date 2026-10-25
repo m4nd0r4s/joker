@@ -176,6 +176,25 @@ enum Command {
     },
     /// Lists tripped outputs (docs/16 E7).
     Trips,
+    /// Calls a class method as a manual writer (docs/17 §4.1).
+    Call {
+        /// `<instance>.<method>`.
+        target_method: String,
+        /// Arguments, as `name=value` (bool/number/quantity).
+        args: Vec<String>,
+        /// How long the writes hold (mandatory).
+        #[arg(long)]
+        ttl: String,
+        /// Why (mandatory).
+        #[arg(long)]
+        reason: String,
+        /// The manual level, default `manual:4`.
+        #[arg(long)]
+        level: Option<String>,
+        /// Take the level from another person.
+        #[arg(long)]
+        takeover: bool,
+    },
     /// Invokes an action of a device (ref/09 §5.10).
     Action {
         /// `<target>.<action>`.
@@ -453,6 +472,21 @@ fn run(cli: Cli) -> Result<u8, Failure> {
             args,
             key,
         } => node()?.action(&target_action, &args, &key),
+        Command::Call {
+            target_method,
+            args,
+            ttl,
+            reason,
+            level,
+            takeover,
+        } => node()?.call(
+            &target_method,
+            &args,
+            &ttl,
+            &reason,
+            level.as_deref(),
+            takeover,
+        ),
         Command::Decisions { output, limit } => node()?.decisions(&output, limit),
         Command::History {
             selectors,

@@ -612,6 +612,55 @@ impl Node {
         })
     }
 
+    /// `jk call <instance>.<method> [name=value …] --ttl <t> --reason "…"`:
+    /// calls a class method as a manual writer (docs/17 §4.1, ref/09 §5.11).
+    pub fn call(
+        &self,
+        target_method: &str,
+        args: &[String],
+        ttl: &str,
+        reason: &str,
+        level: Option<&str>,
+        takeover: bool,
+    ) -> Result<u8, Failure> {
+        let (instance, method) = split_target_action(target_method)?;
+        let mut body = json!({
+            "args": parse_args(args)?,
+            "ttl": ttl,
+            "reason": reason,
+            "takeover": takeover,
+        });
+        if let Some(l) = level {
+            body["level"] = json!(l);
+        }
+        let result = checked(self.client.post(
+            &format!("/v1/instances/{instance}/methods/{method}"),
+            &body,
+            &[],
+        )?)?
+        .json();
+        if self.json {
+            print_json(&result);
+            return Ok(0);
+        }
+        println!("{}", self.header()?);
+        let mut code = 0;
+        for w in result["writes"].as_array().cloned().unwrap_or_default() {
+            let outcome = w["outcome"]["outcome"].as_str().unwrap_or("queued");
+            println!(
+                "{:<24} {:<10} {} · applied {}",
+                w["output"].as_str().unwrap_or(""),
+                w["value"],
+                outcome,
+                w["outcome"]["applied"]
+            );
+            if matches!(outcome, "rejected" | "tripped") {
+                code = 3;
+            }
+        }
+        Ok(code)
+    }
+
     /// `jk decisions`.
     pub fn decisions(&self, outputs: &[String], limit: u32) -> Result<u8, Failure> {
         let mut q = vec![format!("limit={limit}")];
