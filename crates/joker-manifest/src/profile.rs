@@ -14,8 +14,9 @@
 //! `[enums]` (variant → integer), `[fallback]` (`timeout`, `value`,
 //! `applies_to`, `configurable`), `[actions]` (`steps`, `timeout`, and
 //! `args`, `result`, `long`, `native` and `description` kept as
-//! [`crate::context::ActionDecl`], ADR 0066) and the class actions
-//! `[implements]` maps to them ([`ProfileInfo::implemented_actions`]).
+//! [`crate::context::ActionDecl`], ADR 0066), the class actions
+//! `[implements]` maps to them ([`ProfileInfo::implemented_actions`]) and
+//! `[implements]` itself ([`ProfileInfo::implements`]).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -23,7 +24,10 @@ use std::path::Path;
 use joker_units::{Duration, Literal, Unit};
 use toml::de::DeTable;
 
-use crate::context::{Acquisition, Direction, PointPoll, ProfileInfo, SignalInfo, SignalType};
+use crate::context::{
+    Acquisition, Direction, Implements, ImplementsTarget, PointPoll, ProfileInfo, SignalInfo,
+    SignalType,
+};
 use crate::diag::{Diagnostic, Diagnostics};
 use crate::source::{FileId, Sources, Span};
 use crate::value::{self, Node, Table, Value};
@@ -274,6 +278,7 @@ fn load(table: &Table, file: FileId, diagnostics: &mut Diagnostics) -> Option<Pr
     let actions = actions_of(table, &action_steps, diagnostics);
     let action_decls = action_decls_of(table, &action_steps, diagnostics);
     let implemented_actions = implemented_actions_of(table, &actions);
+    let implements = implements_of(table, diagnostics);
     let quirks_table = profile_table.get("quirks").and_then(|e| e.node.as_table());
     let latency = quirks_table
         .and_then(|t| t.get("latency"))
@@ -295,6 +300,7 @@ fn load(table: &Table, file: FileId, diagnostics: &mut Diagnostics) -> Option<Pr
         action_steps,
         action_decls,
         implemented_actions,
+        implements,
         enums: enum_values_of(table),
         fallback_outputs: fallback.outputs,
         fallback_value: fallback.value,
@@ -1215,6 +1221,82 @@ fn action_decls_of(
             }
         }
         out.insert(name.clone(), decl);
+    }
+    out
+}
+
+/// `[implements."<class>"]` (ref/03 §2.2.14): `capabilities` and `map`;
+/// `members` (a composite class fulfilled by one profile) is not
+/// implemented yet and `instances` belongs to 1.x, both `J0807`. The map
+/// is checked against the class where the class is known, in the
+/// manifest checks.
+fn implements_of(table: &Table, diagnostics: &mut Diagnostics) -> BTreeMap<String, Implements> {
+    let Some(implements) = table.get("implements").and_then(|e| e.node.as_table()) else {
+        return BTreeMap::new();
+    };
+    let mut out = BTreeMap::new();
+    for (class, entry) in implements {
+        let Some(t) = entry.node.as_table() else {
+            diagnostics.push(
+                Diagnostic::new("J0824", format!("`[implements.\"{class}\"]` is a table"))
+                    .at(entry.node.span),
+            );
+            continue;
+        };
+        check_keys(
+            t,
+            &["capabilities", "map"],
+            &["members", "instances"],
+            &format!("`[implements.\"{class}\"]`"),
+            diagnostics,
+        );
+        let capabilities = t
+            .get("capabilities")
+            .and_then(|e| match &e.node.value {
+                Value::Array(a) => Some(
+                    a.iter()
+                        .filter_map(|n| n.as_str().map(str::to_owned))
+                        .collect(),
+                ),
+                _ => None,
+            })
+            .unwrap_or_default();
+        let mut map = BTreeMap::new();
+        if let Some(m) = t.get("map").and_then(|e| e.node.as_table()) {
+            for (member, target) in m {
+                let target = match &target.node.value {
+                    Value::String(s) => {
+                        if let Some(a) = s.strip_prefix("actions.") {
+                            ImplementsTarget::Action(a.to_owned())
+                        } else if let Some(c) = s.strip_prefix("const:") {
+                            ImplementsTarget::Const(c.to_owned())
+                        } else {
+                            ImplementsTarget::Signal(s.clone())
+                        }
+                    }
+                    Value::Table(adapter) => ImplementsTarget::Adapter {
+                        signal: adapter
+                            .get("signal")
+                            .and_then(|e| e.node.as_str())
+                            .map(str::to_owned),
+                        keys: adapter.keys().cloned().collect(),
+                    },
+                    _ => ImplementsTarget::Invalid,
+                };
+                map.insert(member.clone(), target);
+            }
+        } else {
+            diagnostics.push(
+                Diagnostic::new("J0142", format!("`[implements.\"{class}\"]` without `map`"))
+                    .at(entry.key),
+            );
+        }
+        let reference = if class.contains('/') {
+            class.clone()
+        } else {
+            format!("std/{class}")
+        };
+        out.insert(reference, Implements { capabilities, map });
     }
     out
 }

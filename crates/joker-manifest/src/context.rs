@@ -232,6 +232,10 @@ pub struct ProfileInfo {
     /// whose `map` names one of this profile's actions (`m =
     /// "actions.<a>"`, ref/03 §2.2.14): member name to action name.
     pub implemented_actions: BTreeMap<String, String>,
+    /// `[implements."<class>"]`, by full class reference (`std/led@1`):
+    /// the classes each device with this profile fulfills, as one implicit
+    /// instance with the device's name (ref/03 §2.2.14).
+    pub implements: BTreeMap<String, Implements>,
     /// `[enums]`: each enum's variants and their integer values (ref/03
     /// §2.2.8).
     pub enums: BTreeMap<String, BTreeMap<String, i64>>,
@@ -241,6 +245,36 @@ pub struct ProfileInfo {
     /// `[fallback] value`: the fixed value the equipment applies in
     /// fallback, checked against each covered output's `safe` (`J0205`).
     pub fallback_value: Option<crate::value::Value>,
+}
+
+/// One `[implements."<class>"]` of a profile (ref/03 §2.2.14).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Implements {
+    /// `capabilities`: what the equipment has.
+    pub capabilities: Vec<String>,
+    /// `map`: class member to its target.
+    pub map: BTreeMap<String, ImplementsTarget>,
+}
+
+/// The target of a member in an `[implements]` map (docs/17 §5.2).
+#[derive(Debug, Clone, PartialEq)]
+pub enum ImplementsTarget {
+    /// A signal of the profile, by relative path (`"status.running"`).
+    Signal(String),
+    /// `"actions.<a>"`.
+    Action(String),
+    /// `"const:<literal>"`.
+    Const(String),
+    /// An adapter table (`{ signal, scale }`, `enum_map`, `edge`,
+    /// `on_rise`, …), with the signal it reads when it names one.
+    Adapter {
+        /// The `signal` key.
+        signal: Option<String>,
+        /// The adapter keys, sorted.
+        keys: Vec<String>,
+    },
+    /// A value of another shape.
+    Invalid,
 }
 
 impl ProfileInfo {

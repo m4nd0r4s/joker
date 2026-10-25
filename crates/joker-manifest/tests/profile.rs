@@ -595,3 +595,27 @@ fn x_keys_are_ignored() {
     ));
     assert!(!p.signals["p"].raw.contains_key("x_comment"));
 }
+
+#[test]
+fn implements_keeps_the_map_and_reserves_members_and_instances() {
+    use joker_manifest::context::ImplementsTarget;
+    let p = ok(&format!(
+        "{HEADER}[signals.run]\naddress = {{ at = 0, fc = 5 }}\ntype = \"bool\"\ndirection = \"output\"\n\n[implements.\"pump@1\"]\ncapabilities = [\"variable_speed\"]\nmap = {{ run_cmd = \"run\", reset = \"actions.reset\", fault = \"const:false\", speed_set = {{ signal = \"run\", scale = 0.01 }} }}\n"
+    ));
+    let i = &p.implements["std/pump@1"];
+    assert_eq!(i.capabilities, ["variable_speed"]);
+    assert_eq!(i.map["run_cmd"], ImplementsTarget::Signal("run".into()));
+    assert_eq!(i.map["reset"], ImplementsTarget::Action("reset".into()));
+    assert_eq!(i.map["fault"], ImplementsTarget::Const("false".into()));
+    assert!(matches!(
+        &i.map["speed_set"],
+        ImplementsTarget::Adapter { signal: Some(s), .. } if s == "run"
+    ));
+    for key in ["instances = { a = { run_cmd = \"run\" } }", "members = {}"] {
+        let report = parse(
+            Path::new("acme/pcs.profile.toml"),
+            &format!("{HEADER}[implements.\"std/pump@1\"]\nmap = {{}}\n{key}\n"),
+        );
+        assert!(report.render().contains("J0807"), "{}", report.render());
+    }
+}
