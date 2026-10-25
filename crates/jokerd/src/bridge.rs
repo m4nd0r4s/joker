@@ -322,13 +322,20 @@ fn parse_poll(raw: &BTreeMap<String, Node>) -> Option<Duration> {
 /// string (ref/06 §2.7). Scoped to the scalar/byte-buffer shapes the
 /// drivers built so far actually use; a new family's raw type needs an
 /// arm here (same spirit as `ref/03 §2.2.5`'s per-family address tables).
-fn point_shape(driver: &str, type_name: &str, addr_len: Option<u8>) -> Option<(RawKind, u16)> {
+/// A Modbus `bool` with a `bit` is one register (ref/06 §2.7).
+fn point_shape(
+    driver: &str,
+    type_name: &str,
+    addr_len: Option<u8>,
+    has_bit: bool,
+) -> Option<(RawKind, u16)> {
     match driver {
         "modbus-rtu" | "modbus-tcp" => Some(match type_name {
+            "bool" if has_bit => (RawKind::Regs, 1),
             "bool" => (RawKind::Bool, 0),
-            "u16" | "i16" => (RawKind::Regs, 1),
-            "u32" | "i32" | "f32" => (RawKind::Regs, 2),
-            "u64" | "i64" | "f64" => (RawKind::Regs, 4),
+            "u16" | "i16" | "bits16" => (RawKind::Regs, 1),
+            "u32" | "i32" | "f32" | "bits32" => (RawKind::Regs, 2),
+            "u64" | "i64" | "f64" | "bits64" => (RawKind::Regs, 4),
             _ => return None,
         }),
         "sysfs" => Some(match type_name {
@@ -667,8 +674,9 @@ impl OutputConversion {
 }
 
 /// The [`OutputConversion`] of an output point; an error for a point the
-/// output stage cannot write (a `bool` in a register bit, which would need
-/// a read-modify-write).
+/// output stage cannot write. A `bool` in a register bit stays a `bool`
+/// after `invert`: the driver sets or clears the bit by read-modify-write
+/// (ADR 0076).
 pub fn output_conversion(point: &DevicePointPlan) -> Result<Option<OutputConversion>, String> {
     use crate::drivers::RawType;
     use joker_hal::encode::{RawNumber, RegLayout};
@@ -687,13 +695,8 @@ pub fn output_conversion(point: &DevicePointPlan) -> Result<Option<OutputConvers
         RawType::Other => return Ok(None),
     };
     let regs = match point.expect {
+        RawKind::Regs if raw == RawNumber::Bool => None,
         RawKind::Regs => {
-            if raw == RawNumber::Bool {
-                return Err(format!(
-                    "`{}`: a `bool` output in a register bit is not supported by this runtime yet (ADR 0075)",
-                    point.path
-                ));
-            }
             let decode = crate::drivers::Decode::of_point(&point.type_name, &point.addr);
             Some(RegLayout {
                 words: u8::try_from(point.width)
@@ -736,7 +739,8 @@ fn point_from_raw(
     } else {
         None
     };
-    let (expect, width) = point_shape(driver, type_name, addr_len).ok_or_else(|| {
+    let has_bit = raw.contains_key("bit");
+    let (expect, width) = point_shape(driver, type_name, addr_len, has_bit).ok_or_else(|| {
         err(format!(
             "{device}.{signal}: type `{type_name}` not supported by `{driver}`"
         ))
