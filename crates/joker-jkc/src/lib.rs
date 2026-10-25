@@ -17,6 +17,7 @@ pub mod check;
 pub mod compat;
 pub mod contract;
 pub mod expr;
+pub mod info;
 pub mod parser;
 pub mod show;
 pub mod stdlib;

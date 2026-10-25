@@ -1625,6 +1625,7 @@ dependencies = [
  "joker-expr",
  "joker-hal",
  "joker-host",
+ "joker-jkc",
  "joker-manifest",
  "joker-store",
  "joker-units",

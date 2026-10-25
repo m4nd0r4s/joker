@@ -8,13 +8,20 @@
 //! boards (docs/26 §6, docs/23 §1). The driver crates will
 //! describe themselves once `joker-hal` lands; this module then only merges
 //! their descriptions.
+//!
+//! The classes are those of `std/` this runtime embeds and, for a project
+//! or a generation, the canonical contracts of its own classes
+//! (`contracts/<package>/<name>@<version>.contract.json`, docs/17 §6.1),
+//! which `jk` compiles from `classes/` and sends with the generation.
 
 use std::collections::BTreeMap;
 use std::path::Path;
 
 use joker_manifest::Context;
 use joker_manifest::context::Direction;
-use joker_manifest::context::{BoardInfo, DriverInfo, ProfileInfo, SignalInfo, SignalType};
+use joker_manifest::context::{
+    BoardInfo, ClassInfo, DriverInfo, ProfileInfo, SignalInfo, SignalType,
+};
 use joker_manifest::model::BusKind;
 use joker_units::{Duration, Unit};
 
@@ -177,14 +184,24 @@ pub fn boards() -> BTreeMap<String, BoardInfo> {
     b
 }
 
-/// The context of the manifest checks: the M0 catalogue plus the apps the
-/// task providers can run.
+/// The classes of `std/` this runtime embeds, as the manifest checks see
+/// them, by reference (`std/led@1`).
+pub fn std_classes() -> BTreeMap<String, ClassInfo> {
+    joker_jkc::stdlib::contracts()
+        .iter()
+        .map(|(reference, file)| (reference.clone(), joker_jkc::info::class_info(file)))
+        .collect()
+}
+
+/// The context of the manifest checks: the M0 catalogue, the classes of
+/// `std/`, plus the apps the task providers can run.
 pub fn context(tasks: &dyn TaskProvider) -> Context {
     Context {
         drivers: drivers(),
         profiles: profiles(),
         boards: boards(),
         apps: tasks.interfaces(),
+        classes: std_classes(),
         ..Context::default()
     }
 }
@@ -200,10 +217,16 @@ pub const PROFILE_KIND: &str = "joker.profile.v1+toml";
 /// The media type of a board file (ref/00 §7.1).
 pub const BOARD_KIND: &str = "joker.board.v1+toml";
 
-/// The media type of the catalog file `name` (`profiles/…` or `boards/…`).
+/// The media type of a class contract (ref/00 §7.1, docs/15).
+pub const CONTRACT_KIND: &str = "joker.class.contract.v1+json";
+
+/// The media type of the catalog file `name` (`profiles/…`, `boards/…`
+/// or `contracts/…`).
 pub fn kind_of(name: &str) -> &'static str {
     if name.starts_with("boards/") {
         BOARD_KIND
+    } else if name.starts_with("contracts/") {
+        CONTRACT_KIND
     } else {
         PROFILE_KIND
     }
@@ -230,24 +253,42 @@ pub fn is_catalog_path(name: &str) -> bool {
                 file.ends_with(".profile.toml") && file.contains('@')
             }
             ["boards", file] => file.ends_with(".board.toml"),
+            ["contracts", .., file] if segments.len() >= 3 => {
+                file.ends_with(".contract.json") && file.contains('@')
+            }
             _ => false,
         }
 }
 
-/// The profiles and boards of `files`, keyed as the manifest refers to
-/// them (`acme/pcs@1`, `rpi5`); a file that does not parse is reported in
-/// the third element and left out, and does not stop the others.
+/// The profiles, boards and classes of `files`, keyed as the manifest
+/// refers to them (`acme/pcs@1`, `rpi5`, `local/tank@1`); a file that does
+/// not parse is reported in the fourth element and left out, and does not
+/// stop the others.
 type Parsed = (
     BTreeMap<String, ProfileInfo>,
     BTreeMap<String, BoardInfo>,
+    BTreeMap<String, ClassInfo>,
     Vec<String>,
 );
 
 fn parse_catalog(files: &CatalogFiles) -> Parsed {
     let mut profiles = BTreeMap::new();
     let mut boards = BTreeMap::new();
+    let mut classes = BTreeMap::new();
     let mut errors = Vec::new();
     for (name, text) in files {
+        if name.starts_with("contracts/") {
+            match joker_jkc::contract::ContractFile::from_json(text) {
+                Ok(file) => {
+                    classes.insert(
+                        file.contract.reference(),
+                        joker_jkc::info::class_info(&file),
+                    );
+                }
+                Err(e) => errors.push(format!("{name}: {e}")),
+            }
+            continue;
+        }
         let path = Path::new(name);
         if let Some(key) = name
             .strip_prefix("profiles/")
@@ -273,7 +314,7 @@ fn parse_catalog(files: &CatalogFiles) -> Parsed {
             }
         }
     }
-    (profiles, boards, errors)
+    (profiles, boards, classes, errors)
 }
 
 /// The context of the manifest checks: the M0 catalogue, the apps of
@@ -282,18 +323,59 @@ fn parse_catalog(files: &CatalogFiles) -> Parsed {
 /// parse are reported in the second element and left out.
 pub fn context_for_files(tasks: &dyn TaskProvider, files: &CatalogFiles) -> (Context, Vec<String>) {
     let mut context = context(tasks);
-    let (profiles, boards, errors) = parse_catalog(files);
+    let (profiles, boards, classes, errors) = parse_catalog(files);
     context.profiles.extend(profiles);
     context.boards.extend(boards);
+    context.classes.extend(classes);
     (context, errors)
 }
 
-/// Every profile and board file under `root` (`profiles/**.profile.toml`,
-/// `boards/*.board.toml`), keyed by its path relative to `root`. A file
-/// that cannot be read is reported in the second element.
-pub fn catalog_files(root: &Path) -> (CatalogFiles, Vec<String>) {
-    let mut files = CatalogFiles::new();
+/// The canonical contracts of the project's own classes: every
+/// `classes/**/*.jkc` under `root` (except `classes/std/`, which this
+/// runtime embeds), compiled with `std/`, keyed
+/// `contracts/<package>/<name>@<version>.contract.json`. The diagnostics
+/// of a class that does not compile are returned in the second element.
+pub fn project_contracts(root: &Path) -> (CatalogFiles, Vec<String>) {
+    let mut sources = Vec::new();
     let mut errors = Vec::new();
+    for path in toml_files(&root.join("classes"), ".jkc") {
+        if path.starts_with(root.join("classes/std")) {
+            continue;
+        }
+        let rel = path.strip_prefix(root).unwrap_or(&path).to_path_buf();
+        match std::fs::read_to_string(&path) {
+            Ok(text) => sources.push((rel, text)),
+            Err(_) => errors.push(format!("{}: could not read", path.display())),
+        }
+    }
+    let mut files = CatalogFiles::new();
+    if sources.is_empty() {
+        return (files, errors);
+    }
+    let mut all = joker_jkc::stdlib::sources();
+    all.extend(sources);
+    let compilation = joker_jkc::compile(all);
+    if !compilation.diagnostics.is_empty() {
+        errors.push(compilation.render());
+    }
+    for file in compilation.classes.values() {
+        if file.contract.package() == "std" {
+            continue;
+        }
+        files.insert(
+            format!("contracts/{}/{}", file.contract.package(), file.file_name()),
+            file.to_json(),
+        );
+    }
+    (files, errors)
+}
+
+/// Every profile and board file under `root` (`profiles/**.profile.toml`,
+/// `boards/*.board.toml`), keyed by its path relative to `root`, and the
+/// [`project_contracts`] of its classes. A file that cannot be read, or a
+/// class that does not compile, is reported in the second element.
+pub fn catalog_files(root: &Path) -> (CatalogFiles, Vec<String>) {
+    let (mut files, mut errors) = project_contracts(root);
     let found = toml_files(&root.join("profiles"), ".profile.toml")
         .into_iter()
         .chain(
@@ -335,7 +417,7 @@ pub fn context_for_project(tasks: &dyn TaskProvider, root: &Path) -> (Context, V
 /// are reported and left out.
 pub fn profiles_from_dir(root: &Path) -> (BTreeMap<String, ProfileInfo>, Vec<String>) {
     let (files, mut errors) = catalog_files(root);
-    let (profiles, _, parse_errors) = parse_catalog(&files);
+    let (profiles, _, _, parse_errors) = parse_catalog(&files);
     errors.extend(
         parse_errors
             .into_iter()
@@ -348,7 +430,7 @@ pub fn profiles_from_dir(root: &Path) -> (BTreeMap<String, ProfileInfo>, Vec<Str
 /// cannot be read or parsed are reported and left out.
 pub fn boards_from_dir(root: &Path) -> (BTreeMap<String, BoardInfo>, Vec<String>) {
     let (files, mut errors) = catalog_files(root);
-    let (_, boards, parse_errors) = parse_catalog(&files);
+    let (_, boards, _, parse_errors) = parse_catalog(&files);
     errors.extend(
         parse_errors
             .into_iter()
@@ -439,6 +521,68 @@ mod tests {
         assert!(errors.is_empty(), "{errors:?}");
         assert!(context.profiles.contains_key("acme/pcs@1"));
         assert!(context.profiles.contains_key("local/bench-esp32@1"));
+    }
+
+    const MANIFEST: &str = "[project]\nname = \"t\"\njoker = \"1.0\"\nmode = \"dev\"\n\n[devices.pi]\ndriver = \"sim\"\n\n[devices.pi.signals]\nact_led = { type = \"bool\", direction = \"output\" }\nlevel = { type = \"f64\", unit = \"m\" }\n\n[outputs.\"pi.act_led\"]\nsafe = false\n";
+
+    fn check(dir: &Path, instances: &str) -> joker_manifest::Report {
+        std::fs::write(dir.join("joker.toml"), format!("{MANIFEST}\n{instances}")).unwrap();
+        let (context, errors) = context_for_project(&crate::native::NativeTasks, dir);
+        assert!(errors.is_empty(), "{errors:?}");
+        joker_manifest::check(
+            &joker_manifest::OsFileSystem,
+            &dir.join("joker.toml"),
+            &context,
+        )
+    }
+
+    #[test]
+    fn a_composite_instance_of_a_std_class_checks_against_its_contract() {
+        let dir = tempfile::tempdir().unwrap();
+        let ok = check(
+            dir.path(),
+            "[instances.led_pi]\nclass = \"std/led@1\"\nmap = { on = \"pi.act_led\" }\n",
+        );
+        assert!(!ok.has_errors(), "{}", ok.render());
+        let unbound = check(
+            dir.path(),
+            "[instances.led_pi]\nclass = \"led@1\"\nmap = {}\n",
+        );
+        assert!(unbound.codes().contains(&"J0601"), "{}", unbound.render());
+        let unknown = check(
+            dir.path(),
+            "[instances.x]\nclass = \"std/nothing@1\"\nmap = {}\n",
+        );
+        assert!(unknown.codes().contains(&"J0193"), "{}", unknown.render());
+    }
+
+    #[test]
+    fn a_project_class_travels_as_its_canonical_contract() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("classes/local")).unwrap();
+        std::fs::write(
+            dir.path().join("classes/local/tank.jkc"),
+            "package local\n\n/// A tank.\nclass tank@1.2.0 {\n    in level: f64 m\n    query low: bool = level < 0.5 m\n}\n",
+        )
+        .unwrap();
+        let (files, errors) = catalog_files(dir.path());
+        assert!(errors.is_empty(), "{errors:?}");
+        let name = "contracts/local/tank@1.2.0.contract.json";
+        assert!(is_catalog_path(name));
+        assert_eq!(kind_of(name), CONTRACT_KIND);
+        assert!(files.contains_key(name), "{:?}", files.keys());
+        let ok = check(
+            dir.path(),
+            "[instances.t1]\nclass = \"local/tank@1\"\nmap = { level = \"pi.level\" }\n",
+        );
+        assert!(!ok.has_errors(), "{}", ok.render());
+        std::fs::write(
+            dir.path().join("classes/local/tank.jkc"),
+            "package local\nclass tank@1.0.0 { out x: f64 }\n",
+        )
+        .unwrap();
+        let (_, errors) = catalog_files(dir.path());
+        assert!(errors.iter().any(|e| e.contains("JC0107")), "{errors:?}");
     }
 
     #[test]
