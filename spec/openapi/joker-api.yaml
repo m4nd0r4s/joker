@@ -5222,6 +5222,7 @@ components:
           items:
             type: object
             properties:
+              path: {$ref: '#/components/schemas/SignalPath'}
               tier: {$ref: '#/components/schemas/Tier'}
               from: {$ref: '#/components/schemas/Timestamp'}
               to: {$ref: '#/components/schemas/Timestamp'}

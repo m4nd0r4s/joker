@@ -288,6 +288,7 @@ actions    = { trip = ["pcs.p_set"] }   # optional: trip outputs
 - **Suppression by design** (`suppress_when`): during maintenance or at startup, the operator is not flooded.
 - Each alarm is at the same time **two signals**, `alarm.<name>.state` (`enum` with the states of the diagram, plus `Unknown`) and `alarm.<name>.active` (`bool`, true in both `Active·*` states), and a series of **events** (transitions), recorded and sent with the `alarms` priority.
 - Apps may also declare alarms (`#[alarm]`, document 04), subject to the same rules.
+- **Restarts:** the state of an alarm, its pending acknowledgement and its shelve survive a restart of `jokerd` and a generation switch; the transitions and operator actions are kept in the alarm journal of the historian (ADR 0082).
 
 ---
 

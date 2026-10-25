@@ -443,12 +443,13 @@ History parameters:
 | `fill` | `none`, `previous`, `null` | `none` | — | — |
 | `limit`, `cursor` | points per page | 10,000 | ≤ 100,000 | `J-E1038` |
 
-- With `tier=auto`, the node chooses the coarsest tier with resolution ≤ `step` that covers `from`. If none covers the whole range, the response carries what there is, with `coverage` (tier, from, to) and a warning.
+- With `tier=auto`, the node chooses the coarsest tier with resolution ≤ `step` that covers `from`. If none covers the whole range, the response carries what there is, with `coverage` (path, tier, from, to) and a warning (ADR 0082).
 - `quality` in an aggregate is the **dominant quality** of the tier (document 01, §12).
 - Raw points: `ts` (the `ts_acq` in UTC), `ts_src`, `value`, `quality`, `reason`, `seq`.
 - The monotonic → UTC translation uses the correspondence table of the historian (document 01, §18). **A clock correction can change, retroactively, the `ts` returned** for old samples; the values and the `seq` do not change. In 1.0 the table is reserved: the historian stores the UTC instant computed at acquisition, and `ts` does not change (ADR 0081).
 - `text/csv`: columns `path,ts,value,quality,reason,seq` (raw) or `path,ts,<aggregates>,quality` (aggregated).
 - **Parquet is produced by `jk`** (`jk export --parquet`), from NDJSON. The node does not carry a Parquet writer (binary size, CPU in `bg`).
+- In 1.0 signals with shape `event` are not recorded, so `GET /v1/events` answers an empty list to a valid query; `jk export --parquet` is reserved (ADR 0082).
 
 ### 5.6 Outputs, arbiter and manual writes
 
@@ -537,7 +538,9 @@ The prediction uses the same functions of the core over the current values, outs
 - **Alarm id:** the name from the manifest (`grid_overfreq`), that of the runtime (`joker.device.pcs.offline`, `joker.group.fast.overrun`, `joker.output.<output>.manual_expiring`, `joker.output.<output>.manual_restored`; the complete list of the `joker.*` is in ref/01 and in document 01, §19) or that of an app (`app.<app>.<name>`, ref/04 §4.2; the signals are `alarm.app.<app>.<name>.state` and `.active`).
 - **Ack** follows document 02, §11: `active_unacked` → `active_acked`; `rtn_unacked` → `normal`. In `active_acked` it is idempotent (200, no change). In `normal` and `unknown` it is `J-E1204` (409): there is nothing to acknowledge, and an `unknown` is a quality problem of the inputs, with its own alarm.
 - **Shelve:** `ttl` required (document 02, §11; `J-E1201`), at most the `max_shelve` of the alarm (default **24 h**, ref/01 §5.15; `J-E1202`). Shelving does not change the ISA-18.2 state of the alarm: it suppresses the notification (topics, uplinks with priority `alarms`) and marks `shelved`. At the end of the TTL, `shelve_expired`, and the alarm notifies again with whatever state it is in. Unshelving an alarm that is not shelved is `J-E1203`.
-- `Alarm`: `id`, `source` (`manifest`, `app`, `runtime`, `instance`), `severity`, `state`, `active`, `uncertain`, `suppressed`, `shelved` (until, by whom, reason), `acked_by`, `acked_at`, `since`, `message` (already with the values interpolated), `condition`, `signals` (`state`, `active`), `trips`, `max_shelve`.
+- `Alarm`: `id`, `source` (`manifest`, `app`, `runtime`, `instance`), `severity`, `state`, `active`, `uncertain`, `suppressed`, `shelved` (until, by whom, reason), `acked_by`, `acked_at`, `since`, `message` (already with the values interpolated), `condition`, `signals` (`state`, `active`), `trips`, `max_shelve`. In 1.0 `suppressed` is not reported: the field is omitted and `state=suppressed` lists nothing (ADR 0082).
+- **Commands** run in the next tick and answer with the `Alarm` after them. They need `operator` (`J-E1002`); a shelve without `reason` is `J-E1013`; a full command queue, or no tick within 5 s, is `J-E1014` (ADR 0082). The state of each alarm, its pending acknowledgement and its shelve survive a restart of `jokerd` and a generation switch.
+- **`AlarmEvent.seq`** is the sequence number of the alarm journal, the order of `GET /v1/alarm-events` and of the `alarms` topic.
 
 ### 5.9 Intents (M18)
 
