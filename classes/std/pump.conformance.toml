@@ -1,0 +1,50 @@
+schema = 1
+
+[suite]
+kind        = "class"
+class       = "std/pump@1"
+spec        = ["14 §4.4", "14 §7.3", "17 §3.1"]
+description = "contract of pump@1: start and stop drive run_cmd, the start and stop supervision queries, run_at writes speed and run together, and with nobody in control the pump goes to safe"
+
+[[case]]
+id     = "start_running_or_failed"
+name   = "start → running in ≤ 10 s, or failed_to_start"
+do     = [{ at = "1s", method = "start" }, { at = "100ms", input = "running", value = false }, { at = "3s", input = "running", value = true }]
+expect = [{ any_of = [{ member = "running", equals = true, before = "11s" },
+                      { query = "failed_to_start", equals = true, at = "11.1s" }] }]
+
+[[case]]
+id     = "failed_to_start_after_ten_seconds"
+do     = [{ at = "100ms", input = "running", value = false }, { at = "1s", method = "start" }]
+expect = [{ query = "failed_to_start", equals = false, at = "10.8s" }, { query = "failed_to_start", equals = true, within = "11s .. 11.2s" }]
+
+[[case]]
+id     = "stop_clears_run_cmd"
+do     = [{ at = "1s", method = "start" }, { at = "2s", method = "stop" }]
+expect = [{ member = "run_cmd", equals = true, at = "1s" }, { member = "run_cmd", equals = false, level = "control:12", at = "2s" }]
+
+[[case]]
+id       = "run_at_writes_speed_and_run_together"
+requires = ["variable_speed"]
+do       = [{ at = "1s", method = "run_at", args = { pct = "60 %" } }, { at = "3s", method = "run_at", args = { pct = "0 %" } }]
+expect   = [{ all_of = [{ member = "speed_set", equals = "60 %", at = "1s" }, { member = "run_cmd", equals = true, at = "1s" }] },
+            { all_of = [{ member = "speed_set", equals = "0 %", at = "3s" }, { member = "run_cmd", equals = false, at = "3s" }] }]
+
+[[case]]
+id       = "run_at_clamps"
+requires = ["variable_speed"]
+do       = [{ at = "1s", method = "run_at", args = { pct = "140 %" } }]
+expect   = [{ member = "speed_set", equals = "100 %", at = "1s" }]
+
+[[case]]
+id       = "dry_running_needs_five_seconds"
+requires = ["pressure"]
+do       = [{ at = "100ms", input = "running", value = true }, { at = "100ms", input = "pressure_out", value = "0.1 bar" }]
+expect   = [{ query = "dry_running", equals = false, at = "4s" }, { query = "dry_running", equals = true, within = "5.1s .. 5.3s" }]
+
+[[case]]
+id       = "safe_stops_pump"
+spec     = ["16 A2", "ref/03 §2.6.3"]
+sim_only = true
+do       = [{ at = "1s", method = "start" }, { at = "20s", lease_expire = "run_cmd" }]
+expect   = [{ member = "run_cmd", equals = false, level = "none", within = "20s .. 20.3s" }]
