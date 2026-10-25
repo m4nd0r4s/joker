@@ -139,7 +139,7 @@ Remissions follow glossary §1.5: `NN §x` is a document of `docs/`, `ref/NN §x
 |---|---|---|---|---|---|
 | 17-1 | #15 | §11 | "the 15 cases of the original proposal", but the parenthetical names 14. | The proposal has 15 (S1–S15); name the missing one in the parenthetical. | Open |
 | 17-2 | #15 | §6 | The `├─`/`└─` tree is malformed (a `└─` followed by more branches). | Redraw the tree. | Open |
-| 17-3 | #15 | §7, JC0310 | "queries in a cycle": a dependency cycle or the cycle domain? Ambiguous in the doc and in the registry. | "queries in a dependency cycle" if that is the rule. | Open |
+| 17-3 | #15 | §7, JC0310 | "queries in a cycle": a dependency cycle or the cycle domain? Ambiguous in the doc and in the registry. | "queries in a dependency cycle" if that is the rule. | Resolved (ADR 0059) |
 
 ## Document 18 (v1 readiness)
 

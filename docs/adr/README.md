@@ -56,6 +56,7 @@
 | [0056](0056-allocation-free-cycle-calls.md) | Allocation-free cycle calls: reserved buffers of `on-cycle`, the trapping allocator and `J-E0903` |
 | [0057](0057-the-cli-may-embed-the-daemon.md) | `jk` may embed the daemon; no library depends on it |
 | [0058](0058-action-step-interpreter-and-decision-log-entries.md) | The action step interpreter lives in `joker-hal`; a new decision-log record kind for actions |
+| [0059](0059-jkc-diagnostics-and-canonical-contract.md) | `jkc` diagnostics, the canonical contract and its hashes, and version compatibility |
 | [0060](0060-fail-closed-permits-and-step-quality.md) | Action permits fail closed; step conditions honour quality |
 | [0061](0061-runtime-state-files-supervisor-records-and-bulk-reset-errors.md) | Runtime state files, supervisor and restore records, and per-output errors of a bulk reset |
 | [0062](0062-wide-signal-values.md) | Wide signal values: the wide slot, decoding, the envelope, the API, the decision log and the trace |

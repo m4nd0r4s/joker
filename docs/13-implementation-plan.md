@@ -33,7 +33,7 @@ crates/
   joker-agent-proto/       agent messages in CBOR, no_std, shared with Micro and the Deck  (Phase 3)
   joker-micro/             runtime for MCUs (Embassy): no_std host of the core, firmware/C lib/crate modes; ffi module with the C ABI  (Phase 2)
   joker-link-proto/        Joker Link protocol, no_std, shared by jokerd and joker-micro  (Phase 2)
-  joker-jkc/               .jkc class compiler (parser, checking, canonical form, codegen)  (← expr, units)
+  joker-jkc/               .jkc class compiler (parser, checking, canonical form, codegen)  (← expr, units, manifest)
   joker-ml/ joker-ml-burn/ joker-ml-ort/ joker-ml-hailo/                            (1.1)
   joker-spec-tests/        task 0a: compiles and validates the references against the code (document 22, §8)
   joker-supply-chain/      tests that read the dependency graph and the toolchain files (policies/dependencies.md §1)

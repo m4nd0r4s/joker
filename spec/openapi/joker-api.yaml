@@ -6086,7 +6086,7 @@ components:
           type: array
           items: {$ref: '#/components/schemas/Name'}
     ClassContract:
-      description: canonical form contract.json (document 17, §6)
+      description: canonical form contract.json (document 17, §6.1; layout in ADR 0059)
       type: object
     # ---------------------------------------------------------------- devices and lock
     LinkState:

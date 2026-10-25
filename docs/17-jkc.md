@@ -298,21 +298,30 @@ pump@1.0.0.contract.json    canonical form, sorted, no comments
 
 The `.contract.json` files go to the device inside each generation (with the manifest and the lock), and the core's instance registry is built from them.
 
+### 6.1 The canonical contract
+
+`<name>@<version>.contract.json` is the canonical JSON (keys sorted by their bytes, no whitespace, integers only, every key present) of four keys: `contract`, `contract_hash`, `docs` and `doc_hash`. `contract` holds the class, its version, capabilities, members, class members, queries, methods, events, actions, `health`, and the enums and records it uses; `docs` holds the `///` text and the documentation annotations (`@aligns`, `@deprecated`, namespaced ones). Expressions and literals are written in canonical form, so reformatting or commenting a class changes neither hash. The contract hash is the SHA-256 of the canonical `contract`, the documentation hash that of `docs`, both `sha256:<hex>`; whoever reads the file verifies both. The exact layout is in ADR 0059.
+
 ---
 
 ## 7. `jkc check` rules
 
 | Code | Rule |
 |---|---|
-| `JC0107` | physical quantity without a unit |
-| `JC0201` | method assigns to an `out` more than once |
+| `JC0101` | syntax error, or a name that breaks the naming rules (snake_case members, arguments, capabilities and variants; UpperCamelCase enums and records; ≤ 32 characters) |
+| `JC0102` | name declared twice |
+| `JC0103` | unknown name: member, type, enum, variant or record |
+| `JC0105` | unknown annotation (without a namespace), annotation out of place, or invalid annotation arguments |
+| `JC0106` | type error: a type, unit, literal or expression that does not fit where it is used, a collection read outside an aggregation, a call with the wrong arguments |
+| `JC0107` | physical quantity without a unit: an `f64`/`f32` `out`, query, argument or field without one (`1` if dimensionless); an `in` or `param` without a unit takes it from the instance, and an expression of the class cannot read it |
+| `JC0201` | method assigns to an `out` more than once, counting the writes of the methods it calls |
 | `JC0204` | method assigns to something that is not `out` |
-| `JC0205` | `atomic` without `order`, or `order` with unassigned members |
+| `JC0205` | `atomic` without `order`, `order` without `atomic`, or an `order` that names something the method does not write, or leaves out something it writes |
 | `JC0206` | argument with the same name as a member |
 | `JC0207` | reserved name (`name`, `index`, `health`, `read`, `raw`, `has`) on a member, query, method, event or action |
 | `JC0210` | use of a member of a capability outside it |
 | `JC0301` | expression with incompatible dimensions |
-| `JC0310` | queries in a cycle |
+| `JC0310` | queries in a dependency cycle (`a` reads `b`, which reads `a`) |
 | `JC0320` | query with a window above 15 min |
 | `JC0401` | action used in a method (including a member's: `compressor.reset()`) |
 | `JC0402` | action without `@timeout` |
@@ -321,7 +330,9 @@ The `.contract.json` files go to the device inside each generation (with the man
 | `JC0503` | call to a method that the member does not have, or of a capability that the member does not require with `@requires` |
 | `JC0504` | `@requires` with a capability that the member's class does not have |
 | `JC0601` | version incompatible with the previous one without bumping the major (§9) |
-| `JW0230` | method conditioned on an `in` (looks like an interlock; check that the manifest also has it) |
+| `JW0230` | method conditioned on an `in` (an assignment or argument reads an `in` or a query; looks like an interlock; check that the manifest also has it) |
+
+`jkc` also reports `J0804` (class and file name, or package and directory, disagree; more than one class in a file) and `J0847` (a `use` or class reference to a class that is neither in the registry nor in the project, ref/03 §2.7). Diagnostics render as those of `jk check` (ref/01 §11.4). The details are in ADR 0059.
 
 **Two limits of 3, which do not add up.** `JC0501` belongs to `jkc` and counts the **class composition** (§8). `J0620` belongs to `jk check` and counts the **implementation layers**: virtual instances whose app uses other virtual instances (document 14, §7.2). A `heat_pump@1` with depth 3, implemented by an app that uses a virtual compressor, has depth 3 and 2 layers, and passes both.
 
