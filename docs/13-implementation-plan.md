@@ -122,7 +122,7 @@ There is a single schema for the core and for the classes (`[suite]`, `[[case]]`
 | long proptest (10⁶) | x86_64 | nightly | — |
 | cross-build aarch64, armv7, `arm-unknown-linux-gnueabihf` (ARMv6), riscv64 | x86_64 (cross) | every commit | yes |
 | `no_std` cross-build **`thumbv8m.main-none-eabihf`** and **`riscv32imac-unknown-none-elf`**, and conformance in QEMU (`mps2-an505`, `virt` riscv32) | x86_64 (cross) | every commit | **yes** |
-| size of `jokerd` (`minimal` and full, `cargo bloat`, 01 §21) | x86_64 (cross aarch64) | every commit | yes |
+| size of `jokerd` (`minimal` and full, `cargo bloat`, 01 §21; `cargo xtask size`) | aarch64 runner | every commit | yes |
 | **Xtensa** cross-build (`xtensa-esp32-none-elf`, `esp` toolchain) and conformance on the bench ESP32 | runner with the `esp` toolchain | every commit in the core | **no**: the result shows up in the PR and opens an alert, but does not prevent the merge |
 | conformance on an RP2350 (HIL) | runner with probe | every commit in the core, once a board is available | yes |
 | hardware tests (CM4, CM5, RevPi Connect 5, x86 IPC) | dedicated runners | nightly, and on PRs with the `hw` label | — |

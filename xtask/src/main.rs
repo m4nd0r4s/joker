@@ -9,7 +9,8 @@
 //! - `msrv`: the MSRV of the core crates against the Xtensa toolchain
 //!   (docs/13 §5.1);
 //! - `determinism`: the core suites run many times, with the same bytes
-//!   every time (docs/11 Phase 0 gates 2 and 5, docs/16 §7).
+//!   every time (docs/11 Phase 0 gates 2 and 5, docs/16 §7);
+//! - `size`: the binary size gate of `jokerd` (docs/01 §21, docs/13 §5).
 
 extern crate alloc;
 
@@ -19,6 +20,7 @@ mod guard;
 mod msrv;
 mod qemu;
 mod rt_bench;
+mod size;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -61,6 +63,14 @@ tasks:
       and exits 1 unless every run gives the same result sequence, byte for
       byte. Prints the SHA-256 of the canonical sequence, which CI compares
       between targets.
+
+  size --target TRIPLE [--limits FILE] [--build NAME]... [--json FILE]
+       [--compare BASELINE.json] [--top N]
+      Measures each build of the limits file (default:
+      xtask/size-limits.toml) with `cargo bloat --release --crates`, strips
+      the binary and exits 1 when one is above its limit, listing the
+      largest crates and, with --compare, those that grew the most
+      (default top: 15).
 ";
 
 fn parse<T: std::str::FromStr>(name: &str, text: &str) -> Result<T, String> {
@@ -189,6 +199,32 @@ fn determinism(args: &[String]) -> Result<bool, String> {
     determinism::run(&options, &NoAlloc)
 }
 
+fn size(args: &[String]) -> Result<bool, String> {
+    let mut options = size::Options {
+        limits: PathBuf::from("xtask/size-limits.toml"),
+        top: 15,
+        ..size::Options::default()
+    };
+    let mut it = args.iter();
+    while let Some(arg) = it.next() {
+        let mut value = |name: &str| {
+            it.next()
+                .cloned()
+                .ok_or_else(|| format!("{name} needs a value"))
+        };
+        match arg.as_str() {
+            "--target" => options.target = value("--target")?,
+            "--limits" => options.limits = PathBuf::from(value("--limits")?),
+            "--build" => options.builds.push(value("--build")?),
+            "--json" => options.json = Some(PathBuf::from(value("--json")?)),
+            "--compare" => options.compare = Some(PathBuf::from(value("--compare")?)),
+            "--top" => options.top = parse("--top", &value("--top")?)?,
+            other => return Err(format!("unknown option {other}\n{USAGE}")),
+        }
+    }
+    size::run(&options)
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.first().map(String::as_str) {
@@ -196,6 +232,7 @@ fn main() -> ExitCode {
         Some("qemu") => qemu(&args[1..]),
         Some("rt-bench") => rt_bench(&args[1..]),
         Some("determinism") => determinism(&args[1..]),
+        Some("size") => size(&args[1..]),
         Some("msrv") => match &args[1..] {
             [flag, max] if flag == "--max" => msrv::run(max),
             _ => Err(format!("msrv needs --max VERSION\n{USAGE}")),

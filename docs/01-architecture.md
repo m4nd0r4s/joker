@@ -458,7 +458,7 @@ Own metrics, exposed as `joker.*` signals (therefore recorded, alarmable and sen
 | Historian ingestion | ≥ 200 k samples/s | CM4, eMMC |
 | App hot swap | 0 ticks lost | same port signature |
 
-**Binary size in CI.** The two builds (`minimal` and full) are measured on every commit with `cargo bloat --release --crates` for `aarch64-unknown-linux-gnu`; a build above the table's limit makes CI fail, with the crates that grew the most. Raising a limit is an explicit decision, in the same commit that justifies it.
+**Binary size in CI.** The two builds (`minimal` and full) are measured on every commit with `cargo bloat --release --crates` for `aarch64-unknown-linux-gnu`; a build above the table's limit makes CI fail, with the crates that grew the most. Raising a limit is an explicit decision, in the same commit that justifies it. The builds and their limits are `xtask/size-limits.toml`, and the gate is `cargo xtask size`, which measures the stripped binary. Until `jokerd` has the Cargo features of ref/06 §3.8 (AUR-432), only the full build exists, and the file lists only it; the `minimal` build joins the gate with its features.
 
 ---
 
