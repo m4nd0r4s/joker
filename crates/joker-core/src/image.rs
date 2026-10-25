@@ -171,6 +171,9 @@ pub struct MethodCall {
     pub ticket: u32,
     /// The cycle task that staged it, or [`NO_TASK`].
     pub task: u16,
+    /// The TTL of a manual caller (docs/16 A10), which every write the call
+    /// expands to carries; 0 for any other caller (ADR 0084).
+    pub ttl_ns: u64,
 }
 
 impl MethodCall {
@@ -184,6 +187,7 @@ impl MethodCall {
         source: Source::Cycle,
         ticket: 0,
         task: NO_TASK,
+        ttl_ns: 0,
     };
 
     /// The arguments.
