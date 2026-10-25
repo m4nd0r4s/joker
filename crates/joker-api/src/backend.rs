@@ -4,9 +4,9 @@
 use serde_json::Value;
 
 use crate::model::{
-    ActivateRequest, BulkResetRequest, GenerationProposal, InvokeActionRequest, ManualWriteRequest,
-    MissingBlobsRequest, ReasonBody, ReleaseRequest, ResetTripRequest, RollbackRequest,
-    TraceRequest,
+    AckRequest, ActivateRequest, BulkResetRequest, GenerationProposal, InvokeActionRequest,
+    ManualWriteRequest, MissingBlobsRequest, ReasonBody, ReleaseRequest, ResetTripRequest,
+    RollbackRequest, ShelveRequest, TraceRequest,
 };
 use crate::problem::Problem;
 
@@ -193,4 +193,41 @@ pub trait Backend: Send + Sync + 'static {
     /// `POST /v1/invocations/{invocation}/cancel`: cancels a long action
     /// (ADR 0066 §9).
     fn cancel_invocation(&self, who: &Principal, id: &str, request: ReasonBody) -> Result<Reply>;
+    /// `GET /v1/history` (ref/09 §5.5); `POST /v1/history/query` comes
+    /// here with its body as parameters.
+    fn history(&self, _query: &Query) -> Result<Reply> {
+        Err(unavailable())
+    }
+    /// `GET /v1/events` (ref/09 §5.5).
+    fn events(&self, _query: &Query) -> Result<Reply> {
+        Err(unavailable())
+    }
+    /// `GET /v1/alarms` (ref/09 §5.8).
+    fn alarms(&self, _query: &Query) -> Result<Reply> {
+        Err(unavailable())
+    }
+    /// `GET /v1/alarms/{alarm}`.
+    fn alarm(&self, _id: &str) -> Result<Reply> {
+        Err(unavailable())
+    }
+    /// `POST /v1/alarms/{alarm}/ack`.
+    fn ack_alarm(&self, _who: &Principal, _id: &str, _request: AckRequest) -> Result<Reply> {
+        Err(unavailable())
+    }
+    /// `POST /v1/alarms/{alarm}/shelve`.
+    fn shelve_alarm(&self, _who: &Principal, _id: &str, _request: ShelveRequest) -> Result<Reply> {
+        Err(unavailable())
+    }
+    /// `POST /v1/alarms/{alarm}/unshelve`.
+    fn unshelve_alarm(&self, _who: &Principal, _id: &str, _request: AckRequest) -> Result<Reply> {
+        Err(unavailable())
+    }
+    /// `GET /v1/alarm-events` (ref/09 §5.8).
+    fn alarm_events(&self, _query: &Query) -> Result<Reply> {
+        Err(unavailable())
+    }
+}
+
+fn unavailable() -> Problem {
+    Problem::new("J-E1005", 404, "no such endpoint on this node")
 }

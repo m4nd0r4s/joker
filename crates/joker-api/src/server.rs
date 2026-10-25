@@ -18,6 +18,7 @@ use serde_json::Value;
 use tokio::net::UnixListener;
 
 use crate::backend::{Backend, Principal, Query, Reply};
+use crate::model::HistoryQuery;
 use crate::problem::{PROBLEM_JSON, Problem};
 use crate::ws;
 
@@ -223,6 +224,141 @@ fn reply_response(backend: &dyn Backend, reply: Reply) -> Response {
     (status, headers, reply.body.to_string()).into_response()
 }
 
+/// How a bulky reply is sent (ref/09 §3.5, §5.5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Format {
+    Json,
+    Ndjson,
+    Csv,
+}
+
+fn format_of(headers: &HeaderMap, csv: bool) -> Format {
+    let accept = header(headers, "accept").unwrap_or("");
+    if accept.contains("application/x-ndjson") {
+        Format::Ndjson
+    } else if csv && accept.contains("text/csv") {
+        Format::Csv
+    } else {
+        Format::Json
+    }
+}
+
+fn csv_field(v: &Value) -> String {
+    match v {
+        Value::Null => String::new(),
+        Value::String(s) if s.contains([',', '"', '\n', '\r']) => {
+            format!("\"{}\"", s.replace('"', "\"\""))
+        }
+        Value::String(s) => s.clone(),
+        other => other.to_string(),
+    }
+}
+
+/// The points of a `HistoryResponse`, each with its path (`HistoryLine`).
+pub fn history_lines(body: &Value) -> Vec<Value> {
+    let mut out = Vec::new();
+    for series in body["series"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
+        for point in series["points"]
+            .as_array()
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+        {
+            let mut line = serde_json::Map::new();
+            line.insert("path".into(), series["path"].clone());
+            if let Value::Object(p) = point {
+                line.extend(p.clone());
+            }
+            out.push(Value::Object(line));
+        }
+    }
+    out
+}
+
+/// A `HistoryResponse` as `text/csv` (ref/09 §5.5): `path,ts,value,quality,
+/// reason,seq` for raw points, `path,ts,<aggregates>,quality` with a step.
+pub fn history_csv(body: &Value) -> String {
+    let lines = history_lines(body);
+    let columns: Vec<&str> = if body.get("step").is_some_and(|s| !s.is_null()) {
+        let mut c = vec!["path", "ts"];
+        for a in ["avg", "min", "max", "first", "last", "count"] {
+            if lines.iter().any(|l| l.get(a).is_some()) {
+                c.push(a);
+            }
+        }
+        c.push("quality");
+        c
+    } else {
+        vec!["path", "ts", "value", "quality", "reason", "seq"]
+    };
+    let mut out = columns.join(",");
+    out.push('\n');
+    for l in &lines {
+        let row: Vec<String> = columns
+            .iter()
+            .map(|c| csv_field(l.get(*c).unwrap_or(&Value::Null)))
+            .collect();
+        out.push_str(&row.join(","));
+        out.push('\n');
+    }
+    out
+}
+
+fn rendered(backend: &dyn Backend, reply: Reply, format: Format, history: bool) -> Response {
+    if format == Format::Json || reply.status != 200 {
+        return reply_response(backend, reply);
+    }
+    let id = request_id();
+    let mut headers = base_headers(backend, &id);
+    let body = match format {
+        Format::Csv => {
+            headers.insert("content-type", HeaderValue::from_static("text/csv"));
+            history_csv(&reply.body)
+        }
+        _ => {
+            headers.insert(
+                "content-type",
+                HeaderValue::from_static("application/x-ndjson"),
+            );
+            let items = if history {
+                history_lines(&reply.body)
+            } else {
+                reply.body["items"].as_array().cloned().unwrap_or_default()
+            };
+            let mut text = String::new();
+            for i in items {
+                text.push_str(&i.to_string());
+                text.push('\n');
+            }
+            text
+        }
+    };
+    let next = reply
+        .body
+        .get("next_cursor")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    if let Some(next) = next
+        && let Ok(v) = HeaderValue::from_str(&format!("<?cursor={next}>; rel=\"next\""))
+    {
+        headers.insert("link", v);
+    }
+    (StatusCode::OK, headers, body).into_response()
+}
+
+async fn run_rendered<F>(backend: Shared, format: Format, history: bool, f: F) -> Response
+where
+    F: FnOnce(&dyn Backend) -> Result<Reply, Problem> + Send + 'static,
+{
+    let b = Arc::clone(&backend);
+    let result = tokio::task::spawn_blocking(move || f(b.as_ref()))
+        .await
+        .unwrap_or_else(|_| Err(Problem::new("J-E1000", 500, "the handler panicked")));
+    match result {
+        Ok(reply) => rendered(backend.as_ref(), reply, format, history),
+        Err(p) => problem_response(backend.as_ref(), &p),
+    }
+}
+
 async fn run<F>(backend: Shared, f: F) -> Response
 where
     F: FnOnce(&dyn Backend) -> Result<Reply, Problem> + Send + 'static,
@@ -326,6 +462,111 @@ get_query!(
     ]
 );
 get_query!(generations, generations, ["state", "limit", "cursor"]);
+get_query!(
+    alarms,
+    alarms,
+    ["sel", "state", "severity", "limit", "cursor"]
+);
+
+const HISTORY_PARAMS: [&str; 10] = [
+    "sel", "from", "to", "since", "step", "agg", "tier", "fill", "limit", "cursor",
+];
+
+async fn history(State(b): State<Shared>, RawQuery(raw): RawQuery, headers: HeaderMap) -> Response {
+    let format = format_of(&headers, true);
+    match parse_query(raw.as_deref(), &HISTORY_PARAMS) {
+        Ok(q) => run_rendered(b, format, true, move |b| b.history(&q)).await,
+        Err(p) => problem_response(b.as_ref(), &p),
+    }
+}
+
+async fn history_query(State(b): State<Shared>, headers: HeaderMap, body: Bytes) -> Response {
+    let format = format_of(&headers, true);
+    match decode::<HistoryQuery>(&body) {
+        Ok(req) => {
+            let q = req.to_query();
+            run_rendered(b, format, true, move |b| b.history(&q)).await
+        }
+        Err(p) => problem_response(b.as_ref(), &p),
+    }
+}
+
+async fn events(State(b): State<Shared>, RawQuery(raw): RawQuery, headers: HeaderMap) -> Response {
+    let format = format_of(&headers, false);
+    match parse_query(
+        raw.as_deref(),
+        &["sel", "from", "to", "since", "order", "limit", "cursor"],
+    ) {
+        Ok(q) => run_rendered(b, format, false, move |b| b.events(&q)).await,
+        Err(p) => problem_response(b.as_ref(), &p),
+    }
+}
+
+async fn alarm_events(
+    State(b): State<Shared>,
+    RawQuery(raw): RawQuery,
+    headers: HeaderMap,
+) -> Response {
+    let format = format_of(&headers, false);
+    match parse_query(
+        raw.as_deref(),
+        &[
+            "sel", "severity", "from", "to", "since", "order", "limit", "cursor",
+        ],
+    ) {
+        Ok(q) => run_rendered(b, format, false, move |b| b.alarm_events(&q)).await,
+        Err(p) => problem_response(b.as_ref(), &p),
+    }
+}
+
+async fn alarm(State(b): State<Shared>, UrlPath(id): UrlPath<String>) -> Response {
+    run(b, move |b| b.alarm(&id)).await
+}
+
+async fn ack_alarm(
+    State(b): State<Shared>,
+    ConnectInfo(peer): ConnectInfo<Peer>,
+    UrlPath(id): UrlPath<String>,
+    body: Bytes,
+) -> Response {
+    match decode(&body) {
+        Ok(req) => {
+            let who = principal(peer);
+            run(b, move |b| b.ack_alarm(&who, &id, req)).await
+        }
+        Err(p) => problem_response(b.as_ref(), &p),
+    }
+}
+
+async fn shelve_alarm(
+    State(b): State<Shared>,
+    ConnectInfo(peer): ConnectInfo<Peer>,
+    UrlPath(id): UrlPath<String>,
+    body: Bytes,
+) -> Response {
+    match decode(&body) {
+        Ok(req) => {
+            let who = principal(peer);
+            run(b, move |b| b.shelve_alarm(&who, &id, req)).await
+        }
+        Err(p) => problem_response(b.as_ref(), &p),
+    }
+}
+
+async fn unshelve_alarm(
+    State(b): State<Shared>,
+    ConnectInfo(peer): ConnectInfo<Peer>,
+    UrlPath(id): UrlPath<String>,
+    body: Bytes,
+) -> Response {
+    match decode(&body) {
+        Ok(req) => {
+            let who = principal(peer);
+            run(b, move |b| b.unshelve_alarm(&who, &id, req)).await
+        }
+        Err(p) => problem_response(b.as_ref(), &p),
+    }
+}
 get_query!(trips, trips, ["sel"]);
 get_query!(actions, actions, ["target"]);
 
@@ -727,6 +968,15 @@ pub fn router_with(backend: Arc<dyn Backend>, limits: ws::Limits) -> Router {
             post(cancel_invocation),
         )
         .route("/v1/decisions", get(decisions))
+        .route("/v1/history", get(history))
+        .route("/v1/history/query", post(history_query))
+        .route("/v1/events", get(events))
+        .route("/v1/alarms", get(alarms))
+        .route("/v1/alarms/{alarm}", get(alarm))
+        .route("/v1/alarms/{alarm}/ack", post(ack_alarm))
+        .route("/v1/alarms/{alarm}/shelve", post(shelve_alarm))
+        .route("/v1/alarms/{alarm}/unshelve", post(unshelve_alarm))
+        .route("/v1/alarm-events", get(alarm_events))
         .route("/v1/blobs/missing", post(missing_blobs))
         .route("/v1/blobs/{digest}", head(blob_head))
         .route(

@@ -6,9 +6,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use joker_api::model::{
-    ARTIFACT_KINDS, ActivateRequest, BulkResetRequest, GenerationProposal, InvokeActionRequest,
-    ManualWriteRequest, MissingBlobsRequest, ReasonBody, ReleaseRequest, ResetTripRequest,
-    RollbackRequest, TraceRequest,
+    ARTIFACT_KINDS, AckRequest, ActivateRequest, BulkResetRequest, GenerationProposal,
+    InvokeActionRequest, ManualWriteRequest, MissingBlobsRequest, ReasonBody, ReleaseRequest,
+    ResetTripRequest, RollbackRequest, ShelveRequest, TraceRequest,
 };
 use joker_api::{Backend, Headers, Principal, Problem, Query, Reply};
 use joker_core::image::{Intent, NO_TASK, Proposal, RELINQUISH, Source as ProposalSource};
@@ -54,6 +54,8 @@ pub struct Node {
     quality: Arc<crate::clock::ClockMonitor>,
     blobs: Blobs,
     hub: Arc<Hub>,
+    alarms: Arc<crate::alarms::AlarmBook>,
+    historian: Arc<crate::historian::Historian>,
 }
 
 impl std::fmt::Debug for Node {
@@ -162,9 +164,17 @@ impl Node {
         utc_origin_ns: i64,
         state_dir: &Path,
     ) -> std::io::Result<Self> {
-        let (manual, trips, log, quality, hub) = {
+        let (manual, trips, log, quality, hub, alarms, historian) = {
             let c = lock_controller(&controller);
-            (c.manual(), c.trips(), c.log(), c.clock(), c.actions())
+            (
+                c.manual(),
+                c.trips(),
+                c.log(),
+                c.clock(),
+                c.actions(),
+                c.alarms(),
+                c.historian(),
+            )
         };
         let boot_count = state_file::bump_counter(state_dir, "boot_count")?;
         Ok(Self {
@@ -184,6 +194,8 @@ impl Node {
             blobs: Blobs::new(state_dir),
             quality,
             hub,
+            alarms,
+            historian,
         })
     }
 
@@ -748,6 +760,173 @@ fn outcome_json(outcome: Outcome, applied: Option<Value>) -> Value {
     Value::Object(m)
 }
 
+/// What an operator command on an alarm needs checked first.
+enum AlarmAction {
+    Ack(Option<String>),
+    Shelve { ttl_ns: u64, reason: String },
+    Unshelve(Option<String>),
+}
+
+impl Node {
+    fn alarm_entry(&self, id: &str) -> Result<crate::alarms::Entry, Problem> {
+        self.alarms
+            .get(id)
+            .ok_or_else(|| Problem::new("J-E1200", 404, format!("unknown alarm `{id}`")))
+    }
+
+    /// `Status.alarms`: counts, and up to 20 active or unacknowledged
+    /// alarms by severity and age (ref/09 §5.2).
+    fn alarm_summary(&self) -> Value {
+        let view = self.view();
+        let live = view.as_ref().map(|v| (v.plan.as_ref(), v.shared.as_ref()));
+        let mut open: Vec<crate::alarms::Entry> = self
+            .alarms
+            .list()
+            .into_iter()
+            .filter(|e| e.active() || e.unacked())
+            .collect();
+        let active = open.iter().filter(|e| e.active()).count();
+        let unacked = open.iter().filter(|e| e.unacked()).count();
+        open.sort_by(|x, y| {
+            y.severity
+                .cmp(&x.severity)
+                .then(x.since.unwrap_or(0).cmp(&y.since.unwrap_or(0)))
+        });
+        let items: Vec<Value> = open
+            .iter()
+            .take(20)
+            .map(|e| crate::alarms::alarm_json(e, live))
+            .collect();
+        json!({"active": active, "unacked": unacked, "items": items})
+    }
+
+    fn alarm_reply(&self, id: &str) -> Result<Reply, Problem> {
+        let e = self.alarm_entry(id)?;
+        let view = self.view();
+        let live = view.as_ref().map(|v| (v.plan.as_ref(), v.shared.as_ref()));
+        Ok(Reply::ok(crate::alarms::alarm_json(&e, live)))
+    }
+
+    /// Runs an operator command on an alarm in the cycle thread and waits
+    /// until the book has its event (ref/09 §5.8, ADR 0082).
+    fn alarm_command(
+        &self,
+        who: &Principal,
+        id: &str,
+        action: AlarmAction,
+    ) -> Result<Reply, Problem> {
+        if self.role_of(who) < Role::Operator {
+            return Err(Problem::new(
+                "J-E1002",
+                403,
+                "acting on an alarm requires the role `operator`",
+            ));
+        }
+        let entry = self.alarm_entry(id)?;
+        let v = self.need_view()?;
+        let number = entry
+            .number
+            .ok_or_else(|| Problem::new("J-E1200", 404, format!("unknown alarm `{id}`")))?;
+        let now = utc_now_ns();
+        let (op, annotation) = match action {
+            AlarmAction::Ack(reason) => {
+                if entry.state == joker_core::alarm::AlarmState::ActiveAcked {
+                    return self.alarm_reply(id);
+                }
+                if !entry.unacked() || entry.state == joker_core::alarm::AlarmState::Unknown {
+                    return Err(Problem::new(
+                        "J-E1204",
+                        409,
+                        format!(
+                            "`{id}` is {}: there is nothing to acknowledge",
+                            crate::alarms::state_name(entry.state)
+                        ),
+                    ));
+                }
+                (
+                    crate::shared::AlarmOp::Ack,
+                    crate::alarms::Annotation {
+                        by: user(who),
+                        reason,
+                        until_utc_ns: None,
+                    },
+                )
+            }
+            AlarmAction::Shelve { ttl_ns, reason } => (
+                crate::shared::AlarmOp::Shelve(ttl_ns),
+                crate::alarms::Annotation {
+                    by: user(who),
+                    reason: Some(reason),
+                    until_utc_ns: Some(
+                        now.saturating_add(i64::try_from(ttl_ns).unwrap_or(i64::MAX)),
+                    ),
+                },
+            ),
+            AlarmAction::Unshelve(reason) => {
+                if entry.shelved.is_none() {
+                    return Err(Problem::new(
+                        "J-E1203",
+                        409,
+                        format!("`{id}` is not shelved"),
+                    ));
+                }
+                (
+                    crate::shared::AlarmOp::Unshelve,
+                    crate::alarms::Annotation {
+                        by: user(who),
+                        reason,
+                        until_utc_ns: None,
+                    },
+                )
+            }
+        };
+        let version = self.alarms.version(id);
+        self.alarms.annotate(id, annotation);
+        let ticket = self.tickets.number();
+        if v.shared
+            .alarm_commands
+            .push(crate::shared::AlarmCommand {
+                alarm: number,
+                op,
+                ticket,
+            })
+            .is_err()
+        {
+            self.alarms.forget(id);
+            return Err(Problem::new(
+                "J-E1014",
+                503,
+                "the alarm command queue is full",
+            ));
+        }
+        let reply = self
+            .alarms
+            .wait_reply(&v.shared, ticket, Duration::from_secs(5))
+            .ok_or_else(|| Problem::new("J-E1014", 503, "no tick ran the alarm command"))?;
+        match reply.result {
+            Ok(true) => {
+                self.alarms.wait_change(id, version, Duration::from_secs(2));
+            }
+            Ok(false) => self.alarms.forget(id),
+            Err(e) => {
+                self.alarms.forget(id);
+                return Err(match e {
+                    joker_core::alarm::AlarmError::BadTtl => {
+                        Problem::new("J-E1202", 422, "the TTL is above the alarm's max_shelve")
+                    }
+                    joker_core::alarm::AlarmError::NotShelved => {
+                        Problem::new("J-E1203", 409, format!("`{id}` is not shelved"))
+                    }
+                    joker_core::alarm::AlarmError::Unknown => {
+                        Problem::new("J-E1200", 404, format!("unknown alarm `{id}`"))
+                    }
+                });
+            }
+        }
+        self.alarm_reply(id)
+    }
+}
+
 impl Backend for Node {
     fn socket_roles(&self) -> joker_api::server::SocketRoles {
         self.view()
@@ -910,7 +1089,7 @@ impl Backend for Node {
             "groups": groups,
             "devices": devices,
             "apps": apps,
-            "alarms": {"active": 0, "unacked": 0, "items": []},
+            "alarms": self.alarm_summary(),
             "trips": [],
             "manual": manual,
         })))
@@ -1556,6 +1735,123 @@ impl Backend for Node {
             .ok_or_else(|| Problem::new("J-E1404", 404, format!("unknown invocation `{id}`")))
     }
 
+    fn history(&self, query: &Query) -> Result<Reply, Problem> {
+        let v = self.need_view()?;
+        crate::queries::history(
+            self.historian.store(),
+            &v.plan,
+            self.generation_ref(&v),
+            query,
+            utc_now_ns(),
+        )
+        .map(Reply::ok)
+    }
+
+    fn events(&self, query: &Query) -> Result<Reply, Problem> {
+        crate::queries::events(query, utc_now_ns()).map(Reply::ok)
+    }
+
+    fn alarms(&self, query: &Query) -> Result<Reply, Problem> {
+        let sel = values_of(query, "sel");
+        let state = one(query, "state").unwrap_or_else(|| "all".into());
+        if !["active", "unacked", "shelved", "suppressed", "all"].contains(&state.as_str()) {
+            return Err(
+                bad("J-E1012", format!("unknown state `{state}`")).with("param", json!("state"))
+            );
+        }
+        let min = match one(query, "severity") {
+            Some(s) => Some(crate::alarms::severity_of(&s).ok_or_else(|| {
+                bad("J-E1012", format!("unknown severity `{s}`")).with("param", json!("severity"))
+            })?),
+            None => None,
+        };
+        let limit = one(query, "limit")
+            .map(|l| {
+                l.parse::<usize>()
+                    .map_err(|_| bad("J-E1012", "bad `limit`"))
+            })
+            .transpose()?
+            .unwrap_or(100)
+            .clamp(1, 1000);
+        let after = one(query, "cursor");
+        let view = self.view();
+        let live = view.as_ref().map(|v| (v.plan.as_ref(), v.shared.as_ref()));
+        let mut items: Vec<(String, Value)> = self
+            .alarms
+            .list()
+            .into_iter()
+            .filter(|e| sel.is_empty() || sel.iter().any(|s| wire::matches(s, &e.id)))
+            .filter(|e| min.is_none_or(|m| e.severity >= m))
+            .filter(|e| match state.as_str() {
+                "active" => e.active(),
+                "unacked" => e.unacked(),
+                "shelved" => e.shelved.is_some(),
+                "suppressed" => false,
+                _ => true,
+            })
+            .filter(|e| after.as_deref().is_none_or(|a| e.id.as_str() > a))
+            .map(|e| (e.id.clone(), crate::alarms::alarm_json(&e, live)))
+            .collect();
+        let next = (items.len() > limit).then(|| items[limit - 1].0.clone());
+        items.truncate(limit);
+        let page: Vec<Value> = items.into_iter().map(|(_, v)| v).collect();
+        Ok(Reply::ok(json!({"items": page, "next_cursor": next})))
+    }
+
+    fn alarm(&self, id: &str) -> Result<Reply, Problem> {
+        self.alarm_reply(id)
+    }
+
+    fn ack_alarm(&self, who: &Principal, id: &str, req: AckRequest) -> Result<Reply, Problem> {
+        self.alarm_command(who, id, AlarmAction::Ack(req.reason))
+    }
+
+    fn shelve_alarm(
+        &self,
+        who: &Principal,
+        id: &str,
+        req: ShelveRequest,
+    ) -> Result<Reply, Problem> {
+        let entry = self.alarm_entry(id)?;
+        let ttl_text = req
+            .ttl
+            .ok_or_else(|| bad("J-E1201", "shelving needs a TTL").with("pointer", json!("/ttl")))?;
+        let ttl_ns = parse_duration(&ttl_text)
+            .map_err(|e| bad("J-E1012", e).with("pointer", json!("/ttl")))?;
+        if ttl_ns == 0 {
+            return Err(bad("J-E1201", "shelving needs a TTL").with("pointer", json!("/ttl")));
+        }
+        if ttl_ns > entry.max_shelve_ns {
+            return Err(Problem::new(
+                "J-E1202",
+                422,
+                format!(
+                    "the TTL is above the alarm's max_shelve ({})",
+                    duration(entry.max_shelve_ns)
+                ),
+            )
+            .with("pointer", json!("/ttl")));
+        }
+        let reason = req.reason.filter(|r| !r.is_empty()).ok_or_else(|| {
+            bad("J-E1013", "shelving needs a reason").with("pointer", json!("/reason"))
+        })?;
+        self.alarm_command(who, id, AlarmAction::Shelve { ttl_ns, reason })
+    }
+
+    fn unshelve_alarm(&self, who: &Principal, id: &str, req: AckRequest) -> Result<Reply, Problem> {
+        self.alarm_command(who, id, AlarmAction::Unshelve(req.reason))
+    }
+
+    fn alarm_events(&self, query: &Query) -> Result<Reply, Problem> {
+        crate::queries::alarm_events(
+            self.historian.store(),
+            self.historian.alarm_series(),
+            query,
+            utc_now_ns(),
+        )
+        .map(Reply::ok)
+    }
+
     fn cancel_invocation(
         &self,
         who: &Principal,
@@ -1928,6 +2224,10 @@ impl Backend for Node {
 }
 
 impl Node {
+    fn generation_ref(&self, v: &View) -> Value {
+        json!({"gen": v.number, "hash": v.hash})
+    }
+
     fn signal_meta(
         &self,
         v: &View,
