@@ -23,6 +23,9 @@ timeout = "200ms"
 
 [devices.vfd.actions.reset_fault]
 role = "admin"
+
+[outputs."vfd.run"]
+safe = false
 """
 
 [fixture.profiles]
@@ -37,6 +40,22 @@ at   = 30001
 fc   = 4
 type = "u16"
 
+[signals.run]
+at        = 1
+fc        = 5
+type      = "bool"
+direction = "output"
+
+[signals.running]
+at   = 10001
+fc   = 2
+type = "bool"
+
+[signals.fault]
+at   = 10002
+fc   = 2
+type = "bool"
+
 [actions.reset_fault]
 steps = [
     { write = { at = 40300, fc = 6, type = "u16", value = 1 } },
@@ -44,7 +63,7 @@ steps = [
 ]
 
 [implements."std/pump@1"]
-map = { reset = "actions.reset_fault", running = "state" }
+map = { reset = "actions.reset_fault", run_cmd = "run", running = "running", fault = "fault" }
 """
 
 [[double]]
@@ -52,7 +71,8 @@ device    = "vfd"
 registers = { "30001" = 0 }
 
 [[case]]
-id     = "an_implicit_instance_action_runs_the_profile_action"
+id      = "an_implicit_instance_action_runs_the_profile_action"
+doubles = ["register"]
 name   = "the class action an implicit instance maps runs the device's steps, with the device's configuration"
 spec   = ["docs/17 §4.2", "ref/03 §2.2.14", "ADR 0066 §14", "ADR 0066 §17"]
 do     = [
@@ -63,5 +83,21 @@ expect = [
     { invocation = "k1", rejected = "J-E1002" },
     { invocation = "k2", state = "succeeded" },
     { writes = "vfd", equals = [[40300, 1], [40300, 0]] },
+    { decision = "k2", outcome = "ok", instance = "vfd", device = "vfd" },
+]
+
+[[case]]
+id      = "an_implicit_instance_action_runs_the_profile_action_on_the_wire"
+doubles = ["wire"]
+name   = "the same over the wire, where the instance's run output is first written at its safe state (ADR 0042)"
+spec   = ["docs/17 §4.2", "ref/03 §2.2.14", "ADR 0066 §14", "ADR 0066 §17"]
+do     = [
+    { at = "100ms", invoke = "vfd.reset", key = "k1", role = "operator" },
+    { at = "100ms", invoke = "vfd.reset", key = "k2", role = "admin" },
+]
+expect = [
+    { invocation = "k1", rejected = "J-E1002" },
+    { invocation = "k2", state = "succeeded" },
+    { writes = "vfd", equals = [[1, false], [40300, 1], [40300, 0]] },
     { decision = "k2", outcome = "ok", instance = "vfd", device = "vfd" },
 ]
