@@ -152,7 +152,7 @@ schema = 1
 
 All sections are optional except `[profile]` and `[signals]` (the latter may be empty only in a discovery profile).
 
-**What the 1.0 runtime reads** (ADR 0064, by ADR 0028). A key, section or form of this section that the runtime does not implement yet is refused with `J0807`, and the profile is not loaded, instead of being read without it: the sections `[coherent]`, `[config]`, `[connect]`, `[relinquish]`, `[events]` and `[discovery]`; `[profile]` `firmware` and `identity`; the point keys `quantity`, `scale_factor`, `bits`, `encoding`, `invalid`, `max_age`, `limits` and `stuck_detect`, the two-point `scale`, an `offset` quantity, `signal_type = "f32"` and `kind` other than `scalar`; the register forms of `[fallback]` and its `behavior`; and a `bool` output in a register bit. An output whose value is converted to raw (`scale`, `offset`, `invert`, `enum`, or a float on an integer raw type) is converted by the output stage of `ref/06` §2.7 (ADR 0075). `label`, `description`, `readback`, `safe_hint`, `range_hint` and `monotonic` are accepted: they change no value the runtime produces. `[defaults]` `poll` and `timeout` are the device defaults. Each refused surface is accepted, unchanged, in the minor that implements it.
+**What the 1.0 runtime reads** (ADR 0064, by ADR 0028). A key, section or form of this section that the runtime does not implement yet is refused with `J0807`, and the profile is not loaded, instead of being read without it: the sections `[coherent]`, `[config]`, `[connect]`, `[relinquish]`, `[events]` and `[discovery]`; `[profile]` `firmware` and `identity`; the point keys `quantity`, `scale_factor`, `bits`, `encoding`, `invalid`, `max_age`, `limits` and `stuck_detect`, the two-point `scale`, an `offset` quantity, `signal_type = "f32"` and `kind` other than `scalar`; and the register forms of `[fallback]` and its `behavior`. An output whose value is converted to raw (`scale`, `offset`, `invert`, `enum`, or a float on an integer raw type) is converted by the output stage of `ref/06` §2.7 (ADR 0075). A `bool` output in a register bit is written by read-modify-write (§2.2.5, ADR 0076). `label`, `description`, `readback`, `safe_hint`, `range_hint` and `monotonic` are accepted: they change no value the runtime produces. `[defaults]` `poll` and `timeout` are the device defaults. Each refused surface is accepted, unchanged, in the minor that implements it.
 
 #### 2.2.2 `[profile]`
 
@@ -253,9 +253,10 @@ A key that is neither generic nor from the driver's address schema is `J0140`. `
 | `fc` | 1, 2, 3, 4, 5, 6, 15, 16 | yes (in `[defaults]` or in the point) | — | inputs and `param`: 1 (coils), 2 (discrete inputs), 3 (holding), 4 (input registers); outputs: 5, 6, 15, 16 (`J0810`) |
 | `word_order` | `big` \| `little` | no | `big` | types of more than one register |
 | `byte_order` | `big` \| `little` | no | `big` | within each register |
-| `bit` | 0–15 | no | — | only with FC 3/4 and `type = "bool"`: extracts a bit of a register |
+| `bit` | 0–15 | no | — | only with `type = "bool"`: with FC 3/4, extracts a bit of a register; on an output with FC 6/16, writes that bit by read-modify-write (ADR 0076) |
 
 - FC 1/2 and FC 5/15 only accept `type = "bool"` (`J0809`). FC 6 only accepts single-register types (`J0809`); types of 2 or 4 registers on an output require FC 16.
+- **Writing an output** (ADR 0076). FC 5 and 15 write one coil; FC 6 writes one register; FC 16 writes the registers of the type, in the order the output stage laid them out (`word_order`, `byte_order`). A `bool` output with `bit` (FC 6 or 16) is a read-modify-write: the driver reads the register with FC 3, sets or clears the bit and writes the register back; if the read fails, nothing is written and the write fails with it. The two requests are not atomic against another Modbus client writing the same register; within the node they are not interleaved with other requests of the device. A write is confirmed by its echo (FC 5/6: the request; FC 15/16: address and count); any other answer is `comm-failure`.
 - **Reading an output.** An output is not read in the cycle: its slot holds the applied value. The readback is read through an input point at the same address (`p_set_rb` with FC 3), which is the only overlap case allowed besides points that read exactly the same registers (bits of a register, different `bit`).
 - Any other register overlap between points of the same space (read FC) is `J0811`.
 
@@ -293,7 +294,7 @@ A key that is neither generic nor from the driver's address schema is `J0140`. `
 | | `min_interval` | duration | `"0ms"` | minimum interval between requests to the same equipment |
 | | `latency` | duration | `"10ms"` | response latency of the server; it enters the bus budget (05 §5, `J0370`) |
 | | `forbidden` | list of integers or `[start, end]` | `[]` | addresses that are never read nor included in a coalescing gap (`J0812`) |
-| | `single_write` | `fc6` \| `fc16` | `fc6` | equipment that only accepts FC 16 even for one register |
+| | `single_write` | `fc6` \| `fc16` | `fc6` | equipment that only accepts FC 16 even for one register: a one-register output, and the register of a bit output, go with FC 16 (ADR 0076) |
 | `i2c`, `spi` | `chip` | string | — | *chip handler* of the driver (`"ti.ads1115"`) |
 | | `max_transfer` | integer (bytes) | 32 | |
 | `opcua` | `max_nodes_per_read` | integer | 500 | |
