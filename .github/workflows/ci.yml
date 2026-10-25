@@ -80,6 +80,23 @@ jobs:
           name: conformance-${{ matrix.arch }}
           path: target/conformance/
 
+  output-cost:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show
+      - name: envelope + arbiter per output on x86_64, against 300 ns (docs/11 Phase 0 gate 4, docs/01 §21)
+        run: |
+          if ! cargo run --release --package xtask -- rt-bench --ticks 1000 --max-output-ns 300 --json target/rt-bench/x86_64.json; then
+            echo "::warning title=Output cost::median above 300 ns per output on this shared runner (non-blocking, docs/13 §5)"
+          fi
+          test -f target/rt-bench/x86_64.json
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rt-bench-x86_64
+          path: target/rt-bench/
+
   qemu:
     strategy:
       fail-fast: false
