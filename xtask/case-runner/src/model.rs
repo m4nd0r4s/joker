@@ -184,6 +184,56 @@ impl WriterSpec {
     }
 }
 
+/// A parameter of a class method: its name in the method's expressions,
+/// its type and its declared unit.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct ParamSpec<'a> {
+    /// The name the expressions read.
+    pub name: &'a str,
+    /// The type.
+    pub ty: ValueType,
+    /// The unit (`"1"` when absent).
+    pub unit: &'a str,
+}
+
+/// A statement of a class method (docs/17 §3.2), over the fixture.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum StmtSpec<'a> {
+    /// `out = expr`.
+    Assign {
+        /// Index in [`Fixture::outputs`].
+        output: usize,
+        /// The expression, over the fixture's paths and the parameters.
+        expr: &'a str,
+    },
+    /// `member.method(args)`.
+    Call {
+        /// Index in [`Fixture::instances`].
+        instance: usize,
+        /// Method number in that instance.
+        method: u16,
+        /// The argument expressions.
+        args: &'a [&'a str],
+    },
+}
+
+/// A method of an instance.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct MethodSpec<'a> {
+    /// The parameters, in order.
+    pub params: &'a [ParamSpec<'a>],
+    /// The statements, in order.
+    pub stmts: &'a [StmtSpec<'a>],
+}
+
+/// An instance of a class (`[[instances]]`, ref/03 §2.6.2): its methods,
+/// by method number, compiled over the fixture (ADR 0041).
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct InstanceSpec<'a> {
+    /// The methods.
+    pub methods: &'a [MethodSpec<'a>],
+}
+
 /// The fixture of a suite: what the core keeps for a whole generation.
 #[derive(Copy, Clone, Debug)]
 pub struct Fixture<'a> {
@@ -209,6 +259,8 @@ pub struct Fixture<'a> {
     pub members: &'a [Link<'a>],
     /// `order` of each atomic group that declares one: (group, output).
     pub order: &'a [Link<'a>],
+    /// The class instances whose methods the cases call.
+    pub instances: &'a [InstanceSpec<'a>],
 }
 
 /// A quality literal: the code, and the reason when one is given.
@@ -281,6 +333,19 @@ pub enum ActionKind {
     Clock(ClockQuality),
     /// A swap to an identical generation at this tick boundary.
     Generation,
+    /// A method record of a writer (docs/17 §4.1).
+    Method {
+        /// Index in [`Fixture::instances`].
+        instance: usize,
+        /// Method number.
+        method: u16,
+        /// Index in [`Fixture::writers`].
+        writer: usize,
+        /// The argument bits, in each parameter's declared unit.
+        args: [u64; joker_core::image::MAX_METHOD_ARGS],
+        /// How many arguments.
+        n_args: u8,
+    },
 }
 
 /// One action of a case.

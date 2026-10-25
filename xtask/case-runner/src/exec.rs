@@ -21,9 +21,9 @@
 //! into the [`TickView`].
 
 use joker_core::alarm::{AlarmConfig, AlarmRuntime, Alarms, Severity};
-use joker_core::class::{Classes, DerivedDef};
+use joker_core::class::{Classes, DerivedDef, InstanceDef, MethodDef, Stmt};
 use joker_core::commit::{CommitError, OutputState};
-use joker_core::image::{ImageStorage, RELINQUISH};
+use joker_core::image::{ImageStorage, MethodCall, RELINQUISH, Source};
 use joker_core::output::{AtomicGroup, Bound, Budget, OnRate, OutputConfig};
 use joker_core::quality::{Quality, QualityCode, QualityReason};
 use joker_core::registry::{Alias, Direction, GroupId, GroupMeta, Registry, SignalMeta, UnitRef};
@@ -38,7 +38,7 @@ use joker_core::{
 use joker_expr::Program;
 
 use crate::env::FixtureEnv;
-use crate::model::{ActionKind, Fixture, Item, LimitSpec, SafeDef, Script};
+use crate::model::{ActionKind, Fixture, Item, LimitSpec, ParamSpec, SafeDef, Script, StmtSpec};
 
 /// The name of the only cycle group of a core suite.
 pub const GROUP: &str = "case";
@@ -188,30 +188,45 @@ pub struct Needs {
 /// Visits every expression of the fixture in the order [`run`] compiles
 /// them: per output `interlock`, the low and high `range` limits and
 /// `reset_when`; then the derived signals; then per alarm `when` and
-/// `suppress_when`.
-fn expressions<'f>(fixture: &Fixture<'f>, mut f: impl FnMut(&'f str)) {
+/// `suppress_when`; then, per instance and method, each assignment and
+/// each call argument, with the parameters of its method.
+fn expressions<'f>(fixture: &Fixture<'f>, mut f: impl FnMut(&'f str, Option<&'f [ParamSpec<'f>]>)) {
     for o in fixture.outputs {
         if let Some(src) = o.interlock {
-            f(src);
+            f(src, None);
         }
         if let Some((low, high)) = o.range {
             for limit in [low, high] {
                 if let LimitSpec::Expr(src) = limit {
-                    f(src);
+                    f(src, None);
                 }
             }
         }
         if let Some(src) = o.reset_when {
-            f(src);
+            f(src, None);
         }
     }
     for c in fixture.calcs {
-        f(c.expr);
+        f(c.expr, None);
     }
     for a in fixture.alarms {
-        f(a.when);
+        f(a.when, None);
         if let Some(src) = a.suppress_when {
-            f(src);
+            f(src, None);
+        }
+    }
+    for i in fixture.instances {
+        for m in i.methods {
+            for stmt in m.stmts {
+                match *stmt {
+                    StmtSpec::Assign { expr, .. } => f(expr, Some(m.params)),
+                    StmtSpec::Call { args, .. } => {
+                        for arg in args {
+                            f(arg, Some(m.params));
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -226,13 +241,15 @@ pub fn needs(fixture: &Fixture<'_>) -> Result<Needs, SetupError> {
     let env = FixtureEnv::new(fixture, None);
     let mut out = Needs::default();
     let mut error = None;
-    expressions(fixture, |src| match env.compile(src, fixture.period_ns) {
-        Ok(p) => {
-            out.programs += 1;
-            out.arena += p.state_words();
-        }
-        Err(e) => {
-            error.get_or_insert(setup(e.code(), "an expression does not compile"));
+    expressions(fixture, |src, params| {
+        match compile(&env, src, fixture.period_ns, params) {
+            Ok(p) => {
+                out.programs += 1;
+                out.arena += p.state_words();
+            }
+            Err(e) => {
+                error.get_or_insert(setup(e.code(), "an expression does not compile"));
+            }
         }
     });
     if let Some(e) = error {
@@ -263,6 +280,7 @@ struct Plan<'p> {
     ports: &'p [SignalId],
     slots: &'p [Slot],
     derived: &'p [DerivedDef<'p>],
+    instances: &'p [InstanceDef<'p>],
     alarms: &'p [AlarmConfig<'p>],
     atomic: &'p [AtomicGroup<'p>],
     arena_words: usize,
@@ -272,6 +290,18 @@ fn bound<'a>(spec: LimitSpec<'_>, program: Option<&'a Program>) -> Result<Bound<
     match spec {
         LimitSpec::Const(x) => Ok(Bound::Const(x)),
         LimitSpec::Expr(_) => program.map(Bound::Expr).ok_or(CAPACITY),
+    }
+}
+
+fn compile(
+    env: &FixtureEnv<'_>,
+    src: &str,
+    period_ns: u64,
+    params: Option<&[ParamSpec<'_>]>,
+) -> Result<Program, joker_expr::Diagnostic> {
+    match params {
+        Some(params) => env.compile_method(src, period_ns, params),
+        None => env.compile(src, period_ns),
     }
 }
 
@@ -324,6 +354,7 @@ pub fn run<const S: usize, const O: usize, const W: usize, const P: usize>(
     let n_writers = fixture.writers.len();
     let n_commit = fixture.atomic.iter().filter(|g| g.commit.is_some()).count();
     if n_in + n_out + n_calc + 2 * n_alarm + n_commit > S
+        || fixture.instances.len() > S
         || n_out > O
         || n_atomic > O
         || n_writers > W
@@ -412,12 +443,12 @@ pub fn run<const S: usize, const O: usize, const W: usize, const P: usize>(
     let env = FixtureEnv::new(fixture, Some(&registry));
     let mut compiled = 0usize;
     let mut failure = None;
-    expressions(fixture, |src| {
+    expressions(fixture, |src, params| {
         if failure.is_some() {
             return;
         }
         match (
-            env.compile(src, fixture.period_ns),
+            compile(&env, src, fixture.period_ns, params),
             programs.get_mut(compiled),
         ) {
             (Ok(p), Some(slot)) => {
@@ -584,6 +615,94 @@ pub fn run<const S: usize, const O: usize, const W: usize, const P: usize>(
         alarm_configs[i] = c;
     }
 
+    let n_inst = fixture.instances.len();
+    let mut assign_programs: [&Program; S] = [&dummy; S];
+    let mut arg_refs: [&Program; S] = [&dummy; S];
+    let mut arg_len = 0usize;
+    let mut stmt_args = [(0usize, 0usize); S];
+    let mut stmt_count = 0usize;
+    for m in fixture.instances.iter().flat_map(|i| i.methods) {
+        for stmt in m.stmts {
+            let k = stmt_count;
+            match *stmt {
+                StmtSpec::Assign { .. } => {
+                    *assign_programs.get_mut(k).ok_or(CAPACITY)? = take()?;
+                }
+                StmtSpec::Call { args, .. } => {
+                    let first = arg_len;
+                    for _ in args {
+                        *arg_refs.get_mut(arg_len).ok_or(CAPACITY)? = take()?;
+                        arg_len += 1;
+                    }
+                    *stmt_args.get_mut(k).ok_or(CAPACITY)? = (first, arg_len);
+                }
+            }
+            stmt_count += 1;
+        }
+    }
+    let arg_refs = arg_refs;
+    let mut stmts = [Stmt::Assign {
+        target: SignalId(0),
+        expr: &dummy,
+    }; S];
+    let mut k = 0usize;
+    for m in fixture.instances.iter().flat_map(|i| i.methods) {
+        for stmt in m.stmts {
+            let def = match *stmt {
+                StmtSpec::Assign { output, .. } => Stmt::Assign {
+                    target: *output_ids[..n_out].get(output).ok_or_else(missing)?,
+                    expr: assign_programs[k],
+                },
+                StmtSpec::Call {
+                    instance, method, ..
+                } => {
+                    let (first, end) = stmt_args[k];
+                    Stmt::Call {
+                        instance: u32::try_from(instance).map_err(|_| CAPACITY)?,
+                        method,
+                        args: &arg_refs[first..end],
+                    }
+                }
+            };
+            *stmts.get_mut(k).ok_or(CAPACITY)? = def;
+            k += 1;
+        }
+    }
+    let stmts = stmts;
+    let mut methods = [MethodDef {
+        params: 0,
+        stmts: &[],
+    }; S];
+    let mut method_spans = [(0usize, 0usize); S];
+    let mut n_methods = 0usize;
+    let mut k = 0usize;
+    for (ii, i) in fixture.instances.iter().enumerate() {
+        let first = n_methods;
+        for m in i.methods {
+            let n = m.stmts.len();
+            *methods.get_mut(n_methods).ok_or(CAPACITY)? = MethodDef {
+                params: u8::try_from(m.params.len()).map_err(|_| CAPACITY)?,
+                stmts: stmts.get(k..k + n).ok_or(CAPACITY)?,
+            };
+            k += n;
+            n_methods += 1;
+        }
+        *method_spans.get_mut(ii).ok_or(CAPACITY)? = (first, n_methods);
+    }
+    let methods = methods;
+    let mut instance_defs = [InstanceDef { methods: &[] }; S];
+    for (def, (first, end)) in instance_defs.iter_mut().zip(&method_spans[..n_inst]) {
+        *def = InstanceDef {
+            methods: &methods[*first..*end],
+        };
+    }
+    let method_words = assign_programs[..stmt_count]
+        .iter()
+        .chain(&arg_refs[..arg_len])
+        .map(|p| p.state_words())
+        .max()
+        .unwrap_or(0);
+
     let mut members = [SignalId(0); O];
     let mut members_len = 0usize;
     let mut bus = [SignalId(0); O];
@@ -649,7 +768,8 @@ pub fn run<const S: usize, const O: usize, const W: usize, const P: usize>(
         + derived_defs[..n_calc]
             .iter()
             .map(|d| d.expr.state_words())
-            .sum::<usize>();
+            .sum::<usize>()
+        + method_words;
     let arena = arena.get_mut(..arena_words).ok_or(CAPACITY)?;
     let plan = Plan {
         registry,
@@ -664,6 +784,7 @@ pub fn run<const S: usize, const O: usize, const W: usize, const P: usize>(
         ports: &ports[..n_in],
         slots: &slots[..registry.len()],
         derived: &derived_defs[..n_calc],
+        instances: &instance_defs[..n_inst],
         alarms: &alarm_configs[..n_alarm],
         atomic: &atomic[..n_atomic],
         arena_words,
@@ -780,13 +901,14 @@ impl Segment<'_> {
         let mut alarms = Alarms::new(plan.alarms, &mut alarm_states[..n_alarm]).map_err(refused)?;
         let (alarm_arena, rest) = rest.split_at_mut(alarms.state_words().min(rest.len()));
         alarms.set_state_arena(alarm_arena).map_err(refused)?;
-        let mut scratch: [Proposal; 0] = [];
-        let mut classes = Classes::new(&[], plan.derived, &mut scratch);
+        let mut scratch = [Proposal::EMPTY; P];
+        let mut classes = Classes::new(plan.instances, plan.derived, &mut scratch);
         classes.set_state_arena(rest).map_err(refused)?;
         let mut snapshot = [Sample::INITIAL; S];
         let mut extenders = [SeqExtender::for_slot(); S];
         let mut proposals = [Proposal::EMPTY; P];
-        let image = ProcessImage::new(
+        let mut method_buffer = [MethodCall::EMPTY; P];
+        let mut image = ProcessImage::new(
             plan.group,
             self.fixture.period_ns,
             ImageStorage {
@@ -797,6 +919,7 @@ impl Segment<'_> {
             },
         )
         .map_err(|_| setup("J0844", "the process image does not build"))?;
+        image.set_method_buffer(&mut method_buffer);
         let mut generation = Generation {
             image,
             outputs,
@@ -966,7 +1089,41 @@ impl Segment<'_> {
                 };
                 staged.map_err(|_| "staging failed")?;
             }
+            for action in at_tick() {
+                let ActionKind::Method {
+                    instance,
+                    method,
+                    writer,
+                    args,
+                    n_args,
+                } = action.kind
+                else {
+                    continue;
+                };
+                let def = self.fixture.writers.get(writer).ok_or("unknown writer")?;
+                if def.is_async() != stage_async {
+                    continue;
+                }
+                image
+                    .stage_method(MethodCall {
+                        writer: WriterId(u32::try_from(writer).map_err(|_| "too many writers")?),
+                        instance: u32::try_from(instance).map_err(|_| "too many instances")?,
+                        method,
+                        args,
+                        n_args,
+                        source: if stage_async {
+                            Source::Async
+                        } else {
+                            Source::Cycle
+                        },
+                        ..MethodCall::EMPTY
+                    })
+                    .map_err(|_| "staging failed")?;
+            }
         }
+        classes
+            .expand(image, plan.slots, outputs, sink)
+            .map_err(|_| "method expansion failed")?;
         outputs
             .commit(image, plan.slots, sink)
             .map_err(|_| "commit failed")?;

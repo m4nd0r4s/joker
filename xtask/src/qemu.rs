@@ -214,6 +214,15 @@ fn action_lit(action: &Action) -> String {
         ActionKind::Reset { output } => format!("m::ActionKind::Reset {{ output: {output} }}"),
         ActionKind::Clock(q) => format!("m::ActionKind::Clock(c::ClockQuality::{q:?})"),
         ActionKind::Generation => "m::ActionKind::Generation".to_string(),
+        ActionKind::Method {
+            instance,
+            method,
+            writer,
+            args,
+            n_args,
+        } => format!(
+            "m::ActionKind::Method {{ instance: {instance}, method: {method}, writer: {writer}, args: {args:?}, n_args: {n_args} }}"
+        ),
     };
     format!("m::Action {{ tick: {}, kind: {kind} }}", action.tick)
 }
@@ -343,7 +352,7 @@ fn fixture_lit(suite: &Suite) -> String {
     }
     let _ = write!(
         out,
-        "    ],\n    requires_good: {},\n    trips: {},\n    members: {},\n    order: {},\n}}",
+        "    ],\n    requires_good: {},\n    trips: {},\n    members: {},\n    order: {},\n    instances: &[],\n}}",
         links_lit(fixture.requires_good),
         links_lit(fixture.trips),
         links_lit(fixture.members),
