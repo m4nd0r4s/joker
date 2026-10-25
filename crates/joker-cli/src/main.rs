@@ -195,6 +195,38 @@ enum Command {
         #[arg(long, default_value_t = 20)]
         limit: u32,
     },
+    /// Queries the historian (ref/09 §5.5).
+    History {
+        /// Selectors.
+        #[arg(required = true)]
+        selectors: Vec<String>,
+        /// Start: RFC 3339, `now` or `-<duration>`; default one hour before `--to`.
+        #[arg(long, allow_hyphen_values = true)]
+        from: Option<String>,
+        /// End; default now.
+        #[arg(long, allow_hyphen_values = true)]
+        to: Option<String>,
+        /// Aggregation interval (`1m`); without it, raw points.
+        #[arg(long)]
+        step: Option<String>,
+        /// Aggregates (`avg,min,max,count,quality` by default with `--step`).
+        #[arg(long)]
+        agg: Option<String>,
+        /// `auto`, `raw`, `1s`, `1m` or `15m`.
+        #[arg(long)]
+        tier: Option<String>,
+    },
+    /// Lists the alarms, then the latest transitions (ref/09 §5.8).
+    Alarms {
+        /// Only the active ones.
+        #[arg(long)]
+        active: bool,
+    },
+    /// Acts on one alarm (ref/09 §5.8).
+    Alarm {
+        #[command(subcommand)]
+        command: AlarmCommand,
+    },
     /// Profile draft tooling (ref/03 §2.2.19).
     Profile {
         #[command(subcommand)]
@@ -204,6 +236,32 @@ enum Command {
     Board {
         #[command(subcommand)]
         command: BoardCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum AlarmCommand {
+    /// Acknowledges an alarm.
+    Ack {
+        /// The alarm id.
+        id: String,
+        /// Why.
+        #[arg(long)]
+        reason: Option<String>,
+    },
+    /// Shelves an alarm for a TTL, at most its `max_shelve`.
+    Shelve {
+        /// The alarm id.
+        id: String,
+        /// How long.
+        ttl: String,
+        /// Why.
+        reason: String,
+    },
+    /// Ends the shelve of an alarm.
+    Unshelve {
+        /// The alarm id.
+        id: String,
     },
 }
 
@@ -370,6 +428,27 @@ fn run(cli: Cli) -> Result<u8, Failure> {
             key,
         } => node()?.action(&target_action, &args, &key),
         Command::Decisions { output, limit } => node()?.decisions(&output, limit),
+        Command::History {
+            selectors,
+            from,
+            to,
+            step,
+            agg,
+            tier,
+        } => node()?.history(&node::HistoryArgs {
+            selectors,
+            from,
+            to,
+            step,
+            agg,
+            tier,
+        }),
+        Command::Alarms { active } => node()?.alarms(active),
+        Command::Alarm { command } => match command {
+            AlarmCommand::Ack { id, reason } => node()?.alarm_ack(&id, reason.as_deref()),
+            AlarmCommand::Shelve { id, ttl, reason } => node()?.alarm_shelve(&id, &ttl, &reason),
+            AlarmCommand::Unshelve { id } => node()?.alarm_unshelve(&id),
+        },
         Command::Record {
             duration,
             groups,

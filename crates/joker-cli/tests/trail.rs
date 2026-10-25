@@ -126,6 +126,15 @@ fn part_one_and_two() {
     let decisions = n(&["decisions", "--limit", "3"]);
     assert_eq!(code(&decisions), 0);
     assert!(text(&decisions).contains("pi.act_led"));
+    let alarms = n(&["alarms", "--active"]);
+    assert_eq!(code(&alarms), 0, "{}", text(&alarms));
+    let unknown = n(&["alarm", "ack", "nope"]);
+    assert_ne!(code(&unknown), 0, "{}", text(&unknown));
+    assert!(text(&unknown).contains("J-E1200"), "{}", text(&unknown));
+    let history = n(&["--json", "history", "pi.act_led", "--from", "-10m"]);
+    assert_eq!(code(&history), 0, "{}", text(&history));
+    let v: serde_json::Value = serde_json::from_slice(&history.stdout).unwrap();
+    assert!(v["series"].is_array(), "{v}");
     let status = n(&["status"]);
     assert_eq!(code(&status), 0, "{}", text(&status));
     assert!(

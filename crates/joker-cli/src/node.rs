@@ -638,6 +638,155 @@ impl Node {
         Ok(0)
     }
 
+    /// `jk history` (ref/09 §9.1).
+    pub fn history(&self, args: &HistoryArgs) -> Result<u8, Failure> {
+        let mut q: Vec<String> = args
+            .selectors
+            .iter()
+            .map(|s| format!("sel={}", encode(s)))
+            .collect();
+        for (key, value) in [
+            ("from", &args.from),
+            ("to", &args.to),
+            ("step", &args.step),
+            ("agg", &args.agg),
+            ("tier", &args.tier),
+        ] {
+            if let Some(v) = value {
+                q.push(format!("{key}={}", encode(v)));
+            }
+        }
+        let h = checked(self.client.get(&format!("/v1/history?{}", q.join("&")))?)?.json();
+        if self.json {
+            print_json(&h);
+            return Ok(0);
+        }
+        println!(
+            "{} .. {}  tier {}{}",
+            h["from"].as_str().unwrap_or(""),
+            h["to"].as_str().unwrap_or(""),
+            h["tier"].as_str().unwrap_or(""),
+            h["step"]
+                .as_str()
+                .map(|s| format!("  step {s}"))
+                .unwrap_or_default()
+        );
+        for w in h["warnings"].as_array().cloned().unwrap_or_default() {
+            println!("warning: {}", w["message"].as_str().unwrap_or(""));
+        }
+        for series in h["series"].as_array().cloned().unwrap_or_default() {
+            let unit = series["unit"].as_str().unwrap_or("");
+            println!("{} [{}]", series["path"].as_str().unwrap_or(""), unit);
+            for p in series["points"].as_array().cloned().unwrap_or_default() {
+                let fields: Vec<String> = ["value", "avg", "min", "max", "first", "last", "count"]
+                    .iter()
+                    .filter_map(|k| p.get(*k).map(|v| format!("{k}={v}")))
+                    .collect();
+                println!(
+                    "  {}  {}  {}",
+                    p["ts"].as_str().unwrap_or(""),
+                    fields.join(" "),
+                    p["quality"].as_str().unwrap_or("")
+                );
+            }
+        }
+        if let Some(next) = h["next_cursor"].as_str() {
+            println!("(more points: cursor {next})");
+        }
+        Ok(0)
+    }
+
+    /// `jk alarms [--active]` (ref/09 §9.1).
+    pub fn alarms(&self, active: bool) -> Result<u8, Failure> {
+        let path = if active {
+            "/v1/alarms?state=active"
+        } else {
+            "/v1/alarms"
+        };
+        let a = checked(self.client.get(path)?)?.json();
+        let events = checked(self.client.get("/v1/alarm-events?limit=10")?)?.json();
+        if self.json {
+            print_json(&json!({"alarms": a["items"], "events": events["items"]}));
+            return Ok(0);
+        }
+        for e in a["items"].as_array().cloned().unwrap_or_default() {
+            let shelved = e["shelved"]["until"]
+                .as_str()
+                .map(|u| format!("  shelved until {u}"))
+                .unwrap_or_default();
+            println!(
+                "{:<28} {:<9} {:<15} {}{}",
+                e["id"].as_str().unwrap_or(""),
+                e["severity"].as_str().unwrap_or(""),
+                e["state"].as_str().unwrap_or(""),
+                e["message"].as_str().unwrap_or(""),
+                shelved
+            );
+        }
+        let recent = events["items"].as_array().cloned().unwrap_or_default();
+        if !recent.is_empty() {
+            println!();
+            for e in recent {
+                println!(
+                    "{}  {:<28} {:<14} {} -> {}{}",
+                    e["ts"].as_str().unwrap_or(""),
+                    e["id"].as_str().unwrap_or(""),
+                    e["kind"].as_str().unwrap_or(""),
+                    e["from"].as_str().unwrap_or(""),
+                    e["to"].as_str().unwrap_or(""),
+                    e["by"]
+                        .as_str()
+                        .map(|b| format!("  by {b}"))
+                        .unwrap_or_default()
+                );
+            }
+        }
+        Ok(0)
+    }
+
+    fn alarm_post(&self, id: &str, op: &str, body: Value) -> Result<u8, Failure> {
+        let a = checked(self.client.post(
+            &format!("/v1/alarms/{}/{op}", encode(id)),
+            &body,
+            &[],
+        )?)?
+        .json();
+        if self.json {
+            print_json(&a);
+        } else {
+            let shelved = a["shelved"]["until"]
+                .as_str()
+                .map(|u| format!(", shelved until {u}"))
+                .unwrap_or_default();
+            println!(
+                "{}: {}{}",
+                a["id"].as_str().unwrap_or(id),
+                a["state"].as_str().unwrap_or(""),
+                shelved
+            );
+        }
+        Ok(0)
+    }
+
+    /// `jk alarm ack <id>`.
+    pub fn alarm_ack(&self, id: &str, reason: Option<&str>) -> Result<u8, Failure> {
+        let body = match reason {
+            Some(r) => json!({"reason": r}),
+            None => json!({}),
+        };
+        self.alarm_post(id, "ack", body)
+    }
+
+    /// `jk alarm shelve <id> <ttl> "<reason>"`.
+    pub fn alarm_shelve(&self, id: &str, ttl: &str, reason: &str) -> Result<u8, Failure> {
+        self.alarm_post(id, "shelve", json!({"ttl": ttl, "reason": reason}))
+    }
+
+    /// `jk alarm unshelve <id>`.
+    pub fn alarm_unshelve(&self, id: &str) -> Result<u8, Failure> {
+        self.alarm_post(id, "unshelve", json!({}))
+    }
+
     fn download(
         &self,
         created: Value,
@@ -1161,4 +1310,34 @@ mod tests {
         let rendered = render_output_explain("pi.act_led", &state);
         assert!(!rendered.contains("last result"));
     }
+}
+
+/// The arguments of `jk history`.
+#[derive(Debug, Clone, Default)]
+pub struct HistoryArgs {
+    /// Selectors.
+    pub selectors: Vec<String>,
+    /// `--from`.
+    pub from: Option<String>,
+    /// `--to`.
+    pub to: Option<String>,
+    /// `--step`.
+    pub step: Option<String>,
+    /// `--agg`.
+    pub agg: Option<String>,
+    /// `--tier`.
+    pub tier: Option<String>,
+}
+
+/// Percent-encodes a query value (RFC 3986 unreserved characters pass).
+fn encode(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for b in text.bytes() {
+        if b.is_ascii_alphanumeric() || b"-._~*,:".contains(&b) {
+            out.push(char::from(b));
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
 }
