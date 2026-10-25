@@ -1,0 +1,570 @@
+[[excerpt]]
+check = "typescript"
+block = "f883566fc3ca"
+reason = "ref/05 §8: the cycles member of an app, with an elided body"
+
+[[excerpt]]
+check = "typescript"
+block = "a855105910fd"
+reason = "ref/05 §11: the models member of an app, outside its object"
+
+[[example]]
+block = "06fa32450a34"
+section = "6.4.1"
+cddl = "joker-link.cddl"
+rule = "hello-offer"
+
+[[example]]
+block = "03e6df7e5b40"
+section = "6.4.1"
+cddl = "joker-link.cddl"
+rule = "hello-answer"
+
+[[example]]
+block = "a329e11ec062"
+section = "6.4.1"
+cddl = "joker-link.cddl"
+rule = "hello-request"
+
+[[example]]
+block = "c48b456a0b7a"
+section = "6.5"
+cddl = "joker-link.cddl"
+rule = "ready"
+
+[[example]]
+block = "a329e11ec062"
+section = "6.6"
+cddl = "joker-link.cddl"
+rule = "bye"
+
+[[example]]
+block = "4cf69eecd1be"
+section = "6.7"
+cddl = "joker-link.cddl"
+rule = "ping"
+
+[[example]]
+block = "7a0634b53a62"
+section = "6.7"
+cddl = "joker-link.cddl"
+rule = "pong"
+
+[[example]]
+block = "ec6254546b7d"
+section = "6.8"
+cddl = "joker-link.cddl"
+rule = "keyrot-offer"
+
+[[example]]
+block = "932e402228db"
+section = "6.8"
+cddl = "joker-link.cddl"
+rule = "keyrot-stored"
+
+[[example]]
+block = "505da2453cb0"
+section = "6.9"
+cddl = "joker-link.cddl"
+rule = "samples"
+
+[[example]]
+block = "7e801be7280b"
+section = "6.10"
+cddl = "joker-link.cddl"
+rule = "read"
+
+[[example]]
+block = "cbcc81910ec2"
+section = "6.11"
+cddl = "joker-link.cddl"
+rule = "catalog-req"
+
+[[example]]
+block = "fce5fb1122c9"
+section = "6.11"
+cddl = "joker-link.cddl"
+rule = "catalog-data"
+
+[[example]]
+block = "cd4ef08da3aa"
+section = "6.12"
+cddl = "joker-link.cddl"
+rule = "propose"
+
+[[example]]
+block = "261b1b75ba76"
+section = "6.13"
+cddl = "joker-link.cddl"
+rule = "outcomes"
+
+[[example]]
+block = "f7096ced6c0f"
+section = "6.14"
+cddl = "joker-link.cddl"
+rule = "call"
+
+[[example]]
+block = "35faa4b11902"
+section = "6.15"
+cddl = "joker-link.cddl"
+rule = "action"
+
+[[example]]
+block = "571f06444539"
+section = "6.16"
+cddl = "joker-link.cddl"
+rule = "result"
+
+[[example]]
+block = "fd36611893e2"
+section = "6.16"
+cddl = "joker-link.cddl"
+rule = "result"
+
+[[example]]
+block = "b56d5638be2f"
+section = "6.17"
+cddl = "joker-link.cddl"
+rule = "cancel"
+
+[[example]]
+block = "ce14ee27b9e0"
+section = "6.18"
+cddl = "joker-link.cddl"
+rule = "events"
+
+[[example]]
+block = "8fb6913966d9"
+section = "6.19"
+cddl = "joker-link.cddl"
+rule = "alarms"
+
+[[example]]
+block = "5e5d04c0bf39"
+section = "6.20"
+cddl = "joker-link.cddl"
+rule = "alarm-cmd"
+
+[[example]]
+block = "161f5aa84b83"
+section = "6.21"
+cddl = "joker-link.cddl"
+rule = "reset"
+
+[[example]]
+block = "76ca2a3abe48"
+section = "6.22"
+cddl = "joker-link.cddl"
+rule = "restart"
+
+[[example]]
+block = "4eb9e27b77f7"
+section = "6.23"
+cddl = "joker-link.cddl"
+rule = "time-probe"
+
+[[example]]
+block = "27e835bd3499"
+section = "6.23"
+cddl = "joker-link.cddl"
+rule = "time-echo"
+
+[[example]]
+block = "c419c56ad31d"
+section = "6.23"
+cddl = "joker-link.cddl"
+rule = "time-set"
+
+[[example]]
+block = "130cb2ac9854"
+section = "6.24"
+cddl = "joker-link.cddl"
+rule = "trace-info"
+
+[[example]]
+block = "60e8c153ce0b"
+section = "6.24"
+cddl = "joker-link.cddl"
+rule = "trace-read"
+
+[[example]]
+block = "dfad9b4f02d7"
+section = "6.24"
+cddl = "joker-link.cddl"
+rule = "trace-data"
+
+[[example]]
+block = "815bfadcaf02"
+section = "6.26"
+cddl = "joker-link.cddl"
+rule = "error"
+
+[[example]]
+block = "2eb32d05b97f"
+section = "9.3"
+cddl = "joker-link.cddl"
+rule = "ota-begin"
+
+[[example]]
+block = "9148456ae046"
+section = "9.3"
+cddl = "joker-link.cddl"
+rule = "ota-ready"
+
+[[example]]
+block = "7fbd97af9838"
+section = "9.3"
+cddl = "joker-link.cddl"
+rule = "ota-data"
+
+[[example]]
+block = "3e7195d13d7d"
+section = "9.3"
+cddl = "joker-link.cddl"
+rule = "ota-ack"
+
+[[example]]
+block = "77ecdc6bc7b5"
+section = "9.3"
+cddl = "joker-link.cddl"
+rule = "ota-end"
+
+[[example]]
+block = "3f2b553efa7f"
+section = "9.3"
+cddl = "joker-link.cddl"
+rule = "ota-verified"
+
+[[example]]
+block = "7b4d399905ef"
+section = "9.4"
+cddl = "joker-link.cddl"
+rule = "ota-activate"
+
+[[example]]
+block = "476f6c26c937"
+section = "9.4"
+cddl = "joker-link.cddl"
+rule = "ota-confirm"
+
+[[example]]
+block = "32d07b59f742"
+section = "9.4"
+cddl = "joker-link.cddl"
+rule = "ota-state"
+
+[[example]]
+block = "b999ad15893e"
+section = "9.4"
+cddl = "joker-link.cddl"
+rule = "ota-abort"
+
+[[example]]
+block = "76b4f981a562"
+section = "2.6.7"
+cddl = "agent.cddl"
+rule = "desired-state"
+
+[[example]]
+block = "59fdd79051d2"
+section = "2.10.3"
+cddl = "agent.cddl"
+rule = "report"
+
+[[excerpt]]
+check = "cddl"
+block = "bdedb7c312c7"
+reason = "ref/07 §6.7: ACK has an empty body, zero bytes, which has no diagnostic notation"
+
+[divergence.cddl."ref/07"]
+issue = "AUR-431"
+items = [
+  "2eb32d05b97f §9.3 (joker-link.cddl ota-begin): [\"BAD_CBOR\", [\"prim\", 6, 18, [\"array\", [\"member\", 1, 1, [\"te",
+]
+
+[divergence.cddl."ref/10"]
+issue = "AUR-431"
+items = [
+  "59fdd79051d2 §2.10.3 (agent.cddl report): [\"2026-09-24T10:00:00.120Z\", [\"prim\", 6, 0, [\"anno\", \"regexp",
+  "76b4f981a562 §2.6.7 (agent.cddl desired-state): [\"2026-09-24T09:00:00Z\", [\"prim\", 6, 0, [\"anno\", \"regexp\", [",
+]
+
+[divergence.rust."ref/01 §12"]
+issue = "AUR-429"
+items = [
+  "ActuationBudget",
+  "Bound",
+  "Expr",
+  "Ext",
+  "ImplementedBy",
+  "Instance",
+  "Quantity",
+  "Rate",
+  "Reserved",
+  "Safe",
+  "Selector",
+]
+
+[divergence.rust."ref/04 §4"]
+issue = "AUR-284"
+items = [
+  "ActionCall",
+  "ActionCall::key",
+  "ActionCall::start",
+  "ActionError",
+  "ActionError::cancelled",
+  "ActionError::device",
+  "ActionError::invalid",
+  "ActionErrorKind",
+  "ActionHandle::cancel",
+  "ActionHandle::finish",
+  "ActionHandle::progress",
+  "ActionPort::invoke",
+  "Agg",
+  "AlarmHandle::clear",
+  "AlarmHandle::raise",
+  "AlarmHandle::set",
+  "AlarmHandle::state",
+  "AlarmState",
+  "BenchIoCycle",
+  "BenchIoCycle::online",
+  "BenchIoCycle::raw",
+  "BenchIoCycle::rssi",
+  "BenchIoCycle::uptime",
+  "Change",
+  "CounterHandle::add",
+  "CounterHandle::inc",
+  "CycleInputMany::get",
+  "CycleInputMany::is_empty",
+  "CycleInputMany::iter",
+  "CycleInputMany::len",
+  "CycleInputMany::names",
+  "CycleInternal::get",
+  "CycleInternal::get_or",
+  "CycleInternal::get_or_default",
+  "CycleInternal::sample",
+  "CycleInternal::set",
+  "Error::quality",
+  "EventInputHandle::next",
+  "EventInputHandle::stream",
+  "EventOutputHandle::emit",
+  "Full",
+  "Instant::utc_seconds",
+  "Kv::batch",
+  "Kv::delete",
+  "Kv::get",
+  "Kv::get_record",
+  "Kv::keys",
+  "Kv::set",
+  "Kv::set_record",
+  "Led",
+  "LedCycle",
+  "LedCycle::brightness",
+  "LedCycle::dim",
+  "LedCycle::off",
+  "LedCycle::on",
+  "LedCycle::raw",
+  "LedCycle::set",
+  "LedCycle::toggle",
+  "Level::band",
+  "MailboxEnd::drain",
+  "MailboxEnd::lost",
+  "MailboxEnd::recv",
+  "MailboxEnd::try_recv",
+  "MailboxEnd::try_send",
+  "ManyHandle::by_name",
+  "ManyHandle::get",
+  "ManyHandle::healthy",
+  "ManyHandle::index",
+  "ManyHandle::is_empty",
+  "ManyHandle::iter",
+  "ManyHandle::iter_mut",
+  "ManyHandle::len",
+  "ManyHandle::names",
+  "ManyHandle::read_all",
+  "PerInstance",
+  "PerInstance::get",
+  "PerInstance::get_mut",
+  "PublishedHandle::set",
+  "Secret",
+  "Secret::expose",
+  "Secret::name",
+  "Snapshot",
+  "TaskInput::history",
+  "TaskInput::history_agg",
+  "TaskInput::subscribe",
+  "TaskIo",
+  "TaskIo::kv",
+  "TaskIo::now",
+  "TaskIo::random",
+  "TaskIo::secret",
+  "TaskIo::shadow",
+  "TaskIo::sleep",
+  "TaskIo::sleep_until",
+  "TaskIo::snapshot",
+  "TaskOutput::get",
+  "TaskOutput::history",
+  "TaskOutput::last_outcome",
+  "TaskOutput::mine",
+  "TaskOutput::relinquish",
+  "TaskOutput::sample",
+  "TaskOutput::set",
+  "TaskOutput::winner",
+  "TaskOutput::write",
+  "UtcSeconds",
+  "UtcSeconds::MAX",
+  "UtcSeconds::MIN",
+  "WriteOutcome::require_applied",
+  "WriteTicket",
+  "joker::migrate",
+  "joker::on_action",
+  "joker::on_params",
+  "joker::task",
+]
+
+[divergence.rust."ref/04 §6"]
+issue = "AUR-241"
+items = [
+  "Harness",
+  "Harness::actions",
+  "Harness::alarm",
+  "Harness::clock",
+  "Harness::command",
+  "Harness::device",
+  "Harness::devices",
+  "Harness::emit",
+  "Harness::envelope",
+  "Harness::errors",
+  "Harness::events",
+  "Harness::group",
+  "Harness::history",
+  "Harness::hot_swap",
+  "Harness::inject",
+  "Harness::input",
+  "Harness::input_series",
+  "Harness::internal",
+  "Harness::kv",
+  "Harness::lease",
+  "Harness::level",
+  "Harness::logs",
+  "Harness::manifest",
+  "Harness::manual",
+  "Harness::new",
+  "Harness::now",
+  "Harness::on_action",
+  "Harness::output",
+  "Harness::param",
+  "Harness::published",
+  "Harness::restart_app",
+  "Harness::run_for",
+  "Harness::run_until",
+  "Harness::safe",
+  "Harness::scenario",
+  "Harness::secret",
+  "Harness::seed",
+  "Harness::set_input",
+  "Harness::set_param",
+  "Harness::start_utc",
+  "Harness::step",
+  "Harness::stop_app",
+  "Harness::traps",
+  "Observed",
+  "OutputTrace::after",
+  "OutputTrace::all",
+  "OutputTrace::any",
+  "OutputTrace::at",
+  "OutputTrace::before",
+  "OutputTrace::between",
+  "OutputTrace::intervals",
+  "OutputTrace::last",
+  "OutputTrace::no_new_writes",
+  "OutputTrace::outcomes",
+  "OutputTrace::proposals",
+  "OutputTrace::toggles",
+  "OutputTrace::toggles_every",
+  "OutputTrace::values",
+  "OutputTrace::when",
+  "Series::constant",
+  "Series::every",
+  "Series::frozen_after",
+  "Series::linear",
+  "Series::noise",
+  "Series::points",
+  "Series::ramp",
+  "Series::replay",
+  "Series::sine",
+  "Series::step",
+  "Series::with_quality",
+  "Series::with_quality_at",
+  "SeriesTrace::bad",
+  "SeriesTrace::eq",
+  "SeriesTrace::ge",
+  "SeriesTrace::gt",
+  "SeriesTrace::le",
+  "SeriesTrace::lt",
+  "SeriesTrace::values",
+  "Sim::button",
+  "Sim::of",
+  "Sim::pump",
+  "Sim::temp_sensor",
+  "SimDevice::capabilities",
+  "SimDevice::constant",
+  "SimDevice::fault",
+  "SimDevice::member",
+  "SimDevice::name",
+  "SimDevice::press_at",
+]
+
+[divergence.rust."ref/05 §20"]
+issue = "AUR-284"
+items = [
+  "joker::Event",
+  "joker::classes",
+  "joker::task",
+]
+
+[divergence.rust."ref/06 §3"]
+issue = "AUR-430"
+items = [
+  "AdcRead",
+  "AdcRead::bits",
+  "AdcRead::read",
+  "CanFrames",
+  "CanFrames::receive",
+  "CanFrames::transmit",
+  "Cx::locked",
+  "Cx::spawn_blocking",
+  "MODBUS_TCP",
+  "Scanner",
+  "Scanner::scan",
+  "joker_hal::DriverEntry",
+  "joker_hal::driver_entry",
+]
+
+[divergence.rust."ref/08 §2"]
+issue = "AUR-315"
+items = [
+  "crate crates/joker-micro does not exist",
+]
+
+[divergence.typescript."ref/05"]
+issue = "AUR-387"
+items = [
+  "TS2304 CycleView",
+  "TS2304 LocalCycle",
+  "TS2304 LocalTask",
+  "TS2304 LogRecord",
+  "TS2304 OutputTrace",
+  "TS2304 PumpTask",
+  "TS2304 Series",
+  "TS2304 Span",
+  "TS2304 TaskError",
+  "TS2304 Trace",
+  "TS2304 Trap",
+  "TS2304 ValueOf",
+  "TS2430 History<T>",
+  "TS2552 ManyPorts",
+  "TS2552 ReadValue",
+  "TS2552 RecordOf",
+]
