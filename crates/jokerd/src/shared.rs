@@ -6,6 +6,7 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use crossbeam_queue::ArrayQueue;
+use joker_core::alarm::{AlarmError, AlarmEvent};
 use joker_core::commit::{DecisionRecord, WriteResult};
 use joker_core::image::Proposal;
 use joker_core::value::NO_TS_SRC;
@@ -34,6 +35,43 @@ pub const TRIP_CAPACITY: usize = 16;
 pub const EXPORT_CAPACITY: usize = 256;
 /// Trace buffers in flight between the cycle thread and the trace ring.
 pub const TRACE_BUFFERS: usize = 512;
+/// Alarm transitions in flight to the alarm journal (ADR 0082).
+pub const ALARM_EVENT_CAPACITY: usize = 4_096;
+/// Operator commands on alarms waiting for a tick, and their replies.
+pub const ALARM_COMMAND_CAPACITY: usize = 64;
+
+/// What an operator asks of an alarm (ref/09 §5.8).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AlarmOp {
+    /// Acknowledge.
+    Ack,
+    /// Shelve for this many ns.
+    Shelve(u64),
+    /// End a shelve.
+    Unshelve,
+}
+
+/// An operator command on an alarm, for the cycle thread, the only one
+/// that owns the alarms' state machines: it runs at the start of the next
+/// tick of any group.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AlarmCommand {
+    /// The alarm's number (its position in `plan.alarms`).
+    pub alarm: u32,
+    /// What to do.
+    pub op: AlarmOp,
+    /// Matches the [`AlarmReply`].
+    pub ticket: u32,
+}
+
+/// What the cycle thread did with an [`AlarmCommand`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AlarmReply {
+    /// The command's ticket.
+    pub ticket: u32,
+    /// For `Ack`, whether anything changed; the core's refusal otherwise.
+    pub result: Result<bool, AlarmError>,
+}
 
 /// A request to end a trip (`jk reset`, docs/16 E7, ref/09 §5.7): pushed
 /// by the API into the owning group's own queue, consumed by that
@@ -353,6 +391,14 @@ pub struct Shared {
     pub confirmations: ArrayQueue<Confirmation>,
     /// Confirmations dropped by a full queue.
     pub confirmations_dropped: Counter,
+    /// Alarm transitions and operator actions, for the alarm journal.
+    pub alarm_events: ArrayQueue<AlarmEvent>,
+    /// Alarm events dropped by a full queue.
+    pub alarm_events_dropped: Counter,
+    /// Operator commands on alarms.
+    pub alarm_commands: ArrayQueue<AlarmCommand>,
+    /// Their replies.
+    pub alarm_replies: ArrayQueue<AlarmReply>,
 }
 
 /// What the output stage does with one output besides writing its
@@ -548,6 +594,10 @@ impl Shared {
             write_acks_dropped: Counter::default(),
             confirmations: ArrayQueue::new(WRITE_ACK_CAPACITY),
             confirmations_dropped: Counter::default(),
+            alarm_events: ArrayQueue::new(ALARM_EVENT_CAPACITY),
+            alarm_events_dropped: Counter::default(),
+            alarm_commands: ArrayQueue::new(ALARM_COMMAND_CAPACITY),
+            alarm_replies: ArrayQueue::new(ALARM_COMMAND_CAPACITY),
         }
     }
 

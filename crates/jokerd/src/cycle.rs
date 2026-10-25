@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::atomic::Ordering;
 
-use joker_core::alarm::{AlarmRuntime, Alarms};
+use joker_core::alarm::{AlarmEvent, AlarmRuntime, AlarmSnapshot, Alarms};
 use joker_core::class::Classes;
 use joker_core::commit::{CommitSink, DecisionRecord, OutputResult, OutputState, WriteResult};
 use joker_core::envelope::Applied;
@@ -69,6 +69,9 @@ pub struct RunOptions {
     /// allocation guard that proves the tick does not allocate, AGENTS.md
     /// invariant 6); `None` runs it directly.
     pub tick_guard: Option<fn(&mut dyn FnMut())>,
+    /// Alarm states restored before the first tick (ADR 0082), by alarm
+    /// number.
+    pub alarms: Vec<(u32, AlarmSnapshot)>,
 }
 
 struct Sink<'s> {
@@ -148,6 +151,12 @@ impl CommitSink for Sink<'_> {
             self.shared.decisions_dropped.bump();
         }
     }
+
+    fn alarm(&mut self, event: &AlarmEvent) {
+        if self.shared.alarm_events.push(*event).is_err() {
+            self.shared.alarm_events_dropped.bump();
+        }
+    }
 }
 
 struct GroupRun<'a> {
@@ -201,6 +210,9 @@ pub fn run(
     alarms
         .set_state_arena(&mut alarm_arena)
         .map_err(|e| CycleError(format!("alarms: {e:?}")))?;
+    for (alarm, snapshot) in &options.alarms {
+        let _ = alarms.restore(*alarm, *snapshot);
+    }
     let mut outputs = Outputs::new(
         &registry,
         &tables.writers,
@@ -443,6 +455,25 @@ fn tick(
         at_mono_ns: at.mono_ns,
         pending_resets: &mut g.pending_resets,
     };
+    while let Some(c) = shared.alarm_commands.pop() {
+        let alarms = &mut *expressions.alarms;
+        let result = match c.op {
+            crate::shared::AlarmOp::Ack => alarms.ack(c.alarm, at.mono_ns, &mut sink),
+            crate::shared::AlarmOp::Shelve(ttl) => alarms
+                .shelve(c.alarm, ttl, at.mono_ns, &mut sink)
+                .map(|()| true),
+            crate::shared::AlarmOp::Unshelve => alarms
+                .unshelve(c.alarm, at.mono_ns, &mut sink)
+                .map(|()| true),
+        };
+        let reply = crate::shared::AlarmReply {
+            ticket: c.ticket,
+            result,
+        };
+        if shared.alarm_replies.push(reply).is_err() {
+            shared.alarm_events_dropped.bump();
+        }
+    }
     if expressions
         .alarms
         .evaluate(&g.image, &shared.slots, outputs, &mut sink)

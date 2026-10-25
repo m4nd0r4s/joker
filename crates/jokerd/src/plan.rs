@@ -241,6 +241,9 @@ pub struct Plan {
     pub instance_actions: Vec<crate::actions::InstanceAction>,
     /// `[security.roles]` (ref/09 §2.2).
     pub roles: joker_api::server::SocketRoles,
+    /// `[telemetry]`: what the historian records and its store policy
+    /// (ref/01 §5.17, ADR 0082).
+    pub telemetry: crate::historian::TelemetryPlan,
 }
 
 /// The borrowed core tables of a plan.
@@ -559,6 +562,7 @@ impl Plan {
             alarms: Vec::new(),
             instance_actions: Vec::new(),
             roles: crate::actions::socket_roles(manifest),
+            telemetry: crate::historian::TelemetryPlan::default(),
         };
         plan.index()?;
         plan.permit_sources = crate::bridge::permit_sources(manifest, &plan.devices);
@@ -572,6 +576,7 @@ impl Plan {
         crate::expr_plan::bind(&mut plan, manifest)?;
         representable_outputs(&mut plan)?;
         plan.index()?;
+        plan.telemetry = crate::historian::telemetry_plan(manifest, &plan)?;
         Ok(plan)
     }
 
