@@ -1377,6 +1377,7 @@ impl OutputTrace {
     pub fn proposals(&self) -> impl Iterator<Item = (Duration, Value)> + '_;
     pub fn no_new_writes(&self) -> bool;
     pub fn outcomes(&self) -> impl Iterator<Item = (Duration, WriteOutcome<Value>)> + '_;
+    pub fn levels(&self) -> impl Iterator<Item = (Duration, Option<Level>)> + '_;  // level that won each tick; None = safe
 }
 
 impl SeriesTrace {
