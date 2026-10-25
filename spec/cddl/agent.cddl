@@ -22,7 +22,7 @@ agent-message = desired-state / command / trust-bundle / floor-statement /
 
 ; ------------------------------------------------------------------ common types
 
-time      = int / tdate                 ; CBOR: s64 ns UTC since 1970; JSON: RFC 3339 with Z
+timestamp = int / tdate                 ; CBOR: s64 ns UTC since 1970; JSON: RFC 3339 with Z
 duration  = uint / tstr                 ; CBOR: ns; JSON: duration literal (ref/00, §3.1)
 digest    = bstr .size 32 / tstr        ; JSON: "sha256:" + 64 lowercase hex
 ulid      = bstr .size 16 / tstr        ; JSON: 26 Crockford base32 characters
@@ -31,7 +31,7 @@ name      = tstr                        ; DNS label (ref/00, §5): node, org, De
 path      = tstr                        ; path of document 02, §9
 semver    = tstr
 seq       = uint                        ; always < 2^53 (fits in a JSON number)
-bytes     = bstr / tstr                 ; JSON: base64 (RFC 4648, §4)
+binary    = bstr / tstr                 ; JSON: base64 (RFC 4648, §4)
 enum      = uint / tstr                 ; JSON: snake_case name
 cose      = bstr / tstr                 ; COSE_Sign1 (RFC 9052), CBOR; in JSON, base64
 code      = tstr                        ; J-code of the registry (ref/00, §8)
@@ -54,7 +54,7 @@ trust-bundle = {
   ("v" / 1) => 1,
   ("org" / 2) => name,
   ("version" / 3) => seq,
-  ("issued" / 4) => time,
+  ("issued" / 4) => timestamp,
   ? ("authority" / 5) => name,          ; deck_id; absent = node without a Deck
   ("keys" / 6) => [+ trust-key],
   ? ("deck_urls" / 7) => [+ tstr],
@@ -69,10 +69,10 @@ trust-bundle = {
 trust-key = {
   ("kid" / 1) => kid,
   ("alg" / 2) => -8,                    ; COSE EdDSA: the organization keys are Ed25519 (D7, ADR 0025)
-  ("key" / 3) => bytes,                 ; raw public key, 32 B
+  ("key" / 3) => binary,                 ; raw public key, 32 B
   ("roles" / 4) => [+ enum],            ; trust-role: root 0, deck 1, runtime 2, apps 3, config 4, profiles 5,
                                         ; boards 6, classes 7, firmware 8, models 9 (1.1), drivers 10, secrets 11
-  ? ("not_after" / 5) => time,
+  ? ("not_after" / 5) => timestamp,
   ? ("deck" / 6) => name,               ; required for the deck role
   extension
 }
@@ -81,7 +81,7 @@ floor-statement = {
   ("v" / 1) => 1,
   ("role" / 2) => enum,                 ; trust-role of the artifact type
   ("seq" / 3) => seq,
-  ("issued" / 4) => time,
+  ("issued" / 4) => timestamp,
   ? ("min_version" / 5) => semver,
   ? ("revoked" / 6) => [* digest],
   ? ("scope" / 7) => tstr,              ; board, architecture or "*"
@@ -94,7 +94,7 @@ floor-statement = {
 enroll-request = {
   ("token" / 1) => tstr,
   ("node" / 2) => name,
-  ("csr" / 3) => bytes,                 ; PKCS#10 DER; SAN URI urn:joker:kem:x25519:<base64url> (ref/02 §3.2.3)
+  ("csr" / 3) => binary,                 ; PKCS#10 DER; SAN URI urn:joker:kem:x25519:<base64url> (ref/02 §3.2.3)
   ("hw" / 4) => digest,
   ("key_storage" / 5) => enum,          ; tpm 0, secure_element 1, file 2
   ("kind" / 6) => enum,                 ; node-kind: linux 0, micro 1 (RESERVED 1.1)
@@ -106,15 +106,15 @@ enroll-request = {
 
 attestation = {                         ; optional in 1.0; the Deck may require it in 1.3
   ("kind" / 1) => enum,                 ; tpm2 0
-  ("ek_cert" / 2) => bytes,
-  ("ak" / 3) => bytes,
-  ("quote" / 4) => bytes,
-  ("nonce" / 5) => bytes,
+  ("ek_cert" / 2) => binary,
+  ("ak" / 3) => binary,
+  ("quote" / 4) => binary,
+  ("nonce" / 5) => binary,
   extension
 }
 
 enroll-reply = {
-  ("cert" / 1) => [+ bytes],            ; X.509 DER chain, leaf first
+  ("cert" / 1) => [+ binary],            ; X.509 DER chain, leaf first
   ("trust" / 2) => cose,                ; trust-bundle signed by the organization root
   ? ("deck" / 3) => name,
   ? ("settings" / 4) => agent-settings,
@@ -123,12 +123,12 @@ enroll-reply = {
 }
 
 enroll-nonce = {
-  ("nonce" / 1) => bytes,              ; 32 B, valid for 5 min
+  ("nonce" / 1) => binary,              ; 32 B, valid for 5 min
   extension
 }
 
 renew-request = {
-  ("csr" / 1) => bytes,                 ; new identity key; the same KEM key in the SAN
+  ("csr" / 1) => binary,                 ; new identity key; the same KEM key in the SAN
   ("proof" / 2) => cose,                ; COSE_Sign1 of the old key over renew-proof
   ("hw" / 3) => digest,
   extension
@@ -137,12 +137,12 @@ renew-request = {
 renew-proof = {
   ("node" / 1) => name,
   ("csr" / 2) => digest,                ; SHA-256 of the DER CSR
-  ("ts" / 3) => time,
+  ("ts" / 3) => timestamp,
   ("nonce" / 4) => ulid,
 }
 
 renew-reply = {
-  ("cert" / 1) => [+ bytes],
+  ("cert" / 1) => [+ binary],
   ? ("trust" / 2) => [+ cose],          ; bundle chain from the node's version
   extension
 }
@@ -159,7 +159,7 @@ hello = {
   ("uptime" / 7) => duration,
   ("hw" / 8) => digest,
   ("key_storage" / 9) => enum,
-  ("time" / 10) => time,
+  ("time" / 10) => timestamp,
   ("clock" / 11) => enum,               ; clock_quality (ref/00, §6)
   ("desired_seq" / 12) => seq,          ; last accepted desired state (0 = none)
   ("report_seq" / 13) => seq,
@@ -173,7 +173,7 @@ hello = {
 hello-reply = {
   ("proto_minor" / 1) => uint,
   ("deck" / 2) => name,
-  ("time" / 3) => time,
+  ("time" / 3) => timestamp,
   ("event_ack" / 4) => seq,
   ("need_full" / 5) => bool,
   ? ("settings" / 6) => agent-settings,
@@ -202,8 +202,8 @@ desired-state = {
   ("org" / 3) => name,
   ("deck" / 4) => name,
   ("seq" / 5) => seq,
-  ("issued" / 6) => time,
-  ? ("expires" / 7) => time,
+  ("issued" / 6) => timestamp,
+  ? ("expires" / 7) => timestamp,
   ? ("runtime" / 8) => runtime-target,
   ? ("generation" / 9) => generation-target,
   ("artifacts" / 10) => [* artifact],
@@ -218,7 +218,7 @@ desired-state = {
   ? ("override_local" / 19) => bool,
   ? ("crit" / 20) => [+ uint],
   ? ("note" / 21) => tstr,
-  ? ("secrets" / 22) => bytes,         ; secret-bundle (joker.secrets.v1, spec/cddl/secrets.cddl) of this node
+  ? ("secrets" / 22) => binary,         ; secret-bundle (joker.secrets.v1, spec/cddl/secrets.cddl) of this node
   ; 23: reserved (models, 1.1)
   ; 100–119: reserved (v2, sites)
   extension
@@ -298,7 +298,7 @@ rollout-info = {
 }
 
 schedule = {
-  ? ("not_before" / 1) => time,
+  ? ("not_before" / 1) => timestamp,
   ? ("windows" / 2) => [+ window],
   ? ("jitter" / 3) => duration,
   ? ("fetch_deadline" / 4) => duration,
@@ -341,10 +341,10 @@ command = {
   ("id" / 1) => ulid,
   ("node" / 2) => name,
   ("deck" / 3) => name,
-  ("ts" / 4) => time,
+  ("ts" / 4) => timestamp,
   ("kind" / 5) => enum,                 ; command-kind
   ? ("args" / 6) => command-args,
-  ? ("expires" / 7) => time,
+  ? ("expires" / 7) => timestamp,
   extension
 }
 
@@ -366,8 +366,8 @@ renew-args = {
 upload-args = {
   ("upload" / 1) => ulid,
   ("what" / 2) => enum,                 ; upload-kind: decisions 0, logs 1, trace 2, events 3
-  ? ("from" / 3) => time,
-  ? ("to" / 4) => time,
+  ? ("from" / 3) => timestamp,
+  ? ("to" / 4) => timestamp,
   ? ("filter" / 5) => tstr,             ; path selector (document 02, §9)
   ? ("max_bytes" / 6) => uint,
   extension
@@ -406,7 +406,7 @@ tunnel-frame = [
 ; ------------------------------------------------------------------ long-poll (HTTPS)
 
 poll-reply = {
-  ("time" / 1) => time,
+  ("time" / 1) => timestamp,
   ? ("desired" / 2) => cose,
   ? ("commands" / 3) => [+ cose],
   ? ("cursor" / 4) => tstr,
@@ -423,7 +423,7 @@ report = {
   ("node" / 2) => name,
   ("seq" / 3) => seq,
   ? ("base" / 4) => seq,                ; present = delta (merge patch, RFC 7386) over the base report
-  ("time" / 5) => time,
+  ("time" / 5) => timestamp,
   ("clock" / 6) => enum,
   ("body" / 7) => report-body,
   extension
@@ -472,7 +472,7 @@ node-info = {
   ? ("tz" / 6) => tstr,
   ? ("kind" / 7) => enum,               ; node-kind
   ? ("boot" / 8) => ulid,
-  ? ("booted" / 9) => time,
+  ? ("booted" / 9) => timestamp,
   extension
 }
 
@@ -493,14 +493,14 @@ generation-info = {
   ? ("previous" / 4) => gen-ref,
   ? ("origin" / 5) => enum,             ; gen-origin: agent 0, local 1, import 2, session 3,
                                         ; shadow 4, rollback 5, boot 6
-  ? ("confirm_by" / 6) => time,
+  ? ("confirm_by" / 6) => timestamp,
   extension
 }
 
 gen-ref = {
   ("gen" / 1) => uint,
   ("hash" / 2) => digest,
-  ? ("at" / 3) => time,
+  ? ("at" / 3) => timestamp,
   ? ("by" / 4) => tstr,                 ; principal (user:…, deck:<deck_id>/user:<id>, agent)
   ? ("label" / 5) => tstr,
   extension
@@ -514,14 +514,14 @@ desired-info = {
   ? ("code" / 5) => code,
   ? ("causes" / 6) => [+ code],
   ? ("fetched" / 7) => [done: uint, total: uint],        ; bytes
-  ? ("next" / 8) => time,               ; next attempt or window opening
+  ? ("next" / 8) => timestamp,               ; next attempt or window opening
   ? ("rollout" / 9) => ulid,
   extension
 }
 
 drift-entry = {
   ("code" / 1) => code,
-  ("since" / 2) => time,
+  ("since" / 2) => timestamp,
   ? ("detail" / 3) => tstr,
   extension
 }
@@ -542,7 +542,7 @@ group-info = {
 
 device-info = {
   ("link" / 1) => enum,                 ; link-state (ref/00 §6): connecting 0 … stopped 5
-  ? ("since" / 2) => time,
+  ? ("since" / 2) => timestamp,
   ? ("driver" / 3) => tstr,
   ? ("firmware" / 4) => tstr,
   extension
@@ -566,14 +566,14 @@ app-info = {
 alarm-info = {
   ("state" / 1) => enum,                ; alarm_state (ref/00, §6)
   ("severity" / 2) => enum,             ; severity
-  ("since" / 3) => time,
-  ? ("shelved_until" / 4) => time,
+  ("since" / 3) => timestamp,
+  ? ("shelved_until" / 4) => timestamp,
   ? ("message" / 5) => tstr,
   extension
 }
 
 trip-info = {
-  ("since" / 1) => time,
+  ("since" / 1) => timestamp,
   ? ("cause" / 2) => tstr,
   extension
 }
@@ -581,7 +581,7 @@ trip-info = {
 override-info = {
   ("level" / 1) => tstr,                ; "manual:3"
   ("by" / 2) => tstr,
-  ("until" / 3) => time,
+  ("until" / 3) => timestamp,
   ? ("reason" / 4) => tstr,
   extension
 }
@@ -646,8 +646,8 @@ driver-info = {
 }
 
 identity-info = {
-  ? ("serial" / 1) => bytes,
-  ? ("not_after" / 2) => time,
+  ? ("serial" / 1) => binary,
+  ? ("not_after" / 2) => timestamp,
   ? ("key_storage" / 3) => enum,
   ? ("trust_version" / 4) => seq,
   ? ("floors" / 5) => { * tstr => seq },  ; role → seq of the applied floor
@@ -659,8 +659,8 @@ agent-info = {
   ? ("queue" / 2) => uint,              ; events awaiting confirmation
   ? ("queue_bytes" / 3) => uint,
   ? ("dropped" / 4) => uint,            ; since enrollment
-  ? ("oldest" / 5) => time,             ; oldest event awaiting confirmation
-  ? ("paused_until" / 6) => time,
+  ? ("oldest" / 5) => timestamp,             ; oldest event awaiting confirmation
+  ? ("paused_until" / 6) => timestamp,
   ? ("hold" / 7) => bool,               ; local changes on hold
   extension
 }
@@ -681,7 +681,7 @@ event-ack = {
 event = {
   ("seq" / 1) => seq,
   ("id" / 2) => ulid,
-  ("ts" / 3) => time,
+  ("ts" / 3) => timestamp,
   ("clock" / 4) => enum,
   ("boot" / 5) => ulid,
   ("mono" / 6) => uint,                 ; ns since boot (pair of ts, ref/00, §3)
@@ -701,7 +701,7 @@ alarm-event = {
   ("severity" / 4) => enum,
   ? ("message" / 5) => tstr,
   ? ("by" / 6) => tstr,                 ; who acknowledged or shelved
-  ? ("shelved_until" / 7) => time,
+  ? ("shelved_until" / 7) => timestamp,
   extension
 }
 
@@ -770,7 +770,7 @@ gap-event = {
 clock-event = {
   ("boot" / 1) => ulid,
   ("mono" / 2) => uint,
-  ("utc" / 3) => time,
+  ("utc" / 3) => timestamp,
   ("quality" / 4) => enum,
   ? ("source" / 5) => tstr,             ; ntp, ptp, gnss, deck
   extension
@@ -785,15 +785,15 @@ command-result-event = {
 
 cert-event = {
   ("action" / 1) => enum,               ; cert-action: renewed 0, expiring 1, expired 2, revoked 3
-  ? ("not_after" / 2) => time,
-  ? ("serial" / 3) => bytes,
+  ? ("not_after" / 2) => timestamp,
+  ? ("serial" / 3) => binary,
   extension
 }
 
 agent-event = {
   ("action" / 1) => enum,               ; agent-action: paused 0, resumed 1, hold 2, imported 3, offline 4, online 5
   ? ("by" / 2) => tstr,
-  ? ("until" / 3) => time,
+  ? ("until" / 3) => timestamp,
   ? ("detail" / 4) => tstr,
   extension
 }
@@ -828,13 +828,13 @@ registry-token-request = {
 status-message = {
   ("online" / 1) => bool,
   ("boot" / 2) => ulid,
-  ("time" / 3) => time,
+  ("time" / 3) => timestamp,
   extension
 }
 
 registry-token = {
   ("token" / 1) => tstr,
-  ("expires" / 2) => time,
+  ("expires" / 2) => timestamp,
   ("scope" / 3) => [+ tstr],
   extension
 }

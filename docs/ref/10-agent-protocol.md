@@ -74,13 +74,13 @@ Document 20 (§2, §3.1, §4), document 21 (§1, §7, §8), ADR 0015, 0021 and 0
 
 | CDDL type | CBOR | JSON |
 |---|---|---|
-| `time` | `int`, ns UTC since 1970 | RFC 3339 with `Z` (ref/00, §3) |
+| `timestamp` | `int`, ns UTC since 1970 | RFC 3339 with `Z` (ref/00, §3) |
 | `duration` | `uint`, ns | duration literal (`"10m"`) |
 | `digest` | `bstr` of 32 B | `"sha256:<64 hex>"` |
 | `ulid` | `bstr` of 16 B | 26 Crockford base32 characters |
 | `kid` | `bstr` of 16 B: the first 16 bytes of the SHA-256 of the raw public key | 32 hex |
 | `enum` | numeric value (§2.2) | `snake_case` name |
-| `bytes`, `cose` | `bstr` | base64 (RFC 4648, §4, with `=`) |
+| `binary`, `cose` | `bstr` | base64 (RFC 4648, §4, with `=`) |
 | `seq` | `uint` < 2⁵³ | number |
 
 **Integer keys.** 1–99: v1. 100–119: reserved for v2 (sites, §6). Negative ones in CBOR, and text ones starting with `x_` in JSON: private extensions, always ignored. A removed key is never reused (ref/00, §1).
@@ -200,7 +200,7 @@ Signed by a `root` key. It is what the node uses to verify everything else.
 | 1 | `v` | `1` | yes | — | = 1 | `J0939` |
 | 2 | `org` | name | yes | — | = org of the node | `J0939` |
 | 3 | `version` | seq | yes | — | > installed version | `J0939` |
-| 4 | `issued` | time | yes | — | — | — |
+| 4 | `issued` | timestamp | yes | — | — | — |
 | 5 | `authority` | name | no | no Deck | a `deck` key with that `deck` | `J0939` |
 | 6 | `keys` | `[+ trust-key]` | yes | — | ≤ 32; at least one `root` | `J0939` |
 | 7 | `deck_urls` | `[+ tstr]` | no | — | `https://`, ≤ 4 | `J0939` |
@@ -216,9 +216,9 @@ Signed by a `root` key. It is what the node uses to verify everything else.
 |---|---|---|---|---|
 | 1 | `kid` | kid | yes | = SHA-256(`key`)[0..16]; unique in the bundle |
 | 2 | `alg` | int | yes | −8 (Ed25519, D7) |
-| 3 | `key` | bytes | yes | 32 B |
+| 3 | `key` | binary | yes | 32 B |
 | 4 | `roles` | `[+ trust-role]` | yes | `root` is not combined with other roles |
-| 5 | `not_after` | time | no | checked only with the clock `synced` |
+| 5 | `not_after` | timestamp | no | checked only with the clock `synced` |
 | 6 | `deck` | name | if `deck` ∈ `roles` | the `deck_id` that the key represents |
 
 **Update rule.** A new bundle is only accepted if it is signed by a `root` key **of the installed bundle** and has a higher `version`. A root rotation is a bundle signed by the old root that already includes the new one. A node that was away during several rotations receives the **chain** of bundles and verifies them one by one (`renew-reply.trust`, `hello-reply.trust`, `GET /trust`).
@@ -234,7 +234,7 @@ Signed by a key with the role of the artifact type (the floor of the runtime by 
 | 1 | `v` | `1` | yes | = 1 |
 | 2 | `role` | `trust-role` | yes | ≠ `root`, ≠ `deck` |
 | 3 | `seq` | seq | yes | > last floor accepted for (`role`, `scope`) |
-| 4 | `issued` | time | yes | — |
+| 4 | `issued` | timestamp | yes | — |
 | 5 | `min_version` | semver | no | minimum admissible version |
 | 6 | `revoked` | `[* digest]` | no | ≤ 256 forbidden digests |
 | 7 | `scope` | tstr | no, `"*"` | board, architecture (`arch:aarch64`) or `*` |
@@ -258,7 +258,7 @@ The `_` separates without ambiguity, because it does not exist in names (ref/00,
 |---|---|---|---|---|---|
 | 1 | `token` | tstr | yes | valid, unused, not expired | `J0930` |
 | 2 | `node` | name | yes | grammar of ref/00, §5; free in the org or equal to that of the token | `J0932` |
-| 3 | `csr` | bytes | yes | PKCS#10 DER, P-256, signed by its own key; `CN` = `node`; with the X25519 KEM key in the SAN URI `urn:joker:kem:x25519:<base64url>` (ref/02 §3.2.3) | `J0932` |
+| 3 | `csr` | binary | yes | PKCS#10 DER, P-256, signed by its own key; `CN` = `node`; with the X25519 KEM key in the SAN URI `urn:joker:kem:x25519:<base64url>` (ref/02 §3.2.3) | `J0932` |
 | 4 | `hw` | digest | yes | hardware fingerprint (§3.2.3) | — |
 | 5 | `key_storage` | enum | yes | the Deck may require `tpm`/`secure_element` | `J0933` |
 | 6 | `kind` | `node-kind` | yes | — | — |
@@ -272,7 +272,7 @@ The `_` separates without ambiguity, because it does not exist in names (ref/00,
 
 | # | Name | Type | Req. | Meaning |
 |---|---|---|---|---|
-| 1 | `cert` | `[+ bytes]` | yes | DER chain, leaf first, up to the issuing CA |
+| 1 | `cert` | `[+ binary]` | yes | DER chain, leaf first, up to the issuing CA |
 | 2 | `trust` | cose | yes | signed bundle; the node verifies that the root has the `kid` of the token (`J0931`) |
 | 3 | `deck` | name | no | `deck_id` of the authority (= `trust.authority`) |
 | 4 | `settings` | `agent-settings` | no | initial values (§2.9) |
@@ -293,8 +293,8 @@ The Deck accepts mTLS with the old certificate **even if expired**, up to `renew
 | 3 | `org` | name | yes | — | = org of the node | `J0944` |
 | 4 | `deck` | name | yes | — | = `authority` of the bundle and = `deck` of the key | `J0941` |
 | 5 | `seq` | seq | yes | — | > last accepted (§3.3) | `J0942`, `J0943` |
-| 6 | `issued` | time | yes | — | ≤ now + 5 min (only with the clock `synced`) | `J0945` |
-| 7 | `expires` | time | no | no expiration | > now (only with the clock `synced`) | `J0945` |
+| 6 | `issued` | timestamp | yes | — | ≤ now + 5 min (only with the clock `synced`) | `J0945` |
+| 7 | `expires` | timestamp | no | no expiration | > now (only with the clock `synced`) | `J0945` |
 | 8 | `runtime` | `runtime-target` | no | keep the current one | §2.6.1 | `J0947`, `J0948` |
 | 9 | `generation` | `generation-target` | no | keep the current one | §2.6.2 | `J0954`, `J0955` |
 | 10 | `artifacts` | `[* artifact]` | yes | — | ≤ 256; all the digests referred to, and only those (§3.3, V12 and V18) | `J0949` |
@@ -309,7 +309,7 @@ The Deck accepts mTLS with the old certificate **even if expired**, up to `renew
 | 19 | `override_local` | bool | no | `false` | if `true`, replaces a locally changed generation (§3.7) | — |
 | 20 | `crit` | `[+ uint]` | no | — | keys that the node must know | `J0946` |
 | 21 | `note` | tstr ≤ 1 KiB | no | — | text for people (appears in `jk agent desired`) | — |
-| 22 | `secrets` | bytes | no | — | the `secret-bundle` of this node (media type `joker.secrets.v1`, `spec/cddl/secrets.cddl`, ref/02 §2.4): the entries encrypted to the KEM key of the node, each signed by the `secrets` role. The Deck delivers them without being able to read them (D6, ADR 0024). Verified entry by entry in V10b (§3.3) | `J0922`–`J0926` (per entry) |
+| 22 | `secrets` | binary | no | — | the `secret-bundle` of this node (media type `joker.secrets.v1`, `spec/cddl/secrets.cddl`, ref/02 §2.4): the entries encrypted to the KEM key of the node, each signed by the `secrets` role. The Deck delivers them without being able to read them (D6, ADR 0024). Verified entry by entry in V10b (§3.3) | `J0922`–`J0926` (per entry) |
 | 23 | — | — | — | — | reserved: models (1.1) | — |
 | 100–119 | — | — | — | — | reserved: v2 (sites) | — |
 
@@ -397,7 +397,7 @@ An invalid policy is `J0979`. The `confirm` of the DSD applies to the `runtime` 
 
 | # | Name | Type | Default | Validation | Meaning |
 |---|---|---|---|---|---|
-| 1 | `not_before` | time | — | — | do not swap before this instant (the download may start now) |
+| 1 | `not_before` | timestamp | — | — | do not swap before this instant (the download may start now) |
 | 2 | `windows` | `[+ window]` | always | ≤ 16 | only swap within one of these windows, intersected with those of the node (§3.4.4) |
 | 3 | `jitter` | duration | `0s` | ≤ 24 h | uniform random delay, drawn once per DSD and stored |
 | 4 | `fetch_deadline` | duration | `72h` | 1 h–30 d | deadline to download everything, counted from acceptance |
@@ -453,10 +453,10 @@ A command is a one-off request, signed by the `deck` key, **idempotent and bound
 | 1 | `id` | ULID | yes | a repeated `id` returns the previous result (without error) | — |
 | 2 | `node` | name | yes | = node | `J0944` |
 | 3 | `deck` | name | yes | = authority | `J0941` |
-| 4 | `ts` | time | yes | with the clock `synced`: \|ts − now\| ≤ 30 s (ref/00, §9) | `J0968` |
+| 4 | `ts` | timestamp | yes | with the clock `synced`: \|ts − now\| ≤ 30 s (ref/00, §9) | `J0968` |
 | 5 | `kind` | `command-kind` | yes | — | `unsupported` |
 | 6 | `args` | per `kind` | depending | — | `J0967` |
-| 7 | `expires` | time | no | with the clock `synced`: > now | `J0968` |
+| 7 | `expires` | timestamp | no | with the clock `synced`: > now | `J0968` |
 
 | `kind` | `args` | Does | Equivalent role | Version |
 |---|---|---|---|---|
@@ -476,8 +476,8 @@ A `confirm` or `reject` whose target is not in `confirming` responds `conflict` 
 |---|---|---|---|---|---|
 | 1 | `upload` | ULID | yes | — | destination `PUT /agent/v1/uploads/{upload}` |
 | 2 | `what` | `upload-kind` | yes | — | in `[agent.upload] allow` of the node, otherwise `forbidden` |
-| 3 | `from` | time | no | start of the record | — |
-| 4 | `to` | time | no | now | — |
+| 3 | `from` | timestamp | no | start of the record | — |
+| 4 | `to` | timestamp | no | now | — |
 | 5 | `filter` | tstr | no | everything | path selector (document 02, §9) |
 | 6 | `max_bytes` | uint | no | `[agent.upload] max_bytes` | ≤ that value |
 
@@ -498,7 +498,7 @@ Format of the body: `decisions` and `events` in NDJSON (one decision or event pe
 | 7 | `uptime` | duration | yes | — |
 | 8 | `hw` | digest | yes | hardware fingerprint |
 | 9 | `key_storage` | enum | yes | — |
-| 10 | `time` | time | yes | clock of the node |
+| 10 | `time` | timestamp | yes | clock of the node |
 | 11 | `clock` | `clock_quality` | yes | — |
 | 12 | `desired_seq` | seq | yes | last DSD accepted (0 = none) |
 | 13 | `report_seq` | seq | yes | last report sent |
@@ -535,7 +535,7 @@ The Deck suggests; the node applies the value bounded by the margins below (and 
 | 2 | `node` | name | yes | — |
 | 3 | `seq` | seq | yes | increasing per node, persisted |
 | 4 | `base` | seq | no | present: it is a **delta** (merge patch, RFC 7386) over the `base` report; absent: full |
-| 5 | `time` | time | yes | — |
+| 5 | `time` | timestamp | yes | — |
 | 6 | `clock` | `clock_quality` | yes | — |
 | 7 | `body` | `report-body` | yes | — |
 
@@ -646,7 +646,7 @@ The maps by name (`devices`, `alarms`…) are keyed by the path or name of docum
 |---|---|---|---|---|
 | 1 | `seq` | seq | yes | increasing, contiguous, persisted; a lost event keeps its `seq` (§3.9.3) |
 | 2 | `id` | ULID | yes | global identifier, stable across resends |
-| 3 | `ts` | time | yes | UTC of the node at the moment of the event |
+| 3 | `ts` | timestamp | yes | UTC of the node at the moment of the event |
 | 4 | `clock` | `clock_quality` | yes | quality of the clock at that moment |
 | 5 | `boot` | ULID | yes | boot in which the event happened |
 | 6 | `mono` | uint | yes | monotonic ns since that boot (pair of `ts`, ref/00, §3) |

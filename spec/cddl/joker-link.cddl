@@ -15,7 +15,7 @@
 link-body = hello / ready / bye / ping / pong / ack / error / keyrot /
             catalog-msg / read / samples / propose / outcomes / call /
             action / result / cancel / events / alarms / alarm-cmd / reset /
-            restart / time / trace / ota
+            restart / time-msg / trace / ota
 
 ; ---------------------------------------------------------------- base types
 u8   = 0..255
@@ -366,7 +366,7 @@ reset = { 1 => u32, 2 => sid, 3 => role, * uint => any }
 restart = { 1 => u32, 2 => &(warm: 0, reboot: 1) / uint, 3 => role, * uint => any }
 
 ; ------------------------------------------------------------------- TIME 0x20
-time = time-probe / time-echo / time-set
+time-msg = time-probe / time-echo / time-set
 time-probe = { 1 => 0, 2 => host-us, * uint => any }                       ; t1
 time-echo  = { 1 => 1, 2 => host-us, 3 => mono-us, 4 => mono-us, * uint => any } ; t1, t2, t3
 time-set   = {
