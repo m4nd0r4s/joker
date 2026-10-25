@@ -147,6 +147,18 @@ pub enum AlarmError {
     NotShelved,
 }
 
+/// What of an alarm survives a restart of the runtime (ADR 0082): the
+/// underlying state, with its pending acknowledgement, and the end of a
+/// shelve. The `Unknown` overlay and the delay timers do not survive; the
+/// next evaluation derives them again.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct AlarmSnapshot {
+    /// The underlying state; never `Unknown`.
+    pub underlying: AlarmState,
+    /// Monotonic instant the shelve ends, if shelved.
+    pub shelved_until: Option<u64>,
+}
+
 /// The runtime state of one alarm.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct AlarmRuntime {
@@ -246,6 +258,34 @@ impl<'a> Alarms<'a> {
     pub fn state(&self, alarm: u32) -> Option<(AlarmState, bool)> {
         let s = &self.states[self.find(alarm).ok()?];
         Some((s.state(), s.shelved()))
+    }
+
+    /// The state of an alarm that survives a restart.
+    pub fn snapshot(&self, alarm: u32) -> Option<AlarmSnapshot> {
+        let s = &self.states[self.find(alarm).ok()?];
+        Some(AlarmSnapshot {
+            underlying: s.underlying,
+            shelved_until: s.shelved_until,
+        })
+    }
+
+    /// Restores an alarm before its first evaluation (ADR 0082), without an
+    /// event: the next tick publishes its signals, an active one trips its
+    /// outputs as usual, and a restored state leaves it only through the
+    /// lifecycle of docs/02 §11. An `Unknown` underlying state restores
+    /// `Normal`.
+    pub fn restore(&mut self, alarm: u32, snapshot: AlarmSnapshot) -> Result<(), AlarmError> {
+        let i = self.find(alarm)?;
+        let state = &mut self.states[i];
+        state.underlying = match snapshot.underlying {
+            AlarmState::Unknown => AlarmState::Normal,
+            s => s,
+        };
+        state.shelved_until = snapshot.shelved_until;
+        state.unknown = None;
+        state.since = None;
+        state.published = None;
+        Ok(())
     }
 
     /// Step 3 for the alarms of the image's group: evaluates conditions and
