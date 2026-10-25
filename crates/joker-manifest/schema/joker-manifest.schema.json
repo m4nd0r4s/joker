@@ -274,6 +274,7 @@
                 "patternProperties": { "^x_": {} },
                 "additionalProperties": false
               },
+              "data_class": { "allOf": [{ "enum": ["operational", "personal", "sensitive"] }], "x-joker-reserved": true },
               "kind": { "allOf": [{ "enum": ["scalar", "block"] }], "x-joker-since": "1.1" },
               "block": { "allOf": [{ "type": "integer", "minimum": 1, "maximum": 4294967295 }], "x-joker-since": "1.1" }
             },
@@ -316,7 +317,8 @@
             },
             "patternProperties": { "^x_": {} },
             "additionalProperties": false
-          }
+          },
+          "data_class": { "allOf": [{ "enum": ["operational", "personal", "sensitive"] }], "x-joker-reserved": true }
         },
         "patternProperties": { "^x_": {} },
         "additionalProperties": false
@@ -715,7 +717,8 @@
               "signals": { "type": "array", "items": { "enum": ["metrics", "logs", "traces"] } },
               "every": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
               "url": { "type": "string" },
-              "events": { "type": "array", "items": { "enum": ["alarms", "events"] } }
+              "events": { "type": "array", "items": { "enum": ["alarms", "events"] } },
+              "accepts": { "allOf": [{ "type": "array", "uniqueItems": true, "items": { "enum": ["operational", "personal", "sensitive"] } }], "x-joker-reserved": true }
             },
             "patternProperties": { "^x_": {} },
             "additionalProperties": false
@@ -773,7 +776,8 @@
             "patternProperties": { "^x_": {} },
             "additionalProperties": false
           } },
-          "endpoints": { "type": "array", "items": { "type": "string" } }
+          "endpoints": { "type": "array", "items": { "type": "string" } },
+          "accepts": { "allOf": [{ "type": "array", "uniqueItems": true, "items": { "enum": ["operational", "personal", "sensitive"] } }], "x-joker-reserved": true }
         },
         "patternProperties": { "^x_": {} },
         "additionalProperties": false

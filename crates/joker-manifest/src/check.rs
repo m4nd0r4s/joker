@@ -490,7 +490,7 @@ impl Checker<'_> {
                 if key.starts_with("x_") {
                     continue;
                 }
-                if matches!(key, "kind" | "block") {
+                if matches!(key, "kind" | "block" | "data_class") {
                     self.push(
                         Diagnostic::new(
                             "J0290",
