@@ -336,3 +336,25 @@ fn method_records_replay_to_the_same_bytes() {
     }
     assert_eq!(segment.finish(), recorded.as_slice());
 }
+
+#[test]
+fn an_expanded_write_carries_the_ttl_of_its_call() {
+    let mut r = rig();
+    let mut sink = Sink::default();
+    r.h.set_input(50.0, Quality::GOOD, 0);
+    r.h.image
+        .latch(0, Instant::mono(0), r.h.slots, &r.h.registry)
+        .unwrap();
+    r.h.image
+        .stage_method(MethodCall {
+            ttl_ns: 5_000_000_000,
+            ..call(0, 0, &[7.0])
+        })
+        .unwrap();
+    r.classes
+        .expand(&mut r.h.image, r.h.slots, &r.h.outputs, &mut sink)
+        .unwrap();
+    let expanded = r.h.image.proposals().last().copied().unwrap();
+    assert_eq!(expanded.ttl_ns, 5_000_000_000);
+    assert_eq!(r.h.image.direct_proposals().len(), 0);
+}
