@@ -575,3 +575,39 @@ fn a_fallback_value_as_safe_as_safe_and_an_accepted_uncovered_output_pass() {
     let report = run(&text);
     assert!(!report.codes().contains(&"J0205"), "{}", report.render());
 }
+
+#[test]
+fn only_scalar_members_of_declared_capabilities_need_a_binding() {
+    let mut c = context();
+    let mut dim = member(MemberKind::Out, SignalType::Float);
+    dim.capability = Some("dimmable".into());
+    c.classes.insert(
+        "std/lamp_t@1".into(),
+        ClassInfo {
+            members: [
+                ("on", member(MemberKind::Out, SignalType::Bool)),
+                ("dim", dim),
+                ("toggle", member(MemberKind::Method, SignalType::Unknown)),
+                ("lit", member(MemberKind::Query, SignalType::Bool)),
+                ("reset", member(MemberKind::Action, SignalType::Unknown)),
+                ("tripped", member(MemberKind::Event, SignalType::Unknown)),
+            ]
+            .into_iter()
+            .map(|(k, v)| (k.to_owned(), v))
+            .collect(),
+            capabilities: ["dimmable".to_owned()].into_iter().collect(),
+        },
+    );
+    let text = site("[instances.l1]\nclass = \"std/lamp_t@1\"\nmap = { on = \"io.do_1\" }\n");
+    let mut fs = MemoryFileSystem::default();
+    fs.file("joker.toml", &text).dir("apps/x");
+    let report = check(&fs, Path::new("joker.toml"), &c);
+    assert!(!report.has_errors(), "{}", report.render());
+    let text = site(
+        "[instances.l1]\nclass = \"std/lamp_t@1\"\ncapabilities = [\"dimmable\"]\nmap = { on = \"io.do_1\" }\n",
+    );
+    let mut fs = MemoryFileSystem::default();
+    fs.file("joker.toml", &text).dir("apps/x");
+    let report = check(&fs, Path::new("joker.toml"), &c);
+    assert!(report.codes().contains(&"J0602"), "{}", report.render());
+}

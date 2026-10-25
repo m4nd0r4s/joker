@@ -546,7 +546,12 @@ impl Checker<'_> {
             if let Some(info) = &info {
                 for (member_name, member) in &info.members {
                     let bound = map.and_then(|m| m.get(member_name));
-                    let needed = !member.optional
+                    let scalar = matches!(
+                        member.kind,
+                        MemberKind::In | MemberKind::Out | MemberKind::Param
+                    );
+                    let needed = scalar
+                        && !member.optional
                         && member.capability.as_ref().is_none_or(|c| caps.contains(c))
                         && !virtual_instance
                         && !decl.contains_key("sim");
@@ -610,6 +615,19 @@ impl Checker<'_> {
                         member.kind,
                         MemberKind::In | MemberKind::Out | MemberKind::Param
                     ) {
+                        continue;
+                    }
+                    if member
+                        .capability
+                        .as_ref()
+                        .is_some_and(|c| !caps.contains(c))
+                    {
+                        continue;
+                    }
+                    if !virtual_instance
+                        && !decl.contains_key("sim")
+                        && map.and_then(|m| m.get(member_name)).is_none()
+                    {
                         continue;
                     }
                     let alias = format!("{name}.{member_name}");
