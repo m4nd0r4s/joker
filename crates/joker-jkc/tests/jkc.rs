@@ -289,3 +289,27 @@ fn jc0601_requires_the_bump_of_section_9() {
     );
     assert_eq!(codes(&version(&event, "1.1.0")), ["JC0601"]);
 }
+
+#[test]
+fn rust_generation_covers_enums_records_and_methods() {
+    let src = "package acme\n\nenum PcsMode { off = 0, standby = 1, charge = 2 }\n\nrecord Session {\n    id: string\n    energy: f64 kWh\n}\n\n/// A charger.\nclass charger.ac@2.1.0 {\n    out mode: PcsMode @safe_hint(off)\n    event ended: Session\n    method charge(limit: f64 A) { mode = PcsMode.charge }\n}\n";
+    let c = compile(vec![(
+        PathBuf::from("classes/acme/charger.ac@2.jkc"),
+        src.to_owned(),
+    )]);
+    assert!(!c.has_errors(), "{}", c.render());
+    let file = &c.classes["acme/charger.ac@2"];
+    let code = joker_jkc::codegen::rust_package(c.classes.values());
+    assert!(code.contains("pub mod v2 {"), "{code}");
+    assert!(code.contains("pub struct ChargerAc;"));
+    assert!(code.contains("pub use v2::{ChargerAc, ChargerAcMethod};"));
+    assert!(code.contains("#[repr(i64)]\n    pub enum PcsMode {"));
+    assert!(code.contains("Charge = 2,"));
+    assert!(code.contains("pub struct Session<'a> {"));
+    assert!(code.contains("pub id: &'a str,"));
+    assert!(code.contains("pub energy: f64,"));
+    assert!(code.contains("/// `charge(limit: f64 A)`."));
+    assert_eq!(joker_jkc::codegen::camel("temp_sensor"), "TempSensor");
+    assert_eq!(joker_jkc::codegen::camel("meter.ac3"), "MeterAc3");
+    assert_eq!(file.contract.version.major, 2);
+}

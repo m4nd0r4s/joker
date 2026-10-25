@@ -14,6 +14,7 @@
 
 pub mod ast;
 pub mod check;
+pub mod codegen;
 pub mod compat;
 pub mod contract;
 pub mod expr;

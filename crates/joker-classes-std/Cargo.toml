@@ -1,0 +1,18 @@
+[package]
+name = "joker-classes-std"
+description = "The Rust items jkc generates for the classes of std/ (docs/14 §10, docs/17 §6, ref/04 §4.8.1)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[build-dependencies]
+joker-jkc = { path = "../joker-jkc" }
+
+[dev-dependencies]
+joker-jkc = { path = "../joker-jkc" }
+
+[lints]
+workspace = true
