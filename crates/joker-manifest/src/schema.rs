@@ -19,6 +19,9 @@ pub enum Phase {
     V1_0,
     /// Reserved for 1.1: in the schema, refused by a 1.0 runtime (`J0290`).
     V1_1,
+    /// Reserved in 1.0 until this runtime implements it (ADR 0028, ADR 0079):
+    /// in the schema, refused by every runtime that does not (`J0290`).
+    Reserved,
 }
 
 /// Where a key applies.
@@ -153,6 +156,13 @@ const fn v11(name: &'static str, ty: Ty) -> Key {
     }
 }
 
+const fn reserved(name: &'static str, ty: Ty) -> Key {
+    Key {
+        phase: Phase::Reserved,
+        ..k(name, ty)
+    }
+}
+
 const fn micro(name: &'static str, ty: Ty) -> Key {
     Key {
         target: Target::Micro,
@@ -175,6 +185,8 @@ const fn section(name: &'static str, ty: Ty) -> Key {
 }
 
 const TEXTS: Ty = Ty::List(&Ty::Text);
+const DATA_CLASS: Ty = Ty::Choice(&["operational", "personal", "sensitive"]);
+const ACCEPTS: Ty = Ty::Set(&DATA_CLASS);
 const PATHS: Ty = Ty::List(&Ty::Path);
 const SELECTORS: Ty = Ty::Set(&Ty::PathOrSelector);
 const FILES: Ty = Ty::List(&Ty::File);
@@ -368,6 +380,7 @@ pub const SIGNAL_TUNING: &[Key] = &[
         Ty::OneOf(&[Ty::Duration, Ty::Choice(&["on_demand"])]),
     ),
     k("record", RECORD),
+    reserved("data_class", DATA_CLASS),
     v11("kind", Ty::Choice(&["scalar", "block"])),
     v11("block", Ty::Int(1, u32::MAX as i64)),
 ];
@@ -406,6 +419,7 @@ pub const SIGNAL: &[Key] = &[
     k("limits", Ty::List(&Ty::Quantity)),
     k("stuck_detect", Ty::Duration),
     k("record", RECORD),
+    reserved("data_class", DATA_CLASS),
 ];
 
 /// `[outputs."<path>"]` (§5.10).
@@ -657,6 +671,7 @@ pub const UPLINK: &[Key] = &[
     k("every", Ty::Duration),
     k("url", Ty::Text),
     k("events", Ty::List(&Ty::Choice(&["alarms", "events"]))),
+    reserved("accepts", ACCEPTS),
 ];
 
 /// `[telemetry]` (§5.17).
@@ -728,6 +743,7 @@ pub const BRIDGE: &[Key] = &[
         ),
     ),
     k("endpoints", TEXTS),
+    reserved("accepts", ACCEPTS),
 ];
 
 /// `[security]` (§5.19–§5.20).
@@ -1295,7 +1311,19 @@ impl Validator<'_> {
     }
 
     fn rules(&mut self, key: &Key, entry: &Entry, at: &str) {
-        if key.phase == Phase::V1_1 && !self.options.v1_1 {
+        if key.phase == Phase::Reserved {
+            self.push(
+                Diagnostic::new(
+                    "J0290",
+                    format!(
+                        "`{}` is reserved; this runtime does not implement it yet",
+                        key.name
+                    ),
+                )
+                .at(entry.key)
+                .label(format!("in `{}`", at.trim_start_matches('.'))),
+            );
+        } else if key.phase == Phase::V1_1 && !self.options.v1_1 {
             self.push(
                 Diagnostic::new(
                     "J0290",
@@ -1464,8 +1492,10 @@ fn table_schema(keys: &[Key], open: bool, level: usize) -> String {
     for (i, key) in keys.iter().enumerate() {
         let mut schema = type_schema(&key.ty, level + 2);
         let mut extra = Vec::new();
-        if key.phase == Phase::V1_1 {
-            extra.push("\"x-joker-since\": \"1.1\"".to_owned());
+        match key.phase {
+            Phase::V1_0 => {}
+            Phase::V1_1 => extra.push("\"x-joker-since\": \"1.1\"".to_owned()),
+            Phase::Reserved => extra.push("\"x-joker-reserved\": true".to_owned()),
         }
         match key.target {
             Target::Micro => extra.push("\"x-joker-target\": \"micro\"".to_owned()),
