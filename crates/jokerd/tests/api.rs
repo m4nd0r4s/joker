@@ -1617,3 +1617,390 @@ async fn a_proposal_carries_its_profiles_as_uploaded_artifacts() {
         "the node has no profile of its own to fall back on"
     );
 }
+
+/// A numeric output, an alarm on it, and the historian recording it.
+fn effective_with_alarm() -> String {
+    "[project]\n\
+     name  = \"alarm-test\"\n\
+     joker = \"1.0\"\n\
+     mode  = \"dev\"\n\
+     \n\
+     [outputs.\"pi.p_set\"]\n\
+     safe  = \"0 kW\"\n\
+     range = [\"-100 kW\", \"100 kW\"]\n\
+     \n\
+     [alarms.p_high]\n\
+     when       = \"pi.p_set > 50 kW\"\n\
+     severity   = \"high\"\n\
+     message    = \"p_set is {pi.p_set}\"\n\
+     max_shelve = \"1h\"\n\
+     \n\
+     [telemetry.record]\n\
+     \"pi.p_set\" = { on_change = true, keep = { raw = \"7d\", \"1m\" = \"30d\" } }\n\
+     \n\
+     [devices.pi]\n\
+     driver = \"sim\"\n\
+     \n\
+     [devices.pi.signals]\n\
+     p_set = { type = \"f64\", direction = \"output\", unit = \"kW\" }\n"
+        .to_owned()
+}
+
+async fn get_json(http: &Http, path: &str) -> Value {
+    http.send("GET", path, &[], None).await.json()
+}
+
+async fn wait_alarm(http: &Http, id: &str, state: &str) -> Value {
+    for _ in 0..200 {
+        let a = get_json(http, &format!("/v1/alarms/{id}")).await;
+        if a["state"] == state {
+            return a;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!(
+        "{id} never reached {state}: {}",
+        get_json(http, &format!("/v1/alarms/{id}")).await
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn alarms_ack_shelve_and_unshelve_follow_the_contract() {
+    let f = start_with(&effective_with_alarm()).await;
+    let list = f.call("GET", "/v1/alarms", "/v1/alarms", None).await;
+    assert_eq!(list.status, 200, "{}", list.json());
+    assert_eq!(list.json()["items"][0]["id"], "p_high");
+    assert_eq!(list.json()["items"][0]["state"], "normal");
+    let missing = f
+        .call("GET", "/v1/alarms/{alarm}", "/v1/alarms/nope", None)
+        .await;
+    assert_eq!(
+        (missing.status, missing.json()["code"].clone()),
+        (404, json!("J-E1200"))
+    );
+
+    let nothing = f
+        .call(
+            "POST",
+            "/v1/alarms/{alarm}/ack",
+            "/v1/alarms/p_high/ack",
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!(
+        (nothing.status, nothing.json()["code"].clone()),
+        (409, json!("J-E1204"))
+    );
+    let no_ttl = f
+        .call(
+            "POST",
+            "/v1/alarms/{alarm}/shelve",
+            "/v1/alarms/p_high/shelve",
+            Some(json!({"reason": "maintenance"})),
+        )
+        .await;
+    assert_eq!(
+        (no_ttl.status, no_ttl.json()["code"].clone()),
+        (400, json!("J-E1201"))
+    );
+    let too_long = f
+        .call(
+            "POST",
+            "/v1/alarms/{alarm}/shelve",
+            "/v1/alarms/p_high/shelve",
+            Some(json!({"ttl": "2h", "reason": "maintenance"})),
+        )
+        .await;
+    assert_eq!(
+        (too_long.status, too_long.json()["code"].clone()),
+        (422, json!("J-E1202"))
+    );
+    let not_shelved = f
+        .call(
+            "POST",
+            "/v1/alarms/{alarm}/unshelve",
+            "/v1/alarms/p_high/unshelve",
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!(
+        (not_shelved.status, not_shelved.json()["code"].clone()),
+        (409, json!("J-E1203"))
+    );
+
+    let write = f
+        .call(
+            "POST",
+            "/v1/outputs/{path}/manual",
+            "/v1/outputs/pi.p_set/manual",
+            Some(json!({"value": 80, "ttl": "1h", "reason": "raise the alarm", "wait": true})),
+        )
+        .await;
+    assert_eq!(write.status, 200, "{}", write.json());
+    let active = wait_alarm(&f.http, "p_high", "active_unacked").await;
+    assert_eq!(active["message"], "p_set is 80 kW");
+    assert_eq!(active["active"], true);
+    let status = f.call("GET", "/v1/status", "/v1/status", None).await;
+    assert_eq!(status.json()["alarms"]["active"], 1);
+    assert_eq!(status.json()["alarms"]["unacked"], 1);
+
+    let acked = f
+        .call(
+            "POST",
+            "/v1/alarms/{alarm}/ack",
+            "/v1/alarms/p_high/ack",
+            Some(json!({"reason": "seen"})),
+        )
+        .await;
+    assert_eq!(acked.status, 200, "{}", acked.json());
+    assert_eq!(acked.json()["state"], "active_acked");
+    assert!(acked.json()["acked_by"].as_str().is_some());
+    let again = f
+        .call(
+            "POST",
+            "/v1/alarms/{alarm}/ack",
+            "/v1/alarms/p_high/ack",
+            None,
+        )
+        .await;
+    assert_eq!(again.status, 200, "an ack in active_acked is idempotent");
+
+    let shelved = f
+        .call(
+            "POST",
+            "/v1/alarms/{alarm}/shelve",
+            "/v1/alarms/p_high/shelve",
+            Some(json!({"ttl": "10m", "reason": "maintenance"})),
+        )
+        .await;
+    assert_eq!(shelved.status, 200, "{}", shelved.json());
+    assert_eq!(shelved.json()["shelved"]["reason"], "maintenance");
+    assert_eq!(
+        shelved.json()["state"],
+        "active_acked",
+        "shelving does not change the state"
+    );
+    let filtered = f
+        .call(
+            "GET",
+            "/v1/alarms",
+            "/v1/alarms?state=shelved&severity=high",
+            None,
+        )
+        .await;
+    assert_eq!(filtered.json()["items"].as_array().unwrap().len(), 1);
+    let unshelved = f
+        .call(
+            "POST",
+            "/v1/alarms/{alarm}/unshelve",
+            "/v1/alarms/p_high/unshelve",
+            Some(json!({"reason": "done"})),
+        )
+        .await;
+    assert_eq!(unshelved.status, 200, "{}", unshelved.json());
+    assert!(unshelved.json()["shelved"].is_null());
+
+    let events = f
+        .call(
+            "GET",
+            "/v1/alarm-events",
+            "/v1/alarm-events?order=asc",
+            None,
+        )
+        .await;
+    assert_eq!(events.status, 200, "{}", events.json());
+    let kinds: Vec<Value> = events.json()["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["kind"].clone())
+        .collect();
+    assert_eq!(
+        kinds,
+        vec![
+            json!("transition"),
+            json!("ack"),
+            json!("shelve"),
+            json!("unshelve")
+        ]
+    );
+    assert_eq!(events.json()["items"][2]["reason"], "maintenance");
+    assert_eq!(events.json()["items"][0]["message"], "p_set is 80 kW");
+    let ndjson = f
+        .http
+        .send(
+            "GET",
+            "/v1/alarm-events",
+            &[("accept", "application/x-ndjson")],
+            None,
+        )
+        .await;
+    assert_eq!(ndjson.header("content-type"), Some("application/x-ndjson"));
+    assert_eq!(String::from_utf8_lossy(&ndjson.body).lines().count(), 4);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn history_queries_follow_the_contract() {
+    let f = start_with(&effective_with_alarm()).await;
+    for v in [10, 20, 30] {
+        let w = f
+            .call(
+                "POST",
+                "/v1/outputs/{path}/manual",
+                "/v1/outputs/pi.p_set/manual",
+                Some(json!({"value": v, "ttl": "1h", "reason": "history", "wait": true})),
+            )
+            .await;
+        assert_eq!(w.status, 200, "{}", w.json());
+        tokio::time::sleep(Duration::from_millis(60)).await;
+    }
+    let mut raw = Value::Null;
+    for _ in 0..200 {
+        raw = f
+            .call(
+                "GET",
+                "/v1/history",
+                "/v1/history?sel=pi.p_set&from=1970-01-01T00:00:00Z",
+                None,
+            )
+            .await
+            .json();
+        if raw["series"][0]["points"]
+            .as_array()
+            .is_some_and(|p| p.len() >= 3)
+        {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    let points = raw["series"][0]["points"].as_array().unwrap();
+    let values: Vec<f64> = points.iter().filter_map(|p| p["value"].as_f64()).collect();
+    assert!(values.ends_with(&[10.0, 20.0, 30.0]), "{values:?}");
+    assert_eq!(raw["series"][0]["unit"], "kW");
+    assert_eq!(raw["tier"], "raw");
+
+    let agg = f
+        .call(
+            "POST",
+            "/v1/history/query",
+            "/v1/history/query",
+            Some(json!({"sel": ["pi.p_set"], "from": "1970-01-01T00:00:00Z", "step": "1h", "agg": ["avg", "max", "count", "last"]})),
+        )
+        .await;
+    assert_eq!(agg.status, 200, "{}", agg.json());
+    let point = &agg.json()["series"][0]["points"][0];
+    assert_eq!(point["max"], 30.0);
+    assert_eq!(point["last"], 30.0);
+    assert!(point["count"].as_u64().unwrap() >= 3);
+
+    let csv = f
+        .http
+        .send(
+            "GET",
+            "/v1/history?sel=pi.p_set&from=1970-01-01T00:00:00Z",
+            &[("accept", "text/csv")],
+            None,
+        )
+        .await;
+    let text = String::from_utf8_lossy(&csv.body).to_string();
+    assert!(
+        text.starts_with("path,ts,value,quality,reason,seq\n"),
+        "{text}"
+    );
+    assert!(text.contains("pi.p_set,"));
+    let lines = f
+        .http
+        .send(
+            "GET",
+            "/v1/history?sel=pi.p_set&from=1970-01-01T00:00:00Z&limit=2",
+            &[("accept", "application/x-ndjson")],
+            None,
+        )
+        .await;
+    assert_eq!(String::from_utf8_lossy(&lines.body).lines().count(), 2);
+    assert!(
+        lines
+            .header("link")
+            .is_some_and(|l| l.contains("rel=\"next\""))
+    );
+
+    for (query, status, code) in [
+        ("/v1/history", 400, "J-E1013"),
+        ("/v1/history?sel=pi.p_set&step=500us", 400, "J-E1039"),
+        ("/v1/history?sel=pi.p_set&agg=avg", 400, "J-E1039"),
+        ("/v1/history?sel=pi.p_set&limit=200000", 422, "J-E1038"),
+        ("/v1/history?sel=pi.p_set&from=-1h&since=1h", 400, "J-E1034"),
+        ("/v1/history?sel=Pi.P", 400, "J-E1030"),
+    ] {
+        let r = f.call("GET", "/v1/history", query, None).await;
+        assert_eq!(
+            (r.status, r.json()["code"].clone()),
+            (status, json!(code)),
+            "{query}"
+        );
+    }
+    let events = f
+        .call("GET", "/v1/events", "/v1/events?sel=pi.**", None)
+        .await;
+    assert_eq!(events.status, 200, "{}", events.json());
+}
+
+/// The alarm book survives a restart: a pending acknowledgement and a
+/// shelve come back, and so does the journal (ADR 0082).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn alarm_state_and_journal_survive_a_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let manifest = effective_with_alarm();
+    let (http, halt) = boot_at(dir.path(), &manifest).await;
+    let write = http
+        .send(
+            "POST",
+            "/v1/outputs/pi.p_set/manual",
+            &[],
+            Some(&json!({"value": 80, "ttl": "1h", "reason": "raise", "wait": true})),
+        )
+        .await;
+    assert_eq!(write.status, 200, "{}", write.json());
+    wait_alarm(&http, "p_high", "active_unacked").await;
+    let shelve = http
+        .send(
+            "POST",
+            "/v1/alarms/p_high/shelve",
+            &[],
+            Some(&json!({"ttl": "30m", "reason": "commissioning"})),
+        )
+        .await;
+    assert_eq!(shelve.status, 200, "{}", shelve.json());
+    let release = http
+        .send(
+            "POST",
+            "/v1/outputs/pi.p_set/release",
+            &[],
+            Some(&json!({})),
+        )
+        .await;
+    assert_eq!(release.status, 200, "{}", release.json());
+    wait_alarm(&http, "p_high", "rtn_unacked").await;
+    halt.halt();
+
+    let (http, halt) = boot_at(dir.path(), &manifest).await;
+    let a = wait_alarm(&http, "p_high", "rtn_unacked").await;
+    assert_eq!(a["shelved"]["reason"], "commissioning", "{a}");
+    let events = get_json(&http, "/v1/alarm-events?order=asc").await;
+    let kinds: Vec<Value> = events["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["kind"].clone())
+        .collect();
+    assert_eq!(
+        kinds,
+        vec![json!("transition"), json!("shelve"), json!("transition")]
+    );
+    let ack = http
+        .send("POST", "/v1/alarms/p_high/ack", &[], Some(&json!({})))
+        .await;
+    assert_eq!(ack.status, 200, "{}", ack.json());
+    assert_eq!(ack.json()["state"], "normal");
+    halt.halt();
+}

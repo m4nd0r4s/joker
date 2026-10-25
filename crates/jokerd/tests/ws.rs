@@ -1,6 +1,6 @@
 //! `GET /v1/ws` (ref/09 §6): a real WebSocket handshake and the
 //! `subscribe`/`data`/`ping` round trip, scoped to the topics this
-//! build actually feeds (`signals`, `outputs`, `decisions`).
+//! build actually feeds (`signals`, `outputs`, `decisions`, `alarms`).
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -37,6 +37,10 @@ struct Fixture {
 }
 
 async fn start() -> Fixture {
+    start_with(&effective()).await
+}
+
+async fn start_with(manifest: &str) -> Fixture {
     let dir = tempfile::tempdir().unwrap();
     let clock = Monotonic::start();
     let log = Arc::new(Mutex::new(
@@ -55,7 +59,7 @@ async fn start() -> Fixture {
     )
     .unwrap();
     let g = c
-        .propose(&effective(), "", Some("bench".into()), false)
+        .propose(manifest, "", Some("bench".into()), false)
         .unwrap();
     c.activate(g.number, None, None).unwrap();
     let controller = Arc::new(Mutex::new(c));
@@ -154,7 +158,7 @@ async fn an_unknown_topic_is_refused_without_closing_the_connection() {
     let _welcome = next_json(&mut ws).await;
 
     ws.send(Message::Text(
-        json!({"op": "subscribe", "id": "r1", "topic": "alarms"})
+        json!({"op": "subscribe", "id": "r1", "topic": "nope"})
             .to_string()
             .into(),
     ))
@@ -245,4 +249,64 @@ async fn sse_stream_sends_a_subscribed_event_then_data() {
     );
     assert!(text.contains("event: subscribed"), "{text}");
     assert!(text.contains("\"topic\":\"outputs\""), "{text}");
+}
+
+async fn post(socket: &Path, path: &str, body: Value) -> Value {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut stream = tokio::net::UnixStream::connect(socket).await.unwrap();
+    let body = body.to_string();
+    let req = format!(
+        "POST {path} HTTP/1.1\r\nhost: joker\r\nconnection: close\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{body}",
+        body.len()
+    );
+    stream.write_all(req.as_bytes()).await.unwrap();
+    let mut raw = Vec::new();
+    stream.read_to_end(&mut raw).await.unwrap();
+    let split = raw.windows(4).position(|w| w == b"\r\n\r\n").unwrap();
+    serde_json::from_slice(&raw[split + 4..]).unwrap_or(Value::Null)
+}
+
+/// The `alarms` topic (ref/09 §6.4): a `resync` with the active alarms,
+/// then each transition as an `AlarmEvent`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn alarm_transitions_arrive_on_the_alarms_topic() {
+    let manifest = "[project]\nname = \"ws-alarms\"\njoker = \"1.0\"\nmode = \"dev\"\n\n\
+                    [outputs.\"pi.p_set\"]\nsafe = \"0 kW\"\nrange = [\"-100 kW\", \"100 kW\"]\n\n\
+                    [alarms.p_high]\nwhen = \"pi.p_set > 50 kW\"\nseverity = \"high\"\n\n\
+                    [devices.pi]\ndriver = \"sim\"\n\n\
+                    [devices.pi.signals]\np_set = { type = \"f64\", direction = \"output\", unit = \"kW\" }\n";
+    let f = start_with(manifest).await;
+    let mut ws = connect(&f.socket).await;
+    let _welcome = next_json(&mut ws).await;
+    ws.send(Message::Text(
+        json!({"op": "subscribe", "id": "a", "topic": "alarms", "min_interval": "10ms"})
+            .to_string()
+            .into(),
+    ))
+    .await
+    .unwrap();
+    let subscribed = next_json(&mut ws).await;
+    assert_eq!(subscribed["op"], "subscribed", "{subscribed}");
+    let resync = next_json(&mut ws).await;
+    assert_eq!(resync["op"], "resync");
+    assert_eq!(resync["items"], json!([]), "no active alarm yet");
+
+    let write = post(
+        &f.socket,
+        "/v1/outputs/pi.p_set/manual",
+        json!({"value": 80, "ttl": "1h", "reason": "raise", "wait": true}),
+    )
+    .await;
+    assert_eq!(write["outcome"]["outcome"], "accepted", "{write}");
+    let data = loop {
+        let m = next_json(&mut ws).await;
+        if m["op"] == "data" {
+            break m;
+        }
+    };
+    let event = &data["items"][0];
+    assert_eq!(event["id"], "p_high", "{data}");
+    assert_eq!(event["kind"], "transition");
+    assert_eq!(event["to"], "active_unacked");
+    assert!(event["seq"].is_u64());
 }

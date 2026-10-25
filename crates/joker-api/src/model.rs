@@ -262,3 +262,88 @@ pub struct InvokeActionRequest {
     #[serde(default = "yes")]
     pub wait: bool,
 }
+
+/// `AckRequest` (ref/09 §5.8), also the body of an unshelve.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AckRequest {
+    /// Why.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// `ShelveRequest` (ref/09 §5.8). Both fields are required; they are
+/// optional here so that a missing TTL gets its own code (`J-E1201`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ShelveRequest {
+    /// How long, at most the alarm's `max_shelve`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ttl: Option<String>,
+    /// Why.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// `HistoryQuery` (ref/09 §5.5): the parameters of `GET /v1/history` in a
+/// body.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HistoryQuery {
+    /// Selectors.
+    pub sel: Vec<String>,
+    /// Start.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<String>,
+    /// End.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to: Option<String>,
+    /// Duration back from `to`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub since: Option<String>,
+    /// Aggregation interval.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub step: Option<String>,
+    /// Aggregates.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agg: Option<Vec<String>>,
+    /// `auto`, `raw`, `1s`, `1m`, `15m`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tier: Option<String>,
+    /// `none`, `previous`, `null`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fill: Option<String>,
+    /// Points per page.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u64>,
+    /// Page cursor.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<String>,
+}
+
+impl HistoryQuery {
+    /// The same query as `GET` parameters.
+    pub fn to_query(&self) -> Vec<(String, String)> {
+        let mut q: Vec<(String, String)> =
+            self.sel.iter().map(|s| ("sel".into(), s.clone())).collect();
+        let mut put = |k: &str, v: &Option<String>| {
+            if let Some(v) = v {
+                q.push((k.into(), v.clone()));
+            }
+        };
+        put("from", &self.from);
+        put("to", &self.to);
+        put("since", &self.since);
+        put("step", &self.step);
+        put("tier", &self.tier);
+        put("fill", &self.fill);
+        put("cursor", &self.cursor);
+        if let Some(agg) = &self.agg {
+            q.push(("agg".into(), agg.join(",")));
+        }
+        if let Some(limit) = self.limit {
+            q.push(("limit".into(), limit.to_string()));
+        }
+        q
+    }
+}

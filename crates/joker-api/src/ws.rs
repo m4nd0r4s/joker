@@ -243,6 +243,7 @@ enum Topic {
     Status,
     Metrics,
     Decisions,
+    Alarms,
 }
 
 impl Topic {
@@ -253,6 +254,7 @@ impl Topic {
             "status" => Some(Self::Status),
             "metrics" => Some(Self::Metrics),
             "decisions" => Some(Self::Decisions),
+            "alarms" => Some(Self::Alarms),
             _ => None,
         }
     }
@@ -264,6 +266,7 @@ impl Topic {
             Self::Status => "status",
             Self::Metrics => "metrics",
             Self::Decisions => "decisions",
+            Self::Alarms => "alarms",
         }
     }
 
@@ -272,13 +275,13 @@ impl Topic {
     }
 
     fn is_event(self) -> bool {
-        self == Self::Decisions
+        matches!(self, Self::Decisions | Self::Alarms)
     }
 
     fn default_interval(self) -> Duration {
         match self {
             Self::Status | Self::Metrics => SNAPSHOT_MINIMUM,
-            Self::Decisions => Duration::from_millis(200),
+            Self::Decisions | Self::Alarms => Duration::from_millis(200),
             Self::Signals | Self::Outputs => Duration::from_millis(100),
         }
     }
@@ -506,7 +509,7 @@ fn paths_of(items: &[Value]) -> BTreeSet<String> {
 fn item_key(topic: Topic, item: &Value, index: usize) -> String {
     let field = match topic {
         Topic::Signals | Topic::Outputs => item.get("path"),
-        Topic::Decisions => item.get("id"),
+        Topic::Decisions | Topic::Alarms => item.get("id"),
         Topic::Status | Topic::Metrics => None,
     };
     field
@@ -527,8 +530,30 @@ fn stable(value: &Value) -> Value {
     }
 }
 
-fn decision_id(item: &Value) -> Option<&str> {
-    item.get("id").and_then(Value::as_str)
+/// The key that orders the items of an event topic: a decision's ULID, an
+/// alarm event's `seq` (zero-padded so that it sorts as text).
+fn event_key(topic: Topic, item: &Value) -> Option<String> {
+    match topic {
+        Topic::Alarms => item
+            .get("seq")
+            .and_then(Value::as_u64)
+            .map(|n| format!("{n:020}")),
+        _ => item.get("id").and_then(Value::as_str).map(str::to_owned),
+    }
+}
+
+/// The active alarms, for the `resync` of the `alarms` topic (§6.5, §6.6).
+async fn alarm_table(backend: &Shared, sel: &[String]) -> Vec<Value> {
+    let b = Arc::clone(backend);
+    let mut q: Query = sel.iter().map(|s| ("sel".to_owned(), s.clone())).collect();
+    q.push(("state".into(), "active".into()));
+    q.push(("limit".into(), "1000".into()));
+    tokio::task::spawn_blocking(move || b.alarms(&q))
+        .await
+        .ok()
+        .and_then(Result::ok)
+        .and_then(|r| r.body.get("items").and_then(Value::as_array).cloned())
+        .unwrap_or_default()
 }
 
 /// Reads `topic`'s current items through the backend, the same call a REST
@@ -558,6 +583,11 @@ async fn read_topic(
                 let mut q = selectors("output");
                 q.push(("limit".into(), DECISIONS_READ.into()));
                 b.decisions(&q).map(|r| list(r.body))
+            }
+            Topic::Alarms => {
+                let mut q = selectors("sel");
+                q.push(("limit".into(), DECISIONS_READ.into()));
+                b.alarm_events(&q).map(|r| list(r.body))
             }
         }
     })
@@ -773,11 +803,7 @@ impl Session {
             replay: VecDeque::new(),
         };
         if topic.is_event() {
-            sub.last_id = items
-                .iter()
-                .filter_map(decision_id)
-                .max()
-                .map(str::to_owned);
+            sub.last_id = items.iter().filter_map(|i| event_key(topic, i)).max();
         }
         self.outbox.push(
             &json!({
@@ -791,6 +817,11 @@ impl Session {
             None,
         );
         if sub.resync {
+            let items = if topic == Topic::Alarms {
+                alarm_table(&self.backend, &sub.sel).await
+            } else {
+                items
+            };
             self.send_resync(&sub_id, &mut sub, items);
         }
         self.subs.insert(sub_id.clone(), sub);
@@ -891,6 +922,10 @@ impl Session {
                 && (sub.same_paths(&items) || self.re_resolve(&id, &mut sub, &items).await)
             {
                 if sub.topic.is_event() {
+                    if sub.topic == Topic::Alarms && sub.resync {
+                        let table = alarm_table(&self.backend, &sub.sel).await;
+                        self.send_resync(&id, &mut sub, table);
+                    }
                     self.sample_event(&id, &mut sub, items);
                 } else if sub.resync {
                     self.send_resync(&id, &mut sub, items);
@@ -1017,15 +1052,17 @@ impl Session {
     }
 
     fn sample_event(&mut self, sub_id: &str, sub: &mut Subscription, items: Vec<Value>) {
+        let topic = sub.topic;
         let mut fresh: Vec<Value> = items
             .into_iter()
             .filter(|i| {
-                decision_id(i).is_some_and(|id| sub.last_id.as_deref().is_none_or(|last| id > last))
+                event_key(topic, i)
+                    .is_some_and(|id| sub.last_id.as_deref().is_none_or(|last| id.as_str() > last))
             })
             .collect();
-        fresh.sort_by(|a, b| decision_id(a).cmp(&decision_id(b)));
-        if let Some(id) = fresh.last().and_then(decision_id) {
-            sub.last_id = Some(id.to_owned());
+        fresh.sort_by_key(|i| event_key(topic, i));
+        if let Some(id) = fresh.last().and_then(|i| event_key(topic, i)) {
+            sub.last_id = Some(id);
         }
         for item in fresh {
             sub.ring.push_back(item);
@@ -1047,6 +1084,9 @@ impl Session {
                 return;
             }
             sub.lost = 0;
+            if topic == Topic::Alarms {
+                sub.resync = true;
+            }
         }
         if sub.ring.is_empty() || sub.busy() {
             return;
