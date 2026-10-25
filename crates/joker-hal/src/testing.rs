@@ -29,16 +29,17 @@ use joker_core::{
 };
 
 use crate::acquire::{SampleBuffer, Settled, settle};
+use crate::cbor::Cbor;
 use crate::commit::{OutputBinding, RawEncoding};
 use crate::cx::{Cx, Host, LogLevel};
 use crate::driver::{
-    AckSlot, CommittedWrite, ConnectOut, Driver, HealthOut, OpenArgs, RawSink, ReadBatch, WriteAck,
-    WriteAcks,
+    AckSlot, CommittedWrite, ConnectOut, ConnectSink, DeviceInfo, Driver, HealthOut, OpenArgs,
+    RawSink, ReadBatch, WriteAck, WriteAcks,
 };
 use crate::link::{GpioLineConfig, GpioLines, IoError, Link, SerialInfo, SerialIo};
 use crate::plan::PlanView;
 use crate::spec::PlanRequest;
-use crate::types::{BatchId, BatchKind, DriverError, MonoNs};
+use crate::types::{BatchId, BatchKind, DeviceIx, DriverError, MonoNs};
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
@@ -631,6 +632,46 @@ impl OutputHarness {
     }
 }
 
+/// One device a driver reported in `connect`: its identity and its
+/// discovered map (ref/06 §2.11), owned.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Reported {
+    /// The device.
+    pub index: DeviceIx,
+    /// Vendor.
+    pub vendor: Option<String>,
+    /// Model.
+    pub model: Option<String>,
+    /// Serial number.
+    pub serial: Option<String>,
+    /// Firmware version.
+    pub firmware: Option<String>,
+    /// Hardware revision.
+    pub hw_revision: Option<String>,
+    /// The driver fields, CBOR.
+    pub extra: Vec<u8>,
+    /// The discovered map, CBOR.
+    pub discovered: Option<Vec<u8>>,
+}
+
+struct Reports(Vec<Reported>);
+
+impl ConnectSink for Reports {
+    fn device(&mut self, index: DeviceIx, info: &DeviceInfo<'_>, discovered: Option<Cbor<'_>>) {
+        let own = |s: Option<&str>| s.map(String::from);
+        self.0.push(Reported {
+            index,
+            vendor: own(info.vendor),
+            model: own(info.model),
+            serial: own(info.serial),
+            firmware: own(info.firmware),
+            hw_revision: own(info.hw_revision),
+            extra: info.extra.as_bytes().to_vec(),
+            discovered: discovered.map(|d| d.as_bytes().to_vec()),
+        });
+    }
+}
+
 /// One read or write recorded by a [`Bench`].
 #[derive(Clone, Debug, PartialEq)]
 pub enum Event {
@@ -729,6 +770,19 @@ impl<'r, D: Driver> Bench<'r, D> {
         host.run(self.driver.connect(&mut cx, &mut out))
             .map_err(|_| BenchError::Stalled)?
             .map_err(BenchError::Driver)
+    }
+
+    /// Runs `connect` and returns what the driver reported through
+    /// `ConnectOut::device` (ref/06 §2.11).
+    pub fn connect_reports(&mut self) -> Result<Vec<Reported>, BenchError> {
+        let host = self.host.clone();
+        let mut cx = Cx::new(&*host, host.mono() + self.timeout_ns);
+        let mut sink = Reports(Vec::new());
+        let mut out = ConnectOut::new(&mut sink);
+        host.run(self.driver.connect(&mut cx, &mut out))
+            .map_err(|_| BenchError::Stalled)?
+            .map_err(BenchError::Driver)?;
+        Ok(sink.0)
     }
 
     /// Runs `disconnect`.
