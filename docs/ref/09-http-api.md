@@ -446,7 +446,7 @@ History parameters:
 - With `tier=auto`, the node chooses the coarsest tier with resolution ≤ `step` that covers `from`. If none covers the whole range, the response carries what there is, with `coverage` (tier, from, to) and a warning.
 - `quality` in an aggregate is the **dominant quality** of the tier (document 01, §12).
 - Raw points: `ts` (the `ts_acq` in UTC), `ts_src`, `value`, `quality`, `reason`, `seq`.
-- The monotonic → UTC translation uses the correspondence table of the historian (document 01, §18). **A clock correction can change, retroactively, the `ts` returned** for old samples; the values and the `seq` do not change.
+- The monotonic → UTC translation uses the correspondence table of the historian (document 01, §18). **A clock correction can change, retroactively, the `ts` returned** for old samples; the values and the `seq` do not change. In 1.0 the table is reserved: the historian stores the UTC instant computed at acquisition, and `ts` does not change (ADR 0081).
 - `text/csv`: columns `path,ts,value,quality,reason,seq` (raw) or `path,ts,<aggregates>,quality` (aggregated).
 - **Parquet is produced by `jk`** (`jk export --parquet`), from NDJSON. The node does not carry a Parquet writer (binary size, CPU in `bg`).
 
