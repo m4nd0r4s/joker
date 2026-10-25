@@ -20,7 +20,8 @@ use std::path::Path;
 use joker_manifest::Context;
 use joker_manifest::context::Direction;
 use joker_manifest::context::{
-    BoardInfo, ClassInfo, DriverInfo, ProfileInfo, SignalInfo, SignalType,
+    BoardInfo, ClassInfo, DriverInfo, Implements, ImplementsTarget, ProfileInfo, SignalInfo,
+    SignalType,
 };
 use joker_manifest::model::BusKind;
 use joker_units::{Duration, Unit};
@@ -123,7 +124,9 @@ pub fn drivers() -> BTreeMap<String, DriverInfo> {
     d
 }
 
-/// The M0 profiles.
+/// The M0 profiles. The bench ESP32 is an implicit `std/led@1` and
+/// `std/button@1` (track part 7, §4); its `analog_in@1` needs the `scale`
+/// adapter, which this runtime does not run yet.
 pub fn profiles() -> BTreeMap<String, ProfileInfo> {
     use Direction::{Input, Output, Param};
     use SignalType::{Bool, Integer};
@@ -151,6 +154,26 @@ pub fn profiles() -> BTreeMap<String, ProfileInfo> {
             quirks: BTreeMap::new(),
             poll: Some(Duration::from_millis(100)),
             timeout: None,
+            implements: [
+                ("std/led@1", "on", "led"),
+                ("std/button@1", "pressed", "button"),
+            ]
+            .into_iter()
+            .map(|(class, member, signal)| {
+                (
+                    class.to_owned(),
+                    Implements {
+                        capabilities: Vec::new(),
+                        map: [(
+                            member.to_owned(),
+                            ImplementsTarget::Signal(signal.to_owned()),
+                        )]
+                        .into_iter()
+                        .collect(),
+                    },
+                )
+            })
+            .collect(),
             ..ProfileInfo::default()
         },
     );
@@ -583,6 +606,89 @@ mod tests {
         .unwrap();
         let (_, errors) = catalog_files(dir.path());
         assert!(errors.iter().any(|e| e.contains("JC0107")), "{errors:?}");
+    }
+
+    const LAMP: &str = "[profile]\nname = \"acme/lamp\"\nversion = \"1.0.0\"\ndriver = \"modbus\"\n\n[signals]\nrelay = { at = 0, fc = 5, type = \"bool\", direction = \"output\" }\nfb = { at = 0, fc = 1, type = \"bool\" }\nt = { at = 0, fc = 4, type = \"i16\", unit = \"K\" }\n";
+
+    fn lamp(dir: &Path, implements: &str) -> joker_manifest::Report {
+        std::fs::create_dir_all(dir.join("profiles/acme")).unwrap();
+        std::fs::write(
+            dir.join("profiles/acme/lamp@1.profile.toml"),
+            format!("{LAMP}\n{implements}"),
+        )
+        .unwrap();
+        let device = "[devices.l1]\ndriver = \"modbus-tcp\"\naddress = \"10.0.0.9:502\"\nunit_id = 1\nprofile = \"acme/lamp@1\"\n\n[outputs.\"l1.relay\"]\nsafe = false\n";
+        std::fs::write(dir.join("joker.toml"), format!("{MANIFEST}\n{device}")).unwrap();
+        let (context, _) = context_for_project(&crate::native::NativeTasks, dir);
+        joker_manifest::check(
+            &joker_manifest::OsFileSystem,
+            &dir.join("joker.toml"),
+            &context,
+        )
+    }
+
+    #[test]
+    fn a_profile_with_implements_makes_the_device_an_implicit_instance() {
+        let dir = tempfile::tempdir().unwrap();
+        let ok = lamp(
+            dir.path(),
+            "[implements.\"std/led@1\"]\nmap = { on = \"relay\" }\n\n[implements.\"temp_sensor@1\"]\nmap = { temperature = \"t\" }\n",
+        );
+        assert!(!ok.has_errors(), "{}", ok.render());
+        assert_eq!(ok.paths["l1.on"].canonical, "l1.relay");
+        assert_eq!(ok.paths["l1.temperature"].canonical, "l1.t");
+        for (implements, code) in [
+            ("[implements.\"std/led@1\"]\nmap = {}\n", "J0601"),
+            (
+                "[implements.\"std/led@1\"]\nmap = { on = \"fb\" }\n",
+                "J0824",
+            ),
+            (
+                "[implements.\"std/led@1\"]\nmap = { on = \"relay\", brightness = \"relay\" }\n",
+                "J0824",
+            ),
+            (
+                "[implements.\"std/led@1\"]\nmap = { on = \"nope\" }\n",
+                "J0101",
+            ),
+            (
+                "[implements.\"std/led@1\"]\nmap = { on = \"const:true\" }\n",
+                "J0603",
+            ),
+            ("[implements.\"std/nothing@1\"]\nmap = {}\n", "J0823"),
+            (
+                "[implements.\"std/temp_sensor@1\"]\nmap = { temperature = { signal = \"t\", scale = 0.1 } }\n",
+                "J0807",
+            ),
+            (
+                "[implements.\"std/pressure_sensor@1\"]\nmap = { pressure = \"t\" }\n",
+                "J0107",
+            ),
+        ] {
+            let report = lamp(dir.path(), implements);
+            assert!(
+                report.codes().contains(&code),
+                "{code}: {}",
+                report.render()
+            );
+        }
+    }
+
+    #[test]
+    fn the_bench_esp32_is_an_implicit_led_and_button() {
+        let dir = tempfile::tempdir().unwrap();
+        let esp = "[devices.esp]\ndriver = \"modbus-tcp\"\naddress = \"10.0.0.7:502\"\nunit_id = 1\nprofile = \"local/bench-esp32@1\"\n\n[outputs.\"esp.led\"]\nsafe = false\n";
+        std::fs::write(dir.path().join("joker.toml"), format!("{MANIFEST}\n{esp}")).unwrap();
+        let (context, errors) = context_for_project(&crate::native::NativeTasks, dir.path());
+        assert!(errors.is_empty(), "{errors:?}");
+        let report = joker_manifest::check(
+            &joker_manifest::OsFileSystem,
+            &dir.path().join("joker.toml"),
+            &context,
+        );
+        assert!(!report.has_errors(), "{}", report.render());
+        assert_eq!(report.paths["esp.on"].canonical, "esp.led");
+        assert_eq!(report.paths["esp.pressed"].canonical, "esp.button");
     }
 
     #[test]
