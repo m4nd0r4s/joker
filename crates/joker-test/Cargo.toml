@@ -1,0 +1,18 @@
+[package]
+name = "joker-test"
+description = "Test harness of Joker apps: virtual clock, the real core, assertions on outputs (ref/04 §6)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+joker.workspace = true
+joker-sdk-sys.workspace = true
+joker-core = { workspace = true, features = ["alloc"] }
+joker-host.workspace = true
+
+[lints]
+workspace = true

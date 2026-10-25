@@ -1594,6 +1594,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "joker-test"
+version = "0.0.0"
+dependencies = [
+ "joker-core",
+ "joker-host",
+ "joker-sdk",
+ "joker-sdk-sys",
+]
+
+[[package]]
 name = "joker-units"
 version = "0.0.0"
 
@@ -1705,6 +1715,7 @@ name = "light"
 version = "0.1.0"
 dependencies = [
  "joker-sdk",
+ "joker-test",
 ]
 
 [[package]]

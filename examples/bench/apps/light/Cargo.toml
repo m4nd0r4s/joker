@@ -14,5 +14,8 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 joker.workspace = true
 
+[dev-dependencies]
+joker-test = { path = "../../../../crates/joker-test" }
+
 [lints]
 workspace = true

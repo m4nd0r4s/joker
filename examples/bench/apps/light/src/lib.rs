@@ -31,3 +31,34 @@ fn blink(io: &mut CycleIo<Light>, st: &mut Blink) -> Result<()> {
     io.led.set(st.on);
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use joker_test::prelude::*;
+
+    #[test]
+    fn blinks_at_1hz() {
+        let mut h = Harness::<Light>::new()
+            .group("blink", 20.ms())
+            .param("half_period", 500.0);
+
+        h.run_for(10.s());
+
+        let led = h.output("led");
+        assert_eq!(led.toggles(), 20);
+        assert!(led.toggles_every(500.ms()));
+    }
+
+    #[test]
+    fn stopping_the_app_turns_off_the_led() {
+        let mut h = Harness::<Light>::new()
+            .group("blink", 20.ms())
+            .safe("led", false);
+        h.run_for(520.ms());
+        assert_eq!(h.output("led").last(), Some(true));
+        h.stop_app();
+        h.run_for(80.ms());
+        assert_eq!(h.output("led").last(), Some(false));
+    }
+}
