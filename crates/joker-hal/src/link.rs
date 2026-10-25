@@ -488,6 +488,15 @@ mod paths {
             file.write_all(contents.as_bytes())
         }
 
+        /// Opens a granted device node for reading and writing, for a
+        /// driver that needs its own ioctls on it (ref/06 §3.4: `piControl`).
+        pub fn open_rw(&self, relative: &str) -> io::Result<fs::File> {
+            fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(self.resolve(relative)?)
+        }
+
         /// True when the granted path exists.
         pub fn exists(&self, relative: &str) -> bool {
             self.resolve(relative).is_ok_and(|p| p.exists())
