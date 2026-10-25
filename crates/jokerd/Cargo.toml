@@ -13,6 +13,7 @@ joker-core = { workspace = true, features = ["alloc"] }
 joker-expr = { workspace = true, features = ["alloc"] }
 joker-units = { workspace = true, features = ["alloc"] }
 joker-manifest = { path = "../joker-manifest" }
+joker-jkc = { path = "../joker-jkc" }
 joker-hal = { path = "../joker-hal", features = ["std", "plan"] }
 joker-driver-sysfs = { path = "../joker-drivers/sysfs" }
 joker-driver-modbus = { path = "../joker-drivers/modbus" }
