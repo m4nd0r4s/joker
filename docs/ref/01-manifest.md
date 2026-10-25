@@ -526,7 +526,7 @@ fallback = { configure = true, keepalive = "5s" }
 
 The keys specific to each driver (`address`, `unit_id`, `chip`, `model`, `params`, `node_id`, `eds`, `config`, `position`…) are in **appendix A**, which is the `config` schema of the descriptor of each catalog driver (`ref/06` §2.3). For a W or X driver, those of the schema it publishes apply. A key that exists in another driver but not in this one is `J0173`; one that exists in none is `J0140`; a value outside the driver's schema is `J0852` (`ref/06` §2.3.1). Two devices with the same address on the same bus are `J0178`; so is a device that uses the same kernel resource (LED, GPIO line, thermal zone) as a fixed IO `board.<name>` referred to by the manifest. The fixed IO of the board only exists when the manifest refers to `board.<name>`, and its `fallback` only counts through that path (`ref/03` §2.3.2).
 
-**Two keys with the same name and different roles.** `config` is a **table** validated by the `[config]` of the **profile** (chip keys, `ref/03` §2.2.10), except in `revpi`, where it is the PiCtory file (appendix A). `model` is the **file** of the simulation model in the `sim` driver; the commercial designation of a piece of equipment is `[profile] model`, in the profile, and never appears in the manifest.
+**Two keys with the same name and different roles.** `config` is a **table** validated by the `[config]` of the **profile** (chip keys, `ref/03` §2.2.10); `revpi` has no `config`: it reads the configuration piControl has loaded (appendix A, ADR 0078). `model` is the **file** of the simulation model in the `sim` driver; the commercial designation of a piece of equipment is `[profile] model`, in the profile, and never appears in the manifest.
 
 **`fallback` (M1):**
 
@@ -1401,7 +1401,7 @@ ADR 0028 keeps stable in 1.0 only what is implemented and passed its gate; the c
 | Key | Where it is described | Version |
 |---|---|---|
 | `buses.*.kind = "spi"` and its keys | §5.6 | 1.0.x |
-| drivers `revpi`, `spi`, `opcua`, `m-bus`, `onewire`, `serial-line`; `modbus-slave` on an MCU | appendix A | 1.0.x |
+| drivers `revpi` (implemented, ADR 0078), `spi`, `opcua`, `m-bus`, `onewire`, `serial-line`; `modbus-slave` on an MCU | appendix A | 1.0.x |
 | `instances.*.sim` (class simulators) | §5.13 | 1.0.x |
 | `apps.*.shadow` | §5.12.3 | 1.1 |
 | `telemetry.uplink.*.budget` (M12) | §5.17.3 | 1.1 |
@@ -2183,7 +2183,7 @@ pub struct Selector(String);
 | Phase | What |
 |---|---|
 | **1.0** | everything in §5, except what is listed below (the cut of document 26, §5; ADR 0035); `[link]` on Joker Micro |
-| **1.0.x** (reserved in the 1.0 schema, `J0290`) | buses `spi`; drivers `revpi`, `spi`, `opcua`, `m-bus`, `onewire`, `serial-line`, and `modbus-slave` on an MCU; the `usb` transport of `joker-link`; class simulators (`instances.*.sim`) (§6.6) |
+| **1.0.x** (reserved in the 1.0 schema, `J0290`) | buses `spi`; drivers `spi`, `opcua`, `m-bus`, `onewire`, `serial-line`, and `modbus-slave` on an MCU; the `usb` transport of `joker-link`; class simulators (`instances.*.sim`) (§6.6). The driver `revpi` is 1.0.x and implemented (ADR 0078) |
 | **1.1** (reserved in the 1.0 schema, `J0290`) | app shadow (`apps.*.shadow`); uplink budgets; uplinks `otlp` and `http`; buses `can`, drivers `can` and `canopen`, `joker-link` over CAN and with RS-485 turn-taking; `[link] peer = "deck"` (§6.6); `[models]`, `[streams]`, `[pipelines]`, `[training]`; `writer.kind = "proposal"`; `apps.*.fallback`; `outputs.*.schedule_depth`, `timed`, `on_late`, `late_margin`; signals `kind = "block"`; `telemetry.record` with `blocks`/`trigger`/`pre`/`post`; `resources.ml.accel`; `bind` with `model:`/`pipe:`; `source = "training:…"`; `security.trust.models`; drivers `v4l2`, `libcamera`, `spi-adc` |
 | **1.2** (reserved in the 1.0 schema, `J0290`) | `[drivers]` and the tier W and X drivers (the hosts arrive in 1.2; tier W is open to third parties when it becomes stable, `ref/06` §4); `[bridges]`; uplink `zenoh`; buses `ethercat`; drivers `ethercat` and native `bacnet-ip` (document 21, §4) |
 | **1.4** | Wasm apps on M2 MCUs: `[apps.*] source` on an MCU target (today `J0720`) |
@@ -2204,7 +2204,7 @@ The common keys are in §5.8. For each catalog driver, the "Device keys" column 
 | `sysfs` | N | 1.0 | — | — | none | exactly one of `led` (name in `/sys/class/leds`, e.g. `"ACT"`; `bool` signal, `direction = "output"` or `"input"`; writes `max_brightness` or 0; on an output, on open it sets the LED's `trigger` to `none` and restores the previous one on close, see the note after the table) and `thermal` (zone in `/sys/class/thermal`, e.g. `"thermal_zone0"`; `f64` input in `°C`, read in m°C); `direction` (default `"input"`) | — |
 | `i2c` | N | 1.0 | `i2c`, required | required | `address` (integer 0x03–0x77, required), `config` (table validated by the profile's `[config]`, e.g. `pga`, `rate`) | — | — |
 | `spi` | N | 1.0.x | `spi`, required | required | `config` (as in `i2c`) | — | — |
-| `revpi` | N | 1.0.x | — | — (PiCtory modules) | `config` (`.rsc` `File`, default `"/var/www/revpi/pictory/projects/_config.rsc"`) | — (the signals are the PiCtory variables, with the same name) | — |
+| `revpi` | N | 1.0.x (implemented, ADR 0078) | — | — (PiCtory modules) | none: the variables are those of the configuration piControl has loaded (`/dev/piControl0`) | `var` (PiCtory variable name, 1–31 bytes; default: the signal's name), `type` (`bool` for a 1-bit variable, `i64` or `u64` for one of 8, 16 or 32 bits), `direction` | — |
 | `mqtt` (input) | N | 1.0 | — | optional | `broker` (`mqtt://`/`mqtts://` URL, required), `username`, `password` **(secret)** | `topic` (required), `json` (RFC 6901 JSON pointer; by default: the whole payload), `qos` (0–1, default 1), `type`, `unit` | — |
 | `opcua` (client) | N | 1.0.x | — | optional (imported from NodeSet) | `endpoint` (`"opc.tcp://…"`, required), `security` (`{ policy, mode }`, as in the bridges), `username`, `password` **(secret)**, `sampling` (`Duration`, default = `poll`) | without a profile: `node` (`"ns=2;s=…"`), `attribute` (default `"Value"`), `sampling`, `type`, `unit` | `server_uri`, `namespaces` |
 | `can` | N | 1.1 | `can`, required | required (imported from DBC) | — | — | — |

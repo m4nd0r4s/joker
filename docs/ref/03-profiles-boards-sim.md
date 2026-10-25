@@ -179,7 +179,7 @@ All sections are optional except `[profile]` and `[signals]` (the latter may be 
 | `i2c` | `i2c` | 1.0 |
 | `spi` | `spi` | reserved 1.0.x (`J0807`; `spi-adc` with blocks: 1.1) |
 | `gpio` | `gpio` | 1.0 (expander profiles; the SoC lines come from the board) |
-| `revpi` | `revpi` | reserved 1.0.x (`J0807`) |
+| `revpi` | `revpi` | reserved 1.0.x (`J0807`); the `revpi` driver itself, with declared signals, is implemented (ADR 0078) |
 | `mqtt` | `mqtt` | 1.0 |
 | `opcua` | `opcua` | reserved 1.0.x (`J0807`) |
 | `canopen` | `canopen`; `can` for profiles of simple CAN frames | reserved 1.1 (`J0807`) |
@@ -274,7 +274,7 @@ A key that is neither generic nor from the driver's address schema is `J0140`. `
 | Family | Address keys |
 |---|---|
 | `gpio` (expanders) | `line` (integer or name), `bias` (`as-is` \| `pull-up` \| `pull-down` \| `disabled`, default `as-is`), `active_low` (bool), `drive` (`push-pull` \| `open-drain` \| `open-source`), `edges` (`none` \| `rising` \| `falling` \| `both`, default `none`), `timestamp` (`kernel` \| `none`), `debounce` (duration); they are the per-signal keys of the manifest's `gpio` (ref/01 appendix A) |
-| `revpi` | `var` (name of the piControl variable) |
+| `revpi` | `var` (name of the piControl variable; in the declared form of ADR 0078, the signal's name by default) |
 | `mqtt` | `topic` (string), `json` (JSON pointer RFC 6901, optional), `qos` (0–1); the same as in the manifest (ref/01 appendix A) |
 | `opcua` | `node` (NodeId, `"ns=2;s=Pump.Speed"`), `attribute` (default `Value`), `sampling` (duration); the same as in the manifest |
 | `canopen` | `index` (0–0xFFFF), `subindex` (0–255), `pdo` (`"tpdo1"`…`"tpdo4"`, `"rpdo1"`…) or SDO if omitted |

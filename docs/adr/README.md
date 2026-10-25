@@ -74,5 +74,6 @@
 | [0075](0075-manifest-signal-adjustments-and-the-output-stage.md) | Manifest signal adjustments take effect, and the output stage converts values to raw |
 | [0076](0076-modbus-register-outputs-and-bit-read-modify-write.md) | Modbus register outputs, and a `bool` output in a register bit by read-modify-write |
 | [0077](0077-sunspec-discovery-over-modbus.md) | SunSpec discovery in the Modbus drivers, its effective map, and the profile generated from it |
+| [0078](0078-revpi-driver-over-picontrol.md) | The `revpi` driver over piControl |
 
 Changing a decision = writing a new ADR that replaces it, and updating the affected documents in the same set of commits.
