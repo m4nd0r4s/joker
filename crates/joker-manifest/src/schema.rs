@@ -1469,7 +1469,7 @@ fn type_schema(ty: &Ty, level: usize) -> String {
             )
         }
         Ty::OneOf(forms) => format!(
-            "{{ \"oneOf\": [{}] }}",
+            "{{ \"anyOf\": [{}] }}",
             forms.iter().map(|f| type_schema(f, level)).collect::<Vec<_>>().join(", ")
         ),
         Ty::Any => "{}".to_owned(),
