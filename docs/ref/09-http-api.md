@@ -449,6 +449,7 @@ History parameters:
 - The monotonic → UTC translation uses the correspondence table of the historian (document 01, §18). **A clock correction can change, retroactively, the `ts` returned** for old samples; the values and the `seq` do not change. In 1.0 the table is reserved: the historian stores the UTC instant computed at acquisition, and `ts` does not change (ADR 0081).
 - `text/csv`: columns `path,ts,value,quality,reason,seq` (raw) or `path,ts,<aggregates>,quality` (aggregated).
 - **Parquet is produced by `jk`** (`jk export --parquet`), from NDJSON. The node does not carry a Parquet writer (binary size, CPU in `bg`).
+- **Data classes (reserved, ADR 0079).** Once data classes are implemented (ref/01 §6.7), an export carries only `operational` signals until per-recipient encryption exists (D3), and the omitted paths are listed in the response. Until then, `data_class` is `J0290` and every signal is `operational`.
 - In 1.0 signals with shape `event` are not recorded, so `GET /v1/events` answers an empty list to a valid query; `jk export --parquet` is reserved (ADR 0082).
 
 ### 5.6 Outputs, arbiter and manual writes
@@ -731,6 +732,8 @@ App shadow (M16) is **1.1** (document 26, §5; ADR 0035): the `/v1/shadows/**` o
 The job installs in the inactive slot, swaps and restarts `jokerd`: the connection drops. `jk` recognizes the restart by the new `boot_id` in `/v1/info`, and follows the job until `succeeded` (health passed within the `health_window`) or `failed` (it went back to the previous slot; document 01, §16). An unsigned artifact in `prod`, from another architecture, or older without `allow_downgrade`: `J-E1620`. An update in progress: `J-E1621`. The node does not download the runtime from a registry: `jk` uploads it (local-first); the Deck uses its own path (ref/10).
 
 ### 5.16 Traces
+
+A `.jktrace` keeps exact values, because replay needs them; once data classes are implemented (ref/01 §6.7, ADR 0079), a trace that holds `personal` or `sensitive` signals leaves the node only encrypted per recipient (D3, Phase 2).
 
 | Method | Path | Role | M | Does |
 |---|---|---|---|---|

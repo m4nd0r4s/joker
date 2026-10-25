@@ -565,6 +565,7 @@ a0 = { alias = "tank.level", scale = { from = ["0.6 V", "3.0 V"], to = ["0 m", "
 | `direction` | `"input"` \| `"output"` \| `"param"` | cond. | `"input"` | only in drivers without a profile; on a profile signal the direction is not changed (`J0176`) | track 02 | 1.0 |
 | `poll` | `Duration` or `"on_demand"` | no | that of the device | `on_demand` only in `param` (document 05, §3) | 05 §3 | 1.0 |
 | `record` | recording table (§5.17.1) | no | — | shorthand for `[telemetry.record."<canonical path>"]`; the two together for the same signal are `J0195` | 03 §5.1 | 1.0 |
+| `data_class` | `"operational"` \| `"personal"` \| `"sensitive"` | no | `"operational"` | §6.7; reserved until implemented (`J0290`) | ADR 0079 | 1.0 (reserved) |
 | `kind` | `"scalar"` \| `"block"` | no | `"scalar"` | `block` is M7 | 08 R3 | **1.1** |
 | `block` | `Integer` (samples per block) | cond. | — | required with `kind = "block"` | 08 R3 | **1.1** |
 | driver address keys (`line`, `bias`, `active_low`, `edges`, `timestamp`, `drive`, `topic`, `node`…) | appendix A | | | only in drivers without a profile; on a profile signal, the address belongs to the profile (`J0176`) | track 02, 09, 08 R2 | 1.0 |
@@ -606,9 +607,9 @@ deadband = "0.01 V"
 ```
 
 - The key is a path (canonical, alias or instance member) or a selector (`J0155` if it matches nothing).
-- Accepted keys: `debounce`, `deadband`, `max_age`, `limits`, `stuck_detect`, `record`, with the rules of §5.8.1. Any other is `J0140`.
+- Accepted keys: `debounce`, `deadband`, `max_age`, `limits`, `stuck_detect`, `record`, with the rules of §5.8.1, and `data_class` (§6.7, reserved). Any other is `J0140`.
 - **One adjustment per key and per signal.** If `[signals]` and `[devices.*.signals]`, or two entries of `[signals]` (through selectors), define the same key for the same signal with **different** values, it is `J0175`. With the same value, it is accepted: that is the case of a common manifest and an overlay that declare the same `debounce`.
-- On derived signals (`calc.*`, `app.*`, `alarm.*`), only `record` applies (`J0176`).
+- On derived signals (`calc.*`, `app.*`, `alarm.*`), only `record` and `data_class` apply (`J0176`).
 
 ### 5.10 `[outputs."<path>"]`: the envelope
 
@@ -1066,6 +1067,7 @@ password = "secret:mqtt_password"
 | `history.enabled` | `Bool` | no | `true` | | new | 1.0 |
 | `username` | string | no | — | | new | 1.0 |
 | `password`, `token` **(secret)** | `Ref` `secret:` | no | — | plaintext `J0294` | new | 1.0 |
+| `accepts` | `Set<"operational" \| "personal" \| "sensitive">` | no | `["operational"]` | data classes the uplink may send (§6.7); a selected signal of another class `J0261`; reserved until implemented (`J0290`) | ADR 0079 | 1.0 (reserved) |
 
 The default of `classes` only sends alarms: nothing leaves the node without being asked for (document 12, §10). Uplink budgets (M12) are **1.1** (document 26, §5; ADR 0035): in 1.0, `budget` is `J0290`, and an uplink has no budget (the classes keep their meaning).
 
@@ -1116,6 +1118,7 @@ subscribe = { "/cmd_vel" = { type = "geometry_msgs/msg/Twist", fields = ["linear
 | `expose` | `List<Selector>` or, in `zenoh-ros2`, `Table<Path, topic \| { topic, type, fields }>` | no | `[]` | without matches `J0156` (warning); instance paths expose the whole instance (methods included, in OPC UA) | 03 §12 | 1.2 |
 | `writer.level`, `writer.priority`, `writer.lease` | as in `[apps.*.writer]` | cond. | — | required if `writable` or some `to` is an output; `safety` band `J0253`; `manual` `J0252` | 03 §12 | 1.2 |
 | `writer.writable` | `List<Path \| Selector>` (set) of outputs | no | `[]` (read-only) | only outputs with an envelope (`J0199`); without matches `J0155` | 03 §12 | 1.2 |
+| `accepts` | `Set<"operational" \| "personal" \| "sensitive">` | no | `["operational"]` | data classes the bridge may expose (§6.7); an exposed signal of another class `J0261` | ADR 0079 | 1.2 |
 
 **Keys by `kind`:**
 
@@ -1418,6 +1421,28 @@ ADR 0028 keeps stable in 1.0 only what is implemented and passed its gate; the c
 | `[bridges.<bridge>]` (OPC UA server, Modbus server, Zenoh/ROS 2) | §5.18 | 1.2 |
 | `telemetry.uplink.*.kind = "zenoh"`, with its keys | §5.17.3 | 1.2 |
 | `buses.*.kind = "ethercat"` and its keys | §5.6 | 1.2 |
+| `data_class` on device signals and on `[signals]` | §5.8.1, §5.9, §6.7 | 1.0 (until implemented) |
+| `telemetry.uplink.*.accepts` and `bridges.*.accepts` | §5.17.3, §5.18, §6.7 | 1.0 (until implemented); bridges 1.2 |
+
+### 6.7 Data classes
+
+Document 26, §8 puts data protection on Joker's side as "not letting it leak" (D1–D4 in 1.0). ADR 0079 decides the rules; the keys exist in the 1.0 schema and are reserved until the runtime implements them (`J0290`, §6.6). Their form:
+
+```toml
+[signals."door.badge_id"]
+data_class = "personal"
+
+[telemetry.uplink.cloud]
+kind    = "mqtt"
+broker  = "mqtts://broker.example.com:8883"
+classes = { low = "**" }
+accepts = ["operational"]
+```
+
+- **Classes.** `operational` (the default), `personal` and `sensitive`, in this order of protection. A device signal declares its class in `[devices.<d>.signals.<s>]` or in `[signals."<path>"]`; profiles and classes do not.
+- **Inheritance.** A derived signal (`calc.*`, `alarm.*`, the outputs and published signals of an app, the members of a virtual instance) gets the most protective class of the signals it reads. `[signals."<path>"] data_class` may raise it; lowering it is `J0260`.
+- **Egress.** `accepts` on an uplink or a bridge lists the classes it may send; the default is `["operational"]`. A signal that the uplink's `classes` or the bridge's `expose` selects, of a class the egress does not accept, is `J0261`: an error, never a silent filter.
+- **Exports, traces and logs.** Exports and traces leave the node with `personal` or `sensitive` values only encrypted per recipient (D3, Phase 2; ref/09 §5.5, §5.16), and logs, error messages and diagnostics carry the path with `<redacted:personal>` or `<redacted:sensitive>` instead of the value (D4).
 
 ---
 
@@ -1831,6 +1856,13 @@ Referred to, from other ranges: `J0401` (drift against the lock), `J0501`, `J050
 | `J0256` | error | lease shorter than the owning group's period |
 | `J0257` | warning | `writer` on an app without outputs |
 
+**Data classes (`J026x`, reserved, §6.7)**
+
+| Code | Severity | Message |
+|---|---|---|
+| `J0260` | error | derived signal declares a data class less protective than one of its inputs |
+| `J0261` | error | egress sends a signal whose data class it does not accept |
+
 **Fallback and atomic groups (`J027x`)**
 
 | Code | Severity | Message |
@@ -1872,7 +1904,7 @@ Referred to, from other ranges: `J0401` (drift against the lock), `J0501`, `J050
 | `J0297` | warning | bridge with writes listening on all interfaces (reserved 1.2) |
 | `J0298` | warning | action with `role = "viewer"`: counts as `operator`, which is the API minimum |
 
-`J0244`–`J0249`, `J0258`–`J0269`, `J0278`, `J0279`, `J0289` and `J0299` stay free, so that this reference can grow without leaving the range.
+`J0244`–`J0249`, `J0258`, `J0259`, `J0262`–`J0269`, `J0278`, `J0279`, `J0289` and `J0299` stay free, so that this reference can grow without leaving the range.
 
 ---
 

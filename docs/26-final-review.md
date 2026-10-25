@@ -131,7 +131,7 @@ What stays on Joker's side is **not letting it leak**. The proposed minimum:
 
 | # | Minimum | Version |
 |---|---|---|
-| D1 | `data_class` per signal (`operational`, `personal`, `sensitive`), inherited by derived signals | 1.0 (key already reserved in 1.0) |
+| D1 | `data_class` per signal (`operational`, `personal`, `sensitive`), inherited by derived signals | 1.0 (key reserved in the schema: ref/01 §6.7, ADR 0079) |
 | D2 | egress denied by default: uplinks, bridges and exports declare the classes they accept | 1.0 |
 | D3 | traces, exports and diagnostic packages encrypted per recipient (HPKE, like secrets) | 1.0 |
 | D4 | logs and error messages never carry values of `personal` or `sensitive` signals | 1.0 |
@@ -166,6 +166,6 @@ The tension that stays declared: replay needs the exact values, so a trace with 
 | business model of the family | before publishing (it blocks the OEM channel) |
 | CI hardware (CM4/CM5, RP2350 with a probe, ESP32-C6) | end of Phase 1: it is the first purchase, and it is cheap |
 | day-1 catalog and which of P1–P8 (document 24) go in | end of Phase 1 |
-| D1–D4 (§8) | during Phase 0, so that the key is reserved in the schema |
+| D1–D4 (§8) | decided by ADR 0079 (Phase 0); the keys are reserved in the schema (ref/01 §6.7) until the runtime implements them |
 
 **During Phase 0 (after M0):** the open questions of document 16 §10; the three-level specification change process; the dependency, toolchain and wasmtime version policies; and task 0a (compiling the references).

@@ -2908,6 +2908,24 @@ message = "`writer` on an app without outputs"
 doc = "ref/01 §10.2"
 
 [[code]]
+id = "J0260"
+severity = "error"
+message = "derived signal declares a data class less protective than one of its inputs"
+doc = "ref/01 §10.2"
+also = ["ref/01 §6.7"]
+since = "1.0"
+status = "reserved"
+
+[[code]]
+id = "J0261"
+severity = "error"
+message = "egress sends a signal whose data class it does not accept"
+doc = "ref/01 §10.2"
+also = ["ref/01 §6.7"]
+since = "1.0"
+status = "reserved"
+
+[[code]]
 id = "J0270"
 severity = "error"
 message = "output in two atomic groups"
