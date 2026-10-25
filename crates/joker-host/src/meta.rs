@@ -194,6 +194,16 @@ pub fn read(component: &[u8]) -> Result<AppMeta, HostError> {
     parse(&meta)
 }
 
+/// Merges the `joker:meta` fragments of an app that is not a component
+/// (the native mode of the test harness, ref/04 §6.1), with the rules of
+/// [`read`] for fragments.
+pub fn from_fragments(fragments: &[&[u8]]) -> Result<AppMeta, HostError> {
+    if fragments.is_empty() {
+        return Err(invalid("no joker:meta fragment"));
+    }
+    parse(&merge(fragments)?)
+}
+
 fn merge(sections: &[&[u8]]) -> Result<Item, HostError> {
     let mut app: Option<Item> = None;
     let mut tasks: Vec<Item> = Vec::new();
