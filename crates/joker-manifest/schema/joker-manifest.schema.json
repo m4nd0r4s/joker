@@ -239,13 +239,13 @@
           "signals": { "type": "object", "additionalProperties": {
             "type": "object",
             "properties": {
-              "alias": { "oneOf": [{ "type": "string", "x-joker-format": "path", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$" }, { "type": "array", "uniqueItems": true, "items": { "type": "string", "x-joker-format": "path", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$" } }] },
+              "alias": { "anyOf": [{ "type": "string", "x-joker-format": "path", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$" }, { "type": "array", "uniqueItems": true, "items": { "type": "string", "x-joker-format": "path", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$" } }] },
               "max_age": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
               "limits": { "type": "array", "items": { "type": ["string", "number"], "x-joker-format": "quantity" } },
               "stuck_detect": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
               "deadband": { "type": ["string", "number"], "x-joker-format": "quantity" },
               "debounce": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
-              "scale": { "oneOf": [{ "type": "number" }, {
+              "scale": { "anyOf": [{ "type": "number" }, {
                 "type": "object",
                 "required": ["from", "to"],
                 "properties": {
@@ -255,18 +255,18 @@
                 "patternProperties": { "^x_": {} },
                 "additionalProperties": false
               }] },
-              "offset": { "oneOf": [{ "type": "number" }, { "type": ["string", "number"], "x-joker-format": "quantity" }] },
+              "offset": { "anyOf": [{ "type": "number" }, { "type": ["string", "number"], "x-joker-format": "quantity" }] },
               "unit": { "type": "string" },
               "type": { "type": "string" },
               "direction": { "enum": ["input", "output", "param"] },
-              "poll": { "oneOf": [{ "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" }, { "enum": ["on_demand"] }] },
+              "poll": { "anyOf": [{ "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" }, { "enum": ["on_demand"] }] },
               "record": {
                 "type": "object",
                 "properties": {
                   "every": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
                   "on_change": { "type": "boolean" },
                   "keep": { "type": "object", "additionalProperties": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" } },
-                  "blocks": { "allOf": [{ "oneOf": [{ "type": "boolean" }, { "enum": ["on_trigger"] }] }], "x-joker-since": "1.1" },
+                  "blocks": { "allOf": [{ "anyOf": [{ "type": "boolean" }, { "enum": ["on_trigger"] }] }], "x-joker-since": "1.1" },
                   "trigger": { "allOf": [{ "type": "string", "x-joker-format": "expression" }], "x-joker-since": "1.1" },
                   "pre": { "allOf": [{ "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" }], "x-joker-since": "1.1" },
                   "post": { "allOf": [{ "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" }], "x-joker-since": "1.1" }
@@ -310,7 +310,7 @@
               "every": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
               "on_change": { "type": "boolean" },
               "keep": { "type": "object", "additionalProperties": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" } },
-              "blocks": { "allOf": [{ "oneOf": [{ "type": "boolean" }, { "enum": ["on_trigger"] }] }], "x-joker-since": "1.1" },
+              "blocks": { "allOf": [{ "anyOf": [{ "type": "boolean" }, { "enum": ["on_trigger"] }] }], "x-joker-since": "1.1" },
               "trigger": { "allOf": [{ "type": "string", "x-joker-format": "expression" }], "x-joker-since": "1.1" },
               "pre": { "allOf": [{ "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" }], "x-joker-since": "1.1" },
               "post": { "allOf": [{ "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" }], "x-joker-since": "1.1" }
@@ -335,7 +335,7 @@
           "on_interlock": { "enum": ["safe", "hold"] },
           "requires_good": { "type": "array", "uniqueItems": true, "items": { "type": "string", "x-joker-format": "selector" } },
           "grace": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
-          "range": { "type": "array", "items": { "oneOf": [{ "type": ["string", "number"], "x-joker-format": "quantity" }, { "type": "string", "x-joker-format": "expression" }] } },
+          "range": { "type": "array", "items": { "anyOf": [{ "type": ["string", "number"], "x-joker-format": "quantity" }, { "type": "string", "x-joker-format": "expression" }] } },
           "on_range": { "enum": ["clamp", "reject", "trip"] },
           "rate": { "type": ["string", "number"], "x-joker-format": "rate" },
           "deadband": { "type": ["string", "number"], "x-joker-format": "quantity" },
@@ -358,12 +358,12 @@
           "group": { "type": "string", "x-joker-format": "name", "pattern": "^[a-z][a-z0-9_]{0,31}$" },
           "keepalive": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
           "pulse": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
-          "remote_levels": { "allOf": [{ "oneOf": [{ "type": "array", "uniqueItems": true, "items": { "type": "string", "x-joker-format": "level", "pattern": "^(safety|manual|supervisor|control|optimizer|schedule)(:[0-9]+)?$" } }, { "type": "string" }] }], "x-joker-target": "micro" },
+          "remote_levels": { "allOf": [{ "anyOf": [{ "type": "array", "uniqueItems": true, "items": { "type": "string", "x-joker-format": "level", "pattern": "^(safety|manual|supervisor|control|optimizer|schedule)(:[0-9]+)?$" } }, { "type": "string" }] }], "x-joker-target": "micro" },
           "accept_missing_fallback": { "type": "string" },
-          "widen": { "oneOf": [{ "type": "string" }, { "type": "object", "additionalProperties": { "type": "string" } }] },
+          "widen": { "anyOf": [{ "type": "string" }, { "type": "object", "additionalProperties": { "type": "string" } }] },
           "schedule_depth": { "allOf": [{ "type": "integer", "minimum": 0, "maximum": 256 }], "x-joker-since": "1.1" },
           "timed": { "allOf": [{ "type": "boolean" }], "x-joker-since": "1.1" },
-          "on_late": { "allOf": [{ "oneOf": [{ "enum": ["apply_now", "drop"] }, {
+          "on_late": { "allOf": [{ "anyOf": [{ "enum": ["apply_now", "drop"] }, {
             "type": "object",
             "required": ["apply"],
             "properties": {
@@ -421,7 +421,7 @@
             "patternProperties": { "^x_": {} },
             "additionalProperties": false
           },
-          "bind": { "type": "object", "propertyNames": { "pattern": "^([a-z][a-z0-9_]{0,31}|x_.*)$" }, "additionalProperties": { "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }, {
+          "bind": { "type": "object", "propertyNames": { "pattern": "^([a-z][a-z0-9_]{0,31}|x_.*)$" }, "additionalProperties": { "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }, {
             "type": "object",
             "required": ["signal"],
             "properties": {
@@ -441,7 +441,7 @@
             "patternProperties": { "^x_": {} },
             "additionalProperties": false
           }] } },
-          "params": { "type": "object", "propertyNames": { "pattern": "^([a-z][a-z0-9_]{0,31}|x_.*)$" }, "additionalProperties": { "oneOf": [{ "type": ["string", "number", "integer", "boolean"], "x-joker-format": "value" }, {
+          "params": { "type": "object", "propertyNames": { "pattern": "^([a-z][a-z0-9_]{0,31}|x_.*)$" }, "additionalProperties": { "anyOf": [{ "type": ["string", "number", "integer", "boolean"], "x-joker-format": "value" }, {
             "type": "object",
             "required": ["value"],
             "properties": {
@@ -504,7 +504,7 @@
               "promote": {
                 "type": "object",
                 "properties": {
-                  "outputs": { "oneOf": [{ "type": "string", "x-joker-format": "selector" }, { "type": "array", "items": { "type": "string", "x-joker-format": "path", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$" } }] },
+                  "outputs": { "anyOf": [{ "type": "string", "x-joker-format": "selector" }, { "type": "array", "items": { "type": "string", "x-joker-format": "path", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$" } }] },
                   "auto": { "type": "boolean" }
                 },
                 "patternProperties": { "^x_": {} },
@@ -536,19 +536,19 @@
         "properties": {
           "class": { "type": "string" },
           "capabilities": { "type": "array", "uniqueItems": true, "items": { "type": "string", "x-joker-format": "name", "pattern": "^[a-z][a-z0-9_]{0,31}$" } },
-          "map": { "type": "object", "propertyNames": { "pattern": "^([a-z][a-z0-9_]{0,31}|x_.*)$" }, "additionalProperties": { "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }, {
+          "map": { "type": "object", "propertyNames": { "pattern": "^([a-z][a-z0-9_]{0,31}|x_.*)$" }, "additionalProperties": { "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }, {
             "type": "object",
             "properties": {
             },
             "patternProperties": { "^x_": {} },
             "additionalProperties": true
           }] } },
-          "implemented_by": { "oneOf": [{ "type": "string" }, {
+          "implemented_by": { "anyOf": [{ "type": "string" }, {
             "type": "object",
             "required": ["app"],
             "properties": {
               "app": { "type": "string", "x-joker-format": "name", "pattern": "^[a-z][a-z0-9_]{0,31}$" },
-              "bind": { "type": "object", "propertyNames": { "pattern": "^([a-z][a-z0-9_]{0,31}|x_.*)$" }, "additionalProperties": { "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }, {
+              "bind": { "type": "object", "propertyNames": { "pattern": "^([a-z][a-z0-9_]{0,31}|x_.*)$" }, "additionalProperties": { "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }, {
                 "type": "object",
                 "required": ["signal"],
                 "properties": {
@@ -573,7 +573,7 @@
             "patternProperties": { "^x_": {} },
             "additionalProperties": false
           }] },
-          "sim": { "oneOf": [{ "type": "boolean" }, {
+          "sim": { "anyOf": [{ "type": "boolean" }, {
             "type": "object",
             "properties": {
             },
@@ -595,7 +595,7 @@
         "patternProperties": { "^x_": {} },
         "additionalProperties": false
       } },
-      "calc": { "type": "object", "propertyNames": { "pattern": "^([a-z][a-z0-9_]{0,31}|x_.*)$" }, "additionalProperties": { "oneOf": [{ "type": "string", "x-joker-format": "expression" }, {
+      "calc": { "type": "object", "propertyNames": { "pattern": "^([a-z][a-z0-9_]{0,31}|x_.*)$" }, "additionalProperties": { "anyOf": [{ "type": "string", "x-joker-format": "expression" }, {
         "type": "object",
         "required": ["expr"],
         "properties": {
@@ -659,7 +659,7 @@
               "every": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" },
               "on_change": { "type": "boolean" },
               "keep": { "type": "object", "additionalProperties": { "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" } },
-              "blocks": { "allOf": [{ "oneOf": [{ "type": "boolean" }, { "enum": ["on_trigger"] }] }], "x-joker-since": "1.1" },
+              "blocks": { "allOf": [{ "anyOf": [{ "type": "boolean" }, { "enum": ["on_trigger"] }] }], "x-joker-since": "1.1" },
               "trigger": { "allOf": [{ "type": "string", "x-joker-format": "expression" }], "x-joker-since": "1.1" },
               "pre": { "allOf": [{ "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" }], "x-joker-since": "1.1" },
               "post": { "allOf": [{ "type": "string", "x-joker-format": "duration", "pattern": "^[0-9]+(\\.[0-9]+)? ?(ns|us|µs|ms|s|m|min|h|d)$" }], "x-joker-since": "1.1" }
@@ -682,7 +682,7 @@
             "required": ["kind"],
             "properties": {
               "kind": { "enum": ["mqtt", "mqtt-sparkplug", "zenoh", "otlp", "http"] },
-              "classes": { "type": "object", "additionalProperties": { "oneOf": [{ "type": "string", "x-joker-format": "selector" }, { "type": "array", "items": { "type": "string", "x-joker-format": "selector" } }] } },
+              "classes": { "type": "object", "additionalProperties": { "anyOf": [{ "type": "string", "x-joker-format": "selector" }, { "type": "array", "items": { "type": "string", "x-joker-format": "selector" } }] } },
               "budget": { "type": "string", "x-joker-format": "data-volume", "pattern": "/(day|month)$" },
               "live": {
                 "type": "object",
@@ -732,7 +732,7 @@
         "required": ["kind"],
         "properties": {
           "kind": { "enum": ["opcua-server", "modbus-server", "zenoh-ros2"] },
-          "expose": { "oneOf": [{ "type": "array", "items": { "type": "string", "x-joker-format": "selector" } }, { "type": "object", "additionalProperties": { "oneOf": [{ "type": "string" }, {
+          "expose": { "anyOf": [{ "type": "array", "items": { "type": "string", "x-joker-format": "selector" } }, { "type": "object", "additionalProperties": { "anyOf": [{ "type": "string" }, {
             "type": "object",
             "properties": {
             },
@@ -919,7 +919,7 @@
         "type": "object",
         "required": ["from", "steps", "to"],
         "properties": {
-          "from": { "oneOf": [{ "type": "string", "x-joker-format": "path", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$" }, { "type": "array", "items": { "type": "string", "x-joker-format": "path", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$" } }] },
+          "from": { "anyOf": [{ "type": "string", "x-joker-format": "path", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$" }, { "type": "array", "items": { "type": "string", "x-joker-format": "path", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$" } }] },
           "steps": { "type": "array", "items": {
             "type": "object",
             "required": ["op"],
