@@ -7,11 +7,14 @@
 //! - `qemu`: the same suites on Cortex-M33 and RISC-V in QEMU, with no
 //!   allocator linked (docs/13 §5, task 22);
 //! - `msrv`: the MSRV of the core crates against the Xtensa toolchain
-//!   (docs/13 §5.1).
+//!   (docs/13 §5.1);
+//! - `determinism`: the core suites run many times, with the same bytes
+//!   every time (docs/11 Phase 0 gates 2 and 5, docs/16 §7).
 
 extern crate alloc;
 
 mod conformance;
+mod determinism;
 mod guard;
 mod msrv;
 mod qemu;
@@ -52,6 +55,12 @@ tasks:
   msrv --max VERSION
       Checks that the rust-version of the core crates is at most VERSION,
       the Rust version of the esp toolchain (`rustc +esp --version`).
+
+  determinism [PATH...] [--runs N] [--json FILE]
+      Runs the core suites (default: conformance/) N times (default 1000)
+      and exits 1 unless every run gives the same result sequence, byte for
+      byte. Prints the SHA-256 of the canonical sequence, which CI compares
+      between targets.
 ";
 
 fn parse<T: std::str::FromStr>(name: &str, text: &str) -> Result<T, String> {
@@ -161,12 +170,32 @@ fn qemu(args: &[String]) -> Result<bool, String> {
     qemu::run(&options)
 }
 
+fn determinism(args: &[String]) -> Result<bool, String> {
+    let mut options = determinism::Options::default();
+    let mut it = args.iter();
+    while let Some(arg) = it.next() {
+        let mut value = |name: &str| {
+            it.next()
+                .cloned()
+                .ok_or_else(|| format!("{name} needs a value"))
+        };
+        match arg.as_str() {
+            "--runs" => options.runs = parse("--runs", &value("--runs")?)?,
+            "--json" => options.json = Some(PathBuf::from(value("--json")?)),
+            flag if flag.starts_with('-') => return Err(format!("unknown option {flag}\n{USAGE}")),
+            path => options.paths.push(PathBuf::from(path)),
+        }
+    }
+    determinism::run(&options, &NoAlloc)
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.first().map(String::as_str) {
         Some("conformance") => conformance(&args[1..]),
         Some("qemu") => qemu(&args[1..]),
         Some("rt-bench") => rt_bench(&args[1..]),
+        Some("determinism") => determinism(&args[1..]),
         Some("msrv") => match &args[1..] {
             [flag, max] if flag == "--max" => msrv::run(max),
             _ => Err(format!("msrv needs --max VERSION\n{USAGE}")),

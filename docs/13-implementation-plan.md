@@ -118,6 +118,7 @@ There is a single schema for the core and for the classes (`[suite]`, `[[case]]`
 | supply chain: `cargo deny`, `cargo vet --locked`, dependency graph and toolchain files (`joker-supply-chain`; `policies/dependencies.md` §1) | x86_64 | every commit | yes |
 | references (`joker-spec-tests`: doctests, `tsc`, CDDL, manifest schema, OpenAPI, counts from §5.1) | x86_64 | every commit | yes |
 | conformance | x86_64 | every commit | yes |
+| determinism: the core suites 1000 times with the same bytes (`cargo xtask determinism`), and one digest of the result sequence per target, equal on x86_64, aarch64, Cortex-M33 and RISC-V (docs/11 Phase 0 gates 2 and 5) | x86_64, aarch64, QEMU | every commit | yes |
 | long proptest (10⁶) | x86_64 | nightly | — |
 | cross-build aarch64, armv7, `arm-unknown-linux-gnueabihf` (ARMv6), riscv64 | x86_64 (cross) | every commit | yes |
 | `no_std` cross-build **`thumbv8m.main-none-eabihf`** and **`riscv32imac-unknown-none-elf`**, and conformance in QEMU (`mps2-an505`, `virt` riscv32) | x86_64 (cross) | every commit | **yes** |

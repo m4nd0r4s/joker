@@ -68,6 +68,10 @@ jobs:
           --known-failures xtask/conformance-known-failures.toml
           --json target/conformance/report.json
           --markdown target/conformance/report.md
+      - name: same bytes in 1000 runs (docs/11 Phase 0 gate 5, docs/16 §7)
+        run: >-
+          cargo run --release --package xtask -- determinism --runs 1000
+          --json target/conformance/determinism.json
       - if: always()
         run: cat target/conformance/report.md >> "$GITHUB_STEP_SUMMARY" || true
       - if: always()
@@ -123,6 +127,9 @@ jobs:
           digests() {
             jq -S '[.suites[] | select((.id // "") | startswith("actions.") | not) | .cases[] | {id, status, sequence_digest}]' "$1/report.json"
           }
+          sequence() {
+            jq -r '.suites[] | select((.id // "") | startswith("actions.") | not) | .cases[] | "\(.id) \(.status) \(.sequence_digest // "-")"' "$1/report.json"
+          }
           status=0
           for arch in aarch64 thumbv8m riscv32; do
             if diff <(digests conformance-x86_64) <(digests "conformance-$arch"); then
@@ -132,7 +139,35 @@ jobs:
               status=1
             fi
           done
+          {
+            echo "### Determinism digests per target"
+            echo
+            echo "| target | sha256 of the result sequence | 1000 runs |"
+            echo "|---|---|---|"
+            for arch in x86_64 aarch64 thumbv8m riscv32; do
+              runs="-"
+              if [ -f "conformance-$arch/determinism.json" ]; then
+                runs=$(jq -r '"\(.deterministic) \(.digest)"' "conformance-$arch/determinism.json")
+              fi
+              echo "| $arch | sha256:$(sequence "conformance-$arch" | sha256sum | cut -d' ' -f1) | $runs |"
+            done
+            echo
+            echo "ESP32 (Xtensa): run on the bench board, outside CI; provisional until it is (ADR 0035, decision 8)."
+          } | tee determinism.md >> "$GITHUB_STEP_SUMMARY"
+          for arch in x86_64 aarch64; do
+            expected="sha256:$(sequence "conformance-$arch" | sha256sum | cut -d' ' -f1)"
+            got=$(jq -r .digest "conformance-$arch/determinism.json")
+            if [ "$expected" != "$got" ]; then
+              echo "::error title=Determinism::$arch: the 1000-run digest $got is not the digest of its report $expected"
+              status=1
+            fi
+          done
           exit "$status"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: determinism-digests
+          path: determinism.md
 
   xtensa:
     runs-on: ubuntu-24.04
