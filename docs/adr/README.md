@@ -77,6 +77,7 @@
 | [0077](0077-sunspec-discovery-over-modbus.md) | SunSpec discovery in the Modbus drivers, its effective map, and the profile generated from it |
 | [0078](0078-revpi-driver-over-picontrol.md) | The `revpi` driver over piControl |
 | [0079](0079-data-classes-and-egress.md) | Data classes and egress protection (D1–D4) |
+| [0080](0080-how-the-references-are-compiled.md) | How `joker-spec-tests` compiles the references (task 0a) |
 | [0081](0081-historian-storage-wal-segments-and-retention.md) | Historian storage: WAL, segments, checkpoints and retention |
 | [0082](0082-alarm-journal-persistence-and-historian-wiring.md) | The alarm journal, alarms across restarts, and the historian in jokerd |
 | [0085](0085-runtime-alarms-in-jokerd.md) | The runtime alarms (`joker.*`) in jokerd |
