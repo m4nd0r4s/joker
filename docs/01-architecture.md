@@ -434,7 +434,7 @@ Own metrics, exposed as `joker.*` signals (therefore recorded, alarmable and sen
 | Frozen board | hardware watchdog | reset; device fallback covers the gap | — |
 | Slow model | model deadline | `Err(Deadline)` to the app; backend fallback after N | ML metrics |
 | Hung GPU driver | watchdog of the `joker-ml-<id>` process | kill + restart; backend fallback | alarm |
-| Disk full | store | aggressive retention; without blocking ingestion; if `< 1%`, only alarms and decisions | alarm |
+| Disk full | store | aggressive retention; without blocking ingestion; if `< 1%`, only alarms and decisions | alarm `joker.store.disk_full` |
 | Uplink network down | link | store-and-forward; budget recalculated | cursor lag |
 | Clock jumps | time module | new correspondence; `Holdover`/`Unsynced` | clock quality |
 | New config cuts the network | confirmation window | automatic rollback | generation log |

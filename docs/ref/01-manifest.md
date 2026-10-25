@@ -964,15 +964,18 @@ Each alarm creates `alarm.<alarm>.state` (`enum`, `ref/00` §6) and `alarm.<alar
 
 | Alarm | When | Key that controls it | Where it is defined |
 |---|---|---|---|
-| `joker.output.<s>.budget` | actuation budget exhausted (`Rejected(Budget)`) | `outputs.*.max_actuations` | §5.10, 16 E8 |
-| `joker.output.<s>.unconfirmed` | the output did not confirm through the `readback` | `outputs.*.verify` | §5.10, 01 §7 |
+| `joker.output.<s>.budget` | actuation budget exhausted (`Rejected(Budget)`; `high`) | `outputs.*.max_actuations` | §5.10, 16 E8 |
+| `joker.output.<s>.unconfirmed` | the output did not confirm through the `readback` (`high`) | `outputs.*.verify` | §5.10, 01 §7 |
 | `joker.output.<s>.manual_expiring` | 15 min before the end of the TTL of a manual write (`medium`) | `outputs.*.max_manual` | 01 §6, `ref/09` §5.6 |
 | `joker.output.<s>.manual_restored` | manual level restored at startup without a `synced` clock (`medium`) | `outputs.*.max_manual` | 16 A14 |
-| `joker.group.<g>.overrun` | `alarm_after` consecutive overruns | `cycles.*.alarm_after` | §5.11, 01 §4 |
-| `joker.device.<d>.degraded`, `.offline`, `.drift` | link state of the device | `devices.*` | 05 §12, `ref/06` §2.12 |
+| `joker.group.<g>.overrun` | `alarm_after` consecutive overruns (`high`) | `cycles.*.alarm_after` | §5.11, 01 §4 |
+| `joker.device.<d>.degraded`, `.offline`, `.drift` | link state of the device (`medium`, `high`, `high`) | `devices.*` | 05 §12, `ref/06` §2.12 |
+| `joker.store.disk_full` | the historian's disk is critical: only alarms and decisions are recorded (`high`) | `telemetry.store.max_disk` | 01 §20, ADR 0081 |
 | `joker.driver.<n>.crashloop` | W or X driver in crashloop (critical) | — (fixed threshold; the backoff is `drivers.*.restart`) | `ref/06` §4.5, §5.7 |
 | `joker.node.config_invalid`, `joker.node.crl_expired` | invalid `node.toml`; expired CRL | — (node configuration) | `ref/02` §2.2.2, §3.2.1 |
 | `joker.agent.*` | agent state | — (node configuration) | `ref/10` §2.18 |
+
+The runtime alarms follow the lifecycle of docs/02 §11 without delays, can be acknowledged and shelved (`max_shelve` 24 h), and every transition is in the alarm journal and the decision log (ADR 0085). In 1.0 `joker.driver.<n>.crashloop`, `joker.node.*` and `joker.agent.*` are not raised: the runtime has no W or X drivers, does not read `node.toml` and has no agent yet.
 
 ### 5.16 `[atomic.<group>]` (M20)
 
