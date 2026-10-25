@@ -7,7 +7,7 @@ mod common;
 
 use common::*;
 use joker_core::alarm::{
-    AlarmCause, AlarmConfig, AlarmEvent, AlarmRuntime, AlarmState, Alarms, Severity,
+    AlarmCause, AlarmConfig, AlarmEvent, AlarmRuntime, AlarmSnapshot, AlarmState, Alarms, Severity,
 };
 use joker_core::commit::{Cause, RecordKind};
 use joker_core::quality::{QualityCode, QualityReason};
@@ -251,4 +251,65 @@ fn shelving_hides_but_never_disables_trips() {
     assert_eq!(s.events[0].cause, AlarmCause::ShelveExpired);
     assert!(!r.alarms.state(7).unwrap().1);
     assert!(r.alarms.unshelve(7, 0, &mut sink).is_err());
+}
+
+#[test]
+fn a_restored_alarm_keeps_its_pending_acknowledgement_and_its_shelve() {
+    let mut r = rig(|c| c.delay_off_ns = 0);
+    r.alarms
+        .restore(
+            7,
+            AlarmSnapshot {
+                underlying: AlarmState::ActiveUnacked,
+                shelved_until: Some(3 * PERIOD),
+            },
+        )
+        .unwrap();
+    let sink = r.tick(0, 50.0, Quality::GOOD, None);
+    assert_eq!(
+        r.state(),
+        AlarmState::RtnUnacked,
+        "the condition passed while down: it still needs an ack"
+    );
+    assert_eq!(sink.events.len(), 1);
+    assert!(sink.events[0].shelved);
+    assert_eq!(r.active_signal().0, 0);
+    let sink = r.tick(3, 50.0, Quality::GOOD, None);
+    assert_eq!(sink.events[0].cause, AlarmCause::ShelveExpired);
+    assert_eq!(
+        r.alarms.snapshot(7),
+        Some(AlarmSnapshot {
+            underlying: AlarmState::RtnUnacked,
+            shelved_until: None
+        })
+    );
+    assert!(
+        r.alarms
+            .restore(
+                8,
+                AlarmSnapshot {
+                    underlying: AlarmState::Normal,
+                    shelved_until: None
+                }
+            )
+            .is_err()
+    );
+}
+
+#[test]
+fn a_restored_active_alarm_trips_its_outputs_on_the_first_tick() {
+    let mut r = rig(|c| c.trip = leak(vec![SignalId(1)]));
+    r.alarms
+        .restore(
+            7,
+            AlarmSnapshot {
+                underlying: AlarmState::ActiveAcked,
+                shelved_until: None,
+            },
+        )
+        .unwrap();
+    let sink = r.tick(0, 50.5, Quality::GOOD, Some(10.0));
+    assert!(sink.events.is_empty(), "restoring is not a transition");
+    assert_eq!(r.state(), AlarmState::ActiveAcked);
+    assert!(sink.outputs.iter().any(|o| o.tripped));
 }
