@@ -740,12 +740,24 @@ impl<'r, D: Driver> Bench<'r, D> {
         link: Link,
     ) -> Result<Self, BenchError> {
         let driver = D::open(&OpenArgs::new(request, plan), link).map_err(BenchError::Driver)?;
+        Ok(Self::with_driver(host, request, plan, driver))
+    }
+
+    /// A bench over a driver the test already opened, for a driver whose
+    /// transport a test replaces behind its own seam (a fake process
+    /// image, for `revpi`).
+    pub fn with_driver(
+        host: Arc<VirtualHost>,
+        request: PlanRequest<'r>,
+        plan: PlanView<'r>,
+        driver: D,
+    ) -> Self {
         let timeout_ns = request
             .devices
             .first()
             .map_or(1_000_000_000, |d| d.timeout_ns);
         let now = host.mono();
-        Ok(Self {
+        Self {
             driver,
             host,
             request,
@@ -753,7 +765,7 @@ impl<'r, D: Driver> Bench<'r, D> {
             timeout_ns,
             buf: SampleBuffer::with_capacity(4096),
             due: vec![now; plan.len()],
-        })
+        }
     }
 
     /// The host.
