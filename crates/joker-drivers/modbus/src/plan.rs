@@ -118,6 +118,8 @@ pub struct Quirks {
     pub min_interval_ns: u64,
     /// Response latency of the equipment.
     pub latency_ns: u64,
+    /// `single_write = "fc16"`: one register is written with FC 16.
+    pub single_fc16: bool,
 }
 
 impl Default for Quirks {
@@ -128,6 +130,7 @@ impl Default for Quirks {
             max_gap: 8,
             min_interval_ns: 0,
             latency_ns: 10_000_000,
+            single_fc16: false,
         }
     }
 }
@@ -148,7 +151,14 @@ impl Quirks {
                 "max_gap" => q.max_gap = n?.clamp(0, 125) as u16,
                 "min_interval" => q.min_interval_ns = n?,
                 "latency" => q.latency_ns = n?,
-                "forbidden" | "single_write" | "connect_timeout" => {}
+                "single_write" => {
+                    q.single_fc16 = match v.as_str() {
+                        Ok("fc6") => false,
+                        Ok("fc16") => true,
+                        _ => return Err("`single_write` is \"fc6\" or \"fc16\""),
+                    }
+                }
+                "forbidden" | "connect_timeout" => {}
                 _ => return Err("unknown quirk of the modbus family"),
             }
         }
@@ -168,26 +178,32 @@ pub fn span(p: &PointSpec<'_>) -> u16 {
     }
 }
 
-/// Checks one point against ref/03 §2.2.5 and the M0 write subset.
+/// Checks one point against ref/03 §2.2.5: inputs and parameters read
+/// with FC 1–4, outputs write with FC 5, 6, 15 or 16, FC 6 writes one
+/// register, and `bit` is a `bool` in a register, read with FC 3 or 4 or
+/// written by read-modify-write with FC 6 or 16 (ADR 0076).
 pub fn check_point(p: &PointSpec<'_>) -> Result<Address, Diagnostic<'static>> {
     let a = Address::parse(p.addr).map_err(|m| Diagnostic::at(J0853, p.id, m))?;
     let fc_ok = match p.direction {
         Direction::Input | Direction::Param => matches!(a.fc, 1..=4),
-        Direction::Output => a.fc == 5,
+        Direction::Output => matches!(a.fc, 5 | 6 | 15 | 16),
     };
     if !fc_ok {
         let m = if p.direction == Direction::Output {
-            "outputs are coils (FC 5) in M0; register writes come with the output stage (ADR 0047)"
+            "outputs write with FC 5, 6, 15 or 16"
         } else {
             "inputs and parameters read with FC 1, 2, 3 or 4"
         };
         return Err(Diagnostic::at(J0810, p.id, m));
     }
-    let bits = matches!(a.fc, 1 | 2 | 5);
+    let bits = matches!(a.fc, 1 | 2 | 5 | 15);
     let type_ok = if bits {
         p.expect == RawKind::Bool && p.width == 0 && p.type_name == "bool" && a.bit.is_none()
     } else {
-        p.expect == RawKind::Regs && p.width >= 1 && (a.bit.is_none() || p.type_name == "bool")
+        p.expect == RawKind::Regs
+            && p.width >= 1
+            && (a.bit.is_none() || (p.type_name == "bool" && p.width == 1))
+            && (a.fc != 6 || p.width == 1)
     };
     if !type_ok {
         return Err(Diagnostic::at(

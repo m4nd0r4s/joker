@@ -9,8 +9,14 @@
 //! step without `type` reads and writes `bool` on the bit function codes
 //! and `u16` on the register ones. Everything here is pure: the drivers
 //! frame the PDU and move the bytes.
+//!
+//! The same module builds the requests of an output point's write (ADR
+//! 0076): the raw value the output stage made of the applied value becomes
+//! one FC 5, 6, 15 or 16 request, or, for a `bool` in one bit of a
+//! holding register, an FC 3 read of the register followed by the write
+//! of the register with that bit set or cleared.
 
-use joker_hal::{BatchFailure, Cbor, RawValue};
+use joker_hal::{BatchFailure, Cbor, RawValue, WriteStatus};
 
 use crate::plan::Address;
 
@@ -276,6 +282,102 @@ impl Access {
     }
 }
 
+/// What the write of an output point puts on the wire (ADR 0076).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OutputWrite {
+    /// One request, confirmed by its echo.
+    Direct(Pdu),
+    /// A `bool` in one bit of a holding register: read the register at
+    /// `at` with FC 3, set or clear `bit`, and write the register back with
+    /// [`register_write`].
+    Bit {
+        /// The register, base 0.
+        at: u16,
+        /// The bit, 0 the least significant.
+        bit: u8,
+        /// The level the bit takes.
+        on: bool,
+        /// Write the register with FC 16 instead of FC 6.
+        fc16: bool,
+    },
+}
+
+impl OutputWrite {
+    /// The write of `value` to the output at `addr`, which spans `words`
+    /// registers. `single_fc16` is the `single_write = "fc16"` quirk: one
+    /// register goes with FC 16 even when the address says FC 6. A value
+    /// whose form does not fit the address is `unsupported`: the output
+    /// stage and the plan should not have let it through.
+    pub fn of(
+        addr: &Address,
+        words: u16,
+        value: RawValue<'_>,
+        single_fc16: bool,
+    ) -> Result<Self, WriteStatus> {
+        let [a0, a1] = addr.at.to_be_bytes();
+        Ok(match (addr.fc, addr.bit, value) {
+            (5, None, RawValue::Bool(on)) => {
+                Self::Direct(Pdu::new(&[5, a0, a1, if on { 0xFF } else { 0 }, 0]))
+            }
+            (15, None, RawValue::Bool(on)) => {
+                Self::Direct(Pdu::new(&[15, a0, a1, 0, 1, 1, u8::from(on)]))
+            }
+            (6 | 16, Some(bit), RawValue::Bool(on)) => Self::Bit {
+                at: addr.at,
+                bit,
+                on,
+                fc16: addr.fc == 16 || single_fc16,
+            },
+            (6, None, RawValue::Regs(&[word])) if words == 1 => {
+                Self::Direct(register_write(addr.at, word, single_fc16))
+            }
+            (16, None, RawValue::Regs(regs))
+                if !regs.is_empty() && regs.len() <= 4 && regs.len() == usize::from(words) =>
+            {
+                let n = regs.len() as u8;
+                let mut pdu = Pdu::new(&[16, a0, a1, 0, n, 2 * n]);
+                for w in regs {
+                    let [w0, w1] = w.to_be_bytes();
+                    pdu.push(w0);
+                    pdu.push(w1);
+                }
+                Self::Direct(pdu)
+            }
+            _ => return Err(WriteStatus::Unsupported),
+        })
+    }
+}
+
+/// The FC 3 read of the one holding register at `at`.
+pub fn holding_read(at: u16) -> Pdu {
+    let [a0, a1] = at.to_be_bytes();
+    Pdu::new(&[3, a0, a1, 0, 1])
+}
+
+/// The write of one register: FC 6, or FC 16 with one register.
+pub fn register_write(at: u16, word: u16, fc16: bool) -> Pdu {
+    let [a0, a1] = at.to_be_bytes();
+    let [w0, w1] = word.to_be_bytes();
+    if fc16 {
+        Pdu::new(&[16, a0, a1, 0, 1, 2, w0, w1])
+    } else {
+        Pdu::new(&[6, a0, a1, w0, w1])
+    }
+}
+
+/// `word` with `bit` set (`on`) or cleared.
+pub fn with_bit(word: u16, bit: u8, on: bool) -> u16 {
+    let mask = 1u16 << (bit & 15);
+    if on { word | mask } else { word & !mask }
+}
+
+/// True when the five bytes after the unit of a write's answer echo the
+/// request PDU: the function code, the address and the value (FC 5 and 6)
+/// or the count (FC 15 and 16).
+pub fn echoes(answer: &[u8], request: &[u8]) -> bool {
+    answer.len() >= 5 && request.len() >= 5 && answer[..5] == request[..5]
+}
+
 fn signed_fits(value: RawValue<'_>, width: u32) -> Option<u64> {
     let i = match value {
         RawValue::Int(i) => i,
@@ -420,5 +522,89 @@ mod tests {
                 .write(RawValue::Uint(1))
                 .is_err()
         );
+    }
+
+    fn address(entries: &[(&str, Value)]) -> Address {
+        let addr = Value::Map(
+            entries
+                .iter()
+                .map(|(k, v)| ((*k).to_owned(), v.clone()))
+                .collect(),
+        )
+        .encode();
+        Address::parse(Cbor::new(&addr)).unwrap()
+    }
+
+    fn direct(w: Result<OutputWrite, WriteStatus>) -> std::vec::Vec<u8> {
+        match w.unwrap() {
+            OutputWrite::Direct(pdu) => pdu.as_bytes().to_vec(),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn output_registers_go_with_fc_6_or_16() {
+        let one = address(&at(10, 6));
+        assert_eq!(
+            direct(OutputWrite::of(&one, 1, RawValue::Regs(&[0xFFF6]), false)),
+            [6, 0, 10, 0xFF, 0xF6]
+        );
+        assert_eq!(
+            direct(OutputWrite::of(&one, 1, RawValue::Regs(&[7]), true)),
+            [16, 0, 10, 0, 1, 2, 0, 7],
+            "single_write = fc16"
+        );
+        let two = address(&at(11, 16));
+        assert_eq!(
+            direct(OutputWrite::of(&two, 2, RawValue::Regs(&[1, 2]), false)),
+            [16, 0, 11, 0, 2, 4, 0, 1, 0, 2]
+        );
+        assert_eq!(
+            OutputWrite::of(&two, 2, RawValue::Regs(&[1]), false),
+            Err(WriteStatus::Unsupported),
+            "a value of another width"
+        );
+        assert_eq!(
+            OutputWrite::of(&one, 1, RawValue::Uint(1), false),
+            Err(WriteStatus::Unsupported),
+            "a register point takes registers"
+        );
+        let coil = address(&at(3, 5));
+        assert_eq!(
+            direct(OutputWrite::of(&coil, 1, RawValue::Bool(true), false)),
+            [5, 0, 3, 0xFF, 0]
+        );
+        let coils = address(&at(3, 15));
+        assert_eq!(
+            direct(OutputWrite::of(&coils, 1, RawValue::Bool(true), false)),
+            [15, 0, 3, 0, 1, 1, 1]
+        );
+    }
+
+    #[test]
+    fn a_bool_in_a_register_bit_is_a_read_modify_write() {
+        let mut entries = at(20, 6);
+        entries.push(("bit", Value::Int(4)));
+        let bit = address(&entries);
+        assert_eq!(
+            OutputWrite::of(&bit, 1, RawValue::Bool(true), false),
+            Ok(OutputWrite::Bit {
+                at: 20,
+                bit: 4,
+                on: true,
+                fc16: false
+            })
+        );
+        assert_eq!(holding_read(20).as_bytes(), [3, 0, 20, 0, 1]);
+        assert_eq!(with_bit(0b1000_0001, 4, true), 0b1001_0001);
+        assert_eq!(with_bit(0b1001_0001, 4, false), 0b1000_0001);
+        assert_eq!(with_bit(0x8000, 15, false), 0);
+        assert_eq!(
+            register_write(20, 0b1001_0001, false).as_bytes(),
+            [6, 0, 20, 0, 0b1001_0001]
+        );
+        assert!(echoes(&[6, 0, 20, 0, 0x91], &[6, 0, 20, 0, 0x91]));
+        assert!(!echoes(&[6, 0, 20, 0, 0x90], &[6, 0, 20, 0, 0x91]));
+        assert!(echoes(&[16, 0, 20, 0, 1], &[16, 0, 20, 0, 1, 2, 0, 0x91]));
     }
 }
