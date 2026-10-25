@@ -1,0 +1,23 @@
+package std
+
+/// Lamp: a light source for illumination, switched and optionally dimmed.
+class lamp@1.0.0 {
+    /// Lit or dark.
+    out on: bool @safe_hint(false)
+
+    /// Switches the lamp on.
+    method on() { on = true }
+    /// Switches the lamp off.
+    method off() { on = false }
+    /// Switches the lamp on or off.
+    method set(v: bool) { on = v }
+    /// Inverts the caller's own command.
+    method toggle() { on = !own(on) }
+
+    capability dimmable {
+        /// Brightness while lit.
+        out brightness: f64 % @safe_hint(0 %) @range_hint(0 %, 100 %)
+        /// Sets the brightness, and switches the lamp on above 0 %.
+        method dim(pct: f64 %) { brightness = pct; on = pct > 0 % }
+    }
+}

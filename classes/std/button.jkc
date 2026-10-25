@@ -1,0 +1,14 @@
+package std
+
+/// Momentary push button.
+class button@1.0.0 {
+    /// Held down.
+    in pressed: bool
+
+    /// True for a single tick of the group that reads it, when pressed.
+    query clicked: bool = rose(pressed)
+    /// True for a single tick of the group that reads it, when let go.
+    query released: bool = fell(pressed)
+    /// Held down for at least one second.
+    query long_hold: bool = held(pressed, 1 s)
+}

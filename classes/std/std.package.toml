@@ -1,0 +1,8 @@
+schema = 1
+
+[package]
+name        = "std"
+description = "The standard class library of Joker (docs/14 §10)"
+license     = "Apache-2.0 OR MIT"
+repository  = "https://github.com/m4nd0r4s/joker"
+joker       = "1.0"

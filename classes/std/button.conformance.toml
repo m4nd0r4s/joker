@@ -1,0 +1,33 @@
+schema = 1
+
+[suite]
+kind        = "class"
+class       = "std/button@1"
+spec        = ["14 §4.2", "17 §4.3"]
+description = "contract of button@1: the edge queries last one tick, long_hold after one second, and a bad input gives bad queries"
+
+[[case]]
+id     = "click_lasts_one_tick"
+do     = [{ at = "100ms", input = "pressed", value = false }, { at = "300ms", input = "pressed", value = true }]
+expect = [{ query = "clicked", equals = false, at = "200ms" }, { query = "clicked", equals = true, at = "300ms" }, { query = "clicked", equals = false, at = "400ms" }]
+
+[[case]]
+id     = "release_lasts_one_tick"
+do     = [{ at = "100ms", input = "pressed", value = false }, { at = "300ms", input = "pressed", value = true }, { at = "600ms", input = "pressed", value = false }]
+expect = [{ query = "released", equals = false, at = "500ms" }, { query = "released", equals = true, at = "600ms" }, { query = "released", equals = false, at = "700ms" }]
+
+[[case]]
+id     = "long_hold_after_one_second"
+do     = [{ at = "100ms", input = "pressed", value = false }, { at = "300ms", input = "pressed", value = true }]
+expect = [{ query = "long_hold", equals = false, at = "1.1s" }, { query = "long_hold", equals = true, within = "1.3s .. 1.4s" }]
+
+[[case]]
+id     = "pressed_reads_through"
+do     = [{ at = "100ms", input = "pressed", value = true }]
+expect = [{ member = "pressed", equals = true, quality = "good", at = "100ms" }]
+
+[[case]]
+id     = "bad_input_bad_queries"
+spec   = ["16 §3"]
+do     = [{ at = "100ms", input = "pressed", quality = "bad" }]
+expect = [{ query = "clicked", quality = "bad", at = "100ms" }, { query = "long_hold", quality = "bad", at = "100ms" }]

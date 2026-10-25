@@ -1,0 +1,7 @@
+package std
+
+/// Temperature sensor.
+class temp_sensor@1.0.0 {
+    /// The measured temperature.
+    in temperature: f64 °C
+}

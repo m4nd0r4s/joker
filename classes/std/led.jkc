@@ -1,0 +1,23 @@
+package std
+
+/// Light indicator.
+class led@1.0.0 {
+    /// Lit or dark.
+    out on: bool @safe_hint(false)
+
+    /// Lights the indicator.
+    method on() { on = true }
+    /// Darkens the indicator.
+    method off() { on = false }
+    /// Lights or darkens the indicator.
+    method set(v: bool) { on = v }
+    /// Inverts the caller's own command (docs/14 §8, A6).
+    method toggle() { on = !own(on) }
+
+    capability dimmable {
+        /// Brightness while lit.
+        out brightness: f64 % @safe_hint(0 %) @range_hint(0 %, 100 %)
+        /// Sets the brightness, and lights the indicator above 0 %.
+        method dim(pct: f64 %) { brightness = pct; on = pct > 0 % }
+    }
+}

@@ -1,0 +1,7 @@
+package std
+
+/// Pressure sensor.
+class pressure_sensor@1.0.0 {
+    /// The measured pressure.
+    in pressure: f64 bar
+}

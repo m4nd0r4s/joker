@@ -9,11 +9,20 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+joker-case-runner = { workspace = true, optional = true }
+joker-core = { workspace = true, features = ["alloc"], optional = true }
 joker-expr = { workspace = true, features = ["alloc"] }
 joker-manifest = { path = "../joker-manifest" }
 joker-units = { workspace = true, features = ["alloc"] }
 serde_json = "1.0.154"
 sha2 = "0.10.9"
+toml = { version = "1.1.8", default-features = false, features = ["parse", "serde", "std"], optional = true }
+
+[features]
+verify = ["dep:joker-case-runner", "dep:joker-core", "dep:toml"]
+
+[dev-dependencies]
+joker-jkc = { path = ".", features = ["verify"] }
 
 [lints]
 workspace = true

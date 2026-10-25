@@ -1,0 +1,24 @@
+schema = 1
+
+[suite]
+kind        = "class"
+class       = "std/temp_sensor@1"
+spec        = ["14 §10"]
+description = "contract of temp_sensor@1: the temperature reads through in °C, a value in another unit of the same dimension is converted, and quality is kept"
+
+[[case]]
+id     = "temperature_reads_through"
+do     = [{ at = "100ms", input = "temperature", value = "21.5 °C" }]
+expect = [{ member = "temperature", equals = "21.5 °C", quality = "good", at = "100ms" }]
+
+[[case]]
+id     = "temperature_converts_units"
+spec   = ["ref/01 §3.3"]
+do     = [{ at = "100ms", input = "temperature", value = "294.65 K" }]
+expect = [{ member = "temperature", equals = "21.5 °C", tolerance = 0.000001, at = "100ms" }]
+
+[[case]]
+id     = "bad_temperature_stays_bad"
+spec   = ["16 §3"]
+do     = [{ at = "100ms", input = "temperature", quality = "bad" }]
+expect = [{ member = "temperature", quality = "bad", at = "100ms" }]

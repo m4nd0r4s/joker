@@ -1,0 +1,7 @@
+package std
+
+/// Relative humidity sensor.
+class humidity_sensor@1.0.0 {
+    /// The measured relative humidity.
+    in humidity: f64 %
+}

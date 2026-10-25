@@ -1,0 +1,34 @@
+schema = 1
+
+[suite]
+kind        = "class"
+class       = "std/analog_in@1"
+spec        = ["14 §4.3", "17 §4.3"]
+description = "contract of analog_in@1: the normalized value reads through, smooth averages it over 200 ms, and the physical value keeps the unit of the instance"
+
+[[case]]
+id     = "value_reads_through"
+do     = [{ at = "100ms", input = "value", value = 0.25 }]
+expect = [{ member = "value", equals = 0.25, quality = "good", at = "100ms" }]
+
+[[case]]
+id     = "smooth_settles_on_a_constant"
+do     = [{ at = "100ms", input = "value", value = 0.5 }]
+expect = [{ query = "smooth", equals = 0.5, tolerance = 0.000001, at = "600ms" }]
+
+[[case]]
+id     = "smooth_lags_a_step"
+do     = [{ at = "100ms", input = "value", value = 0 }, { at = "500ms", input = "value", value = 1 }]
+expect = [{ query = "smooth", max = 0.99, at = "500ms" }, { query = "smooth", equals = 1, tolerance = 0.000001, at = "1s" }]
+
+[[case]]
+id     = "bad_value_bad_smooth"
+spec   = ["16 §3"]
+do     = [{ at = "100ms", input = "value", quality = "bad" }]
+expect = [{ query = "smooth", quality = "bad", at = "100ms" }]
+
+[[case]]
+id       = "reading_reads_through"
+requires = ["physical"]
+do       = [{ at = "100ms", input = "reading", value = 4.2 }]
+expect   = [{ member = "reading", equals = 4.2, at = "100ms" }]

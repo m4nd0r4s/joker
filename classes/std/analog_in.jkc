@@ -1,0 +1,15 @@
+package std
+
+/// Normalized analog input (0..1), with the physical value available.
+class analog_in@1.0.0 {
+    /// The normalized value; the normalization belongs to the profile or the instance.
+    in value: f64 1
+
+    /// The value averaged over 200 ms.
+    query smooth: f64 1 = avg(value, 200 ms)
+
+    capability physical {
+        /// The physical value, in the unit the instance gives (V, mA…).
+        in reading: f64
+    }
+}

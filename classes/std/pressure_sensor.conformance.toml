@@ -1,0 +1,24 @@
+schema = 1
+
+[suite]
+kind        = "class"
+class       = "std/pressure_sensor@1"
+spec        = ["14 §10"]
+description = "contract of pressure_sensor@1: the pressure reads through in bar, a value in another unit of the same dimension is converted, and quality is kept"
+
+[[case]]
+id     = "pressure_reads_through"
+do     = [{ at = "100ms", input = "pressure", value = "2.5 bar" }]
+expect = [{ member = "pressure", equals = "2.5 bar", quality = "good", at = "100ms" }]
+
+[[case]]
+id     = "pressure_converts_units"
+spec   = ["ref/01 §3.3"]
+do     = [{ at = "100ms", input = "pressure", value = "250 kPa" }]
+expect = [{ member = "pressure", equals = "2.5 bar", tolerance = 0.000001, at = "100ms" }]
+
+[[case]]
+id     = "bad_pressure_stays_bad"
+spec   = ["16 §3"]
+do     = [{ at = "100ms", input = "pressure", quality = "bad" }]
+expect = [{ member = "pressure", quality = "bad", at = "100ms" }]
