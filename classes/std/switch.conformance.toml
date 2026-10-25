@@ -1,0 +1,28 @@
+schema = 1
+
+[suite]
+kind        = "class"
+class       = "std/switch@1"
+spec        = ["14 §10", "17 §4.3"]
+description = "contract of switch@1: the contact reads through and its edges last one tick"
+
+[[case]]
+id     = "closed_reads_through"
+do     = [{ at = "100ms", input = "closed", value = true }]
+expect = [{ member = "closed", equals = true, quality = "good", at = "100ms" }]
+
+[[case]]
+id     = "turned_on_lasts_one_tick"
+do     = [{ at = "100ms", input = "closed", value = false }, { at = "300ms", input = "closed", value = true }]
+expect = [{ query = "turned_on", equals = false, at = "200ms" }, { query = "turned_on", equals = true, at = "300ms" }, { query = "turned_on", equals = false, at = "400ms" }]
+
+[[case]]
+id     = "turned_off_lasts_one_tick"
+do     = [{ at = "100ms", input = "closed", value = true }, { at = "300ms", input = "closed", value = false }]
+expect = [{ query = "turned_off", equals = false, at = "200ms" }, { query = "turned_off", equals = true, at = "300ms" }, { query = "turned_off", equals = false, at = "400ms" }]
+
+[[case]]
+id     = "bad_input_bad_queries"
+spec   = ["16 §3"]
+do     = [{ at = "100ms", input = "closed", quality = "bad" }]
+expect = [{ query = "turned_on", quality = "bad", at = "100ms" }, { query = "turned_off", quality = "bad", at = "100ms" }]

@@ -1,0 +1,12 @@
+package std
+
+/// Maintained switch: a contact that stays where it was put.
+class switch@1.0.0 {
+    /// The contact is closed.
+    in closed: bool
+
+    /// True for a single tick of the group that reads it, when the contact closes.
+    query turned_on: bool = rose(closed)
+    /// True for a single tick of the group that reads it, when the contact opens.
+    query turned_off: bool = fell(closed)
+}

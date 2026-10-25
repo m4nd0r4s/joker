@@ -1,0 +1,16 @@
+package std
+
+/// Relay: a contact the program closes and opens.
+class relay@1.0.0 {
+    /// Energised (contact in its working position) or not.
+    out on: bool @safe_hint(false)
+
+    /// Energises the relay.
+    method on() { on = true }
+    /// De-energises the relay.
+    method off() { on = false }
+    /// Energises or de-energises the relay.
+    method set(v: bool) { on = v }
+    /// Inverts the caller's own command.
+    method toggle() { on = !own(on) }
+}
