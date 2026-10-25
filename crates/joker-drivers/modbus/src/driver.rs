@@ -19,9 +19,10 @@ use joker_hal::{
 };
 
 use crate::access::Pdu;
-use crate::access::{Access, OutputWrite, echoes, holding_read, register_write, with_bit};
+use crate::access::{Access, OutputWrite, echoes, register_write, with_bit};
 use crate::plan::{Address, Quirks, Request, check_point, span, unit_id};
 use crate::rtu::{MAX_ADU, crc_ok, frame, read_data_len, request};
+use crate::sunspec::{Discovery, Found, ReadError, Step, Walk, report};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Point {
@@ -48,6 +49,8 @@ pub struct ModbusRtu {
     unit: u8,
     quirks: Quirks,
     points: Vec<Point>,
+    discovery: Option<Discovery>,
+    pinned: Option<Vec<u8>>,
     last_request: Option<MonoNs>,
     counters: Counters,
 }
@@ -171,13 +174,8 @@ impl ModbusRtu {
 
     /// Reads the one holding register at `at` with FC 3.
     async fn read_holding(&mut self, cx: &Cx<'_>, at: u16) -> Result<u16, Fail> {
-        let (request, n) = frame(self.unit, holding_read(at).as_bytes());
-        let mut buf = [0u8; MAX_ADU];
-        let len = self.exchange(cx, &request[..n], 3, &mut buf).await?;
-        if len != 7 || buf[2] != 2 {
-            return Err(Fail::Garbled);
-        }
-        Ok(u16::from_be_bytes([buf[3], buf[4]]))
+        let words = self.read_holding_regs(cx, at, 1).await?;
+        words.first().copied().ok_or(Fail::Garbled)
     }
 
     /// Writes one output point and says how it went.
@@ -199,6 +197,45 @@ impl ModbusRtu {
         match done {
             Ok(()) => WriteStatus::Ok,
             Err(f) => f.write(),
+        }
+    }
+
+    /// Reads `count` holding registers from `at` with FC 3.
+    async fn read_holding_regs(
+        &mut self,
+        cx: &Cx<'_>,
+        at: u16,
+        count: u16,
+    ) -> Result<Vec<u16>, Fail> {
+        let frame = request(self.unit, 3, at, count);
+        let data_len = read_data_len(3, count);
+        let mut buf = [0u8; MAX_ADU];
+        let len = self.exchange(cx, &frame, 1 + data_len, &mut buf).await?;
+        if usize::from(buf[2]) != data_len || len != 5 + data_len {
+            return Err(Fail::Garbled);
+        }
+        Ok(buf[3..3 + data_len]
+            .chunks(2)
+            .map(|c| u16::from_be_bytes([c[0], c[1]]))
+            .collect())
+    }
+
+    /// Walks the SunSpec chain (ADR 0077), with FC 3 reads only.
+    async fn discover(&mut self, cx: &Cx<'_>, d: &Discovery) -> Result<Found, DriverError> {
+        let mut walk = Walk::new(d);
+        loop {
+            match walk.step() {
+                Step::Read { at, count } => {
+                    let read = self.read_holding_regs(cx, at, count).await;
+                    walk.feed(match &read {
+                        Ok(words) => Ok(words.as_slice()),
+                        Err(Fail::Exception(_)) => Err(ReadError::Exception),
+                        Err(f) => Err(ReadError::Failed(f.batch())),
+                    });
+                }
+                Step::Done => return Ok(walk.found()),
+                Step::Failed(e) => return Err(DriverError::new(code!("J0876"), e.message())),
+            }
         }
     }
 }
@@ -224,6 +261,9 @@ impl Driver for ModbusRtu {
         let unit = unit_id(device.config).map_err(|m| DriverError::new(J0852, m))?;
         let quirks =
             Quirks::parse(device.quirks).map_err(|m| DriverError::new(crate::plan::J0818, m))?;
+        let discovery =
+            Discovery::parse(device.quirks).map_err(|m| DriverError::new(code!("J0825"), m))?;
+        let pinned = device.discovered.map(|d| d.as_bytes().to_vec());
         let mut points = Vec::new();
         for p in args.request().points {
             let addr = check_point(p).map_err(|d| DriverError::new(d.code, d.message))?;
@@ -244,6 +284,8 @@ impl Driver for ModbusRtu {
             unit,
             quirks,
             points,
+            discovery,
+            pinned,
             last_request: None,
             counters: Counters::default(),
         })
@@ -251,12 +293,17 @@ impl Driver for ModbusRtu {
 
     async fn connect(
         &mut self,
-        _cx: &mut Cx<'_>,
-        _out: &mut ConnectOut<'_>,
+        cx: &mut Cx<'_>,
+        out: &mut ConnectOut<'_>,
     ) -> Result<(), DriverError> {
         self.port
             .discard_input()
-            .map_err(|_| DriverError::new(code!("J0876"), "the serial port is gone"))
+            .map_err(|_| DriverError::new(code!("J0876"), "the serial port is gone"))?;
+        if let Some(d) = self.discovery.clone() {
+            let found = self.discover(cx, &d).await?;
+            report(&found, self.pinned.as_deref(), out)?;
+        }
+        Ok(())
     }
 
     async fn read(

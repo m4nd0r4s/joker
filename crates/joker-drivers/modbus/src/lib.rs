@@ -6,6 +6,7 @@ pub mod driver_tcp;
 pub mod plan;
 pub mod profile;
 pub mod rtu;
+pub mod sunspec;
 pub mod tcp;
 
 pub use driver::ModbusRtu;

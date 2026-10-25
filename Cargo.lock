@@ -1357,6 +1357,7 @@ dependencies = [
  "joker-core",
  "joker-hal",
  "joker-units",
+ "sha2",
  "toml",
 ]
 

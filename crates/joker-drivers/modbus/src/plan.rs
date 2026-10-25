@@ -24,7 +24,11 @@ pub const DESCRIPTOR: Descriptor = Descriptor {
     protocols: &["modbus"],
     buses: &[BusKind::Serial],
     instance: InstanceMode::Device,
-    capabilities: Capabilities::of(&[Capability::Write, Capability::RawAccess]),
+    capabilities: Capabilities::of(&[
+        Capability::Write,
+        Capability::RawAccess,
+        Capability::Discover,
+    ]),
     interface: INTERFACE,
     micro: false,
     license: "Apache-2.0 OR MIT",
@@ -158,7 +162,7 @@ impl Quirks {
                         _ => return Err("`single_write` is \"fc6\" or \"fc16\""),
                     }
                 }
-                "forbidden" | "connect_timeout" => {}
+                "forbidden" | "connect_timeout" | "discovery" => {}
                 _ => return Err("unknown quirk of the modbus family"),
             }
         }
@@ -403,7 +407,11 @@ pub const DESCRIPTOR_TCP: Descriptor = Descriptor {
     protocols: &["modbus"],
     buses: &[BusKind::Ethernet],
     instance: InstanceMode::Device,
-    capabilities: Capabilities::of(&[Capability::Write, Capability::RawAccess]),
+    capabilities: Capabilities::of(&[
+        Capability::Write,
+        Capability::RawAccess,
+        Capability::Discover,
+    ]),
     interface: INTERFACE,
     micro: false,
     license: "Apache-2.0 OR MIT",
