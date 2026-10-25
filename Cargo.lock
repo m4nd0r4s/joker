@@ -1444,11 +1444,15 @@ dependencies = [
 name = "joker-jkc"
 version = "0.0.0"
 dependencies = [
+ "joker-case-runner",
+ "joker-core",
  "joker-expr",
+ "joker-jkc",
  "joker-manifest",
  "joker-units",
  "serde_json",
  "sha2",
+ "toml",
 ]
 
 [[package]]

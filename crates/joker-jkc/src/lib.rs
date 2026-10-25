@@ -18,6 +18,10 @@ pub mod compat;
 pub mod contract;
 pub mod expr;
 pub mod parser;
+pub mod show;
+pub mod stdlib;
+#[cfg(feature = "verify")]
+pub mod verify;
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;

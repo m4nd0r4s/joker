@@ -1,0 +1,30 @@
+schema = 1
+
+[suite]
+kind        = "class"
+class       = "std/analog_out@1"
+spec        = ["14 §10", "17 §4.1"]
+description = "contract of analog_out@1: set clamps to 0..1, and with nobody in control the output goes to safe"
+
+[[case]]
+id     = "set_takes_the_argument"
+do     = [{ at = "100ms", method = "set", args = { v = 0.4 } }]
+expect = [{ member = "value", equals = 0.4, level = "control:12", at = "100ms" }]
+
+[[case]]
+id     = "set_clamps_to_the_unit_interval"
+do     = [{ at = "100ms", method = "set", args = { v = 1.7 } }, { at = "300ms", method = "set", args = { v = -0.2 } }]
+expect = [{ member = "value", equals = 1, at = "100ms" }, { member = "value", equals = 0, at = "300ms" }]
+
+[[case]]
+id       = "lease_expiry_goes_safe"
+spec     = ["16 A2", "ref/03 §2.6.3"]
+sim_only = true
+do       = [{ at = "100ms", method = "set", args = { v = 0.8 } }, { at = "1s", lease_expire = "value" }]
+expect   = [{ member = "value", equals = 0, level = "none", within = "1s .. 1.3s" }]
+
+[[case]]
+id       = "reading_reads_through"
+requires = ["physical"]
+do       = [{ at = "100ms", input = "reading", value = 12 }]
+expect   = [{ member = "reading", equals = 12, at = "100ms" }]

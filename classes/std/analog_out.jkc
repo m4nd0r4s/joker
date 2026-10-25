@@ -1,0 +1,15 @@
+package std
+
+/// Normalized analog output (0..1), with the physical value available.
+class analog_out@1.0.0 {
+    /// The normalized command; the scaling belongs to the profile or the instance.
+    out value: f64 1 @safe_hint(0) @range_hint(0, 1)
+
+    /// Sets the command, clamped to 0..1.
+    method set(v: f64 1) { value = clamp(v, 0, 1) }
+
+    capability physical {
+        /// The physical value of the output, in the unit the instance gives (V, mA…).
+        in reading: f64
+    }
+}

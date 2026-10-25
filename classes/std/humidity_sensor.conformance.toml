@@ -1,0 +1,18 @@
+schema = 1
+
+[suite]
+kind        = "class"
+class       = "std/humidity_sensor@1"
+spec        = ["14 §10"]
+description = "contract of humidity_sensor@1: the relative humidity reads through in %, and quality is kept"
+
+[[case]]
+id     = "humidity_reads_through"
+do     = [{ at = "100ms", input = "humidity", value = "45 %" }]
+expect = [{ member = "humidity", equals = "45 %", quality = "good", at = "100ms" }]
+
+[[case]]
+id     = "bad_humidity_stays_bad"
+spec   = ["16 §3"]
+do     = [{ at = "100ms", input = "humidity", quality = "bad" }]
+expect = [{ member = "humidity", quality = "bad", at = "100ms" }]

@@ -1,0 +1,55 @@
+schema = 1
+
+[suite]
+kind        = "class"
+class       = "std/lamp@1"
+spec        = ["14 §10", "14 §10", "17 §4.1"]
+description = "contract of lamp@1: the methods expand into `on`, toggle inverts the caller's own command, and with nobody in control the lamp goes to safe"
+
+[[case]]
+id     = "on_sets_on"
+do     = [{ at = "100ms", method = "on" }]
+expect = [{ member = "on", equals = true, level = "control:12", at = "100ms" }]
+
+[[case]]
+id     = "off_clears_on"
+do     = [{ at = "100ms", method = "on" }, { at = "300ms", method = "off" }]
+expect = [{ member = "on", equals = true, at = "200ms" }, { member = "on", equals = false, at = "300ms" }]
+
+[[case]]
+id     = "set_takes_the_argument"
+do     = [{ at = "100ms", method = "set", args = { v = true } }, { at = "300ms", method = "set", args = { v = false } }]
+expect = [{ member = "on", equals = true, during = "100ms .. 200ms" }, { member = "on", equals = false, at = "300ms" }]
+
+[[case]]
+id     = "toggle_inverts_own"
+spec   = ["14 §8 A6"]
+do     = [{ at = "100ms", method = "on" }, { at = "300ms", method = "toggle" }, { at = "500ms", method = "toggle" }]
+expect = [{ member = "on", equals = false, at = "300ms" }, { member = "on", equals = true, at = "500ms" }]
+
+[[case]]
+id     = "two_toggles_in_a_tick_cancel"
+spec   = ["17 §4.1"]
+do     = [{ at = "100ms", method = "on" }, { at = "300ms", method = "toggle" }, { at = "300ms", method = "toggle" }]
+expect = [{ member = "on", equals = true, during = "300ms .. 400ms" }]
+
+[[case]]
+id       = "dim_sets_brightness_and_lights"
+requires = ["dimmable"]
+do       = [{ at = "100ms", method = "dim", args = { pct = "40 %" } }, { at = "300ms", method = "dim", args = { pct = "0 %" } }]
+expect   = [{ all_of = [{ member = "brightness", equals = "40 %", at = "100ms" }, { member = "on", equals = true, at = "100ms" }] },
+            { all_of = [{ member = "brightness", equals = "0 %", at = "300ms" }, { member = "on", equals = false, at = "300ms" }] }]
+
+[[case]]
+id       = "brightness_goes_safe_with_the_lease"
+requires = ["dimmable"]
+sim_only = true
+do       = [{ at = "100ms", method = "dim", args = { pct = "70 %" } }, { at = "1s", lease_expire = "brightness" }]
+expect   = [{ member = "brightness", equals = "0 %", level = "none", within = "1s .. 1.3s" }]
+
+[[case]]
+id       = "lease_expiry_goes_safe"
+spec     = ["16 A2", "ref/03 §2.6.3"]
+sim_only = true
+do       = [{ at = "100ms", method = "on" }, { at = "1s", lease_expire = "on" }]
+expect   = [{ member = "on", equals = false, level = "none", within = "1s .. 1.3s" }]
