@@ -3,8 +3,9 @@
 //! `TokioSerial`), `modbus-tcp` (`Link::Tcp` over `TokioTcpConnector`),
 //! `gpio` (`Link::Gpio` over `LinuxGpio`, chardev v1) and `i2c`
 //! (`Link::I2c` over `LinuxI2c`, `i2c-dev`, opened at the `dev` of the
-//! device's `i2c` bus). A device of any other driver is reported, and its
-//! signals read `bad(not_connected)`.
+//! device's `i2c` bus) and `revpi` (`Link::Paths` granting
+//! `/dev/piControl0`, ADR 0078). A device of any other driver is reported,
+//! and its signals read `bad(not_connected)`.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -14,6 +15,7 @@ use joker_core::{Clock, ClockQuality, QualityReason};
 use joker_driver_gpio::{GpioDriver, GpioPlanner};
 use joker_driver_i2c::{I2cDriver, I2cPlanner};
 use joker_driver_modbus::{ModbusPlanner, ModbusRtu, ModbusTcp, ModbusTcpPlanner};
+use joker_driver_revpi::{RevPiDriver, RevPiPlanner};
 use joker_driver_sysfs::{SysfsDriver, SysfsPlanner};
 use joker_hal::link::DevicePaths;
 use joker_hal::std_host::{
@@ -223,6 +225,50 @@ async fn run_modbus_tcp(
     let driver = match ModbusTcp::open(
         &OpenArgs::new(views.request(), hal_plan.view()),
         Link::Tcp(endpoint),
+    ) {
+        Ok(d) => d,
+        Err(e) => return setup_failed(&shared, &plan, device_index, &host, format!("open: {e:?}")),
+    };
+    let targets = point_targets(&plan, device_index);
+    run_driver(
+        driver,
+        &*host,
+        views.request(),
+        hal_plan.view(),
+        device.timeout_ns,
+        &targets,
+        &shared,
+        device_index,
+        device.fallback_keepalive_ns,
+        action_rx,
+        move || *stop.borrow_and_update(),
+    )
+    .await;
+}
+
+/// Where the `revpi` driver finds piControl: `/dev`, granting only
+/// `piControl0` (ADR 0078).
+pub const REVPI_DEV: &str = "/dev";
+
+async fn run_revpi(
+    device: DevicePlan,
+    plan: Arc<Plan>,
+    device_index: usize,
+    shared: Arc<Shared>,
+    host: Arc<TokioHost>,
+    mut stop: watch::Receiver<bool>,
+    action_rx: tokio::sync::mpsc::Receiver<ActionCall>,
+) {
+    let owned = owned_request(&device);
+    let views = owned.views();
+    let hal_plan = match RevPiPlanner::plan(&views.request()) {
+        Ok(p) => p,
+        Err(e) => return setup_failed(&shared, &plan, device_index, &host, format!("plan: {e:?}")),
+    };
+    let paths = DevicePaths::new(REVPI_DEV, &[joker_driver_revpi::image::NODE]);
+    let driver = match RevPiDriver::open(
+        &OpenArgs::new(views.request(), hal_plan.view()),
+        Link::Paths(paths),
     ) {
         Ok(d) => d,
         Err(e) => return setup_failed(&shared, &plan, device_index, &host, format!("open: {e:?}")),
@@ -588,6 +634,11 @@ impl Devices for RealDevices {
                 "gpio" => {
                     self.handle
                         .spawn(run_gpio(device, plan, i, shared, host, stop, action_rx));
+                    true
+                }
+                "revpi" => {
+                    self.handle
+                        .spawn(run_revpi(device, plan, i, shared, host, stop, action_rx));
                     true
                 }
                 "i2c" => {
