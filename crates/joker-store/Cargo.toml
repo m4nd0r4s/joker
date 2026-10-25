@@ -1,0 +1,19 @@
+[package]
+name = "joker-store"
+description = "The local historian: shared WAL, Gorilla-compressed series segments, tiered retention and persistent cursors"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+crossbeam-queue = "0.3.12"
+zstd.workspace = true
+
+[dev-dependencies]
+tempfile = "3.23"
+
+[lints]
+workspace = true
