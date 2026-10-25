@@ -18,6 +18,7 @@ joker-driver-sysfs = { path = "../joker-drivers/sysfs" }
 joker-driver-modbus = { path = "../joker-drivers/modbus" }
 joker-driver-gpio = { path = "../joker-drivers/gpio" }
 joker-driver-i2c = { path = "../joker-drivers/i2c" }
+joker-driver-revpi = { path = "../joker-drivers/revpi" }
 joker-api = { path = "../joker-api" }
 joker-host.workspace = true
 humantime = "2.3"

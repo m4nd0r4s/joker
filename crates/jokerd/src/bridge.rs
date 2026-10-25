@@ -348,6 +348,12 @@ fn point_shape(
             _ => None,
         },
         "i2c" => Some((RawKind::Bytes, u16::from(addr_len?))),
+        "revpi" => match type_name {
+            "bool" => Some((RawKind::Bool, 0)),
+            "i64" => Some((RawKind::Int, 0)),
+            "u64" => Some((RawKind::Uint, 0)),
+            _ => None,
+        },
         _ => None,
     }
 }
@@ -733,7 +739,11 @@ fn point_from_raw(
     raw: &BTreeMap<String, Node>,
     acquisition: joker_manifest::context::Acquisition,
 ) -> Result<DevicePointPlan, BridgeError> {
-    let addr = table_to_cbor(raw);
+    let addr = if driver == "revpi" && !raw.contains_key("var") {
+        joker_hal::cbor::Value::map([("var", joker_hal::cbor::Value::text(signal))]).encode()
+    } else {
+        table_to_cbor(raw)
+    };
     let addr_len = if driver == "i2c" {
         i2c_len(&addr)
     } else {

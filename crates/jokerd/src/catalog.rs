@@ -4,7 +4,7 @@
 //! This is the M0 catalogue: `sim`, `sysfs`, `modbus-rtu`, `modbus-tcp`
 //! (device keys of ref/01 appendix A: `address = "<host>:<port>"` and
 //! `unit_id`; a TCP device without a shared bus needs no `bus`, ADR 0049),
-//! `gpio` and `i2c`, the bench profile `local/bench-esp32@1` and the bench
+//! `gpio`, `i2c` and `revpi` (ADR 0078), the bench profile `local/bench-esp32@1` and the bench
 //! boards (docs/26 §6, docs/23 §1). The driver crates will
 //! describe themselves once `joker-hal` lands; this module then only merges
 //! their descriptions.
@@ -85,6 +85,14 @@ pub fn drivers() -> BTreeMap<String, DriverInfo> {
             ]
             .into_iter()
             .collect(),
+            ..DriverInfo::default()
+        },
+    );
+    d.insert(
+        "revpi".to_owned(),
+        DriverInfo {
+            profile_required: false,
+            address: [("var".to_owned(), None)].into_iter().collect(),
             ..DriverInfo::default()
         },
     );
