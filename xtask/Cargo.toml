@@ -15,6 +15,7 @@ joker-units.workspace = true
 joker-expr.workspace = true
 toml = "1.1"
 serde_json = "1.0"
+sha2 = "0.10.9"
 critical-section = { workspace = true, features = ["std"] }
 jokerd = { path = "../crates/jokerd" }
 joker-driver-modbus = { path = "../crates/joker-drivers/modbus" }
