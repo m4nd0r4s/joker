@@ -1,5 +1,7 @@
 //! The runtime half of `modbus-rtu`: one request per batch on the serial
-//! line, coil writes with their echo, the reads and writes of a step by
+//! line, output writes confirmed by their echo (coils with FC 5 or 15,
+//! registers with FC 6 or 16, a register bit by read-modify-write, ADR
+//! 0076), the reads and writes of a step by
 //! address (`raw-access`, ADR 0073), and every failure mapped to the batch
 //! failures of ref/06 §2.8.
 //!
@@ -16,7 +18,8 @@ use joker_hal::{
     SerialPort, WriteAcks, WriteKind, WriteStatus, code,
 };
 
-use crate::access::Access;
+use crate::access::Pdu;
+use crate::access::{Access, OutputWrite, echoes, holding_read, register_write, with_bit};
 use crate::plan::{Address, Quirks, Request, check_point, span, unit_id};
 use crate::rtu::{MAX_ADU, crc_ok, frame, read_data_len, request};
 
@@ -153,6 +156,51 @@ impl ModbusRtu {
         }
         result
     }
+
+    /// Sends a write request and checks that the answer echoes it.
+    async fn send_write(&mut self, cx: &Cx<'_>, pdu: &Pdu) -> Result<(), Fail> {
+        let (request, n) = frame(self.unit, pdu.as_bytes());
+        let mut buf = [0u8; MAX_ADU];
+        let len = self.exchange(cx, &request[..n], 4, &mut buf).await?;
+        if len == 8 && echoes(&buf[1..6], pdu.as_bytes()) {
+            Ok(())
+        } else {
+            Err(Fail::Garbled)
+        }
+    }
+
+    /// Reads the one holding register at `at` with FC 3.
+    async fn read_holding(&mut self, cx: &Cx<'_>, at: u16) -> Result<u16, Fail> {
+        let (request, n) = frame(self.unit, holding_read(at).as_bytes());
+        let mut buf = [0u8; MAX_ADU];
+        let len = self.exchange(cx, &request[..n], 3, &mut buf).await?;
+        if len != 7 || buf[2] != 2 {
+            return Err(Fail::Garbled);
+        }
+        Ok(u16::from_be_bytes([buf[3], buf[4]]))
+    }
+
+    /// Writes one output point and says how it went.
+    async fn write_output(&mut self, cx: &Cx<'_>, p: Point, value: RawValue<'_>) -> WriteStatus {
+        let op = match OutputWrite::of(&p.addr, p.span, value, self.quirks.single_fc16) {
+            Ok(op) => op,
+            Err(status) => return status,
+        };
+        let done = match op {
+            OutputWrite::Direct(pdu) => self.send_write(cx, &pdu).await,
+            OutputWrite::Bit { at, bit, on, fc16 } => match self.read_holding(cx, at).await {
+                Ok(word) => {
+                    self.send_write(cx, &register_write(at, with_bit(word, bit, on), fc16))
+                        .await
+                }
+                Err(f) => Err(f),
+            },
+        };
+        match done {
+            Ok(()) => WriteStatus::Ok,
+            Err(f) => f.write(),
+        }
+    }
 }
 
 fn io_fail(e: IoError) -> Fail {
@@ -280,17 +328,9 @@ impl Driver for ModbusRtu {
                 acks.set(k, WriteStatus::Skipped, None);
                 continue;
             }
-            let status = match (self.point(w.point), w.value, w.kind) {
-                (_, _, WriteKind::Relinquish) => WriteStatus::Unsupported,
-                (Some(p), RawValue::Bool(on), _) if p.output && p.addr.fc == 5 => {
-                    let frame = request(self.unit, 5, p.addr.at, if on { 0xFF00 } else { 0x0000 });
-                    let mut buf = [0u8; MAX_ADU];
-                    match self.exchange(cx, &frame, 4, &mut buf).await {
-                        Ok(8) if buf[..6] == frame[..6] => WriteStatus::Ok,
-                        Ok(_) => WriteStatus::CommFailure,
-                        Err(f) => f.write(),
-                    }
-                }
+            let status = match (self.point(w.point), w.kind) {
+                (_, WriteKind::Relinquish) => WriteStatus::Unsupported,
+                (Some(p), _) if p.output => self.write_output(cx, p, w.value).await,
                 _ => WriteStatus::Unsupported,
             };
             if status != WriteStatus::Ok
@@ -336,13 +376,8 @@ impl Driver for ModbusRtu {
         req: &AddrWrite<'_>,
     ) -> Result<(), BatchFailure> {
         let access = Access::parse(req.addr, req.type_name)?;
-        let (request, n) = frame(self.unit, access.write(req.value)?.as_bytes());
-        let mut buf = [0u8; MAX_ADU];
-        match self.exchange(cx, &request[..n], 4, &mut buf).await {
-            Ok(8) if buf[..6] == request[..6] => Ok(()),
-            Ok(_) => Err(BatchFailure::CommFailure("unexpected response")),
-            Err(f) => Err(f.batch()),
-        }
+        let pdu = access.write(req.value)?;
+        self.send_write(cx, &pdu).await.map_err(Fail::batch)
     }
 
     fn health(&self, out: &mut HealthOut<'_>) {

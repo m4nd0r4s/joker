@@ -1,5 +1,7 @@
 //! The runtime half of `modbus-tcp`: one TCP connection per device,
-//! reconnected on demand, MBAP-framed requests, the reads and writes of a
+//! reconnected on demand, MBAP-framed requests, output writes confirmed by
+//! their echo (coils with FC 5 or 15, registers with FC 6 or 16, a
+//! register bit by read-modify-write, ADR 0076), the reads and writes of a
 //! step by address (`raw-access`, ADR 0073), and every failure mapped
 //! to the batch failures of ref/06 §2.8 (ADR: same PDU/exception handling
 //! as `modbus-rtu`, only the framing and the transport differ).
@@ -14,7 +16,7 @@ use joker_hal::{
     TcpEndpoint, WriteAcks, WriteKind, WriteStatus, code,
 };
 
-use crate::access::Access;
+use crate::access::{Access, OutputWrite, Pdu, echoes, holding_read, register_write, with_bit};
 use crate::plan::{Address, Quirks, Request, check_point, span, unit_id};
 use crate::tcp::{MAX_ADU, frame, header_length, read_data_len, request, transaction_of};
 
@@ -181,6 +183,57 @@ impl ModbusTcp {
         }
         result
     }
+
+    /// Sends a write request and checks that the answer echoes it.
+    async fn send_write(&mut self, cx: &Cx<'_>, pdu: &Pdu) -> Result<(), Fail> {
+        let transaction = self.transaction();
+        let (request, n) = frame(transaction, self.unit, pdu.as_bytes());
+        let mut buf = [0u8; MAX_ADU];
+        let len = self
+            .exchange(cx, &request[..n], 4, transaction, &mut buf)
+            .await?;
+        if len == 12 && echoes(&buf[7..12], pdu.as_bytes()) {
+            Ok(())
+        } else {
+            Err(Fail::Garbled)
+        }
+    }
+
+    /// Reads the one holding register at `at` with FC 3.
+    async fn read_holding(&mut self, cx: &Cx<'_>, at: u16) -> Result<u16, Fail> {
+        let transaction = self.transaction();
+        let (request, n) = frame(transaction, self.unit, holding_read(at).as_bytes());
+        let mut buf = [0u8; MAX_ADU];
+        let len = self
+            .exchange(cx, &request[..n], 3, transaction, &mut buf)
+            .await?;
+        if len != 11 || buf[8] != 2 {
+            return Err(Fail::Garbled);
+        }
+        Ok(u16::from_be_bytes([buf[9], buf[10]]))
+    }
+
+    /// Writes one output point and says how it went.
+    async fn write_output(&mut self, cx: &Cx<'_>, p: Point, value: RawValue<'_>) -> WriteStatus {
+        let op = match OutputWrite::of(&p.addr, p.span, value, self.quirks.single_fc16) {
+            Ok(op) => op,
+            Err(status) => return status,
+        };
+        let done = match op {
+            OutputWrite::Direct(pdu) => self.send_write(cx, &pdu).await,
+            OutputWrite::Bit { at, bit, on, fc16 } => match self.read_holding(cx, at).await {
+                Ok(word) => {
+                    self.send_write(cx, &register_write(at, with_bit(word, bit, on), fc16))
+                        .await
+                }
+                Err(f) => Err(f),
+            },
+        };
+        match done {
+            Ok(()) => WriteStatus::Ok,
+            Err(f) => f.write(),
+        }
+    }
 }
 
 impl Driver for ModbusTcp {
@@ -309,24 +362,9 @@ impl Driver for ModbusTcp {
                 acks.set(k, WriteStatus::Skipped, None);
                 continue;
             }
-            let status = match (self.point(w.point), w.value, w.kind) {
-                (_, _, WriteKind::Relinquish) => WriteStatus::Unsupported,
-                (Some(p), RawValue::Bool(on), _) if p.output && p.addr.fc == 5 => {
-                    let transaction = self.transaction();
-                    let frame = request(
-                        transaction,
-                        self.unit,
-                        5,
-                        p.addr.at,
-                        if on { 0xFF00 } else { 0x0000 },
-                    );
-                    let mut buf = [0u8; MAX_ADU];
-                    match self.exchange(cx, &frame, 4, transaction, &mut buf).await {
-                        Ok(12) if buf[7..12] == frame[7..12] => WriteStatus::Ok,
-                        Ok(_) => WriteStatus::CommFailure,
-                        Err(f) => f.write(),
-                    }
-                }
+            let status = match (self.point(w.point), w.kind) {
+                (_, WriteKind::Relinquish) => WriteStatus::Unsupported,
+                (Some(p), _) if p.output => self.write_output(cx, p, w.value).await,
                 _ => WriteStatus::Unsupported,
             };
             if status != WriteStatus::Ok
@@ -375,17 +413,7 @@ impl Driver for ModbusTcp {
     ) -> Result<(), BatchFailure> {
         let access = Access::parse(req.addr, req.type_name)?;
         let pdu = access.write(req.value)?;
-        let transaction = self.transaction();
-        let (request, n) = frame(transaction, self.unit, pdu.as_bytes());
-        let mut buf = [0u8; MAX_ADU];
-        match self
-            .exchange(cx, &request[..n], 4, transaction, &mut buf)
-            .await
-        {
-            Ok(12) if buf[7..12] == request[7..12] => Ok(()),
-            Ok(_) => Err(BatchFailure::CommFailure("unexpected response")),
-            Err(f) => Err(f.batch()),
-        }
+        self.send_write(cx, &pdu).await.map_err(Fail::batch)
     }
 
     fn health(&self, out: &mut HealthOut<'_>) {
