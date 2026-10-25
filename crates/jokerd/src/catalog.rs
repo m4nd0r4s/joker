@@ -216,6 +216,24 @@ pub fn std_classes() -> BTreeMap<String, ClassInfo> {
         .collect()
 }
 
+/// The class contracts a generation runs with, by reference: those of
+/// `std/` and those `files` carries (`contracts/…`), whose hashes are
+/// verified; a file that does not read back is left out (the checks
+/// already reported it).
+pub fn contracts_for_files(
+    files: &CatalogFiles,
+) -> BTreeMap<String, joker_jkc::contract::ContractFile> {
+    let mut out = joker_jkc::stdlib::contracts();
+    for (name, text) in files {
+        if name.starts_with("contracts/")
+            && let Ok(file) = joker_jkc::contract::ContractFile::from_json(text)
+        {
+            out.insert(file.contract.reference(), file);
+        }
+    }
+    out
+}
+
 /// The context of the manifest checks: the M0 catalogue, the classes of
 /// `std/`, plus the apps the task providers can run.
 pub fn context(tasks: &dyn TaskProvider) -> Context {

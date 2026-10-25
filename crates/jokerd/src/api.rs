@@ -7,11 +7,13 @@ use std::time::Duration;
 
 use joker_api::model::{
     ARTIFACT_KINDS, AckRequest, ActivateRequest, BulkResetRequest, GenerationProposal,
-    InvokeActionRequest, ManualWriteRequest, MissingBlobsRequest, ReasonBody, ReleaseRequest,
-    ResetTripRequest, RollbackRequest, ShelveRequest, TraceRequest,
+    InvokeActionRequest, ManualWriteRequest, MethodCallRequest, MissingBlobsRequest, ReasonBody,
+    ReleaseRequest, ResetTripRequest, RollbackRequest, ShelveRequest, TraceRequest,
 };
 use joker_api::{Backend, Headers, Principal, Problem, Query, Reply};
-use joker_core::image::{Intent, NO_TASK, Proposal, RELINQUISH, Source as ProposalSource};
+use joker_core::image::{
+    Intent, MAX_METHOD_ARGS, MethodCall, NO_TASK, Proposal, RELINQUISH, Source as ProposalSource,
+};
 use joker_core::outcome::Outcome;
 use joker_core::output::Band;
 use joker_core::{Level, WriterKind};
@@ -1898,6 +1900,277 @@ impl Backend for Node {
             .cancel(id)
             .map(|i| Reply::ok(i.json(false)))
             .map_err(refused)
+    }
+
+    fn call_method(
+        &self,
+        who: &Principal,
+        instance: &str,
+        method: &str,
+        req: MethodCallRequest,
+    ) -> Result<Reply, Problem> {
+        if self.role_of(who) < Role::Operator {
+            return Err(Problem::new(
+                "J-E1002",
+                403,
+                "calling a method requires the role `operator`",
+            ));
+        }
+        let v = self.need_view()?;
+        let (index, inst) = v
+            .plan
+            .instances
+            .iter()
+            .enumerate()
+            .find(|(_, i)| i.name == instance)
+            .ok_or_else(|| {
+                Problem::new("J-E1410", 404, format!("`{instance}` is not an instance"))
+            })?;
+        let (number, m) = inst.method(method).ok_or_else(|| {
+            Problem::new(
+                "J-E1411",
+                404,
+                format!("`{instance}` has no method `{method}`"),
+            )
+        })?;
+        let ttl_text = req.ttl.clone().ok_or_else(|| {
+            bad("J-E1101", "a manual call needs a TTL (A10)").with("pointer", json!("/ttl"))
+        })?;
+        let ttl = parse_duration(&ttl_text)
+            .map_err(|e| bad("J-E1012", e).with("pointer", json!("/ttl")))?;
+        if ttl < 1_000_000_000 {
+            return Err(bad("J-E1103", "the TTL is below 1 s").with("pointer", json!("/ttl")));
+        }
+        let outputs: Vec<OutputPlan> = m
+            .writes
+            .iter()
+            .filter_map(|w| v.plan.output(w).cloned())
+            .collect();
+        if let Some(max) = outputs.iter().map(|o| o.max_manual_ns).min()
+            && ttl > max
+        {
+            return Err(bad(
+                "J-E1102",
+                format!("the TTL is above max_manual ({})", duration(max)),
+            )
+            .with("pointer", json!("/ttl")));
+        }
+        let reason = req
+            .reason
+            .clone()
+            .filter(|r| !r.is_empty())
+            .ok_or_else(|| {
+                bad("J-E1106", "a manual call needs a reason").with("pointer", json!("/reason"))
+            })?;
+        let level = Self::manual_level(req.level.as_deref())?;
+        if let Some(unknown) = req
+            .args
+            .keys()
+            .find(|k| !m.params.iter().any(|p| &p.name == *k))
+        {
+            return Err(
+                bad("J-E1412", format!("`{method}` has no argument `{unknown}`"))
+                    .with("pointer", json!(format!("/args/{unknown}"))),
+            );
+        }
+        let mut args = [0u64; MAX_METHOD_ARGS];
+        if m.params.len() > MAX_METHOD_ARGS {
+            return Err(bad("J-E1412", "too many arguments"));
+        }
+        for (slot, p) in args.iter_mut().zip(&m.params) {
+            let value = req.args.get(&p.name).ok_or_else(|| {
+                bad("J-E1412", format!("missing argument `{}`", p.name))
+                    .with("pointer", json!(format!("/args/{}", p.name)))
+            })?;
+            let signal = crate::plan::SignalPlan {
+                path: p.name.clone(),
+                ty: p.ty,
+                unit: p.unit.clone(),
+                direction: joker_core::registry::Direction::Input,
+                group: None,
+                max_age_ns: None,
+                device: None,
+                variants: Vec::new(),
+                enum_name: None,
+            };
+            *slot = input_bits(&signal, value).map_err(|e| {
+                bad("J-E1412", e.detail).with("pointer", json!(format!("/args/{}", p.name)))
+            })?;
+        }
+        let wait_timeout = match &req.wait_timeout {
+            Some(t) => Duration::from_nanos(parse_duration(t).map_err(|e| bad("J-E1012", e))?),
+            None => Duration::from_secs(5),
+        };
+        if wait_timeout > MAX_WAIT {
+            return Err(bad("J-E1012", "`wait_timeout` is above 30s")
+                .with("pointer", json!("/wait_timeout")));
+        }
+        let group = inst.group.clone().ok_or_else(|| {
+            Problem::new(
+                "J-E1411",
+                404,
+                format!("`{instance}.{method}` writes no output of this node"),
+            )
+        })?;
+        let principal = user(who);
+        let now = self.now_mono();
+        let mut taken = Vec::new();
+        for o in &outputs {
+            if let Some(h) = self.manual.get(&o.path, level, now)
+                && h.principal != principal
+            {
+                if !req.takeover {
+                    return Err(Problem::new(
+                        "J-E1105",
+                        409,
+                        format!(
+                            "manual:{level} of `{}` is held by {} until {}: {}",
+                            o.path,
+                            h.principal,
+                            timestamp(h.until_utc_ns),
+                            h.reason
+                        ),
+                    ));
+                }
+                taken.push(o.clone());
+            }
+        }
+        let writer = v
+            .plan
+            .writer(&format!("user:manual:{level}"))
+            .ok_or_else(|| Problem::new("J-E1000", 500, "manual writer missing"))?;
+        let relinquish: Vec<Proposal> = taken
+            .iter()
+            .map(|o| Proposal {
+                writer,
+                signal: v.plan.id(&o.path).unwrap_or(joker_core::SignalId(0)),
+                value: 0,
+                flags: RELINQUISH,
+                source: ProposalSource::Async,
+                ticket: 0,
+                ttl_ns: 0,
+                intent: Intent::Write,
+                task: NO_TASK,
+            })
+            .collect();
+        self.stage(&v, &relinquish, &group)?;
+        let n = self.tickets.number();
+        let g = v
+            .plan
+            .groups
+            .iter()
+            .position(|gr| gr.name == group)
+            .ok_or_else(|| Problem::new("J-E1000", 500, "owner group missing"))?;
+        let inbox = v
+            .shared
+            .method_inboxes
+            .get(g)
+            .ok_or_else(|| Problem::new("J-E1000", 500, "method inbox missing"))?;
+        inbox
+            .push(MethodCall {
+                writer,
+                instance: u32::try_from(index).unwrap_or(u32::MAX),
+                method: u16::try_from(number).unwrap_or(u16::MAX),
+                args,
+                n_args: u8::try_from(m.params.len()).unwrap_or(u8::MAX),
+                source: ProposalSource::Async,
+                ticket: n,
+                task: NO_TASK,
+                ttl_ns: ttl,
+            })
+            .map_err(|_| Problem::new("J-E1014", 503, "the owner group's inbox is full"))?;
+        let since = utc_now_ns();
+        let until = since.saturating_add(i64::try_from(ttl).unwrap_or(i64::MAX));
+        let call = json!({"method": format!("{instance}.{method}"), "args": req.args});
+        for o in &outputs {
+            let stored = self.manual.set(
+                &o.path,
+                level,
+                Occupant {
+                    principal: principal.clone(),
+                    value: call.clone(),
+                    ttl_ns: ttl,
+                    since_utc_ns: since,
+                    until_utc_ns: until,
+                    until_mono_ns: now.saturating_add(ttl),
+                    reason: reason.clone(),
+                },
+                now,
+            );
+            self.persisted(
+                StateWriteFailure {
+                    generation: Some(v.number),
+                    file: "state/manual",
+                    output: Some(&o.path),
+                    op: "set",
+                },
+                stored,
+            );
+        }
+        let id = joker_api::server::ulid(u128::try_from(since).unwrap_or(0));
+        let mut writes: Vec<Value> = outputs
+            .iter()
+            .enumerate()
+            .map(|(i, o)| {
+                json!({
+                    "id": joker_api::server::ulid(u128::try_from(since).unwrap_or(0) + 1 + i as u128),
+                    "output": o.path,
+                    "kind": "method",
+                    "state": "queued",
+                    "writer": principal,
+                    "level": format!("manual:{level}"),
+                    "ttl": duration(ttl),
+                    "lease_until": timestamp(until),
+                    "generation": {"gen": v.number, "hash": v.hash},
+                })
+            })
+            .collect();
+        let mut status = 202;
+        if req.wait
+            && let Some(result) = self.tickets.wait_method(&v.shared, n, wait_timeout)
+        {
+            if let Some(code) = result.error {
+                return Err(Problem::new(
+                    code,
+                    422,
+                    format!("`{instance}.{method}` expanded to nothing"),
+                ));
+            }
+            let mut committed = 0;
+            for _ in 0..result.writes {
+                let Some(r) = self.tickets.wait(&v.shared, n, wait_timeout) else {
+                    break;
+                };
+                let Some(path) = v.plan.path(r.proposal.signal).map(str::to_owned) else {
+                    continue;
+                };
+                let Some(signal) = v.plan.signal(&path).cloned() else {
+                    continue;
+                };
+                let applied = match r.applied {
+                    joker_core::envelope::Applied::Relinquish => json!("relinquish"),
+                    joker_core::envelope::Applied::Value(b) => wire::value(&signal, b),
+                };
+                if let Some(w) = writes.iter_mut().find(|w| w["output"] == json!(path)) {
+                    w["state"] = json!("committed");
+                    w["value"] = wire::value(&signal, r.proposal.value);
+                    w["outcome"] = outcome_json(r.outcome, Some(applied));
+                    w["tick"] = json!({"group": group, "seq": r.tick});
+                    committed += 1;
+                }
+            }
+            if committed == result.writes as usize {
+                status = 200;
+            }
+        }
+        let body = json!({
+            "id": id,
+            "instance": instance,
+            "method": method,
+            "writes": writes,
+        });
+        self.tickets.put(&id, body.clone());
+        Ok(Reply::with_status(status, body))
     }
 
     fn decisions(&self, query: &Query) -> Result<Reply, Problem> {

@@ -2140,3 +2140,103 @@ async fn runtime_alarms_rise_and_clear_through_the_cycle_loop() {
         .collect();
     assert_eq!(logged.len(), 3, "{logged:#?}");
 }
+
+/// A composite `std/led@1` over a simulated output and the implicit
+/// `std/led@1` and `std/button@1` of the bench ESP32 (track part 7).
+fn classes_manifest() -> String {
+    "[project]\n\
+     name  = \"classes-test\"\n\
+     joker = \"1.0\"\n\
+     mode  = \"dev\"\n\
+     \n\
+     [outputs.\"pi.act_led\"]\n\
+     safe = false\n\
+     \n\
+     [outputs.\"esp.led\"]\n\
+     safe = false\n\
+     \n\
+     [devices.pi]\n\
+     driver = \"sim\"\n\
+     \n\
+     [devices.pi.signals]\n\
+     act_led = { type = \"bool\", direction = \"output\" }\n\
+     \n\
+     [devices.esp]\n\
+     driver  = \"modbus-tcp\"\n\
+     address = \"127.0.0.1:1\"\n\
+     unit_id = 1\n\
+     profile = \"local/bench-esp32@1\"\n\
+     \n\
+     [instances.led_pi]\n\
+     class = \"std/led@1\"\n\
+     map   = { on = \"pi.act_led\" }\n"
+        .to_owned()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn class_methods_expand_into_manual_writes_of_the_caller() {
+    let f = start_with(&classes_manifest()).await;
+    let tpl = "/v1/instances/{instance}/methods/{method}";
+    let call = |instance: &'static str, method: &'static str, body: Value| {
+        let path = format!("/v1/instances/{instance}/methods/{method}");
+        let f = &f;
+        async move { f.call("POST", tpl, &path, Some(body)).await }
+    };
+    let on = call("led_pi", "on", json!({"ttl": "10s", "reason": "bench"})).await;
+    assert_eq!(on.status, 200, "{}", on.json());
+    let body = on.json();
+    assert_eq!(body["instance"], "led_pi");
+    assert_eq!(body["writes"][0]["output"], "pi.act_led");
+    assert_eq!(body["writes"][0]["level"], "manual:4");
+    assert_eq!(body["writes"][0]["outcome"]["outcome"], "accepted");
+    assert_eq!(body["writes"][0]["value"], true);
+    let toggle = call("led_pi", "toggle", json!({"ttl": "10s", "reason": "bench"})).await;
+    assert_eq!(
+        toggle.json()["writes"][0]["value"],
+        false,
+        "{}",
+        toggle.json()
+    );
+    let set = call(
+        "led_pi",
+        "set",
+        json!({"args": {"v": true}, "ttl": "10s", "reason": "bench"}),
+    )
+    .await;
+    assert_eq!(set.json()["writes"][0]["value"], true, "{}", set.json());
+    let implicit = call("esp", "on", json!({"ttl": "10s", "reason": "bench"})).await;
+    assert_eq!(implicit.status, 200, "{}", implicit.json());
+    assert_eq!(implicit.json()["writes"][0]["output"], "esp.led");
+    assert_eq!(implicit.json()["writes"][0]["value"], true);
+    for (instance, method, body, code) in [
+        (
+            "nobody",
+            "on",
+            json!({"ttl": "10s", "reason": "x"}),
+            "J-E1410",
+        ),
+        (
+            "led_pi",
+            "fly",
+            json!({"ttl": "10s", "reason": "x"}),
+            "J-E1411",
+        ),
+        ("led_pi", "on", json!({"reason": "x"}), "J-E1101"),
+        ("led_pi", "on", json!({"ttl": "10s"}), "J-E1106"),
+        (
+            "led_pi",
+            "set",
+            json!({"args": {"v": 3}, "ttl": "10s", "reason": "x"}),
+            "J-E1412",
+        ),
+        (
+            "led_pi",
+            "on",
+            json!({"args": {"x": 1}, "ttl": "10s", "reason": "x"}),
+            "J-E1412",
+        ),
+    ] {
+        let r = call(instance, method, body).await;
+        assert_eq!(r.json()["code"], code, "{instance}.{method}: {}", r.json());
+    }
+}

@@ -37,6 +37,32 @@ fn yes() -> bool {
     true
 }
 
+/// `MethodCallRequest` (ref/09 §5.11): a class method called as a manual
+/// writer (docs/17 §4.1).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MethodCallRequest {
+    /// The method's arguments, by name; quantities accept literals.
+    #[serde(default)]
+    pub args: Map<String, Value>,
+    /// TTL, mandatory (docs/16 A10).
+    pub ttl: Option<String>,
+    /// `manual:3`–`manual:5`, default `manual:4`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub level: Option<String>,
+    /// Why, mandatory.
+    pub reason: Option<String>,
+    /// Take the level from another principal.
+    #[serde(default)]
+    pub takeover: bool,
+    /// Wait for the tick that expands and commits the call.
+    #[serde(default = "yes")]
+    pub wait: bool,
+    /// How long to wait, default `5s`, at most `30s`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wait_timeout: Option<String>,
+}
+
 /// `ReleaseRequest` (ref/09 §5.6).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

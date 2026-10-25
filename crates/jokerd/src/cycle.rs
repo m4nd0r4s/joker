@@ -11,10 +11,10 @@ use std::fmt;
 use std::sync::atomic::Ordering;
 
 use joker_core::alarm::{AlarmEvent, AlarmRuntime, AlarmSnapshot, Alarms};
-use joker_core::class::Classes;
+use joker_core::class::{Classes, MethodResult};
 use joker_core::commit::{CommitSink, DecisionRecord, OutputResult, OutputState, WriteResult};
 use joker_core::envelope::Applied;
-use joker_core::image::{ImageStorage, ProcessImage, Proposal};
+use joker_core::image::{ImageStorage, MethodCall, ProcessImage, Proposal};
 use joker_core::slot::SeqExtender;
 use joker_core::trace::{SegmentWriter, TickRecord, TraceResult};
 use joker_core::{GroupId, Outputs, OutputsStorage, Sample, SignalId, WriterId};
@@ -157,6 +157,12 @@ impl CommitSink for Sink<'_> {
             self.shared.alarm_events_dropped.bump();
         }
     }
+
+    fn method(&mut self, result: &MethodResult) {
+        if result.call.ticket != 0 && self.shared.method_results.push(*result).is_err() {
+            self.shared.method_results_dropped.bump();
+        }
+    }
 }
 
 struct GroupRun<'a> {
@@ -196,9 +202,13 @@ pub fn run(
     let mut intakes = vec![None; STAGING_CAPACITY];
     let mut output_arena = vec![0u64; tables.outputs.iter().map(|c| c.state_words()).sum()];
     let derived = crate::expr_plan::derived_defs(plan, &registry).map_err(CycleError)?;
-    let mut derived_arena = vec![0u64; derived.iter().map(|d| d.expr.state_words()).sum()];
-    let mut method_scratch = Vec::new();
-    let mut classes = Classes::new(&[], &derived, &mut method_scratch);
+    let call_args = crate::classes::call_args(plan);
+    let statements = crate::classes::statements(plan, &call_args).map_err(CycleError)?;
+    let methods = crate::classes::methods(plan, &statements);
+    let instances = crate::classes::instances(&methods);
+    let mut method_scratch = vec![Proposal::EMPTY; STAGING_CAPACITY];
+    let mut classes = Classes::new(&instances, &derived, &mut method_scratch);
+    let mut derived_arena = vec![0u64; classes.state_words()];
     classes
         .set_state_arena(&mut derived_arena)
         .map_err(|e| CycleError(format!("derived signals: {e:?}")))?;
@@ -271,18 +281,26 @@ pub fn run(
         .iter()
         .map(|_| vec![Proposal::EMPTY; STAGING_CAPACITY])
         .collect();
+    let mut method_buffers: Vec<Vec<MethodCall>> = plan
+        .groups
+        .iter()
+        .map(|_| vec![MethodCall::EMPTY; STAGING_CAPACITY])
+        .collect();
 
     let mut groups = Vec::with_capacity(plan.groups.len());
     let storage = ports
         .iter()
         .zip(snapshots.iter_mut())
         .zip(extenders.iter_mut())
-        .zip(proposals.iter_mut());
+        .zip(proposals.iter_mut())
+        .zip(method_buffers.iter_mut());
     let generation_hash = crate::trace_ring::digest_bytes(&plan.manifest_hash);
-    for (index, ((group, mut tasks), (((ports, snapshot), extenders), proposals))) in
-        plan.groups.iter().zip(tasks).zip(storage).enumerate()
+    for (
+        index,
+        ((group, mut tasks), ((((ports, snapshot), extenders), proposals), method_buffer)),
+    ) in plan.groups.iter().zip(tasks).zip(storage).enumerate()
     {
-        let image = ProcessImage::new(
+        let mut image = ProcessImage::new(
             GroupId(index as u32),
             group.period_ns,
             ImageStorage {
@@ -293,6 +311,7 @@ pub fn run(
             },
         )
         .map_err(|e| CycleError(format!("group `{}`: {e:?}", group.name)))?;
+        image.set_method_buffer(method_buffer);
         for (writer, task) in &mut tasks {
             task.prepare(&Prepare {
                 registry: &registry,
@@ -418,6 +437,13 @@ fn tick(
             }
         }
     }
+    if let Some(inbox) = shared.method_inboxes.get(g.index) {
+        while let Some(call) = inbox.pop() {
+            if g.image.stage_method(call).is_err() {
+                stats.dropped_proposals.bump();
+            }
+        }
+    }
     g.pending_resets.clear();
     if let Some(resets) = shared.resets.get(g.index) {
         while g.pending_resets.len() < g.pending_resets.capacity() {
@@ -499,6 +525,13 @@ fn tick(
         at_mono_ns: at.mono_ns,
         pending_resets: &mut g.pending_resets,
     };
+    if expressions
+        .classes
+        .expand(&mut g.image, &shared.slots, outputs, &mut sink)
+        .is_err()
+    {
+        stats.task_errors.bump();
+    }
     if outputs.commit(&g.image, &shared.slots, &mut sink).is_err() {
         stats.task_errors.bump();
     }
@@ -563,9 +596,9 @@ fn trace(g: &mut GroupRun<'_>, index: u64, at: joker_core::Instant, shared: &Sha
         index,
         at,
         inputs: g.image.snapshot(),
-        proposals: g.image.proposals(),
+        proposals: g.image.direct_proposals(),
         results: &g.results,
-        methods: &[],
+        methods: g.image.method_calls(),
     };
     let len = match SegmentWriter::new(g.index as u32, &mut buf) {
         Ok(mut w) => match w.push(&record) {

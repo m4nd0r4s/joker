@@ -112,6 +112,9 @@ fn shared() -> Shared {
     Shared {
         slots: vec![Slot::new()].into_boxed_slice(),
         inboxes: Vec::new().into_boxed_slice(),
+        method_inboxes: Vec::new().into_boxed_slice(),
+        method_results: crossbeam_queue::ArrayQueue::new(1),
+        method_results_dropped: Default::default(),
         resets: Vec::new().into_boxed_slice(),
         trips: Vec::new().into_boxed_slice(),
         reset_results: crossbeam_queue::ArrayQueue::new(1),

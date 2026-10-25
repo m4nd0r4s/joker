@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use joker_core::alarm::{AlarmRuntime, Alarms};
 use joker_core::class::Classes;
 use joker_core::commit::{CommitSink, OutputResult, OutputState};
-use joker_core::image::{ImageStorage, ProcessImage, Proposal, Source};
+use joker_core::image::{ImageStorage, MethodCall, ProcessImage, Proposal, Source};
 use joker_core::slot::SeqExtender;
 use joker_core::trace::{
     Header, Item, Items, PROPOSAL_FLAG_ASYNC, RESULT_LEN, States, Ticks, TraceResult,
@@ -16,6 +16,7 @@ use joker_core::trace::{
 use crate::compress::decompress;
 use joker_core::{
     ClockQuality, GroupId, Instant, Outputs, OutputsStorage, Quality, Sample, SignalId, Slot,
+    WriterKind,
 };
 use joker_manifest::Manifest;
 
@@ -68,6 +69,7 @@ struct Tick {
     at: Instant,
     inputs: Vec<(u32, Quality, u64)>,
     proposals: Vec<Proposal>,
+    methods: Vec<MethodCall>,
     results: Vec<u8>,
 }
 
@@ -169,6 +171,19 @@ pub fn replay(
                                 ..p.to_proposal()
                             })
                             .collect(),
+                        methods: t
+                            .method_calls()
+                            .filter_map(Result::ok)
+                            .filter(|m| {
+                                plan.writers
+                                    .get(m.writer.0 as usize)
+                                    .is_some_and(|w| w.config.kind != WriterKind::Cycle)
+                            })
+                            .map(|m| MethodCall {
+                                source: Source::Async,
+                                ..m
+                            })
+                            .collect(),
                         results: t.result_bytes().to_vec(),
                     });
                 }
@@ -205,9 +220,13 @@ pub fn replay(
     let mut intakes = vec![None; STAGING_CAPACITY];
     let mut output_arena = vec![0u64; tables.outputs.iter().map(|c| c.state_words()).sum()];
     let derived = crate::expr_plan::derived_defs(plan, &registry)?;
-    let mut derived_arena = vec![0u64; derived.iter().map(|d| d.expr.state_words()).sum()];
-    let mut method_scratch = Vec::new();
-    let mut classes = Classes::new(&[], &derived, &mut method_scratch);
+    let call_args = crate::classes::call_args(plan);
+    let statements = crate::classes::statements(plan, &call_args)?;
+    let methods = crate::classes::methods(plan, &statements);
+    let instances = crate::classes::instances(&methods);
+    let mut method_scratch = vec![Proposal::EMPTY; STAGING_CAPACITY];
+    let mut classes = Classes::new(&instances, &derived, &mut method_scratch);
+    let mut derived_arena = vec![0u64; classes.state_words()];
     classes
         .set_state_arena(&mut derived_arena)
         .map_err(|e| format!("derived signals: {e:?}"))?;
@@ -250,28 +269,34 @@ pub fn replay(
         .iter()
         .map(|_| vec![Proposal::EMPTY; STAGING_CAPACITY])
         .collect();
+    let mut method_buffers: Vec<Vec<MethodCall>> = plan
+        .groups
+        .iter()
+        .map(|_| vec![MethodCall::EMPTY; STAGING_CAPACITY])
+        .collect();
     let mut images = Vec::new();
-    for (i, (((p, s), e), q)) in ports
+    for (i, ((((p, s), e), q), m)) in ports
         .iter()
         .zip(snapshots.iter_mut())
         .zip(extenders.iter_mut())
         .zip(staging.iter_mut())
+        .zip(method_buffers.iter_mut())
         .enumerate()
     {
         let period = plan.groups[i].period_ns;
-        images.push(
-            ProcessImage::new(
-                GroupId(i as u32),
-                period,
-                ImageStorage {
-                    ports: p,
-                    snapshot: s,
-                    extenders: e,
-                    proposals: q,
-                },
-            )
-            .map_err(|e| format!("{e:?}"))?,
-        );
+        let mut image = ProcessImage::new(
+            GroupId(i as u32),
+            period,
+            ImageStorage {
+                ports: p,
+                snapshot: s,
+                extenders: e,
+                proposals: q,
+            },
+        )
+        .map_err(|e| format!("{e:?}"))?;
+        image.set_method_buffer(m);
+        images.push(image);
     }
 
     let generation_hash = crate::trace_ring::digest_bytes(&plan.manifest_hash);
@@ -309,6 +334,9 @@ pub fn replay(
         for p in &t.proposals {
             let _ = image.stage_async(*p);
         }
+        for m in &t.methods {
+            let _ = image.stage_method(*m);
+        }
         classes
             .evaluate_derived(image, &slots)
             .map_err(|e| format!("tick {}: {e:?}", t.index))?;
@@ -327,6 +355,17 @@ pub fn replay(
             let mut cx = TaskContext::new(image, &outputs, *writer);
             let _ = task.run(&mut cx);
         }
+        results.clear();
+        classes
+            .expand(
+                image,
+                &slots,
+                &outputs,
+                &mut Collect {
+                    results: &mut results,
+                },
+            )
+            .map_err(|e| format!("tick {}: {e:?}", t.index))?;
         results.clear();
         outputs
             .commit(

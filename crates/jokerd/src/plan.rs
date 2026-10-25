@@ -249,6 +249,9 @@ pub struct Plan {
     /// `[telemetry]`: what the historian records and its store policy
     /// (ref/01 §5.17, ADR 0082).
     pub telemetry: crate::historian::TelemetryPlan,
+    /// The class instances, composite and implicit; an instance's number
+    /// in its method records is its position here (ADR 0084).
+    pub instances: Vec<crate::classes::InstancePlan>,
 }
 
 /// The borrowed core tables of a plan.
@@ -297,11 +300,14 @@ fn binding_paths(binding: &Binding) -> Vec<String> {
 
 impl Plan {
     /// Plans a checked manifest. `paths` and `manifest_hash` come from the
-    /// same `joker_manifest::check` report, which must have no errors.
+    /// same `joker_manifest::check` report, which must have no errors;
+    /// `contracts` are the class contracts the context's classes came
+    /// from, by reference.
     pub fn new(
         manifest: &Manifest,
         paths: &PathRegistry,
         context: &Context,
+        contracts: &BTreeMap<String, joker_jkc::contract::ContractFile>,
         manifest_hash: &str,
     ) -> Result<Plan, PlanError> {
         let mut groups: BTreeMap<String, GroupPlan> = BTreeMap::new();
@@ -570,7 +576,10 @@ impl Plan {
             instance_actions: Vec::new(),
             roles: crate::actions::socket_roles(manifest),
             telemetry: crate::historian::TelemetryPlan::default(),
+            instances: Vec::new(),
         };
+        plan.index()?;
+        let queries = crate::classes::declare(&mut plan, manifest, context, contracts)?;
         plan.index()?;
         plan.permit_sources = crate::bridge::permit_sources(manifest, &plan.devices);
         plan.instance_actions = crate::actions::instance_actions(manifest, &plan.devices);
@@ -580,10 +589,11 @@ impl Plan {
                     .insert((a.instance.clone(), a.action.clone()), source.clone());
             }
         }
-        crate::expr_plan::bind(&mut plan, manifest)?;
+        crate::expr_plan::bind(&mut plan, manifest, &queries)?;
         representable_outputs(&mut plan)?;
         plan.index()?;
         plan.telemetry = crate::historian::telemetry_plan(manifest, &plan)?;
+        crate::classes::compile(&mut plan, manifest, context, contracts)?;
         Ok(plan)
     }
 

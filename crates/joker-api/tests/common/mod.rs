@@ -11,8 +11,8 @@ use std::time::Duration;
 use futures_util::{SinkExt, StreamExt};
 use joker_api::model::{
     ActivateRequest, BulkResetRequest, GenerationProposal, InvokeActionRequest, ManualWriteRequest,
-    MissingBlobsRequest, ReasonBody, ReleaseRequest, ResetTripRequest, RollbackRequest,
-    TraceRequest,
+    MethodCallRequest, MissingBlobsRequest, ReasonBody, ReleaseRequest, ResetTripRequest,
+    RollbackRequest, TraceRequest,
 };
 use joker_api::ws::Limits;
 use joker_api::{Backend, Headers, Principal, Problem, Query, Reply};
@@ -254,6 +254,16 @@ impl Backend for Stub {
         _who: &Principal,
         _id: &str,
         _request: ReasonBody,
+    ) -> Result<Reply, Problem> {
+        none()
+    }
+
+    fn call_method(
+        &self,
+        _who: &Principal,
+        _instance: &str,
+        _method: &str,
+        _request: MethodCallRequest,
     ) -> Result<Reply, Problem> {
         none()
     }

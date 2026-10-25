@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use joker_core::class::MethodResult;
 use joker_core::commit::WriteResult;
 use serde::{Deserialize, Serialize};
 
@@ -258,7 +259,8 @@ pub const TICKET_RETENTION: Duration = Duration::from_secs(600);
 #[derive(Debug, Default)]
 pub struct TicketBook {
     next: Mutex<u32>,
-    results: Mutex<HashMap<u32, WriteResult>>,
+    results: Mutex<HashMap<u32, Vec<WriteResult>>>,
+    method_results: Mutex<HashMap<u32, MethodResult>>,
     reset_results: Mutex<HashMap<u32, ResetOutcome>>,
     tickets: Mutex<BTreeMap<String, Ticket>>,
 }
@@ -285,7 +287,38 @@ impl TicketBook {
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
                 while let Some(r) = shared.results.pop() {
-                    results.insert(r.proposal.ticket, r);
+                    results.entry(r.proposal.ticket).or_default().push(r);
+                }
+                if let Some(list) = results.get_mut(&n)
+                    && !list.is_empty()
+                {
+                    let r = list.remove(0);
+                    if list.is_empty() {
+                        results.remove(&n);
+                    }
+                    return Some(r);
+                }
+            }
+            if start.elapsed() >= timeout {
+                return None;
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    }
+
+    /// Waits for what the method record with ticket `n` expanded to,
+    /// draining the generation's method-result queue meanwhile; `None`
+    /// after `timeout` (ADR 0084).
+    pub fn wait_method(&self, shared: &Shared, n: u32, timeout: Duration) -> Option<MethodResult> {
+        let start = Instant::now();
+        loop {
+            {
+                let mut results = self
+                    .method_results
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                while let Some(r) = shared.method_results.pop() {
+                    results.insert(r.call.ticket, r);
                 }
                 if let Some(r) = results.remove(&n) {
                     return Some(r);
