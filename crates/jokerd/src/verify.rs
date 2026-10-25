@@ -16,6 +16,7 @@ use joker_core::{Outputs, Quality, QualityCode, QualityReason, SignalId, ValueTy
 use joker_units::Conversion;
 
 use crate::plan::Plan;
+use crate::shared::Shared;
 
 #[derive(Debug, Clone, Copy)]
 struct Entry {
@@ -83,8 +84,10 @@ impl Verifier {
     }
 
     /// Checks the outputs owned by `group` after its commit at `now`.
-    pub fn check(&mut self, group: usize, outputs: &Outputs<'_>, slots: &[Slot], now: u64) {
+    pub fn check(&mut self, group: usize, outputs: &Outputs<'_>, shared: &Shared, now: u64) {
+        let slots = &shared.slots;
         for e in self.entries.iter_mut().filter(|e| e.group == group) {
+            let was = e.unconfirmed;
             let Some(view) = outputs.view(e.output) else {
                 continue;
             };
@@ -92,6 +95,9 @@ impl Verifier {
                 e.applied = Some(view.applied);
                 e.disagree_since = None;
                 e.unconfirmed = false;
+                if was {
+                    shared.set_unconfirmed(e.output, false);
+                }
             }
             let Applied::Value(bits) = view.applied else {
                 continue;
@@ -113,6 +119,9 @@ impl Verifier {
                 continue;
             };
             if agrees {
+                if e.unconfirmed {
+                    shared.set_unconfirmed(e.output, false);
+                }
                 e.disagree_since = None;
                 e.unconfirmed = false;
                 let held = slot
@@ -126,6 +135,7 @@ impl Verifier {
             let since = *e.disagree_since.get_or_insert(now);
             if !e.unconfirmed && now.saturating_sub(since) >= e.within_ns {
                 e.unconfirmed = true;
+                shared.set_unconfirmed(e.output, true);
                 mark(
                     slot,
                     Quality::new(QualityCode::Uncertain, QualityReason::NotConfirmed),

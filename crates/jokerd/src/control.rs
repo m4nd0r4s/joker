@@ -827,6 +827,7 @@ impl Controller {
         self.refresh_clock_for(Some(number));
         let plan = Arc::new(loaded.plan);
         let pacer = (self.pacer)();
+        let restored_manual = self.persistent.restored_without_sync();
         let restore = self
             .persistent
             .restore_for(&plan, pacer.now().mono_ns, &self.log, number);
@@ -849,6 +850,8 @@ impl Controller {
                 restore,
                 alarms: Some(Arc::clone(&self.alarms)),
                 historian: Some(Arc::clone(&self.historian)),
+                manual: Some(self.persistent.manual()),
+                restored_manual,
             },
         )
         .map_err(|e| ControlError::new("J-E1000", 500, e.0))?;

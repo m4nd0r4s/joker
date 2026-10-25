@@ -26,6 +26,8 @@ use crate::expr_plan::{AlarmPlan, CalcPlan, OutputExprs};
 pub const DEFAULT_GROUP: &str = "default";
 /// The period of the implicit `default` group.
 pub const DEFAULT_PERIOD_NS: u64 = 100_000_000;
+/// `alarm_after` of a group that does not declare it (ref/01 §5.11).
+pub const DEFAULT_ALARM_AFTER: u32 = 10;
 /// The manual levels a person can hold (ref/01 §3.11).
 pub const MANUAL_LEVELS: [u8; 3] = [3, 4, 5];
 
@@ -69,6 +71,9 @@ pub struct GroupPlan {
     pub tasks: Vec<TaskPlan>,
     /// Signals the group latches, in path order; ids are resolved later.
     pub ports: Vec<String>,
+    /// `alarm_after`: consecutive overruns that raise
+    /// `joker.group.<g>.overrun` (ref/01 §5.11).
+    pub alarm_after: u32,
 }
 
 /// One cycle task of an app.
@@ -312,6 +317,7 @@ impl Plan {
                     period_ns: period,
                     tasks: Vec::new(),
                     ports: Vec::new(),
+                    alarm_after: u32::try_from(cycle.alarm_after.max(1)).unwrap_or(u32::MAX),
                 },
             );
         }
@@ -402,6 +408,7 @@ impl Plan {
                     period_ns: DEFAULT_PERIOD_NS,
                     tasks: Vec::new(),
                     ports: Vec::new(),
+                    alarm_after: DEFAULT_ALARM_AFTER,
                 },
             );
         }

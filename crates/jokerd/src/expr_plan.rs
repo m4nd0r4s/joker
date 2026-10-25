@@ -900,6 +900,7 @@ pub(crate) fn bind(plan: &mut Plan, manifest: &Manifest) -> Result<(), PlanError
                 period_ns: CALC_PERIOD_NS,
                 tasks: Vec::new(),
                 ports: Vec::new(),
+                alarm_after: crate::plan::DEFAULT_ALARM_AFTER,
             },
         );
     }

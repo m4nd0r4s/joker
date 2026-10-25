@@ -95,6 +95,31 @@ pub struct Annotation {
     pub until_utc_ns: Option<i64>,
 }
 
+/// A runtime alarm's condition at one evaluation (ADR 0085).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeCondition {
+    /// The id (`joker.…`).
+    pub id: String,
+    /// The severity.
+    pub severity: Severity,
+    /// The message, already with its values.
+    pub message: String,
+    /// Whether the condition holds.
+    pub active: bool,
+}
+
+/// The next state of the lifecycle of docs/02 §11 without delays.
+fn next_state(current: AlarmState, active: bool) -> AlarmState {
+    match (current, active) {
+        (AlarmState::Normal | AlarmState::RtnUnacked | AlarmState::Unknown, true) => {
+            AlarmState::ActiveUnacked
+        }
+        (AlarmState::ActiveUnacked, false) => AlarmState::RtnUnacked,
+        (AlarmState::ActiveAcked, false) => AlarmState::Normal,
+        (s, _) => s,
+    }
+}
+
 /// One alarm as the API shows it (ref/09 §5.8 `Alarm`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entry {
@@ -167,6 +192,9 @@ pub struct AlarmBook {
 
 fn persisted_json(e: &Entry) -> Value {
     json!({
+        "source": e.source,
+        "severity": severity_name(e.severity),
+        "message": e.message,
         "underlying": state_name(e.underlying),
         "shelved": e.shelved.as_ref().map(|s| json!({
             "until_ns": s.until_utc_ns,
@@ -208,12 +236,16 @@ impl AlarmBook {
                         .unwrap_or("")
                         .to_owned(),
                 });
+                let runtime = p["source"] == "runtime";
                 book.entries.insert(
                     id.clone(),
                     Entry {
                         id,
-                        source: "manifest",
-                        severity: Severity::Low,
+                        source: if runtime { "runtime" } else { "manifest" },
+                        severity: p["severity"]
+                            .as_str()
+                            .and_then(severity_of)
+                            .unwrap_or(Severity::Low),
                         state: underlying,
                         underlying,
                         uncertain: false,
@@ -221,7 +253,11 @@ impl AlarmBook {
                         acked_by: p["acked_by"].as_str().map(str::to_owned),
                         acked_at: p["acked_at_ns"].as_i64(),
                         since: p["since_ns"].as_i64(),
-                        message: None,
+                        message: if runtime {
+                            p["message"].as_str().map(str::to_owned)
+                        } else {
+                            None
+                        },
                         condition: String::new(),
                         signals: None,
                         trips: Vec::new(),
@@ -413,6 +449,35 @@ impl AlarmBook {
         Some(Value::Object(m))
     }
 
+    fn event_json(
+        e: &Entry,
+        kind: &str,
+        from: AlarmState,
+        utc_ns: i64,
+        annotation: Option<&Annotation>,
+    ) -> Value {
+        let mut m = Map::new();
+        m.insert("id".into(), json!(e.id));
+        m.insert("ts".into(), json!(timestamp(utc_ns)));
+        m.insert("kind".into(), json!(kind));
+        m.insert("from".into(), json!(state_name(from)));
+        m.insert("to".into(), json!(state_name(e.state)));
+        m.insert("severity".into(), json!(severity_name(e.severity)));
+        if let Some(a) = annotation {
+            m.insert("by".into(), json!(a.by));
+            if let Some(r) = &a.reason {
+                m.insert("reason".into(), json!(r));
+            }
+        }
+        m.insert(
+            "message".into(),
+            json!(e.message.clone().unwrap_or_else(|| e.id.clone())),
+        );
+        m.insert("uncertain".into(), json!(false));
+        m.insert("shelved".into(), json!(e.shelved.is_some()));
+        Value::Object(m)
+    }
+
     /// Makes events visible to [`AlarmBook::wait_change`] once they are
     /// in the journal (ADR 0082): an API answer never precedes them.
     pub fn published(&self, ids: &[String]) {
@@ -425,6 +490,135 @@ impl AlarmBook {
         }
         drop(book);
         self.changed.notify_all();
+    }
+
+    /// Moves a runtime alarm with its condition (ADR 0085) and returns the
+    /// journal entry of a transition. An alarm that never held is not in
+    /// the book.
+    pub fn runtime(&self, c: &RuntimeCondition, utc_ns: i64) -> Option<Value> {
+        let mut book = self.lock();
+        let entry = match book.entries.get_mut(&c.id) {
+            Some(e) => e,
+            None if c.active => book.entries.entry(c.id.clone()).or_insert(Entry {
+                id: c.id.clone(),
+                source: "runtime",
+                severity: c.severity,
+                state: AlarmState::Normal,
+                underlying: AlarmState::Normal,
+                uncertain: false,
+                shelved: None,
+                acked_by: None,
+                acked_at: None,
+                since: None,
+                message: None,
+                condition: String::new(),
+                signals: None,
+                trips: Vec::new(),
+                max_shelve_ns: joker_core::alarm::DEFAULT_MAX_SHELVE_NS,
+                number: None,
+            }),
+            None => return None,
+        };
+        let from = entry.state;
+        let next = next_state(from, c.active);
+        if c.active || entry.message.is_none() {
+            entry.message = Some(c.message.clone());
+        }
+        entry.severity = c.severity;
+        if next == from {
+            return None;
+        }
+        entry.state = next;
+        entry.underlying = next;
+        entry.since = Some(utc_ns);
+        if next == AlarmState::ActiveUnacked {
+            entry.acked_by = None;
+            entry.acked_at = None;
+        }
+        let event = Self::event_json(entry, "transition", from, utc_ns, None);
+        book.dirty = true;
+        *book.pending.entry(c.id.clone()).or_default() += 1;
+        Some(event)
+    }
+
+    /// Acknowledges, shelves or unshelves a runtime alarm, in the book
+    /// itself (ADR 0085), and returns the journal entry.
+    pub fn runtime_command(
+        &self,
+        id: &str,
+        op: crate::shared::AlarmOp,
+        annotation: Annotation,
+        utc_ns: i64,
+    ) -> Result<Option<Value>, joker_core::alarm::AlarmError> {
+        use crate::shared::AlarmOp;
+        use joker_core::alarm::AlarmError;
+        let mut book = self.lock();
+        let entry = book
+            .entries
+            .get_mut(id)
+            .filter(|e| e.source == "runtime")
+            .ok_or(AlarmError::Unknown)?;
+        let from = entry.state;
+        let kind = match op {
+            AlarmOp::Ack => {
+                let next = match entry.state {
+                    AlarmState::ActiveUnacked => AlarmState::ActiveAcked,
+                    AlarmState::RtnUnacked => AlarmState::Normal,
+                    _ => return Ok(None),
+                };
+                entry.state = next;
+                entry.underlying = next;
+                entry.acked_by = Some(annotation.by.clone());
+                entry.acked_at = Some(utc_ns);
+                "ack"
+            }
+            AlarmOp::Shelve(ttl) => {
+                if ttl == 0 || ttl > entry.max_shelve_ns {
+                    return Err(AlarmError::BadTtl);
+                }
+                entry.shelved = Some(Shelved {
+                    until_utc_ns: annotation.until_utc_ns.unwrap_or_else(|| {
+                        utc_ns.saturating_add(i64::try_from(ttl).unwrap_or(i64::MAX))
+                    }),
+                    by: annotation.by.clone(),
+                    reason: annotation.reason.clone().unwrap_or_default(),
+                });
+                "shelve"
+            }
+            AlarmOp::Unshelve => {
+                if entry.shelved.take().is_none() {
+                    return Err(AlarmError::NotShelved);
+                }
+                "unshelve"
+            }
+        };
+        let event = Self::event_json(entry, kind, from, utc_ns, Some(&annotation));
+        book.dirty = true;
+        *book.pending.entry(id.to_owned()).or_default() += 1;
+        Ok(Some(event))
+    }
+
+    /// Ends the shelves of runtime alarms whose TTL has run out; the
+    /// manifest's alarms end theirs in the core.
+    pub fn expire_runtime_shelves(&self, utc_ns: i64) -> Vec<Value> {
+        let mut book = self.lock();
+        let mut out = Vec::new();
+        let mut ids = Vec::new();
+        for e in book.entries.values_mut() {
+            if e.source == "runtime" && e.shelved.as_ref().is_some_and(|s| s.until_utc_ns <= utc_ns)
+            {
+                e.shelved = None;
+                out.push(Self::event_json(e, "shelve_expired", e.state, utc_ns, None));
+                ids.push(e.id.clone());
+            }
+        }
+        if !ids.is_empty() {
+            book.dirty = true;
+        }
+        for id in ids {
+            *book.pending.entry(id).or_default() += 1;
+        }
+        out
     }
 
     /// Writes the book to `state/alarms` if it changed.
@@ -619,14 +813,16 @@ pub struct AlarmPump {
     handle: Option<JoinHandle<()>>,
 }
 
-/// Where the pump writes.
+/// Where alarm events go: the book's state file, the historian's alarm
+/// journal and the decision log (ADR 0082, ADR 0085).
 #[derive(Debug, Clone)]
-pub struct PumpTargets {
+pub struct Journal {
     /// The book.
     pub book: Arc<AlarmBook>,
     /// The historian's store and the journal's series, if there is one.
     pub journal: Option<(Arc<Store>, SeriesId)>,
-    /// The decision log, for a failed write of `state/alarms`.
+    /// The decision log: an `alarm` record per event, and a failed write
+    /// of `state/alarms`.
     pub log: SharedLog,
     /// The generation.
     pub generation: u64,
@@ -634,7 +830,73 @@ pub struct PumpTargets {
     pub utc_origin_ns: i64,
 }
 
-fn drain(plan: &Plan, shared: &Shared, t: &PumpTargets, reported: &mut bool) {
+impl Journal {
+    /// Writes events the book already applied, as (UTC ns, `AlarmEvent`),
+    /// to the journal (synced, class `alarm`) and the decision log,
+    /// persists the book, and only then publishes them to the API; a
+    /// failed write of `state/alarms` is recorded once until one succeeds.
+    pub fn write(&self, events: &[(i64, Value)], reported: &mut bool) {
+        if let Some((store, series)) = &self.journal
+            && !events.is_empty()
+        {
+            let records: Vec<Record> = events
+                .iter()
+                .map(|(utc, entry)| Record {
+                    series: *series,
+                    payload: Payload::Event(Event {
+                        ts_ns: *utc,
+                        ts_src_ns: None,
+                        seq: 0,
+                        payload: serde_json::to_vec(entry).unwrap_or_default(),
+                    }),
+                })
+                .collect();
+            store.append(&records);
+        }
+        for (utc, entry) in events {
+            let mut m = Map::new();
+            m.insert("gen".into(), json!(self.generation));
+            m.insert("record".into(), json!("alarm"));
+            if let Value::Object(e) = entry {
+                for key in [
+                    "id", "kind", "from", "to", "severity", "by", "reason", "message",
+                ] {
+                    if let Some(v) = e.get(key) {
+                        m.insert(key.into(), v.clone());
+                    }
+                }
+            }
+            m.insert("ts".into(), json!(timestamp(*utc)));
+            if let Err(e) = crate::decisions::lock(&self.log).append(m, true) {
+                eprintln!("jokerd: decision log: {e}");
+            }
+        }
+        if events.is_empty() && !*reported {
+            return;
+        }
+        match self.book.persist() {
+            Ok(()) => *reported = false,
+            Err(e) if !*reported => {
+                *reported = true;
+                StateWriteFailure {
+                    generation: Some(self.generation),
+                    file: "state/alarms",
+                    output: None,
+                    op: "alarm",
+                }
+                .report(&self.log, &e);
+            }
+            Err(_) => {}
+        }
+        let ids: Vec<String> = events
+            .iter()
+            .filter_map(|(_, e)| e["id"].as_str().map(str::to_owned))
+            .collect();
+        self.book.published(&ids);
+    }
+}
+
+fn drain(plan: &Plan, shared: &Shared, t: &Journal, reported: &mut bool) {
     let mut events = Vec::new();
     while let Some(event) = shared.alarm_events.pop() {
         let utc = t
@@ -644,49 +906,12 @@ fn drain(plan: &Plan, shared: &Shared, t: &PumpTargets, reported: &mut bool) {
             events.push((utc, entry));
         }
     }
-    if let Some((store, series)) = &t.journal
-        && !events.is_empty()
-    {
-        let records: Vec<Record> = events
-            .iter()
-            .map(|(utc, entry)| Record {
-                series: *series,
-                payload: Payload::Event(Event {
-                    ts_ns: *utc,
-                    ts_src_ns: None,
-                    seq: 0,
-                    payload: serde_json::to_vec(entry).unwrap_or_default(),
-                }),
-            })
-            .collect();
-        store.append(&records);
-    }
-    if !events.is_empty() || *reported {
-        match t.book.persist() {
-            Ok(()) => *reported = false,
-            Err(e) if !*reported => {
-                *reported = true;
-                StateWriteFailure {
-                    generation: Some(t.generation),
-                    file: "state/alarms",
-                    output: None,
-                    op: "alarm",
-                }
-                .report(&t.log, &e);
-            }
-            Err(_) => {}
-        }
-    }
-    let ids: Vec<String> = events
-        .iter()
-        .filter_map(|(_, e)| e["id"].as_str().map(str::to_owned))
-        .collect();
-    t.book.published(&ids);
+    t.write(&events, reported);
 }
 
 impl AlarmPump {
     /// Starts draining `shared`'s alarm events.
-    pub fn spawn(plan: Arc<Plan>, shared: Arc<Shared>, targets: PumpTargets) -> io::Result<Self> {
+    pub fn spawn(plan: Arc<Plan>, shared: Arc<Shared>, targets: Journal) -> io::Result<Self> {
         let stop = Arc::new(AtomicBool::new(false));
         let flag = Arc::clone(&stop);
         let handle = std::thread::Builder::new()
