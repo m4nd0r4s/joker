@@ -31,6 +31,7 @@ pub mod real_devices;
 pub mod replay;
 pub mod resources;
 pub mod runner;
+pub mod runtime_alarms;
 pub mod shared;
 pub mod state_file;
 pub mod supervisor;

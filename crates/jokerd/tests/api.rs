@@ -2004,3 +2004,139 @@ async fn alarm_state_and_journal_survive_a_restart() {
     assert_eq!(ack.json()["state"], "normal");
     halt.halt();
 }
+
+/// An output with an actuation budget, for the runtime alarms of
+/// ref/01 §5.15 (ADR 0085).
+fn effective_with_budget() -> String {
+    "[project]\n\
+     name  = \"runtime-alarms\"\n\
+     joker = \"1.0\"\n\
+     mode  = \"dev\"\n\
+     \n\
+     [outputs.\"pi.p_set\"]\n\
+     safe           = \"0 kW\"\n\
+     range          = [\"-100 kW\", \"100 kW\"]\n\
+     max_actuations = \"2/h\"\n\
+     \n\
+     [devices.pi]\n\
+     driver = \"sim\"\n\
+     \n\
+     [devices.pi.signals]\n\
+     p_set = { type = \"f64\", direction = \"output\", unit = \"kW\" }\n"
+        .to_owned()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn runtime_alarms_rise_and_clear_through_the_cycle_loop() {
+    let f = start_with(&effective_with_budget()).await;
+    let mut last = Value::Null;
+    for v in [10, 20, 30] {
+        last = f
+            .call(
+                "POST",
+                "/v1/outputs/{path}/manual",
+                "/v1/outputs/pi.p_set/manual",
+                Some(json!({"value": v, "ttl": "10m", "reason": "budget", "wait": true})),
+            )
+            .await
+            .json();
+    }
+    assert_eq!(last["outcome"]["outcome"], "rejected", "{last}");
+    assert_eq!(last["outcome"]["reason"], "budget", "{last}");
+    let budget = wait_alarm(&f.http, "joker.output.pi.p_set.budget", "active_unacked").await;
+    assert_eq!(budget["source"], "runtime");
+    assert_eq!(budget["severity"], "high");
+    wait_alarm(
+        &f.http,
+        "joker.output.pi.p_set.manual_expiring",
+        "active_unacked",
+    )
+    .await;
+    let listed = f
+        .call(
+            "GET",
+            "/v1/alarms",
+            "/v1/alarms?sel=joker.**&state=active",
+            None,
+        )
+        .await;
+    assert_eq!(
+        listed.json()["items"].as_array().unwrap().len(),
+        2,
+        "{}",
+        listed.json()
+    );
+
+    let acked = f
+        .call(
+            "POST",
+            "/v1/alarms/{alarm}/ack",
+            "/v1/alarms/joker.output.pi.p_set.budget/ack",
+            Some(json!({"reason": "known"})),
+        )
+        .await;
+    assert_eq!(acked.status, 200, "{}", acked.json());
+    assert_eq!(acked.json()["state"], "active_acked");
+    let too_long = f
+        .call(
+            "POST",
+            "/v1/alarms/{alarm}/shelve",
+            "/v1/alarms/joker.output.pi.p_set.budget/shelve",
+            Some(json!({"ttl": "25h", "reason": "x"})),
+        )
+        .await;
+    assert_eq!(too_long.json()["code"], "J-E1202");
+
+    let released = f
+        .call(
+            "POST",
+            "/v1/outputs/{path}/release",
+            "/v1/outputs/pi.p_set/release",
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!(released.status, 200, "{}", released.json());
+    wait_alarm(&f.http, "joker.output.pi.p_set.budget", "normal").await;
+    wait_alarm(
+        &f.http,
+        "joker.output.pi.p_set.manual_expiring",
+        "rtn_unacked",
+    )
+    .await;
+
+    let mut kinds: Vec<(Value, Value)> = Vec::new();
+    for _ in 0..200 {
+        let journal = f
+            .call(
+                "GET",
+                "/v1/alarm-events",
+                "/v1/alarm-events?sel=joker.**&order=asc",
+                None,
+            )
+            .await;
+        kinds = journal.json()["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|e| e["id"] == "joker.output.pi.p_set.budget")
+            .map(|e| (e["kind"].clone(), e["to"].clone()))
+            .collect();
+        if kinds.len() >= 3 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert_eq!(
+        kinds,
+        vec![
+            (json!("transition"), json!("active_unacked")),
+            (json!("ack"), json!("active_acked")),
+            (json!("transition"), json!("normal")),
+        ]
+    );
+    let logged: Vec<Value> = decisions_from(f._dir.path(), 0)
+        .into_iter()
+        .filter(|e| e["record"] == "alarm" && e["id"] == "joker.output.pi.p_set.budget")
+        .collect();
+    assert_eq!(logged.len(), 3, "{logged:#?}");
+}

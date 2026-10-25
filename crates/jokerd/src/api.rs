@@ -760,6 +760,20 @@ fn outcome_json(outcome: Outcome, applied: Option<Value>) -> Value {
     Value::Object(m)
 }
 
+fn alarm_problem(id: &str, e: joker_core::alarm::AlarmError) -> Problem {
+    match e {
+        joker_core::alarm::AlarmError::BadTtl => {
+            Problem::new("J-E1202", 422, "the TTL is above the alarm's max_shelve")
+        }
+        joker_core::alarm::AlarmError::NotShelved => {
+            Problem::new("J-E1203", 409, format!("`{id}` is not shelved"))
+        }
+        joker_core::alarm::AlarmError::Unknown => {
+            Problem::new("J-E1200", 404, format!("unknown alarm `{id}`"))
+        }
+    }
+}
+
 /// What an operator command on an alarm needs checked first.
 enum AlarmAction {
     Ack(Option<String>),
@@ -768,6 +782,20 @@ enum AlarmAction {
 }
 
 impl Node {
+    /// Where an operator action on a runtime alarm is recorded.
+    fn journal(&self, generation: u64) -> crate::alarms::Journal {
+        crate::alarms::Journal {
+            book: Arc::clone(&self.alarms),
+            journal: Some((
+                Arc::clone(self.historian.store()),
+                self.historian.alarm_series(),
+            )),
+            log: Arc::clone(&self.log),
+            generation,
+            utc_origin_ns: self.utc_origin_ns,
+        }
+    }
+
     fn alarm_entry(&self, id: &str) -> Result<crate::alarms::Entry, Problem> {
         self.alarms
             .get(id)
@@ -823,10 +851,6 @@ impl Node {
             ));
         }
         let entry = self.alarm_entry(id)?;
-        let v = self.need_view()?;
-        let number = entry
-            .number
-            .ok_or_else(|| Problem::new("J-E1200", 404, format!("unknown alarm `{id}`")))?;
         let now = utc_now_ns();
         let (op, annotation) = match action {
             AlarmAction::Ack(reason) => {
@@ -880,6 +904,21 @@ impl Node {
                 )
             }
         };
+        if entry.source == "runtime" {
+            let event = self
+                .alarms
+                .runtime_command(id, op, annotation, now)
+                .map_err(|e| alarm_problem(id, e))?;
+            if let Some(event) = event {
+                let generation = self.view().map_or(0, |v| v.number);
+                self.journal(generation).write(&[(now, event)], &mut false);
+            }
+            return self.alarm_reply(id);
+        }
+        let v = self.need_view()?;
+        let number = entry
+            .number
+            .ok_or_else(|| Problem::new("J-E1200", 404, format!("unknown alarm `{id}`")))?;
         let version = self.alarms.version(id);
         self.alarms.annotate(id, annotation);
         let ticket = self.tickets.number();
@@ -910,17 +949,7 @@ impl Node {
             Ok(false) => self.alarms.forget(id),
             Err(e) => {
                 self.alarms.forget(id);
-                return Err(match e {
-                    joker_core::alarm::AlarmError::BadTtl => {
-                        Problem::new("J-E1202", 422, "the TTL is above the alarm's max_shelve")
-                    }
-                    joker_core::alarm::AlarmError::NotShelved => {
-                        Problem::new("J-E1203", 409, format!("`{id}` is not shelved"))
-                    }
-                    joker_core::alarm::AlarmError::Unknown => {
-                        Problem::new("J-E1200", 404, format!("unknown alarm `{id}`"))
-                    }
-                });
+                return Err(alarm_problem(id, e));
             }
         }
         self.alarm_reply(id)

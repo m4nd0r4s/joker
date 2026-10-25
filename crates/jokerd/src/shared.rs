@@ -169,6 +169,9 @@ pub struct GroupStats {
     pub task_errors: Counter,
     /// Proposals dropped by a full inbox or staging buffer.
     pub dropped_proposals: Counter,
+    /// Ticks in a row that started a period or more late; 0 after a tick
+    /// on time (`joker.group.<g>.overrun`, ADR 0085).
+    pub consecutive_overruns: Counter,
     /// Monotonic instant this group's tick last *started* (`rt/supervisor`,
     /// AUR-274): a hang anywhere in the cycle thread stops this from
     /// advancing, which is exactly the staleness the supervisor watches.
@@ -399,6 +402,10 @@ pub struct Shared {
     pub alarm_commands: ArrayQueue<AlarmCommand>,
     /// Their replies.
     pub alarm_replies: ArrayQueue<AlarmReply>,
+    /// Per output (in [`Shared::output_ids`] order), whether its readback
+    /// does not confirm it (`verify`, `joker.output.<s>.unconfirmed`);
+    /// set by the cycle thread only.
+    pub unconfirmed: Box<[AtomicBool]>,
 }
 
 /// What the output stage does with one output besides writing its
@@ -598,6 +605,11 @@ impl Shared {
             alarm_events_dropped: Counter::default(),
             alarm_commands: ArrayQueue::new(ALARM_COMMAND_CAPACITY),
             alarm_replies: ArrayQueue::new(ALARM_COMMAND_CAPACITY),
+            unconfirmed: plan
+                .outputs
+                .iter()
+                .map(|_| AtomicBool::new(false))
+                .collect(),
         }
     }
 
@@ -623,6 +635,25 @@ impl Shared {
         {
             cell.store(since_mono_ns, Ordering::Relaxed);
         }
+    }
+
+    /// Records whether the readback of `signal` confirms it (cycle thread
+    /// only).
+    pub fn set_unconfirmed(&self, signal: SignalId, unconfirmed: bool) {
+        if let Ok(i) = self.output_ids.binary_search(&signal)
+            && let Some(cell) = self.unconfirmed.get(i)
+        {
+            cell.store(unconfirmed, Ordering::Relaxed);
+        }
+    }
+
+    /// Whether the readback of `signal` does not confirm it.
+    pub fn unconfirmed(&self, signal: SignalId) -> bool {
+        self.output_ids
+            .binary_search(&signal)
+            .ok()
+            .and_then(|i| self.unconfirmed.get(i))
+            .is_some_and(|c| c.load(Ordering::Relaxed))
     }
 
     /// Asks the cycle thread to stop.

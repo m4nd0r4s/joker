@@ -47,6 +47,24 @@ impl Persistent {
     }
 
     /// The persisted trips.
+    /// The manual levels restored at this startup without a synced clock
+    /// (docs/16 A14), as (output, level), for the first generation only:
+    /// they raise `joker.output.<s>.manual_restored` (ADR 0085).
+    pub fn restored_without_sync(&self) -> Vec<(String, u8)> {
+        if !self.first {
+            return Vec::new();
+        }
+        self.restored
+            .as_ref()
+            .map(|r| {
+                r.degraded
+                    .iter()
+                    .map(|l| (l.output.clone(), l.level))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     pub fn trips(&self) -> Arc<TripTable> {
         Arc::clone(&self.trips)
     }

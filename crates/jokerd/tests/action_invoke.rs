@@ -95,6 +95,7 @@ fn empty_shared(
         alarm_events_dropped: Default::default(),
         alarm_commands: crossbeam_queue::ArrayQueue::new(1),
         alarm_replies: crossbeam_queue::ArrayQueue::new(1),
+        unconfirmed: Vec::new().into_boxed_slice(),
     }
 }
 

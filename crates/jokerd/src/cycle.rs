@@ -336,7 +336,10 @@ pub fn run(
         if late >= g.period_ns {
             let current = (started.mono_ns - epoch) / g.period_ns;
             stats.overruns.add(current - index);
+            stats.consecutive_overruns.bump();
             index = current;
+        } else {
+            stats.consecutive_overruns.set(0);
         }
         g.next_index = index + 1;
         let mut one = || {
@@ -500,7 +503,7 @@ fn tick(
         stats.task_errors.bump();
     }
     shared.apply_confirmations(at.mono_ns);
-    verifier.check(g.index, outputs, &shared.slots, at.mono_ns);
+    verifier.check(g.index, outputs, shared, at.mono_ns);
     for tx in commit_tx.iter_mut() {
         tx.publish(outputs);
     }
