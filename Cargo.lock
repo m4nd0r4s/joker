@@ -1547,6 +1547,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "joker-store"
+version = "0.0.0"
+dependencies = [
+ "crossbeam-queue",
+ "tempfile",
+ "zstd",
+]
+
+[[package]]
 name = "joker-supply-chain"
 version = "0.0.0"
 dependencies = [
