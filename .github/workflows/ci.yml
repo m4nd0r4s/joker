@@ -302,15 +302,25 @@ jobs:
       - run: python3 tools/spec-lint/spec_lint.py --max-score 0.5
       - run: python3 -c "import tomllib; tomllib.load(open('crates/joker-manifest/codes.toml', 'rb'))"
 
-  cross-aarch64:
+  cross:
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - aarch64-unknown-linux-gnu
+          - armv7-unknown-linux-gnueabihf
+          - arm-unknown-linux-gnueabihf
+          - riscv64gc-unknown-linux-gnu
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - run: rustup show
+      - run: rustup target add ${{ matrix.target }}
       - uses: taiki-e/install-action@v2
         with:
           tool: cross
-      - run: cross build --release --target aarch64-unknown-linux-gnu -p jokerd
+      - name: cross-build jokerd for ${{ matrix.target }} (docs/13 §5, docs/26 E5)
+        run: cross build --locked --release --target ${{ matrix.target }} -p jokerd
 
   size:
     runs-on: ubuntu-24.04-arm
