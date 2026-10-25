@@ -1,0 +1,6 @@
+package fx
+
+class jc0320@1.0.0 {
+    in x: f64 1
+    query q: f64 1 = avg(x, 20 min)
+}

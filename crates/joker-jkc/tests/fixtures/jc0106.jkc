@@ -1,0 +1,5 @@
+package fx
+
+class jc0106@1.0.0 {
+    query q: bool = 1 + 2
+}

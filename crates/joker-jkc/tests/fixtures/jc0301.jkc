@@ -1,0 +1,6 @@
+package fx
+
+class jc0301@1.0.0 {
+    in t: f64 °C
+    query hot: bool = t > 5 bar
+}

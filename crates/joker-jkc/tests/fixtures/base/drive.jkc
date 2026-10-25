@@ -1,0 +1,21 @@
+package fx
+
+/// A drive with run, fault and an optional speed reference.
+class drive@1.0.0 {
+    out run_cmd: bool @safe_hint(false)
+    in running: bool
+    in fault: bool
+
+    action reset() -> () @timeout(5 s)
+
+    method start() { run_cmd = true }
+    method stop() { run_cmd = false }
+
+    capability variable_speed {
+        out speed_set: f64 % @safe_hint(0 %) @range_hint(0 %, 100 %)
+        atomic method run_at(pct: f64 %) order(speed_set, run_cmd) {
+            speed_set = clamp(pct, 0 %, 100 %)
+            run_cmd = pct > 0 %
+        }
+    }
+}

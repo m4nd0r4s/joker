@@ -1,0 +1,6 @@
+package fx
+
+class jc0502@1.0.0 {
+    member ds: fx/drive@1[1..4]
+    method m() { ds.stop() }
+}

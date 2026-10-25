@@ -1,0 +1,5 @@
+package fx
+
+class chain_c@1.0.0 {
+    in x: bool
+}

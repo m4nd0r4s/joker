@@ -1,0 +1,5 @@
+package fx
+
+class j0847@1.0.0 {
+    member x: fx/nothing@1
+}
