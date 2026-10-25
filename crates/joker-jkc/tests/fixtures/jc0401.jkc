@@ -1,0 +1,6 @@
+package fx
+
+class jc0401@1.0.0 {
+    member d: fx/drive@1
+    method m() { d.reset() }
+}

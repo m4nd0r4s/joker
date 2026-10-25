@@ -1,0 +1,5 @@
+package fx
+
+class jc0103@1.0.0 {
+    query q: bool = missing
+}

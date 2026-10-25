@@ -1,0 +1,6 @@
+package fx
+
+class jc0503@1.0.0 {
+    member d: fx/drive@1
+    method m(p: f64 %) { d.run_at(p) }
+}

@@ -1,0 +1,6 @@
+package fx
+
+class jc0310@1.0.0 {
+    query a: bool = b
+    query b: bool = a
+}

@@ -1,0 +1,7 @@
+package fx
+
+class jc0205@1.0.0 {
+    out a: bool @safe_hint(false)
+    out b: bool @safe_hint(false)
+    atomic method m() { a = true; b = true }
+}
