@@ -312,6 +312,7 @@ impl FixtureView<'_> {
             trips: &self.trips,
             members: &self.members,
             order: &self.order,
+            instances: &[],
         }
     }
 }

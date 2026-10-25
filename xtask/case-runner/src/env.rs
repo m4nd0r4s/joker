@@ -3,13 +3,14 @@
 //! the selectors of ref/01 §3.9.
 
 use joker_core::ValueType;
+use joker_core::class::ARG_SIGNAL_BASE;
 use joker_core::registry::Registry;
 use joker_expr::{
     CheckOptions, CompileOptions, Diagnostic, EnumId, Env, Program, SignalInfo, SignalType,
 };
 use joker_units::{Duration, Unit};
 
-use crate::model::Fixture;
+use crate::model::{Fixture, ParamSpec};
 
 /// The expression type of a signal type.
 pub fn signal_type(ty: ValueType) -> SignalType {
@@ -177,6 +178,31 @@ impl<'f> FixtureEnv<'f> {
         )
     }
 
+    /// Checks and compiles the expression `src` of a class method whose
+    /// parameters are `params`: parameter `i` is read as the signal
+    /// `ARG_SIGNAL_BASE + i` (ADR 0041), and `own()` is allowed.
+    pub fn compile_method(
+        &self,
+        src: &str,
+        period_ns: u64,
+        params: &[ParamSpec<'_>],
+    ) -> Result<Program, Diagnostic> {
+        let env = MethodEnv { base: self, params };
+        let checked = joker_expr::check(
+            src,
+            &env,
+            CheckOptions {
+                in_class_method: true,
+            },
+        )?;
+        joker_expr::compile(
+            &checked,
+            CompileOptions {
+                period: Duration::from_nanos(period_ns),
+            },
+        )
+    }
+
     /// Calls `found` with every path that `selector` matches, in the
     /// lexicographic order of the paths, each once.
     pub fn select_paths(&self, selector: &str, mut found: impl FnMut(&'f str)) {
@@ -216,6 +242,35 @@ impl Env for FixtureEnv<'_> {
                 found(info);
             }
         });
+    }
+}
+
+struct MethodEnv<'e, 'f> {
+    base: &'e FixtureEnv<'f>,
+    params: &'e [ParamSpec<'e>],
+}
+
+impl Env for MethodEnv<'_, '_> {
+    fn signal(&self, path: &str) -> Option<SignalInfo> {
+        match self.params.iter().position(|p| p.name == path) {
+            Some(i) => {
+                let p = self.params.get(i)?;
+                Some(SignalInfo {
+                    id: ARG_SIGNAL_BASE + u32::try_from(i).ok()?,
+                    ty: signal_type(p.ty),
+                    unit: unit_of(p.unit),
+                })
+            }
+            None => self.base.info(path),
+        }
+    }
+
+    fn enum_variant(&self, enum_name: &str, variant: &str) -> Option<(EnumId, u64)> {
+        self.base.enum_variant(enum_name, variant)
+    }
+
+    fn select(&self, selector: &str, found: &mut dyn FnMut(SignalInfo)) {
+        self.base.select(selector, found);
     }
 }
 

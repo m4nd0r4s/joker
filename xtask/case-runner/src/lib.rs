@@ -30,7 +30,7 @@ pub use exec::{
 };
 pub use joker_expr::Program;
 pub use model::{
-    Action, ActionKind, AlarmSpec, AtomicSpec, CalcSpec, CommitSpec, Expected, Fixture, Item,
-    LimitSpec, Link, Node, OutcomeLit, OutputSpec, Predicates, QualityLit, SafeDef, Script,
-    SignalSpec, Subject, When, WriterSpec,
+    Action, ActionKind, AlarmSpec, AtomicSpec, CalcSpec, CommitSpec, Expected, Fixture,
+    InstanceSpec, Item, LimitSpec, Link, MethodSpec, Node, OutcomeLit, OutputSpec, ParamSpec,
+    Predicates, QualityLit, SafeDef, Script, SignalSpec, StmtSpec, Subject, When, WriterSpec,
 };
