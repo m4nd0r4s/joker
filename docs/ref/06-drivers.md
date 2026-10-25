@@ -255,6 +255,7 @@ The driver delivers and receives **raw values**. The core converts between raw a
 | | `string`, `bytes` | `regs` | `len` |
 | `i2c`, `spi` | any | `bytes` | `len` (or the size of the type) |
 | `gpio`, `revpi` (bits) | `bool` | `boolean` | 0 |
+| `revpi` (8, 16 or 32 bits, ADR 0078) | `i64`, `u64` | `int`, `uint` (sign- or zero-extended) | 0 |
 | other families and `x:`/`w:` | numeric | `int`, `uint` or `float`, whatever the protocol gives | 0 |
 | | `string` | `text` | `len` |
 | | `bytes` | `bytes` | `len` |
@@ -941,7 +942,7 @@ pub const MODBUS_TCP: joker_hal::DriverEntry = joker_hal::driver_entry! {
 | `drv-modbus` | `modbus` | `modbus-tcp`, `modbus-rtu`, `sunspec` |
 | `drv-gpio`, `drv-i2c`, `drv-spi` | `gpio`, `i2c`, `spi` | `spi`: 1.0.x |
 | `drv-sysfs` | `sysfs` | LEDs and temperatures from `/sys/class` (05 §10) |
-| `drv-revpi` | `revpi` | 1.0.x |
+| `drv-revpi` | `revpi` | 1.0.x (implemented, ADR 0078) |
 | `drv-mqtt` | `mqtt` | |
 | `drv-joker-link` | `joker-link` | Joker Link driver (ref/07) |
 | `drv-opcua`, `drv-mbus`, `drv-onewire`, `drv-serial-line` | same | 1.0.x |
@@ -1692,7 +1693,7 @@ In `mode = "dev"`, the `error-in-prod` codes appear as `W0860` and `W0865` (16 �
 | tier W **stable and open to third parties** (`@since(1.2.0)`): world, Rust and C SDK, `i2c`, `spi`, `can` transports in the host (`w-i2c-spi-can`), mandatory conformance, publication on the Hub | **1.2** (21 §4) |
 | conformance suite: interface, `basic` cases, report | **1.0** (used by the catalog); mandatory for publishing on the Hub in **1.2** |
 | catalog drivers of 1.0 | **1.0**: `sim`, `modbus-tcp`, `modbus-rtu` (with `sunspec`), `gpio`, `sysfs`, `i2c`, `mqtt` (input), `joker-link`; on the MCU, `gpio`, `adc`, `pwm`, `i2c`, `modbus-rtu`, `esp32`, `extern` |
-| catalog drivers of 1.0.x | `revpi`, `spi`, `opcua` (client), `m-bus`, `onewire`, `serial-line`; on the MCU, `modbus-slave`, `spi`, `uart` and `onewire` |
+| catalog drivers of 1.0.x | `revpi` (implemented, ADR 0078), `spi`, `opcua` (client), `m-bus`, `onewire`, `serial-line`; on the MCU, `modbus-slave`, `spi`, `uart` and `onewire` |
 | catalog drivers of 1.1 | `can`, `canopen` (on Linux and on the MCU) |
 | streams of X drivers through `SCM_RIGHTS` (messages 40–42), `streams` capability | **1.1** (M4; already reserved in the CDDL, document 11, §"Ready for ML") |
 | block signals, `block-read` capability | **1.1** (M7; reserved) |
