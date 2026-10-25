@@ -28,6 +28,9 @@ pub struct AppEntry {
     pub name: &'static str,
     /// Ports.
     pub ports: &'static [PortDecl],
+    /// Its `joker:meta` fragment (ref/04 §5.2), which a component also
+    /// carries in its custom section; the native test harness reads it here.
+    pub meta: &'static [u8],
 }
 
 /// A cycle task, as `#[joker::cycle]` registers it.
@@ -40,6 +43,8 @@ pub struct CycleTask {
     pub run: fn(&mut TaskCx<'_>) -> Result<()>,
     /// Creates the state of the task at `init`, if it has one.
     pub state: fn() -> Option<Box<dyn Any + Send>>,
+    /// Its `joker:meta` fragment (ref/04 §5.2).
+    pub meta: &'static [u8],
 }
 
 inventory::collect!(AppEntry);

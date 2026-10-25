@@ -459,6 +459,10 @@ fn bytes_tokens(bytes: &[u8]) -> TokenStream2 {
     quote!(#len, [#(#bytes),*])
 }
 
+fn slice_tokens(bytes: &[u8]) -> TokenStream2 {
+    quote!(&[#(#bytes),*])
+}
+
 fn expand_app(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
     let mut item: ItemStruct = syn::parse2(item)?;
     let mut name = std::env::var("CARGO_PKG_NAME")
@@ -548,6 +552,7 @@ fn expand_app(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream
         meta.push((17, Cbor::Text(d)));
     }
     let fragment = Cbor::Map(vec![(0, Cbor::Uint(0)), (1, Cbor::Map(meta))]).to_bytes();
+    let meta_slice = slice_tokens(&fragment);
     let fragment = bytes_tokens(&fragment);
     let app = &item.ident;
     let view = format_ident!("__{}Cycle", app);
@@ -634,6 +639,7 @@ fn expand_app(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream
             ::joker::__private::AppEntry {
                 name: #name,
                 ports: <#app as ::joker::App>::PORTS,
+                meta: #meta_slice,
             }
         }
 
@@ -763,6 +769,7 @@ fn expand_cycle(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStre
         task.push((8, Cbor::Text(d)));
     }
     let fragment = Cbor::Map(vec![(0, Cbor::Uint(1)), (1, Cbor::Map(task))]).to_bytes();
+    let meta_slice = slice_tokens(&fragment);
     let fragment = bytes_tokens(&fragment);
     let section = format_ident!("__JOKER_META_TASK_{}", name.to_uppercase());
     let (run, init) = match state {
@@ -785,6 +792,7 @@ fn expand_cycle(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStre
                 name: #name,
                 run: |cx: &mut ::joker::__private::TaskCx<'_>| #run,
                 state: #init,
+                meta: #meta_slice,
             }
         }
     })
