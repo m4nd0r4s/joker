@@ -611,3 +611,89 @@ fn only_scalar_members_of_declared_capabilities_need_a_binding() {
     let report = check(&fs, Path::new("joker.toml"), &c);
     assert!(report.codes().contains(&"J0602"), "{}", report.render());
 }
+
+#[test]
+fn implicit_instances_check_their_implements_against_the_class() {
+    use joker_manifest::context::{Implements, ImplementsTarget};
+    let lamp_profile = |class: &str, map: Vec<(&str, ImplementsTarget)>, caps: Vec<&str>| {
+        let mut c = context();
+        c.classes.insert(
+            "std/lamp_t@1".into(),
+            ClassInfo {
+                members: [("on".to_owned(), member(MemberKind::Out, SignalType::Bool))]
+                    .into_iter()
+                    .collect(),
+                ..ClassInfo::default()
+            },
+        );
+        c.profiles.insert(
+            "acme/lamp@1".into(),
+            ProfileInfo {
+                signals: [
+                    (
+                        "relay".to_owned(),
+                        signal(SignalType::Bool, Direction::Output, None),
+                    ),
+                    (
+                        "fb".to_owned(),
+                        signal(SignalType::Bool, Direction::Input, None),
+                    ),
+                ]
+                .into_iter()
+                .collect(),
+                implements: [(
+                    class.to_owned(),
+                    Implements {
+                        capabilities: caps.into_iter().map(str::to_owned).collect(),
+                        map: map.into_iter().map(|(k, v)| (k.to_owned(), v)).collect(),
+                    },
+                )]
+                .into_iter()
+                .collect(),
+                ..ProfileInfo::default()
+            },
+        );
+        c
+    };
+    let device = "[devices.l1]\ndriver = \"modbus-tcp\"\naddress = \"10.0.0.9:502\"\nunit_id = 1\nprofile = \"acme/lamp@1\"\n[outputs.\"l1.relay\"]\nsafe = false\n";
+    let check_with = |c: &Context| {
+        let mut fs = MemoryFileSystem::default();
+        fs.file("joker.toml", format!("{BASE}{device}"))
+            .dir("apps/x");
+        check(&fs, Path::new("joker.toml"), c)
+    };
+    let ok = check_with(&lamp_profile(
+        "std/lamp_t@1",
+        vec![("on", ImplementsTarget::Signal("relay".into()))],
+        vec![],
+    ));
+    assert!(!ok.has_errors(), "{}", ok.render());
+    assert_eq!(ok.paths["l1.on"].canonical, "l1.relay");
+    let cases: Vec<(&str, Context)> = vec![
+        (
+            "J0823",
+            lamp_profile(
+                "std/nothing@1",
+                vec![("on", ImplementsTarget::Signal("relay".into()))],
+                vec![],
+            ),
+        ),
+        (
+            "J0824",
+            lamp_profile(
+                "std/lamp_t@1",
+                vec![("on", ImplementsTarget::Signal("fb".into()))],
+                vec![],
+            ),
+        ),
+        ("J0601", lamp_profile("std/lamp_t@1", vec![], vec![])),
+    ];
+    for (code, c) in cases {
+        let report = check_with(&c);
+        assert!(
+            report.codes().contains(&code),
+            "{code}: {}",
+            report.render()
+        );
+    }
+}

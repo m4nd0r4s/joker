@@ -8,7 +8,8 @@ use std::path::Path;
 use joker_units::{Duration, ErrorKind, Literal, QuantityKind, Unit};
 
 use crate::context::{
-    AppInterface, Context, Direction, DriverInfo, PortKind, SignalInfo, SignalType,
+    AppInterface, Context, Direction, DriverInfo, ImplementsTarget, MemberKind, PortKind,
+    SignalInfo, SignalType,
 };
 use crate::diag::{Diagnostic, Diagnostics};
 use crate::grammar;
@@ -439,6 +440,241 @@ impl Checker<'_> {
                 }
             }
             self.device_signals(name, device, driver, profile);
+            self.implicit_instance(name, device, profile);
+        }
+    }
+
+    /// The implicit instance of a device whose profile has `[implements]`
+    /// (ref/03 §2.2.14, docs/14 §5.1): each mapped `in`, `out` and `param`
+    /// member becomes the path `<device>.<member>`, an alias of the
+    /// profile signal it maps to.
+    fn implicit_instance(
+        &mut self,
+        name: &str,
+        device: &crate::model::Device,
+        profile: Option<&crate::context::ProfileInfo>,
+    ) {
+        let Some(profile) = profile else {
+            return;
+        };
+        let Some(reference) = &device.profile else {
+            return;
+        };
+        let at = reference.span;
+        let p = reference.value.clone();
+        for (class, implements) in &profile.implements {
+            let Some(info) = self.context.classes.get(class).cloned() else {
+                if !self.context.open_world {
+                    self.push(
+                        Diagnostic::new(
+                            "J0823",
+                            format!("profile `{p}` implements unknown class `{class}`"),
+                        )
+                        .at(at),
+                    );
+                }
+                continue;
+            };
+            let caps = &implements.capabilities;
+            for cap in caps {
+                if !info.capabilities.contains(cap) {
+                    self.push(
+                        Diagnostic::new(
+                            "J0824",
+                            format!("profile `{p}`: `{class}` has no capability `{cap}`"),
+                        )
+                        .at(at),
+                    );
+                }
+            }
+            for (member_name, member) in &info.members {
+                let scalar = matches!(
+                    member.kind,
+                    MemberKind::In | MemberKind::Out | MemberKind::Param
+                );
+                let declared = member.capability.as_ref().is_none_or(|c| caps.contains(c));
+                if scalar
+                    && declared
+                    && !member.optional
+                    && !implements.map.contains_key(member_name)
+                {
+                    let code = if member.capability.is_some() {
+                        "J0602"
+                    } else {
+                        "J0601"
+                    };
+                    self.push(
+                        Diagnostic::new(
+                            code,
+                            format!(
+                                "profile `{p}`: member `{member_name}` of `{class}` is not mapped"
+                            ),
+                        )
+                        .at(at),
+                    );
+                }
+            }
+            for (member_name, target) in &implements.map {
+                self.implemented_member(
+                    name,
+                    &p,
+                    at,
+                    class,
+                    &info,
+                    caps,
+                    member_name,
+                    target,
+                    profile,
+                );
+            }
+        }
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "one member of one [implements] table, with the device and profile it belongs to"
+    )]
+    fn implemented_member(
+        &mut self,
+        device: &str,
+        profile_name: &str,
+        at: Span,
+        class: &str,
+        info: &crate::context::ClassInfo,
+        caps: &[String],
+        member_name: &str,
+        target: &ImplementsTarget,
+        profile: &crate::context::ProfileInfo,
+    ) {
+        let invalid = |this: &mut Self, why: String| {
+            this.push(
+                Diagnostic::new(
+                    "J0824",
+                    format!("profile `{profile_name}`: `{class}` member `{member_name}`: {why}"),
+                )
+                .at(at),
+            );
+        };
+        let Some(member) = info.members.get(member_name) else {
+            invalid(self, "the class has no such member".into());
+            return;
+        };
+        if let Some(cap) = member.capability.as_ref().filter(|c| !caps.contains(c)) {
+            invalid(
+                self,
+                format!("it belongs to capability `{cap}`, which is not declared"),
+            );
+            return;
+        }
+        let scalar = matches!(
+            member.kind,
+            MemberKind::In | MemberKind::Out | MemberKind::Param
+        );
+        match target {
+            ImplementsTarget::Signal(rel) if scalar => {
+                let path = format!("{device}.{rel}");
+                let Some(reg) = self.paths.get(&path).cloned() else {
+                    self.push(
+                        Diagnostic::new("J0101", format!("unknown signal `{path}`"))
+                            .at(at)
+                            .label(format!("mapped by `{class}` member `{member_name}`")),
+                    );
+                    return;
+                };
+                let direction_ok = match member.kind {
+                    MemberKind::Out => reg.info.direction == Direction::Output,
+                    _ => matches!(reg.info.direction, Direction::Input | Direction::Param),
+                };
+                if !direction_ok {
+                    invalid(self, format!("`{rel}` has an incompatible direction"));
+                    return;
+                }
+                let both_bool =
+                    (member.ty == SignalType::Bool) == (reg.info.ty == SignalType::Bool);
+                if !both_bool {
+                    invalid(self, format!("`{rel}` has an incompatible type"));
+                    return;
+                }
+                if let (Some(want), Some(have)) = (member.unit, reg.info.unit)
+                    && have.check_compatible(&want).is_err()
+                {
+                    self.push(
+                        Diagnostic::new(
+                            "J0107",
+                            format!(
+                                "`{path}` is in `{}`, `{class}` member `{member_name}` in `{}`",
+                                have.symbol(),
+                                want.symbol()
+                            ),
+                        )
+                        .at(at),
+                    );
+                    return;
+                }
+                let alias = format!("{device}.{member_name}");
+                if let Some(existing) = self.paths.get(&alias) {
+                    let canonical = existing.canonical.clone();
+                    if canonical == reg.canonical {
+                        return;
+                    }
+                    self.push(
+                        Diagnostic::new(
+                            "J0604",
+                            format!("member path `{alias}` collides with `{canonical}`"),
+                        )
+                        .at(at),
+                    );
+                    return;
+                }
+                self.paths.insert(
+                    alias,
+                    Registered {
+                        info: reg.info.clone(),
+                        canonical: reg.canonical.clone(),
+                        device: Some(device.to_owned()),
+                        span: Some(at),
+                    },
+                );
+            }
+            ImplementsTarget::Action(a) if member.kind == MemberKind::Action => {
+                if !profile.actions.contains_key(a) {
+                    invalid(self, format!("the profile has no action `{a}`"));
+                }
+            }
+            ImplementsTarget::Const(_) if member.kind == MemberKind::Out => {
+                self.push(
+                    Diagnostic::new(
+                        "J0603",
+                        format!("`const:` on out member `{member_name}` of `{class}`"),
+                    )
+                    .at(at),
+                );
+            }
+            ImplementsTarget::Const(_) if scalar => {}
+            ImplementsTarget::Adapter { signal, keys }
+                if scalar || member.kind == MemberKind::Event =>
+            {
+                if let Some(rel) = signal
+                    && !self.paths.contains_key(&format!("{device}.{rel}"))
+                {
+                    self.push(
+                        Diagnostic::new("J0101", format!("unknown signal `{device}.{rel}`")).at(at),
+                    );
+                    return;
+                }
+                self.push(
+                    Diagnostic::new(
+                        "J0807",
+                        format!(
+                            "profile `{profile_name}`: the adapter `{{ {} }}` of `{class}` member `{member_name}` is not supported by this runtime yet",
+                            keys.join(", ")
+                        ),
+                    )
+                    .at(at)
+                    .help("map the member to a signal of the profile, or bind it in a composite instance (ref/01 §5.13)"),
+                );
+            }
+            _ => invalid(self, "this target does not fit the member".into()),
         }
     }
 
