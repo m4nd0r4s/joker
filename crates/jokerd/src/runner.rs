@@ -49,6 +49,12 @@ pub struct StartContext {
     pub trips: Option<Arc<TripTable>>,
     /// What to restore before the first tick.
     pub restore: Restore,
+    /// The node's alarm book: restores the alarms' state and receives
+    /// their events (ADR 0082).
+    pub alarms: Option<Arc<crate::alarms::AlarmBook>>,
+    /// The node's historian: records `[telemetry.record]` and the alarm
+    /// journal (ADR 0081, ADR 0082).
+    pub historian: Option<Arc<crate::historian::Historian>>,
 }
 
 /// The persisted state a generation restores before its first tick
@@ -123,6 +129,8 @@ pub struct Running {
     decisions: Option<DecisionWriter>,
     feeder: Option<RingFeeder>,
     supervisor: Option<Supervisor>,
+    pump: Option<crate::alarms::AlarmPump>,
+    recorder: Option<crate::historian::Recorder>,
 }
 
 impl Running {
@@ -168,6 +176,53 @@ impl Running {
             None => None,
         };
         let ring = Arc::new(Mutex::new(TraceRing::new(&plan, start.retention)));
+        let alarm_restore = context
+            .alarms
+            .as_ref()
+            .map(|book| book.begin(&plan, pacer.now().mono_ns))
+            .unwrap_or_default();
+        let pump = match &context.alarms {
+            Some(book) => Some(
+                crate::alarms::AlarmPump::spawn(
+                    Arc::clone(&plan),
+                    Arc::clone(&shared),
+                    crate::alarms::PumpTargets {
+                        book: Arc::clone(book),
+                        journal: context
+                            .historian
+                            .as_ref()
+                            .map(|h| (Arc::clone(h.store()), h.alarm_series())),
+                        log: Arc::clone(&log),
+                        generation: start.generation,
+                        utc_origin_ns: start.utc_origin_ns,
+                    },
+                )
+                .map_err(|e| CycleError(format!("cannot start the alarm pump: {e}")))?,
+            ),
+            None => None,
+        };
+        let recorder = match &context.historian {
+            Some(h) => {
+                h.configure(&plan.telemetry.store);
+                let watches = h
+                    .series_for(&plan)
+                    .map_err(|e| CycleError(format!("historian: {e}")))?;
+                let clock = pacer
+                    .monotonic()
+                    .unwrap_or_else(crate::pacer::Monotonic::start);
+                Some(
+                    crate::historian::Recorder::spawn(
+                        Arc::clone(&shared),
+                        Arc::clone(h.ingest()),
+                        watches,
+                        start.utc_origin_ns,
+                        clock,
+                    )
+                    .map_err(|e| CycleError(format!("cannot start the recorder: {e}")))?,
+                )
+            }
+            None => None,
+        };
         let decisions = DecisionWriter::spawn(
             Arc::clone(&plan),
             Arc::clone(&shared),
@@ -186,6 +241,7 @@ impl Running {
                 epoch_mono_ns: None,
                 initial_trips: context.restore.trips,
                 tick_guard: None,
+                alarms: alarm_restore,
             };
             let cpus = start.cpus;
             std::thread::Builder::new()
@@ -217,6 +273,8 @@ impl Running {
             decisions: Some(decisions),
             feeder: Some(feeder),
             supervisor,
+            pump,
+            recorder,
         })
     }
 
@@ -240,6 +298,12 @@ impl Running {
         if let Some(f) = self.feeder.take() {
             f.stop();
         }
+        if let Some(p) = self.pump.take() {
+            p.stop();
+        }
+        if let Some(r) = self.recorder.take() {
+            r.stop();
+        }
         if let Some(d) = self.decisions.take()
             && let Err(e) = d.stop()
         {
@@ -261,6 +325,12 @@ impl Running {
         if let Some(f) = self.feeder.take() {
             f.stop();
         }
+        if let Some(p) = self.pump.take() {
+            p.stop();
+        }
+        if let Some(r) = self.recorder.take() {
+            r.stop();
+        }
         if let Some(d) = self.decisions.take()
             && let Err(e) = d.stop()
         {
@@ -281,6 +351,12 @@ impl Drop for Running {
         }
         if let Some(f) = self.feeder.take() {
             f.stop();
+        }
+        if let Some(p) = self.pump.take() {
+            p.stop();
+        }
+        if let Some(r) = self.recorder.take() {
+            r.stop();
         }
         if let Some(d) = self.decisions.take() {
             let _ = d.stop();

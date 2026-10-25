@@ -20,6 +20,7 @@ joker-driver-gpio = { path = "../joker-drivers/gpio" }
 joker-driver-i2c = { path = "../joker-drivers/i2c" }
 joker-driver-revpi = { path = "../joker-drivers/revpi" }
 joker-api = { path = "../joker-api" }
+joker-store = { path = "../joker-store" }
 joker-host.workspace = true
 humantime = "2.3"
 crossbeam-queue = "0.3.12"
@@ -31,7 +32,7 @@ tokio = { version = "1.48", features = ["rt-multi-thread", "net", "time", "sync"
 zstd.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
-nix = { version = "0.31", default-features = false, features = ["mman", "sched"] }
+nix = { version = "0.31", default-features = false, features = ["fs", "mman", "sched"] }
 thread-priority = "3.1.1"
 
 [dev-dependencies]

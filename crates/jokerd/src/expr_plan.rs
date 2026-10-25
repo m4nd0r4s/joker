@@ -271,6 +271,10 @@ pub struct AlarmPlan {
     pub max_shelve_ns: u64,
     /// `actions.trip`, with selectors expanded, in id order.
     pub trip: Vec<SignalId>,
+    /// `message`, with its `{<path>}` placeholders; `None` is the name.
+    pub message: Option<String>,
+    /// The source of `when`.
+    pub condition: String,
 }
 
 impl AlarmPlan {
@@ -517,6 +521,7 @@ enum Kind {
         severity: Severity,
         max_shelve_ns: u64,
         trip: Vec<String>,
+        message: Option<String>,
     },
 }
 
@@ -644,6 +649,7 @@ fn declarations(manifest: &Manifest) -> Result<Vec<Declaration>, PlanError> {
                     max_shelve_ns: duration_of(t, "max_shelve", &what)?
                         .unwrap_or(DEFAULT_MAX_SHELVE_NS),
                     trip,
+                    message: text(t, "message").map(str::to_owned),
                 },
             });
         }
@@ -925,6 +931,7 @@ pub(crate) fn bind(plan: &mut Plan, manifest: &Manifest) -> Result<(), PlanError
                 severity,
                 max_shelve_ns,
                 trip,
+                message,
             } => {
                 let mut tripped = Vec::new();
                 for target in trip {
@@ -955,6 +962,8 @@ pub(crate) fn bind(plan: &mut Plan, manifest: &Manifest) -> Result<(), PlanError
                     severity: *severity,
                     max_shelve_ns: *max_shelve_ns,
                     trip: tripped,
+                    message: message.clone(),
+                    condition: when.clone(),
                 });
             }
         }

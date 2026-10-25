@@ -139,6 +139,8 @@ pub struct Controller {
     heartbeat: Arc<crate::supervisor::Heartbeat>,
     persistent: crate::persistent::Persistent,
     clock_policy: crate::clock::ClockPolicy,
+    alarms: Arc<crate::alarms::AlarmBook>,
+    historian: Arc<crate::historian::Historian>,
 }
 
 impl fmt::Debug for Controller {
@@ -308,6 +310,11 @@ impl Controller {
             .monotonic()
             .unwrap_or_else(crate::pacer::Monotonic::start);
         let hub = Arc::new(crate::actions::Hub::new(Arc::clone(&log), clock));
+        let alarms = crate::alarms::AlarmBook::open(state_dir).map_err(ControlError::io)?;
+        let historian = Arc::new(
+            crate::historian::Historian::open(&state_dir.join("store"))
+                .map_err(ControlError::io)?,
+        );
         Ok(Self {
             store: Store::open(&state_dir.join("generations")).map_err(ControlError::io)?,
             blobs: Blobs::new(state_dir),
@@ -324,7 +331,19 @@ impl Controller {
             heartbeat: Arc::default(),
             persistent,
             clock_policy: crate::clock::ClockPolicy::default(),
+            alarms,
+            historian,
         })
+    }
+
+    /// The node's alarm book (ADR 0082).
+    pub fn alarms(&self) -> Arc<crate::alarms::AlarmBook> {
+        Arc::clone(&self.alarms)
+    }
+
+    /// The node's historian (ADR 0081).
+    pub fn historian(&self) -> Arc<crate::historian::Historian> {
+        Arc::clone(&self.historian)
     }
 
     /// Runs the Wasm apps of each generation from its artifacts (ADR 0067);
@@ -749,6 +768,7 @@ impl Controller {
             a.devices.stop();
             let _ = a.running.stop();
         }
+        self.historian.stop();
     }
 
     fn get(&self, number: u64) -> Result<Generation, ControlError> {
@@ -827,6 +847,8 @@ impl Controller {
                 heartbeat: Some(Arc::clone(&self.heartbeat)),
                 trips: Some(self.persistent.trips()),
                 restore,
+                alarms: Some(Arc::clone(&self.alarms)),
+                historian: Some(Arc::clone(&self.historian)),
             },
         )
         .map_err(|e| ControlError::new("J-E1000", 500, e.0))?;

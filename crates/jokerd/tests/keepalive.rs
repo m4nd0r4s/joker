@@ -90,6 +90,10 @@ fn empty_shared(bindings: Vec<joker_hal::OutputBinding>, boxes: Vec<CommitBox>) 
         write_acks_dropped: Default::default(),
         confirmations: crossbeam_queue::ArrayQueue::new(16),
         confirmations_dropped: Default::default(),
+        alarm_events: crossbeam_queue::ArrayQueue::new(1),
+        alarm_events_dropped: Default::default(),
+        alarm_commands: crossbeam_queue::ArrayQueue::new(1),
+        alarm_replies: crossbeam_queue::ArrayQueue::new(1),
     }
 }
 

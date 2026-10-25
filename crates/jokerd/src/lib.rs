@@ -2,6 +2,7 @@
 
 pub mod action_exec;
 pub mod actions;
+pub mod alarms;
 pub mod api;
 pub mod apps;
 pub mod blobs;
@@ -17,6 +18,7 @@ pub mod devices;
 pub mod drivers;
 pub mod expr_plan;
 pub mod generations;
+pub mod historian;
 pub mod io;
 pub mod load;
 pub mod manual;
