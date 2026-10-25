@@ -4842,6 +4842,41 @@ message = "desired state with a generation rejected: the node's `[policy] apply_
 doc = "ref/10 §2.20"
 
 [[code]]
+id = "JC0101"
+severity = "error"
+message = "syntax error in a `.jkc` file, or a name that breaks the naming rules"
+doc = "17 §7"
+also = ["ADR 0059"]
+
+[[code]]
+id = "JC0102"
+severity = "error"
+message = "name declared twice"
+doc = "17 §7"
+also = ["ADR 0059"]
+
+[[code]]
+id = "JC0103"
+severity = "error"
+message = "unknown name: member, type, enum, variant or record"
+doc = "17 §7"
+also = ["ADR 0059"]
+
+[[code]]
+id = "JC0105"
+severity = "error"
+message = "unknown annotation, annotation out of place, or invalid annotation arguments"
+doc = "17 §7"
+also = ["ADR 0059"]
+
+[[code]]
+id = "JC0106"
+severity = "error"
+message = "type error: a type, unit, literal or expression that does not fit where it is used"
+doc = "17 §7"
+also = ["ADR 0059"]
+
+[[code]]
 id = "JC0107"
 severity = "error"
 message = "physical quantity without a unit"
@@ -4892,7 +4927,7 @@ doc = "17 §7"
 [[code]]
 id = "JC0310"
 severity = "error"
-message = "queries in a cycle"
+message = "queries in a dependency cycle"
 doc = "17 §7"
 
 [[code]]
