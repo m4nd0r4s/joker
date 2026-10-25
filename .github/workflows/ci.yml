@@ -311,3 +311,41 @@ jobs:
         with:
           tool: cross
       - run: cross build --release --target aarch64-unknown-linux-gnu -p jokerd
+
+  size:
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      actions: read
+      contents: read
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show
+      - run: cargo install --locked cargo-bloat --version 0.12.1
+      - name: baseline from the last green main
+        continue-on-error: true
+        run: |
+          run=$(gh run list --repo "${{ github.repository }}" --workflow ci --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId')
+          if [ -n "$run" ] && gh run download "$run" --repo "${{ github.repository }}" --name jokerd-size --dir target/size-base; then
+            echo "baseline: run $run"
+          else
+            echo "no baseline on main yet"
+          fi
+      - name: jokerd size against docs/01 §21 (cargo bloat, aarch64)
+        run: |
+          set -o pipefail
+          mkdir -p target/size
+          compare=""
+          if [ -f target/size-base/size.json ]; then
+            compare="--compare target/size-base/size.json"
+          fi
+          cargo run --release --package xtask -- size --target aarch64-unknown-linux-gnu --json target/size/size.json $compare | tee target/size/summary.txt
+      - if: always()
+        run: |
+          { echo '### jokerd size (aarch64, stripped)'; echo '```'; cat target/size/summary.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY" || true
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jokerd-size
+          path: target/size/size.json

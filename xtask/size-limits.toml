@@ -1,0 +1,9 @@
+schema = 1
+
+[[build]]
+name = "full"
+package = "jokerd"
+bin = "jokerd"
+features = []
+no_default_features = false
+limit_mb = 30
