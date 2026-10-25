@@ -38,6 +38,7 @@ pub const CLASSES: &[StdClass] = &[
     std_class!("lamp"),
     std_class!("led"),
     std_class!("pressure_sensor"),
+    std_class!("pump"),
     std_class!("relay"),
     std_class!("switch"),
     std_class!("temp_sensor"),

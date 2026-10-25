@@ -1,0 +1,60 @@
+package std
+
+/// Pump with start/stop and status feedback.
+@aligns("CiA 402 when the actuator is a drive")
+class pump@1.0.0 {
+    /// Run command.
+    out run_cmd: bool            @safe_hint(false)
+
+    /// Run feedback (contactor or drive).
+    in  running: bool
+    /// A fault is present.
+    in  fault:   bool
+    /// The equipment's fault code.
+    in  fault_code: u64          @optional
+
+    /// Rated flow.
+    param rated_flow: f64 m3/h   @optional
+
+    /// The pump tripped.
+    event tripped { code: u64 }
+
+    /// Resets after a fault.
+    action reset() -> ()         @permit_hint(fault && !running) @timeout(5 s)
+
+    /// Starts the pump.
+    method start()               { run_cmd = true }
+    /// Stops the pump.
+    method stop()                { run_cmd = false }
+
+    /// Commanded for 10 s without running.
+    query failed_to_start: bool = held(run_cmd && !running, 10 s)
+    /// Still running 30 s after the stop command.
+    query failed_to_stop:  bool = held(!run_cmd && running, 30 s)
+
+    capability variable_speed {
+        /// Speed reference.
+        out speed_set: f64 %     @safe_hint(0 %) @range_hint(0 %, 100 %)
+        /// Actual speed.
+        in  speed:     f64 %
+        /// Runs at a speed, or stops at 0 %; speed and run reach the pump together.
+        atomic method run_at(pct: f64 %) order(speed_set, run_cmd) {
+            speed_set = clamp(pct, 0 %, 100 %)
+            run_cmd   = pct > 0 %
+        }
+    }
+
+    capability pressure {
+        /// Discharge pressure.
+        in pressure_out: f64 bar
+        /// Running with almost no discharge pressure for 5 s.
+        query dry_running: bool = running && held(pressure_out < 0.2 bar, 5 s)
+    }
+
+    capability hour_counter {
+        /// Running hours.
+        in hours: f64 h
+    }
+
+    health required(running, fault)
+}
