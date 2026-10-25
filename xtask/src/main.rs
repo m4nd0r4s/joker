@@ -49,10 +49,12 @@ tasks:
 
   rt-bench [--outputs N] [--period DURATION] [--ticks N] [--iterations N]
            [--json FILE] [--compare BASELINE.json] [--threshold PERCENT]
+           [--max-output-ns NS]
       Measures the tick jitter and the envelope + arbiter cost per output
       (defaults: 64 outputs, 1ms, 10000 paced ticks, 20000 cost ticks).
       With --compare, exits 1 when a p99.9 regresses by more than the
-      threshold (default 5%).
+      threshold (default 5%); with --max-output-ns, when the median cost
+      per output is above NS (Phase 0 gate 4: 300).
 
   msrv --max VERSION
       Checks that the rust-version of the core crates is at most VERSION,
@@ -99,6 +101,9 @@ fn rt_bench(args: &[String]) -> Result<bool, String> {
             "--json" => options.json = Some(PathBuf::from(value("--json")?)),
             "--compare" => options.compare = Some(PathBuf::from(value("--compare")?)),
             "--threshold" => options.threshold_pct = parse("--threshold", &value("--threshold")?)?,
+            "--max-output-ns" => {
+                options.max_output_ns = Some(parse("--max-output-ns", &value("--max-output-ns")?)?);
+            }
             other => return Err(format!("unknown option {other}\n{USAGE}")),
         }
     }
@@ -106,8 +111,19 @@ fn rt_bench(args: &[String]) -> Result<bool, String> {
     print!("{}", rt_bench::summary(&result));
     let text = serde_json::to_string_pretty(&result).map_err(|e| e.to_string())?;
     if let Some(path) = &options.json {
+        if let Some(dir) = path.parent()
+            && !dir.as_os_str().is_empty()
+        {
+            std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        }
         std::fs::write(path, format!("{text}\n"))
             .map_err(|e| format!("{}: {e}", path.display()))?;
+    }
+    if let Some(max) = options.max_output_ns
+        && let Err(e) = rt_bench::check_output_cost(&result, max)
+    {
+        println!("  gate: {e}");
+        return Ok(false);
     }
     let Some(baseline) = &options.compare else {
         return Ok(true);

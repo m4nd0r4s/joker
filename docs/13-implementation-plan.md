@@ -118,6 +118,7 @@ There is a single schema for the core and for the classes (`[suite]`, `[[case]]`
 | supply chain: `cargo deny`, `cargo vet --locked`, dependency graph and toolchain files (`joker-supply-chain`; `policies/dependencies.md` §1) | x86_64 | every commit | yes |
 | references (`joker-spec-tests`: doctests, `tsc`, CDDL, manifest schema, OpenAPI, counts from §5.1) | x86_64 | every commit | yes |
 | conformance | x86_64 | every commit | yes |
+| envelope + arbiter per output ≤ 300 ns, median of `cargo xtask rt-bench` (docs/11 Phase 0 gate 4, 01 §21) | x86_64 (shared runner) | every commit | **no**: the figure is published and a warning shows above 300 ns; shared runners vary too much for a blocking bound, which needs a dedicated x86 runner |
 | determinism: the core suites 1000 times with the same bytes (`cargo xtask determinism`), and one digest of the result sequence per target, equal on x86_64, aarch64, Cortex-M33 and RISC-V (docs/11 Phase 0 gates 2 and 5) | x86_64, aarch64, QEMU | every commit | yes |
 | long proptest (10⁶) | x86_64 | nightly | — |
 | cross-build aarch64, armv7, `arm-unknown-linux-gnueabihf` (ARMv6), riscv64 | x86_64 (cross) | every commit | yes |

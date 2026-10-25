@@ -53,6 +53,9 @@ pub struct Options {
     pub compare: Option<PathBuf>,
     /// Allowed regression of p99.9 against the baseline, in percent.
     pub threshold_pct: f64,
+    /// The largest median cost per output, in ns: the gate of docs/11
+    /// Phase 0 gate 4 (docs/01 §21: envelope + arbiter ≤ 300 ns).
+    pub max_output_ns: Option<f64>,
 }
 
 impl Default for Options {
@@ -65,6 +68,7 @@ impl Default for Options {
             json: None,
             compare: None,
             threshold_pct: 5.0,
+            max_output_ns: None,
         }
     }
 }
@@ -389,6 +393,22 @@ pub fn compare(
     Ok(regressions)
 }
 
+/// Checks the median cost per output against `max_ns`: `Err` with the
+/// figures when it is above (docs/11 Phase 0 gate 4).
+pub fn check_output_cost(result: &Value, max_ns: f64) -> Result<(), String> {
+    let p50 = result
+        .pointer("/cost/ns_per_output/p50")
+        .and_then(Value::as_f64)
+        .ok_or("the result has no cost per output")?;
+    if p50 <= max_ns {
+        Ok(())
+    } else {
+        Err(format!(
+            "envelope + arbiter per output: p50 {p50:.1} ns, above {max_ns} ns"
+        ))
+    }
+}
+
 /// A one-screen summary of a result.
 pub fn summary(result: &Value) -> String {
     let f = |p: &str| {
@@ -492,5 +512,13 @@ mod tests {
         let mut worse = r.clone();
         worse["cost"]["ns_per_output"]["p99_9"] = json!(1e9);
         assert_eq!(compare(&worse, &r, 5.0).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn the_output_cost_gate_reads_the_median() {
+        let r = json!({"cost": {"ns_per_output": {"p50": 120.0, "p99_9": 900.0}}});
+        assert!(check_output_cost(&r, 300.0).is_ok());
+        assert!(check_output_cost(&r, 100.0).is_err());
+        assert!(check_output_cost(&json!({}), 300.0).is_err());
     }
 }
