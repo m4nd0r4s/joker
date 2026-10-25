@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "crates/joker-drivers/sim", "crates/joker-drivers/sysfs", "crates/joker-drivers/modbus", "crates/joker-drivers/gpio", "crates/joker-drivers/i2c", "crates/joker-host/fixtures/*", "crates/jokerd/fixtures/*", "crates/joker-sdk/fixtures/*", "examples/bench/apps/light", "xtask", "xtask/case-runner", "xtask/qemu-conformance", "xtask/qemu-sys"]
+members = ["crates/*", "crates/joker-drivers/sim", "crates/joker-drivers/sysfs", "crates/joker-drivers/modbus", "crates/joker-drivers/gpio", "crates/joker-drivers/i2c", "crates/joker-drivers/revpi", "crates/joker-host/fixtures/*", "crates/jokerd/fixtures/*", "crates/joker-sdk/fixtures/*", "examples/bench/apps/light", "xtask", "xtask/case-runner", "xtask/qemu-conformance", "xtask/qemu-sys"]
 exclude = ["crates/joker-drivers", "tools/bench/esp32-modbus"]
 
 [workspace.package]
@@ -25,6 +25,7 @@ joker-hal = { path = "crates/joker-hal", default-features = false }
 joker-serial-sys = { path = "crates/joker-serial-sys" }
 joker-gpio-sys = { path = "crates/joker-gpio-sys" }
 joker-i2c-sys = { path = "crates/joker-i2c-sys" }
+joker-picontrol-sys = { path = "crates/joker-picontrol-sys" }
 embedded-io = { version = "0.7.1", default-features = false }
 embedded-io-async = { version = "0.7.0", default-features = false }
 tokio = { version = "1.54.1", default-features = false }

@@ -1362,6 +1362,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "joker-driver-revpi"
+version = "0.0.0"
+dependencies = [
+ "joker-core",
+ "joker-hal",
+ "joker-picontrol-sys",
+]
+
+[[package]]
 name = "joker-driver-sim"
 version = "0.0.0"
 dependencies = [
@@ -1451,6 +1460,13 @@ dependencies = [
  "serde",
  "sha2",
  "toml",
+]
+
+[[package]]
+name = "joker-picontrol-sys"
+version = "0.0.0"
+dependencies = [
+ "libc",
 ]
 
 [[package]]
@@ -1555,6 +1571,7 @@ dependencies = [
  "joker-driver-gpio",
  "joker-driver-i2c",
  "joker-driver-modbus",
+ "joker-driver-revpi",
  "joker-driver-sysfs",
  "joker-expr",
  "joker-hal",
