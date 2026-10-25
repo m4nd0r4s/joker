@@ -72,5 +72,6 @@
 | [0073](0073-raw-access-in-the-catalog-drivers-and-the-wire-double.md) | Access by address in the catalog drivers, and the wire double of the action suites |
 | [0074](0074-subscription-resume-re-resolution-and-sampling-budget.md) | Subscription resumption, re-resolution on a generation swap, and the sampling budget |
 | [0075](0075-manifest-signal-adjustments-and-the-output-stage.md) | Manifest signal adjustments take effect, and the output stage converts values to raw |
+| [0076](0076-modbus-register-outputs-and-bit-read-modify-write.md) | Modbus register outputs, and a `bool` output in a register bit by read-modify-write |
 
 Changing a decision = writing a new ADR that replaces it, and updating the affected documents in the same set of commits.
