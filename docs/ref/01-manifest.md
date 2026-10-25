@@ -1017,6 +1017,7 @@ The `commit` signal is a **group command register**: only the core writes it, ri
 
 - On a scalar signal, exactly one of `every` and `on_change` (`J0195`). On an event, neither: all occurrences are recorded. On a block signal, `blocks`.
 - **Overlapping selectors:** for each signal the **most specific** entry applies: an exact path beats a selector; among selectors, the one with more literal segments wins, and then the longest literal prefix. A tie is `J0195`. This is the only section in which specificity resolves overlaps, because recording is not a safety decision; in `[outputs]` and `[signals]`, an overlap is an error.
+- `on_change` reads the signal every 10 ms: changes faster than that are coalesced to the last one. `string`, `bytes` and `record` signals and signals with shape `event` are not recorded in 1.0 (ADR 0082).
 - The decision log, the trips and the alarm transitions are always recorded, regardless of this section. The log stores each change of result, and `fsync = "always"` applies to trips, manual writes, rejections and level changes; the rest goes in batches (document 01, §12 and §19).
 - A signal that no entry catches is not recorded.
 
