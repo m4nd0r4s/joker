@@ -81,6 +81,7 @@
 | [0081](0081-historian-storage-wal-segments-and-retention.md) | Historian storage: WAL, segments, checkpoints and retention |
 | [0082](0082-alarm-journal-persistence-and-historian-wiring.md) | The alarm journal, alarms across restarts, and the historian in jokerd |
 | [0083](0083-the-native-mode-of-joker-test.md) | The native mode of `joker-test` |
+| [0084](0084-class-instances-on-the-node-and-manual-method-calls.md) | Class instances on the node, class queries as derived signals, and manual method calls |
 | [0085](0085-runtime-alarms-in-jokerd.md) | The runtime alarms (`joker.*`) in jokerd |
 
 Changing a decision = writing a new ADR that replaces it, and updating the affected documents in the same set of commits.
