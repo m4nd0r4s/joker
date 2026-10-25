@@ -513,6 +513,10 @@ enum Kind {
     Calc {
         source: String,
     },
+    Query {
+        path: String,
+        source: String,
+    },
     Alarm {
         when: String,
         suppress_when: Option<String>,
@@ -527,15 +531,17 @@ enum Kind {
 
 impl Declaration {
     fn key(&self) -> String {
-        match self.kind {
+        match &self.kind {
             Kind::Calc { .. } => format!("calc.{}", self.name),
+            Kind::Query { path, .. } => path.clone(),
             Kind::Alarm { .. } => format!("alarms.{}", self.name),
         }
     }
 
     fn paths(&self) -> Vec<String> {
-        match self.kind {
+        match &self.kind {
             Kind::Calc { .. } => vec![format!("calc.{}", self.name)],
+            Kind::Query { path, .. } => vec![path.clone()],
             Kind::Alarm { .. } => vec![
                 format!("alarm.{}.state", self.name),
                 format!("alarm.{}.active", self.name),
@@ -545,7 +551,9 @@ impl Declaration {
 
     fn sources(&self) -> Vec<(String, &str, Expect)> {
         match &self.kind {
-            Kind::Calc { source } => vec![(self.key(), source.as_str(), Expect::Any)],
+            Kind::Calc { source } | Kind::Query { source, .. } => {
+                vec![(self.key(), source.as_str(), Expect::Any)]
+            }
             Kind::Alarm {
                 when,
                 suppress_when,
@@ -880,11 +888,23 @@ fn latch_reads(plan: &mut Plan) {
 /// alarm and latches what the expressions read (ADR 0068). `plan` must
 /// already resolve its ids; the caller re-indexes it afterwards, since
 /// derived signals gain their group here.
-pub(crate) fn bind(plan: &mut Plan, manifest: &Manifest) -> Result<(), PlanError> {
+pub(crate) fn bind(
+    plan: &mut Plan,
+    manifest: &Manifest,
+    queries: &[crate::classes::QueryPlan],
+) -> Result<(), PlanError> {
     for (index, exprs) in output_exprs(plan, manifest)? {
         plan.outputs[index].exprs = exprs;
     }
-    let declared = declarations(manifest)?;
+    let mut declared = declarations(manifest)?;
+    declared.extend(queries.iter().map(|q| Declaration {
+        name: q.path.clone(),
+        group: None,
+        kind: Kind::Query {
+            path: q.path.clone(),
+            source: q.source.clone(),
+        },
+    }));
     let reads = probe_reads(plan, &declared)?;
     let groups = evaluation_groups(plan, &declared, &reads)?;
     if groups.iter().any(|g| g == CALC_GROUP) && period_ns(plan, CALC_GROUP).is_none() {
@@ -923,6 +943,11 @@ pub(crate) fn bind(plan: &mut Plan, manifest: &Manifest) -> Result<(), PlanError
                 path: format!("calc.{}", d.name),
                 group: group.clone(),
                 expr: compiled(&d.key(), source, Expect::Any)?,
+            }),
+            Kind::Query { path, source } => calcs.push(CalcPlan {
+                path: path.clone(),
+                group: group.clone(),
+                expr: compiled(path, source, Expect::Any)?,
             }),
             Kind::Alarm {
                 when,

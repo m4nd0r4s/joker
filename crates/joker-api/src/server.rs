@@ -689,6 +689,21 @@ async fn reset_trips(
     }
 }
 
+async fn call_method(
+    State(b): State<Shared>,
+    ConnectInfo(peer): ConnectInfo<Peer>,
+    UrlPath((instance, method)): UrlPath<(String, String)>,
+    body: Bytes,
+) -> Response {
+    match decode(&body) {
+        Ok(req) => {
+            let who = principal(peer);
+            run(b, move |b| b.call_method(&who, &instance, &method, req)).await
+        }
+        Err(p) => problem_response(b.as_ref(), &p),
+    }
+}
+
 async fn invoke_action(
     State(b): State<Shared>,
     ConnectInfo(peer): ConnectInfo<Peer>,
@@ -961,6 +976,10 @@ pub fn router_with(backend: Arc<dyn Backend>, limits: ws::Limits) -> Router {
         .route("/v1/trips/reset", post(reset_trips))
         .route("/v1/actions", get(actions))
         .route("/v1/actions/{target}/{action}", post(invoke_action))
+        .route(
+            "/v1/instances/{instance}/methods/{method}",
+            post(call_method),
+        )
         .route("/v1/invocations", get(invocations))
         .route("/v1/invocations/{invocation}", get(invocation))
         .route(

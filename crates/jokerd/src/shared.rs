@@ -7,8 +7,9 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use crossbeam_queue::ArrayQueue;
 use joker_core::alarm::{AlarmError, AlarmEvent};
+use joker_core::class::MethodResult;
 use joker_core::commit::{DecisionRecord, WriteResult};
-use joker_core::image::Proposal;
+use joker_core::image::{MethodCall, Proposal};
 use joker_core::value::NO_TS_SRC;
 use joker_core::{Quality, QualityCode, QualityReason, SignalId, Slot, ValueType};
 use joker_hal::{CommitBox, OutputBinding, RawEncoding, WriteKind, WriteStatus};
@@ -331,6 +332,14 @@ pub struct Shared {
     pub slots: Box<[Slot]>,
     /// One async inbox per group, by group index.
     pub inboxes: Box<[ArrayQueue<Proposal>]>,
+    /// One inbox of async method records per group, by group index: the
+    /// calls of the API, staged in step 2 and expanded in step 5a
+    /// (docs/17 §4.1, ADR 0084).
+    pub method_inboxes: Box<[ArrayQueue<MethodCall>]>,
+    /// What each method record expanded to, for its caller.
+    pub method_results: ArrayQueue<MethodResult>,
+    /// Method results dropped by a full queue.
+    pub method_results_dropped: Counter,
     /// One reset-request queue per group, by group index (`jk reset`).
     pub resets: Box<[ArrayQueue<ResetRequest>]>,
     /// One trip-injection queue per group, by group index ([`TripRequest`]).
@@ -566,6 +575,11 @@ impl Shared {
             inboxes: (0..plan.groups.len())
                 .map(|_| ArrayQueue::new(INBOX_CAPACITY))
                 .collect(),
+            method_inboxes: (0..plan.groups.len())
+                .map(|_| ArrayQueue::new(INBOX_CAPACITY))
+                .collect(),
+            method_results: ArrayQueue::new(RESULT_CAPACITY),
+            method_results_dropped: Counter::default(),
             resets: (0..plan.groups.len())
                 .map(|_| ArrayQueue::new(RESET_CAPACITY))
                 .collect(),
@@ -676,10 +690,16 @@ impl Shared {
 /// The largest one-tick segment of any group of a plan.
 pub fn trace_buffer_len(plan: &Plan) -> usize {
     use joker_core::trace::{
-        INPUT_LEN, PROPOSAL_LEN, RESULT_LEN, SEGMENT_HEADER_LEN, TICK_FIXED_LEN,
+        INPUT_LEN, METHOD_FIXED_LEN, PROPOSAL_LEN, RESULT_LEN, SEGMENT_HEADER_LEN, TICK_FIXED_LEN,
     };
     let ports = plan.groups.iter().map(|g| g.ports.len()).max().unwrap_or(0);
-    SEGMENT_HEADER_LEN
+    let methods = if plan.instances.iter().any(|i| !i.methods.is_empty()) {
+        STAGING_CAPACITY * (METHOD_FIXED_LEN + 1 + joker_core::image::MAX_METHOD_ARGS * 10)
+    } else {
+        0
+    };
+    methods
+        + SEGMENT_HEADER_LEN
         + TICK_FIXED_LEN
         + ports * INPUT_LEN
         + 2

@@ -93,7 +93,9 @@ pub fn load_with(
             codes: report.codes().iter().map(|c| (*c).to_owned()).collect(),
         });
     };
-    let plan = Plan::new(&manifest, &report.paths, &context, &hash).map_err(LoadError::Plan)?;
+    let contracts = catalog::contracts_for_files(files);
+    let plan = Plan::new(&manifest, &report.paths, &context, &contracts, &hash)
+        .map_err(LoadError::Plan)?;
     Ok(Loaded {
         report,
         manifest,

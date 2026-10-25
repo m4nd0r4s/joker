@@ -5,8 +5,8 @@ use serde_json::Value;
 
 use crate::model::{
     AckRequest, ActivateRequest, BulkResetRequest, GenerationProposal, InvokeActionRequest,
-    ManualWriteRequest, MissingBlobsRequest, ReasonBody, ReleaseRequest, ResetTripRequest,
-    RollbackRequest, ShelveRequest, TraceRequest,
+    ManualWriteRequest, MethodCallRequest, MissingBlobsRequest, ReasonBody, ReleaseRequest,
+    ResetTripRequest, RollbackRequest, ShelveRequest, TraceRequest,
 };
 use crate::problem::Problem;
 
@@ -224,6 +224,16 @@ pub trait Backend: Send + Sync + 'static {
     }
     /// `GET /v1/alarm-events` (ref/09 §5.8).
     fn alarm_events(&self, _query: &Query) -> Result<Reply> {
+        Err(unavailable())
+    }
+    /// `POST /v1/instances/{instance}/methods/{method}` (ref/09 §5.11).
+    fn call_method(
+        &self,
+        _who: &Principal,
+        _instance: &str,
+        _method: &str,
+        _request: MethodCallRequest,
+    ) -> Result<Reply> {
         Err(unavailable())
     }
 }

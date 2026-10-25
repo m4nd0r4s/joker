@@ -8,6 +8,7 @@ pub mod apps;
 pub mod blobs;
 pub mod bridge;
 pub mod catalog;
+pub mod classes;
 pub mod clock;
 pub mod compress;
 pub mod control;
