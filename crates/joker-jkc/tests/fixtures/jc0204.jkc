@@ -1,0 +1,6 @@
+package fx
+
+class jc0204@1.0.0 {
+    in a: bool
+    method m() { a = true }
+}

@@ -1,0 +1,5 @@
+package fx
+
+class jc0101@1.0.0 {
+    in x bool
+}

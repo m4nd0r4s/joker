@@ -1,0 +1,5 @@
+package fx
+
+class chain_a@1.0.0 {
+    member b: fx/chain_b@1
+}

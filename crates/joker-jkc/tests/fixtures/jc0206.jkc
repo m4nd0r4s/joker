@@ -1,0 +1,6 @@
+package fx
+
+class jc0206@1.0.0 {
+    out a: bool @safe_hint(false)
+    method set(a: bool) { a = a }
+}

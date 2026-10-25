@@ -1,0 +1,5 @@
+package fx
+
+class jc0402@1.0.0 {
+    action go() -> ()
+}

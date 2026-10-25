@@ -1,0 +1,6 @@
+package fx
+
+class jc0201@1.0.0 {
+    out a: bool @safe_hint(false)
+    method m() { a = true; a = false }
+}

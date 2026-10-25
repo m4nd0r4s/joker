@@ -1,0 +1,5 @@
+package fx
+
+class jc0107@1.0.0 {
+    out x: f64
+}

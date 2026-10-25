@@ -1,0 +1,8 @@
+package fx
+
+class jc0210@1.0.0 {
+    capability c {
+        in x: bool
+    }
+    query q: bool = x
+}
