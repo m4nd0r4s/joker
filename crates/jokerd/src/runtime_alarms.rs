@@ -15,7 +15,6 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 use joker_core::alarm::Severity;
-use joker_core::outcome::{Outcome, RejectReason};
 
 use crate::alarms::{Journal, RuntimeCondition};
 use crate::historian::Historian;
@@ -59,11 +58,7 @@ pub fn conditions(
         .unwrap_or_default();
     for o in &plan.outputs {
         let Some(id) = plan.id(&o.path) else { continue };
-        let budget = shared
-            .output(id)
-            .and_then(|s| s.read())
-            .and_then(|(_, meta, _)| Outcome::from_code(meta.outcome, meta.detail))
-            == Some(Outcome::Rejected(RejectReason::Budget));
+        let budget = shared.output(id).is_some_and(|s| s.budget_refused());
         if o.max_actuations.is_some() || budget {
             out.push(RuntimeCondition {
                 id: format!("joker.output.{}.budget", o.path),

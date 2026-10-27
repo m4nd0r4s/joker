@@ -10,6 +10,7 @@ use joker_core::alarm::{AlarmError, AlarmEvent};
 use joker_core::class::MethodResult;
 use joker_core::commit::{DecisionRecord, WriteResult};
 use joker_core::image::{MethodCall, Proposal};
+use joker_core::outcome::{Outcome, RejectReason};
 use joker_core::value::NO_TS_SRC;
 use joker_core::{Quality, QualityCode, QualityReason, SignalId, Slot, ValueType};
 use joker_hal::{CommitBox, OutputBinding, RawEncoding, WriteKind, WriteStatus};
@@ -255,6 +256,9 @@ pub struct StateExport {
     pub blob: Vec<u8>,
 }
 
+/// The bit of an output status that keeps a budget refusal.
+const BUDGET_REFUSED_BIT: u32 = 26;
+
 /// The status of one output after its last commit, readable by the API.
 #[derive(Debug)]
 pub struct OutputStatus {
@@ -267,13 +271,30 @@ impl OutputStatus {
     }
 
     /// Publishes the status of a tick (cycle thread only: one writer).
+    /// It also keeps whether the output's last proposal was refused for
+    /// its actuation budget: set by `Rejected(Budget)`, kept through the
+    /// ticks with no proposal while a level is active, and cleared by any
+    /// other result or once no level is (ADR 0085, `budget`).
     pub fn publish(&self, applied: u64, meta: OutputMeta, tick: u64, at_mono_ns: u64) {
+        let refused = match Outcome::from_code(meta.outcome, meta.detail) {
+            Some(Outcome::Rejected(RejectReason::Budget)) => true,
+            Some(Outcome::None) => meta.level != 0 && self.budget_refused(),
+            _ => false,
+        };
         self.slot.write(
             applied,
-            Quality::from_bits(meta.pack()),
+            Quality::from_bits(meta.pack() | u32::from(refused) << BUDGET_REFUSED_BIT),
             tick as i64,
             at_mono_ns,
         );
+    }
+
+    /// Whether the output's last proposal was refused for its actuation
+    /// budget and its level still holds (see [`OutputStatus::publish`]).
+    pub fn budget_refused(&self) -> bool {
+        self.slot
+            .read(8)
+            .is_ok_and(|s| s.quality().to_bits() & (1 << BUDGET_REFUSED_BIT) != 0)
     }
 
     /// Reads the last published status.
