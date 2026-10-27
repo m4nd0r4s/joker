@@ -970,6 +970,7 @@ Each alarm creates `alarm.<alarm>.state` (`enum`, `ref/00` §6) and `alarm.<alar
 | `joker.output.<s>.manual_expiring` | 15 min before the end of the TTL of a manual write (`medium`) | `outputs.*.max_manual` | 01 §6, `ref/09` §5.6 |
 | `joker.output.<s>.manual_restored` | manual level restored at startup without a `synced` clock (`medium`) | `outputs.*.max_manual` | 16 A14 |
 | `joker.group.<g>.overrun` | `alarm_after` consecutive overruns (`high`) | `cycles.*.alarm_after` | §5.11, 01 §4 |
+| `joker.group.<g>.stalled` | the group has not ticked for more than three periods, or the supervisor's `force_safe` holds one of its outputs (`critical`) | — (the supervisor's fixed threshold) | 01 §20, ADR 0086 |
 | `joker.device.<d>.degraded`, `.offline`, `.drift` | link state of the device (`medium`, `high`, `high`) | `devices.*` | 05 §12, `ref/06` §2.12 |
 | `joker.store.disk_full` | the historian's disk is critical: only alarms and decisions are recorded (`high`) | `telemetry.store.max_disk` | 01 §20, ADR 0081 |
 | `joker.driver.<n>.crashloop` | W or X driver in crashloop (critical) | — (fixed threshold; the backoff is `drivers.*.restart`) | `ref/06` §4.5, §5.7 |
