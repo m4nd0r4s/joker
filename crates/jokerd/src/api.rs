@@ -1148,6 +1148,7 @@ impl Backend for Node {
 
     fn metrics(&self) -> Result<Reply, Problem> {
         let view = self.view();
+        let now = self.now_mono();
         let drivers: Vec<Value> = view.as_ref().map_or_else(Vec::new, |v| {
             devices_json(v)
                 .into_iter()
@@ -1169,8 +1170,8 @@ impl Backend for Node {
                         "group": g.name,
                         "ticks": s.ticks.get(),
                         "overruns": s.overruns.get(),
-                        "jitter": {"max": duration(s.max_late_ns.get())},
-                        "duration": {"max": duration(s.max_duration_ns.get())},
+                        "jitter": percentiles(&s.jitter, s.max_late_ns.get(), now),
+                        "duration": percentiles(&s.duration, s.max_duration_ns.get(), now),
                     })
                 })
                 .collect(),
@@ -2617,6 +2618,26 @@ impl Node {
         let sample = v.shared.slots.get(id.index())?.read(8).ok()?;
         Some(wire::sample(s, &sample, now, self.utc_origin_ns))
     }
+}
+
+/// The `Percentiles` of a histogram (ref/09 §5.2): `p50`, `p99` and
+/// `p999` as the upper bound of their bucket, never above `max`, and the
+/// `window` they cover since the first value; only `max` before it.
+fn percentiles(h: &crate::shared::Histogram, max: u64, now_mono_ns: u64) -> Value {
+    let mut m = Map::new();
+    for (name, q) in [("p50", 0.5), ("p99", 0.99), ("p999", 0.999)] {
+        if let Some(v) = h.quantile(q) {
+            m.insert(name.into(), json!(duration(v.min(max))));
+        }
+    }
+    m.insert("max".into(), json!(duration(max)));
+    if let Some(first) = h.first_mono_ns() {
+        m.insert(
+            "window".into(),
+            json!(duration(now_mono_ns.saturating_sub(first))),
+        );
+    }
+    Value::Object(m)
 }
 
 fn trace_json(e: &TraceEntry) -> Value {
