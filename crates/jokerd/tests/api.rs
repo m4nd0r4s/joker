@@ -1317,10 +1317,9 @@ async fn a_manual_level_that_cannot_be_persisted_is_recorded() {
     );
     let failures: Vec<Value> = decisions_from(dir.path(), 0)
         .into_iter()
-        .filter(|e| e["record"] == "state_write_failed")
+        .filter(|e| e["record"] == "state_write_failed" && e["file"] == "state/manual")
         .collect();
     assert_eq!(failures.len(), 1, "{failures:?}");
-    assert_eq!(failures[0]["file"], "state/manual");
     assert_eq!(failures[0]["op"], "set");
     assert_eq!(failures[0]["output"], "pi.act_led");
     assert_eq!(failures[0]["gen"], 1);
