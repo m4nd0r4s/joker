@@ -198,6 +198,46 @@ steps = [
     }
 
     #[test]
+    fn a_sysfs_signal_takes_the_type_its_address_implies() {
+        let joker_toml = r#"
+[project]
+name  = "bridge-test"
+joker = "1.0"
+mode  = "dev"
+
+[outputs."pi.act_led"]
+safe = false
+
+[devices.pi]
+driver = "sysfs"
+poll   = "1s"
+
+[devices.pi.signals]
+act_led  = { led = "ACT", direction = "output" }
+cpu_temp = { thermal = "thermal_zone0" }
+"#;
+        let dir = project(&[("joker.toml", joker_toml)]);
+        let loaded = load(&OsFileSystem, &dir.path().join("joker.toml"), &NativeTasks)
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert!(!loaded.report.has_errors(), "{}", loaded.report.render());
+        let (context, _) = jokerd::catalog::context_for_project(&NativeTasks, dir.path());
+        let plan = jokerd::bridge::device_plan(
+            "pi",
+            &loaded.manifest.devices["pi"],
+            &loaded.manifest,
+            &context,
+            &loaded.report.paths,
+        )
+        .unwrap_or_else(|e| panic!("{e}"));
+        let types: Vec<(&str, &str)> = plan
+            .points
+            .iter()
+            .map(|p| (p.path.as_str(), p.type_name.as_str()))
+            .collect();
+        assert_eq!(types, [("pi.act_led", "bool"), ("pi.cpu_temp", "f64")]);
+    }
+
+    #[test]
     fn no_fallback_means_no_keepalive() {
         let dir = project(&[
             ("joker.toml", JOKER_TOML),

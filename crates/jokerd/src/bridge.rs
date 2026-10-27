@@ -44,7 +44,7 @@ pub fn table_to_cbor(table: &BTreeMap<String, Node>) -> Vec<u8> {
 
 use joker_hal::types::{Direction, RawKind};
 use joker_manifest::check::PathRegistry;
-use joker_manifest::context::{Context, Direction as ManifestDirection, PointPoll};
+use joker_manifest::context::{Context, Direction as ManifestDirection, PointPoll, SignalType};
 use joker_manifest::model::{Device, Manifest};
 use joker_units::Duration;
 
@@ -725,6 +725,20 @@ pub fn output_conversion(point: &DevicePointPlan) -> Result<Option<OutputConvers
     }))
 }
 
+/// The type name of a manifest signal declared without `type`, when its
+/// driver's address implies one unambiguously: a sysfs `led` is `bool` and a
+/// `thermal` zone `f64` (ref/01, driver table). An integer is left out: its
+/// width cannot be recovered from the checked type.
+fn implied_type_name(ty: &SignalType) -> Option<&'static str> {
+    match ty {
+        SignalType::Bool => Some("bool"),
+        SignalType::Float => Some("f64"),
+        SignalType::Text => Some("string"),
+        SignalType::Bytes => Some("bytes"),
+        _ => None,
+    }
+}
+
 #[allow(
     clippy::too_many_arguments,
     reason = "the resolved pieces of one point, each from a different place of the manifest or the profile"
@@ -841,7 +855,12 @@ pub fn device_plan(
     } else {
         for (signal, raw) in &device.signals {
             let raw = &raw.value;
-            let Some(type_name) = raw.get("type").and_then(Node::as_str) else {
+            let resolved = paths.get(&format!("{name}.{signal}"));
+            let Some(type_name) = raw
+                .get("type")
+                .and_then(Node::as_str)
+                .or_else(|| resolved.and_then(|r| implied_type_name(&r.info.ty)))
+            else {
                 return Err(err(format!("{name}.{signal}: missing `type`")));
             };
             let address_only: BTreeMap<String, Node> = raw
@@ -852,7 +871,7 @@ pub fn device_plan(
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect();
             let poll_ns = parse_poll(raw).map(Duration::as_nanos).or(device_poll_ns);
-            let acquisition = match paths.get(&format!("{name}.{signal}")) {
+            let acquisition = match resolved {
                 Some(r) => adjusted(&r.info, false, manifest, paths, name, signal)?,
                 None => joker_manifest::context::Acquisition::NONE,
             };
