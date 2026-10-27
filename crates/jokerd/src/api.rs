@@ -493,6 +493,7 @@ impl Node {
         }
         m.insert("levels".into(), Value::Array(levels));
         m.insert("tripped".into(), json!(tripped));
+        m.insert("force_safe".into(), json!(force_safe(v, o)));
         m.insert("writers".into(), Value::Array(writers));
         Value::Object(m)
     }
@@ -683,6 +684,25 @@ fn reset_item(output: &str, result: &Result<&'static str, Problem>) -> Value {
             "error": {"code": p.code, "detail": p.detail.clone().unwrap_or_default()},
         }),
     }
+}
+
+/// Whether the supervisor holds `o` at its `safe` through the `force_safe`
+/// bit of its latest-wins box (`OutputState.force_safe`, ref/09 §3): the
+/// driver then sends `safe` whatever the arbiter applied.
+fn force_safe(v: &View, o: &OutputPlan) -> bool {
+    let Some(id) = v.plan.id(&o.path) else {
+        return false;
+    };
+    v.shared
+        .commit_bindings
+        .iter()
+        .zip(v.shared.commit_boxes.iter())
+        .any(|(bindings, boxes)| {
+            bindings
+                .iter()
+                .position(|b| b.signal == id)
+                .is_some_and(|i| joker_hal::commit::ForceSafe::new(boxes).is_set(i))
+        })
 }
 
 fn kind_name(kind: WriterKind) -> &'static str {
