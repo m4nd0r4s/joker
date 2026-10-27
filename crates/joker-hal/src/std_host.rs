@@ -283,22 +283,40 @@ fn io_error(e: &io::Error) -> IoError {
 }
 
 /// A serial port on tokio's reactor.
+///
+/// A port that reports [`IoError::Disconnected`] (a USB adapter unplugged)
+/// is opened again through its configured path on the next
+/// [`SerialIo::discard_input`], which a driver calls when it reconnects: the
+/// kernel gives a replugged adapter a new `ttyUSB<n>`, and a
+/// `/dev/serial/by-id/` path (docs/23 §6.3) follows it.
 #[derive(Debug)]
 pub struct TokioSerial {
     fd: AsyncFd<File>,
     info: SerialInfo,
+    config: SerialConfig,
+    gone: bool,
 }
 
 impl TokioSerial {
     /// Opens and configures the port: raw mode, the line settings, and the
     /// modem lines. Must run inside a tokio runtime.
+    pub fn open(config: &SerialConfig) -> io::Result<Self> {
+        Ok(Self {
+            fd: Self::open_fd(config)?,
+            info: config.info,
+            config: config.clone(),
+            gone: false,
+        })
+    }
+
+    /// Opens the descriptor and registers it with the reactor.
     ///
     /// The reactor registration uses `AsyncFd::new`, deprecated in tokio
     /// 1.54 because a generic `T` could report a different descriptor over
     /// time; a `File` owns its descriptor and always reports the same one,
     /// which is the condition `AsyncFd::register` asks for.
     #[allow(deprecated)]
-    pub fn open(config: &SerialConfig) -> io::Result<Self> {
+    fn open_fd(config: &SerialConfig) -> io::Result<AsyncFd<File>> {
         let fd = rustix::fs::open(
             Path::new(&config.port),
             OFlags::RDWR | OFlags::NOCTTY | OFlags::NONBLOCK | OFlags::CLOEXEC,
@@ -334,15 +352,21 @@ impl TokioSerial {
         tcsetattr(&fd, OptionalActions::Now, &t)?;
         joker_serial_sys::set_modem_lines(fd.as_fd(), config.dtr.level(), config.rts.level())?;
         tcflush(&fd, QueueSelector::IOFlush)?;
-        Ok(Self {
-            fd: AsyncFd::new(File::from(fd))?,
-            info: config.info,
-        })
+        AsyncFd::new(File::from(fd))
+    }
+
+    /// Notes a disconnection, so the next `discard_input` opens the port
+    /// again.
+    fn track(&mut self, e: IoError) -> IoError {
+        if e == IoError::Disconnected {
+            self.gone = true;
+        }
+        e
     }
 }
 
-impl SerialIo for TokioSerial {
-    fn poll_read(&mut self, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<Result<usize, IoError>> {
+impl TokioSerial {
+    fn read_fd(&mut self, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<Result<usize, IoError>> {
         loop {
             let mut guard = match self.fd.poll_read_ready(cx) {
                 Poll::Ready(Ok(g)) => g,
@@ -358,7 +382,7 @@ impl SerialIo for TokioSerial {
         }
     }
 
-    fn poll_write(&mut self, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize, IoError>> {
+    fn write_fd(&mut self, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize, IoError>> {
         loop {
             let mut guard = match self.fd.poll_write_ready(cx) {
                 Poll::Ready(Ok(g)) => g,
@@ -372,13 +396,30 @@ impl SerialIo for TokioSerial {
             }
         }
     }
+}
+
+impl SerialIo for TokioSerial {
+    fn poll_read(&mut self, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<Result<usize, IoError>> {
+        self.read_fd(cx, buf).map_err(|e| self.track(e))
+    }
+
+    fn poll_write(&mut self, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize, IoError>> {
+        self.write_fd(cx, buf).map_err(|e| self.track(e))
+    }
 
     fn poll_flush(&mut self, _: &mut Context<'_>) -> Poll<Result<(), IoError>> {
         Poll::Ready(Ok(()))
     }
 
     fn discard_input(&mut self) -> Result<(), IoError> {
-        tcflush(self.fd.get_ref(), QueueSelector::IFlush).map_err(|e| io_error(&e.into()))
+        if self.gone {
+            self.fd = Self::open_fd(&self.config).map_err(|e| io_error(&e))?;
+            self.gone = false;
+            return Ok(());
+        }
+        tcflush(self.fd.get_ref(), QueueSelector::IFlush)
+            .map_err(|e| io_error(&e.into()))
+            .map_err(|e| self.track(e))
     }
 
     fn info(&self) -> SerialInfo {
@@ -742,6 +783,61 @@ mod tests {
         let r = short.within(port.receive_exact(&mut buf)).await;
         assert!(r.is_err(), "{r:?} {buf:?}");
         assert!(host.now().mono_ns >= 20_000_000);
+    }
+
+    fn pty() -> (File, PathBuf) {
+        use rustix::pty::{OpenptFlags, grantpt, openpt, ptsname, unlockpt};
+        let master = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY).unwrap();
+        grantpt(&master).unwrap();
+        unlockpt(&master).unwrap();
+        let name = ptsname(&master, Vec::new()).unwrap();
+        (File::from(master), PathBuf::from(name.to_str().unwrap()))
+    }
+
+    #[tokio::test]
+    async fn a_replugged_port_is_opened_again_through_its_path() {
+        let dir = std::env::temp_dir().join(std::format!(
+            "joker-hal-replug-{}-{}",
+            std::process::id(),
+            host_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let by_id = dir.join("usb-bench-if00-port0");
+        let (first, first_slave) = pty();
+        std::os::unix::fs::symlink(&first_slave, &by_id).unwrap();
+        let config = SerialConfig {
+            port: by_id.clone(),
+            info: SerialInfo::new_8n1(115_200),
+            dtr: LineControl::Keep,
+            rts: LineControl::Keep,
+        };
+        let mut port = SerialPort::new(TokioSerial::open(&config).unwrap());
+        let host = TokioHost::new(ClockQuality::Unsynced);
+        drop(first);
+        let mut buf = [0u8; 1];
+        let cx = Cx::new(&host, host.now().mono_ns + 2_000_000_000);
+        let gone = cx.within(port.receive_exact(&mut buf)).await.unwrap();
+        assert_eq!(gone, Err(IoError::Disconnected));
+
+        let (mut second, second_slave) = pty();
+        std::fs::remove_file(&by_id).unwrap();
+        std::os::unix::fs::symlink(&second_slave, &by_id).unwrap();
+        port.discard_input().unwrap();
+        second.write_all(&[7]).unwrap();
+        let cx = Cx::new(&host, host.now().mono_ns + 2_000_000_000);
+        cx.within(port.receive_exact(&mut buf))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(buf, [7]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    fn host_nanos() -> u128 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
     }
 
     #[tokio::test]
