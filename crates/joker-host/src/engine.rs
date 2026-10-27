@@ -72,7 +72,7 @@ impl HostEngine {
     fn build(triple: &str) -> Result<Self, HostError> {
         let mut config = Config::new();
         config
-            .target(triple)
+            .target(compile_target(triple))
             .map_err(|e| HostError::new(codes::AOT_UNAVAILABLE, format!("target {triple}: {e}")))?;
         config
             .wasm_component_model(true)
@@ -129,6 +129,17 @@ impl HostEngine {
 
     pub(crate) fn wasmtime(&self) -> &Engine {
         &self.engine
+    }
+}
+
+/// The wasmtime compilation target of a node triple: Cranelift's own triple,
+/// or the Pulley interpreter on 32-bit Arm, which Cranelift does not support
+/// (docs/01 §9 and §22).
+fn compile_target(triple: &str) -> &str {
+    if triple.starts_with("arm-") || triple.starts_with("armv") {
+        "pulley32"
+    } else {
+        triple
     }
 }
 
@@ -194,6 +205,20 @@ mod tests {
         let ci = HostEngine::for_target("x86_64-unknown-linux-gnu").unwrap();
         assert_ne!(pi.id(), ci.id());
         assert!(pi.id().as_str().contains("aarch64-unknown-linux-gnu"));
+    }
+
+    #[test]
+    fn armv7_and_armv6_nodes_get_a_pulley_engine() {
+        let empty_component = b"\0asm\x0d\0\x01\0";
+        for triple in [
+            "armv7-unknown-linux-gnueabihf",
+            "arm-unknown-linux-musleabihf",
+        ] {
+            let engine = HostEngine::for_target(triple).unwrap();
+            assert!(engine.id().as_str().contains(triple));
+            assert!(!engine.is_native());
+            engine.precompile(empty_component).unwrap();
+        }
     }
 
     #[test]
