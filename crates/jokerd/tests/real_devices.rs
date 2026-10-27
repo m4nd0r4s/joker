@@ -93,6 +93,56 @@ fn a_real_sysfs_device_reaches_shared_slots() {
     runtime.shutdown_timeout(Duration::from_secs(1));
 }
 
+#[test]
+fn real_samples_are_stamped_on_the_daemon_clock() {
+    let fake = FakeSys::new();
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("joker.toml"), JOKER_TOML).unwrap();
+    let loaded = load(&OsFileSystem, &dir.path().join("joker.toml"), &NativeTasks)
+        .unwrap_or_else(|e| panic!("{e}"));
+    let plan = Arc::new(loaded.plan);
+    let shared = Arc::new(Shared::new(&plan));
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+
+    let clock = jokerd::pacer::Monotonic::start();
+    std::thread::sleep(Duration::from_millis(300));
+    let devices = RealDevices::with_sysfs_root(runtime.handle().clone(), fake.0.to_str().unwrap())
+        .with_monotonic(clock);
+    let set = devices.start(&plan, &shared);
+
+    let temp_id = plan.id("pi.cpu_temp").unwrap();
+    let mut stamped = None;
+    for _ in 0..50 {
+        std::thread::sleep(Duration::from_millis(20));
+        if let Ok(sample) = shared.slots[temp_id.index()].read(8)
+            && sample.seq() != 0
+        {
+            stamped = Some((sample.ts_acq(), clock.now_ns()));
+            break;
+        }
+    }
+    let (ts_acq, now) = stamped.expect("the sysfs driver never wrote a sample");
+    assert!(
+        ts_acq >= 300_000_000,
+        "ts_acq {ts_acq} is not on the daemon clock"
+    );
+    assert!(
+        ts_acq <= now,
+        "ts_acq {ts_acq} is after the daemon's now {now}"
+    );
+    assert!(
+        now - ts_acq < 100_000_000,
+        "sample aged {} ns",
+        now - ts_acq
+    );
+
+    set.stop();
+    runtime.shutdown_timeout(Duration::from_secs(1));
+}
+
 const GPIO_JOKER_TOML: &str = r#"
 [project]
 name  = "real-devices-gpio-test"

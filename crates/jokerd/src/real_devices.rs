@@ -27,6 +27,7 @@ use tokio::sync::watch;
 use crate::bridge::{DevicePlan, owned_request};
 use crate::devices::{DeviceSet, Devices};
 use crate::drivers::{ActionCall, mark_bad, point_targets, run_driver};
+use crate::pacer::Monotonic;
 use crate::plan::Plan;
 use crate::shared::Shared;
 
@@ -535,6 +536,7 @@ pub struct RealDevices {
     handle: tokio::runtime::Handle,
     sysfs_root: Arc<str>,
     clock: Arc<ClockQualityCell>,
+    mono: Monotonic,
     i2c: I2cOpener,
 }
 
@@ -560,6 +562,15 @@ impl RealDevices {
         self
     }
 
+    /// The same devices, stamping their samples on `mono`, the daemon's
+    /// monotonic clock, so that a `ts_acq` and the cycle's latch instants
+    /// are on one time base whenever a generation starts its devices.
+    #[must_use]
+    pub fn with_monotonic(mut self, mono: Monotonic) -> Self {
+        self.mono = mono;
+        self
+    }
+
     /// Devices spawned on `handle`, with `sysfs`'s root overridden (a
     /// fake `/sys` tree in a test).
     pub fn with_sysfs_root(handle: tokio::runtime::Handle, sysfs_root: &str) -> Self {
@@ -567,6 +578,7 @@ impl RealDevices {
             handle,
             sysfs_root: Arc::from(sysfs_root),
             clock: Arc::new(ClockQualityCell::new(ClockQuality::Unsynced)),
+            mono: Monotonic::start(),
             i2c: linux_i2c(),
         }
     }
@@ -601,7 +613,10 @@ impl DeviceSet for RealSet {
 impl Devices for RealDevices {
     fn start(&self, plan: &Arc<Plan>, shared: &Arc<Shared>) -> Box<dyn DeviceSet> {
         let (tx, rx) = watch::channel(false);
-        let host = Arc::new(TokioHost::tracking(Arc::clone(&self.clock)));
+        let host = Arc::new(TokioHost::from_origin(
+            self.mono.origin(),
+            Arc::clone(&self.clock),
+        ));
         let mut actions = BTreeMap::new();
         for (i, device) in plan.devices.iter().enumerate() {
             let plan = Arc::clone(plan);
