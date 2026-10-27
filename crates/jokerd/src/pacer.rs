@@ -44,6 +44,11 @@ impl Monotonic {
         }
     }
 
+    /// The instant this clock reads as zero.
+    pub fn origin(&self) -> StdInstant {
+        self.origin
+    }
+
     /// Nanoseconds since the origin.
     pub fn now_ns(&self) -> u64 {
         u64::try_from(self.origin.elapsed().as_nanos()).unwrap_or(u64::MAX)

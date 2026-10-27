@@ -202,7 +202,9 @@ pub fn run(options: Options, tasks: Arc<dyn TaskProvider>) -> Result<(), String>
             clock,
             std::time::Duration::from_millis(10),
         ),
-        RealDevices::new(runtime.handle().clone()).with_clock(quality.cell()),
+        RealDevices::new(runtime.handle().clone())
+            .with_clock(quality.cell())
+            .with_monotonic(clock),
     ));
     let utc_origin_ns = crate::wire::utc_now_ns().saturating_sub(clock.now_ns() as i64);
     let controller: SharedController = Arc::new(Mutex::new(controller(
