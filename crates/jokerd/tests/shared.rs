@@ -69,3 +69,42 @@ fn a_wide_slot_starts_uninitialized_and_advances_after_a_write() {
     );
     assert_eq!(slot.read(0).unwrap().seq(), 1);
 }
+
+#[test]
+fn an_alarm_message_shows_a_wide_signal_from_its_wide_slot() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("joker.toml"), JOKER_TOML).unwrap();
+    let loaded = load(&OsFileSystem, &dir.path().join("joker.toml"), &NativeTasks)
+        .unwrap_or_else(|e| panic!("{e}"));
+    let shared = Shared::new(&loaded.plan);
+    let template = "fault on {sensor.temp}";
+    assert_eq!(
+        jokerd::alarms::interpolate(template, &loaded.plan, &shared),
+        "fault on ?"
+    );
+
+    let id = loaded.plan.id("sensor.temp").unwrap();
+    shared.wide_slot(id).unwrap().write(
+        &[0xAB, 0xCD],
+        joker_core::Quality::GOOD,
+        joker_core::value::NO_TS_SRC,
+        1,
+    );
+    assert_eq!(
+        jokerd::alarms::interpolate(template, &loaded.plan, &shared),
+        "fault on q80="
+    );
+
+    let bad = joker_core::Quality::new(
+        joker_core::QualityCode::Bad,
+        joker_core::QualityReason::CommFailure,
+    );
+    shared
+        .wide_slot(id)
+        .unwrap()
+        .write(&[], bad, joker_core::value::NO_TS_SRC, 2);
+    assert_eq!(
+        jokerd::alarms::interpolate(template, &loaded.plan, &shared),
+        "fault on ?"
+    );
+}

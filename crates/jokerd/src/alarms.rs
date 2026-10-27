@@ -741,13 +741,23 @@ fn render(path: &str, plan: &Plan, shared: &Shared) -> String {
     let Some((signal, id)) = plan.signal(path).zip(plan.id(path)) else {
         return "?".into();
     };
-    let Some(sample) = shared.slots.get(id.index()).and_then(|s| s.read(8).ok()) else {
-        return "?".into();
+    let v = if crate::shared::is_wide(signal.ty) {
+        let Some(sample) = shared.wide_slot(id).and_then(|s| s.read(8).ok()) else {
+            return "?".into();
+        };
+        if sample.seq() == 0 || sample.quality().is_bad() {
+            return "?".into();
+        }
+        crate::wire::wide_value(signal, sample.as_slice())
+    } else {
+        let Some(sample) = shared.slots.get(id.index()).and_then(|s| s.read(8).ok()) else {
+            return "?".into();
+        };
+        if sample.seq() == 0 || sample.quality().is_bad() {
+            return "?".into();
+        }
+        crate::wire::value(signal, sample.transport_bits())
     };
-    if sample.seq() == 0 || sample.quality().is_bad() {
-        return "?".into();
-    }
-    let v = crate::wire::value(signal, sample.transport_bits());
     let text = match &v {
         Value::String(s) => s.clone(),
         Value::Number(n) => match (n.as_i64(), n.as_f64()) {
