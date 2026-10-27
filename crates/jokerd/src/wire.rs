@@ -2,7 +2,8 @@
 
 use std::time::{Duration as StdDuration, SystemTime, UNIX_EPOCH};
 
-use joker_core::{Quality, QualityCode, Sample, ValueType};
+use base64::Engine as _;
+use joker_core::{Quality, QualityCode, Sample, ValueType, WideSample};
 use joker_units::{Duration, Literal, Unit};
 use serde_json::{Value, json};
 
@@ -69,6 +70,18 @@ pub fn value(signal: &SignalPlan, bits: u64) -> Value {
     }
 }
 
+/// The JSON value of a wide signal's bytes (ref/00 §4.1, ADR 0062): the
+/// text of a `string`, padded standard base64 (RFC 4648 §4) of a `bytes`.
+/// A `string` slot only ever holds valid UTF-8, so `null` there is a
+/// corrupt slot, never a value.
+pub fn wide_value(signal: &SignalPlan, bytes: &[u8]) -> Value {
+    match signal.ty {
+        ValueType::Bytes => json!(base64::engine::general_purpose::STANDARD.encode(bytes)),
+        ValueType::String => core::str::from_utf8(bytes).map_or(Value::Null, |s| json!(s)),
+        _ => Value::Null,
+    }
+}
+
 /// The canonical type name of a signal (ref/00 §6).
 pub fn type_name(ty: ValueType) -> &'static str {
     match ty {
@@ -103,23 +116,79 @@ pub fn reason_name(q: Quality) -> &'static str {
 /// (docs/01 §3.3) at `now_mono_ns`, and translates `ts_acq` to UTC with
 /// `utc_origin_ns` (the UTC time at monotonic zero).
 pub fn sample(signal: &SignalPlan, s: &Sample, now_mono_ns: u64, utc_origin_ns: i64) -> Value {
-    let mut q = s.quality();
-    if let Some(max_age) = signal.max_age_ns
-        && s.seq() != 0
-        && !q.is_bad()
-    {
-        let age = now_mono_ns.saturating_sub(s.ts_acq());
-        if age > max_age.saturating_mul(2) {
-            q = Quality::new(QualityCode::Bad, joker_core::QualityReason::Stale);
-        } else if age > max_age && q.is_good() {
-            q = Quality::new(QualityCode::Uncertain, joker_core::QualityReason::Stale);
-        }
-    }
+    let q = graded(signal, s.quality(), s.seq(), s.ts_acq(), now_mono_ns);
     let shown = if q.is_bad() || s.seq() == 0 {
         Value::Null
     } else {
         value(signal, s.transport_bits())
     };
+    sample_object(
+        signal,
+        shown,
+        q,
+        s.seq(),
+        s.ts_acq(),
+        now_mono_ns,
+        utc_origin_ns,
+    )
+}
+
+/// [`sample`]'s counterpart for a wide (`string`/`bytes`) signal, with the
+/// same `max_age` grading and `null` for a bad or never written sample
+/// (ADR 0062, decision 13).
+pub fn wide_sample(
+    signal: &SignalPlan,
+    s: &WideSample,
+    now_mono_ns: u64,
+    utc_origin_ns: i64,
+) -> Value {
+    let q = graded(signal, s.quality(), s.seq(), s.ts_acq(), now_mono_ns);
+    let shown = if q.is_bad() || s.seq() == 0 {
+        Value::Null
+    } else {
+        wide_value(signal, s.as_slice())
+    };
+    sample_object(
+        signal,
+        shown,
+        q,
+        s.seq(),
+        s.ts_acq(),
+        now_mono_ns,
+        utc_origin_ns,
+    )
+}
+
+/// The quality a sample reads with at `now_mono_ns`: `uncertain(stale)`
+/// past `max_age` and `bad(stale)` past twice it, as the latch ages it
+/// (docs/01 §3.3).
+fn graded(signal: &SignalPlan, q: Quality, seq: u64, ts_acq: u64, now_mono_ns: u64) -> Quality {
+    let Some(max_age) = signal.max_age_ns else {
+        return q;
+    };
+    if seq == 0 || q.is_bad() {
+        return q;
+    }
+    let age = now_mono_ns.saturating_sub(ts_acq);
+    if age > max_age.saturating_mul(2) {
+        Quality::new(QualityCode::Bad, joker_core::QualityReason::Stale)
+    } else if age > max_age && q.is_good() {
+        Quality::new(QualityCode::Uncertain, joker_core::QualityReason::Stale)
+    } else {
+        q
+    }
+}
+
+/// The JSON object of a sample (ref/00 §4.2) from its shown value.
+fn sample_object(
+    signal: &SignalPlan,
+    shown: Value,
+    q: Quality,
+    seq: u64,
+    ts_acq: u64,
+    now_mono_ns: u64,
+    utc_origin_ns: i64,
+) -> Value {
     let mut m = serde_json::Map::new();
     m.insert("path".into(), json!(signal.path));
     m.insert("value".into(), shown);
@@ -130,12 +199,12 @@ pub fn sample(signal: &SignalPlan, s: &Sample, now_mono_ns: u64, utc_origin_ns: 
     m.insert("reason".into(), json!(reason_name(q)));
     m.insert(
         "ts_acq".into(),
-        json!(timestamp(utc_origin_ns.saturating_add(s.ts_acq() as i64))),
+        json!(timestamp(utc_origin_ns.saturating_add(ts_acq as i64))),
     );
-    m.insert("seq".into(), json!(s.seq()));
+    m.insert("seq".into(), json!(seq));
     m.insert(
         "age".into(),
-        json!(duration(now_mono_ns.saturating_sub(s.ts_acq()))),
+        json!(duration(now_mono_ns.saturating_sub(ts_acq))),
     );
     Value::Object(m)
 }
@@ -273,5 +342,83 @@ mod tests {
     fn timestamps() {
         assert_eq!(timestamp(0), "1970-01-01T00:00:00.000000000Z");
         assert_eq!(timestamp(1_500_000_000), "1970-01-01T00:00:01.500000000Z");
+    }
+
+    fn wide_signal(ty: ValueType, max_age_ns: Option<u64>) -> SignalPlan {
+        SignalPlan {
+            path: "sensor.temp".into(),
+            ty,
+            unit: "1".into(),
+            direction: joker_core::registry::Direction::Input,
+            group: None,
+            max_age_ns,
+            device: None,
+            variants: Vec::new(),
+            enum_name: None,
+        }
+    }
+
+    #[test]
+    fn wide_value_encodes_bytes_as_base64_and_string_as_plain_text() {
+        let bytes_signal = wide_signal(ValueType::Bytes, None);
+        assert_eq!(wide_value(&bytes_signal, &[0xAB, 0xCD]), json!("q80="));
+        assert_eq!(wide_value(&bytes_signal, &[]), json!(""));
+
+        let string_signal = wide_signal(ValueType::String, None);
+        assert_eq!(wide_value(&string_signal, b"hello"), json!("hello"));
+    }
+
+    #[test]
+    fn wide_sample_follows_the_same_shape_as_scalar_sample() {
+        let signal = wide_signal(ValueType::Bytes, None);
+        let slot = joker_core::WideSlot::new();
+        slot.write(
+            &[0xAB, 0xCD],
+            Quality::GOOD,
+            joker_core::value::NO_TS_SRC,
+            5,
+        );
+        let s = slot.read(0).unwrap();
+        let v = wide_sample(&signal, &s, 10, 0);
+        assert_eq!(v["path"], json!("sensor.temp"));
+        assert_eq!(v["value"], json!("q80="));
+        assert_eq!(v["quality"], json!("good"));
+        assert_eq!(v["seq"], json!(1));
+    }
+
+    #[test]
+    fn a_wide_sample_never_written_or_bad_shows_null() {
+        let signal = wide_signal(ValueType::String, None);
+        let slot = joker_core::WideSlot::new();
+        let v = wide_sample(&signal, &slot.read(0).unwrap(), 10, 0);
+        assert_eq!(v["value"], Value::Null);
+
+        let bad = Quality::new(QualityCode::Bad, joker_core::QualityReason::CommFailure);
+        slot.write(&[], bad, joker_core::value::NO_TS_SRC, 5);
+        let v = wide_sample(&signal, &slot.read(0).unwrap(), 10, 0);
+        assert_eq!(v["value"], Value::Null);
+        assert_eq!(v["reason"], json!("comm_failure"));
+    }
+
+    #[test]
+    fn a_wide_sample_older_than_twice_max_age_is_bad_stale_with_no_value() {
+        let signal = wide_signal(ValueType::String, Some(100));
+        let slot = joker_core::WideSlot::new();
+        slot.write(b"OK", Quality::GOOD, joker_core::value::NO_TS_SRC, 1_000);
+        let s = slot.read(0).unwrap();
+
+        let fresh = wide_sample(&signal, &s, 1_050, 0);
+        assert_eq!(fresh["value"], json!("OK"));
+        assert_eq!(fresh["quality"], json!("good"));
+
+        let aging = wide_sample(&signal, &s, 1_150, 0);
+        assert_eq!(aging["value"], json!("OK"));
+        assert_eq!(aging["quality"], json!("uncertain"));
+        assert_eq!(aging["reason"], json!("stale"));
+
+        let stale = wide_sample(&signal, &s, 1_201, 0);
+        assert_eq!(stale["value"], Value::Null);
+        assert_eq!(stale["quality"], json!("bad"));
+        assert_eq!(stale["reason"], json!("stale"));
     }
 }

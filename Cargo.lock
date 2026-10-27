@@ -1619,6 +1619,7 @@ name = "jokerd"
 version = "0.0.0"
 dependencies = [
  "assert_no_alloc",
+ "base64",
  "crossbeam-queue",
  "futures-util",
  "humantime",
