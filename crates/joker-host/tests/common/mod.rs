@@ -30,7 +30,16 @@ use joker_host::{
 /// ```sh
 /// cargo build --locked --release --target wasm32-wasip2 -p joker-host-fixture-echo
 /// ```
+///
+/// With `JOKER_GUEST_DIR` set, the component is read from
+/// `<dir>/<package with _>.wasm` instead: a test binary cross-built for a
+/// node runs there with the guests built on the laptop, since a node never
+/// compiles (docs/26 E5).
 pub fn guest(package: &str) -> Vec<u8> {
+    if let Some(dir) = std::env::var_os("JOKER_GUEST_DIR") {
+        let artifact = PathBuf::from(dir).join(format!("{}.wasm", package.replace('-', "_")));
+        return std::fs::read(&artifact).unwrap_or_else(|e| panic!("{}: {e}", artifact.display()));
+    }
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let target_dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("guests");
     let status = Command::new(env!("CARGO"))
