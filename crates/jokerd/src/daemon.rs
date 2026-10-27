@@ -29,6 +29,19 @@ pub struct Options {
 }
 
 impl Options {
+    /// The project around the entry manifest, whose `profiles/` and
+    /// `boards/` a generation proposed without its own catalog carries,
+    /// as [`crate::load::load`] reads them; empty without `--manifest`.
+    pub fn project_root(&self) -> PathBuf {
+        match &self.entry {
+            Some(entry) => match entry.parent() {
+                Some(dir) if !dir.as_os_str().is_empty() => dir.to_path_buf(),
+                _ => PathBuf::from("."),
+            },
+            None => PathBuf::new(),
+        }
+    }
+
     /// Parses `--state-dir <dir>`, `--socket <path>`, `--manifest
     /// <entry>` and `--board <file>` (ref/02 §2.2.3).
     pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Self, String> {
@@ -132,6 +145,7 @@ pub fn controller(
         Config {
             utc_origin_ns,
             clock: quality,
+            project_root: options.project_root(),
             ..Config::default()
         },
     )
@@ -284,6 +298,16 @@ mod tests {
 
     fn args(s: &str) -> Vec<String> {
         s.split_whitespace().map(str::to_owned).collect()
+    }
+
+    #[test]
+    fn the_project_root_is_the_directory_of_the_entry_manifest() {
+        let o = Options::parse(args("--manifest /srv/site/joker.toml")).unwrap();
+        assert_eq!(o.project_root(), PathBuf::from("/srv/site"));
+        let o = Options::parse(args("--manifest joker.toml")).unwrap();
+        assert_eq!(o.project_root(), PathBuf::from("."));
+        let o = Options::parse(args("--state-dir /var/lib/joker")).unwrap();
+        assert_eq!(o.project_root(), PathBuf::new());
     }
 
     #[test]
