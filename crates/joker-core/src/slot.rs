@@ -163,15 +163,15 @@ impl SeqExtender {
     }
 }
 
-const fn lo(word: u64) -> u32 {
+pub(crate) const fn lo(word: u64) -> u32 {
     word as u32
 }
 
-const fn hi(word: u64) -> u32 {
+pub(crate) const fn hi(word: u64) -> u32 {
     (word >> 32) as u32
 }
 
-const fn join(lo: u32, hi: u32) -> u64 {
+pub(crate) const fn join(lo: u32, hi: u32) -> u64 {
     (lo as u64) | ((hi as u64) << 32)
 }
 
