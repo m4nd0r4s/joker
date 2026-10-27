@@ -319,6 +319,11 @@ impl<'a> ForceSafe<'a> {
             None => false,
         }
     }
+
+    /// Whether the bit of box `index` is set; false when out of range.
+    pub fn is_set(&self, index: usize) -> bool {
+        self.boxes.get(index).is_some_and(CommitBox::forced)
+    }
 }
 
 /// What the io side remembers of one box.
@@ -524,7 +529,9 @@ mod tests {
         assert_eq!((w.value, w.kind), (RawValue::Bool(true), WriteKind::Resync));
         assert_eq!(rx.take(), None);
         let force = ForceSafe::new(&boxes);
+        assert!(!force.is_set(0));
         assert!(force.set(0, true));
+        assert!(force.is_set(0));
         let w = rx.take().unwrap();
         assert_eq!(
             (w.value, w.kind),
@@ -534,9 +541,11 @@ mod tests {
         tx.publish(h.outputs());
         assert_eq!(rx.take(), None);
         assert!(force.set(0, false));
+        assert!(!force.is_set(0));
         let w = rx.take().unwrap();
         assert_eq!((w.value, w.kind), (RawValue::Bool(true), WriteKind::Resync));
         assert!(!force.set(1, true));
+        assert!(!force.is_set(1));
     }
 
     #[test]
