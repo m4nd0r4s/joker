@@ -154,9 +154,107 @@ impl Counter {
     }
 }
 
+/// Sub-buckets per power of two of a [`Histogram`]: each bucket is at
+/// most 25% wide.
+const HISTOGRAM_SUB: u64 = 4;
+/// Buckets of a [`Histogram`]: the values below [`HISTOGRAM_SUB`], then
+/// [`HISTOGRAM_SUB`] per power of two up to 2⁶³.
+const HISTOGRAM_BUCKETS: usize = 4 + 62 * 4;
+
+/// A distribution of durations in ns (docs/01 §19, the start jitter and
+/// tick duration percentiles of `GET /v1/metrics`): log-linear buckets of
+/// counters allocated once, so recording on the tick path is one atomic
+/// add and never allocates.
+#[derive(Debug)]
+pub struct Histogram {
+    buckets: Box<[AtomicU64]>,
+    first_mono_ns: AtomicU64,
+}
+
+impl Default for Histogram {
+    fn default() -> Self {
+        Self {
+            buckets: (0..HISTOGRAM_BUCKETS).map(|_| AtomicU64::new(0)).collect(),
+            first_mono_ns: AtomicU64::new(u64::MAX),
+        }
+    }
+}
+
+impl Histogram {
+    /// The bucket of `value`.
+    pub fn bucket(value: u64) -> usize {
+        if value < HISTOGRAM_SUB {
+            return value as usize;
+        }
+        let msb = 63 - u64::from(value.leading_zeros());
+        let sub = (value >> (msb - 2)) & (HISTOGRAM_SUB - 1);
+        (HISTOGRAM_SUB + (msb - 2) * HISTOGRAM_SUB + sub) as usize
+    }
+
+    /// The largest value bucket `index` holds.
+    pub fn upper(index: usize) -> u64 {
+        let index = index as u64;
+        if index < HISTOGRAM_SUB {
+            return index;
+        }
+        let msb = (index - HISTOGRAM_SUB) / HISTOGRAM_SUB + 2;
+        let sub = (index - HISTOGRAM_SUB) % HISTOGRAM_SUB;
+        let lower = (HISTOGRAM_SUB + sub) << (msb - 2);
+        lower + ((1u64 << (msb - 2)) - 1)
+    }
+
+    /// Records `value`, observed at `at_mono_ns`.
+    pub fn record(&self, value: u64, at_mono_ns: u64) {
+        if let Some(b) = self.buckets.get(Self::bucket(value)) {
+            b.fetch_add(1, Ordering::Relaxed);
+        }
+        if self.first_mono_ns.load(Ordering::Relaxed) == u64::MAX {
+            let _ = self.first_mono_ns.compare_exchange(
+                u64::MAX,
+                at_mono_ns,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            );
+        }
+    }
+
+    /// The `q` quantile (0 < `q` ≤ 1) as the upper bound of its bucket,
+    /// `None` before the first value.
+    pub fn quantile(&self, q: f64) -> Option<u64> {
+        let counts: Vec<u64> = self
+            .buckets
+            .iter()
+            .map(|b| b.load(Ordering::Relaxed))
+            .collect();
+        let total: u64 = counts.iter().sum();
+        if total == 0 {
+            return None;
+        }
+        let rank = ((q * total as f64).ceil() as u64).clamp(1, total);
+        let mut seen = 0;
+        for (index, n) in counts.iter().enumerate() {
+            seen += n;
+            if seen >= rank {
+                return Some(Self::upper(index));
+            }
+        }
+        None
+    }
+
+    /// When the first value was recorded, `None` before it.
+    pub fn first_mono_ns(&self) -> Option<u64> {
+        let first = self.first_mono_ns.load(Ordering::Relaxed);
+        (first != u64::MAX).then_some(first)
+    }
+}
+
 /// Statistics of one cycle group (docs/01 §19).
 #[derive(Debug, Default)]
 pub struct GroupStats {
+    /// Start lateness of every tick, in ns.
+    pub jitter: Histogram,
+    /// Duration of every tick, in ns.
+    pub duration: Histogram,
     /// Executed ticks.
     pub ticks: Counter,
     /// Last executed tick index.

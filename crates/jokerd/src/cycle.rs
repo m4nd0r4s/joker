@@ -351,6 +351,7 @@ pub fn run(
         stats.last_tick_mono_ns.set(started.mono_ns);
         let late = started.mono_ns.saturating_sub(deadline);
         stats.max_late_ns.max(late);
+        stats.jitter.record(late, started.mono_ns);
         let mut index = g.next_index;
         if late >= g.period_ns {
             let current = (started.mono_ns - epoch) / g.period_ns;
@@ -383,6 +384,9 @@ pub fn run(
         }
         export_state(g, plan, shared);
         let ended = pacer.now().mono_ns;
+        stats
+            .duration
+            .record(ended.saturating_sub(started.mono_ns), ended);
         stats
             .max_duration_ns
             .max(ended.saturating_sub(started.mono_ns));
