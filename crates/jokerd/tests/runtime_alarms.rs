@@ -5,7 +5,6 @@
 
 mod common;
 
-use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -15,7 +14,7 @@ use jokerd::alarms::{AlarmBook, Annotation, RuntimeCondition};
 use jokerd::load::{Loaded, load};
 use jokerd::manual::{ManualTable, Occupant};
 use jokerd::native::NativeTasks;
-use jokerd::runtime_alarms::{MANUAL_EXPIRING_NS, WatchSources, conditions};
+use jokerd::runtime_alarms::{MANUAL_EXPIRING_NS, WatchSources, WatchState, conditions};
 use jokerd::shared::{OutputMeta, Shared};
 
 const MANIFEST: &str = r#"
@@ -85,8 +84,8 @@ fn each_condition_follows_what_the_generation_publishes() {
         restored: vec![("pi.p_set".into(), 4)],
         historian: None,
     };
-    let mut restored_since = BTreeMap::new();
-    let mut eval = |now| conditions(plan, &shared, &sources, &mut restored_since, now);
+    let mut state = WatchState::default();
+    let mut eval = |now| conditions(plan, &shared, &sources, &mut state, now);
 
     let quiet = eval(0);
     assert!(quiet.iter().all(|c| !c.active), "{quiet:#?}");
@@ -165,7 +164,7 @@ fn a_critical_historian_disk_raises_joker_store_disk_full() {
         restored: Vec::new(),
         historian: Some(historian),
     };
-    let list = conditions(&l.plan, &shared, &sources, &mut BTreeMap::new(), 0);
+    let list = conditions(&l.plan, &shared, &sources, &mut WatchState::default(), 0);
     assert!(active(&list, "joker.store.disk_full"));
 }
 
@@ -268,7 +267,7 @@ fn an_exhausted_budget_stays_raised_until_a_new_result_or_the_level_ends() {
             0,
         );
     };
-    let eval = || conditions(plan, &shared, &sources, &mut BTreeMap::new(), 0);
+    let eval = || conditions(plan, &shared, &sources, &mut WatchState::default(), 0);
 
     publish(Outcome::Rejected(RejectReason::Budget), 4, 1);
     assert!(active(&eval(), id));
@@ -284,4 +283,42 @@ fn an_exhausted_budget_stays_raised_until_a_new_result_or_the_level_ends() {
     publish(Outcome::Rejected(RejectReason::Budget), 4, 5);
     publish(Outcome::Accepted, 4, 6);
     assert!(!active(&eval(), id), "an accepted proposal clears it");
+}
+
+#[test]
+fn a_group_silent_for_three_periods_raises_joker_group_stalled() {
+    let l = loaded();
+    let plan = &l.plan;
+    let shared = Shared::new(plan);
+    let sources = WatchSources {
+        manual: None,
+        restored: Vec::new(),
+        historian: None,
+    };
+    let mut state = WatchState::default();
+    let id = "joker.group.fast.stalled";
+    let ms = 1_000_000;
+
+    let idle = conditions(plan, &shared, &sources, &mut state, 0);
+    assert!(
+        !active(&idle, id),
+        "a cycle loop that is not running is not stalled"
+    );
+    let stalled = idle.iter().find(|c| c.id == id).unwrap();
+    assert_eq!(stalled.severity, Severity::Critical);
+
+    shared
+        .running
+        .store(true, std::sync::atomic::Ordering::Release);
+    let armed = conditions(plan, &shared, &sources, &mut state, 1_000 * ms);
+    assert!(!active(&armed, id));
+    let on_time = conditions(plan, &shared, &sources, &mut state, 1_030 * ms);
+    assert!(!active(&on_time, id), "three periods is not yet stale");
+    let late = conditions(plan, &shared, &sources, &mut state, 1_031 * ms);
+    assert!(active(&late, id), "{late:#?}");
+
+    let fast = plan.groups.iter().position(|g| g.name == "fast").unwrap();
+    shared.groups[fast].last_tick_mono_ns.set(1_040 * ms);
+    let ticking = conditions(plan, &shared, &sources, &mut state, 1_045 * ms);
+    assert!(!active(&ticking, id), "a group that ticks again clears");
 }

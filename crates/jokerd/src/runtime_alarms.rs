@@ -22,7 +22,8 @@ use crate::manual::ManualTable;
 use crate::pacer::Monotonic;
 use crate::plan::Plan;
 use crate::shared::Shared;
-use crate::wire::{timestamp, utc_now_ns};
+use crate::supervisor::{group_boxes, held_at_safe, stale_groups};
+use crate::wire::{duration, timestamp, utc_now_ns};
 
 /// How often the conditions are evaluated.
 pub const WATCH_PERIOD: Duration = Duration::from_millis(50);
@@ -42,15 +43,28 @@ pub struct WatchSources {
     pub historian: Option<Arc<Historian>>,
 }
 
+/// What the watch carries from one evaluation to the next.
+#[derive(Debug, Default)]
+pub struct WatchState {
+    /// The first holder seen of each restored manual level.
+    restored_since: BTreeMap<(String, u8), Option<i64>>,
+    /// When the watch first saw the cycle loop running, the supervisor's
+    /// own origin for a group that has not ticked yet.
+    armed_at: Option<u64>,
+    /// The commit boxes of each group, computed once.
+    group_boxes: Option<Vec<Vec<(usize, usize)>>>,
+}
+
 /// Every runtime condition of `plan` now.
 pub fn conditions(
     plan: &Plan,
     shared: &Shared,
     sources: &WatchSources,
-    restored_since: &mut BTreeMap<(String, u8), Option<i64>>,
+    state: &mut WatchState,
     now_mono_ns: u64,
 ) -> Vec<RuntimeCondition> {
     let mut out = Vec::new();
+    let restored_since = &mut state.restored_since;
     let held = sources
         .manual
         .as_ref()
@@ -132,6 +146,7 @@ pub fn conditions(
             active: consecutive >= u64::from(group.alarm_after),
         });
     }
+    out.extend(stalled(plan, shared, state, now_mono_ns));
     for (d, device) in plan.devices.iter().enumerate() {
         let Some(stats) = shared.devices.get(d) else {
             continue;
@@ -162,6 +177,56 @@ pub fn conditions(
     out
 }
 
+/// `joker.group.<g>.stalled` of every group (ADR 0086): the group has gone
+/// more than the supervisor's three periods without a tick, or the
+/// supervisor's `force_safe` holds one of its outputs.
+fn stalled(
+    plan: &Plan,
+    shared: &Shared,
+    state: &mut WatchState,
+    now_mono_ns: u64,
+) -> Vec<RuntimeCondition> {
+    let armed_at = if shared.running.load(Ordering::Acquire) {
+        Some(*state.armed_at.get_or_insert(now_mono_ns))
+    } else {
+        state.armed_at = None;
+        None
+    };
+    let silent: BTreeMap<usize, u64> = armed_at
+        .map(|at| stale_groups(plan, shared, at, now_mono_ns))
+        .unwrap_or_default()
+        .into_iter()
+        .collect();
+    let boxes = state
+        .group_boxes
+        .get_or_insert_with(|| group_boxes(plan, shared));
+    plan.groups
+        .iter()
+        .enumerate()
+        .map(|(g, group)| {
+            let held = boxes.get(g).map_or(0, |b| held_at_safe(shared, b));
+            let message = match (silent.get(&g), held) {
+                (Some(ns), _) => format!(
+                    "group {}: no tick for {}; the supervisor forces its outputs to safe",
+                    group.name,
+                    duration(*ns)
+                ),
+                (None, n) if n > 0 => format!(
+                    "group {}: the supervisor holds {n} output(s) at safe until the next generation",
+                    group.name
+                ),
+                (None, _) => format!("group {} is ticking", group.name),
+            };
+            RuntimeCondition {
+                id: format!("joker.group.{}.stalled", group.name),
+                severity: Severity::Critical,
+                message,
+                active: silent.contains_key(&g) || held > 0,
+            }
+        })
+        .collect()
+}
+
 /// The thread that raises and clears the runtime alarms of a generation.
 #[derive(Debug)]
 pub struct Watch {
@@ -183,18 +248,12 @@ impl Watch {
         let handle = std::thread::Builder::new()
             .name("svc/watch".into())
             .spawn(move || {
-                let mut restored_since = BTreeMap::new();
+                let mut state = WatchState::default();
                 let mut reported = false;
                 while !flag.load(Ordering::Acquire) {
                     let now = utc_now_ns();
                     let mut events = Vec::new();
-                    for c in conditions(
-                        &plan,
-                        &shared,
-                        &sources,
-                        &mut restored_since,
-                        clock.now_ns(),
-                    ) {
+                    for c in conditions(&plan, &shared, &sources, &mut state, clock.now_ns()) {
                         if let Some(e) = journal.book.runtime(&c, now) {
                             events.push((now, e));
                         }
@@ -229,5 +288,38 @@ impl Watch {
 impl Drop for Watch {
     fn drop(&mut self) {
         self.halt();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+    use super::*;
+
+    #[test]
+    fn an_output_the_supervisor_holds_at_safe_keeps_its_group_stalled() {
+        let (plan, shared) = crate::supervisor::tests::plan_with_one_bound_output();
+        let sources = WatchSources {
+            manual: None,
+            restored: Vec::new(),
+            historian: None,
+        };
+        let mut state = WatchState::default();
+        let owner = plan
+            .outputs
+            .iter()
+            .find(|o| o.path == "pcs.a")
+            .unwrap()
+            .group
+            .clone();
+        let id = format!("joker.group.{owner}.stalled");
+        let stalled = |list: &[RuntimeCondition]| list.iter().find(|c| c.id == id).unwrap().clone();
+        assert!(!stalled(&conditions(&plan, &shared, &sources, &mut state, 0)).active);
+
+        let boxes = crate::supervisor::group_boxes(&plan, &shared);
+        crate::supervisor::force_safe(&shared, &boxes);
+        let held = stalled(&conditions(&plan, &shared, &sources, &mut state, 0));
+        assert!(held.active, "{held:#?}");
+        assert!(held.message.contains("1 output"), "{}", held.message);
     }
 }
