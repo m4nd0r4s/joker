@@ -102,6 +102,15 @@ impl TokioHost {
     }
 }
 
+/// How long past its deadline a shared sleep stays in [`TokioHost`]'s map.
+///
+/// Every task of a host polls the same map, and the monotonic clock passes a
+/// deadline up to a timer tick before tokio fires it: a sweep at the
+/// deadline itself would drop another task's sleep in that window, and that
+/// task would never be woken. Past the grace its timer has fired, and
+/// dropping it only reclaims a sleep whose waiter went away.
+const SLEEP_SWEEP_GRACE_NS: MonoNs = 1_000_000_000;
+
 impl Clock for TokioHost {
     fn now(&self) -> Instant {
         let mono_ns = self.mono();
@@ -119,8 +128,9 @@ impl Host for TokioHost {
     fn poll_sleep(&self, at: MonoNs, cx: &mut Context<'_>) -> Poll<()> {
         let now = self.mono();
         let mut sleeps = self.sleeps.lock().unwrap_or_else(PoisonError::into_inner);
-        sleeps.retain(|&t, _| t > now);
+        sleeps.retain(|&t, _| t.saturating_add(SLEEP_SWEEP_GRACE_NS) > now);
         if at <= now {
+            sleeps.remove(&at);
             return Poll::Ready(());
         }
         let start = self.start;
@@ -600,6 +610,35 @@ mod tests {
     use crate::cx::Cx;
     use crate::link::SerialPort;
     use std::vec::Vec;
+
+    struct Flag(std::sync::atomic::AtomicBool);
+
+    impl std::task::Wake for Flag {
+        fn wake(self: Arc<Self>) {
+            self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_task_sleeping_on_a_shared_host_is_woken_whoever_polls_after_its_deadline() {
+        let host = TokioHost::new(ClockQuality::Unsynced);
+        let woken = Arc::new(Flag(std::sync::atomic::AtomicBool::new(false)));
+        let waker = std::task::Waker::from(Arc::clone(&woken));
+        let at = host.now().mono_ns + 20_000_000;
+        let mut cx = Context::from_waker(&waker);
+        assert!(host.poll_sleep(at, &mut cx).is_pending());
+
+        std::thread::sleep(std::time::Duration::from_millis(25));
+        let other = std::task::Waker::noop();
+        let mut other_cx = Context::from_waker(other);
+        let _ = host.poll_sleep(host.now().mono_ns + 10_000_000_000, &mut other_cx);
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        assert!(
+            woken.0.load(std::sync::atomic::Ordering::SeqCst),
+            "the first task's sleep was dropped before it fired"
+        );
+    }
 
     #[tokio::test]
     async fn a_tracking_host_stamps_the_quality_its_cell_holds_now() {
