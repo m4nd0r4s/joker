@@ -558,6 +558,67 @@ impl LinuxGpio {
     }
 }
 
+/// The chip of a gpio device's `chip` (ref/01 appendix A), already past
+/// `"auto"`: an absolute path is taken as it is, `gpiochip<N>` is under
+/// `/dev`, and anything else is a label, matched against every
+/// `/dev/gpiochip*` the kernel exposes (`NotFound` when none carries it).
+pub fn resolve_gpio_chip(chip: &str) -> io::Result<PathBuf> {
+    if chip.starts_with('/') {
+        return Ok(PathBuf::from(chip));
+    }
+    if chip
+        .strip_prefix("gpiochip")
+        .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+    {
+        return Ok(Path::new("/dev").join(chip));
+    }
+    let mut chips = alloc::vec::Vec::new();
+    for entry in std::fs::read_dir("/dev")? {
+        let path = entry?.path();
+        if path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.starts_with("gpiochip"))
+        {
+            let label = File::open(&path)
+                .and_then(|f| joker_gpio_sys::chip_info(f.as_fd()))
+                .map(|info| info.label)
+                .unwrap_or_default();
+            chips.push((path, label));
+        }
+    }
+    chip_by_label(chip, chips).ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            std::format!("no gpiochip is labelled `{chip}`"),
+        )
+    })
+}
+
+/// The first chip of `chips` (path, label), in path order, whose label is
+/// `label`.
+pub fn chip_by_label(
+    label: &str,
+    mut chips: alloc::vec::Vec<(PathBuf, String)>,
+) -> Option<PathBuf> {
+    chips.sort();
+    chips.into_iter().find(|(_, l)| l == label).map(|(p, _)| p)
+}
+
+/// The offset of the line the kernel names `name` on `chip`, `None` when
+/// no line carries that name (kernels before 5.x name none on the
+/// Raspberry Pi: a board's `[gpio] lines` is the other source).
+pub fn gpio_line_offset(chip: &Path, name: &str) -> io::Result<Option<u32>> {
+    let file = File::open(chip)?;
+    let info = joker_gpio_sys::chip_info(file.as_fd())?;
+    for offset in 0..info.lines {
+        if joker_gpio_sys::line_name(file.as_fd(), offset)? == name {
+            return Ok(Some(offset));
+        }
+    }
+    Ok(None)
+}
+
 /// The chardev request of one granted line.
 fn line_request(config: &GpioLineConfig) -> joker_gpio_sys::LineRequest {
     joker_gpio_sys::LineRequest {
@@ -888,6 +949,30 @@ mod tests {
             TcpEndpoint::new(TokioTcpConnector::to(&std::format!("localhost:{port}")));
         assert!(endpoint.connect().await.is_ok());
         assert!(accept.await.unwrap());
+    }
+
+    #[test]
+    fn a_gpio_chip_is_a_path_a_chardev_name_or_a_label() {
+        assert_eq!(
+            resolve_gpio_chip("/dev/gpiochip3").unwrap(),
+            PathBuf::from("/dev/gpiochip3")
+        );
+        assert_eq!(
+            resolve_gpio_chip("gpiochip0").unwrap(),
+            PathBuf::from("/dev/gpiochip0")
+        );
+        let chips = std::vec![
+            (
+                PathBuf::from("/dev/gpiochip1"),
+                "raspberrypi-exp-gpio".into()
+            ),
+            (PathBuf::from("/dev/gpiochip0"), "pinctrl-bcm2835".into()),
+        ];
+        assert_eq!(
+            chip_by_label("pinctrl-bcm2835", chips.clone()),
+            Some(PathBuf::from("/dev/gpiochip0"))
+        );
+        assert_eq!(chip_by_label("pinctrl-rp1", chips), None);
     }
 
     #[test]
