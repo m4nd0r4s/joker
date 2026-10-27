@@ -429,7 +429,7 @@ Own metrics, exposed as `joker.*` signals (therefore recorded, alarmable and sen
 | Write that never comes back | per-write timeout | latest-wins box; N timeouts → `Down` → device fallback | alarm |
 | App in trap | host | proposals of the tick discarded; crashloop after K | alarm, `jk status` |
 | Slow app in the cycle | epoch | interrupted; tick without that app | app overrun |
-| Hung group | supervisor (group deadline × 3) | the supervisor sets the `force_safe` bit in the boxes of the group's outputs, and the drivers send `safe` without going through the group | critical alarm |
+| Hung group | supervisor (group deadline × 3) | the supervisor sets the `force_safe` bit in the boxes of the group's outputs, and the drivers send `safe` without going through the group | critical alarm `joker.group.<g>.stalled` (ADR 0086) |
 | Dead `jokerd` | systemd / hardware watchdog | restart; persistent trips restored; outputs start at `safe` | startup counter |
 | Frozen board | hardware watchdog | reset; device fallback covers the gap | — |
 | Slow model | model deadline | `Err(Deadline)` to the app; backend fallback after N | ML metrics |

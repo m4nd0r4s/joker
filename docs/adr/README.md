@@ -83,5 +83,6 @@
 | [0083](0083-the-native-mode-of-joker-test.md) | The native mode of `joker-test` |
 | [0084](0084-class-instances-on-the-node-and-manual-method-calls.md) | Class instances on the node, class queries as derived signals, and manual method calls |
 | [0085](0085-runtime-alarms-in-jokerd.md) | The runtime alarms (`joker.*`) in jokerd |
+| [0086](0086-the-hung-group-alarm.md) | The hung-group alarm (`joker.group.<g>.stalled`) |
 
 Changing a decision = writing a new ADR that replaces it, and updating the affected documents in the same set of commits.
