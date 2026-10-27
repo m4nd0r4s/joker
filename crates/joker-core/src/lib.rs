@@ -20,6 +20,7 @@ mod sync;
 pub mod time;
 pub mod trace;
 pub mod value;
+pub mod wide_slot;
 
 pub use arbiter::{Intake, OutputArbiter, Refusal};
 pub use commit::{CommitSink, DecisionRecord, OutputResult, Outputs, OutputsStorage, WriteResult};
@@ -32,3 +33,4 @@ pub use registry::{GroupId, Registry, RegistryBuilder, SignalId, SignalMeta};
 pub use slot::{Collision, SeqExtender, Slot};
 pub use time::{Clock, ClockQuality, Instant, VirtualClock};
 pub use value::{QualityError, Sample, ValueType};
+pub use wide_slot::{WIDE_SLOT_CAPACITY, WideSample, WideSlot};
