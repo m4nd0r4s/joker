@@ -11,7 +11,7 @@ use joker_core::class::MethodResult;
 use joker_core::commit::{DecisionRecord, WriteResult};
 use joker_core::image::{MethodCall, Proposal};
 use joker_core::value::NO_TS_SRC;
-use joker_core::{Quality, QualityCode, QualityReason, SignalId, Slot, ValueType};
+use joker_core::{Quality, QualityCode, QualityReason, SignalId, Slot, ValueType, WideSlot};
 use joker_hal::{CommitBox, OutputBinding, RawEncoding, WriteKind, WriteStatus};
 
 use crate::plan::Plan;
@@ -330,6 +330,15 @@ impl OutputMeta {
 pub struct Shared {
     /// One slot per signal, indexed by `SignalId`.
     pub slots: Box<[Slot]>,
+    /// One wide slot per `bytes`/`string`/`record` signal, numbered
+    /// densely among only those signals in `SignalId` order (ADR 0062,
+    /// decision 2; see [`Shared::wide_slot`]). Empty when the manifest
+    /// declares none.
+    pub wide_slots: Box<[WideSlot]>,
+    /// `SignalId` to its index into [`Shared::wide_slots`], or `None` for
+    /// a scalar signal. Same length and order as [`Shared::slots`], built
+    /// once in [`Shared::new`].
+    pub wide_index: Box<[Option<u32>]>,
     /// One async inbox per group, by group index.
     pub inboxes: Box<[ArrayQueue<Proposal>]>,
     /// One inbox of async method records per group, by group index: the
@@ -555,9 +564,30 @@ impl Shared {
         }
     }
 
+    /// The wide slot of `signal`, or `None` if it is not a `bytes`,
+    /// `string` or `record` signal.
+    pub fn wide_slot(&self, signal: SignalId) -> Option<&WideSlot> {
+        let index = self.wide_index.get(signal.index()).copied().flatten()?;
+        self.wide_slots.get(index as usize)
+    }
+
     /// Allocates everything a plan needs, before the first tick.
     pub fn new(plan: &Plan) -> Self {
         let slots: Box<[Slot]> = (0..plan.signals.len()).map(|_| Slot::new()).collect();
+        let mut wide_index: Vec<Option<u32>> = Vec::with_capacity(plan.signals.len());
+        let mut wide_count: u32 = 0;
+        for s in &plan.signals {
+            if matches!(
+                s.ty,
+                ValueType::Bytes | ValueType::String | ValueType::Record
+            ) {
+                wide_index.push(Some(wide_count));
+                wide_count += 1;
+            } else {
+                wide_index.push(None);
+            }
+        }
+        let wide_slots: Box<[WideSlot]> = (0..wide_count).map(|_| WideSlot::new()).collect();
         let mut output_ids: Vec<SignalId> = plan
             .outputs
             .iter()
@@ -572,6 +602,8 @@ impl Shared {
         let (commit_bindings, commit_boxes, stages) = commit_channels(plan);
         Self {
             slots,
+            wide_slots,
+            wide_index: wide_index.into_boxed_slice(),
             inboxes: (0..plan.groups.len())
                 .map(|_| ArrayQueue::new(INBOX_CAPACITY))
                 .collect(),

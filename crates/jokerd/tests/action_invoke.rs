@@ -63,6 +63,8 @@ fn empty_shared(
 ) -> Shared {
     Shared {
         slots: Vec::new().into_boxed_slice(),
+        wide_slots: Vec::new().into_boxed_slice(),
+        wide_index: Vec::new().into_boxed_slice(),
         inboxes: Vec::new().into_boxed_slice(),
         method_inboxes: Vec::new().into_boxed_slice(),
         method_results: crossbeam_queue::ArrayQueue::new(1),
