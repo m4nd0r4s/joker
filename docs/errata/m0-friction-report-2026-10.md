@@ -12,21 +12,21 @@ Each entry has a status:
 
 | # | Gate | Status | Evidence |
 |---|---|---|---|
-| 1 | Same `light.wasm` runs in the simulator and on the Pi 3, only the manifest changes | **Open (hardware)** | `crates/jokerd/tests/bench_example.rs` proves it end to end against the simulator on this machine (gate 5 code path); the Pi 3 leg is unverified here — see F-1 |
-| 2 | ESP32 cable unplugged → `bad(comm_failure)`, LED off via firmware, app sees `Err` | **Open (hardware)** | `unplugged_cable_gives_comm_failure_within_poll_plus_timeout` (`crates/joker-drivers/modbus/tests/bench_esp32.rs`) proves the logic against a serial double; no run against the real ESP32 bench firmware — see F-1 |
+| 1 | Same `light.wasm` runs in the simulator and on the Pi 3, only the manifest changes | **Fixed (2026-10-27)** | the component runs on the real Pi 3 through Pulley and drives the Pi's LED (sysfs) and the ESP32's LED (Modbus RTU); simulator leg in `crates/jokerd/tests/bench_example.rs` — see the 2026-10-27 update |
+| 2 | ESP32 cable unplugged → `bad(comm_failure)`, LED off via firmware, app sees `Err` | **Fixed (2026-10-27)** | on the real bench: `bad(comm_failure)` at the disconnection, `joker.device.esp.offline`, and the firmware's fallback turning the LED off with `jokerd` frozen — see the 2026-10-27 update (F-3: reconnection after replugging) |
 | 3 | Manual write with TTL beats the app and expires by itself | **Fixed** | `joker-core` arbiter unit tests (A1–A13) and `conformance/arbiter/*` (22 cases) pass |
 | 4 | Generation that breaks the bus reverts if not confirmed | **Fixed** | `an_unconfirmed_generation_is_rolled_back`, `a_crash_while_confirming_boots_the_previous_generation` (`crates/jokerd/tests/generations.rs`) |
 | 5 | 10 minutes recorded on the Pi 3 replay on the laptop with the same bytes, 100 times | **Fixed (2026-10-22)** | 10 minutes recorded live on a real Pi 3 B+ (`jk record --for 10m` over `ssh://`), replayed 100 times on the dev laptop (`jk replay`): all 100 runs byte-identical (single md5 across all 100 JSON reports), 0 divergences, 29999/29999 ticks, state restored from the recording (not `init`) — see the 2026-10-22 update below |
 | 6 | 30+ conformance cases from the spec only pass on x86_64 and aarch64; core compiles for `thumbv8m` and `xtensa-esp32` | **Fixed** | 152 cases (`conformance/`), CI green on x86_64, aarch64, QEMU thumbv8m/riscv32; Xtensa build green (non-blocking job, as designed) |
 | 7 | `jk check` unit error comes out as in document 00 | **Fixed** | `joker-manifest` snapshot tests against the registry messages (`J0107` and siblings) |
-| 8 | First real figures (jitter on Pi 3, size, RSS, startup, Wasm call cost, build time) | **Partial — x86_64 and Pi 3** | See the table below and the 2026-10-22 update. Pi 3 B+ figures now measured for real (jitter, binary size, RSS, startup); Cortex-M33 and the Wasm call cost on Pi 3 are still open — see F-2 |
+| 8 | First real figures (jitter on Pi 3, size, RSS, startup, Wasm call cost, build time) | **Partial — x86_64 and Pi 3** | Pi 3 B+ figures measured for real, including a clean jitter run and the Wasm tick on Pulley (2026-10-27 update); the Cortex-M33 figures are still open |
 | 9 | Friction report | **Fixed** | this document |
 
 ## F-1 — Physical bench validation never ran (gates 1, 2, 5)
 
 **Problem.** Gates 1, 2 and 5 of docs/26 §6 name the bench of document 23 by design: a real Raspberry Pi 3 B+ and a real ESP32 over Modbus RTU, with a cable physically unplugged and a trace replayed across two different hosts. Every piece of logic those gates exercise has a passing software proof (listed above), but no run has happened against the actual hardware — there is no record of it anywhere in the repository, and this development environment has no serial device attached (`/dev/serial*`, `/dev/ttyUSB*` are empty).
 
-**Resolution.** Not resolved yet. Needs the project owner to power on the Pi 3 and the ESP32 per document 23 §4–§7 and grant SSH access, so `jokerd` can be cross-built and deployed and the three gates run for real: cable-pull, 10-minute record and 100x replay from the Pi 3 onto a laptop, and the DX walk of `jk new`/`check`/`apply`/`confirm` against the real serial link. Tracked to close in a follow-up session.
+**Resolution.** Resolved on 2026-10-27: gates 1, 2 and 5 ran on the real bench (2026-10-22 and 2026-10-27 updates).
 
 ## F-2 — Gate 8 figures are x86_64 dev-machine numbers, not Pi 3 / Cortex-M33
 
@@ -93,6 +93,52 @@ Workload: the `light` app (native stand-in, see the note on gate 1 below) bound 
 **Reading it.** The per-output envelope+arbiter cost (9–14 µs) is roughly 30–45× the ≤300 ns target — expected on a 2015-era Cortex-A53 at 1.4 GHz with no atomic-group fast path yet, and not the hardware the target line is calibrated for (CM4/CM5). The 100 ms jitter p99.9 (3.52 ms) is over the ≤2 ms non-RT target, but **this run was not isolated**: the SSH session used to launch it and poll results was active on the same machine throughout, the same confound F-2's x86_64 numbers already called out. A clean rerun (nothing else connected, ideally via a serial console or a fire-and-forget `nohup` with no polling) is needed before treating this as a real divergence worth an erratum. Startup time, binary size and RSS are all comfortably inside target even on this older, weaker board.
 
 **Resolution.** Gate 5: resolved. Gate 8: still partial — the Cortex-M33 figures and a clean (unloaded) Pi 3 jitter run are open; the Wasm call cost needs either a Pulley backend build for `arm-unknown-linux-musleabihf` or waiting for a 64-bit (`aarch64`) Pi image, which is also the planned fix for AUR-401's real GPIO/I²C adapter (the chardev v2 ioctls it needs are Linux ≥5.10 only; this Pi's stock kernel is 4.19). Gates 1 (the Wasm leg specifically — this pass used the native `light` stand-in, not an actual `.wasm` component) and 2 remain open, blocked on the bench ESP32 being wired and powered per document 23 §4–§7.
+
+## 2026-10-27 update — the ESP32 leg, a clean gate 8 run, and what the bench found
+
+Evidence gathered on 2026-10-27 on the same Raspberry Pi 3 B+ (Raspbian 9, kernel `4.19.66-v7+`, 32-bit) with the bench ESP32 (rev v3.1, CH340 bridge) on its USB port, running `jokerd` cross-built for `arm-unknown-linux-musleabihf` from `main` plus the fixes of #94, #96, #97 and #98. Generations were applied from the laptop with `jk apply --node ssh://pi`; from generation 5 on each one carries the app's `.cwasm`, precompiled on the laptop for the node's engine, so the node does not compile anything.
+
+**Gate 1 — the same `light.wasm`, only the manifest changes.** The component runs on the Pi through the Pulley interpreter: it blinks the Pi's own LED through `sysfs` (brightness 255/0 every 500 ms, trigger `none`) with an overlay that only names the LED (`led0` on this kernel, not `ACT`), and, with another overlay that only rebinds `led`, the ESP32's LED over Modbus RTU (readback `led_rb` follows). Same component in `jokerd/tests/bench_example.rs` against the simulator. **Fixed.**
+
+**Gate 2 — losing the ESP32.** Split in two because the board is powered by the same USB cable, so pulling it turns the LED off by itself and proves nothing about the firmware:
+
+- *Device fallback (M1).* With `esp.led` held `true` by a manual write, `jokerd` was frozen with `SIGSTOP` for 20 s (the port stays open, so DTR does not reset the board): the owner saw the LED go off by itself, through the firmware's 2 s fallback; the board's uptime kept counting, so it was not a reset.
+- *Loss of communication.* Cable pulled: every `esp.*` sample went `bad(comm_failure)` at the moment the kernel logged the disconnection, the link went `down`, `joker.device.esp.offline` became active and the reconnection backed off (1.1 s, 2.3 s, 3.4 s, 7.6 s). The app's side is the same `Err` path the simulator test covers.
+
+**Fixed**, with F-3 (reconnection after the cable is plugged back) fixed on a branch and pending its hardware check.
+
+**Gate 8 — a clean run.** `xtask rt-bench` launched with `nohup` and no SSH session open during the measurement, `jokerd` stopped:
+
+| Figure | 1 ms period | 100 ms period | Target (docs/01 §21) |
+|---|---|---|---|
+| Envelope + arbiter per output, p50 | 9.16 µs | 8.97 µs | ≤ 300 ns |
+| Envelope + arbiter per output, p99.9 | 13.27 µs | 15.17 µs | ≤ 300 ns |
+| Tick jitter, p50 | 75.1 µs | 81.4 µs | — |
+| Tick jitter, p99.9 | 125.6 µs | 407.0 µs | ≤ 2 ms (no RT, 100 ms group) |
+| Tick jitter, max | 319.5 µs | 407.0 µs | — |
+| Overruns | 4 / 10000 | 0 / 600 | — |
+
+The 3.5 ms p99.9 of the 2026-10-22 run was the SSH session: clean, the 100 ms group is inside its target. The per-output cost is unchanged (~30× the target) and is now a real divergence to act on, not a measurement artefact.
+
+| Figure | Value | Target |
+|---|---|---|
+| `light.wasm` on Pulley, group `main` (20 ms) tick duration, max | 753 µs (latch + Wasm call + commit) | — (upper bound; the isolated empty-call figure of `joker-host/tests/overhead.rs` builds its guest with cargo at run time, so it cannot run on the node as written) |
+| RSS 15 s after boot, 1 Wasm app, 2 devices, historian on | 93 MB | ≤ 60 MB |
+| Modbus RTU transaction, Pi → ESP32 at 115 200 baud | 6.1 ms | — |
+
+**Resolution.** Gates 1, 2 and 5 are closed on the real bench; gate 8 still lacks the Cortex-M33 figures. Open divergences: per-output cost, RSS.
+
+### What the bench found
+
+- **F-3 — a replugged USB serial adapter never came back** (fixed, `fix/serial-replug`). `TokioSerial` kept the descriptor of the vanished `/dev/ttyUSB0`; the kernel gave the adapter `/dev/ttyUSB1`, and every reconnection failed on the dead descriptor (`J0876`) until `jokerd` restarted. It now opens its configured path again (the `/dev/serial/by-id/` of docs/23 §6.3) on the reconnection that follows a disconnection.
+- **F-4 — `jokerd` did not start on 32-bit Arm** (fixed, #94). The node's engine configured wasmtime with `armv7-unknown-linux-gnueabihf`, which Cranelift does not support, instead of Pulley (docs/01 §9, §22): `J-E0010` at boot, apps or not.
+- **F-5 — sysfs signals without `type` dropped their device** (fixed, #94). ref/01 types them from the address and `jk check` accepts them; the bridge required the key and dropped the whole device with a log line, so the LED never moved and the temperature stayed `uncertain(initial)`.
+- **F-6 — the built-in `local/bench-esp32@1` had no addresses** (fixed, #96). Hand-written in `catalog.rs` with types only; the bridge skipped every signal without a word and only the LED reached the board. It is now the file of docs/23 §4, parsed like a project's profile.
+- **F-7 — real samples were aged by the daemon's uptime** (fixed, #97). Each generation built its real devices a fresh monotonic clock, so `ts_acq` and the latch were on different time bases: `uncertain(stale)` at boot (~300 ms off) and `bad(stale)` after a `jk apply` on a daemon up for 262 s. This, not the bus, explained the "400 ms refresh" (each transaction takes 6 ms).
+- **F-8 — the supervisor's `force_safe` was invisible** (fixed, #98). After a hung group the API kept answering `applied: true` while the hardware sat at `safe`; `OutputState.force_safe` (ref/09 §3) was never served. Open: docs/01's failure table asks for a critical alarm on a hung group, but ref/01 §5.15 defines none, so it needs an ADR.
+- **F-9 — the bench firmware's pinned toolchain cannot be reproduced** (open). `tools/bench/esp32-modbus` pins `espup` 0.18.0, which is yanked on crates.io, with `esp` 1.99.0.0. With `espup` 0.17.1 (the newest one installable), the `esp` 1.99.0.0 it installs builds a firmware that hangs before `main` (RTC watchdog reset, no banner); the same sources built with `esp` 1.97.0.0 and the same linker boot and serve Modbus. The 1.99 build that hangs is `4e103d068`, not the `ad02ddc22` the README records, so the README's own build is not proven broken, only unobtainable. Tied to the core-MSRV-≤-Xtensa rule of `docs/policies/dependencies.md`, so it is the owner's call.
+- **O-2 — opening the serial port resets the ESP32.** The CH340's DTR/RTS reach EN/GPIO0, so every (re)open reboots the board; the first request after it fails and counts as one `link down`. Expected for this board; `[buses.*] dtr`/`rts` (ref/01 §5.6) are the knob if it matters.
+- **O-3 — this kernel names the Pi's LED `led0`.** Kernels before 5.x expose `led0`/`led1`, not `ACT`/`PWR`; `joker.rpi.toml` as written in docs/23 §6.2 needs `led = "led0"` on Raspbian 9.
 
 ## Other observations (non-blocking)
 
