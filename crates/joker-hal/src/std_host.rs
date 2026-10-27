@@ -77,12 +77,21 @@ impl TokioHost {
     /// A host starting now, whose instants carry the quality `quality`
     /// holds at the time they are read.
     pub fn tracking(quality: Arc<ClockQualityCell>) -> Self {
-        let utc_start_ns = std::time::SystemTime::now()
+        Self::from_origin(std::time::Instant::now(), quality)
+    }
+
+    /// A host whose monotonic zero is `origin`, so that its instants are on
+    /// the same time base as every other reader of that origin (the
+    /// daemon's clock: a sample's `ts_acq` and the cycle's latch instants
+    /// must be comparable, docs/01 §3.3).
+    pub fn from_origin(origin: std::time::Instant, quality: Arc<ClockQualityCell>) -> Self {
+        let utc_now_ns = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| i64::try_from(d.as_nanos()).unwrap_or(i64::MAX));
+        let elapsed_ns = i64::try_from(origin.elapsed().as_nanos()).unwrap_or(i64::MAX);
         Self {
-            start: tokio::time::Instant::now(),
-            utc_start_ns,
+            start: tokio::time::Instant::from_std(origin),
+            utc_start_ns: utc_now_ns.saturating_sub(elapsed_ns),
             quality,
             sleeps: Mutex::new(BTreeMap::new()),
         }
