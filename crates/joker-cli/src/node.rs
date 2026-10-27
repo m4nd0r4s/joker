@@ -943,6 +943,12 @@ fn render_output_explain(target: &str, state: &Value) -> String {
         );
     }
     let _ = writeln!(out, "  tripped     {}", state["tripped"]);
+    if state["force_safe"] == true {
+        let _ = writeln!(
+            out,
+            "  force_safe  true (the supervisor holds the output at safe)"
+        );
+    }
     for level in state["levels"].as_array().cloned().unwrap_or_default() {
         let value = level.get("value").cloned().unwrap_or(Value::Null);
         let active = level["active"].as_bool().unwrap_or(false);
@@ -1345,6 +1351,22 @@ mod tests {
     }
 
     #[test]
+    fn render_output_explain_says_when_the_supervisor_forces_safe() {
+        let state = json!({
+            "group": "main",
+            "safe": false,
+            "effective": true,
+            "applied": true,
+            "active_level": "manual:4",
+            "tripped": false,
+            "force_safe": true,
+            "levels": [],
+        });
+        let rendered = render_output_explain("esp.led", &state);
+        assert!(rendered.contains("force_safe  true"), "{rendered}");
+    }
+
+    #[test]
     fn render_output_explain_omits_last_result_when_there_is_none() {
         let state = json!({
             "group": "main",
@@ -1358,6 +1380,7 @@ mod tests {
         });
         let rendered = render_output_explain("pi.act_led", &state);
         assert!(!rendered.contains("last result"));
+        assert!(!rendered.contains("force_safe"));
     }
 }
 
