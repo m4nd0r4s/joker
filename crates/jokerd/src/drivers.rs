@@ -12,6 +12,10 @@
 //! within the point's `deadband`. A value that cannot become the signal's
 //! value reads as `bad` with the reason of ref/03 §2.2.7–§2.2.8, never as a
 //! number.
+//!
+//! A `string` or `bytes` signal is decoded by [`decode_to_wide`] instead
+//! and lives in its wide slot (ADR 0062): its scalar slot is never written,
+//! and a failure writes `bad(<reason>)` with no bytes, as for a scalar.
 
 use std::sync::Arc;
 
@@ -30,7 +34,7 @@ use joker_manifest::context::Acquisition;
 use joker_units::Duration;
 
 use crate::plan::Plan;
-use crate::shared::{Confirmation, OutputStage, Shared, WriteAckRecord};
+use crate::shared::{Confirmation, OutputStage, Shared, WriteAckRecord, is_wide};
 
 pub use crate::action_exec::{ActionCall, ActionOutcome};
 
@@ -334,6 +338,55 @@ pub fn acquire(
     number_to_bits(number, ty)
 }
 
+/// The bytes of a wide input value (ADR 0062, decision 5): `Bytes` as they
+/// are, `Text` as its UTF-8, `Regs` as two bytes per register in protocol
+/// order, each register big-endian unless `byte_order = "little"` (no
+/// `word_order`), padding kept. `None` for any other raw kind, for more
+/// than [`joker_core::WIDE_SLOT_CAPACITY`] bytes, and for a `string` that is
+/// not ASCII (the only `encoding` the 1.0 runtime reads, ref/03 §2.2.1).
+pub fn decode_to_wide(value: &OwnedRaw, decode: &Decode, ty: ValueType) -> Option<Vec<u8>> {
+    let bytes = match value {
+        OwnedRaw::Bytes(b) => b.clone(),
+        OwnedRaw::Text(t) => t.as_bytes().to_vec(),
+        OwnedRaw::Regs(words) => words
+            .iter()
+            .flat_map(|w| {
+                if decode.bytes_little {
+                    w.to_le_bytes()
+                } else {
+                    w.to_be_bytes()
+                }
+            })
+            .collect(),
+        _ => return None,
+    };
+    if bytes.len() > joker_core::WIDE_SLOT_CAPACITY {
+        return None;
+    }
+    if ty == ValueType::String && !bytes.is_ascii() {
+        return None;
+    }
+    Some(bytes)
+}
+
+/// What one settled wide point becomes in its wide slot, the twin of
+/// [`settled_sample`] (ADR 0062, decisions 5 and 6): a `bad` sample keeps
+/// its reason and carries no bytes; a value [`decode_to_wide`] refuses is
+/// `bad(config_error)` with no bytes.
+pub fn settled_wide(target: &PointTarget, settled: &Settled) -> (Vec<u8>, Quality) {
+    let status: Quality = settled.status.into();
+    if status.is_bad() {
+        return (Vec::new(), status);
+    }
+    match decode_to_wide(&settled.value, &target.decode, target.ty) {
+        Some(bytes) => (bytes, status),
+        None => (
+            Vec::new(),
+            Quality::new(QualityCode::Bad, QualityReason::ConfigError),
+        ),
+    }
+}
+
 /// What one settled point becomes in its slot (ref/06 §2.8, docs/16 §3):
 /// the acquired value's bits and the driver's quality when the value
 /// converts (see [`acquire`]), otherwise no value at all. A `bad` sample
@@ -525,6 +578,18 @@ fn store_settled(
     stale: bool,
     now: u64,
 ) {
+    if is_wide(target.ty) {
+        let (bytes, quality) = settled_wide(target, settled);
+        let quality = if stale && quality.is_good() {
+            Quality::new(QualityCode::Uncertain, QualityReason::Stale)
+        } else {
+            quality
+        };
+        if let Some(wide) = shared.wide_slot(target.signal) {
+            wide.write(&bytes, quality, NO_TS_SRC, settled.ts_hw.unwrap_or(now));
+        }
+        return;
+    }
     let (bits, quality) = settled_sample(target, settled);
     let quality = if stale && quality.is_good() {
         Quality::new(QualityCode::Uncertain, QualityReason::Stale)
@@ -705,7 +770,11 @@ fn publish_link(shared: &Shared, device_index: usize, state: LinkState) {
 
 fn mark_all(shared: &Shared, targets: &[PointTarget], quality: Quality, now: u64) {
     for target in targets {
-        if let Some(slot) = shared.slots.get(target.signal.index()) {
+        if is_wide(target.ty) {
+            if let Some(wide) = shared.wide_slot(target.signal) {
+                wide.write(&[], quality, NO_TS_SRC, now);
+            }
+        } else if let Some(slot) = shared.slots.get(target.signal.index()) {
             slot.write(0, quality, NO_TS_SRC, now);
         }
     }

@@ -535,6 +535,12 @@ fn commit_channels(plan: &Plan) -> CommitChannels {
     (bindings, boxes, stages)
 }
 
+/// Whether a signal of type `ty` keeps its value in a wide slot instead
+/// of its scalar slot (ADR 0062, decision 1).
+pub fn is_wide(ty: ValueType) -> bool {
+    matches!(ty, ValueType::Bytes | ValueType::String | ValueType::Record)
+}
+
 impl Shared {
     /// Applies the pending [`Confirmation`]s to the outputs' slots (cycle
     /// thread only: the one writer of an output's slot). A rejected output
@@ -577,10 +583,7 @@ impl Shared {
         let mut wide_index: Vec<Option<u32>> = Vec::with_capacity(plan.signals.len());
         let mut wide_count: u32 = 0;
         for s in &plan.signals {
-            if matches!(
-                s.ty,
-                ValueType::Bytes | ValueType::String | ValueType::Record
-            ) {
+            if is_wide(s.ty) {
                 wide_index.push(Some(wide_count));
                 wide_count += 1;
             } else {
