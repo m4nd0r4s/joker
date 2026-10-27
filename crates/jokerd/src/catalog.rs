@@ -20,11 +20,10 @@ use std::path::Path;
 use joker_manifest::Context;
 use joker_manifest::context::Direction;
 use joker_manifest::context::{
-    BoardInfo, ClassInfo, DriverInfo, Implements, ImplementsTarget, ProfileInfo, SignalInfo,
-    SignalType,
+    BoardInfo, ClassInfo, DriverInfo, ProfileInfo, SignalInfo, SignalType,
 };
 use joker_manifest::model::BusKind;
-use joker_units::{Duration, Unit};
+use joker_units::Unit;
 
 use crate::task::TaskProvider;
 
@@ -124,60 +123,22 @@ pub fn drivers() -> BTreeMap<String, DriverInfo> {
     d
 }
 
+/// The canonical file of the bench profile (docs/23 §4), with the
+/// `[implements]` of track part 7 §4 that need no adapter.
+const BENCH_ESP32_PROFILE: &str = include_str!("../profiles/local/bench-esp32@1.profile.toml");
+
 /// The M0 profiles. The bench ESP32 is an implicit `std/led@1` and
 /// `std/button@1` (track part 7, §4); its `analog_in@1` needs the `scale`
-/// adapter, which this runtime does not run yet.
+/// adapter, which this runtime does not run yet. The profile goes through
+/// the same parser as a project's own profile files, so every signal keeps
+/// its address and type.
 pub fn profiles() -> BTreeMap<String, ProfileInfo> {
-    use Direction::{Input, Output, Param};
-    use SignalType::{Bool, Integer};
-    let signals = [
-        ("led", signal(Bool, Output, None)),
-        ("led_rb", signal(Bool, Input, None)),
-        ("button", signal(Bool, Input, None)),
-        ("touch", signal(Integer, Input, None)),
-        ("rssi", signal(Integer, Input, None)),
-        ("uptime", signal(Integer, Input, Some("s"))),
-        ("fw", signal(Integer, Param, None)),
-    ]
-    .into_iter()
-    .map(|(k, v)| (k.to_owned(), v))
-    .collect();
-    let mut p = BTreeMap::new();
-    p.insert(
-        "local/bench-esp32@1".to_owned(),
-        ProfileInfo {
-            signals,
-            fallback: true,
-            configurable: false,
-            fallback_timeout: Some(Duration::from_secs(2)),
-            latency: None,
-            quirks: BTreeMap::new(),
-            poll: Some(Duration::from_millis(100)),
-            timeout: None,
-            implements: [
-                ("std/led@1", "on", "led"),
-                ("std/button@1", "pressed", "button"),
-            ]
-            .into_iter()
-            .map(|(class, member, signal)| {
-                (
-                    class.to_owned(),
-                    Implements {
-                        capabilities: Vec::new(),
-                        map: [(
-                            member.to_owned(),
-                            ImplementsTarget::Signal(signal.to_owned()),
-                        )]
-                        .into_iter()
-                        .collect(),
-                    },
-                )
-            })
-            .collect(),
-            ..ProfileInfo::default()
-        },
-    );
-    p
+    let path = Path::new("profiles/local/bench-esp32@1.profile.toml");
+    joker_manifest::profile::parse(path, BENCH_ESP32_PROFILE)
+        .profile
+        .map(|p| ("local/bench-esp32@1".to_owned(), p))
+        .into_iter()
+        .collect()
 }
 
 /// The boards of the development bench (docs/23 §1): the Raspberry Pi 3 B+
@@ -504,6 +465,23 @@ fn toml_files(dir: &std::path::Path, suffix: &str) -> Vec<std::path::PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use joker_units::Duration;
+
+    #[test]
+    fn the_builtin_bench_profile_addresses_every_signal() {
+        let profiles = profiles();
+        let bench = &profiles["local/bench-esp32@1"];
+        assert_eq!(bench.signals.len(), 7);
+        for (name, info) in &bench.signals {
+            assert!(info.type_name.is_some(), "{name}: no type");
+            assert!(info.raw.contains_key("at"), "{name}: no address");
+        }
+        assert!(bench.fallback);
+        assert_eq!(bench.fallback_timeout, Some(Duration::from_secs(2)));
+        assert_eq!(bench.poll, Some(Duration::from_millis(100)));
+        assert!(bench.implements.contains_key("std/led@1"));
+        assert!(bench.implements.contains_key("std/button@1"));
+    }
 
     #[test]
     fn no_profiles_or_boards_directory_gives_empty_maps() {

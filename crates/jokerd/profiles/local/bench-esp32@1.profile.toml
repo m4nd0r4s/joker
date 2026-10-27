@@ -1,0 +1,30 @@
+schema = 1
+
+[profile]
+name        = "local/bench-esp32"
+version     = "1.0.0"
+driver      = "modbus"
+description = "ESP32 bench firmware (document 23, §4): LED, button, touch, RSSI, uptime"
+
+[defaults]
+poll = "100ms"
+
+[signals]
+"led"     = { at = 0, fc = 5, type = "bool", direction = "output", readback = "led_rb", safe_hint = false }
+"led_rb"  = { at = 0, fc = 1, type = "bool" }
+"button"  = { at = 0, fc = 2, type = "bool", label = "BOOT" }
+"touch"   = { at = 0, fc = 4, type = "u16", deadband = 5, description = "raw value of the T0 touch sensor (GPIO4); drops when touched" }
+"rssi"    = { at = 1, fc = 4, type = "i16", description = "Wi-Fi RSSI in dBm; 0 without a connection" }
+"uptime"  = { at = 2, fc = 4, type = "u32", unit = "s", monotonic = true }
+"fw"      = { at = 0, fc = 3, type = "u16", direction = "param" }
+
+[fallback]
+timeout    = "2s"
+value      = false
+applies_to = ["led"]
+
+[implements."std/led@1"]
+map = { on = "led" }
+
+[implements."std/button@1"]
+map = { pressed = "button" }
