@@ -43,8 +43,8 @@ fn the_real_project_board_files_parse() {
         checked += 1;
     }
     assert!(
-        checked >= 2,
-        "expected at least the rpi5 and revpi-connect-5 boards, found {checked}"
+        checked >= 3,
+        "expected at least the rpi3b-plus, rpi5 and revpi-connect-5 boards, found {checked}"
     );
 }
 
