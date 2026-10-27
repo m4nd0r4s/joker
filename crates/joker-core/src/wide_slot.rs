@@ -254,18 +254,20 @@ mod tests {
                 }
             })
         };
+        while slot.read(0).map_or(true, |s| s.seq() == 0) {
+            thread::yield_now();
+        }
         let mut ok = 0u32;
         for _ in 0..200_000 {
-            if let Ok(s) = slot.read(4) {
-                if s.seq() == 0 {
-                    assert_eq!(s, WideSample::INITIAL);
-                    continue;
+            match slot.read(4) {
+                Ok(s) => {
+                    let bytes = s.as_slice();
+                    let k = bytes[0];
+                    assert!(bytes.iter().all(|&b| b == k), "torn wide sample");
+                    assert_eq!(s.ts_acq(), u64::from(k));
+                    ok += 1;
                 }
-                let bytes = s.as_slice();
-                let k = bytes[0];
-                assert!(bytes.iter().all(|&b| b == k), "torn wide sample");
-                assert_eq!(s.ts_acq(), u64::from(k));
-                ok += 1;
+                Err(Collision) => thread::yield_now(),
             }
         }
         stop.store(true, core::sync::atomic::Ordering::Relaxed);
