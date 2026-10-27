@@ -2240,3 +2240,60 @@ async fn class_methods_expand_into_manual_writes_of_the_caller() {
         assert_eq!(r.json()["code"], code, "{instance}.{method}: {}", r.json());
     }
 }
+
+#[derive(Default)]
+struct CapturedShared(Mutex<Option<Arc<jokerd::shared::Shared>>>);
+
+impl Devices for CapturedShared {
+    fn start(
+        &self,
+        plan: &Arc<jokerd::plan::Plan>,
+        shared: &Arc<jokerd::shared::Shared>,
+    ) -> Box<dyn jokerd::devices::DeviceSet> {
+        *self.0.lock().unwrap() = Some(Arc::clone(shared));
+        NoDevices.start(plan, shared)
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_output_state_shows_the_supervisor_force_safe_bit() {
+    let manifest = r#"
+[project]
+name  = "force-safe"
+joker = "1.0"
+mode  = "dev"
+
+[outputs."pi.act_led"]
+safe = false
+
+[devices.pi]
+driver = "sysfs"
+
+[devices.pi.signals]
+act_led = { type = "bool", led = "ACT", direction = "output" }
+
+[cycles.main]
+period = "20ms"
+"#;
+    let captured = Arc::new(CapturedShared::default());
+    let f = start_with_devices(manifest, Arc::clone(&captured) as Arc<dyn Devices>).await;
+    let state = f
+        .call("GET", "/v1/outputs/{path}", "/v1/outputs/pi.act_led", None)
+        .await;
+    assert_eq!(state.status, 200, "{}", state.json());
+    assert_eq!(state.json()["force_safe"], false, "{}", state.json());
+
+    let shared = captured.0.lock().unwrap().clone().unwrap();
+    let (device, index) = shared
+        .commit_bindings
+        .iter()
+        .enumerate()
+        .find_map(|(d, b)| (!b.is_empty()).then_some((d, 0)))
+        .unwrap();
+    joker_hal::commit::ForceSafe::new(&shared.commit_boxes[device]).set(index, true);
+
+    let forced = f
+        .call("GET", "/v1/outputs/{path}", "/v1/outputs/pi.act_led", None)
+        .await;
+    assert_eq!(forced.json()["force_safe"], true, "{}", forced.json());
+}
