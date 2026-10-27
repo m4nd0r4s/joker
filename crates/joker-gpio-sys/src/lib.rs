@@ -145,6 +145,76 @@ mod linux {
         (((IOC_READ | IOC_WRITE) << 30) | (ty << 8) | nr | ((size as u32) << 16)) as libc::Ioctl
     }
 
+    /// `struct gpiochip_info` (`<linux/gpio.h>`).
+    #[repr(C)]
+    struct GpioChipInfo {
+        name: [u8; GPIO_MAX_NAME_SIZE],
+        label: [u8; GPIO_MAX_NAME_SIZE],
+        lines: u32,
+    }
+
+    /// `struct gpioline_info` (`<linux/gpio.h>`).
+    #[repr(C)]
+    struct GpioLineInfo {
+        line_offset: u32,
+        flags: u32,
+        name: [u8; GPIO_MAX_NAME_SIZE],
+        consumer: [u8; GPIO_MAX_NAME_SIZE],
+    }
+
+    /// `_IOR(ty, nr, size)` (`<asm-generic/ioctl.h>`); see [`iowr`].
+    const fn ior(ty: u32, nr: u32, size: usize) -> libc::Ioctl {
+        const IOC_READ: u32 = 2;
+        ((IOC_READ << 30) | (ty << 8) | nr | ((size as u32) << 16)) as libc::Ioctl
+    }
+
+    const GPIO_GET_CHIPINFO_IOCTL: libc::Ioctl =
+        ior(0xB4, 0x01, core::mem::size_of::<GpioChipInfo>());
+    const GPIO_GET_LINEINFO_IOCTL: libc::Ioctl =
+        iowr(0xB4, 0x02, core::mem::size_of::<GpioLineInfo>());
+
+    /// See [`super::chip_info`].
+    ///
+    /// Sound: `chip` is a borrowed, open descriptor for the whole call, and
+    /// `info` is a local value the kernel only writes into.
+    #[allow(unsafe_code)]
+    pub(super) fn chip_info(chip: BorrowedFd<'_>) -> std::io::Result<super::ChipInfo> {
+        let mut info = GpioChipInfo {
+            name: [0; GPIO_MAX_NAME_SIZE],
+            label: [0; GPIO_MAX_NAME_SIZE],
+            lines: 0,
+        };
+        let result = unsafe { libc::ioctl(chip.as_raw_fd(), GPIO_GET_CHIPINFO_IOCTL, &mut info) };
+        if result < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(super::ChipInfo {
+            name: super::c_name(&info.name),
+            label: super::c_name(&info.label),
+            lines: info.lines,
+        })
+    }
+
+    /// See [`super::line_name`].
+    ///
+    /// Sound: `chip` is a borrowed, open descriptor for the whole call, and
+    /// `info` is a local, fully-initialized value the kernel reads the
+    /// offset from and writes the rest into.
+    #[allow(unsafe_code)]
+    pub(super) fn line_name(chip: BorrowedFd<'_>, offset: u32) -> std::io::Result<String> {
+        let mut info = GpioLineInfo {
+            line_offset: offset,
+            flags: 0,
+            name: [0; GPIO_MAX_NAME_SIZE],
+            consumer: [0; GPIO_MAX_NAME_SIZE],
+        };
+        let result = unsafe { libc::ioctl(chip.as_raw_fd(), GPIO_GET_LINEINFO_IOCTL, &mut info) };
+        if result < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(super::c_name(&info.name))
+    }
+
     const GPIO_GET_LINEHANDLE_IOCTL: libc::Ioctl =
         iowr(0xB4, 0x03, core::mem::size_of::<GpioHandleRequest>());
     const GPIOHANDLE_GET_LINE_VALUES_IOCTL: libc::Ioctl =
@@ -249,6 +319,14 @@ mod other {
         Err(unsupported())
     }
 
+    pub(super) fn chip_info(_chip: BorrowedFd<'_>) -> std::io::Result<super::ChipInfo> {
+        Err(unsupported())
+    }
+
+    pub(super) fn line_name(_chip: BorrowedFd<'_>, _offset: u32) -> std::io::Result<String> {
+        Err(unsupported())
+    }
+
     pub(super) fn set_line_value(_handle: BorrowedFd<'_>, _value: bool) -> std::io::Result<()> {
         Err(unsupported())
     }
@@ -288,9 +366,51 @@ pub fn set_line_value(handle: BorrowedFd<'_>, value: bool) -> std::io::Result<()
     imp::set_line_value(handle, value)
 }
 
+/// A chip's identity (`struct gpiochip_info`, `<linux/gpio.h>`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ChipInfo {
+    /// The kernel's name of the chip (`gpiochip0`).
+    pub name: String,
+    /// The chip's label (`pinctrl-bcm2835`).
+    pub label: String,
+    /// How many lines the chip has.
+    pub lines: u32,
+}
+
+/// The text of a kernel's fixed, null-padded name buffer: up to the first
+/// `0`, with invalid UTF-8 replaced.
+pub fn c_name(buf: &[u8]) -> String {
+    let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+    String::from_utf8_lossy(&buf[..end]).into_owned()
+}
+
+/// Reads the name, label and line count of an open `gpiochip` fd. On a
+/// system other than Linux it fails with `Unsupported`.
+#[cfg(unix)]
+pub fn chip_info(chip: BorrowedFd<'_>) -> std::io::Result<ChipInfo> {
+    imp::chip_info(chip)
+}
+
+/// Reads the kernel's name of line `offset` of an open `gpiochip` fd;
+/// empty when the device tree names none. On a system other than Linux it
+/// fails with `Unsupported`.
+#[cfg(unix)]
+pub fn line_name(chip: BorrowedFd<'_>, offset: u32) -> std::io::Result<String> {
+    imp::line_name(chip, offset)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_kernel_name_buffer_ends_at_its_first_nul() {
+        let mut buf = [0u8; GPIO_MAX_NAME_SIZE];
+        buf[..6].copy_from_slice(b"GPIO17");
+        assert_eq!(c_name(&buf), "GPIO17");
+        assert_eq!(c_name(&[0u8; 4]), "");
+        assert_eq!(c_name(b"full"), "full");
+    }
 
     fn input(line: u32) -> LineRequest {
         LineRequest {
