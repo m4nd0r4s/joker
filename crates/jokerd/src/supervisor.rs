@@ -101,6 +101,20 @@ pub fn force_safe(shared: &Shared, group_boxes: &[Vec<(usize, usize)>]) {
     }
 }
 
+/// How many of `boxes` the supervisor holds at `safe` through their
+/// `force_safe` bit.
+pub fn held_at_safe(shared: &Shared, boxes: &[(usize, usize)]) -> usize {
+    boxes
+        .iter()
+        .filter(|&&(device, index)| {
+            shared
+                .commit_boxes
+                .get(device)
+                .is_some_and(|b| ForceSafe::new(b).is_set(index))
+        })
+        .count()
+}
+
 /// Checks every group's heartbeat against `now_mono_ns` and, if any is
 /// stale, sets the `force_safe` bit of every output of every group in
 /// `group_boxes` (today's whole-process response, see the module doc).
@@ -376,7 +390,7 @@ fn raise_priority() -> Result<(), String> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use joker_hal::commit::CommitRx;
     use joker_hal::types::WriteKind;
@@ -388,7 +402,7 @@ mod tests {
     /// built by hand here, the same shape `bridge::device_plan` would
     /// produce from a real profile (same technique as
     /// `control::action_tests::plan_with_one_action`).
-    fn plan_with_one_bound_output() -> (crate::plan::Plan, crate::shared::Shared) {
+    pub(crate) fn plan_with_one_bound_output() -> (crate::plan::Plan, crate::shared::Shared) {
         let mut fs = joker_manifest::MemoryFileSystem::default();
         fs.file(
             "joker.toml",

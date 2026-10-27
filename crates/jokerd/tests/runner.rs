@@ -333,6 +333,27 @@ fn a_hang_after_a_generation_switch_is_caught_by_the_supervisor() {
             .any(|e| e["record"] == "supervisor_force_safe" && e["groups"][0] == "default"),
         "no supervisor_force_safe entry in {entries:?}"
     );
+
+    let sources = jokerd::runtime_alarms::WatchSources {
+        manual: None,
+        restored: Vec::new(),
+        historian: None,
+    };
+    let alarms = jokerd::runtime_alarms::conditions(
+        &plan,
+        &shared,
+        &sources,
+        &mut jokerd::runtime_alarms::WatchState::default(),
+        clock.now_ns(),
+    );
+    let stalled = alarms
+        .iter()
+        .find(|c| c.id == "joker.group.default.stalled")
+        .expect("joker.group.default.stalled is evaluated");
+    assert!(
+        stalled.active,
+        "outputs held at safe keep the group stalled (ADR 0086): {stalled:?}"
+    );
 }
 
 /// More manual levels to restore in one group than its inbox holds is a
