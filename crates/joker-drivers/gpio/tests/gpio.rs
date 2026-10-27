@@ -133,7 +133,7 @@ fn outputs_are_requested_at_their_safe_state_before_any_write() {
         .points
         .iter()
         .zip(safe)
-        .map(|(p, safe)| check_point(p).unwrap().line_config(safe))
+        .map(|(p, safe)| check_point(p).unwrap().line_config(safe).unwrap())
         .collect();
     let (chip, lines) = MemoryGpio::with_lines(&configs);
     assert!(!lines.level(22), "safe false, active high: low");

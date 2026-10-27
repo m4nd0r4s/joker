@@ -94,8 +94,13 @@ pub fn load_with(
         });
     };
     let contracts = catalog::contracts_for_files(files);
-    let plan = Plan::new(&manifest, &report.paths, &context, &contracts, &hash)
+    let mut plan = Plan::new(&manifest, &report.paths, &context, &contracts, &hash)
         .map_err(LoadError::Plan)?;
+    plan.board_gpio = manifest
+        .target
+        .as_ref()
+        .and_then(|t| t.board.as_ref())
+        .and_then(|b| catalog::board_gpio(files, &b.value.name));
     Ok(Loaded {
         report,
         manifest,

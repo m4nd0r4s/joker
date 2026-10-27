@@ -222,6 +222,10 @@ pub struct Plan {
     /// not know how to run for real stay here regardless: `Shared::new`
     /// and the device dispatcher decide what to do with each one.
     pub devices: Vec<crate::bridge::DevicePlan>,
+    /// The `[gpio]` of the `[target]` board (ref/03 §2.3.2), when the
+    /// board file is among the generation's and declares one: it
+    /// resolves a gpio device's `chip = "auto"` and its named lines.
+    pub board_gpio: Option<joker_manifest::board::Gpio>,
     /// Every device action's declared `permit` source, by `(device,
     /// action)` name (ref/01 §5.8.2). An action with no entry here
     /// declared none and is always permitted; one with an entry is gated
@@ -569,6 +573,7 @@ impl Plan {
             ids: BTreeMap::new(),
             registry_hash: [0; 32],
             devices,
+            board_gpio: None,
             permit_sources: BTreeMap::new(),
             permits: BTreeMap::new(),
             calcs: Vec::new(),
