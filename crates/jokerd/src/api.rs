@@ -27,7 +27,7 @@ use crate::decisions::{DecisionLog, SharedLog, StateWriteFailure, lock};
 use crate::generations::{Activation, GenArtifact, GenState, Generation, Origin};
 use crate::manual::{ManualTable, Occupant, TicketBook};
 use crate::pacer::Monotonic;
-use crate::plan::{OutputPlan, Plan};
+use crate::plan::{OutputPlan, Plan, SignalPlan};
 use crate::runner::Running;
 use crate::shared::Shared;
 use crate::state_file;
@@ -1219,11 +1219,7 @@ impl Backend for Node {
         let now = self.now_mono();
         let items: Vec<Value> = wire::select(&v.plan, &sel)
             .into_iter()
-            .filter_map(|s| {
-                let id = v.plan.id(&s.path)?;
-                let sample = v.shared.slots.get(id.index())?.read(8).ok()?;
-                Some(wire::sample(s, &sample, now, self.utc_origin_ns))
-            })
+            .filter_map(|s| self.sample_json(&v, s, now))
             .collect();
         Ok(Reply::ok(json!({
             "generation": {"gen": v.number, "hash": v.hash},
@@ -2604,19 +2600,22 @@ impl Node {
         if let Some(g) = &s.group {
             m.insert("group".into(), json!(g));
         }
-        if with_sample
-            && let Some(sample) = v
-                .plan
-                .id(&s.path)
-                .and_then(|id| v.shared.slots.get(id.index()))
-                .and_then(|slot| slot.read(8).ok())
-        {
-            m.insert(
-                "sample".into(),
-                wire::sample(s, &sample, now, self.utc_origin_ns),
-            );
+        if with_sample && let Some(sample) = self.sample_json(v, s, now) {
+            m.insert("sample".into(), sample);
         }
         Value::Object(m)
+    }
+
+    /// The JSON sample of a signal, from its wide slot for a `string` or
+    /// `bytes` signal (ADR 0062) and from its scalar slot otherwise.
+    fn sample_json(&self, v: &View, s: &SignalPlan, now: u64) -> Option<Value> {
+        let id = v.plan.id(&s.path)?;
+        if crate::shared::is_wide(s.ty) {
+            let sample = v.shared.wide_slot(id)?.read(8).ok()?;
+            return Some(wire::wide_sample(s, &sample, now, self.utc_origin_ns));
+        }
+        let sample = v.shared.slots.get(id.index())?.read(8).ok()?;
+        Some(wire::sample(s, &sample, now, self.utc_origin_ns))
     }
 }
 
