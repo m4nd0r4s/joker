@@ -2296,3 +2296,79 @@ period = "20ms"
         .await;
     assert_eq!(forced.json()["force_safe"], true, "{}", forced.json());
 }
+
+#[test]
+fn a_wide_signal_is_readable_through_get_v1_values() {
+    use joker_api::Backend;
+
+    const WIDE_TOML: &str = r#"
+[project]
+name  = "api-wide-test"
+joker = "1.0"
+mode  = "dev"
+
+[buses.i2c1]
+kind = "i2c"
+dev  = "/dev/i2c-1"
+
+[devices.sensor]
+driver  = "i2c"
+bus     = "i2c1"
+address = 0x40
+
+[devices.sensor.signals]
+temp = { type = "bytes", direction = "input", reg = 0, len = 2, poll = "20ms" }
+"#;
+
+    let dir = tempfile::tempdir().unwrap();
+    let clock = Monotonic::start();
+    let log = Arc::new(Mutex::new(
+        DecisionLog::open(&dir.path().join("decisions.jsonl")).unwrap(),
+    ));
+    let mut c = Controller::new(
+        dir.path(),
+        log,
+        Arc::new(NativeTasks),
+        Arc::new(NoDevices),
+        Box::new(move || Box::new(SystemPacer::new(clock, ClockQuality::Unsynced))),
+        Config {
+            min_window: Duration::from_millis(100),
+            ..Config::default()
+        },
+    )
+    .unwrap();
+    let g = c
+        .propose(WIDE_TOML, "", Some("bench".into()), false)
+        .unwrap();
+    c.activate(g.number, None, None).unwrap();
+    let controller = Arc::new(Mutex::new(c));
+
+    let node = Node::new(Arc::clone(&controller), clock, 0, dir.path()).unwrap();
+    {
+        let guard = controller.lock().unwrap();
+        let (_, _, running) = guard.current().unwrap();
+        let id = running.plan.id("sensor.temp").unwrap();
+        running.shared.wide_slot(id).unwrap().write(
+            &[0xAB, 0xCD],
+            joker_core::Quality::GOOD,
+            joker_core::value::NO_TS_SRC,
+            clock.now_ns(),
+        );
+    }
+
+    let sel = ("sel".to_owned(), "sensor.temp".to_owned());
+    let reply = node.values(&vec![sel.clone()]).unwrap();
+    let items = reply.body["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1, "{}", reply.body);
+    assert_eq!(items[0]["path"], json!("sensor.temp"));
+    assert_eq!(items[0]["value"], json!("q80="), "{}", reply.body);
+    assert_eq!(items[0]["quality"], json!("good"));
+    assert_eq!(items[0]["seq"], json!(1));
+
+    let reply = node
+        .signals(&vec![sel, ("values".to_owned(), "true".to_owned())])
+        .unwrap();
+    let sample = &reply.body["items"][0]["sample"];
+    assert_eq!(sample["value"], json!("q80="), "{}", reply.body);
+    assert_eq!(sample["seq"], json!(1));
+}
