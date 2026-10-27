@@ -240,3 +240,48 @@ fn runtime_alarms_follow_the_lifecycle_without_delays() {
         ("runtime", AlarmState::Normal, Severity::High)
     );
 }
+
+#[test]
+fn an_exhausted_budget_stays_raised_until_a_new_result_or_the_level_ends() {
+    let l = loaded();
+    let plan = &l.plan;
+    let shared = Shared::new(plan);
+    let sources = WatchSources {
+        manual: None,
+        restored: Vec::new(),
+        historian: None,
+    };
+    let id = "joker.output.pi.p_set.budget";
+    let p_set = plan.id("pi.p_set").unwrap();
+    let status = shared.output(p_set).unwrap();
+    let publish = |outcome: Outcome, level: u8, tick: u64| {
+        status.publish(
+            0,
+            OutputMeta {
+                level,
+                outcome: outcome.code(),
+                detail: outcome.detail(),
+                tripped: false,
+                relinquish: false,
+            },
+            tick,
+            0,
+        );
+    };
+    let eval = || conditions(plan, &shared, &sources, &mut BTreeMap::new(), 0);
+
+    publish(Outcome::Rejected(RejectReason::Budget), 4, 1);
+    assert!(active(&eval(), id));
+    publish(Outcome::None, 4, 2);
+    publish(Outcome::None, 4, 3);
+    assert!(
+        active(&eval(), id),
+        "ticks with no new proposal keep the refused level's alarm"
+    );
+    publish(Outcome::None, 0, 4);
+    assert!(!active(&eval(), id), "a released level clears it");
+
+    publish(Outcome::Rejected(RejectReason::Budget), 4, 5);
+    publish(Outcome::Accepted, 4, 6);
+    assert!(!active(&eval(), id), "an accepted proposal clears it");
+}
