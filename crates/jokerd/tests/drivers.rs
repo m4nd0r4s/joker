@@ -200,3 +200,237 @@ fn a_value_that_does_not_convert_to_the_signal_type_is_bad_config_error() {
     assert_eq!(quality.code(), joker_core::QualityCode::Bad);
     assert_eq!(quality.reason(), joker_core::QualityReason::ConfigError);
 }
+
+#[test]
+fn a_wide_read_reaches_its_wide_slot_on_success_and_on_failure() {
+    use joker_driver_i2c::{I2cDriver, I2cPlanner};
+    use joker_hal::testing::MemoryI2c;
+    use joker_hal::{I2cBus, Link};
+
+    const I2C_TOML: &str = r#"
+[project]
+name  = "drivers-i2c-test"
+joker = "1.0"
+mode  = "dev"
+
+[buses.i2c1]
+kind = "i2c"
+dev  = "/dev/i2c-1"
+
+[devices.sensor]
+driver  = "i2c"
+bus     = "i2c1"
+address = 0x40
+
+[devices.sensor.signals]
+temp = { type = "bytes", direction = "input", reg = 0, len = 2, poll = "20ms" }
+"#;
+
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("joker.toml"), I2C_TOML).unwrap();
+    let loaded = load(&OsFileSystem, &dir.path().join("joker.toml"), &NativeTasks)
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert!(!loaded.report.has_errors(), "{}", loaded.report.render());
+    let device_plan = loaded.plan.devices[0].clone();
+
+    let shared = Arc::new(Shared::new(&loaded.plan));
+    let owned = jokerd::bridge::owned_request(&device_plan);
+    let views = owned.views();
+    let plan = I2cPlanner::plan(&views.request()).unwrap();
+
+    let (bus, handle) = MemoryI2c::new();
+    handle.preload(0x40, &[0xAB, 0xCD]);
+    let link = Link::I2c(I2cBus::new(bus));
+    let driver = I2cDriver::open(
+        &joker_hal::OpenArgs::new(views.request(), plan.view()),
+        link,
+    )
+    .unwrap();
+
+    let temp_id = loaded.plan.id("sensor.temp").unwrap();
+    let targets = jokerd::drivers::point_targets(&loaded.plan, 0);
+
+    let host = Arc::new(VirtualHost::new(0));
+    let stop_at = 100_000_000u64;
+    let host_for_stop = Arc::clone(&host);
+    host.run(run_driver(
+        driver,
+        &*host,
+        views.request(),
+        plan.view(),
+        2_000_000_000,
+        &targets,
+        &shared,
+        0,
+        None,
+        tokio::sync::mpsc::channel(1).1,
+        move || host_for_stop.mono() >= stop_at,
+    ))
+    .unwrap();
+
+    let sample = shared.wide_slot(temp_id).unwrap().read(8).unwrap();
+    assert!(
+        sample.seq() > 0,
+        "a successful wide read must advance past seq 0"
+    );
+    assert_eq!(sample.as_slice(), &[0xAB, 0xCD]);
+    assert!(sample.quality().is_good());
+
+    let host2 = Arc::new(VirtualHost::new(0));
+    let (bus2, handle2) = MemoryI2c::new();
+    handle2.preload(0x40, &[0xAB, 0xCD]);
+    handle2.deny(0x40);
+    let link2 = Link::I2c(I2cBus::new(bus2));
+    let driver2 = I2cDriver::open(
+        &joker_hal::OpenArgs::new(views.request(), plan.view()),
+        link2,
+    )
+    .unwrap();
+    let shared2 = Arc::new(Shared::new(&loaded.plan));
+    let host2_for_stop = Arc::clone(&host2);
+    host2
+        .run(run_driver(
+            driver2,
+            &*host2,
+            views.request(),
+            plan.view(),
+            2_000_000_000,
+            &targets,
+            &shared2,
+            0,
+            None,
+            tokio::sync::mpsc::channel(1).1,
+            move || host2_for_stop.mono() >= stop_at,
+        ))
+        .unwrap();
+    let failed_sample = shared2.wide_slot(temp_id).unwrap().read(8).unwrap();
+    assert!(
+        failed_sample.seq() > 0,
+        "a FAILED wide read must also advance past seq 0, with a bad quality"
+    );
+    assert_eq!(failed_sample.quality().code(), joker_core::QualityCode::Bad);
+    assert!(
+        failed_sample.as_slice().is_empty(),
+        "a bad wide sample carries no bytes"
+    );
+    let scalar = shared2.slots[temp_id.index()].read(8).unwrap();
+    assert_eq!(
+        scalar.seq(),
+        0,
+        "the scalar slot of a wide signal is never written"
+    );
+}
+
+fn wide_target(ty: joker_core::ValueType) -> PointTarget {
+    PointTarget {
+        point: 0,
+        signal: joker_core::SignalId(0),
+        ty,
+        decode: jokerd::drivers::Decode::TYPED,
+        acquisition: joker_manifest::context::Acquisition::NONE,
+    }
+}
+
+fn settled(value: joker_hal::acquire::OwnedRaw) -> joker_hal::acquire::Settled {
+    joker_hal::acquire::Settled {
+        point: 0,
+        value,
+        status: joker_hal::types::RawStatus::OK,
+        invalid: None,
+        ts_hw: None,
+    }
+}
+
+#[test]
+fn a_wide_value_that_does_not_decode_is_bad_config_error() {
+    use joker_core::{QualityCode, QualityReason, ValueType};
+    use joker_hal::acquire::OwnedRaw;
+
+    let config_error = |(bytes, quality): (Vec<u8>, joker_core::Quality)| {
+        assert!(bytes.is_empty(), "{bytes:?}");
+        assert_eq!(quality.code(), QualityCode::Bad);
+        assert_eq!(quality.reason(), QualityReason::ConfigError);
+    };
+    let bytes = wide_target(ValueType::Bytes);
+    config_error(jokerd::drivers::settled_wide(
+        &bytes,
+        &settled(OwnedRaw::Bytes(vec![0x55; 65])),
+    ));
+    config_error(jokerd::drivers::settled_wide(
+        &bytes,
+        &settled(OwnedRaw::Uint(7)),
+    ));
+    let string = wide_target(ValueType::String);
+    config_error(jokerd::drivers::settled_wide(
+        &string,
+        &settled(OwnedRaw::Text("caf\u{e9}".into())),
+    ));
+    config_error(jokerd::drivers::settled_wide(
+        &string,
+        &settled(OwnedRaw::Bytes(vec![0xff, 0xfe])),
+    ));
+
+    let (ok, quality) =
+        jokerd::drivers::settled_wide(&string, &settled(OwnedRaw::Text("ok".into())));
+    assert_eq!(ok, b"ok");
+    assert!(quality.is_good());
+    let regs = PointTarget {
+        decode: jokerd::drivers::Decode::of_point("string", &[]),
+        ..wide_target(ValueType::String)
+    };
+    let (text, _) =
+        jokerd::drivers::settled_wide(&regs, &settled(OwnedRaw::Regs(vec![0x4f4b, 0x2000])));
+    assert_eq!(
+        text, b"OK \0",
+        "two bytes per register, big-endian, padding kept"
+    );
+}
+
+#[test]
+fn a_wide_signal_turns_bad_when_its_link_goes_down() {
+    const I2C_TOML: &str = r#"
+[project]
+name  = "drivers-i2c-down"
+joker = "1.0"
+mode  = "dev"
+
+[buses.i2c1]
+kind = "i2c"
+dev  = "/dev/i2c-1"
+
+[devices.sensor]
+driver  = "i2c"
+bus     = "i2c1"
+address = 0x40
+
+[devices.sensor.signals]
+temp = { type = "bytes", direction = "input", reg = 0, len = 2, poll = "20ms" }
+"#;
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("joker.toml"), I2C_TOML).unwrap();
+    let loaded = load(&OsFileSystem, &dir.path().join("joker.toml"), &NativeTasks)
+        .unwrap_or_else(|e| panic!("{e}"));
+    let shared = Shared::new(&loaded.plan);
+    let temp_id = loaded.plan.id("sensor.temp").unwrap();
+    let targets = jokerd::drivers::point_targets(&loaded.plan, 0);
+    shared.wide_slot(temp_id).unwrap().write(
+        b"\x01\x02",
+        joker_core::Quality::GOOD,
+        joker_core::value::NO_TS_SRC,
+        1,
+    );
+
+    jokerd::drivers::mark_bad(&shared, &targets, joker_core::QualityReason::CommFailure, 2);
+
+    let sample = shared.wide_slot(temp_id).unwrap().read(8).unwrap();
+    assert_eq!(sample.quality().code(), joker_core::QualityCode::Bad);
+    assert_eq!(
+        sample.quality().reason(),
+        joker_core::QualityReason::CommFailure
+    );
+    assert!(
+        sample.as_slice().is_empty(),
+        "the last good value never stays behind a failure"
+    );
+    assert_eq!(shared.slots[temp_id.index()].read(8).unwrap().seq(), 0);
+}
