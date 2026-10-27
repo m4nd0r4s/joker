@@ -508,3 +508,65 @@ fn an_i2c_bus_that_cannot_be_opened_reads_bad_config_error() {
     set.stop();
     runtime.shutdown_timeout(Duration::from_secs(1));
 }
+
+const RPI3B_PLUS: &str = include_str!("../../../boards/rpi3b-plus.board.toml");
+
+#[test]
+fn a_gpio_device_takes_its_chip_and_line_names_from_the_target_board() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("joker.toml"),
+        "[project]\nname = \"g\"\njoker = \"1.0\"\nmode = \"dev\"\n\n\
+         [target]\nboard = \"rpi3b-plus\"\n\n\
+         [devices.button]\ndriver = \"gpio\"\n\n\
+         [devices.button.signals]\npressed = { type = \"bool\", line = \"GPIO17\", poll = \"20ms\" }\n",
+    )
+    .unwrap();
+    fs::create_dir_all(dir.path().join("boards")).unwrap();
+    let board = format!("{RPI3B_PLUS}\n[gpio.lines]\nGPIO17 = 17\n");
+    fs::write(dir.path().join("boards/rpi3b-plus.board.toml"), board).unwrap();
+    let loaded = load(&OsFileSystem, &dir.path().join("joker.toml"), &NativeTasks)
+        .unwrap_or_else(|e| panic!("{e}"));
+    let gpio = loaded.plan.board_gpio.clone().expect("the board's [gpio]");
+    assert_eq!(gpio.chip.as_deref(), Some("pinctrl-bcm2835"));
+
+    assert_eq!(
+        jokerd::real_devices::gpio_chip_spec("auto", Some(&gpio)).unwrap(),
+        "pinctrl-bcm2835"
+    );
+    assert_eq!(
+        jokerd::real_devices::gpio_chip_spec("gpiochip1", Some(&gpio)).unwrap(),
+        "gpiochip1"
+    );
+    let no_board = jokerd::real_devices::gpio_chip_spec("auto", None).unwrap_err();
+    assert!(no_board.starts_with("J0828"), "{no_board}");
+
+    let never = |_: &str| -> std::io::Result<Option<u32>> { panic!("the board answers first") };
+    assert_eq!(
+        jokerd::real_devices::gpio_named_offset("GPIO17", Some(&gpio), never).unwrap(),
+        17
+    );
+    assert_eq!(
+        jokerd::real_devices::gpio_named_offset("LED", Some(&gpio), |_| Ok(Some(4))).unwrap(),
+        4
+    );
+    let unknown =
+        jokerd::real_devices::gpio_named_offset("GPIO99", Some(&gpio), |_| Ok(None)).unwrap_err();
+    assert!(unknown.starts_with("J0828"), "{unknown}");
+}
+
+#[test]
+fn a_resolved_line_keeps_the_rest_of_the_address() {
+    use joker_hal::cbor::Value;
+    let addr = Value::map([
+        ("line", Value::text("GPIO17")),
+        ("active_low", Value::Bool(true)),
+        ("bias", Value::text("pull-up")),
+    ])
+    .encode();
+    let resolved = jokerd::real_devices::with_line(&addr, 17).unwrap();
+    let a = joker_driver_gpio::plan::Address::parse(joker_hal::Cbor::new(&resolved)).unwrap();
+    assert_eq!(a.line, joker_driver_gpio::plan::Line::Offset(17));
+    assert!(a.active_low);
+    assert_eq!(a.bias, joker_driver_gpio::plan::Bias::PullUp);
+}

@@ -319,6 +319,20 @@ fn parse_catalog(files: &CatalogFiles) -> Parsed {
     (profiles, boards, classes, errors)
 }
 
+/// The `[gpio]` of board `name` (ref/03 §2.3.2), from its file among
+/// `files` (`boards/<name>.board.toml`), when it declares one.
+pub fn board_gpio(files: &CatalogFiles, name: &str) -> Option<joker_manifest::board::Gpio> {
+    files.iter().find_map(|(file, text)| {
+        let key = file.strip_prefix("boards/")?.strip_suffix(".board.toml")?;
+        if key != name {
+            return None;
+        }
+        joker_manifest::board::parse(Path::new(file), text)
+            .peripherals
+            .gpio
+    })
+}
+
 /// The context of the manifest checks: the M0 catalogue, the apps of
 /// `tasks`, and every profile and board of `files` (a file of `files`
 /// wins over the M0 catalogue on a name collision). Files that do not

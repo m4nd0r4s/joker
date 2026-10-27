@@ -22,13 +22,21 @@ line one of its outputs requests, as `bool`, with the step address's own
 `active_low`. Any other line is `config-error`: the host only requests
 the lines the points declare.
 
-Not yet supported: named lines (only integer `line` indices), `edges`
+A `line` is an offset or a line name (`"GPIO17"`). The host resolves a
+name before the driver opens: the `[target]` board's `[gpio] lines`
+first, then the kernel's own line names (kernels before 5.x name none on
+the Raspberry Pi); an unknown name is `J0828`. The steps of an action
+reach a line by its offset only.
+
+Not yet supported: `edges`
 (interrupt-driven push reads), `timestamp` and `debounce`. A point
 declaring any of these is a manifest error, not a silent no-op.
 
-Device config: `chip` (string, the `gpiochip` name, e.g. `gpiochip0`),
-used by the host to resolve the real `Link::Gpio`; this crate only
-validates its presence and shape.
+Device config: `chip` (string: `gpiochip<N>`, a path, a label such as
+`pinctrl-bcm2835`, or `"auto"`, the default, which takes the `[target]`
+board's `[gpio] chip`; ref/01 appendix A),
+resolved by the host to a `/dev/gpiochip<N>` (a label through
+`GPIO_GET_CHIPINFO_IOCTL`) before it opens the real `Link::Gpio`.
 
 The real Linux chardev v1 adapter (`joker_hal::std_host::LinuxGpio`,
 backed by `joker-gpio-sys`'s ioctls: `GPIO_GET_LINEHANDLE_IOCTL`,

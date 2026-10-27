@@ -12,7 +12,7 @@ use joker_hal::{
     RawStatus, RawValue, ReadBatch, Reason, WriteAcks, WriteKind, WriteStatus, code,
 };
 
-use crate::plan::{Address, check_point};
+use crate::plan::{Address, Line, check_point};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Point {
@@ -52,14 +52,23 @@ impl GpioDriver {
         self.points.iter().copied().find(|p| p.id == id)
     }
 
-    fn step_line(&self, addr: joker_hal::Cbor<'_>, write: bool) -> Result<Address, BatchFailure> {
+    fn step_line(
+        &self,
+        addr: joker_hal::Cbor<'_>,
+        write: bool,
+    ) -> Result<(u32, bool), BatchFailure> {
         let a = Address::parse(addr).map_err(BatchFailure::ConfigError)?;
+        let Line::Offset(line) = a.line else {
+            return Err(BatchFailure::ConfigError(
+                "a step reaches a line by its offset in this version",
+            ));
+        };
         let requested = self
             .points
             .iter()
-            .any(|p| p.line == a.line && (p.output || !write));
+            .any(|p| p.line == line && (p.output || !write));
         if requested {
-            Ok(a)
+            Ok((line, a.active_low))
         } else if write {
             Err(BatchFailure::ConfigError(
                 "a step writes a line one of the device's outputs requests",
@@ -83,9 +92,15 @@ impl Driver for GpioDriver {
         let mut points = Vec::new();
         for p in args.request().points {
             let addr = check_point(p).map_err(|d| DriverError::new(d.code, d.message))?;
+            let Line::Offset(line) = addr.line else {
+                return Err(DriverError::new(
+                    code!("J0828"),
+                    "a named gpio line reaches the driver unresolved; the host maps it to an offset first",
+                ));
+            };
             points.push(Point {
                 id: p.id,
-                line: addr.line,
+                line,
                 active_low: addr.active_low,
                 output: p.direction == Direction::Output,
             });
@@ -165,12 +180,12 @@ impl Driver for GpioDriver {
         req: &AddrRead<'_>,
         out: &mut RawSink<'_>,
     ) -> Result<(), BatchFailure> {
-        let a = self.step_line(req.addr, false)?;
-        let level = self.chip.get(a.line).map_err(|e| {
+        let (line, active_low) = self.step_line(req.addr, false)?;
+        let level = self.chip.get(line).map_err(|e| {
             self.errors += 1;
             io_failure(e)
         })?;
-        let on = level != a.active_low;
+        let on = level != active_low;
         let value = match req.expect {
             RawKind::Int => RawValue::Int(i64::from(on)),
             RawKind::Uint => RawValue::Uint(u64::from(on)),
@@ -191,14 +206,14 @@ impl Driver for GpioDriver {
         _cx: &mut Cx<'_>,
         req: &AddrWrite<'_>,
     ) -> Result<(), BatchFailure> {
-        let a = self.step_line(req.addr, true)?;
+        let (line, active_low) = self.step_line(req.addr, true)?;
         let on = match req.value {
             RawValue::Bool(b) => b,
             RawValue::Uint(u) if u <= 1 => u == 1,
             RawValue::Int(i) if (0..=1).contains(&i) => i == 1,
             _ => return Err(BatchFailure::ConfigError("a line takes a bool")),
         };
-        self.chip.set(a.line, on != a.active_low).map_err(|e| {
+        self.chip.set(line, on != active_low).map_err(|e| {
             self.errors += 1;
             io_failure(e)
         })

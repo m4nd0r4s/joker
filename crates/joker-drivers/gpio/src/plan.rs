@@ -1,8 +1,10 @@
 //! The plan half of `gpio`: point addresses of the `gpio` family (ref/03
 //! §2.2.5) and device config (`chip`, ref/01 appendix A).
 //!
-//! Scoped deliberately: only integer `line` indices (named lines need the
-//! real chip's name→offset map, not available without the Linux adapter).
+//! A `line` is an offset or a name (`"GPIO17"`), and `chip` is a label, a
+//! path or `"auto"` (the default: the board's `[gpio]`, ref/03 §2.3.2).
+//! Names and labels are the host's to resolve against the real chip
+//! before [`crate::GpioDriver`] opens, which only takes offsets.
 //! `bias` and `drive` go to the host in each line's [`GpioLineConfig`]
 //! ([`Address::line_config`]), which requests them from the kernel, and
 //! `drive` on an input is a manifest error; this crate's own logic only
@@ -39,11 +41,20 @@ pub const DESCRIPTOR: Descriptor = Descriptor {
 
 pub use joker_hal::link::{GpioBias as Bias, GpioDrive as Drive};
 
+/// A gpio line, as the manifest writes it (ref/01 appendix A).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Line<'a> {
+    /// An offset on the chip.
+    Offset(u32),
+    /// A line name: the board's `[gpio] lines`, or the kernel's own.
+    Name(&'a str),
+}
+
 /// A point's address (ref/03 §2.2.5).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Address {
-    /// The line index (named lines are not supported here).
-    pub line: u32,
+pub struct Address<'a> {
+    /// The line.
+    pub line: Line<'a>,
     /// Inverts the logical value against the physical one.
     pub active_low: bool,
     /// The pull the host requests the line with.
@@ -52,10 +63,10 @@ pub struct Address {
     pub drive: Drive,
 }
 
-impl Address {
+impl<'a> Address<'a> {
     /// Reads `{ line, active_low?, bias?, drive? }`. `edges`, `timestamp`
     /// and `debounce` are a manifest error (`J0821`): not implemented.
-    pub fn parse(addr: Cbor<'_>) -> Result<Self, &'static str> {
+    pub fn parse(addr: Cbor<'a>) -> Result<Self, &'static str> {
         let mut line = None;
         let mut active_low = false;
         let mut bias = Bias::AsIs;
@@ -64,12 +75,16 @@ impl Address {
             let (k, v) = entry.map_err(|_| "the address is not a table")?;
             match k {
                 "line" => {
-                    line = Some(
-                        v.as_u64()
-                            .ok()
-                            .and_then(|l| u32::try_from(l).ok())
-                            .ok_or("`line` is a non-negative integer")?,
-                    );
+                    line = Some(match v.as_str() {
+                        Ok("") => return Err("`line` is an offset or a line name"),
+                        Ok(name) => Line::Name(name),
+                        Err(_) => Line::Offset(
+                            v.as_u64()
+                                .ok()
+                                .and_then(|l| u32::try_from(l).ok())
+                                .ok_or("`line` is an offset or a line name")?,
+                        ),
+                    });
                 }
                 "active_low" => {
                     active_low = v.as_bool().map_err(|_| "`active_low` is a bool")?;
@@ -109,19 +124,23 @@ impl Address {
     /// for an output, its declared safe state as a logical value: the
     /// line is requested already at that state's physical level (inverted
     /// when `active_low`), so it never starts at a level the manifest did
-    /// not declare (AGENTS.md invariant 5).
-    pub fn line_config(&self, safe: Option<bool>) -> GpioLineConfig {
-        GpioLineConfig {
-            line: self.line,
+    /// not declare (AGENTS.md invariant 5). `None` while the line is still
+    /// a name.
+    pub fn line_config(&self, safe: Option<bool>) -> Option<GpioLineConfig> {
+        let Line::Offset(line) = self.line else {
+            return None;
+        };
+        Some(GpioLineConfig {
+            line,
             output: safe.map(|logical| logical != self.active_low),
             bias: self.bias,
             drive: self.drive,
-        }
+        })
     }
 }
 
 /// Checks one point against ref/03 §2.2.5: a gpio line is always `bool`.
-pub fn check_point(p: &PointSpec<'_>) -> Result<Address, Diagnostic<'static>> {
+pub fn check_point<'a>(p: &PointSpec<'a>) -> Result<Address<'a>, Diagnostic<'static>> {
     let addr = Address::parse(p.addr).map_err(|m| Diagnostic::at(J0853, p.id, m))?;
     if p.expect != RawKind::Bool || p.width != 0 {
         return Err(Diagnostic::at(J0809, p.id, "a gpio line is `bool`"));
@@ -143,16 +162,15 @@ pub fn check_point(p: &PointSpec<'_>) -> Result<Address, Diagnostic<'static>> {
     Ok(addr)
 }
 
-/// The chip name of device `config` (ref/01 appendix A).
+/// The chip of device `config` (ref/01 appendix A): `gpiochip<N>`, a
+/// label, a path, or `"auto"` (the default: the board chooses).
 pub fn chip_id(config: Cbor<'_>) -> Result<std::string::String, &'static str> {
-    let name = config
-        .get("chip")
-        .map_err(|_| "config is not a table")?
-        .ok_or("`chip` is required")?
-        .as_str()
-        .map_err(|_| "`chip` is a string")?;
+    let Some(chip) = config.get("chip").map_err(|_| "config is not a table")? else {
+        return Ok(std::string::String::from("auto"));
+    };
+    let name = chip.as_str().map_err(|_| "`chip` is a string")?;
     if name.is_empty() {
-        return Err("`chip` is required");
+        return Err("`chip` is a `gpiochip<N>`, a label, a path or \"auto\"");
     }
     Ok(std::string::String::from(name))
 }
@@ -230,7 +248,7 @@ mod tests {
     fn a_bare_line_defaults_active_low_bias_and_drive() {
         let bytes = addr(&[("line", Value::Uint(17))]);
         let a = Address::parse(Cbor::new(&bytes)).unwrap();
-        assert_eq!(a.line, 17);
+        assert_eq!(a.line, Line::Offset(17));
         assert!(!a.active_low);
         assert_eq!(a.bias, Bias::AsIs);
         assert_eq!(a.drive, Drive::PushPull);
@@ -258,19 +276,19 @@ mod tests {
             ("drive", Value::text("open-source")),
         ]);
         let high = Address::parse(Cbor::new(&bytes)).unwrap();
-        let config = high.line_config(Some(true));
+        let config = high.line_config(Some(true)).unwrap();
         assert_eq!(config.line, 5);
         assert_eq!(config.output, Some(true));
         assert_eq!(config.bias, Bias::PullDown);
         assert_eq!(config.drive, Drive::OpenSource);
-        assert_eq!(high.line_config(Some(false)).output, Some(false));
+        assert_eq!(high.line_config(Some(false)).unwrap().output, Some(false));
         let low = Address {
             active_low: true,
             ..high
         };
-        assert_eq!(low.line_config(Some(false)).output, Some(true));
-        assert_eq!(low.line_config(Some(true)).output, Some(false));
-        assert_eq!(low.line_config(None).output, None);
+        assert_eq!(low.line_config(Some(false)).unwrap().output, Some(true));
+        assert_eq!(low.line_config(Some(true)).unwrap().output, Some(false));
+        assert_eq!(low.line_config(None).unwrap().output, None);
     }
 
     #[test]
@@ -293,12 +311,22 @@ mod tests {
     }
 
     #[test]
-    fn chip_id_requires_a_nonempty_string() {
+    fn chip_id_defaults_to_auto_and_refuses_an_empty_string() {
         let ok = Value::map([("chip", Value::text("gpiochip0"))]).encode();
         assert_eq!(chip_id(Cbor::new(&ok)).unwrap(), "gpiochip0");
         let missing = Value::map([]).encode();
-        assert!(chip_id(Cbor::new(&missing)).is_err());
+        assert_eq!(chip_id(Cbor::new(&missing)).unwrap(), "auto");
         let empty = Value::map([("chip", Value::text(""))]).encode();
         assert!(chip_id(Cbor::new(&empty)).is_err());
+    }
+
+    #[test]
+    fn a_named_line_is_kept_by_name_until_the_host_resolves_it() {
+        let bytes = addr(&[("line", Value::text("GPIO17"))]);
+        let a = Address::parse(Cbor::new(&bytes)).unwrap();
+        assert_eq!(a.line, Line::Name("GPIO17"));
+        assert_eq!(a.line_config(None), None);
+        let empty = addr(&[("line", Value::text(""))]);
+        assert!(Address::parse(Cbor::new(&empty)).is_err());
     }
 }

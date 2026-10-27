@@ -34,6 +34,95 @@ use crate::shared::Shared;
 /// The default Modbus TCP port (ref/01 appendix A).
 pub const MODBUS_TCP_PORT: u16 = 502;
 
+/// The chip a gpio device names once `"auto"` is resolved against the
+/// `[target]` board's `[gpio] chip` (ref/01 appendix A, ref/03 §2.3.2).
+pub fn gpio_chip_spec(
+    chip: &str,
+    board: Option<&joker_manifest::board::Gpio>,
+) -> Result<String, String> {
+    if chip != "auto" {
+        return Ok(chip.to_owned());
+    }
+    board
+        .and_then(|b| b.chip.clone())
+        .filter(|c| c != "auto")
+        .ok_or_else(|| {
+            "J0828: `chip = \"auto\"` needs a `[target]` board whose file declares `[gpio] chip`"
+                .to_owned()
+        })
+}
+
+/// The offset of the line named `name`: the board's `[gpio] lines` first,
+/// then the kernel's own line names through `kernel` (ref/03 §2.3.2);
+/// neither knowing it is `J0828`.
+pub fn gpio_named_offset(
+    name: &str,
+    board: Option<&joker_manifest::board::Gpio>,
+    kernel: impl FnOnce(&str) -> std::io::Result<Option<u32>>,
+) -> Result<u32, String> {
+    if let Some(&offset) = board.and_then(|b| b.lines.get(name)) {
+        return u32::try_from(offset)
+            .map_err(|_| format!("J0828: the board maps line `{name}` to {offset}"));
+    }
+    match kernel(name) {
+        Ok(Some(offset)) => Ok(offset),
+        Ok(None) => Err(format!(
+            "J0828: no line `{name}` in the board's `[gpio] lines` nor among the chip's line names"
+        )),
+        Err(e) => Err(format!("J0828: line `{name}`: {e}")),
+    }
+}
+
+/// A gpio address with its `line` replaced by `offset`, every other key
+/// kept as it is (ref/03 §2.2.5 has only scalar keys).
+pub fn with_line(addr: &[u8], offset: u32) -> Result<Vec<u8>, String> {
+    use joker_hal::cbor::Value;
+    let mut entries = Vec::new();
+    let table = Cbor::new(addr)
+        .entries()
+        .map_err(|_| "the address is not a table".to_owned())?;
+    for entry in table {
+        let (key, value) = entry.map_err(|_| "the address is not a table".to_owned())?;
+        let value = if key == "line" {
+            Value::Uint(u64::from(offset))
+        } else if let Ok(b) = value.as_bool() {
+            Value::Bool(b)
+        } else if let Ok(u) = value.as_u64() {
+            Value::Uint(u)
+        } else if let Ok(s) = value.as_str() {
+            Value::Text(s.to_owned())
+        } else {
+            return Err(format!("address key `{key}` is not a scalar"));
+        };
+        entries.push((key.to_owned(), value));
+    }
+    Ok(Value::Map(entries).encode())
+}
+
+/// `device` with its gpio chip resolved to a chardev and every named line
+/// to its offset on that chip.
+fn resolve_gpio(plan: &Plan, mut device: DevicePlan) -> Result<(PathBuf, DevicePlan), String> {
+    let board = plan.board_gpio.as_ref();
+    let named = joker_driver_gpio::plan::chip_id(Cbor::new(&device.config))
+        .map_err(|e| format!("chip: {e}"))?;
+    let spec = gpio_chip_spec(&named, board)?;
+    let chip = joker_hal::std_host::resolve_gpio_chip(&spec)
+        .map_err(|e| format!("J0828: chip `{spec}`: {e}"))?;
+    for point in &mut device.points {
+        let line = joker_driver_gpio::plan::Address::parse(Cbor::new(&point.addr))
+            .map_err(|e| format!("point `{}`: {e}", point.path))?
+            .line;
+        if let joker_driver_gpio::plan::Line::Name(name) = line {
+            let offset = gpio_named_offset(name, board, |n| {
+                joker_hal::std_host::gpio_line_offset(&chip, n)
+            })
+            .map_err(|e| format!("point `{}`: {e}", point.path))?;
+            point.addr = with_line(&point.addr, offset)?;
+        }
+    }
+    Ok((chip, device))
+}
+
 /// The endpoint of a `modbus-tcp` device from its `[devices.<d>]` keys
 /// (ref/01 appendix A): `address = "<host>:<port>"`, required, the port
 /// 502 by default. The host is a name (resolved at each connection), an
@@ -331,15 +420,15 @@ async fn run_gpio(
     mut stop: watch::Receiver<bool>,
     action_rx: tokio::sync::mpsc::Receiver<ActionCall>,
 ) {
+    let (chip, device) = match resolve_gpio(&plan, device) {
+        Ok(resolved) => resolved,
+        Err(e) => return setup_failed(&shared, &plan, device_index, &host, e),
+    };
     let owned = owned_request(&device);
     let views = owned.views();
     let hal_plan = match GpioPlanner::plan(&views.request()) {
         Ok(p) => p,
         Err(e) => return setup_failed(&shared, &plan, device_index, &host, format!("plan: {e:?}")),
-    };
-    let chip = match joker_driver_gpio::plan::chip_id(Cbor::new(&device.config)) {
-        Ok(c) => c,
-        Err(e) => return setup_failed(&shared, &plan, device_index, &host, format!("chip: {e:?}")),
     };
     let mut lines = Vec::new();
     for p in views.request().points {
@@ -371,9 +460,18 @@ async fn run_gpio(
         } else {
             None
         };
-        lines.push(addr.line_config(safe));
+        let Some(config) = addr.line_config(safe) else {
+            return setup_failed(
+                &shared,
+                &plan,
+                device_index,
+                &host,
+                format!("point `{}`: J0828: the line name was not resolved", p.path),
+            );
+        };
+        lines.push(config);
     }
-    let gpio = match LinuxGpio::open(&PathBuf::from("/dev").join(&chip), &lines) {
+    let gpio = match LinuxGpio::open(&chip, &lines) {
         Ok(g) => g,
         Err(e) => {
             return setup_failed(
@@ -381,7 +479,7 @@ async fn run_gpio(
                 &plan,
                 device_index,
                 &host,
-                format!("/dev/{chip}: {e:?}"),
+                format!("{}: {e:?}", chip.display()),
             );
         }
     };
