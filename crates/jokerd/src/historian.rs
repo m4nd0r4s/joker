@@ -407,6 +407,7 @@ impl Recorder {
             .collect();
         let handle = std::thread::Builder::new()
             .name("svc/record".into())
+            .stack_size(crate::shared::SERVICE_STACK)
             .spawn(move || {
                 while !flag.load(Ordering::Acquire) {
                     let now = clock.now_ns();

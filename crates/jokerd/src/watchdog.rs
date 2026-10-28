@@ -108,6 +108,7 @@ impl WatchdogFeeder {
         let flag = Arc::clone(&stop);
         let handle = std::thread::Builder::new()
             .name("svc/watchdog".into())
+            .stack_size(crate::shared::SERVICE_STACK)
             .spawn(move || {
                 let mut device = device_path.as_deref().and_then(open_watchdog);
                 if let Some(path) = &device_path

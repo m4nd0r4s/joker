@@ -300,6 +300,7 @@ impl Supervisor {
         heartbeat.arm();
         let spawned = std::thread::Builder::new()
             .name("rt/supervisor".into())
+            .stack_size(crate::shared::SERVICE_STACK)
             .spawn(move || {
                 if let Err(e) = raise_priority() {
                     eprintln!("rt/supervisor: {e}; running at default priority");

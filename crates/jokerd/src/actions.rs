@@ -865,6 +865,7 @@ impl Hub {
                 let waiter = id.clone();
                 let spawned = std::thread::Builder::new()
                     .name("joker-action".into())
+                    .stack_size(crate::shared::SERVICE_STACK)
                     .spawn(move || {
                         let outcome = reply_rx.blocking_recv().unwrap_or_else(|_| {
                             ActionOutcome::failed(

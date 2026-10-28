@@ -247,6 +247,7 @@ impl Watch {
         let flag = Arc::clone(&stop);
         let handle = std::thread::Builder::new()
             .name("svc/watch".into())
+            .stack_size(crate::shared::SERVICE_STACK)
             .spawn(move || {
                 let mut state = WatchState::default();
                 let mut reported = false;

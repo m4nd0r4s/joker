@@ -926,6 +926,7 @@ impl AlarmPump {
         let flag = Arc::clone(&stop);
         let handle = std::thread::Builder::new()
             .name("svc/alarms".into())
+            .stack_size(crate::shared::SERVICE_STACK)
             .spawn(move || {
                 let mut reported = false;
                 loop {

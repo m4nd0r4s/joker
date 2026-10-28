@@ -37,6 +37,14 @@ pub const TRIP_CAPACITY: usize = 16;
 pub const EXPORT_CAPACITY: usize = 256;
 /// Trace buffers in flight between the cycle thread and the trace ring.
 pub const TRACE_BUFFERS: usize = 512;
+/// Stack of the service threads (`rt/supervisor`, `svc/*`). The daemon
+/// locks its memory with `mlockall(MCL_CURRENT | MCL_FUTURE)` (docs/09,
+/// attack 5), which makes every page of a thread's stack resident: the 2 MiB
+/// default of the standard library cost 2 MiB of RAM per thread. These
+/// threads run short loops over queues; on the bench project none of them
+/// touched more than 32 KiB. `rt/cycle` keeps the default: Wasm runs on
+/// its stack.
+pub const SERVICE_STACK: usize = 512 * 1024;
 /// Alarm transitions in flight to the alarm journal (ADR 0082).
 pub const ALARM_EVENT_CAPACITY: usize = 4_096;
 /// Operator commands on alarms waiting for a tick, and their replies.
