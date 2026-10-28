@@ -241,6 +241,35 @@ fn stuck_detect_marks_a_value_that_does_not_move_frozen() {
 }
 
 #[test]
+fn stuck_detect_marks_wide_bytes_that_do_not_move_frozen() {
+    let mut stuck = jokerd::drivers::WideStuck::default();
+    let window = Some(1_000 * MS);
+    let g = Quality::GOOD;
+    let frozen = Quality::new(QualityCode::Uncertain, QualityReason::Frozen);
+    assert_eq!(stuck.filter(window, &[1, 2], g, 0), g);
+    assert_eq!(stuck.filter(window, &[1, 2], g, 900 * MS), g);
+    assert_eq!(stuck.filter(window, &[1, 2], g, 1_000 * MS), frozen);
+    assert_eq!(
+        stuck.filter(window, &[1, 2, 0], g, 1_100 * MS),
+        g,
+        "a longer value with the same prefix moves"
+    );
+    assert_eq!(stuck.filter(window, &[1, 2, 0], g, 2_100 * MS), frozen);
+    let bad = Quality::new(QualityCode::Bad, QualityReason::CommFailure);
+    assert_eq!(stuck.filter(window, &[], bad, 2_200 * MS), bad);
+    assert_eq!(
+        stuck.filter(window, &[1, 2, 0], g, 2_300 * MS),
+        g,
+        "a bad read restarts the window"
+    );
+    assert_eq!(
+        stuck.filter(None, &[1, 2, 0], g, 9_000 * MS),
+        g,
+        "off without a window"
+    );
+}
+
+#[test]
 fn debounce_publishes_a_change_once_it_has_lasted() {
     let mut d = Debounce::default();
     let window = Some(100 * MS);
