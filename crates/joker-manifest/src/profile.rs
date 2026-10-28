@@ -435,6 +435,7 @@ fn derived_type(type_name: &str, scaled: bool) -> Option<SignalType> {
         }
         "f32" | "f64" => Some(SignalType::Float),
         "string" => Some(SignalType::Text),
+        "bytes" => Some(SignalType::Bytes),
         _ => None,
     }
 }

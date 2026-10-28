@@ -446,6 +446,69 @@ fn a_bit_whose_register_cannot_be_read_is_not_written() {
 }
 
 #[test]
+fn len_gives_the_registers_of_a_string_or_bytes_point_and_only_of_one() {
+    let one = |type_name: &str, width: u16, entries: &[(&str, u64)], output: bool| {
+        let point = if output {
+            OwnedPoint::output(0, "m.x", RawKind::Regs, width, type_name, addr(entries))
+        } else {
+            OwnedPoint::input(
+                0,
+                "m.x",
+                RawKind::Regs,
+                width,
+                type_name,
+                addr(entries),
+                100 * MS,
+            )
+        };
+        let req = OwnedRequest {
+            bus: None,
+            devices: vec![OwnedDevice::new(
+                "m",
+                Value::map([("unit_id", Value::Uint(1))]).encode(),
+                200 * MS,
+            )],
+            points: vec![point],
+        };
+        ModbusTcpPlanner::plan(&req.views().request())
+            .err()
+            .map(|e| e[0].code.as_str().to_owned())
+    };
+    let at3 = |len: Option<u64>| {
+        let mut e = vec![("at", 0), ("fc", 3)];
+        e.extend(len.map(|n| ("len", n)));
+        e
+    };
+    assert_eq!(one("string", 4, &at3(Some(4)), false), None);
+    assert_eq!(one("bytes", 32, &at3(Some(32)), false), None);
+    assert_eq!(
+        one("string", 4, &at3(None), false).as_deref(),
+        Some("J0809"),
+        "no len"
+    );
+    assert_eq!(
+        one("bytes", 4, &at3(Some(2)), false).as_deref(),
+        Some("J0809"),
+        "len ≠ width"
+    );
+    assert_eq!(
+        one("u16", 1, &at3(Some(1)), false).as_deref(),
+        Some("J0809"),
+        "len on a scalar"
+    );
+    assert_eq!(
+        one("bytes", 33, &at3(Some(33)), false).as_deref(),
+        Some("J0853"),
+        "over 64 B"
+    );
+    assert_eq!(
+        one("string", 2, &[("at", 0), ("fc", 16), ("len", 2)], true).as_deref(),
+        Some("J0809"),
+        "read only"
+    );
+}
+
+#[test]
 fn the_planner_admits_register_outputs_and_refuses_fc_6_on_two_registers() {
     let req = request(None);
     assert!(ModbusTcpPlanner::plan(&req.views().request()).is_ok());
