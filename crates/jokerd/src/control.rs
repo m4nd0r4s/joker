@@ -900,6 +900,19 @@ impl Controller {
         let Some(apps) = &self.apps else {
             return;
         };
+        for line in apps.app_logs().drain() {
+            self.logs.push(
+                crate::logs::LogLevel::from(line.level),
+                &format!("app:{}", line.app),
+                line.message(),
+                line.fields()
+                    .map(|(k, v)| (k.to_owned(), v.to_owned()))
+                    .collect(),
+                self.config
+                    .utc_origin_ns
+                    .saturating_add(i64::try_from(line.at_mono_ns).unwrap_or(i64::MAX)),
+            );
+        }
         let traps = apps.traps();
         let generation = self.active.as_ref().map(|a| a.number);
         for t in traps.drain() {

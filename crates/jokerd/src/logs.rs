@@ -53,6 +53,18 @@ impl LogLevel {
     }
 }
 
+impl From<joker_host::LogLevel> for LogLevel {
+    fn from(level: joker_host::LogLevel) -> Self {
+        match level {
+            joker_host::LogLevel::Trace => Self::Trace,
+            joker_host::LogLevel::Debug => Self::Debug,
+            joker_host::LogLevel::Info => Self::Info,
+            joker_host::LogLevel::Warn => Self::Warn,
+            joker_host::LogLevel::Error => Self::Error,
+        }
+    }
+}
+
 impl From<joker_hal::LogLevel> for LogLevel {
     fn from(level: joker_hal::LogLevel) -> Self {
         match level {
