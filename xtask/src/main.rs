@@ -49,12 +49,14 @@ tasks:
 
   rt-bench [--outputs N] [--period DURATION] [--ticks N] [--iterations N]
            [--json FILE] [--compare BASELINE.json] [--threshold PERCENT]
-           [--max-output-ns NS]
+           [--max-output-ns NS] [--max-scaling RATIO]
       Measures the tick jitter and the envelope + arbiter cost per output
       (defaults: 64 outputs, 1ms, 10000 paced ticks, 20000 cost ticks).
       With --compare, exits 1 when a p99.9 regresses by more than the
       threshold (default 5%); with --max-output-ns, when the median cost
-      per output is above NS (Phase 0 gate 4: 300).
+      per output is above NS (Phase 0 gate 4: 300); with --max-scaling,
+      when the median cost per output of a group 16 times larger is more
+      than RATIO times that of the workload (CI: 3).
 
   msrv --max VERSION
       Checks that the rust-version of the core crates is at most VERSION,
@@ -104,6 +106,9 @@ fn rt_bench(args: &[String]) -> Result<bool, String> {
             "--max-output-ns" => {
                 options.max_output_ns = Some(parse("--max-output-ns", &value("--max-output-ns")?)?);
             }
+            "--max-scaling" => {
+                options.max_scaling = Some(parse("--max-scaling", &value("--max-scaling")?)?);
+            }
             other => return Err(format!("unknown option {other}\n{USAGE}")),
         }
     }
@@ -121,6 +126,12 @@ fn rt_bench(args: &[String]) -> Result<bool, String> {
     }
     if let Some(max) = options.max_output_ns
         && let Err(e) = rt_bench::check_output_cost(&result, max)
+    {
+        println!("  gate: {e}");
+        return Ok(false);
+    }
+    if let Some(max) = options.max_scaling
+        && let Err(e) = rt_bench::check_scaling(&result, max)
     {
         println!("  gate: {e}");
         return Ok(false);

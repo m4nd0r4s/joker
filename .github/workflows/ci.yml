@@ -91,6 +91,8 @@ jobs:
             echo "::warning title=Output cost::median above 300 ns per output on this shared runner (non-blocking, docs/13 §5)"
           fi
           test -f target/rt-bench/x86_64.json
+      - name: envelope + arbiter per output stays linear in the size of the group (docs/13 §5)
+        run: cargo run --release --package xtask -- rt-bench --ticks 100 --max-scaling 3 --json target/rt-bench/x86_64-scaling.json
       - if: always()
         uses: actions/upload-artifact@v4
         with:

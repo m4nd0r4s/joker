@@ -56,7 +56,14 @@ pub struct Options {
     /// The largest median cost per output, in ns: the gate of docs/11
     /// Phase 0 gate 4 (docs/01 §21: envelope + arbiter ≤ 300 ns).
     pub max_output_ns: Option<f64>,
+    /// The largest ratio between the median cost per output of a group
+    /// [`SCALE`] times larger and that of the workload: the commit must
+    /// stay linear in the outputs of a group.
+    pub max_scaling: Option<f64>,
 }
+
+/// How many times larger the group of the scaling measurement is.
+pub const SCALE: usize = 16;
 
 impl Default for Options {
     fn default() -> Self {
@@ -69,6 +76,7 @@ impl Default for Options {
             compare: None,
             threshold_pct: 5.0,
             max_output_ns: None,
+            max_scaling: None,
         }
     }
 }
@@ -276,6 +284,26 @@ fn stats(mut samples: Vec<u64>, scale: f64) -> Value {
     })
 }
 
+/// The commit time of `iterations` back-to-back ticks of `workload`.
+fn commit_costs(workload: &Workload, iterations: u64, guard: &NoAlloc) -> Result<Vec<u64>, String> {
+    let mut cost = Vec::with_capacity(usize::try_from(iterations).unwrap_or(0));
+    let mut error = None;
+    workload.run(iterations, guard, |_, tick| match tick() {
+        Ok(ns) => cost.push(ns),
+        Err(e) => error = Some(e),
+    })?;
+    match error {
+        Some(e) => Err(e),
+        None => Ok(cost),
+    }
+}
+
+fn per_output_ps(cost: &[u64], outputs: usize) -> Vec<u64> {
+    cost.iter()
+        .map(|&ns| ns.saturating_mul(1_000) / outputs as u64)
+        .collect()
+}
+
 /// Runs the benchmark and returns the JSON result.
 pub fn bench(options: &Options) -> Result<Value, String> {
     if options.outputs == 0 || options.period_ns == 0 {
@@ -284,12 +312,17 @@ pub fn bench(options: &Options) -> Result<Value, String> {
     let workload = Workload::new(options.outputs, options.period_ns);
     let guard = NoAlloc;
     let before = guard.violations();
-    let mut cost = Vec::with_capacity(usize::try_from(options.iterations).unwrap_or(0));
+    let cost = commit_costs(&workload, options.iterations, &guard)?;
+    let scaling = match options.max_scaling {
+        Some(_) => {
+            let outputs = options.outputs.saturating_mul(SCALE);
+            let large = Workload::new(outputs, options.period_ns);
+            let cost = commit_costs(&large, options.iterations, &guard)?;
+            Some((outputs, per_output_ps(&cost, outputs)))
+        }
+        None => None,
+    };
     let mut error = None;
-    workload.run(options.iterations, &guard, |_, tick| match tick() {
-        Ok(ns) => cost.push(ns),
-        Err(e) => error = Some(e),
-    })?;
     let mut lateness = Vec::with_capacity(usize::try_from(options.ticks).unwrap_or(0));
     let mut overruns = 0u64;
     let period = Duration::from_nanos(options.period_ns);
@@ -318,17 +351,14 @@ pub fn bench(options: &Options) -> Result<Value, String> {
             "the tick path made {allocations} allocator calls (docs/10 R7)"
         ));
     }
-    let per_output_ps: Vec<u64> = cost
-        .iter()
-        .map(|&ns| ns.saturating_mul(1_000) / options.outputs as u64)
-        .collect();
+    let per_output = per_output_ps(&cost, options.outputs);
     let histogram: Vec<Value> = histogram(&lateness)
         .into_iter()
         .map(|(low, n)| json!({"from_us": low, "count": n}))
         .collect();
     let commit = stats(cost, 1.0);
-    let ns_per_output = stats(per_output_ps, 1_000.0);
-    Ok(json!({
+    let ns_per_output = stats(per_output, 1_000.0);
+    let mut result = json!({
         "schema": 1,
         "tool": "cargo xtask rt-bench",
         "profile": if cfg!(debug_assertions) { "debug" } else { "release" },
@@ -357,7 +387,20 @@ pub fn bench(options: &Options) -> Result<Value, String> {
             "targets_us": {"rt_1ms_group": 100, "non_rt_100ms_group": 2_000},
         },
         "allocations": allocations,
-    }))
+    });
+    if let Some((outputs, per_output)) = scaling {
+        let large = stats(per_output, 1_000.0);
+        let ratio = match (large["p50"].as_f64(), ns_per_output["p50"].as_f64()) {
+            (Some(l), Some(s)) if s > 0.0 => l / s,
+            _ => f64::NAN,
+        };
+        result["scaling"] = json!({
+            "outputs": outputs,
+            "ns_per_output": large,
+            "p50_ratio": ratio,
+        });
+    }
+    Ok(result)
 }
 
 /// Compares a result with a baseline: a p99.9 more than `threshold_pct`
@@ -409,6 +452,24 @@ pub fn check_output_cost(result: &Value, max_ns: f64) -> Result<(), String> {
     }
 }
 
+/// Checks the scaling measurement against `max_ratio`: `Err` with the
+/// figures when the median cost per output of the larger group is more
+/// than `max_ratio` times that of the workload.
+pub fn check_scaling(result: &Value, max_ratio: f64) -> Result<(), String> {
+    let ratio = result
+        .pointer("/scaling/p50_ratio")
+        .and_then(Value::as_f64)
+        .ok_or("the result has no scaling measurement")?;
+    if ratio <= max_ratio {
+        Ok(())
+    } else {
+        Err(format!(
+            "cost per output grows with the group: {} outputs cost {ratio:.2} times as much per output as {}, above {max_ratio}",
+            result["scaling"]["outputs"], result["workload"]["outputs"]
+        ))
+    }
+}
+
 /// A one-screen summary of a result.
 pub fn summary(result: &Value) -> String {
     let f = |p: &str| {
@@ -443,6 +504,14 @@ pub fn summary(result: &Value) -> String {
         f("/jitter/lateness_us/max"),
         result["jitter"]["overruns"],
     );
+    if let Some(ratio) = result.pointer("/scaling/p50_ratio").and_then(Value::as_f64) {
+        let _ = writeln!(
+            out,
+            "  scaling: p50 {:.1} ns per output at {} outputs, {ratio:.2} times the workload's",
+            f("/scaling/ns_per_output/p50"),
+            result["scaling"]["outputs"],
+        );
+    }
     if result["profile"] == "debug" {
         let _ = writeln!(
             out,
@@ -512,6 +581,27 @@ mod tests {
         let mut worse = r.clone();
         worse["cost"]["ns_per_output"]["p99_9"] = json!(1e9);
         assert_eq!(compare(&worse, &r, 5.0).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn the_scaling_gate_compares_the_medians_of_two_group_sizes() {
+        let options = Options {
+            outputs: 4,
+            ticks: 10,
+            iterations: 200,
+            max_scaling: Some(1e9),
+            ..Options::default()
+        };
+        let r = bench(&options).unwrap();
+        assert_eq!(r["allocations"], 0);
+        assert_eq!(r["scaling"]["outputs"], 4 * SCALE);
+        assert!(check_scaling(&r, 1e9).is_ok());
+        let quadratic = json!({
+            "workload": {"outputs": 64},
+            "scaling": {"outputs": 1024, "p50_ratio": 7.0},
+        });
+        assert!(check_scaling(&quadratic, 3.0).is_err());
+        assert!(check_scaling(&json!({}), 3.0).is_err());
     }
 
     #[test]
