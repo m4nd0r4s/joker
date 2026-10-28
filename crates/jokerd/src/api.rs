@@ -1198,6 +1198,7 @@ impl Backend for Node {
             "groups": groups,
             "drivers": drivers,
             "envelope": envelope,
+            "arbiter": {"manual_active": self.manual.all(now).len()},
         })))
     }
 
