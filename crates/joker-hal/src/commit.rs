@@ -253,10 +253,29 @@ impl<'a> CommitTx<'a> {
         boxes: &'a [CommitBox],
         last: &'a mut [Option<Applied>],
     ) -> Result<Self, BindError> {
+        check(outputs, bindings)?;
+        Self::owned(outputs, bindings, boxes, last)
+    }
+
+    /// [`CommitTx::new`] for one cycle group's outputs: binds only the
+    /// bindings whose output `outputs` holds and leaves the others, which
+    /// belong to another group, untouched. Each box keeps one writer.
+    pub fn owned(
+        outputs: &Outputs<'_>,
+        bindings: &'a [OutputBinding],
+        boxes: &'a [CommitBox],
+        last: &'a mut [Option<Applied>],
+    ) -> Result<Self, BindError> {
         if boxes.len() != bindings.len() || last.len() != bindings.len() {
             return Err(BindError::StorageMismatch);
         }
-        check(outputs, bindings)?;
+        for b in bindings {
+            if let Some(config) = outputs.configs().iter().find(|c| c.signal == b.signal)
+                && !b.encoding.accepts(config.ty)
+            {
+                return Err(BindError::EncodingMismatch(b.signal));
+            }
+        }
         for (b, bx) in bindings.iter().zip(boxes) {
             if let Some(config) = outputs.configs().iter().find(|c| c.signal == b.signal) {
                 bx.set_safe(config.safe);
@@ -618,6 +637,38 @@ mod tests {
         let bx = CommitBox::new();
         bx.store(9, Applied::Relinquish);
         assert_eq!(bx.load().map(|s| s.applied), Some(Applied::Relinquish));
+    }
+
+    #[test]
+    fn an_owned_channel_binds_only_the_outputs_it_holds() {
+        let mut h = OutputHarness::new(&[("x.p", ValueType::F64, 0, 0)]).unwrap();
+        let mut bindings = h.bindings(&[RawEncoding::Float]).to_vec();
+        bindings.insert(
+            0,
+            OutputBinding {
+                signal: SignalId(99),
+                point: 5,
+                encoding: RawEncoding::Bool,
+            },
+        );
+        let boxes = [CommitBox::new(), CommitBox::new()];
+        boxes[0].set_safe(joker_core::output::SafeValue::Value(1));
+        let mut last = [None, None];
+        let mut tx = CommitTx::owned(h.outputs(), &bindings, &boxes, &mut last).unwrap();
+        assert_eq!(boxes[0].safe(), Applied::Value(1));
+        h.manual("x.p", 2f64.to_bits());
+        assert_eq!(tx.publish(h.outputs()), 1);
+        assert_eq!(boxes[0].load().map(|s| s.seq), Some(0));
+        assert_eq!(
+            boxes[1].load().map(|s| s.applied),
+            Some(Applied::Value(2f64.to_bits()))
+        );
+        let wrong = h.bindings(&[RawEncoding::Bool]);
+        let mut one = [None];
+        assert_eq!(
+            CommitTx::owned(h.outputs(), &wrong, &boxes[..1], &mut one).unwrap_err(),
+            BindError::EncodingMismatch(wrong[0].signal)
+        );
     }
 
     #[test]
