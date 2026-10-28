@@ -84,5 +84,6 @@
 | [0084](0084-class-instances-on-the-node-and-manual-method-calls.md) | Class instances on the node, class queries as derived signals, and manual method calls |
 | [0085](0085-runtime-alarms-in-jokerd.md) | The runtime alarms (`joker.*`) in jokerd |
 | [0086](0086-the-hung-group-alarm.md) | The hung-group alarm (`joker.group.<g>.stalled`) |
+| [0087](0087-figures-per-hardware-class-and-locked-memory.md) | The figures of document 01 §21 per hardware class, and memory as `jokerd` locks it |
 
 Changing a decision = writing a new ADR that replaces it, and updating the affected documents in the same set of commits.
