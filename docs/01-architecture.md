@@ -448,15 +448,17 @@ Own metrics, exposed as `joker.*` signals (therefore recorded, alarmable and sen
 |---|---|---|
 | `jokerd` binary, `minimal` build (`sim`, `sysfs`, Modbus, MQTT; `ref/06` §3.8) | ≤ 20 MB | aarch64, static, `strip`; no ML (1.0 has no Burn, ADR 0019) |
 | `jokerd` binary, full build (`default`, `ref/06` §3.8) | ≤ 30 MB | same |
-| Idle RSS without ML | ≤ 60 MB | 1,000 signals, 3 apps, historian cache of 8 MB (the resident `.text` counts) |
+| Idle RSS without ML | ≤ 60 MB | CM4/CM5, aarch64; 1,000 signals, 3 apps, historian cache of 8 MB; with the daemon's `mlockall`, 15 s after boot and after the continuous trace retention (the resident `.text` counts; ADR 0087) |
 | Startup to the first tick | ≤ 2 s | AOT in cache |
 | Tick jitter p99.9 | ≤ 100 µs | CM4/CM5, PREEMPT_RT, isolated CPU, 1 ms group |
 | Tick jitter p99.9 | ≤ 2 ms | kernel without RT, 100 ms group |
 | Overhead of the cycle Wasm call | ≤ 5 µs | empty task, Cranelift |
-| Envelope + arbiter per output | ≤ 300 ns | no atomic groups |
+| Envelope + arbiter per output | ≤ 300 ns | CM4/CM5, aarch64; no atomic groups; the same per output at 64 and 1,024 outputs within 3× (ADR 0087) |
 | Ingestion of scalar samples | ≥ 100 k/s | CM4, 1 `io` CPU core |
 | Historian ingestion | ≥ 200 k samples/s | CM4, eMMC |
 | App hot swap | 0 ticks lost | same port signature |
+
+**Other boards.** The rows that name no board are figures of the reference class, CM4 and CM5 with an aarch64 build. Other boards, such as the Pi 3 B+ of the M0 bench or a 32-bit build, publish their measured figures in the errata of the phase and are held to them as regressions, not to this table (ADR 0087).
 
 **Binary size in CI.** The two builds (`minimal` and full) are measured on every commit with `cargo bloat --release --crates` for `aarch64-unknown-linux-gnu`; a build above the table's limit makes CI fail, with the crates that grew the most. Raising a limit is an explicit decision, in the same commit that justifies it. The builds and their limits are `xtask/size-limits.toml`, and the gate is `cargo xtask size`, which measures the stripped binary. Until `jokerd` has the Cargo features of ref/06 §3.8 (AUR-432), only the full build exists, and the file lists only it; the `minimal` build joins the gate with its features.
 

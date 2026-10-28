@@ -140,6 +140,39 @@ The 3.5 ms p99.9 of the 2026-10-22 run was the SSH session: clean, the 100 ms gr
 - **O-2 — opening the serial port resets the ESP32.** The CH340's DTR/RTS reach EN/GPIO0, so every (re)open reboots the board; the first request after it fails and counts as one `link down`. Expected for this board; `[buses.*] dtr`/`rts` (ref/01 §5.6) are the knob if it matters.
 - **O-3 — this kernel names the Pi's LED `led0`.** Kernels before 5.x expose `led0`/`led1`, not `ACT`/`PWR`; `joker.rpi.toml` as written in docs/23 §6.2 needs `led = "led0"` on Raspbian 9.
 
+## 2026-10-28 update — where the per-output cost and the RSS went (AUR-436)
+
+Profiled on the dev laptop (M4 Pro, macOS): `cargo xtask rt-bench` under `samply`, `jokerd` with the bench project under `vmmap` and `malloc_history`, and the ARMv6 code of `joker-core` read from `--emit asm`. No ARM32 run was possible there, so the Pi 3 column is an estimate until the bench re-measures it (commands below).
+
+**Per output.** The commit was quadratic in the outputs of a group (every output scanned every staged proposal, and every match scanned the later ones), so the cost per output grew with the group; the arbiter also walked its 16 levels twice per output per tick. The core uses no 64-bit atomic and no critical-section fallback on the tick path (32-bit `portable-atomic` only, native `ldrex`/`strex` and CP15 barriers on ARMv6), so nothing there needed a cheaper scheme.
+
+| `rt-bench`, envelope + arbiter per output, p50 | before | after |
+|---|---|---|
+| M4 Pro P cores, 64 outputs | 173 ns | 35–43 ns |
+| M4 Pro P cores, 1,000 outputs | 1,556 ns | 44 ns |
+| M4 Pro E cores, 64 outputs | 740 ns | 126 ns |
+| M4 Pro E cores, 1,000 outputs | 7,685 ns | 179 ns |
+| Pi 3 B+, 64 outputs | 9.16 µs | 1–2 µs expected |
+
+**RSS.** `jokerd` locks its memory (`mlockall(MCL_CURRENT | MCL_FUTURE)`), so on Linux every mapped page counts. The continuous trace ring kept each tick in a ~9.3 KB buffer for the 10 minute retention (~0.5 MB/s with one 20 ms group: the 93 MB at 15 s were on their way to ~370 MB), the telemetry queue took 18 MB at boot, and every service thread had a 2 MiB stack.
+
+| `jokerd`, bench project, RSS | 15 s | 3 min |
+|---|---|---|
+| M4 Pro, before | 44.0 MB | 123.1 MB |
+| M4 Pro, after | 29.1 MB | 30.3 MB |
+| Pi 3 B+ | 93 MB | ~60 MB expected, flat over the retention |
+
+**Resolution.** The per-output and RSS rows of document 01 §21 are figures of the CM4/CM5 class (ADR 0087); the Pi 3 B+ publishes its own and is held to them as regressions. To re-measure on the bench, `jokerd` stopped and no SSH session open during `rt-bench`:
+
+```sh
+cargo build --release --target arm-unknown-linux-musleabihf -p xtask -p jokerd
+scp target/arm-unknown-linux-musleabihf/release/xtask target/arm-unknown-linux-musleabihf/release/jokerd pi:/tmp/
+ssh pi 'sudo systemctl stop jokerd; nohup sh -c "/tmp/xtask rt-bench --max-scaling 3 --json /tmp/rt-1ms.json > /tmp/rt-1ms.txt 2>&1; /tmp/xtask rt-bench --period 100ms --ticks 600 --json /tmp/rt-100ms.json > /tmp/rt-100ms.txt 2>&1" > /dev/null 2>&1 &'
+ssh pi 'cat /tmp/rt-1ms.txt /tmp/rt-100ms.txt'
+ssh pi 'sudo install /tmp/jokerd /usr/local/bin/jokerd && sudo systemctl start jokerd'
+ssh pi 'sleep 15; grep -E "VmRSS|VmLck" /proc/$(pidof jokerd)/status; sleep 600; grep -E "VmRSS|VmLck" /proc/$(pidof jokerd)/status'
+```
+
 ## Other observations (non-blocking)
 
 - **O-1 — local toolchain drift is a trap, not a product bug.** This machine's ambient Rust (nix `languages.rust.channel = "nightly"` in the untracked `devenv.nix`) does not match `rust-toolchain.toml` (`1.99.0` with `thumbv8m.main-none-eabihf`, `riscv32imac-unknown-none-elf`, `wasm32-wasip2`) and shadows it on `PATH`, so every test that builds a Wasm component failed locally with `can't find crate for core` until the pinned toolchain was installed explicitly (`rustup target add wasm32-wasip2 …` under `~/.rustup`, bypassing the nix-provided `rustc`). CI is unaffected (it uses the pinned toolchain directly) and the project needs no change; worth a one-line note in `AGENTS.md` or a repo `README` for anyone using a Nix-based personal devenv on top of the project's own toolchain file.
