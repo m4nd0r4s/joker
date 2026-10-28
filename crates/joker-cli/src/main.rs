@@ -206,6 +206,24 @@ enum Command {
         #[arg(long)]
         key: String,
     },
+    /// The node's structured logs, oldest first (ref/09 §5.2).
+    Logs {
+        /// Only this app's lines (`app:<a>`).
+        #[arg(long, conflicts_with = "source")]
+        app: Option<String>,
+        /// Only this source: `jokerd`, `driver:<d>`, `app:<a>`, `api`.
+        #[arg(long)]
+        source: Option<String>,
+        /// Only this level and above: trace, debug, info, warn, error.
+        #[arg(long)]
+        level: Option<String>,
+        /// Only the last duration (`10m`, `1h`).
+        #[arg(long)]
+        since: Option<String>,
+        /// How many lines.
+        #[arg(long, default_value_t = 100)]
+        limit: u32,
+    },
     /// The decision log.
     Decisions {
         /// Only these outputs (selectors).
@@ -488,6 +506,19 @@ fn run(cli: Cli) -> Result<u8, Failure> {
             takeover,
         ),
         Command::Decisions { output, limit } => node()?.decisions(&output, limit),
+        Command::Logs {
+            app,
+            source,
+            level,
+            since,
+            limit,
+        } => node()?.logs(&[
+            ("app", app),
+            ("source", source),
+            ("level", level),
+            ("since", since),
+            ("limit", Some(limit.to_string())),
+        ]),
         Command::History {
             selectors,
             from,

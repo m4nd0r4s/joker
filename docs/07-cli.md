@@ -166,7 +166,7 @@ They talk to the node's local API, which talks to the Deck (ref/10, §2.18).
 | `jk call <instance>.<method> [args] --ttl <t> --reason "…"` | calls a class method as a `manual` writer (document 17, §4.1) |
 | `jk app <start\|stop\|restart\|logs> <app>` | app lifecycle |
 | `jk device stop <device> --reason "…"`, `jk device start <device>` | stops and starts again the driver of a device (role `operator`, audited): while stopped, the link is `stopped`, the signals `bad(not_connected)` and the outputs on the device fallback. It is volatile, like an app's `stop`: it holds until the next startup of `jokerd` or the next generation (ref/09, §5.12) |
-| `jk logs [--app <a>] [--follow]` | structured logs |
+| `jk logs [--app <a> \| --source <s>] [--level <l>] [--since <d>] [--limit <n>] [--follow]` | structured logs, oldest first; the filters are those of `GET /v1/logs` (ref/09 §5.2) |
 
 ## 5. Data
 
