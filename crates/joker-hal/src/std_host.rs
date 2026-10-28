@@ -66,6 +66,27 @@ pub struct TokioHost {
     utc_start_ns: i64,
     quality: Arc<ClockQualityCell>,
     sleeps: Mutex<BTreeMap<MonoNs, Pin<Box<tokio::time::Sleep>>>>,
+    log: Option<LogSink>,
+}
+
+/// Where a [`TokioHost`] hands the log lines of the drivers it hosts.
+#[derive(Clone)]
+pub struct LogSink(Arc<LogFn>);
+
+/// What a [`LogSink`] calls with each line.
+type LogFn = dyn Fn(crate::cx::LogLevel, &str) + Send + Sync;
+
+impl LogSink {
+    /// A sink calling `f` with each line.
+    pub fn new(f: impl Fn(crate::cx::LogLevel, &str) + Send + Sync + 'static) -> Self {
+        Self(Arc::new(f))
+    }
+}
+
+impl core::fmt::Debug for LogSink {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("LogSink")
+    }
 }
 
 impl TokioHost {
@@ -94,7 +115,16 @@ impl TokioHost {
             utc_start_ns: utc_now_ns.saturating_sub(elapsed_ns),
             quality,
             sleeps: Mutex::new(BTreeMap::new()),
+            log: None,
         }
+    }
+
+    /// The same host, handing its drivers' log lines to `sink` instead of
+    /// dropping them.
+    #[must_use]
+    pub fn with_log(mut self, sink: LogSink) -> Self {
+        self.log = Some(sink);
+        self
     }
 
     fn mono(&self) -> MonoNs {
@@ -149,7 +179,9 @@ impl Host for TokioHost {
     }
 
     fn log(&self, level: crate::cx::LogLevel, message: &str) {
-        let _ = (level, message);
+        if let Some(sink) = &self.log {
+            (sink.0)(level, message);
+        }
     }
 }
 
