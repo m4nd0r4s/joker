@@ -262,6 +262,14 @@ async fn start_with(manifest: &str) -> Fixture {
 }
 
 async fn start_with_devices(manifest: &str, devices: Arc<dyn Devices>) -> Fixture {
+    start_with_tasks(manifest, devices, Arc::new(NativeTasks)).await
+}
+
+async fn start_with_tasks(
+    manifest: &str,
+    devices: Arc<dyn Devices>,
+    tasks: Arc<dyn jokerd::task::TaskProvider>,
+) -> Fixture {
     let dir = tempfile::tempdir().unwrap();
     let clock = Monotonic::start();
     let log = Arc::new(Mutex::new(
@@ -270,7 +278,7 @@ async fn start_with_devices(manifest: &str, devices: Arc<dyn Devices>) -> Fixtur
     let mut c = Controller::new(
         dir.path(),
         log,
-        Arc::new(NativeTasks),
+        tasks,
         devices,
         Box::new(move || Box::new(SystemPacer::new(clock, ClockQuality::Unsynced))),
         Config {
@@ -1737,6 +1745,67 @@ fn effective_with_alarm() -> String {
 
 async fn get_json(http: &Http, path: &str) -> Value {
     http.send("GET", path, &[], None).await.json()
+}
+
+/// The native apps, with `light.blink` blocking 200 ms on every tick of
+/// its 20 ms group: a hung group (ADR 0086).
+struct Hanging;
+
+struct Blocking;
+
+impl jokerd::task::CycleTask for Blocking {
+    fn run(
+        &mut self,
+        _cx: &mut jokerd::task::TaskContext<'_, '_, '_>,
+    ) -> Result<(), jokerd::task::TaskError> {
+        std::thread::sleep(Duration::from_millis(200));
+        Ok(())
+    }
+}
+
+impl jokerd::task::TaskProvider for Hanging {
+    fn interfaces(
+        &self,
+    ) -> std::collections::BTreeMap<String, joker_manifest::context::AppInterface> {
+        jokerd::task::TaskProvider::interfaces(&NativeTasks)
+    }
+
+    fn instantiate(
+        &self,
+        _spec: jokerd::task::TaskSpec<'_>,
+    ) -> Result<Box<dyn jokerd::task::CycleTask>, jokerd::task::TaskError> {
+        Ok(Box::new(Blocking))
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_hung_group_is_a_critical_alarm_in_alarms_and_status() {
+    let f = start_with_tasks(&effective(), Arc::new(NoDevices), Arc::new(Hanging)).await;
+    let id = "joker.group.main.stalled";
+    let alarm = wait_alarm(&f.http, id, "active_unacked").await;
+    assert_eq!(alarm["severity"], "critical", "{alarm}");
+    assert_eq!(alarm["source"], "runtime", "{alarm}");
+
+    let listed = f
+        .call("GET", "/v1/alarms", "/v1/alarms?sel=joker.group.**", None)
+        .await;
+    assert!(
+        listed.json()["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|a| a["id"] == id),
+        "{}",
+        listed.json()
+    );
+
+    let status = f.call("GET", "/v1/status", "/v1/status", None).await;
+    let alarms = &status.json()["alarms"];
+    assert!(alarms["unacked"].as_u64().unwrap() >= 1, "{alarms}");
+    assert_eq!(
+        alarms["items"][0]["id"], id,
+        "the critical alarm comes first: {alarms}"
+    );
 }
 
 async fn wait_alarm(http: &Http, id: &str, state: &str) -> Value {
