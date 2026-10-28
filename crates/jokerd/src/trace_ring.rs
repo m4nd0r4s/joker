@@ -51,6 +51,11 @@ impl TraceRing {
 
     /// Takes every queued chunk, evicts what is older than the retention,
     /// and keeps the cycle thread's pool full.
+    ///
+    /// The ring keeps a copy of each tick at its encoded size, and the
+    /// buffer the cycle thread filled, sized for the largest possible tick,
+    /// goes straight back to the pool: a tick is a few hundred bytes, the
+    /// buffer is kilobytes, and the ring holds every tick of the retention.
     pub fn absorb(&mut self, shared: &Shared, buffer_len: usize) {
         while let Some(chunk) = shared.trace_filled.pop() {
             let newest = chunk.at_mono_ns;
@@ -58,14 +63,24 @@ impl TraceRing {
                 let _ = shared.trace_free.push(chunk.segment);
                 continue;
             };
-            ring.push_back(chunk);
+            let TraceChunk {
+                group,
+                index,
+                at_mono_ns,
+                segment,
+            } = chunk;
+            ring.push_back(TraceChunk {
+                group,
+                index,
+                at_mono_ns,
+                segment: segment.as_slice().to_vec(),
+            });
+            let _ = shared.trace_free.push(segment);
             while ring
                 .front()
                 .is_some_and(|c| newest.saturating_sub(c.at_mono_ns) > self.retention_ns)
             {
-                if let Some(old) = ring.pop_front() {
-                    let _ = shared.trace_free.push(old.segment);
-                }
+                ring.pop_front();
             }
         }
         while !shared.trace_free.is_full() {
@@ -205,4 +220,82 @@ pub fn digest_bytes(digest: &str) -> [u8; 32] {
             .unwrap_or(0);
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use super::*;
+
+    fn plan() -> Plan {
+        let mut fs = joker_manifest::MemoryFileSystem::default();
+        fs.file(
+            "joker.toml",
+            "[project]\nname = \"t\"\njoker = \"1.0\"\nmode = \"dev\"\n\n\
+             [outputs.\"pcs.a\"]\nsafe = false\n\n\
+             [cycles.main]\nperiod = \"20ms\"\n\n\
+             [devices.pcs]\ndriver = \"sim\"\n\n\
+             [devices.pcs.signals]\na = { type = \"bool\", direction = \"output\" }\n",
+        );
+        crate::load::load(
+            &fs,
+            std::path::Path::new("joker.toml"),
+            &crate::native::NativeTasks,
+        )
+        .unwrap()
+        .plan
+    }
+
+    fn fill(shared: &Shared, at_mono_ns: u64, bytes: usize) {
+        let mut segment = shared.trace_free.pop().unwrap();
+        segment.clear();
+        segment.resize(bytes, 7);
+        assert!(
+            shared
+                .trace_filled
+                .push(TraceChunk {
+                    group: 0,
+                    index: at_mono_ns,
+                    at_mono_ns,
+                    segment,
+                })
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn the_ring_keeps_ticks_at_their_size_and_the_pool_keeps_its_buffers() {
+        let plan = plan();
+        let shared = Shared::new(&plan);
+        let len = trace_buffer_len(&plan);
+        let mut ring = TraceRing::new(&plan, Duration::from_secs(1));
+        for k in 0..3 {
+            fill(&shared, k * 20_000_000, 40);
+        }
+        ring.absorb(&shared, len);
+        assert_eq!(ring.len(), 3);
+        assert!(
+            ring.groups[0]
+                .iter()
+                .all(|c| c.segment.len() == 40 && c.segment.capacity() == 40)
+        );
+        assert!(shared.trace_free.is_full());
+        while let Some(buffer) = shared.trace_free.pop() {
+            assert!(buffer.capacity() >= len);
+        }
+    }
+
+    #[test]
+    fn ticks_older_than_the_retention_leave_the_ring() {
+        let plan = plan();
+        let shared = Shared::new(&plan);
+        let len = trace_buffer_len(&plan);
+        let mut ring = TraceRing::new(&plan, Duration::from_secs(1));
+        fill(&shared, 0, 40);
+        fill(&shared, 500_000_000, 40);
+        fill(&shared, 1_200_000_000, 40);
+        ring.absorb(&shared, len);
+        assert_eq!(ring.bounds(), Some((500_000_000, 1_200_000_000)));
+    }
 }
