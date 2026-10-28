@@ -29,8 +29,13 @@ use crate::shared::Shared;
 pub const ALARM_JOURNAL: &str = "journal:alarms";
 /// Room in the priority queue (alarms and decisions).
 pub const PRIORITY_QUEUE: usize = 16_384;
-/// Room in the telemetry queue.
-pub const TELEMETRY_QUEUE: usize = 262_144;
+/// Room in the telemetry queue: 4.5 MB of records, allocated and touched
+/// when the historian opens. `svc/record` is its only producer and pushes
+/// at most one record per recorded signal every [`RECORDER_PERIOD`], so
+/// it holds 650 ms of 1,000 signals recorded `on_change` while
+/// `svc/store` is busy, and 320 ms at the 200 k samples/s of docs/01 §21.
+/// A full queue drops and counts (ADR 0013).
+pub const TELEMETRY_QUEUE: usize = 65_536;
 /// How often the recorder looks at the slots.
 pub const RECORDER_PERIOD: Duration = Duration::from_millis(10);
 
