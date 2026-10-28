@@ -128,6 +128,8 @@ Each cycle group has **its own process image**: a dense vector with only the sig
 
 **Output boxes for the drivers.** The commit does not write into a FIFO. Each output has a **latest-wins box** (the last applied value replaces the previous one not yet sent), so that slow or hung equipment never receives, when it wakes up, a queue of stale values. Only scheduled writes, pulses and atomic groups use an ordered queue, and that one is bounded. Each box also has an atomic `force_safe` bit that only the supervisor sets (document 09, attack 4): it is the emergency path when a group hangs, and it does not violate the single writer of the values.
 
+An alarm whose `actions.trip` names an output of another group reaches the owner group as a trip request when it enters `active`, and the owner trips the output again on each tick while `alarm.<a>.active` reads `true`; the trip takes effect at the next commit of the owner group (ADR 0089).
+
 Consistency between groups: a group reads the **applied** values (commits) of another group, in the state they were in at its latch. There is no transactional consistency between groups of different periods, and this is declared (document 02, §6.3). Whoever needs consistency between two tasks puts them in the same group.
 
 ---

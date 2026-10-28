@@ -24,7 +24,7 @@ AUR-274 built `rt/supervisor`, persistent trips and the A14 persistence of manua
 ### Decision-log records
 
 6. Four record kinds join `output`, `write` (ADR 0033) and `action` (ADR 0058), all **immediate** (`fsync`), all with `gen` and `ts`:
-   - `supervisor_force_safe`: `rt/supervisor` found groups that had not ticked for more than three periods and forced every output to `safe` (docs/01 §8). Fields: `groups` (names), `silent_ns` (the longest silence), `at_mono_ns`. It stands for the critical alarm until M9 exists.
+   - `supervisor_force_safe`: `rt/supervisor` found groups that had not ticked for more than three periods and forced every output to `safe` (docs/01 §8); since ADR 0089, only the outputs of those groups. Fields: `groups` (names), `silent_ns` (the longest silence), `at_mono_ns`. It stands for the critical alarm until M9 exists.
    - `manual_restored`: a manual level was restored at startup without a `synced` clock (docs/16 A14). Fields: `output`, `level` (`manual:<n>`), `principal`, `remaining_ns`. It stands for the alarm `joker.output.<s>.manual_restored` until M9 exists. A level restored with a `synced` clock has `synced: true` and the same fields; a level whose deadline had passed is recorded as `manual_expired` with `output`, `level` and `principal` (A14's `kind = expiry`).
    - `reset`: a trip reset requested through the API (ref/09 §5.7). Fields: `output`, `principal`, `reason`, `result` (the `ResetResult.result`), and `error` (`code`, `detail`) when it failed.
    - `restore_failed`: a generation could not restore the persisted state before its first tick. Fields: `what` (`manual`), `group`, `count`, `capacity`.
