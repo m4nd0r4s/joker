@@ -746,6 +746,19 @@ impl Shared {
         }
     }
 
+    /// Writes a wide sample of `signal`: the bytes and quality into its
+    /// wide slot, then value `0` with the same quality and instant into its
+    /// scalar slot, which the latch and `requires_good` read (ADR 0088).
+    /// Only the signal's writer calls it.
+    pub fn write_wide(&self, signal: SignalId, bytes: &[u8], quality: Quality, ts_acq: u64) {
+        if let Some(wide) = self.wide_slot(signal) {
+            wide.write(bytes, quality, NO_TS_SRC, ts_acq);
+        }
+        if let Some(slot) = self.slots.get(signal.index()) {
+            slot.write(0, quality, NO_TS_SRC, ts_acq);
+        }
+    }
+
     /// The wide slot of `signal`, or `None` if it is not a `bytes`,
     /// `string` or `record` signal.
     pub fn wide_slot(&self, signal: SignalId) -> Option<&WideSlot> {

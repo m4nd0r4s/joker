@@ -315,9 +315,15 @@ temp = { type = "bytes", direction = "input", reg = 0, len = 2, poll = "20ms" }
     );
     let scalar = shared2.slots[temp_id.index()].read(8).unwrap();
     assert_eq!(
-        scalar.seq(),
-        0,
-        "the scalar slot of a wide signal is never written"
+        (scalar.transport_bits(), scalar.quality()),
+        (0, failed_sample.quality()),
+        "the scalar slot of a wide signal carries its quality, with value 0 (ADR 0088)"
+    );
+    let good = shared.slots[temp_id.index()].read(8).unwrap();
+    assert_eq!(
+        (good.transport_bits(), good.quality()),
+        (0, sample.quality()),
+        "a good wide read makes the scalar slot good too (ADR 0088)"
     );
 }
 
@@ -432,5 +438,9 @@ temp = { type = "bytes", direction = "input", reg = 0, len = 2, poll = "20ms" }
         sample.as_slice().is_empty(),
         "the last good value never stays behind a failure"
     );
-    assert_eq!(shared.slots[temp_id.index()].read(8).unwrap().seq(), 0);
+    assert_eq!(
+        shared.slots[temp_id.index()].read(8).unwrap().quality(),
+        sample.quality(),
+        "the scalar slot carries the link's bad quality too (ADR 0088)"
+    );
 }
