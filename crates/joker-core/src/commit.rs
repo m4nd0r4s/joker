@@ -771,11 +771,13 @@ impl<'a> Outputs<'a> {
             }
         }
         let configs = self.configs;
+        let mut hint = 0;
         for (i, proposal) in proposals.iter().enumerate() {
-            let owner = configs
-                .binary_search_by(|c| c.signal.cmp(&proposal.signal))
-                .ok()
-                .filter(|&o| configs[o].group == group);
+            let found = locate(configs, proposal.signal, hint);
+            if let Some(o) = found {
+                hint = o + 1;
+            }
+            let owner = found.filter(|&o| configs[o].group == group);
             let Some(o) = owner else {
                 let result = WriteResult {
                     tick: tick.index,
@@ -1224,6 +1226,15 @@ fn facts(config: &OutputConfig<'_>, inputs: &dyn Inputs, now: u64, arena: &mut [
         range,
         reset,
         words: cursor,
+    }
+}
+
+/// The index of `signal` in `configs`, looking first at `hint`, where the
+/// next proposal usually is: cycle tasks stage their writes in port order.
+fn locate(configs: &[OutputConfig<'_>], signal: SignalId, hint: usize) -> Option<usize> {
+    match configs.get(hint) {
+        Some(c) if c.signal == signal => Some(hint),
+        _ => configs.binary_search_by(|c| c.signal.cmp(&signal)).ok(),
     }
 }
 
