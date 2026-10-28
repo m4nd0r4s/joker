@@ -52,14 +52,18 @@ pub struct Address {
     pub word_little: bool,
     /// `byte_order = "little"`: the bytes of each register are swapped.
     pub byte_little: bool,
+    /// `len`: the registers of a `string` or `bytes` point (ref/03 §2.2.7),
+    /// 1–32, since a wide value holds at most 64 B.
+    pub len: Option<u16>,
 }
 
 impl Address {
-    /// Reads `{ at, fc, word_order?, byte_order?, bit? }`.
+    /// Reads `{ at, fc, word_order?, byte_order?, bit?, len? }`.
     pub fn parse(addr: Cbor<'_>) -> Result<Self, &'static str> {
         let mut at = None;
         let mut fc = None;
         let mut bit = None;
+        let mut len = None;
         let mut word_little = false;
         let mut byte_little = false;
         for entry in addr.entries().map_err(|_| "the address is not a table")? {
@@ -84,6 +88,14 @@ impl Address {
                 "bit" => {
                     bit = Some(v.as_u64().ok().filter(|b| *b < 16).ok_or("`bit` is 0–15")? as u8)
                 }
+                "len" => {
+                    len = Some(
+                        v.as_u64()
+                            .ok()
+                            .filter(|n| (1..=32).contains(n))
+                            .ok_or("`len` is 1–32 registers")? as u16,
+                    )
+                }
                 "word_order" | "byte_order" => {
                     let little = match v.as_str().map_err(|_| "expected big or little")? {
                         "big" => false,
@@ -105,6 +117,7 @@ impl Address {
             bit,
             word_little,
             byte_little,
+            len,
         })
     }
 }
@@ -214,6 +227,21 @@ pub fn check_point(p: &PointSpec<'_>) -> Result<Address, Diagnostic<'static>> {
             J0809,
             p.id,
             "type does not fit the function code",
+        ));
+    }
+    let wide = matches!(p.type_name, "string" | "bytes");
+    if wide && p.direction == Direction::Output {
+        return Err(Diagnostic::at(
+            J0809,
+            p.id,
+            "`string` and `bytes` points are read, not written",
+        ));
+    }
+    if wide != a.len.is_some() || a.len.is_some_and(|n| n != p.width) {
+        return Err(Diagnostic::at(
+            J0809,
+            p.id,
+            "`len` gives the registers of a `string` or `bytes` point, and only of one",
         ));
     }
     if u32::from(a.at) + u32::from(span(p)) - 1 > 65_535 {

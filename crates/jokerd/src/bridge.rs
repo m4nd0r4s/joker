@@ -336,6 +336,7 @@ fn point_shape(
             "u16" | "i16" | "bits16" => (RawKind::Regs, 1),
             "u32" | "i32" | "f32" | "bits32" => (RawKind::Regs, 2),
             "u64" | "i64" | "f64" | "bits64" => (RawKind::Regs, 4),
+            "string" | "bytes" => (RawKind::Regs, u16::from(addr_len?)),
             _ => return None,
         }),
         "sysfs" => Some(match type_name {
@@ -383,7 +384,9 @@ fn bus_params_cbor(bus: &joker_manifest::model::Bus) -> Vec<u8> {
     Cbor::Map(entries).encode()
 }
 
-fn i2c_len(addr: &[u8]) -> Option<u8> {
+/// The `len` of a point address: bytes for `i2c`, registers for a Modbus
+/// `string` or `bytes` point (ref/03 §2.2.4).
+fn addr_len(addr: &[u8]) -> Option<u8> {
     let cbor = joker_hal::cbor::Cbor::new(addr);
     u8::try_from(cbor.get("len").ok()??.as_u64().ok()?).ok()
 }
@@ -758,8 +761,8 @@ fn point_from_raw(
     } else {
         table_to_cbor(raw)
     };
-    let addr_len = if driver == "i2c" {
-        i2c_len(&addr)
+    let addr_len = if matches!(driver, "i2c" | "modbus-rtu" | "modbus-tcp") {
+        addr_len(&addr)
     } else {
         None
     };
