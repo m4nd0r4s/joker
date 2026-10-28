@@ -536,6 +536,49 @@ impl Debounce {
     }
 }
 
+/// The `stuck_detect` of a `string` or `bytes` point (ref/03 §2.2.4,
+/// ADR 0062): `uncertain(frozen)` once its bytes have stayed equal for the
+/// window, without allocating (the last bytes are kept in a fixed buffer).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct WideStuck {
+    last: Option<([u8; joker_core::WIDE_SLOT_CAPACITY], u8, u64)>,
+}
+
+impl WideStuck {
+    /// The quality to publish for `bytes` read at `now` with `quality`.
+    pub fn filter(
+        &mut self,
+        window_ns: Option<u64>,
+        bytes: &[u8],
+        quality: Quality,
+        now: u64,
+    ) -> Quality {
+        let Some(window) = window_ns else {
+            return quality;
+        };
+        if !quality.is_good() {
+            self.last = None;
+            return quality;
+        }
+        let len = bytes.len().min(joker_core::WIDE_SLOT_CAPACITY);
+        match &self.last {
+            Some((last, n, since)) if usize::from(*n) == len && last[..len] == bytes[..len] => {
+                if now.saturating_sub(*since) >= window {
+                    Quality::new(QualityCode::Uncertain, QualityReason::Frozen)
+                } else {
+                    quality
+                }
+            }
+            _ => {
+                let mut last = [0; joker_core::WIDE_SLOT_CAPACITY];
+                last[..len].copy_from_slice(&bytes[..len]);
+                self.last = Some((last, len as u8, now));
+                quality
+            }
+        }
+    }
+}
+
 /// The per-point state of the acquisition stage.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct PointFilters {
@@ -545,6 +588,8 @@ pub struct PointFilters {
     pub stuck: Stuck,
     /// `debounce`.
     pub debounce: Debounce,
+    /// `stuck_detect` of a wide point.
+    pub wide_stuck: WideStuck,
 }
 
 fn numeric_value(ty: ValueType, bits: u64) -> Option<f64> {
@@ -580,6 +625,8 @@ fn store_settled(
 ) {
     if is_wide(target.ty) {
         let (bytes, quality) = settled_wide(target, settled);
+        let stuck_ns = target.acquisition.stuck_detect.map(Duration::as_nanos);
+        let quality = filters.wide_stuck.filter(stuck_ns, &bytes, quality, now);
         let quality = if stale && quality.is_good() {
             Quality::new(QualityCode::Uncertain, QualityReason::Stale)
         } else {

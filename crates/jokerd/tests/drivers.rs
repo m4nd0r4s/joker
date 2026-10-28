@@ -327,6 +327,80 @@ temp = { type = "bytes", direction = "input", reg = 0, len = 2, poll = "20ms" }
     );
 }
 
+#[test]
+fn a_wide_read_that_does_not_move_turns_frozen_after_stuck_detect() {
+    use joker_driver_i2c::{I2cDriver, I2cPlanner};
+    use joker_hal::testing::MemoryI2c;
+    use joker_hal::{I2cBus, Link};
+
+    let toml = r#"
+[project]
+name  = "drivers-wide-stuck"
+joker = "1.0"
+mode  = "dev"
+
+[buses.i2c1]
+kind = "i2c"
+dev  = "/dev/i2c-1"
+
+[devices.sensor]
+driver  = "i2c"
+bus     = "i2c1"
+address = 0x40
+
+[devices.sensor.signals]
+temp = { type = "bytes", direction = "input", reg = 0, len = 2, poll = "20ms", stuck_detect = "100ms" }
+"#;
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("joker.toml"), toml).unwrap();
+    let loaded = load(&OsFileSystem, &dir.path().join("joker.toml"), &NativeTasks)
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert!(!loaded.report.has_errors(), "{}", loaded.report.render());
+    let shared = Arc::new(Shared::new(&loaded.plan));
+    let owned = jokerd::bridge::owned_request(&loaded.plan.devices[0]);
+    let views = owned.views();
+    let plan = I2cPlanner::plan(&views.request()).unwrap();
+    let (bus, handle) = MemoryI2c::new();
+    handle.preload(0x40, &[0xAB, 0xCD]);
+    let driver = I2cDriver::open(
+        &joker_hal::OpenArgs::new(views.request(), plan.view()),
+        Link::I2c(I2cBus::new(bus)),
+    )
+    .unwrap();
+    let targets = jokerd::drivers::point_targets(&loaded.plan, 0);
+    let host = Arc::new(VirtualHost::new(0));
+    let clock = Arc::clone(&host);
+    host.run(run_driver(
+        driver,
+        &*host,
+        views.request(),
+        plan.view(),
+        2_000_000_000,
+        &targets,
+        &shared,
+        0,
+        None,
+        tokio::sync::mpsc::channel(1).1,
+        move || clock.mono() >= 300_000_000,
+    ))
+    .unwrap();
+
+    let temp = loaded.plan.id("sensor.temp").unwrap();
+    let sample = shared.wide_slot(temp).unwrap().read(8).unwrap();
+    assert_eq!(
+        (sample.quality().code(), sample.quality().reason()),
+        (
+            joker_core::QualityCode::Uncertain,
+            joker_core::QualityReason::Frozen
+        )
+    );
+    assert_eq!(
+        sample.as_slice(),
+        &[0xAB, 0xCD],
+        "a frozen value keeps its bytes"
+    );
+}
+
 fn wide_target(ty: joker_core::ValueType) -> PointTarget {
     PointTarget {
         point: 0,
