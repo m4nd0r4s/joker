@@ -10,9 +10,9 @@ use joker_core::registry::{Alias, GroupMeta, SignalMeta, UnitRef};
 use joker_core::slot::SeqExtender;
 use joker_core::time::Instant;
 use joker_core::{
-    Applied, CommitSink, Level, Outcome, OutputConfig, OutputResult, Outputs, OutputsStorage,
-    ProcessImage, Proposal, Registry, RegistryBuilder, RejectReason, SafeValue, Sample, SignalId,
-    Slot, ValueType, WriterConfig, WriterId, WriterKind,
+    Applied, CommitSink, IntakeSlot, Level, Outcome, OutputConfig, OutputResult, Outputs,
+    OutputsStorage, ProcessImage, Proposal, Registry, RegistryBuilder, RejectReason, SafeValue,
+    Sample, SignalId, Slot, ValueType, WriterConfig, WriterId, WriterKind,
 };
 
 const MS: u64 = 1_000_000;
@@ -105,7 +105,7 @@ fn rig(configure: impl Fn(&mut OutputConfig<'static>), on_rate: OnRate) -> Rig {
         OutputsStorage {
             configs,
             states: leak(vec![OutputState::EMPTY; 2]),
-            intakes: leak(vec![None; 8]),
+            intakes: leak(vec![IntakeSlot::EMPTY; 8]),
         },
     )
     .unwrap();
@@ -271,7 +271,7 @@ fn group_configuration_is_checked() {
         OutputsStorage {
             configs,
             states: leak(vec![OutputState::EMPTY; 2]),
-            intakes: leak(vec![None; 2]),
+            intakes: leak(vec![IntakeSlot::EMPTY; 2]),
         },
     )
     .unwrap();

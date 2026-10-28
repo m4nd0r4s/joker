@@ -27,8 +27,8 @@ use joker_core::registry::{Alias, GroupMeta, OwnedRegistry, SignalMeta, UnitRef}
 use joker_core::slot::SeqExtender;
 use joker_core::time::{ClockQuality, Instant};
 use joker_core::{
-    OutputsStorage, ProcessImage, Proposal, SafeValue, Sample, SignalId, Slot, ValueType,
-    WriterConfig, WriterId,
+    IntakeSlot, OutputsStorage, ProcessImage, Proposal, SafeValue, Sample, SignalId, Slot,
+    ValueType, WriterConfig, WriterId,
 };
 use serde_json::{Value, json};
 
@@ -148,7 +148,7 @@ impl Workload {
         ];
         let staging = ids.len() * WRITERS;
         let mut states = vec![OutputState::EMPTY; configs.len()];
-        let mut intakes = vec![None; staging];
+        let mut intakes = vec![IntakeSlot::EMPTY; staging];
         let mut outputs = joker_core::Outputs::new(
             &registry,
             &writers,

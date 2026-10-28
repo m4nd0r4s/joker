@@ -212,6 +212,25 @@ pub enum CommitError {
 /// Most members an atomic group may have.
 pub const MAX_ATOMIC_MEMBERS: usize = 16;
 
+const NO_PROPOSAL: u32 = u32::MAX;
+
+/// Scratch of one staged proposal during a commit: what the arbiter did
+/// with it and the next proposal on the same output, so that each output
+/// walks only its own proposals.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct IntakeSlot {
+    intake: Option<Intake>,
+    next: u32,
+}
+
+impl IntakeSlot {
+    /// Placeholder used to initialise fixed-capacity storage.
+    pub const EMPTY: Self = Self {
+        intake: None,
+        next: NO_PROPOSAL,
+    };
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 struct Track {
     span: Span,
@@ -234,6 +253,8 @@ pub struct OutputState {
     pending: Option<Pending>,
     output_track: Option<Track>,
     write_tracks: [Option<Track>; Level::COUNT],
+    first_proposal: u32,
+    last_proposal: u32,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -259,6 +280,8 @@ impl OutputState {
         pending: None,
         output_track: None,
         write_tracks: [None; Level::COUNT],
+        first_proposal: NO_PROPOSAL,
+        last_proposal: NO_PROPOSAL,
     };
 }
 
@@ -283,7 +306,7 @@ pub struct OutputsStorage<'a> {
     /// One state per configuration.
     pub states: &'a mut [OutputState],
     /// Scratch buffer, at least as long as the staging capacity of any image.
-    pub intakes: &'a mut [Option<Intake>],
+    pub intakes: &'a mut [IntakeSlot],
 }
 
 /// The outputs of a generation, with their arbiters and envelopes.
@@ -296,7 +319,7 @@ pub struct Outputs<'a> {
     state_words: usize,
     configs: &'a [OutputConfig<'a>],
     states: &'a mut [OutputState],
-    intakes: &'a mut [Option<Intake>],
+    intakes: &'a mut [IntakeSlot],
 }
 
 impl<'a> Outputs<'a> {
@@ -687,7 +710,7 @@ impl<'a> Outputs<'a> {
     ) -> Result<(), CommitError> {
         let tick = image.tick().ok_or(CommitError::NoTick)?;
         let proposals = image.proposals();
-        if self.intakes.len() < proposals.len() {
+        if self.intakes.len() < proposals.len() || proposals.len() >= NO_PROPOSAL as usize {
             return Err(CommitError::IntakeBufferTooSmall);
         }
         if self.arena.len() < self.state_words {
@@ -706,6 +729,8 @@ impl<'a> Outputs<'a> {
                 freed[level.index()] = Some((level, entry));
             });
             self.states[o].expired_now = mask != 0;
+            self.states[o].first_proposal = NO_PROPOSAL;
+            self.states[o].last_proposal = NO_PROPOSAL;
             let applied = self.states[o].last;
             for (level, entry) in freed.into_iter().flatten() {
                 if self.is_manual(entry.writer) {
@@ -741,40 +766,13 @@ impl<'a> Outputs<'a> {
                 });
             }
         }
+        let configs = self.configs;
         for (i, proposal) in proposals.iter().enumerate() {
-            let intake = match self
-                .configs
+            let owner = configs
                 .binary_search_by(|c| c.signal.cmp(&proposal.signal))
-            {
-                Ok(o) if self.configs[o].group == group => {
-                    if proposal.writer.is_remote() {
-                        match self.remote.get(proposal.writer.remote_slot()) {
-                            Some(remote) => self.states[o].arbiter.propose_remote(
-                                &self.configs[o],
-                                remote,
-                                proposal,
-                                now,
-                            ),
-                            None => Intake::Refused(Refusal::NotOwner),
-                        }
-                    } else {
-                        self.states[o].arbiter.propose(
-                            &self.configs[o],
-                            self.writers,
-                            proposal,
-                            now,
-                        )
-                    }
-                }
-                _ => Intake::Refused(Refusal::NotOwner),
-            };
-            self.intakes[i] = Some(intake);
-        }
-        for (i, proposal) in proposals.iter().enumerate() {
-            if self
-                .find(proposal.signal)
-                .is_none_or(|o| self.configs[o].group != group)
-            {
+                .ok()
+                .filter(|&o| configs[o].group == group);
+            let Some(o) = owner else {
                 let result = WriteResult {
                     tick: tick.index,
                     proposal: *proposal,
@@ -794,20 +792,45 @@ impl<'a> Outputs<'a> {
                     previous: None,
                     durability: Durability::Immediate,
                 });
-                self.intakes[i] = None;
+                self.intakes[i] = IntakeSlot::EMPTY;
+                continue;
+            };
+            let state = &mut self.states[o];
+            let intake = if proposal.writer.is_remote() {
+                match self.remote.get(proposal.writer.remote_slot()) {
+                    Some(remote) => {
+                        state
+                            .arbiter
+                            .propose_remote(&configs[o], remote, proposal, now)
+                    }
+                    None => Intake::Refused(Refusal::NotOwner),
+                }
+            } else {
+                state
+                    .arbiter
+                    .propose(&configs[o], self.writers, proposal, now)
+            };
+            self.intakes[i] = IntakeSlot {
+                intake: Some(intake),
+                next: NO_PROPOSAL,
+            };
+            let at = i as u32;
+            match self.intakes.get_mut(state.last_proposal as usize) {
+                Some(tail) => tail.next = at,
+                None => state.first_proposal = at,
             }
+            state.last_proposal = at;
         }
         let writers = self.writers;
         let remote = self.remote;
-        for o in 0..self.configs.len() {
-            let config = self.configs[o];
+        for (o, config) in configs.iter().enumerate() {
             if config.group != group {
                 continue;
             }
             let state = &mut self.states[o];
             let words = config.state_words();
             let arena = &mut self.arena[state.arena_offset..state.arena_offset + words];
-            let facts = facts(&config, &inputs, now, arena);
+            let facts = facts(config, &inputs, now, arena);
             let all_good = config
                 .requires_good
                 .iter()
@@ -854,7 +877,7 @@ impl<'a> Outputs<'a> {
                 },
             };
             state.pending = Some(Pending {
-                verdict: evaluate_in(&config, state.last, state.tripped, effective, &ctx),
+                verdict: evaluate_in(config, state.last, state.tripped, effective, &ctx),
                 reset,
                 ring: state.arena_offset + facts.words,
             });
@@ -870,8 +893,7 @@ impl<'a> Outputs<'a> {
                     .write(value, Quality::GOOD, NO_TS_SRC, now);
             }
         }
-        for o in 0..self.configs.len() {
-            let config = self.configs[o];
+        for (o, config) in configs.iter().enumerate() {
             if config.group != group {
                 continue;
             }
@@ -907,16 +929,15 @@ impl<'a> Outputs<'a> {
             let mut last_outcome = None;
             let mut active_cause = None;
             let mut any_cause = None;
-            for (i, proposal) in proposals.iter().enumerate() {
-                if proposal.signal != config.signal {
-                    continue;
-                }
-                let Some(intake) = self.intakes[i] else {
+            let mut at = state.first_proposal;
+            while let (Some(&IntakeSlot { intake, next }), Some(proposal)) =
+                (self.intakes.get(at as usize), proposals.get(at as usize))
+            {
+                at = next;
+                let Some(intake) = intake else {
                     continue;
                 };
-                let superseded = proposals[i + 1..].iter().any(|later| {
-                    later.signal == proposal.signal && later.writer == proposal.writer
-                });
+                let superseded = written_again(self.intakes, proposals, next, proposal.writer);
                 let outcome = match intake {
                     Intake::Refused(Refusal::NotOwner) => Outcome::Rejected(RejectReason::NotOwner),
                     Intake::Refused(Refusal::WrongType) => {
@@ -1200,6 +1221,23 @@ fn facts(config: &OutputConfig<'_>, inputs: &dyn Inputs, now: u64, arena: &mut [
         reset,
         words: cursor,
     }
+}
+
+/// Whether `writer` proposes again on the same output after the proposal
+/// whose successor is `at` (docs/16 A4).
+fn written_again(
+    slots: &[IntakeSlot],
+    proposals: &[Proposal],
+    mut at: u32,
+    writer: WriterId,
+) -> bool {
+    while let (Some(slot), Some(proposal)) = (slots.get(at as usize), proposals.get(at as usize)) {
+        if proposal.writer == writer {
+            return true;
+        }
+        at = slot.next;
+    }
+    false
 }
 
 fn record_actuation(ring: &mut [u64], capacity: usize, now: u64) {

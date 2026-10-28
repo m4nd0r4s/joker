@@ -10,9 +10,9 @@ use joker_core::slot::SeqExtender;
 use joker_core::time::Instant;
 use joker_core::trace::{SegmentWriter, TickRecord, TraceResult};
 use joker_core::{
-    Applied, ClockQuality, CommitSink, DecisionRecord, Level, Outcome, OutputConfig, OutputResult,
-    Outputs, OutputsStorage, ProcessImage, Proposal, Quality, RegistryBuilder, SafeValue, Sample,
-    SignalId, Slot, ValueType, WriteResult, WriterConfig, WriterId, WriterKind,
+    Applied, ClockQuality, CommitSink, DecisionRecord, IntakeSlot, Level, Outcome, OutputConfig,
+    OutputResult, Outputs, OutputsStorage, ProcessImage, Proposal, Quality, RegistryBuilder,
+    SafeValue, Sample, SignalId, Slot, ValueType, WriteResult, WriterConfig, WriterId, WriterKind,
 };
 
 pub const MS: u64 = 1_000_000;
@@ -96,7 +96,7 @@ impl Harness {
             OutputsStorage {
                 configs,
                 states: leak(vec![joker_core::commit::OutputState::EMPTY; 1]),
-                intakes: leak(vec![None; 8]),
+                intakes: leak(vec![IntakeSlot::EMPTY; 8]),
             },
         )
         .unwrap();

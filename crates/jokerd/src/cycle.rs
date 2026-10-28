@@ -17,7 +17,7 @@ use joker_core::envelope::Applied;
 use joker_core::image::{ImageStorage, MethodCall, ProcessImage, Proposal};
 use joker_core::slot::SeqExtender;
 use joker_core::trace::{SegmentWriter, TickRecord, TraceResult};
-use joker_core::{GroupId, Outputs, OutputsStorage, Sample, SignalId, WriterId};
+use joker_core::{GroupId, IntakeSlot, Outputs, OutputsStorage, Sample, SignalId, WriterId};
 
 use crate::pacer::Pacer;
 use crate::plan::Plan;
@@ -199,7 +199,7 @@ pub fn run(
         return Err(CycleError("slot table does not match the registry".into()));
     }
     let mut states = vec![OutputState::EMPTY; tables.outputs.len()];
-    let mut intakes = vec![None; STAGING_CAPACITY];
+    let mut intakes = vec![IntakeSlot::EMPTY; STAGING_CAPACITY];
     let mut output_arena = vec![0u64; tables.outputs.iter().map(|c| c.state_words()).sum()];
     let derived = crate::expr_plan::derived_defs(plan, &registry).map_err(CycleError)?;
     let call_args = crate::classes::call_args(plan);

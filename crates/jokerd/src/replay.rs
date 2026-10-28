@@ -15,8 +15,8 @@ use joker_core::trace::{
 
 use crate::compress::decompress;
 use joker_core::{
-    ClockQuality, GroupId, Instant, Outputs, OutputsStorage, Quality, Sample, SignalId, Slot,
-    WriterKind,
+    ClockQuality, GroupId, Instant, IntakeSlot, Outputs, OutputsStorage, Quality, Sample, SignalId,
+    Slot, WriterKind,
 };
 use joker_manifest::Manifest;
 
@@ -217,7 +217,7 @@ pub fn replay(
     let registry = tables.registry.as_registry();
     let slots: Vec<Slot> = (0..registry.len()).map(|_| Slot::new()).collect();
     let mut states = vec![OutputState::EMPTY; tables.outputs.len()];
-    let mut intakes = vec![None; STAGING_CAPACITY];
+    let mut intakes = vec![IntakeSlot::EMPTY; STAGING_CAPACITY];
     let mut output_arena = vec![0u64; tables.outputs.iter().map(|c| c.state_words()).sum()];
     let derived = crate::expr_plan::derived_defs(plan, &registry)?;
     let call_args = crate::classes::call_args(plan);

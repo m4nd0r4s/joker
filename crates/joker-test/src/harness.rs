@@ -16,9 +16,10 @@ use joker_core::slot::SeqExtender;
 use joker_core::time::Instant;
 use joker_core::value::NO_TS_SRC;
 use joker_core::{
-    Applied, ClockQuality, CommitSink, ImageStorage, Level, OutputConfig, Outputs, OutputsStorage,
-    ProcessImage, Proposal, Quality, QualityCode, QualityReason, Registry, RegistryBuilder,
-    SafeValue, Sample, SignalId, Slot, ValueType, WriteResult, WriterConfig, WriterId, WriterKind,
+    Applied, ClockQuality, CommitSink, ImageStorage, IntakeSlot, Level, OutputConfig, Outputs,
+    OutputsStorage, ProcessImage, Proposal, Quality, QualityCode, QualityReason, Registry,
+    RegistryBuilder, SafeValue, Sample, SignalId, Slot, ValueType, WriteResult, WriterConfig,
+    WriterId, WriterKind,
 };
 use joker_host::abi::{
     self, Header, Record, ResultEntry, SampleEntry, image_flags, record_flags, sample_flags,
@@ -512,7 +513,7 @@ impl<A: App> Harness<A> {
             OutputsStorage {
                 configs,
                 states: leak(vec![OutputState::EMPTY; n_outs]),
-                intakes: leak(vec![None; 256]),
+                intakes: leak(vec![IntakeSlot::EMPTY; 256]),
             },
         )
         .unwrap_or_else(|e| panic!("outputs: {e:?}"));
