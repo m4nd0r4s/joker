@@ -4,7 +4,7 @@ Signals, registry, process image, arbiter, envelope, alarms and trace (docs/01, 
 
 ## Testing
 
-The seqlock of `Slot` is model-checked with [loom](https://docs.rs/loom):
+The seqlocks of `Slot` and `WideSlot` are model-checked with [loom](https://docs.rs/loom). Under `--cfg loom` the payload of `WideSlot` shrinks from sixteen words to two (`WIDE_SLOT_CAPACITY` is 8 instead of 64) so the exhaustive model finishes; the seqlock code it checks is the same:
 
 ```sh
 RUSTFLAGS="--cfg loom" LOOM_MAX_PREEMPTIONS=2 cargo test -p joker-core --release --lib loom

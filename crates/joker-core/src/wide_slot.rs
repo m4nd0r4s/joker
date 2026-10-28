@@ -13,7 +13,14 @@ use crate::value::NO_TS_SRC;
 
 /// Maximum payload bytes a [`WideSlot`] holds (docs/02-signal-model.md §2:
 /// `bytes`/`string` are each <=64 bytes).
+#[cfg(not(loom))]
 pub const WIDE_SLOT_CAPACITY: usize = 64;
+/// Maximum payload bytes a [`WideSlot`] holds under the `loom` model
+/// checker: two payload words instead of sixteen, so the exhaustive model
+/// finishes. The seqlock code that loom checks is the same; only the
+/// number of payload words it loops over shrinks.
+#[cfg(loom)]
+pub const WIDE_SLOT_CAPACITY: usize = 8;
 const PAYLOAD_WORDS: usize = WIDE_SLOT_CAPACITY / 4;
 
 /// A last-value slot for a `bytes`/`string` signal, up to
@@ -238,40 +245,157 @@ mod tests {
         assert_eq!(s.seq(), 1);
     }
 
+    fn expected_len(seq: u64) -> usize {
+        1 + (seq as usize % WIDE_SLOT_CAPACITY)
+    }
+
+    fn expected_byte(seq: u64, i: usize) -> u8 {
+        (seq as u8)
+            .wrapping_mul(31)
+            .wrapping_add(i as u8)
+            .wrapping_add(1)
+    }
+
+    fn expected_quality(seq: u64) -> Quality {
+        if seq.is_multiple_of(2) {
+            Quality::GOOD
+        } else {
+            Quality::new(QualityCode::Uncertain, QualityReason::Stale)
+        }
+    }
+
+    fn write_version(slot: &WideSlot, seq: u64) {
+        let len = expected_len(seq);
+        let mut buf = [0u8; WIDE_SLOT_CAPACITY];
+        for (i, b) in buf.iter_mut().enumerate().take(len) {
+            *b = expected_byte(seq, i);
+        }
+        slot.write(&buf[..len], expected_quality(seq), seq as i64 * 3, seq);
+    }
+
     #[test]
-    fn concurrent_readers_never_see_torn_samples() {
+    fn concurrent_readers_see_only_whole_samples() {
         let slot = Arc::new(WideSlot::new());
         let stop = Arc::new(AtomicBool::new(false));
         let writer = {
             let slot = Arc::clone(&slot);
             let stop = Arc::clone(&stop);
             thread::spawn(move || {
-                let mut k: u8 = 1;
+                let mut seq = 1u64;
                 while !stop.load(core::sync::atomic::Ordering::Relaxed) {
-                    let buf = [k; WIDE_SLOT_CAPACITY];
-                    slot.write(&buf, Quality::GOOD, 0, u64::from(k));
-                    k = k.wrapping_add(1).max(1);
+                    write_version(&slot, seq);
+                    seq += 1;
                 }
             })
         };
-        while slot.read(0).map_or(true, |s| s.seq() == 0) {
-            thread::yield_now();
-        }
-        let mut ok = 0u32;
-        for _ in 0..200_000 {
-            match slot.read(4) {
-                Ok(s) => {
-                    let bytes = s.as_slice();
-                    let k = bytes[0];
-                    assert!(bytes.iter().all(|&b| b == k), "torn wide sample");
-                    assert_eq!(s.ts_acq(), u64::from(k));
-                    ok += 1;
-                }
-                Err(Collision) => thread::yield_now(),
+        let mut last_seq = 0u64;
+        let mut distinct = 0u32;
+        let mut reads = 0u32;
+        while distinct < 2_000 && reads < 50_000_000 {
+            reads += 1;
+            let Ok(s) = slot.try_read() else {
+                continue;
+            };
+            let seq = s.seq();
+            assert!(
+                seq >= last_seq,
+                "sequence went backwards: {last_seq} then {seq}"
+            );
+            if seq == 0 {
+                assert_eq!(s, WideSample::INITIAL);
+                continue;
             }
+            let len = expected_len(seq);
+            assert_eq!(s.as_slice().len(), len, "length of version {seq}");
+            for (i, &b) in s.as_slice().iter().enumerate() {
+                assert_eq!(b, expected_byte(seq, i), "byte {i} of version {seq}");
+            }
+            assert_eq!(
+                s.quality(),
+                expected_quality(seq),
+                "quality of version {seq}"
+            );
+            assert_eq!(s.ts_src_raw(), seq as i64 * 3, "ts_src of version {seq}");
+            assert_eq!(s.ts_acq(), seq, "ts_acq of version {seq}");
+            if seq != last_seq {
+                distinct += 1;
+            }
+            last_seq = seq;
         }
         stop.store(true, core::sync::atomic::Ordering::Relaxed);
         assert!(writer.join().is_ok());
-        assert!(ok > 0);
+        assert!(
+            distinct >= 2_000,
+            "only {distinct} distinct versions were read while the writer ran"
+        );
+    }
+}
+
+#[cfg(all(test, loom))]
+mod loom_tests {
+    use super::*;
+    use loom::sync::Arc;
+    use loom::thread;
+
+    fn expected(seq: u64) -> ([u8; WIDE_SLOT_CAPACITY], usize, u32) {
+        let len = if seq == 1 { 3 } else { WIDE_SLOT_CAPACITY };
+        let mut bytes = [0u8; WIDE_SLOT_CAPACITY];
+        for (i, b) in bytes.iter_mut().enumerate().take(len) {
+            *b = (seq as u8) * 16 + i as u8 + 1;
+        }
+        (bytes, len, 0x0100_0000 * seq as u32 + 7)
+    }
+
+    fn write(slot: &WideSlot, seq: u64) {
+        let (bytes, len, quality) = expected(seq);
+        slot.write(&bytes[..len], Quality::from_bits(quality), seq as i64, seq);
+    }
+
+    #[test]
+    fn reader_sees_whole_samples_only() {
+        loom::model(|| {
+            let slot = Arc::new(WideSlot::new());
+            let writer = {
+                let slot = Arc::clone(&slot);
+                thread::spawn(move || {
+                    write(&slot, 1);
+                    write(&slot, 2);
+                })
+            };
+            if let Ok(s) = slot.try_read() {
+                let seq = s.seq();
+                if seq == 0 {
+                    assert_eq!(s, WideSample::INITIAL);
+                } else {
+                    let (bytes, len, quality) = expected(seq);
+                    assert_eq!(s.as_slice(), &bytes[..len]);
+                    assert_eq!(s.quality().to_bits(), quality);
+                    assert_eq!(s.ts_src_raw(), seq as i64);
+                    assert_eq!(s.ts_acq(), seq);
+                }
+            }
+            assert!(writer.join().is_ok());
+        });
+    }
+
+    #[test]
+    fn two_reads_are_monotonic() {
+        loom::model(|| {
+            let slot = Arc::new(WideSlot::new());
+            let writer = {
+                let slot = Arc::clone(&slot);
+                thread::spawn(move || {
+                    write(&slot, 1);
+                    write(&slot, 2);
+                })
+            };
+            let first = slot.try_read().ok();
+            let second = slot.try_read().ok();
+            if let (Some(a), Some(b)) = (first, second) {
+                assert!(a.seq() <= b.seq());
+                assert_eq!(b.ts_acq(), b.seq());
+            }
+            assert!(writer.join().is_ok());
+        });
     }
 }
