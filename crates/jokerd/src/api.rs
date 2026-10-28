@@ -1170,6 +1170,7 @@ impl Backend for Node {
                         "group": g.name,
                         "ticks": s.ticks.get(),
                         "overruns": s.overruns.get(),
+                        "consecutive_overruns": s.consecutive_overruns.get(),
                         "jitter": percentiles(&s.jitter, s.max_late_ns.get(), now),
                         "duration": percentiles(&s.duration, s.max_duration_ns.get(), now),
                     })
