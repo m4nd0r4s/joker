@@ -87,6 +87,134 @@ impl Traps {
     }
 }
 
+/// Bytes of an [`AppLine`]'s text: its message, then the key and the
+/// value of each field.
+const APP_LINE_BYTES: usize = 512;
+
+/// Fields an [`AppLine`] keeps.
+const APP_LINE_FIELDS: usize = 8;
+
+/// A log line an app wrote during a tick, copied into a fixed buffer so
+/// the cycle thread hands it off without allocating. A message or a field
+/// past the buffer is cut at a character boundary.
+#[derive(Debug, Clone)]
+pub struct AppLine {
+    /// The app.
+    pub app: Arc<str>,
+    /// The level.
+    pub level: joker_host::LogLevel,
+    /// The latch instant of the tick that wrote it.
+    pub at_mono_ns: u64,
+    message: u16,
+    fields: [(u16, u16); APP_LINE_FIELDS],
+    n_fields: u8,
+    text: [u8; APP_LINE_BYTES],
+}
+
+impl AppLine {
+    fn new(app: &Arc<str>, at_mono_ns: u64, record: &joker_host::LogRecord<'_>) -> Self {
+        let mut line = Self {
+            app: Arc::clone(app),
+            level: record.level,
+            at_mono_ns,
+            message: 0,
+            fields: [(0, 0); APP_LINE_FIELDS],
+            n_fields: 0,
+            text: [0; APP_LINE_BYTES],
+        };
+        let mut at = 0usize;
+        line.message = line.put(&mut at, record.message);
+        for (key, value) in record.fields().take(APP_LINE_FIELDS) {
+            let k = line.put(&mut at, key);
+            let v = line.put(&mut at, value);
+            line.fields[usize::from(line.n_fields)] = (k, v);
+            line.n_fields += 1;
+        }
+        line
+    }
+
+    fn put(&mut self, at: &mut usize, s: &str) -> u16 {
+        let mut n = s.len().min(APP_LINE_BYTES - *at);
+        while !s.is_char_boundary(n) {
+            n -= 1;
+        }
+        self.text[*at..*at + n].copy_from_slice(&s.as_bytes()[..n]);
+        *at += n;
+        n as u16
+    }
+
+    fn slice(&self, from: usize, len: u16) -> &str {
+        self.text
+            .get(from..from + usize::from(len))
+            .and_then(|b| std::str::from_utf8(b).ok())
+            .unwrap_or("")
+    }
+
+    /// The message.
+    pub fn message(&self) -> &str {
+        self.slice(0, self.message)
+    }
+
+    /// The fields, in the order written.
+    pub fn fields(&self) -> impl Iterator<Item = (&str, &str)> {
+        let mut at = usize::from(self.message);
+        self.fields[..usize::from(self.n_fields)]
+            .iter()
+            .map(move |&(k, v)| {
+                let key = self.slice(at, k);
+                let value = self.slice(at + usize::from(k), v);
+                at += usize::from(k) + usize::from(v);
+                (key, value)
+            })
+    }
+}
+
+/// Where the cycle thread hands off the log lines of the apps without
+/// allocating or blocking: a bounded queue the daemon drains into the
+/// node's log ring (`GET /v1/logs`). A full queue drops the line and
+/// counts it (AGENTS.md invariant 7).
+#[derive(Debug)]
+pub struct AppLogs {
+    queue: ArrayQueue<AppLine>,
+    dropped: AtomicU64,
+}
+
+impl Default for AppLogs {
+    fn default() -> Self {
+        Self::new(256)
+    }
+}
+
+impl AppLogs {
+    /// A queue of `capacity` lines.
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            queue: ArrayQueue::new(capacity.max(1)),
+            dropped: AtomicU64::new(0),
+        }
+    }
+
+    fn report(&self, line: AppLine) {
+        if self.queue.push(line).is_err() {
+            self.dropped.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    /// Takes the lines handed off so far, oldest first.
+    pub fn drain(&self) -> Vec<AppLine> {
+        let mut out = Vec::with_capacity(self.queue.len());
+        while let Some(l) = self.queue.pop() {
+            out.push(l);
+        }
+        out
+    }
+
+    /// Lines dropped because the queue was full.
+    pub fn dropped(&self) -> u64 {
+        self.dropped.load(Ordering::Relaxed)
+    }
+}
+
 /// The Wasm apps a node can run, by app name.
 #[derive(Clone)]
 pub struct WasmTasks {
@@ -94,6 +222,7 @@ pub struct WasmTasks {
     apps: BTreeMap<String, Arc<AppComponent>>,
     mode: RunMode,
     traps: Arc<Traps>,
+    logs: Arc<AppLogs>,
 }
 
 impl fmt::Debug for WasmTasks {
@@ -125,6 +254,7 @@ impl WasmTasks {
             apps: BTreeMap::new(),
             mode,
             traps: Arc::default(),
+            logs: Arc::default(),
         }
     }
 
@@ -137,6 +267,18 @@ impl WasmTasks {
     /// The traps of its tasks.
     pub fn traps(&self) -> Arc<Traps> {
         Arc::clone(&self.traps)
+    }
+
+    /// Hands the log lines of its tasks to `logs`.
+    #[must_use]
+    pub fn with_app_logs(mut self, logs: Arc<AppLogs>) -> Self {
+        self.logs = logs;
+        self
+    }
+
+    /// The log lines of its tasks.
+    pub fn app_logs(&self) -> Arc<AppLogs> {
+        Arc::clone(&self.logs)
     }
 
     /// Adds a component loaded elsewhere (from the AOT cache of a node)
@@ -335,6 +477,7 @@ impl TaskProvider for WasmTasks {
             app: Arc::from(spec.app),
             task_name: Arc::from(spec.task),
             traps: Arc::clone(&self.traps),
+            logs: Arc::clone(&self.logs),
         }))
     }
 }
@@ -357,6 +500,7 @@ struct WasmTask {
     app: Arc<str>,
     task_name: Arc<str>,
     traps: Arc<Traps>,
+    logs: Arc<AppLogs>,
 }
 
 impl fmt::Debug for WasmTask {
@@ -428,6 +572,11 @@ impl CycleTask for WasmTask {
         let tick = cx.tick();
         let (image, outputs) = cx.parts();
         let report = instance.run(self.task, image, outputs).map_err(host)?;
+        let at_mono_ns = tick.map_or(0, |t| t.at.mono_ns);
+        instance.drain_log(|record| {
+            self.logs
+                .report(AppLine::new(&self.app, at_mono_ns, &record));
+        });
         match report.status {
             CycleStatus::Ok => Ok(()),
             CycleStatus::AppError => Err(TaskError(String::new())),

@@ -37,6 +37,7 @@ pub struct NodeApps {
     blobs: Blobs,
     aot: AotCache,
     traps: Arc<Traps>,
+    app_logs: Arc<crate::wasm::AppLogs>,
     loaded: Mutex<Loaded>,
 }
 
@@ -101,6 +102,7 @@ impl NodeApps {
             blobs: Blobs::new(state_dir),
             aot: AotCache::new(state_dir.join("aot")),
             traps: Arc::default(),
+            app_logs: Arc::default(),
             loaded: Mutex::new(BTreeMap::new()),
         }
     }
@@ -113,6 +115,11 @@ impl NodeApps {
     /// Where the cycle tasks of every generation report their traps.
     pub fn traps(&self) -> Arc<Traps> {
         Arc::clone(&self.traps)
+    }
+
+    /// Where the cycle tasks of every generation hand off their log lines.
+    pub fn app_logs(&self) -> Arc<crate::wasm::AppLogs> {
+        Arc::clone(&self.app_logs)
     }
 
     /// The Wasm apps of a generation, loaded from the AOT cache after
@@ -144,7 +151,8 @@ impl NodeApps {
             RuntimeMode::Dev
         };
         let mut tasks = WasmTasks::with_engine(Arc::clone(&self.engine), RunMode::Normal)
-            .with_traps(Arc::clone(&self.traps));
+            .with_traps(Arc::clone(&self.traps))
+            .with_app_logs(Arc::clone(&self.app_logs));
         for (app, files) in apps {
             let Some(wasm) = files.wasm else {
                 return Err(error(

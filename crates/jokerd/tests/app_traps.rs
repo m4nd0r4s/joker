@@ -98,6 +98,7 @@ fn a_trapping_app_is_reported_and_its_output_goes_safe() {
         .unwrap();
     c.activate(g.number, None, None).unwrap();
 
+    let logs = c.logs();
     let path = dir.path().join("decisions.jsonl");
     let start = Instant::now();
     let mut entries = Vec::new();
@@ -109,7 +110,14 @@ fn a_trapping_app_is_reported_and_its_output_goes_safe() {
             .iter()
             .rfind(|e| e["record"] == "output" && e["output"] == "pi.act_led")
             .is_some_and(|e| e["applied"] == false);
-        if trapped && safe {
+        let logged = !logs
+            .query(&jokerd::logs::LogFilter {
+                source: Some("app:crash".into()),
+                ..jokerd::logs::LogFilter::default()
+            })
+            .0
+            .is_empty();
+        if trapped && safe && logged {
             break;
         }
         std::thread::sleep(Duration::from_millis(20));
@@ -140,4 +148,14 @@ fn a_trapping_app_is_reported_and_its_output_goes_safe() {
         Some(&&serde_json::Value::Bool(false)),
         "{led:?}"
     );
+
+    let (lines, _) = logs.query(&jokerd::logs::LogFilter {
+        source: Some("app:crash".into()),
+        ..jokerd::logs::LogFilter::default()
+    });
+    let line = lines
+        .iter()
+        .find(|e| e.msg == "about to trap")
+        .unwrap_or_else(|| panic!("{lines:?}"));
+    assert_eq!(line.level, jokerd::logs::LogLevel::Warn);
 }

@@ -1,7 +1,9 @@
 //! A cycle app that drives its output on for a few ticks and then traps,
 //! for the tests of the trap report and of the lease that takes its output
-//! to `safe` (docs/01 §9, ADR 0067).
+//! to `safe` (docs/01 §9, ADR 0067), writing a `warn` log line first, for
+//! the test of app lines in the node's log ring.
 
+use joker::__private::sys::joker::runtime::log;
 use joker::prelude::*;
 
 /// Drives `led` on, then traps on its eleventh tick.
@@ -22,6 +24,7 @@ struct Count {
 fn run(io: &mut CycleIo<Crash>, st: &mut Count) -> Result<()> {
     st.ticks += 1;
     if st.ticks > 10 {
+        log::log(log::Level::Warn, "about to trap", &[]);
         std::process::abort();
     }
     io.led.set(true);
