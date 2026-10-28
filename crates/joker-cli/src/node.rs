@@ -687,6 +687,40 @@ impl Node {
         Ok(0)
     }
 
+    /// `jk logs` (ref/09 §9.1): one page of `GET /v1/logs`, printed oldest
+    /// first.
+    pub fn logs(&self, params: &[(&str, Option<String>)]) -> Result<u8, Failure> {
+        let q: Vec<String> = params
+            .iter()
+            .filter_map(|(k, v)| v.as_ref().map(|v| format!("{k}={}", encode(v))))
+            .collect();
+        let page = checked(self.client.get(&format!("/v1/logs?{}", q.join("&")))?)?.json();
+        if self.json {
+            print_json(&page);
+            return Ok(0);
+        }
+        let mut items = page["items"].as_array().cloned().unwrap_or_default();
+        items.reverse();
+        for e in items {
+            let fields: String = e["fields"]
+                .as_object()
+                .map(|f| {
+                    f.iter()
+                        .map(|(k, v)| format!(" {k}={}", v.as_str().unwrap_or("")))
+                        .collect()
+                })
+                .unwrap_or_default();
+            println!(
+                "{}  {:<5} {:<16} {}{fields}",
+                e["ts"].as_str().unwrap_or(""),
+                e["level"].as_str().unwrap_or(""),
+                e["source"].as_str().unwrap_or(""),
+                e["msg"].as_str().unwrap_or("")
+            );
+        }
+        Ok(0)
+    }
+
     /// `jk history` (ref/09 §9.1).
     pub fn history(&self, args: &HistoryArgs) -> Result<u8, Failure> {
         let mut q: Vec<String> = args
