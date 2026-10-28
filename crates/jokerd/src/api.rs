@@ -58,6 +58,7 @@ pub struct Node {
     hub: Arc<Hub>,
     alarms: Arc<crate::alarms::AlarmBook>,
     historian: Arc<crate::historian::Historian>,
+    logs: Arc<crate::logs::LogRing>,
 }
 
 impl std::fmt::Debug for Node {
@@ -166,7 +167,7 @@ impl Node {
         utc_origin_ns: i64,
         state_dir: &Path,
     ) -> std::io::Result<Self> {
-        let (manual, trips, log, quality, hub, alarms, historian) = {
+        let (manual, trips, log, quality, hub, alarms, historian, logs) = {
             let c = lock_controller(&controller);
             (
                 c.manual(),
@@ -176,6 +177,7 @@ impl Node {
                 c.actions(),
                 c.alarms(),
                 c.historian(),
+                c.logs(),
             )
         };
         let boot_count = state_file::bump_counter(state_dir, "boot_count")?;
@@ -198,6 +200,7 @@ impl Node {
             hub,
             alarms,
             historian,
+            logs,
         })
     }
 
@@ -2271,6 +2274,72 @@ impl Backend for Node {
         let next = (items.len() > limit).then(|| items[limit - 1].0.to_string());
         let page: Vec<Value> = items.into_iter().take(limit).map(|(_, d)| d).collect();
         Ok(Reply::ok(json!({"items": page, "next_cursor": next})))
+    }
+
+    fn logs(&self, query: &Query) -> Result<Reply, Problem> {
+        let source = match (one(query, "source"), one(query, "app")) {
+            (Some(_), Some(_)) => {
+                return Err(
+                    bad("J-E1012", "`source` and `app` together").with("param", json!("app"))
+                );
+            }
+            (s, None) => s,
+            (None, Some(app)) => Some(format!("app:{app}")),
+        };
+        let min_level = match one(query, "level") {
+            None => crate::logs::LogLevel::Trace,
+            Some(l) => crate::logs::LogLevel::parse(&l)
+                .ok_or_else(|| bad("J-E1012", "bad `level`").with("param", json!("level")))?,
+        };
+        let (from_ns, to_ns) = crate::queries::range(query, utc_now_ns(), None)?;
+        let limit = one(query, "limit")
+            .map(|l| {
+                l.parse::<usize>()
+                    .map_err(|_| bad("J-E1012", "bad `limit`").with("param", json!("limit")))
+            })
+            .transpose()?
+            .unwrap_or(100)
+            .clamp(1, 1000);
+        let cursor = one(query, "cursor")
+            .map(|c| {
+                c.parse::<u64>()
+                    .map_err(|_| Problem::new("J-E1032", 400, "bad cursor"))
+            })
+            .transpose()?;
+        let (page, next) = self.logs.query(&crate::logs::LogFilter {
+            source,
+            min_level,
+            from_ns,
+            to_ns,
+            ascending: one(query, "order").is_some_and(|o| o == "asc"),
+            limit,
+            cursor,
+        });
+        let items: Vec<Value> = page
+            .iter()
+            .map(|e| {
+                let mut item = json!({
+                    "seq": e.seq,
+                    "ts": timestamp(e.ts_utc_ns),
+                    "level": e.level.as_str(),
+                    "source": e.source,
+                    "msg": e.msg,
+                });
+                if !e.fields.is_empty() {
+                    item["fields"] = e
+                        .fields
+                        .iter()
+                        .map(|(k, v)| (k.clone(), json!(v)))
+                        .collect::<Map<String, Value>>()
+                        .into();
+                }
+                item
+            })
+            .collect();
+        Ok(Reply::ok(json!({
+            "items": items,
+            "next_cursor": next.map(|n| n.to_string()),
+        })))
     }
 
     fn generations(&self, query: &Query) -> Result<Reply, Problem> {

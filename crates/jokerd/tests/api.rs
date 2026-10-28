@@ -250,6 +250,7 @@ struct Fixture {
     contract: Contract,
     _dir: tempfile::TempDir,
     stop: Option<tokio::sync::oneshot::Sender<()>>,
+    logs: Arc<jokerd::logs::LogRing>,
 }
 
 async fn start() -> Fixture {
@@ -282,6 +283,7 @@ async fn start_with_devices(manifest: &str, devices: Arc<dyn Devices>) -> Fixtur
         .propose(manifest, "", Some("bench".into()), false)
         .unwrap();
     c.activate(g.number, None, None).unwrap();
+    let logs = c.logs();
     let controller = Arc::new(Mutex::new(c));
     let node = Node::new(controller, clock, 0, dir.path()).unwrap();
     let socket = dir.path().join("api.sock");
@@ -306,6 +308,7 @@ async fn start_with_devices(manifest: &str, devices: Arc<dyn Devices>) -> Fixtur
         contract: Contract::load(),
         _dir: dir,
         stop: Some(tx),
+        logs,
     }
 }
 
@@ -501,6 +504,69 @@ async fn meta_signals_and_values_follow_the_contract() {
         (nope.status, nope.json()["code"].clone()),
         (404, json!("J-E1005"))
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn logs_are_served_from_the_ring_with_their_filters() {
+    use jokerd::logs::LogLevel;
+    let f = start().await;
+    let now = jokerd::wire::utc_now_ns();
+    f.logs
+        .push(LogLevel::Info, "jokerd", "started", Vec::new(), now - 2);
+    f.logs.push(
+        LogLevel::Warn,
+        "driver:pcs",
+        "timeout",
+        vec![("batch".into(), "3".into())],
+        now - 1,
+    );
+    f.logs
+        .push(LogLevel::Debug, "driver:pcs", "poll", Vec::new(), now);
+
+    let all = f.call("GET", "/v1/logs", "/v1/logs", None).await;
+    assert_eq!(all.status, 200, "{}", all.json());
+    let msgs = |r: &Response| -> Vec<String> {
+        r.json()["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["msg"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    assert_eq!(msgs(&all), ["poll", "timeout", "started"]);
+    let warn = &all.json()["items"][1];
+    assert_eq!(warn["level"], "warn");
+    assert_eq!(warn["source"], "driver:pcs");
+    assert_eq!(warn["fields"]["batch"], "3");
+
+    let pcs = f
+        .call(
+            "GET",
+            "/v1/logs",
+            "/v1/logs?source=driver:pcs&level=info",
+            None,
+        )
+        .await;
+    assert_eq!(msgs(&pcs), ["timeout"]);
+
+    let page = f
+        .call("GET", "/v1/logs", "/v1/logs?order=asc&limit=2", None)
+        .await;
+    assert_eq!(msgs(&page), ["started", "timeout"]);
+    let cursor = page.json()["next_cursor"].as_str().unwrap().to_owned();
+    let rest = f
+        .call(
+            "GET",
+            "/v1/logs",
+            &format!("/v1/logs?order=asc&limit=2&cursor={cursor}"),
+            None,
+        )
+        .await;
+    assert_eq!(msgs(&rest), ["poll"]);
+    assert!(rest.json()["next_cursor"].is_null());
+
+    let bad = f.call("GET", "/v1/logs", "/v1/logs?level=loud", None).await;
+    assert_eq!(bad.json()["code"], "J-E1012");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

@@ -185,6 +185,43 @@ fn a_gpio_device_dispatches_and_registers_its_action_channel_even_without_the_ch
 }
 
 #[test]
+fn a_device_that_cannot_be_set_up_says_why_in_the_log_ring() {
+    use jokerd::logs::{LogFilter, LogLevel, LogRing};
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("joker.toml"), GPIO_JOKER_TOML).unwrap();
+    let loaded = load(&OsFileSystem, &dir.path().join("joker.toml"), &NativeTasks)
+        .unwrap_or_else(|e| panic!("{e}"));
+    let plan = Arc::new(loaded.plan);
+    let shared = Arc::new(Shared::new(&plan));
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let ring = Arc::new(LogRing::default());
+    let set = RealDevices::new(runtime.handle().clone())
+        .with_logs(Arc::clone(&ring))
+        .start(&plan, &shared);
+    let filter = LogFilter {
+        source: Some("driver:hdr".into()),
+        min_level: LogLevel::Error,
+        ..LogFilter::default()
+    };
+    let mut page = Vec::new();
+    for _ in 0..50 {
+        page = ring.query(&filter).0;
+        if !page.is_empty() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(page.len(), 1, "{page:?}");
+    assert!(page[0].msg.contains("bad(config_error)"), "{}", page[0].msg);
+
+    set.stop();
+    runtime.shutdown_timeout(Duration::from_secs(1));
+}
+
+#[test]
 fn a_device_whose_driver_cannot_be_set_up_reads_bad_config_error() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("joker.toml"), GPIO_JOKER_TOML).unwrap();

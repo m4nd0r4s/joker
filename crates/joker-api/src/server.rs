@@ -461,6 +461,13 @@ get_query!(
         "cursor"
     ]
 );
+get_query!(
+    logs,
+    logs,
+    [
+        "source", "app", "level", "from", "to", "since", "order", "limit", "cursor"
+    ]
+);
 get_query!(generations, generations, ["state", "limit", "cursor"]);
 get_query!(
     alarms,
@@ -987,6 +994,7 @@ pub fn router_with(backend: Arc<dyn Backend>, limits: ws::Limits) -> Router {
             post(cancel_invocation),
         )
         .route("/v1/decisions", get(decisions))
+        .route("/v1/logs", get(logs))
         .route("/v1/history", get(history))
         .route("/v1/history/query", post(history_query))
         .route("/v1/events", get(events))
