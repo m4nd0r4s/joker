@@ -402,7 +402,7 @@ Joker **does not update the OS**. It integrates with RAUC, SWUpdate or Mender fo
 
 ## 19. Observability
 
-Own metrics, exposed as `joker.*` signals (therefore recorded, alarmable and sendable like any other signal), via OTLP, in `GET /v1/metrics` and in the Prometheus text format at `GET /metrics` (ref/09 §5.2, ADR 0071):
+Own metrics, exposed as `joker.*` signals (therefore recorded, alarmable and sendable like any other signal), via OTLP, in `GET /v1/metrics` and in the Prometheus text format at `GET /metrics` (ref/09 §5.2, ADR 0071). Their paths, types and writer on Linux are in ADR 0090:
 
 | Area | Metrics |
 |---|---|
