@@ -61,6 +61,7 @@ pub enum Intake {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct OutputArbiter {
     levels: [Option<LevelEntry>; Level::COUNT],
+    occupied: u16,
     period_ns: u64,
 }
 
@@ -70,6 +71,7 @@ impl OutputArbiter {
     pub const fn new(period_ns: u64) -> Self {
         Self {
             levels: [None; Level::COUNT],
+            occupied: 0,
             period_ns,
         }
     }
@@ -91,25 +93,50 @@ impl OutputArbiter {
     /// Like [`OutputArbiter::expire`], calling `freed` with each freed level
     /// and what it held, from the highest priority.
     pub fn expire_each(&mut self, t_latch: u64, mut freed: impl FnMut(Level, LevelEntry)) -> u16 {
-        let mut mask = 0;
-        for (i, level) in self.levels.iter_mut().enumerate() {
-            if let Some(entry) = *level
-                && t_latch >= entry.lease_until
+        let mask = self.expiring(t_latch);
+        let mut left = mask;
+        while left != 0 {
+            let i = left.trailing_zeros() as usize;
+            left &= left - 1;
+            if let Some(entry) = self.levels[i].take()
+                && let Some(l) = Level::new(i as u8 + 1)
             {
-                *level = None;
+                freed(l, entry);
+            }
+        }
+        self.occupied &= !mask;
+        mask
+    }
+
+    /// The bit mask of the levels whose lease ends at `t_latch`, without
+    /// freeing them (bit `n-1` for level `n`).
+    pub fn expiring(&self, t_latch: u64) -> u16 {
+        let mut mask = 0;
+        let mut left = self.occupied;
+        while left != 0 {
+            let i = left.trailing_zeros() as usize;
+            left &= left - 1;
+            if self.levels[i].is_some_and(|entry| t_latch >= entry.lease_until) {
                 mask |= 1 << i;
-                if let Some(l) = Level::new(i as u8 + 1) {
-                    freed(l, entry);
-                }
             }
         }
         mask
     }
 
+    fn set(&mut self, level: Level, entry: Option<LevelEntry>) -> Option<LevelEntry> {
+        let bit = 1 << level.index();
+        if entry.is_some() {
+            self.occupied |= bit;
+        } else {
+            self.occupied &= !bit;
+        }
+        core::mem::replace(&mut self.levels[level.index()], entry)
+    }
+
     /// Puts back a level saved before a restart (docs/16 A14), before the
     /// first tick. It replaces whatever the level holds.
     pub fn restore(&mut self, level: Level, entry: LevelEntry) {
-        self.levels[level.index()] = Some(entry);
+        self.set(level, Some(entry));
     }
 
     /// Takes one proposal of a remote writer (docs/16 A12). The level
@@ -128,22 +155,24 @@ impl OutputArbiter {
         if !output.delegates(remote.level) {
             return Intake::Refused(Refusal::NotOwner);
         }
-        let slot = &mut self.levels[remote.level.index()];
-        if slot.is_some_and(|e| !e.writer.is_remote()) {
+        if self.levels[remote.level.index()].is_some_and(|e| !e.writer.is_remote()) {
             return Intake::Refused(Refusal::NotOwner);
         }
         if proposal.is_relinquish() {
-            return Intake::Relinquished(slot.take().map(|_| remote.level));
+            return Intake::Relinquished(self.set(remote.level, None).map(|_| remote.level));
         }
         if !output.accepts(proposal.value) {
             return Intake::Refused(Refusal::WrongType);
         }
         let lease = remote.lease_ns.min(remote.link_max_lease_ns);
-        *slot = Some(LevelEntry {
-            writer: proposal.writer,
-            value: proposal.value,
-            lease_until: t_tick.saturating_add(lease),
-        });
+        self.set(
+            remote.level,
+            Some(LevelEntry {
+                writer: proposal.writer,
+                value: proposal.value,
+                lease_until: t_tick.saturating_add(lease),
+            }),
+        );
         Intake::Placed(remote.level)
     }
 
@@ -164,14 +193,11 @@ impl OutputArbiter {
             return Intake::Refused(Refusal::NotOwner);
         }
         let mut lease = self.lease_of(writer);
-        let slot = &mut self.levels[writer.level.index()];
-        if let Some(entry) = slot
-            && entry.writer != proposal.writer
-        {
+        if self.levels[writer.level.index()].is_some_and(|entry| entry.writer != proposal.writer) {
             return Intake::Refused(Refusal::NotOwner);
         }
         if proposal.is_relinquish() {
-            let held = slot.take().map(|_| writer.level);
+            let held = self.set(writer.level, None).map(|_| writer.level);
             return Intake::Relinquished(held);
         }
         if !output.accepts(proposal.value) {
@@ -180,22 +206,23 @@ impl OutputArbiter {
         if proposal.ttl_ns != 0 && writer.kind == WriterKind::Manual {
             lease = proposal.ttl_ns.min(output.max_manual_ns);
         }
-        *slot = Some(LevelEntry {
-            writer: proposal.writer,
-            value: proposal.value,
-            lease_until: t_tick.saturating_add(lease),
-        });
+        self.set(
+            writer.level,
+            Some(LevelEntry {
+                writer: proposal.writer,
+                value: proposal.value,
+                lease_until: t_tick.saturating_add(lease),
+            }),
+        );
         Intake::Placed(writer.level)
     }
 
     /// The active level of highest priority and what it holds (docs/16 A5);
     /// `None` means the output goes to `safe` (A6).
     pub fn active(&self) -> Option<(Level, LevelEntry)> {
-        self.levels
-            .iter()
-            .enumerate()
-            .find_map(|(i, entry)| entry.map(|e| (Level::new(i as u8 + 1), e)))
-            .and_then(|(level, entry)| level.map(|l| (l, entry)))
+        let i = self.occupied.trailing_zeros() as usize;
+        let entry = (*self.levels.get(i)?)?;
+        Level::new(i as u8 + 1).map(|level| (level, entry))
     }
 
     /// What a level holds.
@@ -205,10 +232,15 @@ impl OutputArbiter {
 
     /// The level held by `writer`, if any.
     pub fn level_of(&self, writer: WriterId) -> Option<Level> {
-        self.levels
-            .iter()
-            .position(|e| e.is_some_and(|e| e.writer == writer))
-            .and_then(|i| Level::new(i as u8 + 1))
+        let mut left = self.occupied;
+        while left != 0 {
+            let i = left.trailing_zeros() as usize;
+            left &= left - 1;
+            if self.levels[i].is_some_and(|e| e.writer == writer) {
+                return Level::new(i as u8 + 1);
+            }
+        }
+        None
     }
 }
 

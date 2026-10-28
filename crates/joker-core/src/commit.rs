@@ -723,14 +723,18 @@ impl<'a> Outputs<'a> {
             if self.configs[o].group != group {
                 continue;
             }
+            self.states[o].first_proposal = NO_PROPOSAL;
+            self.states[o].last_proposal = NO_PROPOSAL;
+            if self.states[o].arbiter.expiring(now) == 0 {
+                self.states[o].expired_now = false;
+                continue;
+            }
             let signal = self.configs[o].signal;
             let mut freed: [Option<(Level, LevelEntry)>; Level::COUNT] = [None; Level::COUNT];
             let mask = self.states[o].arbiter.expire_each(now, |level, entry| {
                 freed[level.index()] = Some((level, entry));
             });
             self.states[o].expired_now = mask != 0;
-            self.states[o].first_proposal = NO_PROPOSAL;
-            self.states[o].last_proposal = NO_PROPOSAL;
             let applied = self.states[o].last;
             for (level, entry) in freed.into_iter().flatten() {
                 if self.is_manual(entry.writer) {
