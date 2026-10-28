@@ -433,6 +433,13 @@ This repo's own CI (`.github/workflows/nightly.yml`, job `core-loom`) runs `joke
 Run: `RUSTFLAGS="--cfg loom" LOOM_MAX_PREEMPTIONS=2 cargo test --release -p joker-core --lib wide_slot::loom_tests`
 Expected: `reader_sees_whole_samples_only` passes.
 
+**As done (2026-10-28).** The first implementation (`dc2a8d8`) dropped this step: an exhaustive loom model over sixteen payload words did not finish, and the threaded test of Step 3 was kept as the only check. That left two gaps: the algorithm was argued to be `Slot`'s rather than checked, and the threaded test wrote the same byte into every word at a fixed length, so it could not see a tear between words of different writes, a length that disagrees with its payload, or a quality and timestamp from another write. The follow-up closed both:
+
+- Under `--cfg loom` only, `WIDE_SLOT_CAPACITY` is 8 (two payload words) instead of 64. The seqlock code is unchanged; only the number of words it loops over shrinks, so the model finishes (about 50 s with `Slot`'s two models, `LOOM_MAX_PREEMPTIONS=2`).
+- `wide_slot::loom_tests` has `reader_sees_whole_samples_only` (each successful read is one whole write: bytes, length, quality, `ts_src`, `ts_acq`, all tied to its sequence number, with two writes of different lengths) and `two_reads_are_monotonic`.
+- The threaded test is now `concurrent_readers_see_only_whole_samples`: every write `k` has its own length, a distinct byte per position, its own quality and timestamps, all derived from `k`, and `k` is read back from the sample's `seq`; it checks every field, that `seq` never goes backwards, and that at least 2,000 distinct versions were read while the writer ran.
+- Mutation check: removing the version recheck at the end of `try_read` fails both the loom model and the threaded test.
+
 - [ ] **Step 5: Run a mutation check**
 
 Temporarily change the guard `bytes.len() > WIDE_SLOT_CAPACITY` to `false` (so an oversized write is stored) and re-run `a_payload_longer_than_64_bytes_is_bad_config_error_not_truncated` — it must fail or panic on the slice bound (this proves the test exercises the guard). Revert the change.
