@@ -606,6 +606,7 @@ async fn manual_writes_follow_a10_and_a13() {
         .unwrap_or_else(|| panic!("{envelope}"));
     assert!(led["accepted"].as_u64().unwrap() >= 1, "{led}");
     assert_eq!(led["rejected"], 0, "{led}");
+    assert_eq!(m.json()["arbiter"]["manual_active"], 1, "{}", m.json());
     let list = f.call("GET", "/v1/manual", "/v1/manual", None).await;
     assert_eq!(list.json()["items"][0]["reason"], "commissioning");
     let outputs = f.call("GET", "/v1/outputs", "/v1/outputs", None).await;
