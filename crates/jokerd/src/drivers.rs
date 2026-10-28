@@ -1191,9 +1191,7 @@ fn encode_writes<'w>(
                     output: binding.signal,
                     confirmed: false,
                 };
-                if shared.confirmations.push(confirmation).is_err() {
-                    shared.confirmations_dropped.bump();
-                }
+                shared.push_confirmation(confirmation);
             }
         }
     }
@@ -1361,8 +1359,6 @@ fn confirm_outputs(
             output: binding.signal,
             confirmed,
         };
-        if shared.confirmations.push(confirmation).is_err() {
-            shared.confirmations_dropped.bump();
-        }
+        shared.push_confirmation(confirmation);
     }
 }

@@ -583,17 +583,25 @@ pub struct Shared {
     pub write_acks: ArrayQueue<WriteAckRecord>,
     /// Write acks dropped by a full queue.
     pub write_acks_dropped: Counter,
-    /// Confirmations of output writes, for the cycle thread to apply to
-    /// the outputs' slots.
-    pub confirmations: ArrayQueue<Confirmation>,
+    /// Confirmations of output writes, one queue per group by group index,
+    /// for the owner group to apply to its outputs' slots
+    /// ([`Shared::push_confirmation`], ADR 0089).
+    pub confirmations: Box<[ArrayQueue<Confirmation>]>,
     /// Confirmations dropped by a full queue.
     pub confirmations_dropped: Counter,
+    /// The owner group index of each output, in [`Shared::output_ids`]
+    /// order.
+    pub output_groups: Box<[u32]>,
+    /// Trip requests of an alarm for an output of another group, dropped by
+    /// a full trip queue (ADR 0089).
+    pub trip_requests_dropped: Counter,
     /// Alarm transitions and operator actions, for the alarm journal.
     pub alarm_events: ArrayQueue<AlarmEvent>,
     /// Alarm events dropped by a full queue.
     pub alarm_events_dropped: Counter,
-    /// Operator commands on alarms.
-    pub alarm_commands: ArrayQueue<AlarmCommand>,
+    /// Operator commands on alarms, one queue per group by the alarm's
+    /// group index (ADR 0089).
+    pub alarm_commands: Box<[ArrayQueue<AlarmCommand>]>,
     /// Their replies.
     pub alarm_replies: ArrayQueue<AlarmReply>,
     /// Per output (in [`Shared::output_ids`] order), whether its readback
@@ -718,15 +726,34 @@ pub fn is_wide(ty: ValueType) -> bool {
 }
 
 impl Shared {
-    /// Applies the pending [`Confirmation`]s to the outputs' slots (cycle
-    /// thread only: the one writer of an output's slot). A rejected output
-    /// keeps its applied value with `uncertain(not_confirmed)`; a confirmed
-    /// one is `good` again. The core rewrites the slot `good` whenever the
-    /// applied value changes, so a new value starts confirmed until its own
-    /// ack says otherwise.
-    pub fn apply_confirmations(&self, now_mono_ns: u64) {
+    /// Queues a [`Confirmation`] for the group that owns its output, the
+    /// one writer of the output's slot (ADR 0089). A full queue, or an
+    /// output this generation does not have, is counted in
+    /// [`Shared::confirmations_dropped`].
+    pub fn push_confirmation(&self, confirmation: Confirmation) {
+        let queue = self
+            .output_ids
+            .binary_search(&confirmation.output)
+            .ok()
+            .and_then(|i| self.output_groups.get(i))
+            .and_then(|g| self.confirmations.get(*g as usize));
+        if queue.is_none_or(|q| q.push(confirmation).is_err()) {
+            self.confirmations_dropped.bump();
+        }
+    }
+
+    /// Applies the pending [`Confirmation`]s of `group` to its outputs'
+    /// slots (that group's thread only: the one writer of an output's
+    /// slot). A rejected output keeps its applied value with
+    /// `uncertain(not_confirmed)`; a confirmed one is `good` again. The
+    /// core rewrites the slot `good` whenever the applied value changes, so
+    /// a new value starts confirmed until its own ack says otherwise.
+    pub fn apply_confirmations(&self, group: usize, now_mono_ns: u64) {
         let not_confirmed = Quality::new(QualityCode::Uncertain, QualityReason::NotConfirmed);
-        while let Some(c) = self.confirmations.pop() {
+        let Some(queue) = self.confirmations.get(group) else {
+            return;
+        };
+        while let Some(c) = queue.pop() {
             let Some(slot) = self.slots.get(c.output.index()) else {
                 continue;
             };
@@ -786,6 +813,17 @@ impl Shared {
             .filter_map(|o| plan.id(&o.path))
             .collect();
         output_ids.sort();
+        let output_groups: Box<[u32]> = output_ids
+            .iter()
+            .map(|id| {
+                plan.outputs
+                    .iter()
+                    .find(|o| plan.id(&o.path) == Some(*id))
+                    .and_then(|o| plan.groups.iter().position(|g| g.name == o.group))
+                    .and_then(|g| u32::try_from(g).ok())
+                    .unwrap_or(u32::MAX)
+            })
+            .collect();
         let trace_free = ArrayQueue::new(TRACE_BUFFERS);
         let trace_len = trace_buffer_len(plan);
         for _ in 0..TRACE_BUFFERS {
@@ -837,11 +875,17 @@ impl Shared {
                 .collect(),
             write_acks: ArrayQueue::new(WRITE_ACK_CAPACITY),
             write_acks_dropped: Counter::default(),
-            confirmations: ArrayQueue::new(WRITE_ACK_CAPACITY),
+            confirmations: (0..plan.groups.len())
+                .map(|_| ArrayQueue::new(WRITE_ACK_CAPACITY))
+                .collect(),
             confirmations_dropped: Counter::default(),
+            output_groups,
+            trip_requests_dropped: Counter::default(),
             alarm_events: ArrayQueue::new(ALARM_EVENT_CAPACITY),
             alarm_events_dropped: Counter::default(),
-            alarm_commands: ArrayQueue::new(ALARM_COMMAND_CAPACITY),
+            alarm_commands: (0..plan.groups.len())
+                .map(|_| ArrayQueue::new(ALARM_COMMAND_CAPACITY))
+                .collect(),
             alarm_replies: ArrayQueue::new(ALARM_COMMAND_CAPACITY),
             unconfirmed: plan
                 .outputs

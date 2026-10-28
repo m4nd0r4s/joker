@@ -254,7 +254,7 @@ fn wait_for(server: &Arc<Mutex<Server>>, done: impl Fn(&Server) -> bool) {
 /// The confirmation changes the io task queued, by output.
 fn confirmations(shared: &Shared) -> Vec<(SignalId, bool)> {
     let mut out = Vec::new();
-    while let Some(c) = shared.confirmations.pop() {
+    while let Some(c) = shared.confirmations.iter().find_map(|q| q.pop()) {
         out.push((c.output, c.confirmed));
     }
     out

@@ -947,15 +947,18 @@ impl Node {
         let version = self.alarms.version(id);
         self.alarms.annotate(id, annotation);
         let ticket = self.tickets.number();
-        if v.shared
-            .alarm_commands
-            .push(crate::shared::AlarmCommand {
-                alarm: number,
-                op,
-                ticket,
-            })
-            .is_err()
-        {
+        let queue = v
+            .plan
+            .alarms
+            .get(number as usize)
+            .and_then(|a| v.plan.groups.iter().position(|g| g.name == a.group))
+            .and_then(|g| v.shared.alarm_commands.get(g));
+        let command = crate::shared::AlarmCommand {
+            alarm: number,
+            op,
+            ticket,
+        };
+        if queue.is_none_or(|q| q.push(command).is_err()) {
             self.alarms.forget(id);
             return Err(Problem::new(
                 "J-E1014",

@@ -1,5 +1,9 @@
-//! The cycle domain: one thread that runs every cycle group of a
-//! generation, tick after tick (docs/01 §2, §4; docs/26 §6).
+//! The cycle domain: the cycle groups of a generation, tick after tick
+//! (docs/01 §2, §4; docs/26 §6; ADR 0089).
+//!
+//! On the real clock each group ticks on its own thread `rt/<group>`; on a
+//! virtual clock every group ticks on the calling thread, so that replay
+//! and the tests stay deterministic. Both tick the same per-group state.
 //!
 //! Each tick of a group latches its ports, drains its async inbox, runs its
 //! tasks in order, commits through the arbiter and the envelope, publishes
@@ -8,13 +12,14 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use joker_core::alarm::{AlarmEvent, AlarmRuntime, AlarmSnapshot, Alarms};
+use joker_core::alarm::{AlarmCause, AlarmConfig, AlarmEvent, AlarmRuntime, AlarmSnapshot, Alarms};
 use joker_core::class::{Classes, MethodResult};
 use joker_core::commit::{CommitSink, DecisionRecord, OutputResult, OutputState, WriteResult};
 use joker_core::envelope::Applied;
 use joker_core::image::{ImageStorage, MethodCall, ProcessImage, Proposal};
+use joker_core::output::OutputConfig;
 use joker_core::slot::SeqExtender;
 use joker_core::trace::{SegmentWriter, TickRecord, TraceResult};
 use joker_core::{GroupId, IntakeSlot, Outputs, OutputsStorage, Sample, SignalId, WriterId};
@@ -49,6 +54,10 @@ pub struct CycleExit {
     pub applied: BTreeMap<String, Applied>,
     /// Ticks executed, over all groups.
     pub ticks: u64,
+    /// The groups whose thread panicked (ADR 0089 decision 6): their
+    /// outputs are not in `applied`, so the next generation starts them at
+    /// `safe`.
+    pub panicked: Vec<String>,
 }
 
 /// Options of a run.
@@ -72,6 +81,9 @@ pub struct RunOptions {
     /// Alarm states restored before the first tick (ADR 0082), by alarm
     /// number.
     pub alarms: Vec<(u32, AlarmSnapshot)>,
+    /// CPU ids every group thread is pinned to (`[resources] rt.cpus`);
+    /// empty does nothing.
+    pub cpus: Vec<usize>,
 }
 
 struct Sink<'s> {
@@ -85,6 +97,8 @@ struct Sink<'s> {
     /// (docs/16 E7). Preallocated with [`RESET_CAPACITY`] and never
     /// grown, so the tick does not allocate (AGENTS.md invariant 6).
     pending_resets: &'s mut Vec<(SignalId, u32)>,
+    /// The trips of this group's alarms on outputs of other groups.
+    edge: &'s [ForeignTrip],
 }
 
 impl CommitSink for Sink<'_> {
@@ -153,6 +167,22 @@ impl CommitSink for Sink<'_> {
     }
 
     fn alarm(&mut self, event: &AlarmEvent) {
+        if matches!(event.cause, AlarmCause::Condition)
+            && event.to.is_active()
+            && !event.from.is_active()
+        {
+            for t in self.edge.iter().filter(|t| t.alarm == event.alarm) {
+                let request = crate::shared::TripRequest { signal: t.output };
+                let pushed = self
+                    .shared
+                    .trips
+                    .get(t.owner)
+                    .is_some_and(|q| q.push(request).is_ok());
+                if !pushed {
+                    self.shared.trip_requests_dropped.bump();
+                }
+            }
+        }
         if self.shared.alarm_events.push(*event).is_err() {
             self.shared.alarm_events_dropped.bump();
         }
@@ -165,27 +195,125 @@ impl CommitSink for Sink<'_> {
     }
 }
 
+/// What an alarm of one group trips in another group (ADR 0089 decision
+/// 3): the alarm, its `alarm.<a>.active` signal, the output and the index
+/// of the output's owner group.
+#[derive(Clone, Copy, Debug)]
+struct ForeignTrip {
+    alarm: u32,
+    active: Option<SignalId>,
+    output: SignalId,
+    owner: usize,
+}
+
+/// The trips of `alarms` whose output belongs to a group other than the
+/// alarm's own.
+fn foreign_trips(alarms: &[AlarmConfig<'_>], outputs: &[OutputConfig<'_>]) -> Vec<ForeignTrip> {
+    let mut trips = Vec::new();
+    for alarm in alarms {
+        for &output in alarm.trip {
+            let Some(owner) = outputs.iter().find(|c| c.signal == output).map(|c| c.group) else {
+                continue;
+            };
+            if owner != alarm.group {
+                trips.push(ForeignTrip {
+                    alarm: alarm.id,
+                    active: alarm.active_signal,
+                    output,
+                    owner: owner.0 as usize,
+                });
+            }
+        }
+    }
+    trips
+}
+
+/// The buffers one group ticks over, allocated before the first tick.
+struct GroupStore {
+    states: Vec<OutputState>,
+    intakes: Vec<IntakeSlot>,
+    output_arena: Vec<u64>,
+    method_scratch: Vec<Proposal>,
+    derived_arena: Vec<u64>,
+    alarm_states: Vec<AlarmRuntime>,
+    alarm_arena: Vec<u64>,
+    commit_last: Vec<Vec<Option<Applied>>>,
+    snapshot: Vec<Sample>,
+    extenders: Vec<SeqExtender>,
+    proposals: Vec<Proposal>,
+    method_buffer: Vec<MethodCall>,
+}
+
 struct GroupRun<'a> {
     index: usize,
     exported: u64,
     period_ns: u64,
     next_index: u64,
+    ticks: u64,
     image: ProcessImage<'a>,
     tasks: GroupTasks,
     results: Vec<TraceResult>,
     pending_resets: Vec<(SignalId, u32)>,
+    outputs: Outputs<'a>,
+    classes: Classes<'a>,
+    alarms: Alarms<'a>,
+    commit_tx: Vec<joker_hal::CommitTx<'a>>,
+    verifier: crate::verify::Verifier,
+    edge: &'a [ForeignTrip],
+    level: &'a [ForeignTrip],
 }
 
-/// Runs a plan on the current thread until `shared.stop` is set or
-/// `options.max_ticks` is reached. `tasks` has one entry per group of the
-/// plan, in plan order.
+/// The ticks a run may still take, over all groups (`RunOptions::max_ticks`).
+struct Budget {
+    max: Option<u64>,
+    claimed: AtomicU64,
+}
+
+impl Budget {
+    /// Takes one tick; false once `max` ticks were taken.
+    fn claim(&self) -> bool {
+        let n = self.claimed.fetch_add(1, Ordering::Relaxed);
+        self.max.is_none_or(|max| n < max)
+    }
+}
+
+/// What every group of a run reads and never changes.
+struct RunContext<'r> {
+    plan: &'r Plan,
+    shared: &'r Shared,
+    registry: &'r joker_core::Registry<'r>,
+    epoch: u64,
+    budget: Budget,
+    tick_guard: Option<fn(&mut dyn FnMut())>,
+}
+
+/// The `SCHED_FIFO` priority of each group (ADR 0089 decision 5): the
+/// shortest period gets 90, the next distinct period 89, never below 2.
+pub fn rt_priorities(periods_ns: &[u64]) -> Vec<u8> {
+    let mut distinct: Vec<u64> = periods_ns.to_vec();
+    distinct.sort_unstable();
+    distinct.dedup();
+    periods_ns
+        .iter()
+        .map(|p| {
+            let rank = distinct.iter().position(|d| d == p).unwrap_or(0);
+            u8::try_from(90usize.saturating_sub(rank)).map_or(2, |v| v.max(2))
+        })
+        .collect()
+}
+
+/// Runs a plan until `shared.stop` is set or `options.max_ticks` is
+/// reached. `tasks` has one entry per group of the plan, in plan order.
 ///
-/// There is one `CommitTx` per real-driver device (ref/06 §2.9, step 7):
-/// after each group's commit, it publishes every output that device owns
-/// and that changed, for that device's io task to drain through a
-/// matching `CommitRx` on the same boxes. A device with no output
-/// bindings (no real driver, or no output points) gets an empty, harmless
-/// `CommitTx`.
+/// When the pacer forks (the real clock), each group ticks on its own
+/// thread `rt/<group>`; otherwise every group ticks on the calling
+/// thread, earliest deadline first and
+/// ties by group index, which keeps replay deterministic (ADR 0089).
+///
+/// Each group has one `CommitTx` per real-driver device, bound only to
+/// the outputs it owns (ref/06 §2.9, step 7): after each commit it
+/// publishes the outputs of that device that changed, for the device's io
+/// task to drain through a matching `CommitRx` on the same boxes.
 pub fn run(
     plan: &Plan,
     shared: &Shared,
@@ -198,108 +326,142 @@ pub fn run(
     if shared.slots.len() != registry.len() {
         return Err(CycleError("slot table does not match the registry".into()));
     }
-    let mut states = vec![OutputState::EMPTY; tables.outputs.len()];
-    let mut intakes = vec![IntakeSlot::EMPTY; STAGING_CAPACITY];
-    let mut output_arena = vec![0u64; tables.outputs.iter().map(|c| c.state_words()).sum()];
+    if tasks.len() != plan.groups.len() {
+        return Err(CycleError("one task list per group is required".into()));
+    }
     let derived = crate::expr_plan::derived_defs(plan, &registry).map_err(CycleError)?;
     let call_args = crate::classes::call_args(plan);
     let statements = crate::classes::statements(plan, &call_args).map_err(CycleError)?;
     let methods = crate::classes::methods(plan, &statements);
     let instances = crate::classes::instances(&methods);
-    let mut method_scratch = vec![Proposal::EMPTY; STAGING_CAPACITY];
-    let mut classes = Classes::new(&instances, &derived, &mut method_scratch);
-    let mut derived_arena = vec![0u64; classes.state_words()];
-    classes
-        .set_state_arena(&mut derived_arena)
-        .map_err(|e| CycleError(format!("derived signals: {e:?}")))?;
     let alarm_configs = crate::expr_plan::alarm_configs(plan, &registry).map_err(CycleError)?;
-    let mut alarm_states = vec![AlarmRuntime::EMPTY; alarm_configs.len()];
-    let mut alarms = Alarms::new(&alarm_configs, &mut alarm_states)
-        .map_err(|e| CycleError(format!("alarms: {e:?}")))?;
-    let mut alarm_arena = vec![0u64; alarms.state_words()];
-    alarms
-        .set_state_arena(&mut alarm_arena)
-        .map_err(|e| CycleError(format!("alarms: {e:?}")))?;
-    for (alarm, snapshot) in &options.alarms {
-        let _ = alarms.restore(*alarm, *snapshot);
-    }
-    let mut outputs = Outputs::new(
-        &registry,
-        &tables.writers,
-        OutputsStorage {
-            configs: &tables.outputs,
-            states: &mut states,
-            intakes: &mut intakes,
-        },
-    )
-    .map_err(|e| CycleError(format!("outputs: {e:?}")))?;
-    outputs
-        .set_state_arena(&mut output_arena)
-        .map_err(|e| CycleError(format!("outputs: {e:?}")))?;
-    for (path, applied) in &options.inherit {
-        if let Some(id) = plan.id(path) {
-            outputs.inherit(id, *applied);
-        }
-    }
-    for signal in &options.initial_trips {
-        outputs.trip(*signal);
-    }
-    let mut verifier = crate::verify::Verifier::new(plan);
-
-    let mut commit_last: Vec<Vec<Option<Applied>>> = shared
-        .commit_bindings
-        .iter()
-        .map(|b| vec![None; b.len()])
+    let foreign = foreign_trips(&alarm_configs, &tables.outputs);
+    let edges: Vec<Vec<ForeignTrip>> = (0..plan.groups.len())
+        .map(|g| {
+            foreign
+                .iter()
+                .filter(|t| {
+                    alarm_configs
+                        .iter()
+                        .any(|a| a.id == t.alarm && a.group.0 as usize == g)
+                })
+                .copied()
+                .collect()
+        })
         .collect();
-    let mut commit_tx: Vec<joker_hal::CommitTx<'_>> = shared
-        .commit_bindings
-        .iter()
-        .zip(&shared.commit_boxes)
-        .zip(&mut commit_last)
-        .map(|((bindings, boxes), last)| joker_hal::CommitTx::new(&outputs, bindings, boxes, last))
-        .collect::<Result<_, _>>()
-        .map_err(|e| CycleError(format!("commit channel: {e:?}")))?;
-
-    if tasks.len() != plan.groups.len() {
-        return Err(CycleError("one task list per group is required".into()));
-    }
+    let levels: Vec<Vec<ForeignTrip>> = (0..plan.groups.len())
+        .map(|g| foreign.iter().filter(|t| t.owner == g).copied().collect())
+        .collect();
+    let configs: Vec<Vec<OutputConfig<'_>>> = (0..plan.groups.len())
+        .map(|g| {
+            tables
+                .outputs
+                .iter()
+                .filter(|c| c.group.0 as usize == g)
+                .copied()
+                .collect()
+        })
+        .collect();
     let ports: Vec<Vec<SignalId>> = plan
         .groups
         .iter()
         .map(|g| g.ports.iter().filter_map(|p| plan.id(p)).collect())
         .collect();
-    let mut snapshots: Vec<Vec<Sample>> = ports
+    let derived_words = Classes::new(&instances, &derived, &mut []).state_words();
+    let mut sizing = vec![AlarmRuntime::EMPTY; alarm_configs.len()];
+    let alarm_words = Alarms::new(&alarm_configs, &mut sizing)
+        .map_err(|e| CycleError(format!("alarms: {e:?}")))?
+        .state_words();
+    let mut stores: Vec<GroupStore> = configs
         .iter()
-        .map(|p| vec![Sample::INITIAL; p.len()])
-        .collect();
-    let mut extenders: Vec<Vec<SeqExtender>> = ports
-        .iter()
-        .map(|p| vec![SeqExtender::for_slot(); p.len()])
-        .collect();
-    let mut proposals: Vec<Vec<Proposal>> = plan
-        .groups
-        .iter()
-        .map(|_| vec![Proposal::EMPTY; STAGING_CAPACITY])
-        .collect();
-    let mut method_buffers: Vec<Vec<MethodCall>> = plan
-        .groups
-        .iter()
-        .map(|_| vec![MethodCall::EMPTY; STAGING_CAPACITY])
+        .zip(&ports)
+        .map(|(configs, ports)| GroupStore {
+            states: vec![OutputState::EMPTY; configs.len()],
+            intakes: vec![IntakeSlot::EMPTY; STAGING_CAPACITY],
+            output_arena: vec![0u64; configs.iter().map(|c| c.state_words()).sum()],
+            method_scratch: vec![Proposal::EMPTY; STAGING_CAPACITY],
+            derived_arena: vec![0u64; derived_words],
+            alarm_states: vec![AlarmRuntime::EMPTY; alarm_configs.len()],
+            alarm_arena: vec![0u64; alarm_words],
+            commit_last: shared
+                .commit_bindings
+                .iter()
+                .map(|b| vec![None; b.len()])
+                .collect(),
+            snapshot: vec![Sample::INITIAL; ports.len()],
+            extenders: vec![SeqExtender::for_slot(); ports.len()],
+            proposals: vec![Proposal::EMPTY; STAGING_CAPACITY],
+            method_buffer: vec![MethodCall::EMPTY; STAGING_CAPACITY],
+        })
         .collect();
 
-    let mut groups = Vec::with_capacity(plan.groups.len());
-    let storage = ports
-        .iter()
-        .zip(snapshots.iter_mut())
-        .zip(extenders.iter_mut())
-        .zip(proposals.iter_mut())
-        .zip(method_buffers.iter_mut());
     let generation_hash = crate::trace_ring::digest_bytes(&plan.manifest_hash);
-    for (
-        index,
-        ((group, mut tasks), ((((ports, snapshot), extenders), proposals), method_buffer)),
-    ) in plan.groups.iter().zip(tasks).zip(storage).enumerate()
+    let mut groups = Vec::with_capacity(plan.groups.len());
+    for (index, (((store, mut tasks), (configs, ports)), (edge, level))) in stores
+        .iter_mut()
+        .zip(tasks)
+        .zip(configs.iter().zip(&ports))
+        .zip(edges.iter().zip(&levels))
+        .enumerate()
     {
+        let group = &plan.groups[index];
+        let GroupStore {
+            states,
+            intakes,
+            output_arena,
+            method_scratch,
+            derived_arena,
+            alarm_states,
+            alarm_arena,
+            commit_last,
+            snapshot,
+            extenders,
+            proposals,
+            method_buffer,
+        } = store;
+        let mut outputs = Outputs::new(
+            &registry,
+            &tables.writers,
+            OutputsStorage {
+                configs,
+                states,
+                intakes,
+            },
+        )
+        .map_err(|e| CycleError(format!("outputs: {e:?}")))?;
+        outputs
+            .set_state_arena(output_arena)
+            .map_err(|e| CycleError(format!("outputs: {e:?}")))?;
+        for (path, applied) in &options.inherit {
+            if let Some(id) = plan.id(path) {
+                outputs.inherit(id, *applied);
+            }
+        }
+        for signal in &options.initial_trips {
+            outputs.trip(*signal);
+        }
+        let mut classes = Classes::new(&instances, &derived, method_scratch);
+        classes
+            .set_state_arena(derived_arena)
+            .map_err(|e| CycleError(format!("derived signals: {e:?}")))?;
+        let mut alarms = Alarms::new(&alarm_configs, alarm_states)
+            .map_err(|e| CycleError(format!("alarms: {e:?}")))?;
+        alarms
+            .set_state_arena(alarm_arena)
+            .map_err(|e| CycleError(format!("alarms: {e:?}")))?;
+        for (alarm, snapshot) in &options.alarms {
+            let _ = alarms.restore(*alarm, *snapshot);
+        }
+        let commit_tx = shared
+            .commit_bindings
+            .iter()
+            .zip(&shared.commit_boxes)
+            .zip(commit_last.iter_mut())
+            .map(|((bindings, boxes), last)| {
+                joker_hal::CommitTx::owned(&outputs, bindings, boxes, last)
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| CycleError(format!("commit channel: {e:?}")))?;
         let mut image = ProcessImage::new(
             GroupId(index as u32),
             group.period_ns,
@@ -327,107 +489,195 @@ pub fn run(
             exported: 0,
             period_ns: group.period_ns,
             next_index: 0,
+            ticks: 0,
             image,
             tasks,
             results: Vec::with_capacity(plan.outputs.len()),
             pending_resets: Vec::with_capacity(RESET_CAPACITY),
+            outputs,
+            classes,
+            alarms,
+            commit_tx,
+            verifier: crate::verify::Verifier::new(plan),
+            edge,
+            level,
         });
     }
 
-    let epoch = options.epoch_mono_ns.unwrap_or_else(|| pacer.now().mono_ns);
-    let mut total = 0u64;
+    let context = RunContext {
+        plan,
+        shared,
+        registry: &registry,
+        epoch: options.epoch_mono_ns.unwrap_or_else(|| pacer.now().mono_ns),
+        budget: Budget {
+            max: options.max_ticks,
+            claimed: AtomicU64::new(0),
+        },
+        tick_guard: options.tick_guard,
+    };
+    let forks: Option<Vec<Box<dyn Pacer>>> = groups.iter().map(|_| pacer.fork()).collect();
     shared.running.store(true, Ordering::Release);
-    while !shared.stop_requested() && options.max_ticks.is_none_or(|max| total < max) {
-        let Some(g) = groups
-            .iter_mut()
-            .min_by_key(|g| (epoch + g.next_index * g.period_ns, g.index))
-        else {
-            break;
-        };
-        let deadline = epoch + g.next_index * g.period_ns;
-        pacer.wait_until(deadline);
-        let started = pacer.now();
-        let stats = &shared.groups[g.index];
-        stats.last_tick_mono_ns.set(started.mono_ns);
-        let late = started.mono_ns.saturating_sub(deadline);
-        stats.max_late_ns.max(late);
-        stats.jitter.record(late, started.mono_ns);
-        let mut index = g.next_index;
-        if late >= g.period_ns {
-            let current = (started.mono_ns - epoch) / g.period_ns;
-            stats.overruns.add(current - index);
-            stats.consecutive_overruns.bump();
-            index = current;
-        } else {
-            stats.consecutive_overruns.set(0);
+    let panicked = match forks {
+        Some(pacers) => run_threads(&mut groups, pacers, &context, &options.cpus),
+        None => {
+            run_interleaved(&mut groups, pacer, &context);
+            Ok(Vec::new())
         }
-        g.next_index = index + 1;
-        let mut one = || {
-            tick(
-                g,
-                index,
-                started,
-                shared,
-                &registry,
-                &mut Expressions {
-                    classes: &mut classes,
-                    alarms: &mut alarms,
-                },
-                &mut outputs,
-                &mut commit_tx,
-                &mut verifier,
-            )
-        };
-        match options.tick_guard {
-            Some(guard) => guard(&mut one),
-            None => one(),
-        }
-        export_state(g, plan, shared);
-        let ended = pacer.now().mono_ns;
-        stats
-            .duration
-            .record(ended.saturating_sub(started.mono_ns), ended);
-        stats
-            .max_duration_ns
-            .max(ended.saturating_sub(started.mono_ns));
-        stats.ticks.bump();
-        stats.last_tick.set(index);
-        total += 1;
-    }
+    };
     shared.running.store(false, Ordering::Release);
+    let panicked = panicked?;
 
     let mut exit = CycleExit {
         applied: BTreeMap::new(),
-        ticks: total,
+        ticks: groups.iter().map(|g| g.ticks).sum(),
+        panicked: panicked
+            .iter()
+            .filter_map(|&g| plan.groups.get(g).map(|p| p.name.clone()))
+            .collect(),
     };
-    for o in &plan.outputs {
-        if let Some(view) = plan.id(&o.path).and_then(|id| outputs.view(id)) {
-            exit.applied.insert(o.path.clone(), view.applied);
+    for g in groups.iter().filter(|g| !panicked.contains(&g.index)) {
+        for o in &plan.outputs {
+            if let Some(view) = plan.id(&o.path).and_then(|id| g.outputs.view(id)) {
+                exit.applied.insert(o.path.clone(), view.applied);
+            }
         }
     }
     Ok(exit)
 }
 
-/// The derived signals and alarms of a generation (docs/01 §4 step 3).
-struct Expressions<'e, 'a> {
-    classes: &'e mut Classes<'a>,
-    alarms: &'e mut Alarms<'a>,
+/// Every group on the calling thread, earliest deadline first, ties by
+/// group index.
+fn run_interleaved(groups: &mut [GroupRun<'_>], pacer: &mut dyn Pacer, cx: &RunContext<'_>) {
+    while !cx.shared.stop_requested() && cx.budget.claim() {
+        let Some(g) = groups
+            .iter_mut()
+            .min_by_key(|g| (cx.epoch + g.next_index * g.period_ns, g.index))
+        else {
+            break;
+        };
+        step(g, pacer, cx);
+    }
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "every argument is a distinct piece of the generation's tick state, borrowed for one tick"
-)]
+/// One thread `rt/<group>` per group, pinned to `cpus` at its
+/// rate-monotonic `SCHED_FIFO` priority. Returns the groups whose thread
+/// panicked; an error only when a thread could not be started, after the
+/// started ones were stopped and joined.
+fn run_threads(
+    groups: &mut [GroupRun<'_>],
+    pacers: Vec<Box<dyn Pacer>>,
+    cx: &RunContext<'_>,
+    cpus: &[usize],
+) -> Result<Vec<usize>, CycleError> {
+    let periods: Vec<u64> = groups.iter().map(|g| g.period_ns).collect();
+    let priorities = rt_priorities(&periods);
+    std::thread::scope(|scope| {
+        let mut handles = Vec::with_capacity(groups.len());
+        let mut failed = None;
+        for ((g, mut pacer), priority) in groups.iter_mut().zip(pacers).zip(priorities) {
+            let index = g.index;
+            let name = cx
+                .plan
+                .groups
+                .get(index)
+                .map_or_else(|| format!("rt/{index}"), |p| format!("rt/{}", p.name));
+            let spawned =
+                std::thread::Builder::new()
+                    .name(name.clone())
+                    .spawn_scoped(scope, move || {
+                        if let Err(e) = crate::resources::pin_current_thread(cpus) {
+                            eprintln!("{name}: {e}");
+                        }
+                        if let Err(e) = crate::resources::raise_priority(priority) {
+                            eprintln!("{name}: {e}; running at default priority");
+                        }
+                        while !cx.shared.stop_requested() && cx.budget.claim() {
+                            step(g, pacer.as_mut(), cx);
+                        }
+                    });
+            match spawned {
+                Ok(h) => handles.push((index, h)),
+                Err(e) => {
+                    failed = Some(CycleError(format!("cannot start the group thread: {e}")));
+                    cx.shared.request_stop();
+                    break;
+                }
+            }
+        }
+        let mut panicked = Vec::new();
+        for (index, handle) in handles {
+            if handle.join().is_err() {
+                panicked.push(index);
+            }
+        }
+        match failed {
+            Some(e) => Err(e),
+            None => Ok(panicked),
+        }
+    })
+}
+
+/// How long a group waits for its deadline before it looks at the stop
+/// request again: a slow group stops within this, not within its period.
+const STOP_POLL_NS: u64 = 50_000_000;
+
+/// Waits for the next deadline of `g` and runs one tick, with its
+/// statistics. The last wait is always one `wait_until(deadline)`; a wait
+/// longer than [`STOP_POLL_NS`] is cut in pieces, and a stop requested
+/// between them ends it without a tick.
+fn step(g: &mut GroupRun<'_>, pacer: &mut dyn Pacer, cx: &RunContext<'_>) {
+    let deadline = cx.epoch + g.next_index * g.period_ns;
+    loop {
+        let now = pacer.now().mono_ns;
+        if deadline.saturating_sub(now) <= STOP_POLL_NS {
+            pacer.wait_until(deadline);
+            break;
+        }
+        if cx.shared.stop_requested() {
+            return;
+        }
+        pacer.wait_until(now + STOP_POLL_NS);
+    }
+    let started = pacer.now();
+    let stats = &cx.shared.groups[g.index];
+    stats.last_tick_mono_ns.set(started.mono_ns);
+    let late = started.mono_ns.saturating_sub(deadline);
+    stats.max_late_ns.max(late);
+    stats.jitter.record(late, started.mono_ns);
+    let mut index = g.next_index;
+    if late >= g.period_ns {
+        let current = (started.mono_ns - cx.epoch) / g.period_ns;
+        stats.overruns.add(current - index);
+        stats.consecutive_overruns.bump();
+        index = current;
+    } else {
+        stats.consecutive_overruns.set(0);
+    }
+    g.next_index = index + 1;
+    let mut one = || tick(g, index, started, cx.shared, cx.registry);
+    match cx.tick_guard {
+        Some(guard) => guard(&mut one),
+        None => one(),
+    }
+    export_state(g, cx.plan, cx.shared);
+    let ended = pacer.now().mono_ns;
+    stats
+        .duration
+        .record(ended.saturating_sub(started.mono_ns), ended);
+    stats
+        .max_duration_ns
+        .max(ended.saturating_sub(started.mono_ns));
+    stats.ticks.bump();
+    stats.last_tick.set(index);
+    g.ticks += 1;
+}
+
 fn tick(
     g: &mut GroupRun<'_>,
     index: u64,
     at: joker_core::Instant,
     shared: &Shared,
     registry: &joker_core::Registry<'_>,
-    expressions: &mut Expressions<'_, '_>,
-    outputs: &mut Outputs<'_>,
-    commit_tx: &mut [joker_hal::CommitTx<'_>],
-    verifier: &mut crate::verify::Verifier,
 ) {
     let stats = &shared.groups[g.index];
     if g.image.latch(index, at, &shared.slots, registry).is_err() {
@@ -454,7 +704,7 @@ fn tick(
             let Some(req) = resets.pop() else {
                 break;
             };
-            if outputs.reset(req.signal) {
+            if g.outputs.reset(req.signal) {
                 g.pending_resets.push((req.signal, req.ticket));
             } else {
                 let outcome = ResetOutcome {
@@ -470,14 +720,20 @@ fn tick(
     }
     if let Some(trips) = shared.trips.get(g.index) {
         while let Some(req) = trips.pop() {
-            outputs.trip(req.signal);
+            g.outputs.trip(req.signal);
         }
     }
-    if expressions
-        .classes
-        .evaluate_derived(&g.image, &shared.slots)
-        .is_err()
-    {
+    for t in g.level {
+        let active = t
+            .active
+            .and_then(|s| shared.slots.get(s.index()))
+            .and_then(|s| s.read(8).ok())
+            .is_some_and(|s| s.transport_bits() != 0);
+        if active {
+            g.outputs.trip(t.output);
+        }
+    }
+    if g.classes.evaluate_derived(&g.image, &shared.slots).is_err() {
         stats.task_errors.bump();
     }
     g.results.clear();
@@ -487,35 +743,37 @@ fn tick(
         tick: index,
         at_mono_ns: at.mono_ns,
         pending_resets: &mut g.pending_resets,
+        edge: g.edge,
     };
-    while let Some(c) = shared.alarm_commands.pop() {
-        let alarms = &mut *expressions.alarms;
-        let result = match c.op {
-            crate::shared::AlarmOp::Ack => alarms.ack(c.alarm, at.mono_ns, &mut sink),
-            crate::shared::AlarmOp::Shelve(ttl) => alarms
-                .shelve(c.alarm, ttl, at.mono_ns, &mut sink)
-                .map(|()| true),
-            crate::shared::AlarmOp::Unshelve => alarms
-                .unshelve(c.alarm, at.mono_ns, &mut sink)
-                .map(|()| true),
-        };
-        let reply = crate::shared::AlarmReply {
-            ticket: c.ticket,
-            result,
-        };
-        if shared.alarm_replies.push(reply).is_err() {
-            shared.alarm_events_dropped.bump();
+    if let Some(commands) = shared.alarm_commands.get(g.index) {
+        while let Some(c) = commands.pop() {
+            let alarms = &mut g.alarms;
+            let result = match c.op {
+                crate::shared::AlarmOp::Ack => alarms.ack(c.alarm, at.mono_ns, &mut sink),
+                crate::shared::AlarmOp::Shelve(ttl) => alarms
+                    .shelve(c.alarm, ttl, at.mono_ns, &mut sink)
+                    .map(|()| true),
+                crate::shared::AlarmOp::Unshelve => alarms
+                    .unshelve(c.alarm, at.mono_ns, &mut sink)
+                    .map(|()| true),
+            };
+            let reply = crate::shared::AlarmReply {
+                ticket: c.ticket,
+                result,
+            };
+            if shared.alarm_replies.push(reply).is_err() {
+                shared.alarm_events_dropped.bump();
+            }
         }
     }
-    if expressions
-        .alarms
-        .evaluate(&g.image, &shared.slots, outputs, &mut sink)
+    if g.alarms
+        .evaluate(&g.image, &shared.slots, &mut g.outputs, &mut sink)
         .is_err()
     {
         stats.task_errors.bump();
     }
     for (writer, task) in &mut g.tasks {
-        let mut cx = TaskContext::new(&mut g.image, outputs, *writer);
+        let mut cx = TaskContext::new(&mut g.image, &g.outputs, *writer);
         if task.run(&mut cx).is_err() {
             stats.task_errors.bump();
         }
@@ -528,21 +786,24 @@ fn tick(
         tick: index,
         at_mono_ns: at.mono_ns,
         pending_resets: &mut g.pending_resets,
+        edge: g.edge,
     };
-    if expressions
-        .classes
-        .expand(&mut g.image, &shared.slots, outputs, &mut sink)
+    if g.classes
+        .expand(&mut g.image, &shared.slots, &g.outputs, &mut sink)
         .is_err()
     {
         stats.task_errors.bump();
     }
-    if outputs.commit(&g.image, &shared.slots, &mut sink).is_err() {
+    if g.outputs
+        .commit(&g.image, &shared.slots, &mut sink)
+        .is_err()
+    {
         stats.task_errors.bump();
     }
-    shared.apply_confirmations(at.mono_ns);
-    verifier.check(g.index, outputs, shared, at.mono_ns);
-    for tx in commit_tx.iter_mut() {
-        tx.publish(outputs);
+    shared.apply_confirmations(g.index, at.mono_ns);
+    g.verifier.check(g.index, &g.outputs, shared, at.mono_ns);
+    for tx in g.commit_tx.iter_mut() {
+        tx.publish(&g.outputs);
     }
     trace(g, index, at, shared);
     let _ = g.image.end_tick();

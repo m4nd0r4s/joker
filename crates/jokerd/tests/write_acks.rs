@@ -56,6 +56,9 @@ impl Driver for RejectingDriver {
 }
 
 fn shared(bindings: Vec<joker_hal::OutputBinding>, boxes: Vec<CommitBox>) -> Shared {
+    let mut output_ids: Vec<joker_core::SignalId> = bindings.iter().map(|b| b.signal).collect();
+    output_ids.sort();
+    let output_groups: Box<[u32]> = vec![0; output_ids.len()].into_boxed_slice();
     Shared {
         slots: Vec::new().into_boxed_slice(),
         wide_slots: Vec::new().into_boxed_slice(),
@@ -77,7 +80,7 @@ fn shared(bindings: Vec<joker_hal::OutputBinding>, boxes: Vec<CommitBox>) -> Sha
         trace_dropped: Default::default(),
         outputs: Vec::new().into_boxed_slice(),
         trip_since: Vec::new().into_boxed_slice(),
-        output_ids: Vec::new().into_boxed_slice(),
+        output_ids: output_ids.into_boxed_slice(),
         groups: Vec::new().into_boxed_slice(),
         export_request: Default::default(),
         exports: crossbeam_queue::ArrayQueue::new(1),
@@ -89,11 +92,13 @@ fn shared(bindings: Vec<joker_hal::OutputBinding>, boxes: Vec<CommitBox>) -> Sha
         devices: vec![DeviceStats::default()].into_boxed_slice(),
         write_acks: crossbeam_queue::ArrayQueue::new(8),
         write_acks_dropped: Default::default(),
-        confirmations: crossbeam_queue::ArrayQueue::new(16),
+        confirmations: vec![crossbeam_queue::ArrayQueue::new(16)].into_boxed_slice(),
         confirmations_dropped: Default::default(),
+        output_groups,
+        trip_requests_dropped: Default::default(),
         alarm_events: crossbeam_queue::ArrayQueue::new(1),
         alarm_events_dropped: Default::default(),
-        alarm_commands: crossbeam_queue::ArrayQueue::new(1),
+        alarm_commands: Vec::new().into_boxed_slice(),
         alarm_replies: crossbeam_queue::ArrayQueue::new(1),
         unconfirmed: Vec::new().into_boxed_slice(),
     }
@@ -149,8 +154,7 @@ fn a_rejected_write_is_queued_for_the_decision_log() {
     assert_eq!(ack.kind, WriteKind::Set);
     assert_eq!(ack.status, WriteStatus::DeviceRejected);
     assert!(shared.write_acks.pop().is_none(), "one write, one ack");
-    let confirmation = shared
-        .confirmations
+    let confirmation = shared.confirmations[0]
         .pop()
         .expect("the rejection reaches the cycle thread");
     assert_eq!(confirmation.output, output);
@@ -174,24 +178,22 @@ fn a_rejected_output_is_uncertain_not_confirmed_until_a_write_is_confirmed() {
         (q.code(), q.reason())
     };
 
-    shared
-        .confirmations
+    shared.confirmations[0]
         .push(Confirmation {
             output: relay,
             confirmed: true,
         })
         .unwrap();
-    shared.apply_confirmations(20);
+    shared.apply_confirmations(0, 20);
     assert_eq!(quality(), (QualityCode::Good, QualityReason::None));
 
-    shared
-        .confirmations
+    shared.confirmations[0]
         .push(Confirmation {
             output: relay,
             confirmed: false,
         })
         .unwrap();
-    shared.apply_confirmations(30);
+    shared.apply_confirmations(0, 30);
     assert_eq!(
         quality(),
         (QualityCode::Uncertain, QualityReason::NotConfirmed)
@@ -202,14 +204,13 @@ fn a_rejected_output_is_uncertain_not_confirmed_until_a_write_is_confirmed() {
         "the applied value stays"
     );
 
-    shared
-        .confirmations
+    shared.confirmations[0]
         .push(Confirmation {
             output: relay,
             confirmed: true,
         })
         .unwrap();
-    shared.apply_confirmations(40);
+    shared.apply_confirmations(0, 40);
     assert_eq!(quality(), (QualityCode::Good, QualityReason::None));
 }
 

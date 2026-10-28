@@ -400,3 +400,187 @@ fn restoring_more_manual_levels_than_an_inbox_holds_fails_the_start() {
         "{entries:?}"
     );
 }
+
+/// Two groups whose outputs share one real-driver device: `fast` owns
+/// `pcs.a` (10 ms) and `slow` owns `pcs.b` (50 ms).
+fn plan_with_two_groups() -> jokerd::plan::Plan {
+    use joker_manifest::MemoryFileSystem;
+    let mut fs = MemoryFileSystem::default();
+    fs.file(
+        "joker.toml",
+        "[project]\nname = \"t\"\njoker = \"1.0\"\nmode = \"dev\"\n\n\
+         [outputs.\"pcs.a\"]\nsafe = false\ngroup = \"fast\"\n\n\
+         [outputs.\"pcs.b\"]\nsafe = false\ngroup = \"slow\"\n\n\
+         [cycles.fast]\nperiod = \"10ms\"\n\n\
+         [cycles.slow]\nperiod = \"50ms\"\n\n\
+         [devices.pcs]\ndriver = \"sim\"\n\n\
+         [devices.pcs.signals]\n\
+         a = { type = \"bool\", direction = \"output\" }\n\
+         b = { type = \"bool\", direction = \"output\" }\n",
+    );
+    let loaded = jokerd::load::load(&fs, std::path::Path::new("joker.toml"), &NativeTasks)
+        .unwrap_or_else(|e| panic!("{e}"));
+    let mut plan = loaded.plan;
+    let point = |path: &str| jokerd::bridge::DevicePointPlan {
+        path: path.into(),
+        addr: Vec::new(),
+        type_name: "bool".into(),
+        direction: joker_hal::types::Direction::Output,
+        poll_ns: None,
+        expect: joker_hal::types::RawKind::Bool,
+        width: 0,
+        acquisition: joker_manifest::context::Acquisition::NONE,
+    };
+    plan.devices.push(jokerd::bridge::DevicePlan {
+        name: "pcs".into(),
+        driver: "modbus-rtu".into(),
+        bus: None,
+        bus_kind: None,
+        bus_params: Vec::new(),
+        config: Vec::new(),
+        quirks: Vec::new(),
+        timeout_ns: 1_000_000_000,
+        fallback_keepalive_ns: None,
+        fallback_outputs: None,
+        points: vec![point("pcs.a"), point("pcs.b")],
+        actions: Vec::new(),
+    });
+    plan
+}
+
+/// Panics on its first tick.
+struct Panicking;
+
+impl CycleTask for Panicking {
+    fn run(&mut self, _cx: &mut TaskContext<'_, '_, '_>) -> Result<(), TaskError> {
+        panic!("a cycle task that panics");
+    }
+}
+
+fn group_index(plan: &jokerd::plan::Plan, name: &str) -> usize {
+    plan.groups.iter().position(|g| g.name == name).unwrap()
+}
+
+/// `Idle` in every group but `slow`, which runs `slow_task`.
+fn two_group_tasks(plan: &jokerd::plan::Plan, slow_task: Box<dyn CycleTask>) -> Vec<GroupTasks> {
+    let slow = group_index(plan, "slow");
+    let mut slow_task = Some(slow_task);
+    (0..plan.groups.len())
+        .map(|g| {
+            let task: Box<dyn CycleTask> = match slow_task.take_if(|_| g == slow) {
+                Some(task) => task,
+                None => Box::new(Idle),
+            };
+            vec![(joker_core::WriterId(0), task)]
+        })
+        .collect()
+}
+
+/// The thread names of this process, from `/proc/self/task/*/comm`.
+fn thread_names() -> Vec<String> {
+    std::fs::read_dir("/proc/self/task")
+        .map(|tasks| {
+            tasks
+                .filter_map(|t| std::fs::read_to_string(t.ok()?.path().join("comm")).ok())
+                .map(|s| s.trim().to_owned())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// One thread per cycle group (ADR 0089, AUR-396, AUR-274): a group whose
+/// task blocks past three periods is forced to `safe` and raises its own
+/// `stalled` alarm, while the other group keeps ticking on its own thread
+/// and keeps its outputs.
+#[test]
+fn a_hung_group_does_not_stop_the_other_group() {
+    let plan = Arc::new(plan_with_two_groups());
+    let fast = group_index(&plan, "fast");
+    let slow = group_index(&plan, "slow");
+    let dir = tempfile::tempdir().unwrap();
+    let clock = Monotonic::start();
+    let running = Running::start(
+        Arc::clone(&plan),
+        two_group_tasks(&plan, Box::new(Frozen)),
+        Box::new(SystemPacer::new(clock, ClockQuality::Unsynced)),
+        log(&dir),
+        start(None),
+    )
+    .unwrap();
+    let shared = Arc::clone(&running.shared);
+    std::thread::sleep(Duration::from_millis(250));
+    let names = thread_names();
+    assert!(names.iter().any(|n| n == "rt/fast"), "{names:?}");
+    assert!(names.iter().any(|n| n == "rt/slow"), "{names:?}");
+    let before = shared.groups[fast].ticks.get();
+    std::thread::sleep(Duration::from_millis(200));
+    let after = shared.groups[fast].ticks.get();
+    assert!(
+        after >= before + 10,
+        "fast kept ticking while slow hung: {before} -> {after}"
+    );
+    let boxes = jokerd::supervisor::group_boxes(&plan, &shared);
+    assert_eq!(jokerd::supervisor::held_at_safe(&shared, &boxes[slow]), 1);
+    assert_eq!(jokerd::supervisor::held_at_safe(&shared, &boxes[fast]), 0);
+
+    let sources = jokerd::runtime_alarms::WatchSources {
+        manual: None,
+        restored: Vec::new(),
+        historian: None,
+    };
+    let alarms = jokerd::runtime_alarms::conditions(
+        &plan,
+        &shared,
+        &sources,
+        &mut jokerd::runtime_alarms::WatchState::default(),
+        clock.now_ns(),
+    );
+    let active = |id: &str| alarms.iter().find(|c| c.id == id).is_some_and(|c| c.active);
+    assert!(active("joker.group.slow.stalled"), "{alarms:?}");
+    assert!(!active("joker.group.fast.stalled"), "{alarms:?}");
+    running.stop().unwrap();
+
+    let entries = DecisionLog::read_all(&dir.path().join("decisions.jsonl")).unwrap();
+    let forced: Vec<&serde_json::Value> = entries
+        .iter()
+        .filter(|e| e["record"] == "supervisor_force_safe")
+        .collect();
+    assert!(!forced.is_empty(), "{entries:?}");
+    assert!(
+        forced
+            .iter()
+            .all(|e| e["groups"] == serde_json::json!(["slow"])),
+        "{forced:?}"
+    );
+}
+
+/// A group thread that panics stops only its group (ADR 0089 decision 6):
+/// the other keeps ticking, the stop names the panicked group, and its
+/// outputs are not handed to the next generation.
+#[test]
+fn a_panicking_group_is_named_and_does_not_stop_the_other() {
+    let plan = Arc::new(plan_with_two_groups());
+    let fast = group_index(&plan, "fast");
+    let slow = group_index(&plan, "slow");
+    let dir = tempfile::tempdir().unwrap();
+    let clock = Monotonic::start();
+    let running = Running::start(
+        Arc::clone(&plan),
+        two_group_tasks(&plan, Box::new(Panicking)),
+        Box::new(SystemPacer::new(clock, ClockQuality::Unsynced)),
+        log(&dir),
+        start(None),
+    )
+    .unwrap();
+    let shared = Arc::clone(&running.shared);
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(shared.groups[fast].ticks.get() >= 15);
+    assert_eq!(shared.groups[slow].ticks.get(), 0);
+    let boxes = jokerd::supervisor::group_boxes(&plan, &shared);
+    assert_eq!(jokerd::supervisor::held_at_safe(&shared, &boxes[slow]), 1);
+    assert_eq!(jokerd::supervisor::held_at_safe(&shared, &boxes[fast]), 0);
+    let exit = running.stop().unwrap();
+    assert_eq!(exit.panicked, ["slow"]);
+    assert!(exit.applied.contains_key("pcs.a"));
+    assert!(!exit.applied.contains_key("pcs.b"));
+}
