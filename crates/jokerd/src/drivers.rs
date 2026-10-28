@@ -585,9 +585,7 @@ fn store_settled(
         } else {
             quality
         };
-        if let Some(wide) = shared.wide_slot(target.signal) {
-            wide.write(&bytes, quality, NO_TS_SRC, settled.ts_hw.unwrap_or(now));
-        }
+        shared.write_wide(target.signal, &bytes, quality, settled.ts_hw.unwrap_or(now));
         return;
     }
     let (bits, quality) = settled_sample(target, settled);
@@ -771,9 +769,7 @@ fn publish_link(shared: &Shared, device_index: usize, state: LinkState) {
 fn mark_all(shared: &Shared, targets: &[PointTarget], quality: Quality, now: u64) {
     for target in targets {
         if is_wide(target.ty) {
-            if let Some(wide) = shared.wide_slot(target.signal) {
-                wide.write(&[], quality, NO_TS_SRC, now);
-            }
+            shared.write_wide(target.signal, &[], quality, now);
         } else if let Some(slot) = shared.slots.get(target.signal.index()) {
             slot.write(0, quality, NO_TS_SRC, now);
         }

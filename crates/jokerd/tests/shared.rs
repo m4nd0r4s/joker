@@ -1,6 +1,6 @@
 //! `jokerd::shared::Shared`'s wide-slot table.
 
-#![allow(clippy::unwrap_used)]
+#![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::sync::Arc;
 
@@ -28,6 +28,110 @@ address = 0x40
 [devices.sensor.signals]
 temp = { type = "bytes", direction = "input", reg = 0, len = 2, poll = "50ms" }
 "#;
+
+/// An output guarded by `requires_good` on a `bytes` signal (ADR 0062
+/// decision 7, ADR 0088).
+const GUARDED_TOML: &str = r#"
+[project]
+name  = "shared-wide-guard"
+joker = "1.0"
+mode  = "dev"
+
+[buses.i2c1]
+kind = "i2c"
+dev  = "/dev/i2c-1"
+
+[devices.sensor]
+driver  = "i2c"
+bus     = "i2c1"
+address = 0x40
+
+[devices.sensor.signals]
+temp = { type = "bytes", direction = "input", reg = 0, len = 2, poll = "50ms" }
+
+[devices.pi]
+driver = "sim"
+
+[devices.pi.signals]
+led = { type = "bool", direction = "output" }
+
+[outputs."pi.led"]
+safe          = false
+requires_good = ["sensor.temp"]
+"#;
+
+/// One tick with a manual `true` on `pi.led`, after `quality` reached
+/// the wide slot of `sensor.temp` (or nothing, with `None`).
+fn guarded_outcome(quality: Option<joker_core::Quality>) -> joker_core::Outcome {
+    use joker_core::image::{Proposal, Source};
+    use joker_core::time::{ClockQuality, Instant};
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("joker.toml"), GUARDED_TOML).unwrap();
+    let loaded = load(&OsFileSystem, &dir.path().join("joker.toml"), &NativeTasks)
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert!(!loaded.report.has_errors(), "{}", loaded.report.render());
+    let plan = &loaded.plan;
+    let shared = Shared::new(plan);
+    let temp = plan.id("sensor.temp").unwrap();
+    if let Some(q) = quality {
+        let bytes: &[u8] = if q.is_good() { &[0xAB, 0xCD] } else { &[] };
+        shared.write_wide(temp, bytes, q, 999_000_000);
+    }
+    shared.inboxes[0]
+        .push(Proposal {
+            writer: plan.writer("user:manual:4").unwrap(),
+            signal: plan.id("pi.led").unwrap(),
+            value: 1,
+            source: Source::Async,
+            ttl_ns: 3_600_000_000_000,
+            ..Proposal::EMPTY
+        })
+        .unwrap();
+    jokerd::cycle::run(
+        plan,
+        &shared,
+        vec![Vec::new()],
+        &mut jokerd::pacer::VirtualPacer::new(Instant {
+            mono_ns: 1_000_000_000,
+            utc_ns: 1_760_000_000_000_000_000,
+            clock: ClockQuality::Synced,
+        }),
+        jokerd::cycle::RunOptions {
+            max_ticks: Some(1),
+            ..jokerd::cycle::RunOptions::default()
+        },
+    )
+    .unwrap();
+    let (_, meta, _) = shared
+        .output(plan.id("pi.led").unwrap())
+        .unwrap()
+        .read()
+        .unwrap();
+    joker_core::Outcome::from_code(meta.outcome, meta.detail).unwrap()
+}
+
+#[test]
+fn requires_good_on_a_wide_signal_follows_its_wide_slot() {
+    use joker_core::{Outcome, Quality, QualityCode, QualityReason};
+    assert_eq!(
+        guarded_outcome(Some(Quality::new(QualityCode::Good, QualityReason::None))),
+        Outcome::Accepted,
+        "a good wide sample satisfies requires_good"
+    );
+    assert_ne!(
+        guarded_outcome(Some(Quality::new(
+            QualityCode::Bad,
+            QualityReason::DeviceFault
+        ))),
+        Outcome::Accepted,
+        "a bad wide sample does not"
+    );
+    assert_ne!(
+        guarded_outcome(None),
+        Outcome::Accepted,
+        "nor does a wide signal never read"
+    );
+}
 
 #[test]
 fn a_wide_signal_gets_a_wide_slot_and_a_scalar_signal_does_not() {
