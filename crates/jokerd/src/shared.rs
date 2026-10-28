@@ -357,24 +357,62 @@ pub struct StateExport {
 /// The bit of an output status that keeps a budget refusal.
 const BUDGET_REFUSED_BIT: u32 = 26;
 
+/// The envelope results of one output since its generation started, by
+/// kind (docs/01 §19, ref/09 §5.2 `Metrics.envelope`).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct EnvelopeResults {
+    /// `Accepted`.
+    pub accepted: u64,
+    /// `Clamped(Range)` and `Clamped(Rate)`.
+    pub clamped: u64,
+    /// `Rejected(*)`.
+    pub rejected: u64,
+    /// `Suppressed`.
+    pub suppressed: u64,
+    /// `Tripped`.
+    pub tripped: u64,
+}
+
 /// The status of one output after its last commit, readable by the API.
 #[derive(Debug)]
 pub struct OutputStatus {
     slot: Slot,
+    accepted: Counter,
+    clamped: Counter,
+    rejected: Counter,
+    suppressed: Counter,
+    tripped: Counter,
 }
 
 impl OutputStatus {
     fn new() -> Self {
-        Self { slot: Slot::new() }
+        Self {
+            slot: Slot::new(),
+            accepted: Counter::default(),
+            clamped: Counter::default(),
+            rejected: Counter::default(),
+            suppressed: Counter::default(),
+            tripped: Counter::default(),
+        }
     }
 
-    /// Publishes the status of a tick (cycle thread only: one writer).
-    /// It also keeps whether the output's last proposal was refused for
-    /// its actuation budget: set by `Rejected(Budget)`, kept through the
-    /// ticks with no proposal while a level is active, and cleared by any
-    /// other result or once no level is (ADR 0085, `budget`).
+    /// Publishes the status of a tick (cycle thread only: one writer) and
+    /// counts its result in [`OutputStatus::results`]. It also keeps
+    /// whether the output's last proposal was refused for its actuation
+    /// budget: set by `Rejected(Budget)`, kept through the ticks with no
+    /// proposal while a level is active, and cleared by any other result
+    /// or once no level is (ADR 0085, `budget`).
     pub fn publish(&self, applied: u64, meta: OutputMeta, tick: u64, at_mono_ns: u64) {
-        let refused = match Outcome::from_code(meta.outcome, meta.detail) {
+        let outcome = Outcome::from_code(meta.outcome, meta.detail);
+        match outcome {
+            Some(Outcome::Accepted) => self.accepted.bump(),
+            Some(Outcome::ClampedRange | Outcome::ClampedRate) => self.clamped.bump(),
+            Some(Outcome::Rejected(_)) => self.rejected.bump(),
+            Some(Outcome::Suppressed) => self.suppressed.bump(),
+            Some(Outcome::Tripped) => self.tripped.bump(),
+            _ => {}
+        }
+        let refused = match outcome {
             Some(Outcome::Rejected(RejectReason::Budget)) => true,
             Some(Outcome::None) => meta.level != 0 && self.budget_refused(),
             _ => false,
@@ -385,6 +423,17 @@ impl OutputStatus {
             tick as i64,
             at_mono_ns,
         );
+    }
+
+    /// The results counted by [`OutputStatus::publish`].
+    pub fn results(&self) -> EnvelopeResults {
+        EnvelopeResults {
+            accepted: self.accepted.get(),
+            clamped: self.clamped.get(),
+            rejected: self.rejected.get(),
+            suppressed: self.suppressed.get(),
+            tripped: self.tripped.get(),
+        }
     }
 
     /// Whether the output's last proposal was refused for its actuation

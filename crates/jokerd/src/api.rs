@@ -1158,7 +1158,7 @@ impl Backend for Node {
                 })
                 .collect()
         });
-        let groups: Vec<Value> = match view {
+        let groups: Vec<Value> = match &view {
             None => Vec::new(),
             Some(v) => v
                 .plan
@@ -1176,10 +1176,28 @@ impl Backend for Node {
                 })
                 .collect(),
         };
+        let envelope: Vec<Value> = view.as_ref().map_or_else(Vec::new, |v| {
+            v.plan
+                .outputs
+                .iter()
+                .filter_map(|o| {
+                    let r = v.shared.output(v.plan.id(&o.path)?)?.results();
+                    Some(json!({
+                        "output": o.path,
+                        "accepted": r.accepted,
+                        "clamped": r.clamped,
+                        "rejected": r.rejected,
+                        "suppressed": r.suppressed,
+                        "tripped": r.tripped,
+                    }))
+                })
+                .collect()
+        });
         Ok(Reply::ok(json!({
             "at": timestamp(utc_now_ns()),
             "groups": groups,
             "drivers": drivers,
+            "envelope": envelope,
         })))
     }
 
