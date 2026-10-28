@@ -19,7 +19,8 @@ use joker_driver_revpi::{RevPiDriver, RevPiPlanner};
 use joker_driver_sysfs::{SysfsDriver, SysfsPlanner};
 use joker_hal::link::DevicePaths;
 use joker_hal::std_host::{
-    ClockQualityCell, LinuxGpio, LinuxI2c, SerialConfig, TokioHost, TokioSerial, TokioTcpConnector,
+    ClockQualityCell, LinuxGpio, LinuxI2c, LogSink, SerialConfig, TokioHost, TokioSerial,
+    TokioTcpConnector,
 };
 use joker_hal::{Cbor, Direction, Driver, GpioChip, I2cBus, Link, OpenArgs, Planner};
 use tokio::sync::watch;
@@ -620,7 +621,9 @@ fn setup_failed(
         .devices
         .get(device_index)
         .map_or("?", |d| d.name.as_str());
-    eprintln!("error: device `{name}`: {detail}; its signals read bad(config_error)");
+    let line = format!("device `{name}`: {detail}; its signals read bad(config_error)");
+    eprintln!("error: {line}");
+    joker_hal::Host::log(host, joker_hal::LogLevel::Error, &line);
     stopped(shared, plan, device_index, host, QualityReason::ConfigError);
 }
 
@@ -636,6 +639,7 @@ pub struct RealDevices {
     clock: Arc<ClockQualityCell>,
     mono: Monotonic,
     i2c: I2cOpener,
+    logs: Option<Arc<crate::logs::LogRing>>,
 }
 
 impl std::fmt::Debug for RealDevices {
@@ -678,6 +682,7 @@ impl RealDevices {
             clock: Arc::new(ClockQualityCell::new(ClockQuality::Unsynced)),
             mono: Monotonic::start(),
             i2c: linux_i2c(),
+            logs: None,
         }
     }
 
@@ -687,6 +692,34 @@ impl RealDevices {
     pub fn with_i2c(mut self, open: I2cOpener) -> Self {
         self.i2c = open;
         self
+    }
+
+    /// The same devices, writing what each driver logs to `logs` as
+    /// `driver:<device>` (`GET /v1/logs`) instead of dropping it.
+    #[must_use]
+    pub fn with_logs(mut self, logs: Arc<crate::logs::LogRing>) -> Self {
+        self.logs = Some(logs);
+        self
+    }
+
+    /// The host of one device: on the daemon's clock, with its log lines
+    /// going to the ring as `driver:<device>`.
+    fn host(&self, device: &str) -> Arc<TokioHost> {
+        let host = TokioHost::from_origin(self.mono.origin(), Arc::clone(&self.clock));
+        let Some(logs) = &self.logs else {
+            return Arc::new(host);
+        };
+        let logs = Arc::clone(logs);
+        let source = format!("driver:{device}");
+        Arc::new(host.with_log(LogSink::new(move |level, message| {
+            logs.push(
+                level.into(),
+                &source,
+                message,
+                Vec::new(),
+                crate::wire::utc_now_ns(),
+            );
+        })))
     }
 }
 
@@ -711,15 +744,11 @@ impl DeviceSet for RealSet {
 impl Devices for RealDevices {
     fn start(&self, plan: &Arc<Plan>, shared: &Arc<Shared>) -> Box<dyn DeviceSet> {
         let (tx, rx) = watch::channel(false);
-        let host = Arc::new(TokioHost::from_origin(
-            self.mono.origin(),
-            Arc::clone(&self.clock),
-        ));
         let mut actions = BTreeMap::new();
         for (i, device) in plan.devices.iter().enumerate() {
             let plan = Arc::clone(plan);
             let shared = Arc::clone(shared);
-            let host = Arc::clone(&host);
+            let host = self.host(&device.name);
             let stop = rx.clone();
             let device = device.clone();
             let name = device.name.clone();

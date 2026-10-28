@@ -141,6 +141,7 @@ pub struct Controller {
     clock_policy: crate::clock::ClockPolicy,
     alarms: Arc<crate::alarms::AlarmBook>,
     historian: Arc<crate::historian::Historian>,
+    logs: Arc<crate::logs::LogRing>,
 }
 
 impl fmt::Debug for Controller {
@@ -333,6 +334,7 @@ impl Controller {
             clock_policy: crate::clock::ClockPolicy::default(),
             alarms,
             historian,
+            logs: Arc::default(),
         })
     }
 
@@ -344,6 +346,19 @@ impl Controller {
     /// The node's historian (ADR 0081).
     pub fn historian(&self) -> Arc<crate::historian::Historian> {
         Arc::clone(&self.historian)
+    }
+
+    /// The node's log ring (`GET /v1/logs`).
+    pub fn logs(&self) -> Arc<crate::logs::LogRing> {
+        Arc::clone(&self.logs)
+    }
+
+    /// The same controller, sharing `logs` with whoever else writes to it
+    /// (the devices).
+    #[must_use]
+    pub fn with_logs(mut self, logs: Arc<crate::logs::LogRing>) -> Self {
+        self.logs = logs;
+        self
     }
 
     /// Runs the Wasm apps of each generation from its artifacts (ADR 0067);

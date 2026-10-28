@@ -125,6 +125,8 @@ pub trait Backend: Send + Sync + 'static {
     fn write_ticket(&self, id: &str) -> Result<Reply>;
     /// `GET /v1/decisions`.
     fn decisions(&self, query: &Query) -> Result<Reply>;
+    /// `GET /v1/logs` (ref/09 §5.2, `jk logs`).
+    fn logs(&self, query: &Query) -> Result<Reply>;
     /// `GET /v1/generations`.
     fn generations(&self, query: &Query) -> Result<Reply>;
     /// `POST /v1/generations`.

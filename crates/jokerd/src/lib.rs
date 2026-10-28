@@ -22,6 +22,7 @@ pub mod generations;
 pub mod historian;
 pub mod io;
 pub mod load;
+pub mod logs;
 pub mod manual;
 pub mod native;
 pub mod pacer;

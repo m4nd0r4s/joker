@@ -152,6 +152,9 @@ impl Backend for Stub {
     fn write_ticket(&self, _id: &str) -> Result<Reply, Problem> {
         none()
     }
+    fn logs(&self, _query: &Query) -> Result<Reply, Problem> {
+        Ok(Reply::ok(json!({"items": [], "next_cursor": null})))
+    }
     fn decisions(&self, _query: &Query) -> Result<Reply, Problem> {
         let n = self.decisions_per_read.load(Ordering::SeqCst);
         let end = self.decisions.fetch_add(n, Ordering::SeqCst) + n;

@@ -205,6 +205,7 @@ pub fn run(options: Options, tasks: Arc<dyn TaskProvider>) -> Result<(), String>
     }
     let clock = Monotonic::start();
     let quality = Arc::new(ClockMonitor::default());
+    let logs = Arc::new(crate::logs::LogRing::default());
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .thread_name("io")
         .enable_all()
@@ -218,17 +219,24 @@ pub fn run(options: Options, tasks: Arc<dyn TaskProvider>) -> Result<(), String>
         ),
         RealDevices::new(runtime.handle().clone())
             .with_clock(quality.cell())
-            .with_monotonic(clock),
+            .with_monotonic(clock)
+            .with_logs(Arc::clone(&logs)),
     ));
     let utc_origin_ns = crate::wire::utc_now_ns().saturating_sub(clock.now_ns() as i64);
-    let controller: SharedController = Arc::new(Mutex::new(controller(
-        &options,
-        tasks,
-        devices,
-        clock,
-        utc_origin_ns,
-        quality,
-    )?));
+    let controller: SharedController = Arc::new(Mutex::new(
+        controller(&options, tasks, devices, clock, utc_origin_ns, quality)?
+            .with_logs(Arc::clone(&logs)),
+    ));
+    logs.push(
+        crate::logs::LogLevel::Info,
+        "jokerd",
+        "started",
+        vec![
+            ("version".into(), env!("CARGO_PKG_VERSION").into()),
+            ("state_dir".into(), options.state_dir.display().to_string()),
+        ],
+        crate::wire::utc_now_ns(),
+    );
     let node = crate::api::Node::new(
         Arc::clone(&controller),
         clock,
