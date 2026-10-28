@@ -265,16 +265,11 @@ impl Running {
                 initial_trips: context.restore.trips,
                 tick_guard: None,
                 alarms: alarm_restore,
+                cpus: start.cpus,
             };
-            let cpus = start.cpus;
             std::thread::Builder::new()
                 .name("rt/cycle".into())
-                .spawn(move || {
-                    if let Err(e) = crate::resources::pin_current_thread(&cpus) {
-                        eprintln!("rt/cycle: {e}");
-                    }
-                    run(&plan, &shared, tasks, pacer.as_mut(), options)
-                })
+                .spawn(move || run(&plan, &shared, tasks, pacer.as_mut(), options))
         };
         let cycle = match spawned {
             Ok(cycle) => cycle,

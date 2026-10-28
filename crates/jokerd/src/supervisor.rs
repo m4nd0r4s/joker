@@ -1,8 +1,8 @@
 //! `rt/supervisor` (AUR-274, docs/01 §2, §8, §20; docs/09 attack 4(c)):
-//! watches the cycle thread's own per-group heartbeat
-//! (`GroupStats::last_tick_mono_ns`) and, if any group goes stale past
-//! `STALE_FACTOR` times its period, forces every output's `force_safe`
-//! bit — bypassing the group entirely, through the already-built
+//! watches each group's heartbeat (`GroupStats::last_tick_mono_ns`) and,
+//! when a group goes stale past `STALE_FACTOR` times its period, forces
+//! the `force_safe` bit of that group's outputs — bypassing the group
+//! entirely, through the already-built
 //! `joker_hal::commit::ForceSafe` (docs/09 attack 4(c)'s own
 //! refinement: the single-writer principle forbids writing into a
 //! group's own boxes any other way) — and records it in the decision
@@ -14,12 +14,10 @@
 //! the moment the cycle loop starts, so a group that never ticks at all
 //! is stale once its deadline passes, like one that stopped.
 //!
-//! Today, every group shares one `rt/cycle` thread (AUR-275, one thread
-//! per group, is not built yet), so a real hang makes every group go
-//! stale together: the response below forces every output of every
-//! group, not just the stale one. The detection math (`stale_groups`)
-//! does not change when AUR-275 lands — only how many groups the
-//! response reaches narrows to the group that is actually stuck.
+//! Each group ticks on its own `rt/<group>` thread (ADR 0089), so a hang
+//! or a panic stales only that group, and only its outputs are forced;
+//! the other groups keep running until a hardware watchdog, which stops
+//! being fed once any group was forced (ADR 0061), restarts the board.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
@@ -37,8 +35,7 @@ use crate::shared::Shared;
 /// A group is stale once it has gone this many periods without a tick.
 pub const STALE_FACTOR: u64 = 3;
 
-/// How often the supervisor checks (independent of any group's period,
-/// since today it watches the one shared cycle thread as a whole).
+/// How often the supervisor checks, independent of any group's period.
 pub const POLL_INTERVAL: Duration = Duration::from_millis(20);
 
 /// The (device_index, box_index) pairs of every output of a plan,
@@ -115,10 +112,10 @@ pub fn held_at_safe(shared: &Shared, boxes: &[(usize, usize)]) -> usize {
         .count()
 }
 
-/// Checks every group's heartbeat against `now_mono_ns` and, if any is
-/// stale, sets the `force_safe` bit of every output of every group in
-/// `group_boxes` (today's whole-process response, see the module doc).
-/// Returns the stale groups, empty when none is.
+/// Checks every group's heartbeat against `now_mono_ns` and sets the
+/// `force_safe` bit of the outputs of each stale group in `group_boxes`
+/// (ADR 0089 decision 7); the other groups keep their own threads and
+/// their outputs. Returns the stale groups, empty when none is.
 pub fn check_and_respond(
     plan: &Plan,
     shared: &Shared,
@@ -127,8 +124,10 @@ pub fn check_and_respond(
     now_mono_ns: u64,
 ) -> Vec<(usize, u64)> {
     let stale = stale_groups(plan, shared, armed_at_mono_ns, now_mono_ns);
-    if !stale.is_empty() {
-        force_safe(shared, group_boxes);
+    for (g, _) in &stale {
+        if let Some(boxes) = group_boxes.get(*g) {
+            force_safe(shared, std::slice::from_ref(boxes));
+        }
     }
     stale
 }
@@ -306,28 +305,34 @@ impl Supervisor {
                     eprintln!("rt/supervisor: {e}; running at default priority");
                 }
                 let mut armed_at = None;
-                let mut was_stale = false;
+                let mut was_stale = vec![false; plan.groups.len()];
                 while !flag.load(Ordering::Acquire) {
                     beats.beat();
                     let now_mono_ns = clock.now_ns();
-                    if !shared.running.load(Ordering::Acquire) {
+                    if !shared.running.load(Ordering::Acquire) || shared.stop_requested() {
                         armed_at = None;
                         std::thread::sleep(POLL_INTERVAL);
                         continue;
                     }
                     let since = *armed_at.get_or_insert(now_mono_ns);
                     let found = check_and_respond(&plan, &shared, &group_boxes, since, now_mono_ns);
-                    let found_stale = !found.is_empty();
-                    if found_stale && !was_stale {
+                    let new: Vec<(usize, u64)> = found
+                        .iter()
+                        .filter(|(g, _)| !was_stale.get(*g).copied().unwrap_or(true))
+                        .copied()
+                        .collect();
+                    if !new.is_empty() {
                         eprintln!(
                             "jokerd: rt/supervisor: a group has not ticked in over {}x its \
-                             period; forcing every output to safe (AUR-274)",
+                             period; forcing its outputs to safe (ADR 0089)",
                             STALE_FACTOR
                         );
-                        recorder.force_safe(&plan, &found, now_mono_ns);
+                        recorder.force_safe(&plan, &new, now_mono_ns);
                     }
-                    was_stale = found_stale;
-                    if found_stale {
+                    for (g, stale) in was_stale.iter_mut().enumerate() {
+                        *stale = found.iter().any(|(s, _)| *s == g);
+                    }
+                    if !found.is_empty() {
                         beats.force();
                     }
                     std::thread::sleep(POLL_INTERVAL);
@@ -534,5 +539,64 @@ pub(crate) mod tests {
             }
         }
         assert!(any_checked, "the test plan has no bound outputs to check");
+    }
+
+    #[test]
+    fn only_the_outputs_of_the_stale_group_are_forced() {
+        let mut fs = joker_manifest::MemoryFileSystem::default();
+        fs.file(
+            "joker.toml",
+            "[project]\nname = \"t\"\njoker = \"1.0\"\nmode = \"dev\"\n\n\
+             [outputs.\"pcs.a\"]\nsafe = false\ngroup = \"fast\"\n\n\
+             [outputs.\"pcs.b\"]\nsafe = false\ngroup = \"slow\"\n\n\
+             [cycles.fast]\nperiod = \"10ms\"\n\n\
+             [cycles.slow]\nperiod = \"100ms\"\n\n\
+             [devices.pcs]\ndriver = \"sim\"\n\n\
+             [devices.pcs.signals]\n\
+             a = { type = \"bool\", direction = \"output\" }\n\
+             b = { type = \"bool\", direction = \"output\" }\n",
+        );
+        let loaded = crate::load::load(
+            &fs,
+            std::path::Path::new("joker.toml"),
+            &crate::native::NativeTasks,
+        )
+        .unwrap_or_else(|e| panic!("{e}"));
+        let mut plan = loaded.plan;
+        let point = |path: &str| crate::bridge::DevicePointPlan {
+            path: path.into(),
+            addr: Vec::new(),
+            type_name: "bool".into(),
+            direction: joker_hal::types::Direction::Output,
+            poll_ns: None,
+            expect: joker_hal::types::RawKind::Bool,
+            width: 0,
+            acquisition: joker_manifest::context::Acquisition::NONE,
+        };
+        plan.devices.push(crate::bridge::DevicePlan {
+            name: "pcs".into(),
+            driver: "modbus-rtu".into(),
+            bus: None,
+            bus_kind: None,
+            bus_params: Vec::new(),
+            config: Vec::new(),
+            quirks: Vec::new(),
+            timeout_ns: 1_000_000_000,
+            fallback_keepalive_ns: None,
+            fallback_outputs: None,
+            points: vec![point("pcs.a"), point("pcs.b")],
+            actions: Vec::new(),
+        });
+        let shared = crate::shared::Shared::new(&plan);
+        let boxes = group_boxes(&plan, &shared);
+        let fast = plan.groups.iter().position(|g| g.name == "fast").unwrap();
+        let slow = plan.groups.iter().position(|g| g.name == "slow").unwrap();
+        let now = 1_000_000_000;
+        shared.groups[fast].last_tick_mono_ns.set(now);
+        shared.groups[slow].last_tick_mono_ns.set(1);
+        let stale = check_and_respond(&plan, &shared, &boxes, 0, now);
+        assert_eq!(stale.iter().map(|(g, _)| *g).collect::<Vec<_>>(), [slow]);
+        assert_eq!(held_at_safe(&shared, &boxes[slow]), 1);
+        assert_eq!(held_at_safe(&shared, &boxes[fast]), 0);
     }
 }

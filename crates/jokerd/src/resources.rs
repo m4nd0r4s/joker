@@ -1,7 +1,6 @@
 //! Reads `[resources]` from the manifest (ref/01 §5.4, M8) and applies it
-//! to the running process: today, CPU affinity for the `rt/cycle` thread.
-//! Real-time scheduling priority (`SCHED_FIFO`) and the rest of M8 (several
-//! resource classes, each its own thread) are still open (AUR-396).
+//! to the running process: CPU affinity and the rate-monotonic `SCHED_FIFO`
+//! priority of each `rt/<group>` thread (ADR 0089).
 
 use joker_manifest::Manifest;
 use joker_manifest::value::Value;
@@ -54,6 +53,31 @@ pub fn pin_current_thread(cpus: &[usize]) -> Result<(), String> {
 /// Joker Micro target).
 #[cfg(not(target_os = "linux"))]
 pub fn pin_current_thread(_cpus: &[usize]) -> Result<(), String> {
+    Ok(())
+}
+
+/// Runs the calling thread `SCHED_FIFO` at `priority` (1–99; a cycle
+/// group's rate-monotonic priority, ADR 0089). A failure (no
+/// `CAP_SYS_NICE`) is reported, not fatal: the thread keeps the default
+/// policy.
+#[cfg(target_os = "linux")]
+pub fn raise_priority(priority: u8) -> Result<(), String> {
+    use thread_priority::{
+        RealtimeThreadSchedulePolicy, ThreadPriority, ThreadPriorityValue, ThreadSchedulePolicy,
+        set_thread_priority_and_policy, thread_native_id,
+    };
+    let value = ThreadPriorityValue::try_from(priority)?;
+    set_thread_priority_and_policy(
+        thread_native_id(),
+        ThreadPriority::Crossplatform(value),
+        ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Fifo),
+    )
+    .map_err(|e| format!("SCHED_FIFO {priority}: {e:?}"))
+}
+
+/// No-op outside Linux.
+#[cfg(not(target_os = "linux"))]
+pub fn raise_priority(_priority: u8) -> Result<(), String> {
     Ok(())
 }
 

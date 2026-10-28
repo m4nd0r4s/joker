@@ -26,6 +26,13 @@ pub trait Pacer: Send {
     fn monotonic(&self) -> Option<Monotonic> {
         None
     }
+
+    /// A pacer on the same clock for another thread, when each cycle group
+    /// may tick on its own (ADR 0089). `None` keeps every group on one
+    /// thread: a virtual clock, which must stay deterministic.
+    fn fork(&self) -> Option<Box<dyn Pacer>> {
+        None
+    }
 }
 
 /// The daemon's monotonic clock: nanoseconds since the daemon started,
@@ -111,6 +118,13 @@ impl Pacer for SystemPacer {
 
     fn monotonic(&self) -> Option<Monotonic> {
         Some(self.mono)
+    }
+
+    fn fork(&self) -> Option<Box<dyn Pacer>> {
+        Some(Box::new(Self {
+            mono: self.mono,
+            quality: Arc::clone(&self.quality),
+        }))
     }
 }
 
