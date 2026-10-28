@@ -186,6 +186,7 @@ impl RingFeeder {
         let len = trace_buffer_len(plan);
         let handle = std::thread::Builder::new()
             .name("svc/trace".into())
+            .stack_size(crate::shared::SERVICE_STACK)
             .spawn(move || {
                 loop {
                     let stopping = flag.load(Ordering::Acquire);

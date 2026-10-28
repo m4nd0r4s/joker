@@ -264,6 +264,7 @@ pub fn record(
 ) {
     let _ = std::thread::Builder::new()
         .name("svc/record".into())
+        .stack_size(crate::shared::SERVICE_STACK)
         .spawn(move || {
             std::thread::sleep(duration);
             let to =

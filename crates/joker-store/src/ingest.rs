@@ -124,6 +124,10 @@ impl Ingest {
 /// The largest batch the writer appends at once.
 pub const BATCH: usize = 4096;
 
+/// Stack of the writer thread. A daemon that locks its memory pays for
+/// every page of it; the writer drains queues and appends blocks.
+pub const WRITER_STACK: usize = 512 * 1024;
+
 /// The writer thread (`svc/store`): drains an [`Ingest`] into a [`Store`]
 /// and runs its housekeeping.
 #[derive(Debug)]
@@ -139,6 +143,7 @@ impl Writer {
         let flag = Arc::clone(&stop);
         let handle = std::thread::Builder::new()
             .name("svc/store".into())
+            .stack_size(WRITER_STACK)
             .spawn(move || {
                 let mut batch = Vec::with_capacity(BATCH);
                 loop {

@@ -425,6 +425,7 @@ impl DecisionWriter {
         let mut watch = trips.map(|t| TripWatch::new(&plan, &shared, t));
         let handle = std::thread::Builder::new()
             .name("svc/decisions".into())
+            .stack_size(crate::shared::SERVICE_STACK)
             .spawn(move || {
                 let mut reported_drops = 0;
                 loop {
