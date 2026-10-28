@@ -31,9 +31,9 @@ use joker_core::slot::SeqExtender;
 use joker_core::time::{Clock, ClockQuality, Instant, VirtualClock};
 use joker_core::value::NO_TS_SRC;
 use joker_core::{
-    Applied, CommitSink, Level, Outcome, OutputResult, Outputs, OutputsStorage, ProcessImage,
-    Proposal, RegistryBuilder, SafeValue, Sample, SignalId, Slot, ValueType, WriterConfig,
-    WriterId, WriterKind,
+    Applied, CommitSink, IntakeSlot, Level, Outcome, OutputResult, Outputs, OutputsStorage,
+    ProcessImage, Proposal, RegistryBuilder, SafeValue, Sample, SignalId, Slot, ValueType,
+    WriterConfig, WriterId, WriterKind,
 };
 use joker_expr::Program;
 
@@ -878,7 +878,7 @@ impl Segment<'_> {
             _ => setup("J0844", "the outputs do not build"),
         };
         let mut states = [OutputState::EMPTY; O];
-        let mut intakes = [None; P];
+        let mut intakes = [IntakeSlot::EMPTY; P];
         let mut outputs = Outputs::new(
             &plan.registry,
             plan.writers,

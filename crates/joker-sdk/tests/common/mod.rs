@@ -12,9 +12,9 @@ use joker_core::registry::{Alias, GroupMeta, SignalMeta, UnitRef};
 use joker_core::slot::SeqExtender;
 use joker_core::time::Instant;
 use joker_core::{
-    ClockQuality, CommitSink, ImageStorage, Level, OutputConfig, Outputs, OutputsStorage,
-    ProcessImage, Proposal, Quality, Registry, RegistryBuilder, SafeValue, Sample, SignalId, Slot,
-    ValueType, WriteResult, WriterConfig, WriterId, WriterKind,
+    ClockQuality, CommitSink, ImageStorage, IntakeSlot, Level, OutputConfig, Outputs,
+    OutputsStorage, ProcessImage, Proposal, Quality, Registry, RegistryBuilder, SafeValue, Sample,
+    SignalId, Slot, ValueType, WriteResult, WriterConfig, WriterId, WriterKind,
 };
 use joker_host::{
     AppComponent, CycleInstance, CycleReport, CycleSetup, HostEngine, InstanceLimits, PortBinding,
@@ -134,7 +134,7 @@ impl Bench {
             OutputsStorage {
                 configs,
                 states: leak(vec![OutputState::EMPTY; outs.len()]),
-                intakes: leak(vec![None; 64]),
+                intakes: leak(vec![IntakeSlot::EMPTY; 64]),
             },
         )
         .unwrap();

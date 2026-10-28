@@ -23,9 +23,9 @@ use joker_core::image::ImageStorage;
 use joker_core::registry::{Alias, GroupMeta, SignalMeta, UnitRef};
 use joker_core::slot::SeqExtender;
 use joker_core::{
-    ClockQuality, Instant, Level, OutputConfig, Outputs, OutputsStorage, ProcessImage, Proposal,
-    Registry, RegistryBuilder, SafeValue, Sample, SignalId, Slot, ValueType, WriterConfig,
-    WriterId, WriterKind,
+    ClockQuality, Instant, IntakeSlot, Level, OutputConfig, Outputs, OutputsStorage, ProcessImage,
+    Proposal, Registry, RegistryBuilder, SafeValue, Sample, SignalId, Slot, ValueType,
+    WriterConfig, WriterId, WriterKind,
 };
 
 use crate::acquire::{SampleBuffer, Settled, settle};
@@ -546,7 +546,7 @@ impl OutputHarness {
             OutputsStorage {
                 configs,
                 states: leak(vec![OutputState::EMPTY; configs.len()]),
-                intakes: leak(vec![None; 16]),
+                intakes: leak(vec![IntakeSlot::EMPTY; 16]),
             },
         )
         .map_err(|_| HarnessError("outputs"))?;

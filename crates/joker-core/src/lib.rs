@@ -23,7 +23,9 @@ pub mod value;
 pub mod wide_slot;
 
 pub use arbiter::{Intake, OutputArbiter, Refusal};
-pub use commit::{CommitSink, DecisionRecord, OutputResult, Outputs, OutputsStorage, WriteResult};
+pub use commit::{
+    CommitSink, DecisionRecord, IntakeSlot, OutputResult, Outputs, OutputsStorage, WriteResult,
+};
 pub use envelope::Applied;
 pub use image::{ImageStorage, ProcessImage, Proposal, TickInfo, WriterId};
 pub use outcome::{Outcome, RejectReason};
