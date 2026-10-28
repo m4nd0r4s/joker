@@ -4543,6 +4543,14 @@ components:
             throttled: {type: boolean}
             memory_used: {type: string}
             disk_free: {type: string}
+        runtime:
+          description: the daemon's own queues (ADR 0090)
+          type: object
+          properties:
+            dropped:
+              description: drops of each internal queue, by queue name (decisions, write_results, trace, alarm_events, method_results, reset_results, trip_requests, confirmations, write_acks, logs)
+              type: object
+              additionalProperties: {type: integer}
         ml:
           description: reserved for 1.1; null in 1.0
           type: ['null', object]

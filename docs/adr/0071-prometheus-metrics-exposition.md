@@ -58,6 +58,7 @@ Three constraints shape the answer:
 | `system.temp` | `joker_system_temperature_celsius` | gauge | — |
 | `system.throttled` | `joker_system_throttled` | gauge (0 or 1) | — |
 | `system.memory_used`, `disk_free` | `joker_system_memory_used_bytes`, `joker_system_disk_free_bytes` | gauge | — |
+| `runtime.dropped` | `joker_runtime_dropped_total` | counter | `queue` (ADR 0090) |
 
 8. **Percentiles are summaries.** ref/09 defines the histograms of `Metrics` as `Percentiles` (`p50`, `p99`, `p999`, `max`, `window`). `p50`, `p99` and `p999` are the samples of a `summary` family with `quantile="0.5"`, `"0.99"` and `"0.999"`; `max` is a separate gauge (`…_max_seconds`), since Prometheus summaries have no maximum. The node keeps no running sum, so the summaries carry no `_sum` and no `_count`.
 9. **The link state is a state set:** one sample per value of `LinkState` (`connecting`, `up`, `degraded`, `down`, `drift`, `stopped`), 1 for the current one and 0 for the rest, so that a series does not vanish when the state changes.
