@@ -360,6 +360,9 @@ impl Node {
                 g["stats"]["overruns"]
             );
         }
+        for line in alarm_lines(&s["alarms"]) {
+            println!("{line}");
+        }
         for m in s["manual"].as_array().cloned().unwrap_or_default() {
             println!(
                 "manual {} {} = {} by {} until {}",
@@ -1315,9 +1318,62 @@ async fn watch_signals(socket: &Path, sel: &[String], json_mode: bool) -> Result
     }
 }
 
+/// The lines `jk status` prints for the `alarms` of `GET /v1/status`: the
+/// counts, then each open alarm, most severe first as the node sends them.
+/// Nothing when no alarm is open.
+fn alarm_lines(alarms: &Value) -> Vec<String> {
+    let items = alarms["items"].as_array().cloned().unwrap_or_default();
+    let (active, unacked) = (
+        alarms["active"].as_u64().unwrap_or(0),
+        alarms["unacked"].as_u64().unwrap_or(0),
+    );
+    if items.is_empty() && active == 0 && unacked == 0 {
+        return Vec::new();
+    }
+    let mut lines = vec![format!("alarms {active} active · {unacked} unacked")];
+    for a in items {
+        let mut line = format!(
+            "alarm {} {} {}",
+            a["severity"].as_str().unwrap_or("?"),
+            a["id"].as_str().unwrap_or("?"),
+            a["state"].as_str().unwrap_or("?")
+        );
+        if let Some(message) = a["message"].as_str() {
+            line.push_str(" · ");
+            line.push_str(message);
+        }
+        lines.push(line);
+    }
+    lines
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn status_lists_the_open_alarms_after_their_counts() {
+        let alarms = serde_json::json!({
+            "active": 1,
+            "unacked": 2,
+            "items": [
+                {"id": "joker.group.main.stalled", "severity": "critical",
+                 "state": "active_unacked", "message": "group main: no tick"},
+                {"id": "p_high", "severity": "high", "state": "rtn_unacked"}
+            ]
+        });
+        assert_eq!(
+            alarm_lines(&alarms),
+            [
+                "alarms 1 active · 2 unacked",
+                "alarm critical joker.group.main.stalled active_unacked · group main: no tick",
+                "alarm high p_high rtn_unacked",
+            ]
+        );
+        assert!(
+            alarm_lines(&serde_json::json!({"active": 0, "unacked": 0, "items": []})).is_empty()
+        );
+    }
 
     #[test]
     fn target_and_action_split_on_the_first_dot() {
