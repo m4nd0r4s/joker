@@ -1200,6 +1200,7 @@ impl Backend for Node {
             "drivers": drivers,
             "envelope": envelope,
             "arbiter": {"manual_active": self.manual.all(now).len()},
+            "system": system_json(&self.state_dir),
         })))
     }
 
@@ -2638,6 +2639,66 @@ impl Node {
         let sample = v.shared.slots.get(id.index())?.read(8).ok()?;
         Some(wire::sample(s, &sample, now, self.utc_origin_ns))
     }
+}
+
+/// The `system` section of `Metrics` (ref/09 §5.2), read when asked and
+/// never on the tick: the first thermal zone's temperature, the Raspberry
+/// Pi firmware's throttling flags, the memory in use and the free space
+/// of the state directory's filesystem. A value the node cannot read is
+/// left out.
+fn system_json(state_dir: &std::path::Path) -> Value {
+    let mut out = serde_json::Map::new();
+    let read = |path: &str| std::fs::read_to_string(path).ok();
+    if let Some(milli) =
+        read("/sys/class/thermal/thermal_zone0/temp").and_then(|t| t.trim().parse::<i64>().ok())
+    {
+        out.insert(
+            "temp".into(),
+            json!(format!("{:.1} °C", milli as f64 / 1000.0)),
+        );
+    }
+    if let Some(flags) = read("/sys/devices/platform/soc/soc:firmware/get_throttled")
+        .and_then(|t| u64::from_str_radix(t.trim().trim_start_matches("0x"), 16).ok())
+    {
+        out.insert("throttled".into(), json!(flags & 0xF != 0));
+    }
+    if let Some(used) = read("/proc/meminfo").and_then(|t| memory_used_kib(&t)) {
+        out.insert("memory_used".into(), json!(format!("{used} KiB")));
+    }
+    if let Some(free) = disk_free_kib(state_dir) {
+        out.insert("disk_free".into(), json!(format!("{free} KiB")));
+    }
+    Value::Object(out)
+}
+
+/// `MemTotal` less `MemAvailable` of `/proc/meminfo`, in KiB.
+fn memory_used_kib(meminfo: &str) -> Option<u64> {
+    let field = |name: &str| {
+        meminfo
+            .lines()
+            .find_map(|l| l.strip_prefix(name))
+            .and_then(|rest| {
+                rest.trim()
+                    .trim_end_matches("kB")
+                    .trim()
+                    .parse::<u64>()
+                    .ok()
+            })
+    };
+    Some(field("MemTotal:")?.saturating_sub(field("MemAvailable:")?))
+}
+
+/// The space an unprivileged process can still use on `dir`'s
+/// filesystem, in KiB.
+#[cfg(target_os = "linux")]
+fn disk_free_kib(dir: &std::path::Path) -> Option<u64> {
+    let s = nix::sys::statvfs::statvfs(dir).ok()?;
+    Some((s.blocks_available() as u64).saturating_mul(s.fragment_size() as u64) / 1024)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn disk_free_kib(_dir: &std::path::Path) -> Option<u64> {
+    None
 }
 
 /// The `Percentiles` of a histogram (ref/09 §5.2): `p50`, `p99` and

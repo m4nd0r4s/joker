@@ -454,6 +454,18 @@ async fn meta_signals_and_values_follow_the_contract() {
     assert_eq!(m.json()["groups"][0]["group"], "main");
     assert!(m.json()["groups"][0]["ticks"].as_u64().unwrap() > 0);
     assert_eq!(m.json()["groups"][0]["consecutive_overruns"], 0);
+    #[cfg(target_os = "linux")]
+    for field in ["disk_free", "memory_used"] {
+        let text = m.json()["system"][field]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned();
+        let kib: u64 = text
+            .strip_suffix(" KiB")
+            .and_then(|n| n.parse().ok())
+            .unwrap_or_else(|| panic!("{field}: {text:?}"));
+        assert!(kib > 0, "{field}: {text}");
+    }
     let sig = f
         .call("GET", "/v1/signals", "/v1/signals?sel=pi.**", None)
         .await;
