@@ -86,5 +86,6 @@
 | [0086](0086-the-hung-group-alarm.md) | The hung-group alarm (`joker.group.<g>.stalled`) |
 | [0087](0087-figures-per-hardware-class-and-locked-memory.md) | The figures of document 01 §21 per hardware class, and memory as `jokerd` locks it |
 | [0088](0088-the-scalar-slot-of-a-wide-signal-carries-its-quality.md) | The scalar slot of a wide signal carries its quality (amends ADR 0062 decision 2) |
+| [0089](0089-one-thread-per-cycle-group.md) | One thread per cycle group: per-group state, cross-group alarm trips, priorities and the supervisor's narrowed response (amends ADR 0061 decision 6) |
 
 Changing a decision = writing a new ADR that replaces it, and updating the affected documents in the same set of commits.
