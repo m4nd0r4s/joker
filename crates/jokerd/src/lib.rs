@@ -16,6 +16,7 @@ pub mod cycle;
 pub mod daemon;
 pub mod decisions;
 pub mod devices;
+pub mod doctor;
 pub mod drivers;
 pub mod expr_plan;
 pub mod generations;

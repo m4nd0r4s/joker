@@ -54,6 +54,7 @@ pub struct Node {
     name: String,
     state_dir: PathBuf,
     tickets: TicketBook,
+    jobs: Arc<crate::doctor::Jobs>,
     manual: Arc<ManualTable>,
     trips: Arc<TripTable>,
     traces: Arc<Traces>,
@@ -196,6 +197,7 @@ impl Node {
             name: host_name(),
             state_dir: state_dir.to_owned(),
             tickets: TicketBook::default(),
+            jobs: Arc::default(),
             manual,
             trips,
             traces: Arc::new(Traces::open(&state_dir.join("traces"))?),
@@ -1339,6 +1341,89 @@ impl Backend for Node {
         }
         items.sort_by(|a, b| a["key"].as_str().cmp(&b["key"].as_str()));
         Ok(Reply::ok(json!({ "items": items })))
+    }
+
+    fn job(&self, id: &str) -> Result<Reply, Problem> {
+        self.jobs
+            .get(id)
+            .map(Reply::ok)
+            .ok_or_else(|| Problem::new("J-E1005", 404, format!("unknown job `{id}`")))
+    }
+
+    fn doctor_report(&self) -> Result<Reply, Problem> {
+        self.jobs
+            .last_report()
+            .map(Reply::ok)
+            .ok_or_else(|| Problem::new("J-E1005", 404, "no doctor report yet: run `jk doctor`"))
+    }
+
+    fn run_doctor(
+        &self,
+        who: &Principal,
+        req: joker_api::model::DoctorRequest,
+    ) -> Result<Reply, Problem> {
+        if self.role_of(who) < Role::Admin {
+            return Err(Problem::new(
+                "J-E1002",
+                403,
+                "`jk doctor` requires the role `admin`",
+            ));
+        }
+        let view = self.view();
+        let mut skipped = Vec::new();
+        let mut rt_length = None;
+        for c in &req.checks {
+            match c.as_str() {
+                "base" => {}
+                "rt" => {
+                    let prod_live = view
+                        .as_ref()
+                        .is_some_and(|v| !v.plan.dev && !v.plan.outputs.is_empty());
+                    if prod_live && !req.allow_live {
+                        skipped.push(json!({
+                            "id": "rt.cyclictest",
+                            "status": "skip",
+                            "detail": "outputs are active in prod and the measurement disturbs rt",
+                            "help": "run again with --allow-live",
+                        }));
+                        continue;
+                    }
+                    let length = match &req.rt_duration {
+                        Some(d) => wire::parse_duration(d).map_err(|e| {
+                            bad("J-E1012", format!("`rt_duration`: {e}"))
+                                .with("pointer", json!("/rt_duration"))
+                        })?,
+                        None => 60_000_000_000,
+                    };
+                    rt_length = Some(Duration::from_nanos(length));
+                }
+                "ml" | "network" => skipped.push(json!({
+                    "id": c,
+                    "status": "skip",
+                    "detail": "nothing to check in 1.0",
+                })),
+                other => {
+                    return Err(bad("J-E1012", format!("unknown check `{other}`"))
+                        .with("pointer", json!("/checks")));
+                }
+            }
+        }
+        let inputs = crate::doctor::Inputs {
+            running: view.map(|v| (v.plan, v.shared)),
+            state_dir: self.state_dir.clone(),
+            rt_cpus: lock_controller(&self.controller).active_rt_cpus(),
+            now_mono_ns: self.now_mono(),
+        };
+        let job = self
+            .jobs
+            .start_doctor(&user(who), rt_length, skipped, inputs)
+            .map_err(|e| Problem::new("J-E1000", 500, format!("cannot start the doctor: {e}")))?;
+        let location = format!("/v1/jobs/{}", job["id"].as_str().unwrap_or_default());
+        Ok(Reply {
+            status: 202,
+            headers: vec![("location", location)],
+            ..Reply::ok(job)
+        })
     }
 
     fn apps(&self) -> Result<Reply, Problem> {
