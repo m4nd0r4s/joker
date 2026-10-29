@@ -114,13 +114,26 @@ impl DecisionLog {
     pub fn scan(
         path: &Path,
         newest_first: bool,
+        visit: impl FnMut(Value) -> bool,
+    ) -> io::Result<()> {
+        Self::scan_filtered(path, newest_first, |_| true, visit)
+    }
+
+    /// [`DecisionLog::scan`], with `keep` asked first about each raw line:
+    /// a line it refuses is never parsed. Parsing is what a scan of a large
+    /// log spends its time on, so a filter that can answer from the bytes
+    /// (an exact output path) makes a scan for a rare entry fast.
+    pub fn scan_filtered(
+        path: &Path,
+        newest_first: bool,
+        keep: impl Fn(&[u8]) -> bool,
         mut visit: impl FnMut(Value) -> bool,
     ) -> io::Result<()> {
         use std::io::{BufRead, Read, Seek, SeekFrom};
         let mut file = File::open(path)?;
         let mut line_of = |bytes: &[u8]| -> bool {
             let trimmed = bytes.trim_ascii();
-            if trimmed.is_empty() {
+            if trimmed.is_empty() || !keep(trimmed) {
                 return true;
             }
             match serde_json::from_slice(trimmed) {
