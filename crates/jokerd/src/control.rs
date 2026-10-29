@@ -142,6 +142,7 @@ pub struct Controller {
     alarms: Arc<crate::alarms::AlarmBook>,
     historian: Arc<crate::historian::Historian>,
     logs: Arc<crate::logs::LogRing>,
+    state_dir: std::path::PathBuf,
 }
 
 impl fmt::Debug for Controller {
@@ -335,6 +336,7 @@ impl Controller {
             alarms,
             historian,
             logs: Arc::default(),
+            state_dir: state_dir.to_path_buf(),
         })
     }
 
@@ -867,6 +869,8 @@ impl Controller {
                 historian: Some(Arc::clone(&self.historian)),
                 manual: Some(self.persistent.manual()),
                 restored_manual,
+                logs: Some(Arc::clone(&self.logs)),
+                state_dir: Some(self.state_dir.clone()),
             },
         )
         .map_err(|e| ControlError::new("J-E1000", 500, e.0))?;

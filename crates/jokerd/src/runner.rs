@@ -61,6 +61,11 @@ pub struct StartContext {
     /// The manual levels restored at startup without a synced clock, as
     /// (output, level).
     pub restored_manual: Vec<(String, u8)>,
+    /// The daemon's log ring, whose drops `svc/metrics` counts (ADR 0090).
+    pub logs: Option<Arc<crate::logs::LogRing>>,
+    /// The state directory, for the `joker.system.*` and `joker.node.*`
+    /// signals.
+    pub state_dir: Option<std::path::PathBuf>,
 }
 
 /// The persisted state a generation restores before its first tick
@@ -138,6 +143,7 @@ pub struct Running {
     pump: Option<crate::alarms::AlarmPump>,
     recorder: Option<crate::historian::Recorder>,
     watch: Option<crate::runtime_alarms::Watch>,
+    metrics: Option<crate::runtime_signals::MetricsWriter>,
 }
 
 impl Running {
@@ -224,6 +230,22 @@ impl Running {
             ),
             None => None,
         };
+        let metrics = match pacer.monotonic() {
+            Some(clock) => Some(
+                crate::runtime_signals::MetricsWriter::spawn(
+                    Arc::clone(&plan),
+                    Arc::clone(&shared),
+                    crate::runtime_signals::Sources {
+                        manual: context.manual.clone(),
+                        logs: context.logs.clone(),
+                        state_dir: context.state_dir.clone(),
+                        clock,
+                    },
+                )
+                .map_err(|e| CycleError(format!("cannot start svc/metrics: {e}")))?,
+            ),
+            None => None,
+        };
         let recorder = match &context.historian {
             Some(h) => {
                 h.configure(&plan.telemetry.store);
@@ -294,6 +316,7 @@ impl Running {
             pump,
             recorder,
             watch,
+            metrics,
         })
     }
 
@@ -319,6 +342,9 @@ impl Running {
         }
         if let Some(w) = self.watch.take() {
             w.stop();
+        }
+        if let Some(m) = self.metrics.take() {
+            m.stop();
         }
         if let Some(p) = self.pump.take() {
             p.stop();
@@ -350,6 +376,9 @@ impl Running {
         if let Some(w) = self.watch.take() {
             w.stop();
         }
+        if let Some(m) = self.metrics.take() {
+            m.stop();
+        }
         if let Some(p) = self.pump.take() {
             p.stop();
         }
@@ -379,6 +408,9 @@ impl Drop for Running {
         }
         if let Some(w) = self.watch.take() {
             w.stop();
+        }
+        if let Some(m) = self.metrics.take() {
+            m.stop();
         }
         if let Some(p) = self.pump.take() {
             p.stop();
