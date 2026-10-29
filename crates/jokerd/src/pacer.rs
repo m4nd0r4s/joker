@@ -17,6 +17,11 @@ use crate::clock::{ClockPolicy, SyncSource, TimesyncFile, evaluate};
 pub trait Pacer: Send {
     /// The current instant.
     fn now(&self) -> Instant;
+    /// The monotonic time alone, without reading the wall clock: what the
+    /// cycle stamps a task's run time with (ADR 0090).
+    fn mono_ns(&self) -> u64 {
+        self.now().mono_ns
+    }
     /// Waits until the monotonic time reaches `mono_ns`.
     fn wait_until(&mut self, mono_ns: u64);
     /// The real monotonic clock behind [`Pacer::now`], when there is one:
@@ -107,6 +112,10 @@ impl Pacer for SystemPacer {
             utc_ns: utc,
             clock: self.quality.get(),
         }
+    }
+
+    fn mono_ns(&self) -> u64 {
+        self.mono.now_ns()
     }
 
     fn wait_until(&mut self, mono_ns: u64) {

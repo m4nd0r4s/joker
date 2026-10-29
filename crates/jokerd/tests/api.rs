@@ -2531,3 +2531,53 @@ temp = { type = "bytes", direction = "input", reg = 0, len = 2, poll = "20ms" }
     assert_eq!(sample["value"], json!("q80="), "{}", reply.body);
     assert_eq!(sample["seq"], json!(1));
 }
+
+/// `GET /v1/groups` (ref/09 §5.2) with the measured WCET of each task,
+/// and the runtime's own signals and drops (ADR 0090).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn groups_and_runtime_signals_follow_the_contract() {
+    let f = start().await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let g = f.call("GET", "/v1/groups", "/v1/groups", None).await;
+    assert_eq!(g.status, 200, "{}", g.json());
+    let main = &g.json()["items"][0];
+    assert_eq!(main["name"], "main");
+    assert!(main["period"].is_string(), "{main}");
+    assert!(main["stats"]["ticks"].as_u64().unwrap() > 0, "{main}");
+    let task = &main["tasks"][0];
+    assert!(
+        task["app"].is_string() && task["task"].is_string(),
+        "{main}"
+    );
+    assert!(task["wcet_measured_p999"].is_string(), "{main}");
+    let one = f
+        .call("GET", "/v1/groups/{group}", "/v1/groups/main", None)
+        .await;
+    assert_eq!(one.status, 200);
+    assert_eq!(one.json()["name"], "main");
+    let missing = f
+        .call("GET", "/v1/groups/{group}", "/v1/groups/nope", None)
+        .await;
+    assert_eq!(missing.status, 404);
+
+    let m = f.call("GET", "/v1/metrics", "/v1/metrics", None).await;
+    assert!(
+        m.json()["runtime"]["dropped"]["decisions"].is_u64(),
+        "{}",
+        m.json()
+    );
+    assert!(
+        m.json()["arbiter"]["leases_expiring"].is_u64(),
+        "{}",
+        m.json()
+    );
+    let v = f
+        .call(
+            "GET",
+            "/v1/values",
+            "/v1/values?sel=joker.group.main.ticks",
+            None,
+        )
+        .await;
+    assert_eq!(v.json()["items"][0]["quality"], "good", "{}", v.json());
+}
