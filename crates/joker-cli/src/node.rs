@@ -544,6 +544,44 @@ impl Node {
         })
     }
 
+    /// `jk app list` (ref/09 §5.14): the apps of the running generation.
+    pub fn apps(&self) -> Result<u8, Failure> {
+        let v = checked(self.client.get("/v1/apps")?)?.json();
+        if self.json {
+            print_json(&v);
+            return Ok(0);
+        }
+        for a in v["items"].as_array().into_iter().flatten() {
+            println!(
+                "{:<24} {}",
+                a["name"].as_str().unwrap_or("?"),
+                a["state"].as_str().unwrap_or("?")
+            );
+        }
+        Ok(0)
+    }
+
+    /// `jk app start|stop|restart <app>` (ref/09 §5.14, ADR 0091): the
+    /// banner of a mutating command, then the app's state after it.
+    pub fn app_lifecycle(&self, app: &str, op: &str, reason: Option<&str>) -> Result<u8, Failure> {
+        let body = match reason {
+            Some(r) => json!({ "reason": r }),
+            None => json!({}),
+        };
+        let a = checked(
+            self.client
+                .post(&format!("/v1/apps/{app}/{op}"), &body, &[])?,
+        )?
+        .json();
+        if self.json {
+            print_json(&a);
+        } else {
+            println!("{}", self.header()?);
+            println!("{app}: {} ({op})", a["state"].as_str().unwrap_or("?"));
+        }
+        Ok(0)
+    }
+
     /// `jk trips`: lists tripped outputs (docs/16 E7).
     pub fn trips(&self) -> Result<u8, Failure> {
         let t = checked(self.client.get("/v1/trips")?)?.json();

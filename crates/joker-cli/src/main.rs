@@ -269,6 +269,11 @@ enum Command {
         #[command(subcommand)]
         command: AlarmCommand,
     },
+    /// Operates an app on the node (ref/09 §5.14, ADR 0091).
+    App {
+        #[command(subcommand)]
+        command: AppCommand,
+    },
     /// Profile draft tooling (ref/03 §2.2.19).
     Profile {
         #[command(subcommand)]
@@ -304,6 +309,47 @@ enum ClassCommand {
     },
     /// Validates the classes of `std/` and of the project (JC codes).
     Check,
+}
+
+#[derive(Debug, Subcommand)]
+enum AppCommand {
+    /// The node's apps and their state.
+    List,
+    /// Lets a stopped app run again.
+    Start {
+        /// The app.
+        app: String,
+    },
+    /// Stops an app: its tasks skip their ticks and its outputs follow
+    /// their leases, until a start or the next generation.
+    Stop {
+        /// The app.
+        app: String,
+        /// Why.
+        reason: String,
+    },
+    /// Swaps fresh instances of an app's cycle tasks in.
+    Restart {
+        /// The app.
+        app: String,
+        /// Why.
+        #[arg(long)]
+        reason: Option<String>,
+    },
+    /// The app's log lines (`jk logs --app <app>`).
+    Logs {
+        /// The app.
+        app: String,
+        /// Only this level and above: trace, debug, info, warn, error.
+        #[arg(long)]
+        level: Option<String>,
+        /// How many lines.
+        #[arg(long, default_value_t = 100)]
+        limit: u32,
+        /// Keep printing new lines as they arrive.
+        #[arg(long)]
+        follow: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -547,6 +593,27 @@ fn run(cli: Cli) -> Result<u8, Failure> {
             AlarmCommand::Ack { id, reason } => node()?.alarm_ack(&id, reason.as_deref()),
             AlarmCommand::Shelve { id, ttl, reason } => node()?.alarm_shelve(&id, &ttl, &reason),
             AlarmCommand::Unshelve { id } => node()?.alarm_unshelve(&id),
+        },
+        Command::App { command } => match command {
+            AppCommand::List => node()?.apps(),
+            AppCommand::Start { app } => node()?.app_lifecycle(&app, "start", None),
+            AppCommand::Stop { app, reason } => node()?.app_lifecycle(&app, "stop", Some(&reason)),
+            AppCommand::Restart { app, reason } => {
+                node()?.app_lifecycle(&app, "restart", reason.as_deref())
+            }
+            AppCommand::Logs {
+                app,
+                level,
+                limit,
+                follow,
+            } => node()?.logs(
+                &[
+                    ("app", Some(app)),
+                    ("level", level),
+                    ("limit", Some(limit.to_string())),
+                ],
+                follow,
+            ),
         },
         Command::Record {
             duration,
