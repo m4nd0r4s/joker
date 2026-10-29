@@ -24,6 +24,12 @@ pub const ALARM_STATES: [&str; 5] = [
     "unknown",
 ];
 
+/// The `link_state` enum of ref/00 §6, as expressions name it.
+pub const LINK_STATE: &str = "LinkState";
+
+/// The variants of `link_state`, in their numeric order.
+pub const LINK_STATES: [&str; 6] = ["connecting", "up", "degraded", "down", "drift", "stopped"];
+
 /// What an expression must produce.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Expect {

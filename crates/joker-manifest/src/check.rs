@@ -41,7 +41,7 @@ const DECLARATION_ONLY: [&str; 2] = ["type", "direction"];
 const RESERVED_PREFIXES: [&str; 6] = ["calc.", "alarm.", "app.", "board.", "joker.", "bridge."];
 
 /// Implicit cycle groups (ref/01 §5.11).
-const IMPLICIT_GROUPS: [&str; 2] = ["default", "calc"];
+pub(crate) const IMPLICIT_GROUPS: [&str; 2] = ["default", "calc"];
 
 /// The manifest limits of ref/01 §11.3.
 const MAX_DEVICES: usize = 1024;

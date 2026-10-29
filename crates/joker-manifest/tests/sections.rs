@@ -697,3 +697,47 @@ fn implicit_instances_check_their_implements_against_the_class() {
         );
     }
 }
+
+#[test]
+fn the_runtime_signals_are_registered_and_readable_by_an_alarm() {
+    let text = site(concat!(
+        "[cycles.main]\nperiod = \"20ms\"\n",
+        "[alarms.hot]\nwhen = \"joker.system.temp > 80 °C || joker.group.main.overruns > 0\"\nseverity = \"high\"\n",
+        "[telemetry.record]\n\"joker.output.**\" = { every = \"1s\", keep = { raw = \"7d\" } }\n",
+    ));
+    let report = run(&text);
+    assert!(!report.has_errors(), "{}", report.render());
+    for path in [
+        "joker.group.main.ticks",
+        "joker.group.main.jitter_p99",
+        "joker.group.default.overruns",
+        "joker.device.pcs.link",
+        "joker.device.io.dropped_samples",
+        "joker.output.pcs.p_set.accepted",
+        "joker.output.io.do_1.tripped",
+        "joker.arbiter.leases_expiring",
+        "joker.system.temp",
+        "joker.system.memory_used_bytes",
+        "joker.node.boot_count",
+        "joker.runtime.dropped",
+    ] {
+        let registered = report
+            .paths
+            .get(path)
+            .unwrap_or_else(|| panic!("`{path}` is not registered"));
+        assert_eq!(registered.info.direction, Direction::Input, "{path}");
+        assert!(registered.device.is_none(), "{path}");
+    }
+    assert!(matches!(
+        report.paths["joker.device.pcs.link"].info.ty,
+        SignalType::Enum { .. }
+    ));
+    assert_eq!(
+        report.paths["joker.group.main.jitter_p99"]
+            .info
+            .unit
+            .map(|u| u.symbol().to_owned()),
+        Some("s".to_owned())
+    );
+    assert!(!report.paths.contains_key("joker.output.pcs.p_ac.accepted"));
+}
