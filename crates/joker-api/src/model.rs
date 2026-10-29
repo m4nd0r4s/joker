@@ -201,6 +201,22 @@ pub struct RollbackRequest {
     pub reason: String,
 }
 
+/// `DoctorRequest` (ref/09 §5.17, `jk doctor`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DoctorRequest {
+    /// The check groups beyond `base`, which always runs: `rt`, `ml`,
+    /// `network`.
+    #[serde(default)]
+    pub checks: Vec<String>,
+    /// How long the `rt` checks measure (default 60 s).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rt_duration: Option<String>,
+    /// Allows the `rt` checks while outputs are active in `prod`.
+    #[serde(default)]
+    pub allow_live: bool,
+}
+
 /// A lifecycle command on an app (`POST /v1/apps/{app}/start|stop|restart`,
 /// ref/09 §5.14, ADR 0091).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
