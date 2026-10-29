@@ -2772,3 +2772,79 @@ async fn a_signal_tells_its_lineage() {
         .await;
     assert_eq!(missing.status, 404);
 }
+
+/// `jk doctor` (ref/09 §5.17): `POST /v1/doctor` starts a `doctor` job,
+/// `GET /v1/jobs/{job}` follows it to its report, and `GET /v1/doctor`
+/// keeps the last one.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_doctor_runs_as_a_job_and_keeps_its_report() {
+    let f = start().await;
+    let none = f.call("GET", "/v1/doctor", "/v1/doctor", None).await;
+    assert_eq!(none.status, 404);
+    let job = f
+        .call(
+            "POST",
+            "/v1/doctor",
+            "/v1/doctor",
+            Some(json!({"checks": ["rt", "network"], "rt_duration": "200ms"})),
+        )
+        .await;
+    assert_eq!(job.status, 202, "{}", job.json());
+    assert_eq!(job.json()["kind"], "doctor");
+    let id = job.json()["id"].as_str().unwrap().to_owned();
+    let done = loop {
+        let j = f
+            .call("GET", "/v1/jobs/{job}", &format!("/v1/jobs/{id}"), None)
+            .await;
+        if j.json()["state"] == "succeeded" {
+            break j.json();
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    };
+    let report = &done["result"];
+    assert!(
+        matches!(report["summary"].as_str(), Some("ok" | "warn" | "fail")),
+        "{report}"
+    );
+    let ids: Vec<&str> = report["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|c| c["id"].as_str())
+        .collect();
+    for id in [
+        "kernel.preempt_rt",
+        "disk",
+        "groups",
+        "rt.cyclictest",
+        "network",
+    ] {
+        assert!(ids.contains(&id), "{id} in {ids:?}");
+    }
+    let rt = report["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["id"] == "rt.cyclictest")
+        .unwrap();
+    assert!(rt["measured"]["samples"].as_u64().unwrap() > 50, "{rt}");
+    let groups = report["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["id"] == "groups")
+        .unwrap();
+    assert_eq!(groups["status"], "ok", "{groups}");
+    let last = f.call("GET", "/v1/doctor", "/v1/doctor", None).await;
+    assert_eq!(last.status, 200, "{}", last.json());
+    assert_eq!(last.json()["id"], report["id"]);
+    let refused = f
+        .call(
+            "POST",
+            "/v1/doctor",
+            "/v1/doctor",
+            Some(json!({"checks": ["bogus"]})),
+        )
+        .await;
+    assert_eq!(refused.status, 400);
+}

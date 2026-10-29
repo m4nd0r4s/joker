@@ -116,6 +116,7 @@ struct Active {
     devices: Box<dyn DeviceSet>,
     manifest: Arc<joker_manifest::Manifest>,
     provider: Arc<dyn TaskProvider>,
+    rt_cpus: Vec<usize>,
 }
 
 struct Confirming {
@@ -391,6 +392,14 @@ impl Controller {
     /// The generation running now, if any.
     pub fn active_generation(&self) -> Option<u64> {
         self.active.as_ref().map(|a| a.number)
+    }
+
+    /// `[resources] rt.cpus` of the generation running now.
+    pub fn active_rt_cpus(&self) -> Vec<usize> {
+        self.active
+            .as_ref()
+            .map(|a| a.rt_cpus.clone())
+            .unwrap_or_default()
     }
 
     /// Stops (`stopped`) or starts an app of the running generation
@@ -967,6 +976,7 @@ impl Controller {
             hash: g.hash.clone(),
             running,
             devices,
+            rt_cpus: crate::resources::rt_cpus(&loaded.manifest),
             manifest: Arc::new(loaded.manifest),
             provider,
         });
@@ -1347,6 +1357,7 @@ mod action_tests {
             devices: Box::new(Answering(tx)),
             manifest: Arc::new(joker_manifest::Manifest::default()),
             provider: Arc::new(NativeTasks),
+            rt_cpus: Vec::new(),
         });
         c
     }
