@@ -534,6 +534,57 @@ async fn groups(State(b): State<Shared>) -> Response {
     run(b, move |b| b.groups()).await
 }
 
+async fn apps(State(b): State<Shared>) -> Response {
+    run(b, move |b| b.apps()).await
+}
+
+async fn app(State(b): State<Shared>, UrlPath(name): UrlPath<String>) -> Response {
+    run(b, move |b| b.app(&name)).await
+}
+
+async fn app_lifecycle(
+    b: Shared,
+    peer: Peer,
+    name: String,
+    op: crate::model::AppOp,
+    body: Bytes,
+) -> Response {
+    match decode(&body) {
+        Ok(req) => {
+            let who = principal(peer);
+            run(b, move |b| b.app_lifecycle(&who, &name, op, req)).await
+        }
+        Err(p) => problem_response(b.as_ref(), &p),
+    }
+}
+
+async fn start_app(
+    State(b): State<Shared>,
+    ConnectInfo(peer): ConnectInfo<Peer>,
+    UrlPath(name): UrlPath<String>,
+    body: Bytes,
+) -> Response {
+    app_lifecycle(b, peer, name, crate::model::AppOp::Start, body).await
+}
+
+async fn stop_app(
+    State(b): State<Shared>,
+    ConnectInfo(peer): ConnectInfo<Peer>,
+    UrlPath(name): UrlPath<String>,
+    body: Bytes,
+) -> Response {
+    app_lifecycle(b, peer, name, crate::model::AppOp::Stop, body).await
+}
+
+async fn restart_app(
+    State(b): State<Shared>,
+    ConnectInfo(peer): ConnectInfo<Peer>,
+    UrlPath(name): UrlPath<String>,
+    body: Bytes,
+) -> Response {
+    app_lifecycle(b, peer, name, crate::model::AppOp::Restart, body).await
+}
+
 async fn group(State(b): State<Shared>, UrlPath(name): UrlPath<String>) -> Response {
     run(b, move |b| b.group(&name)).await
 }
@@ -976,6 +1027,11 @@ pub fn router_with(backend: Arc<dyn Backend>, limits: ws::Limits) -> Router {
         .route("/v1/health", get(health))
         .route("/v1/status", get(status))
         .route("/v1/groups", get(groups))
+        .route("/v1/apps", get(apps))
+        .route("/v1/apps/{app}", get(app))
+        .route("/v1/apps/{app}/start", post(start_app))
+        .route("/v1/apps/{app}/stop", post(stop_app))
+        .route("/v1/apps/{app}/restart", post(restart_app))
         .route("/v1/groups/{group}", get(group))
         .route("/v1/metrics", get(metrics))
         .route("/metrics", get(prometheus))

@@ -201,6 +201,29 @@ pub struct RollbackRequest {
     pub reason: String,
 }
 
+/// A lifecycle command on an app (`POST /v1/apps/{app}/start|stop|restart`,
+/// ref/09 §5.14, ADR 0091).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AppOp {
+    /// Lets a stopped app's tasks run again.
+    Start,
+    /// Stops the app's cycle tasks; its outputs follow their leases.
+    Stop,
+    /// Swaps fresh instances of the app's cycle tasks in.
+    Restart,
+}
+
+impl AppOp {
+    /// The name of the operation, as the path and the decision log spell it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Start => "start",
+            Self::Stop => "stop",
+            Self::Restart => "restart",
+        }
+    }
+}
+
 /// `ReasonBody`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
