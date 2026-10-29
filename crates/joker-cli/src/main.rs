@@ -223,6 +223,10 @@ enum Command {
         /// How many lines.
         #[arg(long, default_value_t = 100)]
         limit: u32,
+        /// Keep printing new lines as they arrive (`GET /v1/ws`, topic
+        /// `logs`).
+        #[arg(long)]
+        follow: bool,
     },
     /// The decision log.
     Decisions {
@@ -512,13 +516,17 @@ fn run(cli: Cli) -> Result<u8, Failure> {
             level,
             since,
             limit,
-        } => node()?.logs(&[
-            ("app", app),
-            ("source", source),
-            ("level", level),
-            ("since", since),
-            ("limit", Some(limit.to_string())),
-        ]),
+            follow,
+        } => node()?.logs(
+            &[
+                ("app", app),
+                ("source", source),
+                ("level", level),
+                ("since", since),
+                ("limit", Some(limit.to_string())),
+            ],
+            follow,
+        ),
         Command::History {
             selectors,
             from,

@@ -691,37 +691,42 @@ impl Node {
     }
 
     /// `jk logs` (ref/09 §9.1): one page of `GET /v1/logs`, printed oldest
-    /// first.
-    pub fn logs(&self, params: &[(&str, Option<String>)]) -> Result<u8, Failure> {
+    /// first; with `follow`, then every new line from `GET /v1/ws`'s `logs`
+    /// topic with the same `source`, `app` and `level` filters.
+    pub fn logs(&self, params: &[(&str, Option<String>)], follow: bool) -> Result<u8, Failure> {
         let q: Vec<String> = params
             .iter()
             .filter_map(|(k, v)| v.as_ref().map(|v| format!("{k}={}", encode(v))))
             .collect();
         let page = checked(self.client.get(&format!("/v1/logs?{}", q.join("&")))?)?.json();
-        if self.json {
+        if self.json && !follow {
             print_json(&page);
             return Ok(0);
         }
         let mut items = page["items"].as_array().cloned().unwrap_or_default();
         items.reverse();
-        for e in items {
-            let fields: String = e["fields"]
-                .as_object()
-                .map(|f| {
-                    f.iter()
-                        .map(|(k, v)| format!(" {k}={}", v.as_str().unwrap_or("")))
-                        .collect()
-                })
-                .unwrap_or_default();
-            println!(
-                "{}  {:<5} {:<16} {}{fields}",
-                e["ts"].as_str().unwrap_or(""),
-                e["level"].as_str().unwrap_or(""),
-                e["source"].as_str().unwrap_or(""),
-                e["msg"].as_str().unwrap_or("")
-            );
+        for e in &items {
+            if self.json {
+                println!("{e}");
+            } else {
+                println!("{}", log_line(e));
+            }
         }
-        Ok(0)
+        if !follow {
+            return Ok(0);
+        }
+        let filters: Vec<(String, String)> = params
+            .iter()
+            .filter(|(k, _)| matches!(*k, "source" | "app" | "level"))
+            .filter_map(|(k, v)| v.as_ref().map(|v| ((*k).to_owned(), v.clone())))
+            .collect();
+        let socket = self.client.socket().to_owned();
+        let json_mode = self.json;
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| Failure::usage(format!("tokio: {e}")))?;
+        runtime.block_on(follow_logs(&socket, &filters, json_mode))
     }
 
     /// `jk history` (ref/09 §9.1).
@@ -1280,6 +1285,72 @@ async fn top_view(socket: &Path, header: &str, json_mode: bool) -> Result<u8, Fa
             continue;
         }
         print!("\x1B[2J\x1B[H{}", render_top(header, &state));
+        std::io::stdout().flush().ok();
+    }
+}
+
+/// One `LogEntry` as `jk logs` prints it: time, level, source, message and
+/// its fields.
+fn log_line(e: &Value) -> String {
+    let fields: String = e["fields"]
+        .as_object()
+        .map(|f| {
+            f.iter()
+                .map(|(k, v)| format!(" {k}={}", v.as_str().unwrap_or("")))
+                .collect()
+        })
+        .unwrap_or_default();
+    format!(
+        "{}  {:<5} {:<16} {}{fields}",
+        e["ts"].as_str().unwrap_or(""),
+        e["level"].as_str().unwrap_or(""),
+        e["source"].as_str().unwrap_or(""),
+        e["msg"].as_str().unwrap_or("")
+    )
+}
+
+/// `jk logs --follow`: the `logs` topic of `GET /v1/ws` (ref/09 §6) with
+/// `filters`, each new line printed as it arrives (one JSON object per
+/// line with `--json`), until the node closes the connection.
+async fn follow_logs(
+    socket: &Path,
+    filters: &[(String, String)],
+    json_mode: bool,
+) -> Result<u8, Failure> {
+    use futures_util::SinkExt;
+    use tokio_tungstenite::tungstenite::Message;
+
+    let mut ws = open_ws(socket).await?;
+    let mut subscribe = json!({
+        "op": "subscribe",
+        "id": "follow",
+        "topic": "logs",
+        "initial": false,
+    });
+    for (k, v) in filters {
+        subscribe[k] = json!(v);
+    }
+    ws.send(Message::Text(subscribe.to_string().into()))
+        .await
+        .map_err(|e| lost(e.to_string()))?;
+    let mut closing = None;
+    loop {
+        let v = next_message(&mut ws, &mut closing).await?;
+        if v["op"] == "error" {
+            return Err(lost(
+                v["problem"]["detail"].as_str().unwrap_or("").to_owned(),
+            ));
+        }
+        if v["op"] != "data" {
+            continue;
+        }
+        for e in v["items"].as_array().into_iter().flatten() {
+            if json_mode {
+                println!("{e}");
+            } else {
+                println!("{}", log_line(e));
+            }
+        }
         std::io::stdout().flush().ok();
     }
 }
