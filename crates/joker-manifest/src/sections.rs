@@ -68,6 +68,7 @@ impl Checker<'_> {
         self.clock();
         self.drivers();
         self.instances();
+        self.runtime_signals();
         self.calc_and_alarms();
         self.signals();
         self.bridge_signals();
@@ -82,6 +83,84 @@ impl Checker<'_> {
         self.security();
         self.micro_target();
         self.output_rules();
+    }
+
+    /// Registers the runtime's own signals (ADR 0090): per cycle group, per
+    /// device and per output, and the node-wide ones. They are inputs with
+    /// no device; `svc/metrics` writes them.
+    fn runtime_signals(&mut self) {
+        let int = || SignalInfo::new(SignalType::Integer, Direction::Input);
+        let seconds = || {
+            SignalInfo::new(SignalType::Float, Direction::Input)
+                .with_unit(joker_units::Unit::SECOND)
+        };
+        let mut signals: Vec<(String, SignalInfo)> = Vec::new();
+        let mut groups: BTreeSet<&str> = self.manifest.cycles.keys().map(String::as_str).collect();
+        groups.extend(crate::check::IMPLICIT_GROUPS);
+        for g in groups {
+            for name in ["ticks", "overruns"] {
+                signals.push((format!("joker.group.{g}.{name}"), int()));
+            }
+            for name in ["jitter_p99", "jitter_max", "duration_p99", "duration_max"] {
+                signals.push((format!("joker.group.{g}.{name}"), seconds()));
+            }
+        }
+        for d in self.manifest.devices.keys() {
+            signals.push((
+                format!("joker.device.{d}.link"),
+                SignalInfo::new(
+                    SignalType::Enum {
+                        name: expr::LINK_STATE.to_owned(),
+                        variants: expr::LINK_STATES.iter().map(|s| (*s).to_owned()).collect(),
+                    },
+                    Direction::Input,
+                ),
+            ));
+            for name in ["reconnects", "dropped_samples", "invalid_samples"] {
+                signals.push((format!("joker.device.{d}.{name}"), int()));
+            }
+        }
+        let outputs: Vec<String> = self
+            .paths
+            .iter()
+            .filter(|(p, r)| r.info.direction == Direction::Output && r.canonical == **p)
+            .map(|(p, _)| p.clone())
+            .collect();
+        for o in outputs {
+            for name in ["accepted", "clamped", "rejected", "suppressed", "tripped"] {
+                signals.push((format!("joker.output.{o}.{name}"), int()));
+            }
+        }
+        for name in [
+            "joker.arbiter.manual_active",
+            "joker.arbiter.leases_expiring",
+            "joker.system.memory_used_bytes",
+            "joker.system.disk_free_bytes",
+            "joker.node.boot_count",
+            "joker.runtime.dropped",
+        ] {
+            signals.push((name.to_owned(), int()));
+        }
+        let mut temp = SignalInfo::new(SignalType::Float, Direction::Input);
+        if let Ok(celsius) = joker_units::Unit::parse("°C") {
+            temp = temp.with_unit(celsius);
+        }
+        signals.push(("joker.system.temp".to_owned(), temp));
+        signals.push((
+            "joker.system.throttled".to_owned(),
+            SignalInfo::new(SignalType::Bool, Direction::Input),
+        ));
+        signals.push(("joker.node.uptime".to_owned(), seconds()));
+        for (path, info) in signals {
+            self.paths
+                .entry(path.clone())
+                .or_insert_with(|| Registered {
+                    info,
+                    canonical: path,
+                    device: None,
+                    span: None,
+                });
+        }
     }
 
     fn opaque_check(&self) -> impl Fn(&str) -> bool + '_ {
