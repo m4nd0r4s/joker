@@ -105,6 +105,60 @@ impl DecisionLog {
             .map(|l| serde_json::from_str(l).map_err(io::Error::other))
             .collect()
     }
+
+    /// Visits the entries of a log file one line at a time, newest first
+    /// (read backwards in blocks from the end) or oldest first, until
+    /// `visit` returns `false`. Memory stays at one block and one line, so
+    /// a read of the last few entries costs the same on a log of any size.
+    /// A line that is not JSON is skipped.
+    pub fn scan(
+        path: &Path,
+        newest_first: bool,
+        mut visit: impl FnMut(Value) -> bool,
+    ) -> io::Result<()> {
+        use std::io::{BufRead, Read, Seek, SeekFrom};
+        let mut file = File::open(path)?;
+        let mut line_of = |bytes: &[u8]| -> bool {
+            let trimmed = bytes.trim_ascii();
+            if trimmed.is_empty() {
+                return true;
+            }
+            match serde_json::from_slice(trimmed) {
+                Ok(v) => visit(v),
+                Err(_) => true,
+            }
+        };
+        if !newest_first {
+            for line in io::BufReader::new(file).split(b'\n') {
+                if !line_of(&line?) {
+                    break;
+                }
+            }
+            return Ok(());
+        }
+        const BLOCK: u64 = 64 * 1024;
+        let mut end = file.seek(SeekFrom::End(0))?;
+        let mut carry: Vec<u8> = Vec::new();
+        while end > 0 {
+            let start = end.saturating_sub(BLOCK);
+            let mut block = vec![0u8; usize::try_from(end - start).unwrap_or(0)];
+            file.seek(SeekFrom::Start(start))?;
+            file.read_exact(&mut block)?;
+            block.extend_from_slice(&carry);
+            let mut tail = block.len();
+            while let Some(nl) = block[..tail].iter().rposition(|b| *b == b'\n') {
+                if !line_of(&block[nl + 1..tail]) {
+                    return Ok(());
+                }
+                tail = nl;
+            }
+            block.truncate(tail);
+            carry = block;
+            end = start;
+        }
+        line_of(&carry);
+        Ok(())
+    }
 }
 
 /// A shared handle on the decision log.

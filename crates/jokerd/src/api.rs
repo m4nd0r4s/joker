@@ -2612,8 +2612,6 @@ impl Backend for Node {
                     .map_err(|_| Problem::new("J-E1032", 400, "bad cursor"))
             })
             .transpose()?;
-        let entries =
-            DecisionLog::read_all(&self.state_dir.join("decisions.jsonl")).unwrap_or_default();
         let hashes: std::collections::BTreeMap<u64, String> = lock_controller(&self.controller)
             .store()
             .list()
@@ -2621,34 +2619,34 @@ impl Backend for Node {
             .into_iter()
             .map(|g| (g.number, g.hash))
             .collect();
-        let mut items: Vec<(u64, Value)> = entries
-            .iter()
-            .filter_map(|e| {
-                let d = match e["record"].as_str() {
-                    Some("output" | "write") => decision_json(e, &hashes),
-                    Some("write_ack") => ack_decision_json(e, &hashes),
-                    _ => None,
-                }?;
-                Some((e["seq"].as_u64().unwrap_or(0), d))
-            })
-            .filter(|(_, d)| {
-                let out = d["output"].as_str().unwrap_or("");
-                (outputs.is_empty() || outputs.iter().any(|s| wire::matches(s, out)))
-                    && (outcomes.is_empty()
-                        || outcomes
-                            .iter()
-                            .any(|o| d["outcome"]["outcome"] == *o.as_str()))
-                    && (writers.is_empty()
-                        || writers.iter().any(|w| d["writer"]["writer"] == *w.as_str()))
-                    && (kinds.is_empty() || kinds.iter().any(|k| d["kind"] == *k.as_str()))
-            })
-            .collect();
-        if !asc {
-            items.reverse();
-        }
-        if let Some(c) = cursor {
-            items.retain(|(seq, _)| if asc { *seq > c } else { *seq < c });
-        }
+        let mut items: Vec<(u64, Value)> = Vec::new();
+        let _ = DecisionLog::scan(&self.state_dir.join("decisions.jsonl"), !asc, |e| {
+            let seq = e["seq"].as_u64().unwrap_or(0);
+            if cursor.is_some_and(|c| if asc { seq <= c } else { seq >= c }) {
+                return true;
+            }
+            let d = match e["record"].as_str() {
+                Some("output" | "write") => decision_json(&e, &hashes),
+                Some("write_ack") => ack_decision_json(&e, &hashes),
+                _ => None,
+            };
+            let Some(d) = d else {
+                return true;
+            };
+            let out = d["output"].as_str().unwrap_or("");
+            let wanted = (outputs.is_empty() || outputs.iter().any(|s| wire::matches(s, out)))
+                && (outcomes.is_empty()
+                    || outcomes
+                        .iter()
+                        .any(|o| d["outcome"]["outcome"] == *o.as_str()))
+                && (writers.is_empty()
+                    || writers.iter().any(|w| d["writer"]["writer"] == *w.as_str()))
+                && (kinds.is_empty() || kinds.iter().any(|k| d["kind"] == *k.as_str()));
+            if wanted {
+                items.push((seq, d));
+            }
+            items.len() <= limit
+        });
         let next = (items.len() > limit).then(|| items[limit - 1].0.to_string());
         let page: Vec<Value> = items.into_iter().take(limit).map(|(_, d)| d).collect();
         Ok(Reply::ok(json!({"items": page, "next_cursor": next})))
