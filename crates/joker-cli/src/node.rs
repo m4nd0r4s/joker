@@ -1527,6 +1527,12 @@ async fn top_view(socket: &Path, header: &str, json_mode: bool) -> Result<u8, Fa
     }
 }
 
+/// Writes one line to stdout; false once stdout is closed (a `| head`
+/// that has read enough), so a follow ends quietly instead of panicking.
+fn emit(line: &str) -> bool {
+    writeln!(std::io::stdout(), "{line}").is_ok()
+}
+
 /// One `LogEntry` as `jk logs` prints it: time, level, source, message and
 /// its fields.
 fn log_line(e: &Value) -> String {
@@ -1578,7 +1584,9 @@ async fn follow_trace(socket: &Path, signal: &str, json_mode: bool) -> Result<u8
         }
         for r in v["items"].as_array().into_iter().flatten() {
             if json_mode {
-                println!("{r}");
+                if !emit(&r.to_string()) {
+                    return Ok(0);
+                }
                 continue;
             }
             let mut line = format!("{} tick {}", r["group"].as_str().unwrap_or("?"), r["tick"]);
@@ -1603,7 +1611,9 @@ async fn follow_trace(socket: &Path, signal: &str, json_mode: bool) -> Result<u8
                     r["result"]["applied"]
                 ));
             }
-            println!("{line}");
+            if !emit(&line) {
+                return Ok(0);
+            }
         }
         std::io::stdout().flush().ok();
     }
@@ -1646,9 +1656,13 @@ async fn follow_logs(
         }
         for e in v["items"].as_array().into_iter().flatten() {
             if json_mode {
-                println!("{e}");
+                if !emit(&e.to_string()) {
+                    return Ok(0);
+                }
             } else {
-                println!("{}", log_line(e));
+                if !emit(&log_line(e)) {
+                    return Ok(0);
+                }
             }
         }
         std::io::stdout().flush().ok();
