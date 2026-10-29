@@ -33,6 +33,7 @@
 | `jk diff [--against <generation\|file>]` | effective manifest after the overlays; differences from what is running |
 | `jk explain <key\|code\|pipeline>` | origin of a key (overlay), explanation of an error, plan of a pipeline |
 | `jk explain <output path>` | the arbiter state of an output, on the node: owning group, occupied levels (writer, value, lease), active level, envelope and last result (`GET /v1/outputs/{path}`, `OutputState`; ref/09, §5.6). An argument that is at the same time a manifest key and an output is read as an output; `jk explain 'outputs."<output>"'` asks for the key |
+| `jk why <output>` | why the output has this value, on one screen: the arbiter state of `jk explain`, the last five decisions and the quality and value of the signals its envelope reads (permissive, `requires_good`, the inputs of its expressions); docs/26 F2, ADR 0091 |
 | `jk inspect <app.wasm\|driver.wasm\|firmware.jkfw\|model.jkm>` | metadata: ports, tasks, WIT world, signature, lineage; the descriptor of a driver; the descriptor of a firmware (ref/08, §2.14) |
 | `jk lsp` | language server for the TOML files and the `.jkc` files (1.0.x; document 26, §5) |
 | `jk sim <scenario>` | runs only the simulated plant, without apps (to see the dynamics) |
