@@ -33,6 +33,9 @@ pub const RESET_CAPACITY: usize = 16;
 /// the generation runs; the persisted trips are restored before the first
 /// tick through `RunOptions::initial_trips`, with no capacity, ADR 0061).
 pub const TRIP_CAPACITY: usize = 16;
+/// Capacity of each group's queue of task instances to swap in, and of
+/// the queue of instances swapped out (an app restart).
+pub const TASK_SWAP_CAPACITY: usize = 64;
 /// State exports in flight (apps per request).
 pub const EXPORT_CAPACITY: usize = 256;
 /// Trace buffers in flight between the cycle thread and the trace ring.
@@ -105,6 +108,23 @@ pub struct ResetRequest {
 pub struct TripRequest {
     /// The output to trip.
     pub signal: SignalId,
+}
+
+/// A fresh instance of one cycle task, to swap in between two ticks of its
+/// group (`POST /v1/apps/{app}/restart`, ref/09 §5.14).
+pub struct TaskSwap {
+    /// The task's position in its group's task order.
+    pub index: usize,
+    /// The new instance, not yet prepared.
+    pub task: Box<dyn crate::task::CycleTask>,
+}
+
+impl std::fmt::Debug for TaskSwap {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TaskSwap")
+            .field("index", &self.index)
+            .finish()
+    }
 }
 
 /// What ending a trip resolved to (ref/09 §5.7's `ResetResult.result`).
@@ -611,6 +631,16 @@ pub struct Shared {
     /// does not confirm it (`verify`, `joker.output.<s>.unconfirmed`);
     /// set by the cycle thread only.
     pub unconfirmed: Box<[AtomicBool]>,
+    /// Per app, in [`Plan::apps`](crate::plan::Plan::apps) order: whether
+    /// it is stopped (`POST /v1/apps/{app}/stop`, ref/09 §5.14); its tasks
+    /// skip their ticks and its leases run out.
+    pub app_stopped: Box<[AtomicBool]>,
+    /// One queue per group, by group index, of fresh task instances to swap
+    /// in between two ticks (`POST /v1/apps/{app}/restart`).
+    pub task_swaps: Box<[ArrayQueue<TaskSwap>]>,
+    /// The instances a swap took out, dropped by the daemon outside the
+    /// cycle.
+    pub retired_tasks: ArrayQueue<Box<dyn crate::task::CycleTask>>,
 }
 
 /// What the output stage does with one output besides writing its
@@ -902,6 +932,11 @@ impl Shared {
                 .iter()
                 .map(|_| AtomicBool::new(false))
                 .collect(),
+            app_stopped: plan.apps().iter().map(|_| AtomicBool::new(false)).collect(),
+            task_swaps: (0..plan.groups.len())
+                .map(|_| ArrayQueue::new(TASK_SWAP_CAPACITY))
+                .collect(),
+            retired_tasks: ArrayQueue::new(TASK_SWAP_CAPACITY),
         }
     }
 

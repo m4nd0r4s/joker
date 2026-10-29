@@ -261,6 +261,9 @@ struct GroupRun<'a> {
     verifier: crate::verify::Verifier,
     edge: &'a [ForeignTrip],
     level: &'a [ForeignTrip],
+    name: &'a str,
+    apps: Vec<usize>,
+    generation_hash: [u8; 32],
 }
 
 /// The ticks a run may still take, over all groups (`RunOptions::max_ticks`).
@@ -396,6 +399,7 @@ pub fn run(
         .collect();
 
     let generation_hash = crate::trace_ring::digest_bytes(&plan.manifest_hash);
+    let app_names = plan.apps();
     let mut groups = Vec::with_capacity(plan.groups.len());
     for (index, (((store, mut tasks), (configs, ports)), (edge, level))) in stores
         .iter_mut()
@@ -501,6 +505,18 @@ pub fn run(
             verifier: crate::verify::Verifier::new(plan),
             edge,
             level,
+            name: &group.name,
+            apps: group
+                .tasks
+                .iter()
+                .map(|t| {
+                    app_names
+                        .iter()
+                        .position(|a| *a == t.app)
+                        .unwrap_or(usize::MAX)
+                })
+                .collect(),
+            generation_hash,
         });
     }
 
@@ -720,6 +736,11 @@ fn tick(
             }
         }
     }
+    if let Some(swaps) = shared.task_swaps.get(g.index) {
+        while let Some(swap) = swaps.pop() {
+            swap_task(g, swap, shared, registry);
+        }
+    }
     if let Some(trips) = shared.trips.get(g.index) {
         while let Some(req) = trips.pop() {
             g.outputs.trip(req.signal);
@@ -775,6 +796,14 @@ fn tick(
         stats.task_errors.bump();
     }
     for (i, (writer, task)) in g.tasks.iter_mut().enumerate() {
+        let stopped = g
+            .apps
+            .get(i)
+            .and_then(|a| shared.app_stopped.get(*a))
+            .is_some_and(|s| s.load(Ordering::Acquire));
+        if stopped {
+            continue;
+        }
         let begun = clock.mono_ns();
         let mut cx = TaskContext::new(&mut g.image, &g.outputs, *writer);
         if task.run(&mut cx).is_err() {
@@ -814,6 +843,40 @@ fn tick(
     }
     trace(g, index, at, shared);
     let _ = g.image.end_tick();
+}
+
+/// Swaps a fresh instance into the task order of `g` (an app restart,
+/// ref/09 §5.14): it is prepared like the instances of the first tick, and
+/// the old one goes to `retired_tasks` for the daemon to drop outside the
+/// cycle; only a full queue drops it here. An instance that does not
+/// prepare is dropped, and the old one keeps running.
+fn swap_task(
+    g: &mut GroupRun<'_>,
+    swap: crate::shared::TaskSwap,
+    shared: &Shared,
+    registry: &joker_core::Registry<'_>,
+) {
+    let Some((writer, slot)) = g.tasks.get_mut(swap.index) else {
+        return;
+    };
+    let mut task = swap.task;
+    let prepared = task.prepare(&Prepare {
+        registry,
+        image: &g.image,
+        group: g.name,
+        writer: *writer,
+        generation_hash: g.generation_hash,
+    });
+    let retired = match prepared {
+        Ok(()) => std::mem::replace(slot, task),
+        Err(_) => {
+            shared.groups[g.index].task_errors.bump();
+            task
+        }
+    };
+    if let Err(retired) = shared.retired_tasks.push(retired) {
+        drop(retired);
+    }
 }
 
 /// Between two ticks of a group, answers a pending state export request
