@@ -530,6 +530,14 @@ async fn alarm(State(b): State<Shared>, UrlPath(id): UrlPath<String>) -> Respons
     run(b, move |b| b.alarm(&id)).await
 }
 
+async fn groups(State(b): State<Shared>) -> Response {
+    run(b, move |b| b.groups()).await
+}
+
+async fn group(State(b): State<Shared>, UrlPath(name): UrlPath<String>) -> Response {
+    run(b, move |b| b.group(&name)).await
+}
+
 async fn ack_alarm(
     State(b): State<Shared>,
     ConnectInfo(peer): ConnectInfo<Peer>,
@@ -967,6 +975,8 @@ pub fn router_with(backend: Arc<dyn Backend>, limits: ws::Limits) -> Router {
         .route("/v1/info", get(info))
         .route("/v1/health", get(health))
         .route("/v1/status", get(status))
+        .route("/v1/groups", get(groups))
+        .route("/v1/groups/{group}", get(group))
         .route("/v1/metrics", get(metrics))
         .route("/metrics", get(prometheus))
         .route("/v1/signals", get(signals))
