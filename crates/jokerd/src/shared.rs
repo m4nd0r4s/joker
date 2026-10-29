@@ -263,6 +263,9 @@ pub struct GroupStats {
     pub jitter: Histogram,
     /// Duration of every tick, in ns.
     pub duration: Histogram,
+    /// Run time of each task of a tick, in ns, in tick order: the measured
+    /// WCET of `GET /v1/groups` (ADR 0090).
+    pub tasks: Box<[Histogram]>,
     /// Executed ticks.
     pub ticks: Counter,
     /// Last executed tick index.
@@ -860,7 +863,14 @@ impl Shared {
             outputs: output_ids.iter().map(|_| OutputStatus::new()).collect(),
             trip_since: output_ids.iter().map(|_| AtomicU64::new(0)).collect(),
             output_ids: output_ids.into_boxed_slice(),
-            groups: plan.groups.iter().map(|_| GroupStats::default()).collect(),
+            groups: plan
+                .groups
+                .iter()
+                .map(|g| GroupStats {
+                    tasks: g.tasks.iter().map(|_| Histogram::default()).collect(),
+                    ..GroupStats::default()
+                })
+                .collect(),
             export_request: AtomicU64::new(0),
             exports: ArrayQueue::new(EXPORT_CAPACITY),
             stop: AtomicBool::new(false),

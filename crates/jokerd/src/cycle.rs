@@ -654,7 +654,8 @@ fn step(g: &mut GroupRun<'_>, pacer: &mut dyn Pacer, cx: &RunContext<'_>) {
         stats.consecutive_overruns.set(0);
     }
     g.next_index = index + 1;
-    let mut one = || tick(g, index, started, cx.shared, cx.registry);
+    let clock: &dyn Pacer = pacer;
+    let mut one = || tick(g, index, started, cx.shared, cx.registry, clock);
     match cx.tick_guard {
         Some(guard) => guard(&mut one),
         None => one(),
@@ -678,6 +679,7 @@ fn tick(
     at: joker_core::Instant,
     shared: &Shared,
     registry: &joker_core::Registry<'_>,
+    clock: &dyn Pacer,
 ) {
     let stats = &shared.groups[g.index];
     if g.image.latch(index, at, &shared.slots, registry).is_err() {
@@ -772,12 +774,17 @@ fn tick(
     {
         stats.task_errors.bump();
     }
-    for (writer, task) in &mut g.tasks {
+    for (i, (writer, task)) in g.tasks.iter_mut().enumerate() {
+        let begun = clock.mono_ns();
         let mut cx = TaskContext::new(&mut g.image, &g.outputs, *writer);
         if task.run(&mut cx).is_err() {
             stats.task_errors.bump();
         }
         stats.dropped_proposals.add(cx.dropped());
+        let ended = clock.mono_ns();
+        if let Some(h) = stats.tasks.get(i) {
+            h.record(ended.saturating_sub(begun), ended);
+        }
     }
     g.results.clear();
     let mut sink = Sink {

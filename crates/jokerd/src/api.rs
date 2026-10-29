@@ -1152,6 +1152,26 @@ impl Backend for Node {
         })))
     }
 
+    fn groups(&self) -> Result<Reply, Problem> {
+        let v = self.need_view()?;
+        let now = self.now_mono();
+        let items: Vec<Value> = (0..v.plan.groups.len())
+            .filter_map(|g| group_json(&v, g, now))
+            .collect();
+        Ok(Reply::ok(json!({ "items": items })))
+    }
+
+    fn group(&self, name: &str) -> Result<Reply, Problem> {
+        let v = self.need_view()?;
+        v.plan
+            .groups
+            .iter()
+            .position(|g| g.name == name)
+            .and_then(|g| group_json(&v, g, self.now_mono()))
+            .map(Reply::ok)
+            .ok_or_else(|| Problem::new("J-E1005", 404, format!("unknown group `{name}`")))
+    }
+
     fn metrics(&self) -> Result<Reply, Problem> {
         let view = self.view();
         let now = self.now_mono();
@@ -2750,6 +2770,57 @@ fn system_json(state_dir: &std::path::Path) -> Value {
         out.insert("disk_free".into(), json!(format!("{} KiB", free / 1024)));
     }
     Value::Object(out)
+}
+
+/// The `Group` of ref/09 §5.2 for group `g`: its period, its rate-monotonic
+/// priority (ADR 0089), its tasks with the measured WCET of each (the
+/// p99.9 of its run times, ADR 0090) and its statistics. A field the node
+/// does not know is left out.
+fn group_json(v: &View, g: usize, now_mono_ns: u64) -> Option<Value> {
+    let plan = v.plan.groups.get(g)?;
+    let stats = v.shared.groups.get(g)?;
+    let periods: Vec<u64> = v.plan.groups.iter().map(|p| p.period_ns).collect();
+    let tasks: Vec<Value> = plan
+        .tasks
+        .iter()
+        .enumerate()
+        .map(|(i, t)| {
+            let mut task = Map::new();
+            task.insert("app".into(), json!(t.app));
+            task.insert("task".into(), json!(t.task));
+            if let Some(p) = stats.tasks.get(i).and_then(|h| h.quantile(0.999)) {
+                task.insert("wcet_measured_p999".into(), json!(duration(p)));
+            }
+            Value::Object(task)
+        })
+        .collect();
+    let mut out = Map::new();
+    out.insert("name".into(), json!(plan.name));
+    out.insert("period".into(), json!(duration(plan.period_ns)));
+    if let Some(p) = crate::cycle::rt_priorities(&periods).get(g) {
+        out.insert("priority".into(), json!(p));
+    }
+    out.insert(
+        "order".into(),
+        json!(
+            plan.tasks
+                .iter()
+                .map(|t| format!("{}.{}", t.app, t.task))
+                .collect::<Vec<_>>()
+        ),
+    );
+    out.insert("tasks".into(), Value::Array(tasks));
+    out.insert(
+        "stats".into(),
+        json!({
+            "ticks": stats.ticks.get(),
+            "overruns": stats.overruns.get(),
+            "consecutive_overruns": stats.consecutive_overruns.get(),
+            "jitter": percentiles(&stats.jitter, stats.max_late_ns.get(), now_mono_ns),
+            "duration": percentiles(&stats.duration, stats.max_duration_ns.get(), now_mono_ns),
+        }),
+    );
+    Some(Value::Object(out))
 }
 
 /// The `Percentiles` of a histogram (ref/09 §5.2): `p50`, `p99` and
