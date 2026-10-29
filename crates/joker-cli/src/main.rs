@@ -269,6 +269,23 @@ enum Command {
         #[command(subcommand)]
         command: AlarmCommand,
     },
+    /// Checks the node: kernel, isolcpus, permissions, watchdog, clock,
+    /// disk, groups and device fallbacks; `--rt` also measures wake-up
+    /// latency (`POST /v1/doctor`, ref/09 §5.17).
+    Doctor {
+        /// Measure real-time latency.
+        #[arg(long)]
+        rt: bool,
+        /// How long the `--rt` measurement runs.
+        #[arg(long)]
+        rt_duration: Option<String>,
+        /// The ML checks (nothing to check in 1.0).
+        #[arg(long)]
+        ml: bool,
+        /// Allow `--rt` with live outputs in `prod`.
+        #[arg(long)]
+        allow_live: bool,
+    },
     /// Follows a signal from its source to the envelope: its lineage, then
     /// every tick that touches it (`GET /v1/ws`, topic `signal_trace`).
     Trace {
@@ -547,6 +564,12 @@ fn run(cli: Cli) -> Result<u8, Failure> {
         Command::Explain { target } => node()?.explain(&target),
         Command::Why { output } => node()?.why(&output),
         Command::Trace { signal } => node()?.trace(&signal),
+        Command::Doctor {
+            rt,
+            rt_duration,
+            ml,
+            allow_live,
+        } => node()?.doctor(rt, rt_duration.as_deref(), ml, allow_live),
         Command::Reset { output, reason } => node()?.reset(&output, &reason),
         Command::Trips => node()?.trips(),
         Command::Action {

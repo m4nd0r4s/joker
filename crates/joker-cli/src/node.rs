@@ -647,6 +647,59 @@ impl Node {
         Ok(0)
     }
 
+    /// `jk doctor` (ref/09 §5.17): starts the `doctor` job, follows it to
+    /// its report and prints each check; exit 6 when the report fails
+    /// (ref/09 §9.2).
+    pub fn doctor(
+        &self,
+        rt: bool,
+        rt_duration: Option<&str>,
+        ml: bool,
+        allow_live: bool,
+    ) -> Result<u8, Failure> {
+        let mut checks = vec!["base"];
+        if rt {
+            checks.push("rt");
+        }
+        if ml {
+            checks.push("ml");
+        }
+        let mut body = json!({"checks": checks, "allow_live": allow_live});
+        if let Some(d) = rt_duration {
+            body["rt_duration"] = json!(d);
+        }
+        let job = checked(self.client.post("/v1/doctor", &body, &[])?)?.json();
+        let id = job["id"].as_str().unwrap_or_default().to_owned();
+        let report = loop {
+            let j = checked(self.client.get(&format!("/v1/jobs/{id}"))?)?.json();
+            match j["state"].as_str() {
+                Some("succeeded") => break j["result"].clone(),
+                Some("failed" | "cancelled") => {
+                    return Err(lost(format!("the doctor job ended {}", j["state"])));
+                }
+                _ => std::thread::sleep(std::time::Duration::from_millis(200)),
+            }
+        };
+        if self.json {
+            print_json(&report);
+        } else {
+            println!("{}", self.header()?);
+            for c in report["checks"].as_array().into_iter().flatten() {
+                println!(
+                    "{:<5} {:<20} {}",
+                    c["status"].as_str().unwrap_or("?"),
+                    c["id"].as_str().unwrap_or("?"),
+                    c["detail"].as_str().unwrap_or("")
+                );
+                if let Some(help) = c["help"].as_str() {
+                    println!("      help: {help}");
+                }
+            }
+            println!("summary: {}", report["summary"].as_str().unwrap_or("?"));
+        }
+        Ok(if report["summary"] == "fail" { 6 } else { 0 })
+    }
+
     /// `jk trace <signal>` (ref/09 §9.1): the signal's lineage
     /// (`GET /v1/signals/{path}/lineage`), then every tick that touches it
     /// from the `signal_trace` topic of `GET /v1/ws`, until the node closes
