@@ -269,6 +269,12 @@ enum Command {
         #[command(subcommand)]
         command: AlarmCommand,
     },
+    /// Why an output has its value, on one screen: its arbiter state, its
+    /// last decisions and the signals its envelope reads (ADR 0091).
+    Why {
+        /// The output path.
+        output: String,
+    },
     /// Operates an app on the node (ref/09 §5.14, ADR 0091).
     App {
         #[command(subcommand)]
@@ -533,6 +539,7 @@ fn run(cli: Cli) -> Result<u8, Failure> {
             force,
         } => node()?.release(&output, level.as_deref(), force),
         Command::Explain { target } => node()?.explain(&target),
+        Command::Why { output } => node()?.why(&output),
         Command::Reset { output, reason } => node()?.reset(&output, &reason),
         Command::Trips => node()?.trips(),
         Command::Action {

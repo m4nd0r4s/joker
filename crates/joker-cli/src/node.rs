@@ -544,6 +544,109 @@ impl Node {
         })
     }
 
+    /// `jk why <output>` (docs/26 F2, ADR 0091): the output's arbiter state,
+    /// its last five decisions and the value and quality of every signal its
+    /// envelope reads, on one screen; with `--json`,
+    /// `{output, decisions, inputs}`.
+    pub fn why(&self, output: &str) -> Result<u8, Failure> {
+        let o = checked(self.client.get(&format!("/v1/outputs/{output}"))?)?.json();
+        let d = checked(
+            self.client
+                .get(&format!("/v1/decisions?output={}&limit=5", encode(output)))?,
+        )?
+        .json();
+        let reads: Vec<String> = o["envelope"]["reads"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|r| r.as_str().map(str::to_owned))
+            .collect();
+        let inputs = if reads.is_empty() {
+            json!({"items": []})
+        } else {
+            let sel: Vec<String> = reads.iter().map(|r| format!("sel={}", encode(r))).collect();
+            checked(self.client.get(&format!("/v1/values?{}", sel.join("&")))?)?.json()
+        };
+        if self.json {
+            print_json(&json!({
+                "output": o,
+                "decisions": d["items"],
+                "inputs": inputs["items"],
+            }));
+            return Ok(0);
+        }
+        let text = |v: &Value| match v {
+            Value::String(s) => s.clone(),
+            Value::Null => "-".to_owned(),
+            other => other.to_string(),
+        };
+        println!("{}", self.header()?);
+        println!(
+            "{output} = {} · safe {} · group {}",
+            text(&o["applied"]),
+            text(&o["safe"]),
+            text(&o["group"])
+        );
+        let last = &o["last_outcome"];
+        let mut result = text(&last["outcome"]);
+        if let Some(reason) = last["reason"].as_str() {
+            result.push_str(&format!(" ({reason})"));
+        }
+        println!(
+            "active level {} · last result {result}",
+            text(&o["active_level"])
+        );
+        if o["tripped"] == true {
+            println!("tripped: `jk reset {output}` clears it");
+        }
+        if o["force_safe"] == true {
+            println!("held at safe by the supervisor (a group stalled)");
+        }
+        for l in o["levels"].as_array().into_iter().flatten() {
+            println!(
+                "  {:<12} {:<24} {:<10} lease until {}",
+                text(&l["level"]),
+                text(&l["writer"]),
+                text(&l["value"]),
+                text(&l["lease_until"])
+            );
+        }
+        let e = &o["envelope"];
+        if let Some(interlock) = e["interlock"].as_str() {
+            println!(
+                "interlock `{interlock}` ({} when false)",
+                text(&e["on_interlock"])
+            );
+        }
+        if let Some(range) = e["range"].as_array() {
+            let r: Vec<String> = range.iter().map(text).collect();
+            println!("range {} ({})", r.join(" .. "), text(&e["on_range"]));
+        }
+        if !reads.is_empty() {
+            println!("reads:");
+            for i in inputs["items"].as_array().into_iter().flatten() {
+                println!(
+                    "  {:<32} {:<12} {}",
+                    text(&i["path"]),
+                    text(&i["value"]),
+                    text(&i["quality"])
+                );
+            }
+        }
+        println!("last decisions:");
+        for dec in d["items"].as_array().into_iter().flatten() {
+            println!(
+                "  {} {:<10} {:<12} {} {}",
+                text(&dec["ts"]),
+                text(&dec["kind"]),
+                text(&dec["outcome"]["outcome"]),
+                text(&dec["applied"]),
+                text(&dec["active_level"])
+            );
+        }
+        Ok(0)
+    }
+
     /// `jk app list` (ref/09 §5.14): the apps of the running generation.
     pub fn apps(&self) -> Result<u8, Failure> {
         let v = checked(self.client.get("/v1/apps")?)?.json();
