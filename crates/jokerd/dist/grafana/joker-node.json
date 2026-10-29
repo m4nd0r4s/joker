@@ -1,0 +1,134 @@
+{
+  "title": "Joker node",
+  "uid": "joker-node",
+  "description": "The runtime metrics of one Joker node, on the Prometheus names of ADR 0071.",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "time": {"from": "now-1h", "to": "now"},
+  "refresh": "10s",
+  "tags": ["joker"],
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Prometheus",
+        "type": "datasource",
+        "query": "prometheus"
+      },
+      {
+        "name": "instance",
+        "label": "Node",
+        "type": "query",
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "query": "label_values(joker_cycle_ticks_total, instance)",
+        "refresh": 2,
+        "includeAll": false
+      }
+    ]
+  },
+  "panels": [
+    {"id": 1, "type": "row", "title": "Cycle", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0}},
+    {
+      "id": 2, "type": "timeseries", "title": "Ticks per second",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 1},
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+      "targets": [{"refId": "A", "expr": "rate(joker_cycle_ticks_total{instance=\"$instance\"}[1m])", "legendFormat": "{{group}}"}]
+    },
+    {
+      "id": 3, "type": "timeseries", "title": "Start jitter",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 1},
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "targets": [
+        {"refId": "A", "expr": "joker_cycle_jitter_seconds{instance=\"$instance\",quantile=\"0.99\"}", "legendFormat": "{{group}} p99"},
+        {"refId": "B", "expr": "joker_cycle_jitter_max_seconds{instance=\"$instance\"}", "legendFormat": "{{group}} max"}
+      ]
+    },
+    {
+      "id": 4, "type": "timeseries", "title": "Tick duration",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 1},
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "targets": [
+        {"refId": "A", "expr": "joker_cycle_duration_seconds{instance=\"$instance\",quantile=\"0.99\"}", "legendFormat": "{{group}} p99"},
+        {"refId": "B", "expr": "joker_cycle_duration_max_seconds{instance=\"$instance\"}", "legendFormat": "{{group}} max"}
+      ]
+    },
+    {
+      "id": 5, "type": "timeseries", "title": "Overruns",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 9},
+      "targets": [
+        {"refId": "A", "expr": "increase(joker_cycle_overruns_total{instance=\"$instance\"}[5m])", "legendFormat": "{{group}} in 5 min"},
+        {"refId": "B", "expr": "joker_cycle_consecutive_overruns{instance=\"$instance\"}", "legendFormat": "{{group}} consecutive"}
+      ]
+    },
+    {
+      "id": 6, "type": "timeseries", "title": "Internal drops",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 9},
+      "targets": [{"refId": "A", "expr": "increase(joker_runtime_dropped_total{instance=\"$instance\"}[5m])", "legendFormat": "{{queue}}"}]
+    },
+    {"id": 7, "type": "row", "title": "Drivers", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 17}},
+    {
+      "id": 8, "type": "state-timeline", "title": "Link state",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 18},
+      "targets": [{"refId": "A", "expr": "joker_driver_link_state{instance=\"$instance\"} == 1", "legendFormat": "{{device}} {{state}}"}]
+    },
+    {
+      "id": 9, "type": "timeseries", "title": "Reconnections and refused samples",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 18},
+      "targets": [
+        {"refId": "A", "expr": "increase(joker_driver_reconnects_total{instance=\"$instance\"}[5m])", "legendFormat": "{{device}} reconnects"},
+        {"refId": "B", "expr": "increase(joker_driver_dropped_samples_total{instance=\"$instance\"}[5m])", "legendFormat": "{{device}} dropped"},
+        {"refId": "C", "expr": "increase(joker_driver_invalid_samples_total{instance=\"$instance\"}[5m])", "legendFormat": "{{device}} invalid"}
+      ]
+    },
+    {"id": 10, "type": "row", "title": "Envelope and arbiter", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 26}},
+    {
+      "id": 11, "type": "timeseries", "title": "Envelope results per second",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"h": 8, "w": 16, "x": 0, "y": 27},
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+      "targets": [{"refId": "A", "expr": "sum by (output, result) (rate(joker_envelope_results_total{instance=\"$instance\"}[1m]))", "legendFormat": "{{output}} {{result}}"}]
+    },
+    {
+      "id": 12, "type": "stat", "title": "Manual overrides and expiring leases",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 27},
+      "targets": [
+        {"refId": "A", "expr": "joker_arbiter_manual_active{instance=\"$instance\"}", "legendFormat": "manual"},
+        {"refId": "B", "expr": "joker_arbiter_leases_expiring{instance=\"$instance\"}", "legendFormat": "expiring leases"}
+      ]
+    },
+    {"id": 13, "type": "row", "title": "System", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 35}},
+    {
+      "id": 14, "type": "timeseries", "title": "Temperature",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 36},
+      "fieldConfig": {"defaults": {"unit": "celsius"}, "overrides": []},
+      "targets": [
+        {"refId": "A", "expr": "joker_system_temperature_celsius{instance=\"$instance\"}", "legendFormat": "CPU"},
+        {"refId": "B", "expr": "joker_system_throttled{instance=\"$instance\"}", "legendFormat": "throttled"}
+      ]
+    },
+    {
+      "id": 15, "type": "timeseries", "title": "Memory used",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 36},
+      "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []},
+      "targets": [{"refId": "A", "expr": "joker_system_memory_used_bytes{instance=\"$instance\"}", "legendFormat": "used"}]
+    },
+    {
+      "id": 16, "type": "timeseries", "title": "Free disk",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 36},
+      "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []},
+      "targets": [{"refId": "A", "expr": "joker_system_disk_free_bytes{instance=\"$instance\"}", "legendFormat": "state directory"}]
+    }
+  ]
+}
