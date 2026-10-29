@@ -57,3 +57,27 @@ fn a_last_line_without_a_newline_is_read() {
     .unwrap();
     assert_eq!(got, [2, 1]);
 }
+
+#[test]
+fn a_raw_line_filter_skips_lines_before_they_are_parsed() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("decisions.jsonl");
+    std::fs::write(
+        &path,
+        "{\"output\":\"a\",\"seq\":1}\nnot json at all\n{\"output\":\"b\",\"seq\":2}\n{\"output\":\"a\",\"seq\":3}\n",
+    )
+    .unwrap();
+    let needle = b"\"output\":\"a\"";
+    let mut got = Vec::new();
+    DecisionLog::scan_filtered(
+        &path,
+        true,
+        |line| line.windows(needle.len()).any(|w| w == needle),
+        |e| {
+            got.push(e["seq"].as_u64().unwrap());
+            true
+        },
+    )
+    .unwrap();
+    assert_eq!(got, [3, 1]);
+}

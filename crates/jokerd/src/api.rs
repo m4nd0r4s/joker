@@ -2619,34 +2619,57 @@ impl Backend for Node {
             .into_iter()
             .map(|g| (g.number, g.hash))
             .collect();
+        let exact = !outputs.is_empty() && outputs.iter().all(|s| !s.contains('*'));
+        let needles: Vec<Vec<u8>> = if exact {
+            let aliases = self
+                .view()
+                .map(|v| v.plan.aliases.clone())
+                .unwrap_or_default();
+            outputs
+                .iter()
+                .map(|s| {
+                    let path = aliases.get(s).unwrap_or(s);
+                    format!("\"output\":{}", json!(path)).into_bytes()
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let keep = |line: &[u8]| {
+            needles.is_empty()
+                || needles
+                    .iter()
+                    .any(|n| line.windows(n.len()).any(|w| w == n.as_slice()))
+        };
         let mut items: Vec<(u64, Value)> = Vec::new();
-        let _ = DecisionLog::scan(&self.state_dir.join("decisions.jsonl"), !asc, |e| {
-            let seq = e["seq"].as_u64().unwrap_or(0);
-            if cursor.is_some_and(|c| if asc { seq <= c } else { seq >= c }) {
-                return true;
-            }
-            let d = match e["record"].as_str() {
-                Some("output" | "write") => decision_json(&e, &hashes),
-                Some("write_ack") => ack_decision_json(&e, &hashes),
-                _ => None,
-            };
-            let Some(d) = d else {
-                return true;
-            };
-            let out = d["output"].as_str().unwrap_or("");
-            let wanted = (outputs.is_empty() || outputs.iter().any(|s| wire::matches(s, out)))
-                && (outcomes.is_empty()
-                    || outcomes
-                        .iter()
-                        .any(|o| d["outcome"]["outcome"] == *o.as_str()))
-                && (writers.is_empty()
-                    || writers.iter().any(|w| d["writer"]["writer"] == *w.as_str()))
-                && (kinds.is_empty() || kinds.iter().any(|k| d["kind"] == *k.as_str()));
-            if wanted {
-                items.push((seq, d));
-            }
-            items.len() <= limit
-        });
+        let _ =
+            DecisionLog::scan_filtered(&self.state_dir.join("decisions.jsonl"), !asc, keep, |e| {
+                let seq = e["seq"].as_u64().unwrap_or(0);
+                if cursor.is_some_and(|c| if asc { seq <= c } else { seq >= c }) {
+                    return true;
+                }
+                let d = match e["record"].as_str() {
+                    Some("output" | "write") => decision_json(&e, &hashes),
+                    Some("write_ack") => ack_decision_json(&e, &hashes),
+                    _ => None,
+                };
+                let Some(d) = d else {
+                    return true;
+                };
+                let out = d["output"].as_str().unwrap_or("");
+                let wanted = (outputs.is_empty() || outputs.iter().any(|s| wire::matches(s, out)))
+                    && (outcomes.is_empty()
+                        || outcomes
+                            .iter()
+                            .any(|o| d["outcome"]["outcome"] == *o.as_str()))
+                    && (writers.is_empty()
+                        || writers.iter().any(|w| d["writer"]["writer"] == *w.as_str()))
+                    && (kinds.is_empty() || kinds.iter().any(|k| d["kind"] == *k.as_str()));
+                if wanted {
+                    items.push((seq, d));
+                }
+                items.len() <= limit
+            });
         let next = (items.len() > limit).then(|| items[limit - 1].0.to_string());
         let page: Vec<Value> = items.into_iter().take(limit).map(|(_, d)| d).collect();
         Ok(Reply::ok(json!({"items": page, "next_cursor": next})))
