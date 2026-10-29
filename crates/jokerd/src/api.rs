@@ -2635,15 +2635,13 @@ impl Backend for Node {
         } else {
             Vec::new()
         };
-        let keep = |line: &[u8]| {
-            needles.is_empty()
-                || needles
-                    .iter()
-                    .any(|n| line.windows(n.len()).any(|w| w == n.as_slice()))
-        };
+        let needles: Vec<&[u8]> = needles.iter().map(Vec::as_slice).collect();
         let mut items: Vec<(u64, Value)> = Vec::new();
-        let _ =
-            DecisionLog::scan_filtered(&self.state_dir.join("decisions.jsonl"), !asc, keep, |e| {
+        let _ = DecisionLog::scan_filtered(
+            &self.state_dir.join("decisions.jsonl"),
+            !asc,
+            &needles,
+            |e| {
                 let seq = e["seq"].as_u64().unwrap_or(0);
                 if cursor.is_some_and(|c| if asc { seq <= c } else { seq >= c }) {
                     return true;
@@ -2669,7 +2667,8 @@ impl Backend for Node {
                     items.push((seq, d));
                 }
                 items.len() <= limit
-            });
+            },
+        );
         let next = (items.len() > limit).then(|| items[limit - 1].0.to_string());
         let page: Vec<Value> = items.into_iter().take(limit).map(|(_, d)| d).collect();
         Ok(Reply::ok(json!({"items": page, "next_cursor": next})))

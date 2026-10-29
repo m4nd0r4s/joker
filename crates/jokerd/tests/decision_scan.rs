@@ -67,17 +67,36 @@ fn a_raw_line_filter_skips_lines_before_they_are_parsed() {
         "{\"output\":\"a\",\"seq\":1}\nnot json at all\n{\"output\":\"b\",\"seq\":2}\n{\"output\":\"a\",\"seq\":3}\n",
     )
     .unwrap();
-    let needle = b"\"output\":\"a\"";
+    let needle: &[u8] = b"\"output\":\"a\"";
     let mut got = Vec::new();
-    DecisionLog::scan_filtered(
-        &path,
-        true,
-        |line| line.windows(needle.len()).any(|w| w == needle),
-        |e| {
-            got.push(e["seq"].as_u64().unwrap());
-            true
-        },
-    )
+    DecisionLog::scan_filtered(&path, true, &[needle], |e| {
+        got.push(e["seq"].as_u64().unwrap());
+        true
+    })
     .unwrap();
     assert_eq!(got, [3, 1]);
+}
+
+#[test]
+fn a_needle_far_from_its_line_end_is_found_across_skipped_blocks() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("decisions.jsonl");
+    let text: String = (1..=6)
+        .map(|i| {
+            let output = if i % 3 == 0 { "rare" } else { "busy" };
+            format!(
+                "{{\"output\":\"{output}\",\"pad\":\"{}\",\"seq\":{i}}}\n",
+                "x".repeat(150_000)
+            )
+        })
+        .collect();
+    std::fs::write(&path, text).unwrap();
+    let needle: &[u8] = b"\"output\":\"rare\"";
+    let mut got = Vec::new();
+    DecisionLog::scan_filtered(&path, true, &[needle], |e| {
+        got.push(e["seq"].as_u64().unwrap());
+        true
+    })
+    .unwrap();
+    assert_eq!(got, [6, 3]);
 }

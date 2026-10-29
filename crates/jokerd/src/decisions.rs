@@ -116,24 +116,30 @@ impl DecisionLog {
         newest_first: bool,
         visit: impl FnMut(Value) -> bool,
     ) -> io::Result<()> {
-        Self::scan_filtered(path, newest_first, |_| true, visit)
+        Self::scan_filtered(path, newest_first, &[], visit)
     }
 
-    /// [`DecisionLog::scan`], with `keep` asked first about each raw line:
-    /// a line it refuses is never parsed. Parsing is what a scan of a large
-    /// log spends its time on, so a filter that can answer from the bytes
-    /// (an exact output path) makes a scan for a rare entry fast.
+    /// [`DecisionLog::scan`] over the lines that hold at least one of
+    /// `needles` (all of them when it is empty); the others are never
+    /// parsed. Parsing is what a scan of a large log spends its time on, so
+    /// a needle that names a rare entry (an exact output path) makes the
+    /// scan for it fast: newest first, a block that holds no needle is
+    /// skipped whole, with one search instead of one per line.
     pub fn scan_filtered(
         path: &Path,
         newest_first: bool,
-        keep: impl Fn(&[u8]) -> bool,
+        needles: &[&[u8]],
         mut visit: impl FnMut(Value) -> bool,
     ) -> io::Result<()> {
         use std::io::{BufRead, Read, Seek, SeekFrom};
+        let finders: Vec<memchr::memmem::Finder<'_>> =
+            needles.iter().map(memchr::memmem::Finder::new).collect();
+        let holds =
+            |bytes: &[u8]| finders.is_empty() || finders.iter().any(|f| f.find(bytes).is_some());
         let mut file = File::open(path)?;
         let mut line_of = |bytes: &[u8]| -> bool {
             let trimmed = bytes.trim_ascii();
-            if trimmed.is_empty() || !keep(trimmed) {
+            if trimmed.is_empty() || !holds(trimmed) {
                 return true;
             }
             match serde_json::from_slice(trimmed) {
@@ -158,8 +164,15 @@ impl DecisionLog {
             file.seek(SeekFrom::Start(start))?;
             file.read_exact(&mut block)?;
             block.extend_from_slice(&carry);
+            if !holds(&block) {
+                let first = memchr::memchr(b'\n', &block).unwrap_or(block.len());
+                block.truncate(first);
+                carry = block;
+                end = start;
+                continue;
+            }
             let mut tail = block.len();
-            while let Some(nl) = block[..tail].iter().rposition(|b| *b == b'\n') {
+            while let Some(nl) = memchr::memrchr(b'\n', &block[..tail]) {
                 if !line_of(&block[nl + 1..tail]) {
                     return Ok(());
                 }

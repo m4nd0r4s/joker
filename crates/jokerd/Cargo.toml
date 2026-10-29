@@ -24,6 +24,7 @@ joker-api = { path = "../joker-api" }
 joker-store = { path = "../joker-store" }
 joker-host.workspace = true
 humantime = "2.3"
+memchr = "2.8"
 base64 = "0.22.1"
 crossbeam-queue = "0.3.12"
 serde = { version = "1.0.228", features = ["derive"] }
