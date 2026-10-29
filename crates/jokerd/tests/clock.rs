@@ -82,7 +82,15 @@ fn an_unsynced_clock_blocks_the_writes_of_an_app_that_requires_synced() {
         .unwrap();
     c.activate(1, None, None).unwrap();
     assert_eq!(c.clock().quality(), joker_core::ClockQuality::Unsynced);
-    std::thread::sleep(Duration::from_millis(200));
+    let refused = || {
+        DecisionLog::read_all(&dir.path().join("decisions.jsonl"))
+            .map(|log| led_writes(&log).iter().any(|w| w.0 == "rejected"))
+            .unwrap_or(false)
+    };
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while !refused() && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
 
     source.synchronise_now();
     c.refresh_clock();
