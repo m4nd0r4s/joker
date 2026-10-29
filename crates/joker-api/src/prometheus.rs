@@ -635,6 +635,23 @@ pub fn render(metrics: &Value) -> String {
     for f in &REST {
         x.plain(metrics, f);
     }
+    if let Some(dropped) = metrics
+        .get("runtime")
+        .and_then(|r| r.get("dropped"))
+        .and_then(Value::as_object)
+    {
+        x.begin(
+            "joker_runtime_dropped_total",
+            Kind::Counter,
+            "Drops of an internal queue of the daemon.",
+        );
+        for (queue, n) in dropped {
+            if let Some(n) = Read::Number.value(n) {
+                x.sample("joker_runtime_dropped_total", &[("queue", queue)], n);
+            }
+        }
+        x.end();
+    }
     x.out
 }
 

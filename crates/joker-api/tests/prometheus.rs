@@ -196,6 +196,7 @@ fn full_metrics() -> Value {
         "apps": [{"app": "ctl", "traps": 0, "restarts": 1, "memory": "12 MiB", "cpu_async": "2.5s"}],
         "store": {"queue": 3, "dropped": 0, "disk_used": "1 GiB"},
         "system": {"temp": "61 °C", "throttled": false, "memory_used": "300 MiB", "disk_free": "2 GB"},
+        "runtime": {"dropped": {"decisions": 4, "logs": 0}},
         "ml": null
     })
 }
@@ -265,6 +266,12 @@ fn every_field_of_metrics_maps_to_its_family_and_labels() {
     assert_eq!(p.value("joker_system_throttled"), 0.0);
     assert_eq!(p.value("joker_system_disk_free_bytes"), 2e9);
     assert_eq!(p.value("joker_arbiter_manual_active"), 1.0);
+    assert_eq!(p.types["joker_runtime_dropped_total"], "counter");
+    assert_eq!(
+        p.value(r#"joker_runtime_dropped_total{queue="decisions"}"#),
+        4.0
+    );
+    assert_eq!(p.value(r#"joker_runtime_dropped_total{queue="logs"}"#), 0.0);
 }
 
 #[test]
