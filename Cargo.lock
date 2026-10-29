@@ -1638,6 +1638,7 @@ dependencies = [
  "joker-store",
  "joker-units",
  "jsonschema",
+ "memchr",
  "nix",
  "serde",
  "serde_json",
