@@ -38,6 +38,11 @@ use crate::wire::{self, duration, input_bits, parse_duration, timestamp, utc_now
 /// The longest a write waits for its tick.
 pub const MAX_WAIT: Duration = Duration::from_secs(30);
 
+/// How far back `signal_trace` reads the continuous trace ring on each
+/// sample of the topic (ADR 0091): the engine keeps only the records it
+/// has not sent yet.
+const TRACE_WINDOW_NS: u64 = 2_000_000_000;
+
 /// The daemon state the API serves.
 pub struct Node {
     controller: SharedController,
@@ -1151,6 +1156,189 @@ impl Backend for Node {
             "trips": [],
             "manual": manual,
         })))
+    }
+
+    fn lineage(&self, path: &str) -> Result<Reply, Problem> {
+        let v = self.need_view()?;
+        let canonical = v
+            .plan
+            .aliases
+            .get(path)
+            .cloned()
+            .unwrap_or_else(|| path.to_owned());
+        let s = v
+            .plan
+            .signal(&canonical)
+            .ok_or_else(|| Problem::new("J0101", 404, format!("unknown signal `{path}`")))?;
+        let id = v
+            .plan
+            .id(&canonical)
+            .ok_or_else(|| Problem::new("J0101", 404, format!("unknown signal `{path}`")))?;
+        let mut m = Map::new();
+        m.insert("path".into(), json!(path));
+        m.insert("canonical".into(), json!(canonical));
+        if let Some(device) = &s.device {
+            let mut source = Map::new();
+            source.insert("device".into(), json!(device));
+            if let Some(d) = v.plan.devices.iter().find(|d| &d.name == device) {
+                source.insert("driver".into(), json!(d.driver));
+                if let Some(bus) = &d.bus {
+                    source.insert("bus".into(), json!(bus));
+                }
+                if let Some(poll) = d
+                    .points
+                    .iter()
+                    .find(|p| p.path == canonical)
+                    .and_then(|p| p.poll_ns)
+                {
+                    source.insert("poll".into(), json!(duration(poll)));
+                }
+            }
+            m.insert("source".into(), Value::Object(source));
+        }
+        if let Some(c) = v.plan.calcs.iter().find(|c| c.path == canonical) {
+            m.insert("expression".into(), json!(c.expr.source));
+        }
+        let mut readers = Vec::new();
+        for g in &v.plan.groups {
+            for t in &g.tasks {
+                for (port, bound) in &t.bindings {
+                    if *bound == canonical {
+                        readers.push(
+                            json!({"kind": "app", "name": t.app, "port": port, "group": g.name}),
+                        );
+                    }
+                }
+            }
+        }
+        for c in &v.plan.calcs {
+            if c.expr.inputs().any(|i| i == id) {
+                readers.push(json!({"kind": "calc", "name": c.path, "group": c.group}));
+            }
+        }
+        for a in &v.plan.alarms {
+            if a.when.inputs().any(|i| i == id) {
+                readers.push(json!({"kind": "alarm", "name": a.name, "group": a.group}));
+            }
+        }
+        for o in &v.plan.outputs {
+            let e = &o.exprs;
+            if e.interlock
+                .as_ref()
+                .is_some_and(|x| x.inputs().any(|i| i == id))
+            {
+                readers.push(json!({"kind": "interlock", "name": o.path, "group": o.group}));
+            }
+            if e.requires_good.contains(&id) {
+                readers.push(json!({"kind": "requires_good", "name": o.path, "group": o.group}));
+            }
+            let in_range = e.range.as_ref().is_some_and(|(lo, hi)| {
+                [lo, hi].iter().any(|l| match l {
+                    crate::expr_plan::LimitPlan::Expr(x) => x.inputs().any(|i| i == id),
+                    crate::expr_plan::LimitPlan::Const(_) => false,
+                })
+            });
+            if in_range {
+                readers.push(json!({"kind": "range", "name": o.path, "group": o.group}));
+            }
+        }
+        m.insert("readers".into(), Value::Array(readers));
+        if let Some(o) = v.plan.outputs.iter().find(|o| o.path == canonical) {
+            let mut output = Map::new();
+            output.insert("group".into(), json!(o.group));
+            if let Some(verify) = &o.verify {
+                output.insert("readback".into(), json!(verify.readback));
+            }
+            m.insert("output".into(), Value::Object(output));
+        }
+        Ok(Reply::ok(Value::Object(m)))
+    }
+
+    fn signal_trace(&self, path: &str) -> Result<Reply, Problem> {
+        use joker_core::trace::{SEGMENT_HEADER_LEN, Ticks};
+        let v = self.need_view()?;
+        let canonical = v
+            .plan
+            .aliases
+            .get(path)
+            .cloned()
+            .unwrap_or_else(|| path.to_owned());
+        let (Some(s), Some(id)) = (v.plan.signal(&canonical), v.plan.id(&canonical)) else {
+            return Err(Problem::new(
+                "J0101",
+                404,
+                format!("unknown signal `{path}`"),
+            ));
+        };
+        let from = self.now_mono().saturating_sub(TRACE_WINDOW_NS);
+        let ring = crate::trace_ring::lock(&v.ring);
+        let mut items = Vec::new();
+        for (g, group) in v.plan.groups.iter().enumerate() {
+            let port = group.ports.iter().position(|p| v.plan.id(p) == Some(id));
+            let mut last = None;
+            for (index, at, segment) in ring.ticks_of(g, from) {
+                let Some(payload) = segment.get(SEGMENT_HEADER_LEN..) else {
+                    continue;
+                };
+                let Some(Ok(tick)) = Ticks::new(payload, 1, group.ports.len()).next() else {
+                    continue;
+                };
+                let read = port
+                    .and_then(|p| tick.inputs().nth(p))
+                    .map(|i| (i.value, i.quality));
+                let proposals: Vec<Value> = tick
+                    .proposals()
+                    .filter(|p| p.signal == id)
+                    .map(|p| {
+                        let writer = v
+                            .plan
+                            .writers
+                            .get(p.writer.0 as usize)
+                            .map_or_else(|| p.writer.0.to_string(), |w| w.name.clone());
+                        json!({"writer": writer, "value": wire::value(s, p.value)})
+                    })
+                    .collect();
+                let result = tick
+                    .results()
+                    .find(|r| r.signal == id)
+                    .map(|r| (r.outcome, r.applied));
+                let state = (read, result);
+                if (read.is_none() && result.is_none() && proposals.is_empty())
+                    || (last == Some(state) && proposals.is_empty())
+                {
+                    continue;
+                }
+                last = Some(state);
+                let mut item = Map::new();
+                item.insert("key".into(), json!(format!("{at:020}.{g:04}")));
+                item.insert("group".into(), json!(group.name));
+                item.insert("tick".into(), json!(index));
+                item.insert("mono_ns".into(), json!(at));
+                if let Some((value, quality)) = read {
+                    item.insert(
+                        "read".into(),
+                        json!({
+                            "value": wire::value(s, value),
+                            "quality": wire::quality_name(quality),
+                            "reason": wire::reason_name(quality),
+                        }),
+                    );
+                }
+                if !proposals.is_empty() {
+                    item.insert("proposals".into(), Value::Array(proposals));
+                }
+                if let Some((outcome, applied)) = result {
+                    let outcome = Outcome::from_code(outcome, 0).unwrap_or(Outcome::None);
+                    item.insert(
+                        "result".into(),
+                        outcome_json(outcome, Some(wire::value(s, applied))),
+                    );
+                }
+                items.push(Value::Object(item));
+            }
+        }
+        items.sort_by(|a, b| a["key"].as_str().cmp(&b["key"].as_str()));
+        Ok(Reply::ok(json!({ "items": items })))
     }
 
     fn apps(&self) -> Result<Reply, Problem> {

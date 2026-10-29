@@ -2735,12 +2735,7 @@ async fn an_output_serves_its_envelope_and_the_signals_it_reads() {
         );
     let f = start_with(&manifest).await;
     let o = f
-        .call(
-            "GET",
-            "/v1/outputs/{path}",
-            "/v1/outputs/pi.act_led",
-            None,
-        )
+        .call("GET", "/v1/outputs/{path}", "/v1/outputs/pi.act_led", None)
         .await;
     assert_eq!(o.status, 200, "{}", o.json());
     let e = &o.json()["envelope"];
@@ -2748,4 +2743,32 @@ async fn an_output_serves_its_envelope_and_the_signals_it_reads() {
     assert_eq!(e["requires_good"], json!(["pi.temp"]), "{e}");
     assert_eq!(e["reads"], json!(["pi.door", "pi.temp"]), "{e}");
     assert_eq!(e["on_interlock"], "safe", "{e}");
+}
+
+/// `GET /v1/signals/{path}/lineage` (ref/09 §5.4): the bench's LED is
+/// written by `light` and owned by `main`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_signal_tells_its_lineage() {
+    let f = start().await;
+    let l = f
+        .call(
+            "GET",
+            "/v1/signals/{path}/lineage",
+            "/v1/signals/pi.act_led/lineage",
+            None,
+        )
+        .await;
+    assert_eq!(l.status, 200, "{}", l.json());
+    assert_eq!(l.json()["canonical"], "pi.act_led");
+    assert_eq!(l.json()["source"]["device"], "pi");
+    assert_eq!(l.json()["output"]["group"], "main");
+    let missing = f
+        .call(
+            "GET",
+            "/v1/signals/{path}/lineage",
+            "/v1/signals/pi.nope/lineage",
+            None,
+        )
+        .await;
+    assert_eq!(missing.status, 404);
 }

@@ -94,6 +94,21 @@ impl TraceRing {
         }
     }
 
+    /// The ticks of group `g` from `from_mono_ns` on, oldest first, as
+    /// (index, instant, encoded tick): what `signal_trace` decodes
+    /// (ref/09 §6, ADR 0091).
+    pub fn ticks_of(&self, g: usize, from_mono_ns: u64) -> Vec<(u64, u64, Vec<u8>)> {
+        self.groups
+            .get(g)
+            .map(|ring| {
+                ring.iter()
+                    .filter(|c| c.at_mono_ns >= from_mono_ns)
+                    .map(|c| (c.index, c.at_mono_ns, c.segment.clone()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     /// Ticks held, over all groups.
     pub fn len(&self) -> usize {
         self.groups.iter().map(VecDeque::len).sum()

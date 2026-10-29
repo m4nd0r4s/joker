@@ -366,3 +366,41 @@ async fn new_log_lines_follow_on_the_logs_topic_with_their_filters() {
         .collect();
     assert_eq!(messages, ["forecast OOD"], "{data}");
 }
+
+/// `jk trace <signal>` (ref/09 §6, topic `signal_trace`, ADR 0091): each
+/// tick that changed something about the LED, with its proposals and
+/// the envelope's result.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_signal_trace_follows_the_ticks_that_touch_a_signal() {
+    let f = start().await;
+    let mut ws = connect(&f.socket).await;
+    let _welcome = next_json(&mut ws).await;
+    ws.send(Message::Text(
+        json!({
+            "op": "subscribe",
+            "id": "t1",
+            "topic": "signal_trace",
+            "path": "pi.act_led",
+            "min_interval": "50ms",
+        })
+        .to_string()
+        .into(),
+    ))
+    .await
+    .unwrap();
+    let subscribed = next_json(&mut ws).await;
+    assert_eq!(subscribed["op"], "subscribed", "{subscribed}");
+    let data = loop {
+        let m = next_json(&mut ws).await;
+        if m["op"] == "data" && m["items"].as_array().is_some_and(|i| !i.is_empty()) {
+            break m;
+        }
+    };
+    let item = &data["items"][0];
+    assert_eq!(item["group"], "main", "{data}");
+    assert!(item["tick"].is_u64(), "{data}");
+    assert!(
+        item["result"]["outcome"].is_string() || item["proposals"].is_array(),
+        "{data}"
+    );
+}
