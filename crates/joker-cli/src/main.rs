@@ -269,6 +269,12 @@ enum Command {
         #[command(subcommand)]
         command: AlarmCommand,
     },
+    /// Follows a signal from its source to the envelope: its lineage, then
+    /// every tick that touches it (`GET /v1/ws`, topic `signal_trace`).
+    Trace {
+        /// The signal path.
+        signal: String,
+    },
     /// Why an output has its value, on one screen: its arbiter state, its
     /// last decisions and the signals its envelope reads (ADR 0091).
     Why {
@@ -540,6 +546,7 @@ fn run(cli: Cli) -> Result<u8, Failure> {
         } => node()?.release(&output, level.as_deref(), force),
         Command::Explain { target } => node()?.explain(&target),
         Command::Why { output } => node()?.why(&output),
+        Command::Trace { signal } => node()?.trace(&signal),
         Command::Reset { output, reason } => node()?.reset(&output, &reason),
         Command::Trips => node()?.trips(),
         Command::Action {

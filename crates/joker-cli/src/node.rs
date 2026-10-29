@@ -647,6 +647,50 @@ impl Node {
         Ok(0)
     }
 
+    /// `jk trace <signal>` (ref/09 §9.1): the signal's lineage
+    /// (`GET /v1/signals/{path}/lineage`), then every tick that touches it
+    /// from the `signal_trace` topic of `GET /v1/ws`, until the node closes
+    /// the connection; with `--json`, the lineage and then one record per
+    /// line.
+    pub fn trace(&self, signal: &str) -> Result<u8, Failure> {
+        let l = checked(self.client.get(&format!("/v1/signals/{signal}/lineage"))?)?.json();
+        if self.json {
+            println!("{l}");
+        } else {
+            let text = |v: &Value| v.as_str().unwrap_or("-").to_owned();
+            println!("{} ({})", text(&l["path"]), text(&l["canonical"]));
+            if l["source"].is_object() {
+                println!(
+                    "source: device {} · driver {} · poll {}",
+                    text(&l["source"]["device"]),
+                    text(&l["source"]["driver"]),
+                    text(&l["source"]["poll"])
+                );
+            }
+            if let Some(e) = l["expression"].as_str() {
+                println!("expression: {e}");
+            }
+            for r in l["readers"].as_array().into_iter().flatten() {
+                println!(
+                    "read by {} {} (group {})",
+                    text(&r["kind"]),
+                    text(&r["name"]),
+                    text(&r["group"])
+                );
+            }
+            if l["output"].is_object() {
+                println!("output of group {}", text(&l["output"]["group"]));
+            }
+        }
+        let socket = self.client.socket().to_owned();
+        let json_mode = self.json;
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| Failure::usage(format!("tokio: {e}")))?;
+        runtime.block_on(follow_trace(&socket, signal, json_mode))
+    }
+
     /// `jk app list` (ref/09 §5.14): the apps of the running generation.
     pub fn apps(&self) -> Result<u8, Failure> {
         let v = checked(self.client.get("/v1/apps")?)?.json();
@@ -1448,6 +1492,68 @@ fn log_line(e: &Value) -> String {
         e["source"].as_str().unwrap_or(""),
         e["msg"].as_str().unwrap_or("")
     )
+}
+
+/// `jk trace`: the `signal_trace` topic of `GET /v1/ws` (ref/09 §6) for
+/// `signal`, one line per tick record as it arrives (one JSON object per
+/// line with `--json`).
+async fn follow_trace(socket: &Path, signal: &str, json_mode: bool) -> Result<u8, Failure> {
+    use futures_util::SinkExt;
+    use tokio_tungstenite::tungstenite::Message;
+
+    let mut ws = open_ws(socket).await?;
+    let subscribe = json!({
+        "op": "subscribe",
+        "id": "trace",
+        "topic": "signal_trace",
+        "path": signal,
+        "initial": false,
+    });
+    ws.send(Message::Text(subscribe.to_string().into()))
+        .await
+        .map_err(|e| lost(e.to_string()))?;
+    let mut closing = None;
+    loop {
+        let v = next_message(&mut ws, &mut closing).await?;
+        if v["op"] == "error" {
+            return Err(lost(
+                v["problem"]["detail"].as_str().unwrap_or("").to_owned(),
+            ));
+        }
+        if v["op"] != "data" {
+            continue;
+        }
+        for r in v["items"].as_array().into_iter().flatten() {
+            if json_mode {
+                println!("{r}");
+                continue;
+            }
+            let mut line = format!("{} tick {}", r["group"].as_str().unwrap_or("?"), r["tick"]);
+            if r["read"].is_object() {
+                line.push_str(&format!(
+                    " · read {} {}",
+                    r["read"]["value"],
+                    r["read"]["quality"].as_str().unwrap_or("?")
+                ));
+            }
+            for p in r["proposals"].as_array().into_iter().flatten() {
+                line.push_str(&format!(
+                    " · {} proposes {}",
+                    p["writer"].as_str().unwrap_or("?"),
+                    p["value"]
+                ));
+            }
+            if r["result"].is_object() {
+                line.push_str(&format!(
+                    " · {} {}",
+                    r["result"]["outcome"].as_str().unwrap_or("?"),
+                    r["result"]["applied"]
+                ));
+            }
+            println!("{line}");
+        }
+        std::io::stdout().flush().ok();
+    }
 }
 
 /// `jk logs --follow`: the `logs` topic of `GET /v1/ws` (ref/09 §6) with
