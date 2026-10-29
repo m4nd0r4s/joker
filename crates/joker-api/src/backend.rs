@@ -4,9 +4,9 @@
 use serde_json::Value;
 
 use crate::model::{
-    AckRequest, ActivateRequest, AppOp, BulkResetRequest, GenerationProposal, InvokeActionRequest,
-    ManualWriteRequest, MethodCallRequest, MissingBlobsRequest, ReasonBody, ReleaseRequest,
-    ResetTripRequest, RollbackRequest, ShelveRequest, TraceRequest,
+    AckRequest, ActivateRequest, AppOp, BulkResetRequest, DoctorRequest, GenerationProposal,
+    InvokeActionRequest, ManualWriteRequest, MethodCallRequest, MissingBlobsRequest, ReasonBody,
+    ReleaseRequest, ResetTripRequest, RollbackRequest, ShelveRequest, TraceRequest,
 };
 use crate::problem::Problem;
 
@@ -218,6 +218,18 @@ pub trait Backend: Send + Sync + 'static {
     /// per recent tick that changed something about the signal, each with
     /// a `key` that orders them (ADR 0091).
     fn signal_trace(&self, _path: &str) -> Result<Reply> {
+        Err(unavailable())
+    }
+    /// `GET /v1/jobs/{job}` (ref/09 §5.17).
+    fn job(&self, _id: &str) -> Result<Reply> {
+        Err(unavailable())
+    }
+    /// `GET /v1/doctor`: the last stored report.
+    fn doctor_report(&self) -> Result<Reply> {
+        Err(unavailable())
+    }
+    /// `POST /v1/doctor`: starts a `doctor` job (`jk doctor`).
+    fn run_doctor(&self, _who: &Principal, _request: DoctorRequest) -> Result<Reply> {
         Err(unavailable())
     }
     /// `GET /v1/apps` (ref/09 §5.14).

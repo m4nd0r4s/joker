@@ -538,6 +538,28 @@ async fn lineage(State(b): State<Shared>, UrlPath(path): UrlPath<String>) -> Res
     run(b, move |b| b.lineage(&path)).await
 }
 
+async fn job(State(b): State<Shared>, UrlPath(id): UrlPath<String>) -> Response {
+    run(b, move |b| b.job(&id)).await
+}
+
+async fn doctor_report(State(b): State<Shared>) -> Response {
+    run(b, move |b| b.doctor_report()).await
+}
+
+async fn run_doctor(
+    State(b): State<Shared>,
+    ConnectInfo(peer): ConnectInfo<Peer>,
+    body: Bytes,
+) -> Response {
+    match decode(&body) {
+        Ok(req) => {
+            let who = principal(peer);
+            run(b, move |b| b.run_doctor(&who, req)).await
+        }
+        Err(p) => problem_response(b.as_ref(), &p),
+    }
+}
+
 async fn apps(State(b): State<Shared>) -> Response {
     run(b, move |b| b.apps()).await
 }
@@ -1032,6 +1054,8 @@ pub fn router_with(backend: Arc<dyn Backend>, limits: ws::Limits) -> Router {
         .route("/v1/status", get(status))
         .route("/v1/groups", get(groups))
         .route("/v1/signals/{path}/lineage", get(lineage))
+        .route("/v1/jobs/{job}", get(job))
+        .route("/v1/doctor", get(doctor_report).post(run_doctor))
         .route("/v1/apps", get(apps))
         .route("/v1/apps/{app}", get(app))
         .route("/v1/apps/{app}/start", post(start_app))
