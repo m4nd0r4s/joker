@@ -200,6 +200,15 @@ pub trait Backend: Send + Sync + 'static {
     fn history(&self, _query: &Query) -> Result<Reply> {
         Err(unavailable())
     }
+    /// `GET /v1/groups` (ref/09 §5.2): the cycle groups with their tasks
+    /// and statistics.
+    fn groups(&self) -> Result<Reply> {
+        Err(unavailable())
+    }
+    /// `GET /v1/groups/{group}`.
+    fn group(&self, _name: &str) -> Result<Reply> {
+        Err(unavailable())
+    }
     /// `GET /v1/events` (ref/09 §5.5).
     fn events(&self, _query: &Query) -> Result<Reply> {
         Err(unavailable())
