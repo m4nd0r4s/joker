@@ -2581,3 +2581,141 @@ async fn groups_and_runtime_signals_follow_the_contract() {
         .await;
     assert_eq!(v.json()["items"][0]["quality"], "good", "{}", v.json());
 }
+
+/// What the instances of [`Counting`] report: how many were made, how many
+/// ticks ran, and which instance ran last.
+#[derive(Default)]
+struct Probe {
+    made: std::sync::atomic::AtomicUsize,
+    runs: std::sync::atomic::AtomicUsize,
+    last: std::sync::atomic::AtomicUsize,
+}
+
+struct Counting(Arc<Probe>);
+
+struct Counted {
+    id: usize,
+    probe: Arc<Probe>,
+}
+
+impl jokerd::task::CycleTask for Counted {
+    fn run(
+        &mut self,
+        _cx: &mut jokerd::task::TaskContext<'_, '_, '_>,
+    ) -> Result<(), jokerd::task::TaskError> {
+        use std::sync::atomic::Ordering;
+        self.probe.runs.fetch_add(1, Ordering::SeqCst);
+        self.probe.last.store(self.id, Ordering::SeqCst);
+        Ok(())
+    }
+}
+
+impl jokerd::task::TaskProvider for Counting {
+    fn interfaces(
+        &self,
+    ) -> std::collections::BTreeMap<String, joker_manifest::context::AppInterface> {
+        jokerd::task::TaskProvider::interfaces(&NativeTasks)
+    }
+
+    fn instantiate(
+        &self,
+        _spec: jokerd::task::TaskSpec<'_>,
+    ) -> Result<Box<dyn jokerd::task::CycleTask>, jokerd::task::TaskError> {
+        let id = self
+            .0
+            .made
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            + 1;
+        Ok(Box::new(Counted {
+            id,
+            probe: Arc::clone(&self.0),
+        }))
+    }
+}
+
+/// `jk app stop|start|restart` (ref/09 §5.14, ADR 0091): a stopped app's
+/// tasks skip their ticks, a started one runs again, and a restart swaps a
+/// fresh instance in.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_app_stops_starts_and_restarts_on_the_node() {
+    use std::sync::atomic::Ordering;
+    let probe = Arc::new(Probe::default());
+    let f = start_with_tasks(
+        &effective(),
+        Arc::new(NoDevices),
+        Arc::new(Counting(Arc::clone(&probe))),
+    )
+    .await;
+    let apps = f.call("GET", "/v1/apps", "/v1/apps", None).await;
+    assert_eq!(apps.status, 200, "{}", apps.json());
+    let app = apps.json()["items"][0]["name"].as_str().unwrap().to_owned();
+    assert_eq!(apps.json()["items"][0]["state"], "running");
+    let one = f
+        .call("GET", "/v1/apps/{app}", &format!("/v1/apps/{app}"), None)
+        .await;
+    assert_eq!(one.json()["name"], app.as_str());
+
+    let stop = format!("/v1/apps/{app}/stop");
+    let refused = f
+        .call("POST", "/v1/apps/{app}/stop", &stop, Some(json!({})))
+        .await;
+    assert_eq!(refused.status, 400, "{}", refused.json());
+    let stopped = f
+        .call(
+            "POST",
+            "/v1/apps/{app}/stop",
+            &stop,
+            Some(json!({"reason": "maintenance"})),
+        )
+        .await;
+    assert_eq!(stopped.status, 200, "{}", stopped.json());
+    assert_eq!(stopped.json()["state"], "stopped");
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let frozen = probe.runs.load(Ordering::SeqCst);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(
+        probe.runs.load(Ordering::SeqCst),
+        frozen,
+        "a stopped app runs"
+    );
+
+    let started = f
+        .call(
+            "POST",
+            "/v1/apps/{app}/start",
+            &format!("/v1/apps/{app}/start"),
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!(started.json()["state"], "running", "{}", started.json());
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert!(probe.runs.load(Ordering::SeqCst) > frozen);
+    assert_eq!(probe.last.load(Ordering::SeqCst), 1);
+
+    let restarted = f
+        .call(
+            "POST",
+            "/v1/apps/{app}/restart",
+            &format!("/v1/apps/{app}/restart"),
+            Some(json!({"reason": "fresh state"})),
+        )
+        .await;
+    assert_eq!(restarted.status, 200, "{}", restarted.json());
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(probe.made.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        probe.last.load(Ordering::SeqCst),
+        2,
+        "the fresh instance runs"
+    );
+
+    let unknown = f
+        .call(
+            "POST",
+            "/v1/apps/{app}/start",
+            "/v1/apps/nope/start",
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!(unknown.status, 404);
+}

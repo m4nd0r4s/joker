@@ -638,6 +638,17 @@ impl Plan {
         self.ids.get(path).copied()
     }
 
+    /// The apps that run cycle tasks in this plan, in name order: the index
+    /// of `Shared::app_stopped`.
+    pub fn apps(&self) -> Vec<String> {
+        let names: std::collections::BTreeSet<&str> = self
+            .groups
+            .iter()
+            .flat_map(|g| g.tasks.iter().map(|t| t.app.as_str()))
+            .collect();
+        names.into_iter().map(str::to_owned).collect()
+    }
+
     /// The canonical path of a signal.
     pub fn path(&self, id: SignalId) -> Option<&str> {
         self.signals

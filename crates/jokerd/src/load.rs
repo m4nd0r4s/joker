@@ -118,26 +118,56 @@ pub fn instantiate(
     for group in &plan.groups {
         let mut list: GroupTasks = Vec::with_capacity(group.tasks.len());
         for t in &group.tasks {
-            let app = manifest
-                .apps
-                .get(&t.app)
-                .ok_or_else(|| LoadError::Task(format!("unknown app `{}`", t.app)))?;
-            let bindings: BTreeMap<String, joker_core::SignalId> = t
-                .bindings
-                .iter()
-                .filter_map(|(port, path)| plan.id(path).map(|id| (port.clone(), id)))
-                .collect();
-            let task = tasks
-                .instantiate(TaskSpec {
-                    app: &t.app,
-                    task: &t.task,
-                    manifest: app,
-                    bindings: &bindings,
-                })
-                .map_err(|e| LoadError::Task(e.0))?;
-            list.push((t.writer, task));
+            list.push((t.writer, instantiate_task(plan, manifest, tasks, t)?));
         }
         out.push(list);
     }
     Ok(out)
+}
+
+/// One fresh task instance of an app: its group index, its position in
+/// that group's task order, and the instance.
+pub type AppTask = (usize, usize, Box<dyn crate::task::CycleTask>);
+
+/// Fresh instances of every cycle task of `app`, each with its group index
+/// and its position in that group's task order: what an app restart swaps
+/// in (ref/09 §5.14).
+pub fn instantiate_app(
+    plan: &Plan,
+    manifest: &Manifest,
+    tasks: &dyn TaskProvider,
+    app: &str,
+) -> Result<Vec<AppTask>, LoadError> {
+    let mut out = Vec::new();
+    for (g, group) in plan.groups.iter().enumerate() {
+        for (i, t) in group.tasks.iter().enumerate().filter(|(_, t)| t.app == app) {
+            out.push((g, i, instantiate_task(plan, manifest, tasks, t)?));
+        }
+    }
+    Ok(out)
+}
+
+fn instantiate_task(
+    plan: &Plan,
+    manifest: &Manifest,
+    tasks: &dyn TaskProvider,
+    t: &crate::plan::TaskPlan,
+) -> Result<Box<dyn crate::task::CycleTask>, LoadError> {
+    let app = manifest
+        .apps
+        .get(&t.app)
+        .ok_or_else(|| LoadError::Task(format!("unknown app `{}`", t.app)))?;
+    let bindings: BTreeMap<String, joker_core::SignalId> = t
+        .bindings
+        .iter()
+        .filter_map(|(port, path)| plan.id(path).map(|id| (port.clone(), id)))
+        .collect();
+    tasks
+        .instantiate(TaskSpec {
+            app: &t.app,
+            task: &t.task,
+            manifest: app,
+            bindings: &bindings,
+        })
+        .map_err(|e| LoadError::Task(e.0))
 }

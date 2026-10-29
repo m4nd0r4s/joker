@@ -1152,6 +1152,71 @@ impl Backend for Node {
         })))
     }
 
+    fn apps(&self) -> Result<Reply, Problem> {
+        let states = lock_controller(&self.controller).app_states();
+        let items: Vec<Value> = states.iter().map(app_json).collect();
+        Ok(Reply::ok(json!({ "items": items })))
+    }
+
+    fn app(&self, name: &str) -> Result<Reply, Problem> {
+        lock_controller(&self.controller)
+            .app_states()
+            .iter()
+            .find(|(n, _, _)| n == name)
+            .map(|s| Reply::ok(app_json(s)))
+            .ok_or_else(|| Problem::new("J-E1500", 404, format!("unknown app `{name}`")))
+    }
+
+    fn app_lifecycle(
+        &self,
+        who: &Principal,
+        name: &str,
+        op: joker_api::model::AppOp,
+        req: ReasonBody,
+    ) -> Result<Reply, Problem> {
+        use joker_api::model::AppOp;
+        if self.role_of(who) < Role::Operator {
+            return Err(Problem::new(
+                "J-E1002",
+                403,
+                format!("`{}` on an app requires the role `operator`", op.name()),
+            ));
+        }
+        let reason = req.reason.filter(|r| !r.is_empty());
+        if op == AppOp::Stop && reason.is_none() {
+            return Err(
+                bad("J-E1106", "stopping an app needs a reason").with("pointer", json!("/reason"))
+            );
+        }
+        let mut c = lock_controller(&self.controller);
+        match op {
+            AppOp::Start => c.app_stop(name, false),
+            AppOp::Stop => c.app_stop(name, true),
+            AppOp::Restart => c.app_restart(name).map(|_| ()),
+        }
+        .map_err(problem)?;
+        let mut m = Map::new();
+        if let Some(generation) = c.active_generation() {
+            m.insert("gen".into(), json!(generation));
+        }
+        m.insert("record".into(), json!("app"));
+        m.insert("app".into(), json!(name));
+        m.insert("op".into(), json!(op.name()));
+        m.insert("principal".into(), json!(user(who)));
+        if let Some(reason) = &reason {
+            m.insert("reason".into(), json!(reason));
+        }
+        m.insert("ts".into(), json!(timestamp(utc_now_ns())));
+        if let Err(e) = lock(&self.log).append(m, true) {
+            eprintln!("jokerd: decision log: {e}");
+        }
+        c.app_states()
+            .iter()
+            .find(|(n, _, _)| n == name)
+            .map(|s| Reply::ok(app_json(s)))
+            .ok_or_else(|| Problem::new("J-E1500", 404, format!("unknown app `{name}`")))
+    }
+
     fn groups(&self) -> Result<Reply, Problem> {
         let v = self.need_view()?;
         let now = self.now_mono();
@@ -2768,6 +2833,21 @@ fn system_json(state_dir: &std::path::Path) -> Value {
     }
     if let Some(free) = s.disk_free_bytes {
         out.insert("disk_free".into(), json!(format!("{} KiB", free / 1024)));
+    }
+    Value::Object(out)
+}
+
+/// The `App` of ref/09 §5.14 for one of `Controller::app_states`: its
+/// name, `running` or `stopped`, and its digest when it has one (ADR 0091).
+fn app_json((name, stopped, digest): &(String, bool, Option<String>)) -> Value {
+    let mut out = Map::new();
+    out.insert("name".into(), json!(name));
+    out.insert(
+        "state".into(),
+        json!(if *stopped { "stopped" } else { "running" }),
+    );
+    if let Some(d) = digest {
+        out.insert("digest".into(), json!(d));
     }
     Value::Object(out)
 }

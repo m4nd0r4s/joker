@@ -103,6 +103,9 @@ fn empty_shared(
         alarm_commands: Vec::new().into_boxed_slice(),
         alarm_replies: crossbeam_queue::ArrayQueue::new(1),
         unconfirmed: Vec::new().into_boxed_slice(),
+        app_stopped: Vec::new().into_boxed_slice(),
+        task_swaps: Vec::new().into_boxed_slice(),
+        retired_tasks: crossbeam_queue::ArrayQueue::new(1),
     }
 }
 

@@ -114,6 +114,8 @@ struct Active {
     hash: String,
     running: Running,
     devices: Box<dyn DeviceSet>,
+    manifest: Arc<joker_manifest::Manifest>,
+    provider: Arc<dyn TaskProvider>,
 }
 
 struct Confirming {
@@ -343,6 +345,89 @@ impl Controller {
     /// The node's alarm book (ADR 0082).
     pub fn alarms(&self) -> Arc<crate::alarms::AlarmBook> {
         Arc::clone(&self.alarms)
+    }
+
+    fn active_app(&self, app: &str) -> Result<(&Active, usize), ControlError> {
+        let a = self
+            .active
+            .as_ref()
+            .ok_or_else(|| ControlError::new("J-E1015", 503, "no generation is running"))?;
+        let index = a
+            .running
+            .plan
+            .apps()
+            .iter()
+            .position(|n| n == app)
+            .ok_or_else(|| ControlError::new("J-E1500", 404, format!("unknown app `{app}`")))?;
+        Ok((a, index))
+    }
+
+    /// The apps of the running generation, in name order (ref/09 §5.14):
+    /// each with whether it is stopped and the digest of its component in
+    /// the generation, when it has one (a native app has none, ADR 0091).
+    pub fn app_states(&self) -> Vec<(String, bool, Option<String>)> {
+        let Some(a) = &self.active else {
+            return Vec::new();
+        };
+        let artifacts = self.store.artifacts(a.number).unwrap_or_default();
+        a.running
+            .plan
+            .apps()
+            .into_iter()
+            .zip(a.running.shared.app_stopped.iter())
+            .map(|(name, s)| {
+                let digest = artifacts
+                    .iter()
+                    .find(|x| {
+                        x.kind == crate::apps::APP_WASM
+                            && x.name.strip_prefix(crate::apps::APP_PREFIX) == Some(name.as_str())
+                    })
+                    .map(|x| x.digest.clone());
+                (name, s.load(std::sync::atomic::Ordering::Acquire), digest)
+            })
+            .collect()
+    }
+
+    /// The generation running now, if any.
+    pub fn active_generation(&self) -> Option<u64> {
+        self.active.as_ref().map(|a| a.number)
+    }
+
+    /// Stops (`stopped`) or starts an app of the running generation
+    /// (ref/09 §5.14): its tasks skip their ticks while it is stopped, and
+    /// its outputs follow their leases. It holds until the next generation
+    /// or the next start of `jokerd`.
+    pub fn app_stop(&mut self, app: &str, stopped: bool) -> Result<(), ControlError> {
+        let (a, index) = self.active_app(app)?;
+        if let Some(s) = a.running.shared.app_stopped.get(index) {
+            s.store(stopped, std::sync::atomic::Ordering::Release);
+        }
+        Ok(())
+    }
+
+    /// Restarts an app of the running generation (ref/09 §5.14): fresh
+    /// instances of its cycle tasks, built here, swapped in by each group
+    /// between two ticks. Returns how many tasks were queued.
+    pub fn app_restart(&mut self, app: &str) -> Result<usize, ControlError> {
+        let (a, _) = self.active_app(app)?;
+        while a.running.shared.retired_tasks.pop().is_some() {}
+        let fresh =
+            crate::load::instantiate_app(&a.running.plan, &a.manifest, a.provider.as_ref(), app)
+                .map_err(|e| validation(&e))?;
+        let count = fresh.len();
+        for (g, index, task) in fresh {
+            let queue = a.running.shared.task_swaps.get(g).ok_or_else(|| {
+                ControlError::new("J-E1501", 409, "the generation changed during the restart")
+            })?;
+            if queue.push(crate::shared::TaskSwap { index, task }).is_err() {
+                return Err(ControlError::new(
+                    "J-E1501",
+                    409,
+                    "a restart of this app is still being applied",
+                ));
+            }
+        }
+        Ok(count)
     }
 
     /// The node's historian (ADR 0081).
@@ -882,6 +967,8 @@ impl Controller {
             hash: g.hash.clone(),
             running,
             devices,
+            manifest: Arc::new(loaded.manifest),
+            provider,
         });
         self.store
             .record_activation(&Activation {
@@ -1258,6 +1345,8 @@ mod action_tests {
             hash: "sha256:test".into(),
             running,
             devices: Box::new(Answering(tx)),
+            manifest: Arc::new(joker_manifest::Manifest::default()),
+            provider: Arc::new(NativeTasks),
         });
         c
     }
