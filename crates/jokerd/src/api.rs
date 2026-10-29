@@ -498,6 +498,7 @@ impl Node {
         m.insert("tripped".into(), json!(tripped));
         m.insert("force_safe".into(), json!(force_safe(v, o)));
         m.insert("writers".into(), Value::Array(writers));
+        m.insert("envelope".into(), envelope_json(v, o));
         Value::Object(m)
     }
 
@@ -2835,6 +2836,70 @@ fn system_json(state_dir: &std::path::Path) -> Value {
         out.insert("disk_free".into(), json!(format!("{} KiB", free / 1024)));
     }
     Value::Object(out)
+}
+
+/// The declared `Envelope` of one output (ref/09 §5.6), and `reads`: the
+/// signals its expressions and `requires_good` read, for `jk why`
+/// (ADR 0091). A key the output does not declare is left out.
+fn envelope_json(v: &View, o: &OutputPlan) -> Value {
+    use joker_core::output::{OnInterlock, OnRange};
+    let path_of = |id: joker_core::SignalId| {
+        v.plan
+            .signals
+            .iter()
+            .find(|s| v.plan.id(&s.path) == Some(id))
+            .map(|s| s.path.clone())
+    };
+    let quantity = |x: f64| {
+        if o.unit == "1" {
+            format!("{x}")
+        } else {
+            format!("{x} {}", o.unit)
+        }
+    };
+    let mut m = Map::new();
+    if let Some((lo, hi)) = o.range {
+        m.insert("range".into(), json!([quantity(lo), quantity(hi)]));
+    }
+    let on_range = match o.on_range {
+        OnRange::Clamp => "clamp",
+        OnRange::Reject => "reject",
+        OnRange::Trip => "trip",
+    };
+    m.insert("on_range".into(), json!(on_range));
+    if let Some(rate) = o.rate {
+        m.insert("rate".into(), json!(format!("{}/s", quantity(rate))));
+    }
+    if let Some(band) = o.deadband {
+        m.insert("deadband".into(), json!(quantity(band)));
+    }
+    if o.min_interval_ns > 0 {
+        m.insert("min_interval".into(), json!(duration(o.min_interval_ns)));
+    }
+    if let Some(interlock) = &o.exprs.interlock {
+        m.insert("interlock".into(), json!(interlock.source));
+    }
+    let on_interlock = match o.on_interlock {
+        OnInterlock::Safe => "safe",
+        OnInterlock::Hold => "hold",
+    };
+    m.insert("on_interlock".into(), json!(on_interlock));
+    m.insert("permit_uncertain".into(), json!(o.permit_uncertain));
+    let requires_good: Vec<String> = o
+        .exprs
+        .requires_good
+        .iter()
+        .filter_map(|id| path_of(*id))
+        .collect();
+    m.insert("requires_good".into(), json!(requires_good));
+    if o.grace_ns > 0 {
+        m.insert("grace".into(), json!(duration(o.grace_ns)));
+    }
+    m.insert("max_lease".into(), json!(duration(o.max_lease_ns)));
+    m.insert("max_manual".into(), json!(duration(o.max_manual_ns)));
+    let reads: Vec<String> = o.exprs.reads().into_iter().filter_map(path_of).collect();
+    m.insert("reads".into(), json!(reads));
+    Value::Object(m)
 }
 
 /// The `App` of ref/09 §5.14 for one of `Controller::app_states`: its

@@ -2719,3 +2719,33 @@ async fn an_app_stops_starts_and_restarts_on_the_node() {
         .await;
     assert_eq!(unknown.status, 404);
 }
+
+/// `OutputState.envelope` (ref/09 §5.6) with `reads`, what `jk why`
+/// shows (ADR 0091): the interlock's inputs and `requires_good`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_output_serves_its_envelope_and_the_signals_it_reads() {
+    let manifest = effective()
+        .replace(
+            "[outputs.\"pi.act_led\"]\nsafe = false\n",
+            "[outputs.\"pi.act_led\"]\nsafe = false\ninterlock = \"pi.door\"\nrequires_good = [\"pi.temp\"]\n",
+        )
+        .replace(
+            "act_led = { type = \"bool\", direction = \"output\" }\n",
+            "act_led = { type = \"bool\", direction = \"output\" }\ndoor = { type = \"bool\", direction = \"input\" }\ntemp = { type = \"f64\", direction = \"input\", unit = \"°C\" }\n",
+        );
+    let f = start_with(&manifest).await;
+    let o = f
+        .call(
+            "GET",
+            "/v1/outputs/{path}",
+            "/v1/outputs/pi.act_led",
+            None,
+        )
+        .await;
+    assert_eq!(o.status, 200, "{}", o.json());
+    let e = &o.json()["envelope"];
+    assert_eq!(e["interlock"], "pi.door", "{e}");
+    assert_eq!(e["requires_good"], json!(["pi.temp"]), "{e}");
+    assert_eq!(e["reads"], json!(["pi.door", "pi.temp"]), "{e}");
+    assert_eq!(e["on_interlock"], "safe", "{e}");
+}
