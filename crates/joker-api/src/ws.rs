@@ -245,6 +245,7 @@ enum Topic {
     Decisions,
     Alarms,
     Logs,
+    SignalTrace,
 }
 
 impl Topic {
@@ -257,6 +258,7 @@ impl Topic {
             "decisions" => Some(Self::Decisions),
             "alarms" => Some(Self::Alarms),
             "logs" => Some(Self::Logs),
+            "signal_trace" => Some(Self::SignalTrace),
             _ => None,
         }
     }
@@ -270,6 +272,7 @@ impl Topic {
             Self::Decisions => "decisions",
             Self::Alarms => "alarms",
             Self::Logs => "logs",
+            Self::SignalTrace => "signal_trace",
         }
     }
 
@@ -278,13 +281,17 @@ impl Topic {
     }
 
     fn is_event(self) -> bool {
-        matches!(self, Self::Decisions | Self::Alarms | Self::Logs)
+        matches!(
+            self,
+            Self::Decisions | Self::Alarms | Self::Logs | Self::SignalTrace
+        )
     }
 
     fn default_interval(self) -> Duration {
         match self {
             Self::Status | Self::Metrics => SNAPSHOT_MINIMUM,
             Self::Decisions | Self::Alarms | Self::Logs => Duration::from_millis(200),
+            Self::SignalTrace => Duration::from_millis(100),
             Self::Signals | Self::Outputs => Duration::from_millis(100),
         }
     }
@@ -515,6 +522,7 @@ fn item_key(topic: Topic, item: &Value, index: usize) -> String {
         Topic::Signals | Topic::Outputs => item.get("path"),
         Topic::Decisions | Topic::Alarms => item.get("id"),
         Topic::Logs => item.get("seq"),
+        Topic::SignalTrace => item.get("key"),
         Topic::Status | Topic::Metrics => None,
     };
     field
@@ -543,6 +551,7 @@ fn event_key(topic: Topic, item: &Value) -> Option<String> {
             .get("seq")
             .and_then(Value::as_u64)
             .map(|n| format!("{n:020}")),
+        Topic::SignalTrace => item.get("key").and_then(Value::as_str).map(str::to_owned),
         _ => item.get("id").and_then(Value::as_str).map(str::to_owned),
     }
 }
@@ -600,6 +609,14 @@ async fn read_topic(
                 let mut q = filters;
                 q.push(("limit".into(), DECISIONS_READ.into()));
                 b.logs(&q).map(|r| list(r.body))
+            }
+            Topic::SignalTrace => {
+                let path = filters
+                    .iter()
+                    .find(|(k, _)| k == "path")
+                    .map(|(_, v)| v.clone())
+                    .unwrap_or_default();
+                b.signal_trace(&path).map(|r| list(r.body))
             }
         }
     })
@@ -1227,6 +1244,7 @@ enum ClientMsg {
         source: Option<String>,
         app: Option<String>,
         level: Option<String>,
+        path: Option<String>,
     },
     Unsubscribe {
         #[serde(default)]
@@ -1559,6 +1577,7 @@ async fn handle_client_message(raw: &str, session: &mut Session) -> bool {
             source,
             app,
             level,
+            path,
         } => {
             let options = SubscribeOptions {
                 sel,
@@ -1566,10 +1585,15 @@ async fn handle_client_message(raw: &str, session: &mut Session) -> bool {
                 mode,
                 initial,
                 buffer,
-                filters: [("source", source), ("app", app), ("level", level)]
-                    .into_iter()
-                    .filter_map(|(k, v)| v.map(|v| (k.to_owned(), v)))
-                    .collect(),
+                filters: [
+                    ("source", source),
+                    ("app", app),
+                    ("level", level),
+                    ("path", path),
+                ]
+                .into_iter()
+                .filter_map(|(k, v)| v.map(|v| (k.to_owned(), v)))
+                .collect(),
             };
             if let Err(p) = session.subscribe(Some(&id), &topic, options).await {
                 session.outbox.push(&error_json(Some(&id), &p), None);
@@ -1616,7 +1640,7 @@ fn stream_options(raw: Option<&str>) -> Result<(String, SubscribeOptions), Probl
             "filter" => {
                 let filter: Value = serde_json::from_str(&v)
                     .map_err(|_| Problem::new("J-E1012", 400, "bad `filter`"))?;
-                for key in ["source", "app", "level"] {
+                for key in ["source", "app", "level", "path"] {
                     if let Some(s) = filter.get(key).and_then(Value::as_str) {
                         options.filters.push((key.to_owned(), s.to_owned()));
                     }

@@ -209,6 +209,17 @@ pub trait Backend: Send + Sync + 'static {
     fn group(&self, _name: &str) -> Result<Reply> {
         Err(unavailable())
     }
+    /// `GET /v1/signals/{path}/lineage` (ref/09 §5.4): where a signal comes
+    /// from and who reads and writes it.
+    fn lineage(&self, _path: &str) -> Result<Reply> {
+        Err(unavailable())
+    }
+    /// The records of the `signal_trace` topic (ref/09 §6) of `path`: one
+    /// per recent tick that changed something about the signal, each with
+    /// a `key` that orders them (ADR 0091).
+    fn signal_trace(&self, _path: &str) -> Result<Reply> {
+        Err(unavailable())
+    }
     /// `GET /v1/apps` (ref/09 §5.14).
     fn apps(&self) -> Result<Reply> {
         Err(unavailable())

@@ -534,6 +534,10 @@ async fn groups(State(b): State<Shared>) -> Response {
     run(b, move |b| b.groups()).await
 }
 
+async fn lineage(State(b): State<Shared>, UrlPath(path): UrlPath<String>) -> Response {
+    run(b, move |b| b.lineage(&path)).await
+}
+
 async fn apps(State(b): State<Shared>) -> Response {
     run(b, move |b| b.apps()).await
 }
@@ -1027,6 +1031,7 @@ pub fn router_with(backend: Arc<dyn Backend>, limits: ws::Limits) -> Router {
         .route("/v1/health", get(health))
         .route("/v1/status", get(status))
         .route("/v1/groups", get(groups))
+        .route("/v1/signals/{path}/lineage", get(lineage))
         .route("/v1/apps", get(apps))
         .route("/v1/apps/{app}", get(app))
         .route("/v1/apps/{app}/start", post(start_app))
