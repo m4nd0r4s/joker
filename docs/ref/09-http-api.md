@@ -704,8 +704,8 @@ App shadow (M16) is **1.1** (document 26, §5; ADR 0035): the `/v1/shadows/**` o
 |---|---|---|---|---|
 | GET | `/v1/apps`, `/v1/apps/{app}` | viewer | | version, digest, WIT world, SDK, state (the `app_state` of ref/00 §6: `starting`, `running`, `crashloop`, `stopped`, `failed`, `shadow`, `updating`), cycle and async instances (state, group, memory, tasks with WCET and overruns), writer, traps, restarts, backoff, shadow, implemented instances, `meta` (`joker:meta` in JSON) (`App`) |
 | POST | `/v1/apps/{app}/start` | operator | M | starts a stopped app |
-| POST | `/v1/apps/{app}/stop` | operator | M | stops; `reason` required |
-| POST | `/v1/apps/{app}/restart` | operator | M | recreates the two instances; takes it out of `crashloop` |
+| POST | `/v1/apps/{app}/stop` | operator | M | stops; `reason` required. Its cycle tasks skip their ticks and its outputs follow their leases, until a start, the next generation or the next start of `jokerd` (ADR 0091) |
+| POST | `/v1/apps/{app}/restart` | operator | M | recreates the two instances; takes it out of `crashloop`. Each group swaps the fresh cycle instances in between two of its ticks (ADR 0091) |
 | GET | `/v1/apps/{app}/kv` | admin | | lists keys (`prefix`) or reads one (`key`; value in base64); **there is no write** |
 | GET | `/v1/shadows` | viewer | | active and recent shadows |
 | POST | `/v1/shadows` | admin | M | `ShadowStartRequest`: `target` (`app:<name>`), `candidate` (artifact), `until`, `promote`, `reason`; `If-Match` |
@@ -1153,6 +1153,7 @@ The validation J-codes (J01xx–J07xx) appear inside `J-E1601` and, on their own
 | `jk explain <key\|code\|pipeline>` | local; `<key>` with `--node` uses the node | `GET /v1/generations/current/provenance?key=` |
 | `jk explain <instance>` | node | `GET /v1/instances/{i}?explain=true` |
 | `jk explain <output>` | node | `GET /v1/outputs/{path}` (`OutputState`: `group`, `levels`, `active_level`, `envelope`, `last_outcome`) |
+| `jk why <output>` | node | `GET /v1/outputs/{path}`, `GET /v1/decisions?output=&limit=5`, `GET /v1/values` of the signals its envelope reads (ADR 0091) |
 | `jk inspect <app.wasm\|driver.wasm\|firmware.jkfw\|model.jkm>` | local; with `--node`, the installed app | `GET /v1/apps/{app}` (`meta`) |
 | `jk lock [--update] [--check]` | local + node | `POST /v1/lock/probe`, `GET /v1/lock/facts`, `GET /v1/lock/drift`, `GET /v1/generations/current/lock`, `GET /v1/runtime/drivers` (the drivers of the binary for the lock, ref/06 §3.8) |
 | `jk sim <scenario>` | local | — |

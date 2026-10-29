@@ -5314,6 +5314,10 @@ components:
         requires_good:
           type: array
           items: {$ref: '#/components/schemas/SignalPath'}
+        reads:
+          description: the signals the envelope reads, its expressions' inputs and requires_good, in path order (ADR 0091); what jk why shows
+          type: array
+          items: {$ref: '#/components/schemas/SignalPath'}
         grace: {$ref: '#/components/schemas/Duration'}
         max_lease: {$ref: '#/components/schemas/Duration'}
         max_manual: {$ref: '#/components/schemas/Duration'}
@@ -6220,7 +6224,7 @@ components:
       enum: [starting, running, crashloop, stopped, failed, shadow, updating]
     App:
       type: object
-      required: [name, version, digest, state]
+      required: [name, state]
       properties:
         name: {$ref: '#/components/schemas/Name'}
         version: {type: string}
