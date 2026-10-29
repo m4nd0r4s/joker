@@ -41,6 +41,10 @@ async fn start() -> Fixture {
 }
 
 async fn start_with(manifest: &str) -> Fixture {
+    start_with_logs(manifest, Arc::default()).await
+}
+
+async fn start_with_logs(manifest: &str, logs: Arc<jokerd::logs::LogRing>) -> Fixture {
     let dir = tempfile::tempdir().unwrap();
     let clock = Monotonic::start();
     let log = Arc::new(Mutex::new(
@@ -57,7 +61,8 @@ async fn start_with(manifest: &str) -> Fixture {
             ..Config::default()
         },
     )
-    .unwrap();
+    .unwrap()
+    .with_logs(logs);
     let g = c
         .propose(manifest, "", Some("bench".into()), false)
         .unwrap();
@@ -309,4 +314,55 @@ async fn alarm_transitions_arrive_on_the_alarms_topic() {
     assert_eq!(event["kind"], "transition");
     assert_eq!(event["to"], "active_unacked");
     assert!(event["seq"].is_u64());
+}
+
+/// `jk logs --follow` (ref/09 §6, topic `logs`): new lines of the log ring
+/// arrive as `data`, filtered by `level`, `source` and `app`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn new_log_lines_follow_on_the_logs_topic_with_their_filters() {
+    use jokerd::logs::LogLevel;
+    let ring: Arc<jokerd::logs::LogRing> = Arc::default();
+    ring.push(
+        LogLevel::Warn,
+        "jokerd",
+        "before the subscription",
+        Vec::new(),
+        1,
+    );
+    let f = start_with_logs(&effective(), Arc::clone(&ring)).await;
+    let mut ws = connect(&f.socket).await;
+    let _welcome = next_json(&mut ws).await;
+    ws.send(Message::Text(
+        json!({
+            "op": "subscribe",
+            "id": "l1",
+            "topic": "logs",
+            "level": "warn",
+            "source": "app:peak",
+            "min_interval": "10ms",
+            "initial": false,
+        })
+        .to_string()
+        .into(),
+    ))
+    .await
+    .unwrap();
+    let subscribed = next_json(&mut ws).await;
+    assert_eq!(subscribed["op"], "subscribed", "{subscribed}");
+    ring.push(LogLevel::Info, "app:peak", "too quiet", Vec::new(), 2);
+    ring.push(LogLevel::Warn, "jokerd", "another source", Vec::new(), 3);
+    ring.push(LogLevel::Error, "app:peak", "forecast OOD", Vec::new(), 4);
+    let data = loop {
+        let m = next_json(&mut ws).await;
+        if m["op"] == "data" {
+            break m;
+        }
+    };
+    let messages: Vec<&str> = data["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|i| i["msg"].as_str())
+        .collect();
+    assert_eq!(messages, ["forecast OOD"], "{data}");
 }

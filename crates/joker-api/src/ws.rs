@@ -244,6 +244,7 @@ enum Topic {
     Metrics,
     Decisions,
     Alarms,
+    Logs,
 }
 
 impl Topic {
@@ -255,6 +256,7 @@ impl Topic {
             "metrics" => Some(Self::Metrics),
             "decisions" => Some(Self::Decisions),
             "alarms" => Some(Self::Alarms),
+            "logs" => Some(Self::Logs),
             _ => None,
         }
     }
@@ -267,6 +269,7 @@ impl Topic {
             Self::Metrics => "metrics",
             Self::Decisions => "decisions",
             Self::Alarms => "alarms",
+            Self::Logs => "logs",
         }
     }
 
@@ -275,13 +278,13 @@ impl Topic {
     }
 
     fn is_event(self) -> bool {
-        matches!(self, Self::Decisions | Self::Alarms)
+        matches!(self, Self::Decisions | Self::Alarms | Self::Logs)
     }
 
     fn default_interval(self) -> Duration {
         match self {
             Self::Status | Self::Metrics => SNAPSHOT_MINIMUM,
-            Self::Decisions | Self::Alarms => Duration::from_millis(200),
+            Self::Decisions | Self::Alarms | Self::Logs => Duration::from_millis(200),
             Self::Signals | Self::Outputs => Duration::from_millis(100),
         }
     }
@@ -452,6 +455,7 @@ fn delivered(out: &Out, bytes: &AtomicUsize) {
 struct Subscription {
     topic: Topic,
     sel: Vec<String>,
+    filters: Vec<(String, String)>,
     interval: Duration,
     next_due: Instant,
     every: bool,
@@ -510,6 +514,7 @@ fn item_key(topic: Topic, item: &Value, index: usize) -> String {
     let field = match topic {
         Topic::Signals | Topic::Outputs => item.get("path"),
         Topic::Decisions | Topic::Alarms => item.get("id"),
+        Topic::Logs => item.get("seq"),
         Topic::Status | Topic::Metrics => None,
     };
     field
@@ -534,7 +539,7 @@ fn stable(value: &Value) -> Value {
 /// alarm event's `seq` (zero-padded so that it sorts as text).
 fn event_key(topic: Topic, item: &Value) -> Option<String> {
     match topic {
-        Topic::Alarms => item
+        Topic::Alarms | Topic::Logs => item
             .get("seq")
             .and_then(Value::as_u64)
             .map(|n| format!("{n:020}")),
@@ -563,10 +568,12 @@ async fn read_topic(
     engine: &Engine,
     topic: Topic,
     sel: &[String],
+    filters: &[(String, String)],
 ) -> Result<Vec<Value>, Problem> {
     let b = Arc::clone(backend);
     let stats = Arc::clone(&engine.stats);
     let sel = sel.to_vec();
+    let filters = filters.to_vec();
     tokio::task::spawn_blocking(move || {
         let selectors =
             |key: &str| -> Query { sel.iter().map(|s| (key.to_owned(), s.clone())).collect() };
@@ -588,6 +595,11 @@ async fn read_topic(
                 let mut q = selectors("sel");
                 q.push(("limit".into(), DECISIONS_READ.into()));
                 b.alarm_events(&q).map(|r| list(r.body))
+            }
+            Topic::Logs => {
+                let mut q = filters;
+                q.push(("limit".into(), DECISIONS_READ.into()));
+                b.logs(&q).map(|r| list(r.body))
             }
         }
     })
@@ -640,6 +652,7 @@ struct SubscribeOptions {
     mode: Option<String>,
     initial: bool,
     buffer: Option<usize>,
+    filters: Vec<(String, String)>,
 }
 
 /// What follows `resumed` for one subscription.
@@ -745,7 +758,14 @@ impl Session {
                 ));
             }
         };
-        let items = read_topic(&self.backend, &self.engine, topic, &options.sel).await?;
+        let items = read_topic(
+            &self.backend,
+            &self.engine,
+            topic,
+            &options.sel,
+            &options.filters,
+        )
+        .await?;
         let floor = if topic == Topic::Outputs {
             self.outputs_floor(&items).await
         } else {
@@ -787,6 +807,7 @@ impl Session {
         let mut sub = Subscription {
             topic,
             sel: options.sel,
+            filters: options.filters,
             interval,
             next_due: Instant::now() + interval,
             every,
@@ -918,7 +939,14 @@ impl Session {
                 continue;
             };
             sub.next_due = now + sub.interval;
-            if let Ok(items) = read_topic(&self.backend, &self.engine, sub.topic, &sub.sel).await
+            if let Ok(items) = read_topic(
+                &self.backend,
+                &self.engine,
+                sub.topic,
+                &sub.sel,
+                &sub.filters,
+            )
+            .await
                 && (sub.same_paths(&items) || self.re_resolve(&id, &mut sub, &items).await)
             {
                 if sub.topic.is_event() {
@@ -1196,6 +1224,9 @@ enum ClientMsg {
         #[serde(default = "default_true")]
         initial: bool,
         buffer: Option<usize>,
+        source: Option<String>,
+        app: Option<String>,
+        level: Option<String>,
     },
     Unsubscribe {
         #[serde(default)]
@@ -1525,6 +1556,9 @@ async fn handle_client_message(raw: &str, session: &mut Session) -> bool {
             mode,
             initial,
             buffer,
+            source,
+            app,
+            level,
         } => {
             let options = SubscribeOptions {
                 sel,
@@ -1532,6 +1566,10 @@ async fn handle_client_message(raw: &str, session: &mut Session) -> bool {
                 mode,
                 initial,
                 buffer,
+                filters: [("source", source), ("app", app), ("level", level)]
+                    .into_iter()
+                    .filter_map(|(k, v)| v.map(|v| (k.to_owned(), v)))
+                    .collect(),
             };
             if let Err(p) = session.subscribe(Some(&id), &topic, options).await {
                 session.outbox.push(&error_json(Some(&id), &p), None);
@@ -1574,6 +1612,15 @@ fn stream_options(raw: Option<&str>) -> Result<(String, SubscribeOptions), Probl
                     v.parse()
                         .map_err(|_| Problem::new("J-E1012", 400, "bad `buffer`"))?,
                 );
+            }
+            "filter" => {
+                let filter: Value = serde_json::from_str(&v)
+                    .map_err(|_| Problem::new("J-E1012", 400, "bad `filter`"))?;
+                for key in ["source", "app", "level"] {
+                    if let Some(s) = filter.get(key).and_then(Value::as_str) {
+                        options.filters.push((key.to_owned(), s.to_owned()));
+                    }
+                }
             }
             _ => {}
         }
