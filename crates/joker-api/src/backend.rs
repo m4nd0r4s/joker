@@ -4,7 +4,7 @@
 use serde_json::Value;
 
 use crate::model::{
-    AckRequest, ActivateRequest, BulkResetRequest, GenerationProposal, InvokeActionRequest,
+    AckRequest, ActivateRequest, AppOp, BulkResetRequest, GenerationProposal, InvokeActionRequest,
     ManualWriteRequest, MethodCallRequest, MissingBlobsRequest, ReasonBody, ReleaseRequest,
     ResetTripRequest, RollbackRequest, ShelveRequest, TraceRequest,
 };
@@ -207,6 +207,24 @@ pub trait Backend: Send + Sync + 'static {
     }
     /// `GET /v1/groups/{group}`.
     fn group(&self, _name: &str) -> Result<Reply> {
+        Err(unavailable())
+    }
+    /// `GET /v1/apps` (ref/09 §5.14).
+    fn apps(&self) -> Result<Reply> {
+        Err(unavailable())
+    }
+    /// `GET /v1/apps/{app}`.
+    fn app(&self, _app: &str) -> Result<Reply> {
+        Err(unavailable())
+    }
+    /// `POST /v1/apps/{app}/start|stop|restart` (ref/09 §5.14, ADR 0091).
+    fn app_lifecycle(
+        &self,
+        _who: &Principal,
+        _app: &str,
+        _op: AppOp,
+        _request: ReasonBody,
+    ) -> Result<Reply> {
         Err(unavailable())
     }
     /// `GET /v1/events` (ref/09 §5.5).
