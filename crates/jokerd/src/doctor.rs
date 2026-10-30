@@ -337,6 +337,55 @@ impl Jobs {
         }
     }
 
+    /// Whether a job of `kind` is still running.
+    pub fn running(&self, kind: &str) -> bool {
+        self.jobs
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .values()
+            .any(|j| j["kind"] == kind && j["state"] == "running")
+    }
+
+    /// Starts a job of `kind` created by `who`: `work` runs on a thread of
+    /// its own, and its value is the job's `result` (`succeeded`), or its
+    /// problem the job's `error` (`failed`). Returns the job as created.
+    pub fn start<F>(self: &Arc<Self>, kind: &str, who: &str, work: F) -> std::io::Result<Value>
+    where
+        F: FnOnce() -> Result<Value, Value> + Send + 'static,
+    {
+        let id = joker_api::id::ulid(u128::try_from(utc_now_ns()).unwrap_or(0));
+        let created = timestamp(utc_now_ns());
+        let job = json!({
+            "id": id,
+            "kind": kind,
+            "state": "running",
+            "created_at": created,
+            "created_by": who,
+            "started_at": created,
+        });
+        self.put(job.clone());
+        let jobs = Arc::clone(self);
+        let mut running = job.clone();
+        std::thread::Builder::new()
+            .name(format!("svc/{kind}"))
+            .spawn(move || {
+                let outcome = work();
+                running["finished_at"] = json!(timestamp(utc_now_ns()));
+                match outcome {
+                    Ok(result) => {
+                        running["state"] = json!("succeeded");
+                        running["result"] = result;
+                    }
+                    Err(problem) => {
+                        running["state"] = json!("failed");
+                        running["error"] = problem;
+                    }
+                }
+                jobs.put(running);
+            })?;
+        Ok(job)
+    }
+
     /// Starts a `doctor` job created by `who`: `base` always, plus `rt`
     /// for `rt_length` when asked, plus the `skipped` checks as they are.
     /// Returns the job as created; it runs on a thread of its own and is

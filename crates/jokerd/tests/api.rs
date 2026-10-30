@@ -3089,3 +3089,122 @@ async fn the_node_serves_its_hardware_inventory() {
     assert_eq!(r.status, 200);
     assert!(r.json()["cpus"]["count"].as_u64().unwrap() >= 1);
 }
+
+/// A Modbus TCP server that answers FC 3 from a SunSpec register image,
+/// with exception 2 for registers the image does not have.
+fn sunspec_server(image: joker_driver_modbus::sunspec::Image) -> std::net::SocketAddr {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else {
+                return;
+            };
+            let mut request = [0u8; 12];
+            while stream.read_exact(&mut request).is_ok() {
+                let at = u16::from_be_bytes([request[8], request[9]]);
+                let count = u16::from_be_bytes([request[10], request[11]]);
+                let mut answer = request[0..4].to_vec();
+                match image.read(at, count) {
+                    Some(words) => {
+                        let len = 3 + 2 * words.len() as u16;
+                        answer.extend(len.to_be_bytes());
+                        answer.extend([request[6], 3, (2 * words.len()) as u8]);
+                        for w in words {
+                            answer.extend(w.to_be_bytes());
+                        }
+                    }
+                    None => answer.extend([0, 3, request[6], 0x83, 2]),
+                }
+                if stream.write_all(&answer).is_err() {
+                    break;
+                }
+            }
+        }
+    });
+    address
+}
+
+/// `jk discover` (docs/05 §7, ADR 0095): `POST /v1/discovery` walks the
+/// SunSpec chain of the equipment as a `discovery` job, with reads only,
+/// and its result carries the identity, the map digest, the lock entry and
+/// the suggested profile.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_discovery_job_walks_a_sunspec_device() {
+    use joker_driver_modbus::sunspec::{Image, common_body};
+    let mut image = Image::new(40000);
+    image.model(1, &common_body("ACME", "PCS 125", "4.12.0", "A1B2C3"));
+    let mut inverter = vec![0u16; 50];
+    inverter[4] = (-2i16) as u16;
+    image.model(103, &inverter);
+    image.model(64001, &[0; 4]);
+    image.end();
+    let address = sunspec_server(image);
+    let f = start().await;
+    let refused = f
+        .call(
+            "POST",
+            "/v1/discovery",
+            "/v1/discovery",
+            Some(json!({"uri": "modbus-tcp://10.0.0.0/24"})),
+        )
+        .await;
+    assert_eq!(
+        (refused.status, refused.json()["code"].clone()),
+        (400, json!("J-E1708"))
+    );
+    let job = f
+        .call(
+            "POST",
+            "/v1/discovery",
+            "/v1/discovery",
+            Some(json!({"uri": format!("sunspec://{address}"), "rate": "200/s", "timeout": "10s"})),
+        )
+        .await;
+    assert_eq!(job.status, 202, "{}", job.json());
+    assert_eq!(job.json()["kind"], "discovery");
+    let id = job.json()["id"].as_str().unwrap().to_owned();
+    let done = loop {
+        let j = f
+            .call("GET", "/v1/jobs/{job}", &format!("/v1/jobs/{id}"), None)
+            .await;
+        if j.json()["state"] != "running" {
+            break j.json();
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    };
+    assert_eq!(done["state"], "succeeded", "{done}");
+    let contract = Contract::load();
+    let schema = json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$ref": "#/components/schemas/DiscoveryResult",
+        "components": contract.doc["components"].clone(),
+    });
+    let validator = jsonschema::validator_for(&schema).unwrap();
+    let errors: Vec<String> = validator
+        .iter_errors(&done["result"])
+        .map(|e| format!("{e} at {}", e.instance_path))
+        .collect();
+    assert!(errors.is_empty(), "{errors:#?}");
+    let hit = &done["result"]["hits"][0];
+    assert_eq!(hit["unit"], 1);
+    assert_eq!(hit["base"], 40000);
+    assert_eq!(hit["identity"]["vendor"], "ACME");
+    assert_eq!(hit["identity"]["serial"], "A1B2C3");
+    assert_eq!(hit["profile_name"], "acme/pcs-125@1");
+    let models: Vec<(u64, bool)> = hit["models"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| (m["id"].as_u64().unwrap(), m["known"].as_bool().unwrap()))
+        .collect();
+    assert_eq!(models, [(1, true), (103, true), (64001, false)]);
+    assert!(hit["digest"].as_str().unwrap().starts_with("sha256:"));
+    let lock = hit["lock"].as_str().unwrap();
+    assert!(lock.starts_with("[discovered.pcs_125]\n"), "{lock}");
+    assert!(lock.contains(hit["digest"].as_str().unwrap()), "{lock}");
+    let profile = hit["profile"].as_str().unwrap();
+    let report = joker_manifest::profile::parse(Path::new("acme/pcs-125@1.profile.toml"), profile);
+    assert!(report.profile.is_some(), "{}\n{profile}", report.render());
+}
