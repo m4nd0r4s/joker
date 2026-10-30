@@ -1,5 +1,6 @@
 //! AUR-404, docs/01 §8 (M1): one device-fallback scenario, run against
-//! every driver kind that has outputs, each through its real driver and
+//! every driver kind that has outputs (`sysfs`, `gpio`, `revpi`,
+//! `modbus-tcp` and `modbus-rtu`), each through its real driver and
 //! `jokerd::drivers::run_driver` over its in-memory double. An applied
 //! output reaches the device; when the equipment loses it, the keepalive
 //! puts it back without a new commit; when the supervisor forces safe, the
@@ -17,12 +18,13 @@ use joker_core::Outcome;
 use joker_core::image::{Proposal, Source};
 use joker_core::time::{ClockQuality, Instant};
 use joker_driver_gpio::{GpioDriver, GpioPlanner};
-use joker_driver_modbus::{ModbusTcp, ModbusTcpPlanner};
+use joker_driver_modbus::rtu::crc16;
+use joker_driver_modbus::{ModbusPlanner, ModbusRtu, ModbusTcp, ModbusTcpPlanner};
 use joker_driver_revpi::image::{Device, FakeImage};
 use joker_driver_revpi::{RevPiDriver, RevPiPlanner};
 use joker_driver_sysfs::{SysfsDriver, SysfsPlanner};
-use joker_hal::link::{DevicePaths, TcpEndpoint};
-use joker_hal::testing::{MemoryGpio, VirtualHost};
+use joker_hal::link::{DevicePaths, SerialInfo, SerialPort, TcpEndpoint};
+use joker_hal::testing::{MemoryGpio, MemorySerial, VirtualHost};
 use joker_hal::{
     Driver, GpioChip, IoError, Link, OpenArgs, PlanRequest, PlanView, Planner, TcpConnect, TcpIo,
     TcpStream,
@@ -137,13 +139,15 @@ fn apply_true(plan: &Plan, shared: &Shared, output: &str) {
     );
 }
 
-/// Runs `driver` for device 0 of `plan` through the scenario: `level`
-/// reads the output on the device, `lose` makes the equipment drop it.
+/// Runs `driver` for device 0 of `plan` on `host` through the scenario:
+/// `level` reads the output on the device, `lose` makes the equipment
+/// drop it.
 #[allow(
     clippy::too_many_arguments,
     reason = "the driver and its plan pieces, plus the two probes into its double"
 )]
 fn scenario<D: Driver>(
+    host: Arc<VirtualHost>,
     driver: D,
     request: PlanRequest<'_>,
     hal_plan: PlanView<'_>,
@@ -155,7 +159,6 @@ fn scenario<D: Driver>(
 ) -> Seen {
     let t = TIMELINE;
     let targets = point_targets(plan, 0);
-    let host = Arc::new(VirtualHost::new(0));
     let clock = Arc::clone(&host);
     let groups = supervisor::group_boxes(plan, shared);
     let seen = Rc::new(Cell::new((false, false, false)));
@@ -240,6 +243,7 @@ fn sysfs(keepalive: Option<u64>) -> Seen {
     .unwrap();
     let brightness = led.join("brightness");
     scenario(
+        Arc::new(VirtualHost::new(0)),
         driver,
         views.request(),
         hal_plan.view(),
@@ -272,6 +276,7 @@ fn gpio(keepalive: Option<u64>) -> Seen {
     )
     .unwrap();
     scenario(
+        Arc::new(VirtualHost::new(0)),
         driver,
         views.request(),
         hal_plan.view(),
@@ -317,6 +322,7 @@ fn revpi(keepalive: Option<u64>) -> Seen {
     )
     .unwrap();
     scenario(
+        Arc::new(VirtualHost::new(0)),
         driver,
         views.request(),
         hal_plan.view(),
@@ -429,6 +435,70 @@ fn modbus_tcp(keepalive: Option<u64>) -> Seen {
     )
     .unwrap();
     scenario(
+        Arc::new(VirtualHost::new(0)),
+        driver,
+        views.request(),
+        hal_plan.view(),
+        plan,
+        &shared,
+        keepalive,
+        || coil.lock().unwrap().on,
+        || coil.lock().unwrap().on = false,
+    )
+}
+
+/// The coil of [`Coil`] behind a Modbus RTU slave: answers FC 5 by its
+/// echo, with the slave's address and the frame's CRC.
+fn rtu_reply(coil: &Mutex<Coil>, frame: &[u8]) -> Vec<u8> {
+    let pdu = &frame[1..frame.len() - 2];
+    let mut out = vec![frame[0]];
+    match pdu[0] {
+        5 => {
+            coil.lock().unwrap().on = pdu[3] == 0xFF;
+            out.extend_from_slice(pdu);
+        }
+        fc => out.extend([fc | 0x80, 1]),
+    }
+    let crc = crc16(&out).to_le_bytes();
+    out.extend_from_slice(&crc);
+    out
+}
+
+fn modbus_rtu(keepalive: Option<u64>) -> Seen {
+    let (_dir, l) = loaded(
+        "[buses.line0]\nkind = \"serial\"\nport = \"/dev/ttyUSB0\"\nbaud = 115200\n\n\
+         [devices.relay]\ndriver = \"modbus-rtu\"\nbus = \"line0\"\nunit_id = 1\n\
+         profile = \"acme/relay@1\"\ntimeout = \"100ms\"\n\n\
+         [outputs.\"relay.run\"]\nsafe = false\n",
+        &[("profiles/acme/relay@1.profile.toml", RELAY_PROFILE)],
+    );
+    let plan = &l.plan;
+    assert_eq!(
+        plan.devices[0].fallback_keepalive_ns,
+        Some(TIMELINE.keepalive),
+        "the keepalive is a fifth of the profile's fallback timeout"
+    );
+    let shared = Arc::new(Shared::new(plan));
+    apply_true(plan, &shared, "relay.run");
+
+    let host = Arc::new(VirtualHost::new(0));
+    let coil = Arc::new(Mutex::new(Coil::default()));
+    let slave = Arc::clone(&coil);
+    let (serial, _line) = MemorySerial::new(
+        Arc::clone(&host),
+        SerialInfo::new_8n1(115_200),
+        Box::new(move |frame: &[u8], _now| rtu_reply(&slave, frame)),
+    );
+    let owned = jokerd::bridge::owned_request(&plan.devices[0]);
+    let views = owned.views();
+    let hal_plan = ModbusPlanner::plan(&views.request()).unwrap();
+    let driver = ModbusRtu::open(
+        &OpenArgs::new(views.request(), hal_plan.view()),
+        Link::Serial(SerialPort::new(serial)),
+    )
+    .unwrap();
+    scenario(
+        host,
         driver,
         views.request(),
         hal_plan.view(),
@@ -461,12 +531,18 @@ fn modbus_tcp_follows_the_fallback_scenario() {
 }
 
 #[test]
+fn modbus_rtu_follows_the_fallback_scenario() {
+    assert_eq!(modbus_rtu(Some(TIMELINE.keepalive)), EXPECTED);
+}
+
+#[test]
 fn without_a_keepalive_a_lost_output_stays_lost() {
     for (kind, seen) in [
         ("sysfs", sysfs(None)),
         ("gpio", gpio(None)),
         ("revpi", revpi(None)),
         ("modbus-tcp", modbus_tcp(None)),
+        ("modbus-rtu", modbus_rtu(None)),
     ] {
         assert!(seen.applied && seen.lost, "{kind}: {seen:?}");
         assert!(!seen.renewed, "{kind}: {seen:?}");
