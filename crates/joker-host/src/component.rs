@@ -114,22 +114,53 @@ pub(crate) fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+/// The worlds a component may declare on this runtime, newest first: the
+/// worlds of [`WORLD`]'s adapter window that have been published (ADR
+/// 0098). `GET /v1/version` reports them as `wit.supported`.
+pub const SUPPORTED_WORLDS: &[&str] = &[WORLD];
+
+/// Whether a runtime serving `served` loads a component of `world`, both
+/// `(major, minor, patch)` (ref/04 §2.8, ADR 0098): a world with a newer
+/// major or minor is `J-E0001`; before 1.0 the window is the served minor
+/// and the one before it, from 1.0 on every minor of the served major up to
+/// its own; anything else is `J-E0002`. The patch never decides.
+pub fn window(served: (u64, u64, u64), world: (u64, u64, u64)) -> Result<(), &'static str> {
+    let (s_major, s_minor, _) = served;
+    let (w_major, w_minor, _) = world;
+    if (w_major, w_minor) > (s_major, s_minor) {
+        return Err(codes::WORLD_TOO_NEW);
+    }
+    let inside = if s_major == 0 {
+        w_major == 0 && w_minor + 1 >= s_minor
+    } else {
+        w_major == s_major
+    };
+    if inside {
+        Ok(())
+    } else {
+        Err(codes::OUTSIDE_WINDOW)
+    }
+}
+
 fn check_meta(meta: &AppMeta, mode: RuntimeMode) -> Result<(), HostError> {
     let served = meta::parse_world(WORLD).unwrap_or_default();
     let Some(world) = meta::parse_world(&meta.world) else {
         return Err(HostError::new(codes::META_INVALID, "invalid world"));
     };
-    if world > served {
-        return Err(HostError::new(
-            codes::WORLD_TOO_NEW,
-            format!("{} is newer than {WORLD}", meta.world),
-        ));
-    }
-    if world != served {
-        return Err(HostError::new(
-            codes::OUTSIDE_WINDOW,
-            format!("{} is outside the window of {WORLD}", meta.world),
-        ));
+    match window(served, world) {
+        Ok(()) => {}
+        Err(code) if code == codes::WORLD_TOO_NEW => {
+            return Err(HostError::new(
+                code,
+                format!("{} is newer than {WORLD}", meta.world),
+            ));
+        }
+        Err(code) => {
+            return Err(HostError::new(
+                code,
+                format!("{} is outside the window of {WORLD}", meta.world),
+            ));
+        }
     }
     if meta.cycle_abi != u64::from(crate::abi::ABI_VERSION) {
         return Err(HostError::new(
@@ -144,6 +175,16 @@ fn check_meta(meta: &AppMeta, mode: RuntimeMode) -> Result<(), HostError> {
         ));
     }
     Ok(())
+}
+
+/// The unstable feature an import of `interface` with `exports` uses, if
+/// any (ref/04 §2.9): a whole unstable interface, or one unstable function
+/// of a stable one.
+pub fn unstable_import(interface: &str, exports: &[&str]) -> Option<&'static str> {
+    UNSTABLE
+        .iter()
+        .find(|(iface, func, _)| *iface == interface && (func.is_empty() || exports.contains(func)))
+        .map(|(_, _, feature)| *feature)
 }
 
 fn check_imports(
@@ -168,23 +209,19 @@ fn check_imports(
                         format!("imports {name} but joker:meta says {}", meta.world),
                     ));
                 }
-                for (iface, func, feature) in UNSTABLE {
-                    if *iface != interface {
-                        continue;
+                let exports: Vec<&str> = match &item.ty {
+                    ComponentItem::ComponentInstance(inst) => {
+                        inst.exports(engine.wasmtime()).map(|(n, _)| n).collect()
                     }
-                    let uses = func.is_empty()
-                        || match &item.ty {
-                            ComponentItem::ComponentInstance(inst) => {
-                                inst.exports(engine.wasmtime()).any(|(n, _)| n == *func)
-                            }
-                            _ => false,
-                        };
-                    if uses && mode == RuntimeMode::Prod {
-                        return Err(HostError::new(
-                            codes::UNSTABLE_FEATURE,
-                            format!("{name} uses the unstable feature {feature}"),
-                        ));
-                    }
+                    _ => Vec::new(),
+                };
+                if let Some(feature) = unstable_import(interface, &exports)
+                    && mode == RuntimeMode::Prod
+                {
+                    return Err(HostError::new(
+                        codes::UNSTABLE_FEATURE,
+                        format!("{name} uses the unstable feature {feature}"),
+                    ));
                 }
             }
             p if p
@@ -194,4 +231,53 @@ fn check_imports(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_window_before_1_0_is_the_served_minor_and_the_one_before() {
+        let served = (0, 2, 0);
+        assert_eq!(window(served, (0, 2, 0)), Ok(()));
+        assert_eq!(window(served, (0, 2, 7)), Ok(()));
+        assert_eq!(window(served, (0, 1, 3)), Ok(()));
+        assert_eq!(window(served, (0, 0, 9)), Err(codes::OUTSIDE_WINDOW));
+        assert_eq!(window(served, (0, 3, 0)), Err(codes::WORLD_TOO_NEW));
+        assert_eq!(window(served, (1, 0, 0)), Err(codes::WORLD_TOO_NEW));
+    }
+
+    #[test]
+    fn from_1_0_every_minor_of_the_major_is_served() {
+        let served = (1, 3, 0);
+        assert_eq!(window(served, (1, 0, 0)), Ok(()));
+        assert_eq!(window(served, (1, 3, 2)), Ok(()));
+        assert_eq!(window(served, (1, 4, 0)), Err(codes::WORLD_TOO_NEW));
+        assert_eq!(window(served, (0, 9, 0)), Err(codes::OUTSIDE_WINDOW));
+        assert_eq!(window(served, (2, 0, 0)), Err(codes::WORLD_TOO_NEW));
+    }
+
+    #[test]
+    fn the_served_world_is_in_its_own_window() {
+        let served = meta::parse_world(WORLD).unwrap_or_default();
+        for world in SUPPORTED_WORLDS {
+            let parsed = meta::parse_world(world).unwrap_or_default();
+            assert_eq!(window(served, parsed), Ok(()), "{world}");
+        }
+    }
+
+    #[test]
+    fn unstable_imports_are_named_by_their_feature() {
+        assert_eq!(unstable_import("ml", &["infer"]), Some("ml"));
+        assert_eq!(unstable_import("frames", &[]), Some("streams"));
+        assert_eq!(unstable_import("blocks", &["next"]), Some("blocks"));
+        assert_eq!(
+            unstable_import("cycle-io", &["get", "write-at"]),
+            Some("scheduled-writes")
+        );
+        assert_eq!(unstable_import("async-io", &["propose"]), Some("intents"));
+        assert_eq!(unstable_import("cycle-io", &["get", "write"]), None);
+        assert_eq!(unstable_import("kv", &["get"]), None);
+    }
 }
