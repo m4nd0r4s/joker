@@ -274,7 +274,7 @@ Any other import makes the host refuse the component at load (`J-E0006`).
 | `scheduled-writes` | `cycle-io.write-at`, `async-io.write-at`, flag `AT` of the `WRITE` record | 02 §7.2, M6 |
 | `intents` | `async-io.propose` | 01 §6.1, M18 |
 
-- An `@unstable` item **is not part of the stable world**: the tools generate the bindings without it, unless the feature is requested (in the Rust SDK, an `unstable-<name>` feature, §4.15). A component that imports an unstable item is refused by `jokerd` in `mode = "prod"` (`J-E0003`). In `mode = "dev"`, the 1.0 runtime binds it to stubs that return `J-E0601`, which allows developing against the planned shape.
+- An `@unstable` item **is not part of the stable world**: the tools generate the bindings without it, unless the feature is requested (in the Rust SDK, an `unstable-<name>` feature, §4.15). A component that imports an unstable item is refused by `jokerd` in `mode = "prod"` (`J-E0003`). In `mode = "dev"`, the 1.0 runtime binds it to stubs that return `J-E0601`, which allows developing against the planned shape. While the host is the cycle subset (ADR 0052), only `cycle-io.write-at` has a stub; a component that imports another unstable item (all of them async functions or resources) is refused at load with `J-E0601` in `dev` (ADR 0098).
 - In 1.1, each stabilized item replaces `@unstable(feature = …)` with `@since(version = 1.1.0)`. The shape may still change before that replacement, and so **an app compiled with an unstable feature is not covered by the golden rule**. This is what allows reserving the interfaces already (document 11, §"Ready for ML") without the shape chosen today being locked in for the whole 1 series.
 
 ### 2.10 Other packages in `wit/`
@@ -1168,7 +1168,7 @@ error[E0277]: J0720: `history()` is not available on Joker Micro
 | `unstable-scheduled-writes` | `scheduled-writes` | `write_at` |
 | `unstable-intents` | `intents` | `propose`, `IntentId` |
 
-Using one of these APIs without the feature is `J-E0718` (with the feature to enable). With the feature, the feature enters `joker:meta` (key 10) and the production `jokerd` refuses the component (`J-E0003`) until the version that stabilizes it. Planned signatures (they may change until stabilization):
+These features arrive with the APIs they give: the 1.0 SDK has none, and its bindings are generated without the `@unstable` items (ADR 0098). Using one of these APIs without the feature is `J-E0718` (with the feature to enable). With the feature, the feature enters `joker:meta` (key 10) and the production `jokerd` refuses the component (`J-E0003`) until the version that stabilizes it. Planned signatures (they may change until stabilization):
 
 ```rust
 #[cfg(feature = "unstable-ml")]
