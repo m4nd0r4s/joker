@@ -17,7 +17,7 @@
 #![no_std]
 
 extern crate alloc;
-#[cfg(test)]
+#[cfg(any(test, target_family = "wasm"))]
 extern crate std;
 
 mod error;
