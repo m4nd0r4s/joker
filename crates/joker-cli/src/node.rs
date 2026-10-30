@@ -386,6 +386,86 @@ impl Node {
         Ok(0)
     }
 
+    fn hardware(&self) -> Result<(Value, Value), Failure> {
+        let info = checked(self.client.get("/v1/info")?)?.json();
+        let hw = checked(self.client.get("/v1/node/hardware")?)?.json();
+        Ok((info, hw))
+    }
+
+    /// `jk board probe` (ref/03 §2.3.7): a board profile draft from the
+    /// node's hardware inventory, written to `out` or to
+    /// `boards/<name>.board.toml`, never over an existing file.
+    pub fn board_probe(&self, name: Option<&str>, out: Option<&Path>) -> Result<u8, Failure> {
+        let (info, hw) = self.hardware()?;
+        let node = info["node"].as_str().unwrap_or("node");
+        if self.json {
+            print_json(&hw);
+            return Ok(0);
+        }
+        let draft = crate::board_probe::draft(&hw, node, name).map_err(Failure::usage)?;
+        let path = out.map_or_else(
+            || Path::new("boards").join(format!("{}.board.toml", draft.name)),
+            Path::to_path_buf,
+        );
+        if path.exists() {
+            return Err(Failure::usage(format!(
+                "{} already exists; jk board probe never overwrites",
+                path.display()
+            )));
+        }
+        println!("→ {node} · inventory read (reads only)");
+        if let Some(board) = info["board"].as_str() {
+            println!(
+                "note: node {node} already declares the board `{board}`; maybe a new board is not needed"
+            );
+        }
+        print!("{}", crate::board_probe::summary(&hw));
+        if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+            std::fs::create_dir_all(parent).map_err(|e| Failure::usage(format!("{e}")))?;
+        }
+        std::fs::write(&path, &draft.text)
+            .map_err(|e| Failure::usage(format!("writing {}: {e}", path.display())))?;
+        println!(
+            "draft   {} · {} fields to review",
+            path.display(),
+            draft.reviews
+        );
+        Ok(0)
+    }
+
+    /// `jk board check <file> --node` (ref/03 §2.3.7): confirms the board
+    /// file against the node's hardware inventory, with reads only.
+    pub fn board_check(&self, file: &Path) -> Result<u8, Failure> {
+        let text = std::fs::read_to_string(file).map_err(|e| Failure::usage(format!("{e}")))?;
+        let (info, hw) = self.hardware()?;
+        let node = info["node"].as_str().unwrap_or("node");
+        let findings = crate::board_probe::confirm(&text, &hw, node).map_err(Failure::usage)?;
+        let errors = findings.iter().filter(|f| f.code.is_some()).count();
+        if self.json {
+            let list: Vec<Value> = findings
+                .iter()
+                .map(|f| json!({"code": f.code, "message": f.message, "line": f.line}))
+                .collect();
+            print_json(&json!({"ok": errors == 0, "findings": list}));
+        } else {
+            println!("{}", self.header()?);
+            for f in &findings {
+                let at = f
+                    .line
+                    .map(|l| format!("\n  --> {}:{l}", file.display()))
+                    .unwrap_or_default();
+                match f.code {
+                    Some(code) => eprintln!("error[{code}]: {}{at}", f.message),
+                    None => eprintln!("note: {}{at}", f.message),
+                }
+            }
+            if errors == 0 {
+                println!("✓ board    {} · confirmed on {node}", file.display());
+            }
+        }
+        Ok(if errors == 0 { 0 } else { 2 })
+    }
+
     /// `jk status`.
     pub fn status(&self) -> Result<u8, Failure> {
         let s = checked(self.client.get("/v1/status")?)?.json();

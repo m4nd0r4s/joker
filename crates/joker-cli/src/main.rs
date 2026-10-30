@@ -2,6 +2,7 @@
 
 mod apps;
 mod board;
+mod board_probe;
 mod class;
 mod dev;
 mod local;
@@ -449,10 +450,23 @@ enum AlarmCommand {
 
 #[derive(Debug, Subcommand)]
 enum BoardCommand {
-    /// Validates a board profile (local checks only; no `--node` yet).
+    /// Validates a board profile; with `--node`, also confirms it against
+    /// the node's hardware inventory (reads only).
     Check {
         /// The board profile file.
         file: PathBuf,
+    },
+    /// Writes a board profile draft from the node's hardware inventory
+    /// (`GET /v1/node/hardware`, reads only), with `# REVIEW` on what only
+    /// a person can decide.
+    Probe {
+        /// The board name; by default, the node's model in lowercase with
+        /// hyphens.
+        #[arg(long)]
+        name: Option<String>,
+        /// Where to write; by default `boards/<name>.board.toml`.
+        #[arg(long)]
+        out: Option<PathBuf>,
     },
     /// Copies an existing board profile to a new name.
     New {
@@ -462,8 +476,7 @@ enum BoardCommand {
         #[arg(long)]
         from: String,
     },
-    /// Renders a board profile's declared peripherals (local checks only;
-    /// no `--node` yet).
+    /// Renders a board profile's declared peripherals.
     Show {
         /// The board profile file.
         file: PathBuf,
@@ -750,7 +763,19 @@ fn run(cli: Cli) -> Result<u8, Failure> {
         } => local::profile_check(&file),
         Command::Board {
             command: BoardCommand::Check { file },
-        } => board::check(&file),
+        } => match cli.node.as_deref() {
+            None => board::check(&file),
+            Some(_) => {
+                let local = board::check(&file)?;
+                if local != 0 {
+                    return Ok(local);
+                }
+                node()?.board_check(&file)
+            }
+        },
+        Command::Board {
+            command: BoardCommand::Probe { name, out },
+        } => node()?.board_probe(name.as_deref(), out.as_deref()),
         Command::Board {
             command: BoardCommand::New { name, from },
         } => board::new(&name, &from),
