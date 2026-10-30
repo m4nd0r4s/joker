@@ -64,7 +64,60 @@ pub fn check(entry: &Entry, json: bool) -> Result<u8, Failure> {
     Ok(0)
 }
 
+/// `jk diff` without `--against` nor a node: the effective manifest of
+/// the entry (ref/01 §8).
+pub fn print_effective(entry: &Entry) -> Result<u8, Failure> {
+    print!(
+        "{}",
+        project::effective_toml(entry).map_err(Failure::usage)?
+    );
+    Ok(0)
+}
+
+/// `jk diff --against <file>`: the effective manifest of `file` against
+/// that of the entry.
+pub fn diff_files(entry: &Entry, file: &Path) -> Result<u8, Failure> {
+    let other = project::entry(None, Some(file)).map_err(Failure::usage)?;
+    let theirs = project::effective_toml(&other).map_err(Failure::usage)?;
+    let ours = project::effective_toml(entry).map_err(Failure::usage)?;
+    let (text, _) = crate::local::render_diff(
+        &file.display().to_string(),
+        &theirs,
+        &entry.manifest.display().to_string(),
+        &ours,
+    );
+    print!("{text}");
+    Ok(0)
+}
+
 impl Node {
+    /// `jk diff [--against <generation>] --node`: the effective manifest of
+    /// a generation of the node (`current` by default) against the
+    /// entry's.
+    pub fn diff(&self, entry: &Entry, against: Option<&str>) -> Result<u8, Failure> {
+        let selector = against.unwrap_or("current");
+        let r = checked(
+            self.client
+                .get(&format!("/v1/generations/{selector}/manifest"))?,
+        )?;
+        let theirs = String::from_utf8_lossy(&r.body).into_owned();
+        let ours = project::effective_toml(entry).map_err(Failure::usage)?;
+        if !self.json {
+            println!("{}", self.header()?);
+        }
+        let (text, changes) = crate::local::render_diff(
+            &format!("generation {selector}"),
+            &theirs,
+            &entry.manifest.display().to_string(),
+            &ours,
+        );
+        print!("{text}");
+        if changes == 0 {
+            println!("no differences");
+        }
+        Ok(0)
+    }
+
     /// Connects to `--node` (or the local runtime).
     pub fn open(node: Option<&str>, timeout: Duration, json: bool) -> Result<Self, Failure> {
         let (target, from) = match node {
