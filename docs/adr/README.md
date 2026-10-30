@@ -89,6 +89,7 @@
 | [0089](0089-one-thread-per-cycle-group.md) | One thread per cycle group: per-group state, cross-group alarm trips, priorities and the supervisor's narrowed response (amends ADR 0061 decision 6) |
 | [0090](0090-the-runtime-signals-on-linux.md) | The runtime's own signals on Linux (`joker.*`), `leases_expiring`, `Metrics.runtime.dropped` and the measured WCET of `GET /v1/groups` |
 | [0091](0091-jk-why-and-the-app-lifecycle-on-the-node.md) | `jk why <output>`, and the app lifecycle on the node: stop, start and restart in `jokerd` 1.0 |
+| [0092](0092-node-hardware-storage-and-board-probe.md) | The root medium in the hardware inventory, `jk board probe` and `jk board check --node`, and what a reference board promises |
 | [0093](0093-the-linux-gpio-driver-on-chardev-v1.md) | The Linux `gpio` driver on chardev v1: `edges` and `timestamp` reserved (`J0807`), `debounce` by the acquisition stage |
 | [0094](0094-seeded-cddl-generation-and-signed-64-bit-integers.md) | Seeded CDDL generation in `joker-spec-tests`, and signed 64-bit integers in the CDDL files (amends ADR 0080 decision 3) |
 

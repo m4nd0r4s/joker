@@ -896,7 +896,7 @@ All three write `version = "1.0.0"`, and **never overwrite** a file that already
 | `cpus` | the possible CPUs | `cpus.possible` | — |
 | `memory` | the power of 2 in MiB above `MemTotal` (`MemTotal` discounts the memory of the GPU and of the kernel: 427 MiB → `"512 MiB"`) | `memory.total` | — |
 | `clock` | the maximum frequency | `cpus.max_freq` | — |
-| `storage` | the type of the root device (`sd`, `emmc`, `ssd`) | `storage` | — |
+| `storage` | the type of the root device (`sd`, `emmc`, `ssd`); nothing when the inventory cannot tell it | `storage.medium` (ADR 0092) | — |
 | `tier` | `"dev"` | — | **yes**: the level is a support commitment (01 §22), and `"1"` or `"2"` requires CI with the board |
 | `kernel` | `"preempt_rt"` if the current kernel is one, otherwise `"standard"` | `kernel.preempt_rt` | **yes**: it is the **target** kernel with which the board is supported, and not the one installed today |
 | `recommended` | a suggestion: with 1 CPU, everything in `[0]`; with 2, `rt = [1]`, `bg = [0]`, `io = [0]`; with 3 or more, `rt` = the last, `io` = the second-to-last, `bg` = the rest | `cpus.count` | **yes**: it depends on what runs on the board besides Joker |
