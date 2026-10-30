@@ -100,3 +100,94 @@ fn a_needle_far_from_its_line_end_is_found_across_skipped_blocks() {
     .unwrap();
     assert_eq!(got, [6, 3]);
 }
+
+fn entry(i: u64) -> serde_json::Map<String, Value> {
+    let mut m = serde_json::Map::new();
+    m.insert("record".into(), serde_json::json!("output"));
+    m.insert("i".into(), serde_json::json!(i));
+    m.insert("pad".into(), serde_json::json!("x".repeat(80)));
+    m
+}
+
+fn segment_names(dir: &tempfile::TempDir) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .filter(|n| n != "decisions.jsonl")
+        .collect();
+    names.sort();
+    names
+}
+
+#[test]
+fn a_full_current_file_is_rotated_and_seq_continues_across_segments() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("decisions.jsonl");
+    let mut log = DecisionLog::with_bounds(&path, 1_000, 1 << 30).unwrap();
+    for i in 0..30 {
+        assert_eq!(log.append(entry(i), false).unwrap(), i);
+    }
+    log.sync().unwrap();
+    let names = segment_names(&dir);
+    assert!(names.len() >= 2, "{names:?}");
+    assert_eq!(names[0], "decisions.00000000000000000000.jsonl");
+    let all = DecisionLog::read_all(&path).unwrap();
+    let seqs: Vec<u64> = all.iter().map(|e| e["seq"].as_u64().unwrap()).collect();
+    assert_eq!(seqs, (0..30).collect::<Vec<_>>());
+    let mut newest = Vec::new();
+    DecisionLog::scan(&path, true, |e| {
+        newest.push(e["seq"].as_u64().unwrap());
+        true
+    })
+    .unwrap();
+    assert_eq!(newest, (0..30).rev().collect::<Vec<_>>());
+
+    drop(log);
+    let mut reopened = DecisionLog::with_bounds(&path, 1_000, 1 << 30).unwrap();
+    assert_eq!(reopened.append(entry(30), true).unwrap(), 30);
+}
+
+#[test]
+fn reopening_after_a_rotation_continues_from_the_newest_segment() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("decisions.jsonl");
+    let mut log = DecisionLog::with_bounds(&path, 1_000, 1 << 30).unwrap();
+    for i in 0..9 {
+        log.append(entry(i), true).unwrap();
+    }
+    drop(log);
+    std::fs::rename(&path, jokerd::decisions::segment_path(&path, 0)).unwrap();
+    let mut log = DecisionLog::with_bounds(&path, 1_000, 1 << 30).unwrap();
+    assert_eq!(log.append(entry(9), true).unwrap(), 9);
+}
+
+#[test]
+fn the_oldest_segments_go_past_the_bound_and_the_gap_is_recorded() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("decisions.jsonl");
+    let mut log = DecisionLog::with_bounds(&path, 1_000, 2_500).unwrap();
+    for i in 0..200 {
+        log.append(entry(i), false).unwrap();
+    }
+    log.sync().unwrap();
+    let total: u64 = std::fs::read_dir(dir.path())
+        .unwrap()
+        .map(|e| e.unwrap().metadata().unwrap().len())
+        .sum();
+    assert!(total <= 2_500 + 1_200, "{total}");
+    let all = DecisionLog::read_all(&path).unwrap();
+    let retention: Vec<&Value> = all.iter().filter(|e| e["record"] == "retention").collect();
+    assert!(!retention.is_empty());
+    let first_kept = all
+        .iter()
+        .map(|e| e["seq"].as_u64().unwrap())
+        .min()
+        .unwrap();
+    let removed_to = retention
+        .iter()
+        .map(|e| e["to_seq"].as_u64().unwrap())
+        .max()
+        .unwrap();
+    assert_eq!(removed_to + 1, first_kept);
+    assert!(retention.iter().all(|e| e["bytes"].as_u64().unwrap() > 0));
+}

@@ -7,7 +7,9 @@
 //! are written with `fsync` at once; the rest goes in a batch synced at
 //! least once a second. The writes a real driver did not confirm follow as
 //! `write_ack` entries (ref/06 §2.9). Records that could not be queued are
-//! counted and written as a `gap`.
+//! counted and written as a `gap`. The file is rotated into segments and
+//! the oldest segments are deleted past a bound, each deletion written as a
+//! `retention` entry (ADR 0097).
 
 use std::collections::BTreeMap;
 use std::fs::{File, OpenOptions};
@@ -34,12 +36,24 @@ use crate::trips::TripTable;
 /// How often batch records are synced.
 pub const BATCH_SYNC: Duration = Duration::from_secs(1);
 
-/// The append-only decision log file.
+/// The size past which the current file of the log is rotated (ADR 0097).
+pub const SEGMENT_BYTES: u64 = 64 << 20;
+/// The size the current file and the segments may take together; the
+/// oldest segments are deleted past it (ADR 0097).
+pub const KEEP_BYTES: u64 = 1 << 30;
+
+/// The decision log: an append-only current file and the segments rotated
+/// out of it (ADR 0097).
 #[derive(Debug)]
 pub struct DecisionLog {
     path: PathBuf,
     out: BufWriter<File>,
     seq: u64,
+    first_seq: u64,
+    size: u64,
+    segment_bytes: u64,
+    keep_bytes: u64,
+    line: Vec<u8>,
     unsynced: bool,
     last_sync: StdInstant,
 }
@@ -47,38 +61,110 @@ pub struct DecisionLog {
 impl DecisionLog {
     /// Opens or creates the log, continuing its sequence numbers.
     pub fn open(path: &Path) -> io::Result<Self> {
-        let seq = match std::fs::read_to_string(path) {
-            Ok(text) => text.lines().count() as u64,
+        Self::with_bounds(path, SEGMENT_BYTES, KEEP_BYTES)
+    }
+
+    /// [`DecisionLog::open`] with other rotation bounds.
+    pub fn with_bounds(path: &Path, segment_bytes: u64, keep_bytes: u64) -> io::Result<Self> {
+        let size = match std::fs::metadata(path) {
+            Ok(m) => m.len(),
             Err(e) if e.kind() == io::ErrorKind::NotFound => 0,
             Err(e) => return Err(e),
         };
+        let mut last = None;
+        for file in Self::files(path, true)? {
+            Self::scan_file(&file, true, &|_| true, &mut |v| {
+                last = v["seq"].as_u64();
+                last.is_none()
+            })?;
+            if last.is_some() {
+                break;
+            }
+        }
+        let seq = last.map_or(0, |s| s + 1);
+        let mut first = None;
+        if size > 0 {
+            Self::scan_file(path, false, &|_| true, &mut |v| {
+                first = v["seq"].as_u64();
+                first.is_none()
+            })?;
+        }
         let file = OpenOptions::new().create(true).append(true).open(path)?;
         Ok(Self {
             path: path.to_owned(),
             out: BufWriter::new(file),
             seq,
+            first_seq: first.unwrap_or(seq),
+            size,
+            segment_bytes,
+            keep_bytes,
+            line: Vec::new(),
             unsynced: false,
             last_sync: StdInstant::now(),
         })
     }
 
-    /// The log's path.
+    /// The log's current file.
     pub fn path(&self) -> &Path {
         &self.path
     }
 
     /// Appends one entry; `immediate` entries are synced before returning.
-    pub fn append(&mut self, mut entry: Map<String, Value>, immediate: bool) -> io::Result<u64> {
-        let seq = self.seq;
-        entry.insert("seq".into(), json!(seq));
-        serde_json::to_writer(&mut self.out, &Value::Object(entry))?;
-        self.out.write_all(b"\n")?;
-        self.seq += 1;
-        self.unsynced = true;
+    /// A current file that reached the segment size is rotated first.
+    pub fn append(&mut self, entry: Map<String, Value>, immediate: bool) -> io::Result<u64> {
+        if self.size >= self.segment_bytes {
+            self.rotate()?;
+        }
+        let seq = self.write(entry)?;
         if immediate {
             self.sync()?;
         }
         Ok(seq)
+    }
+
+    fn write(&mut self, mut entry: Map<String, Value>) -> io::Result<u64> {
+        let seq = self.seq;
+        entry.insert("seq".into(), json!(seq));
+        self.line.clear();
+        serde_json::to_writer(&mut self.line, &Value::Object(entry))?;
+        self.line.push(b'\n');
+        self.out.write_all(&self.line)?;
+        self.size += self.line.len() as u64;
+        self.seq += 1;
+        self.unsynced = true;
+        Ok(seq)
+    }
+
+    fn rotate(&mut self) -> io::Result<()> {
+        self.unsynced = true;
+        self.sync()?;
+        std::fs::rename(&self.path, segment_path(&self.path, self.first_seq))?;
+        let file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.path)?;
+        self.out = BufWriter::new(file);
+        self.size = 0;
+        self.first_seq = self.seq;
+        let mut kept = segments(&self.path)?;
+        let mut total: u64 = kept.iter().map(|s| s.2).sum();
+        let mut removed = Vec::new();
+        while total > self.keep_bytes && !kept.is_empty() {
+            let (from, path, bytes) = kept.remove(0);
+            std::fs::remove_file(&path)?;
+            total -= bytes;
+            let next = kept.first().map_or(self.first_seq, |s| s.0);
+            removed.push((from, next.saturating_sub(1), bytes));
+        }
+        for (from, to, bytes) in removed {
+            let mut m = Map::new();
+            m.insert("record".into(), json!("retention"));
+            m.insert("from_seq".into(), json!(from));
+            m.insert("to_seq".into(), json!(to));
+            m.insert("bytes".into(), json!(bytes));
+            self.write(m)?;
+        }
+        self.sync()
     }
 
     /// Flushes and syncs what is pending.
@@ -100,19 +186,36 @@ impl DecisionLog {
         Ok(())
     }
 
-    /// Reads every entry of a log file.
+    /// Reads every entry of a log, its segments first.
     pub fn read_all(path: &Path) -> io::Result<Vec<Value>> {
-        let text = std::fs::read_to_string(path)?;
-        text.lines()
-            .map(|l| serde_json::from_str(l).map_err(io::Error::other))
-            .collect()
+        let mut out = Vec::new();
+        for file in Self::files(path, false)? {
+            let text = std::fs::read_to_string(file)?;
+            for l in text.lines() {
+                out.push(serde_json::from_str(l).map_err(io::Error::other)?);
+            }
+        }
+        Ok(out)
     }
 
-    /// Visits the entries of a log file one line at a time, newest first
-    /// (read backwards in blocks from the end) or oldest first, until
-    /// `visit` returns `false`. Memory stays at one block and one line, so
-    /// a read of the last few entries costs the same on a log of any size.
-    /// A line that is not JSON is skipped.
+    /// The files of the log whose current file is `path`, in log order or,
+    /// with `newest_first`, the reverse.
+    fn files(path: &Path, newest_first: bool) -> io::Result<Vec<PathBuf>> {
+        let mut files: Vec<PathBuf> = segments(path)?.into_iter().map(|s| s.1).collect();
+        if path.exists() {
+            files.push(path.to_owned());
+        }
+        if newest_first {
+            files.reverse();
+        }
+        Ok(files)
+    }
+
+    /// Visits the entries of a log one line at a time, newest first (each
+    /// file read backwards in blocks from the end, the current file first)
+    /// or oldest first, until `visit` returns `false`. Memory stays at one
+    /// block and one line, so a read of the last few entries costs the
+    /// same on a log of any size. A line that is not JSON is skipped.
     pub fn scan(
         path: &Path,
         newest_first: bool,
@@ -133,11 +236,32 @@ impl DecisionLog {
         needles: &[&[u8]],
         mut visit: impl FnMut(Value) -> bool,
     ) -> io::Result<()> {
-        use std::io::{BufRead, Read, Seek, SeekFrom};
         let finders: Vec<memchr::memmem::Finder<'_>> =
             needles.iter().map(memchr::memmem::Finder::new).collect();
         let holds =
             |bytes: &[u8]| finders.is_empty() || finders.iter().any(|f| f.find(bytes).is_some());
+        let files = Self::files(path, newest_first)?;
+        if files.is_empty() {
+            return Err(io::Error::from(io::ErrorKind::NotFound));
+        }
+        for file in files {
+            match Self::scan_file(&file, newest_first, &holds, &mut visit) {
+                Ok(true) => {}
+                Ok(false) => return Ok(()),
+                Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(())
+    }
+
+    fn scan_file(
+        path: &Path,
+        newest_first: bool,
+        holds: &dyn Fn(&[u8]) -> bool,
+        visit: &mut dyn FnMut(Value) -> bool,
+    ) -> io::Result<bool> {
+        use std::io::{BufRead, Read, Seek, SeekFrom};
         let mut file = File::open(path)?;
         let mut line_of = |bytes: &[u8]| -> bool {
             let trimmed = bytes.trim_ascii();
@@ -152,10 +276,10 @@ impl DecisionLog {
         if !newest_first {
             for line in io::BufReader::new(file).split(b'\n') {
                 if !line_of(&line?) {
-                    break;
+                    return Ok(false);
                 }
             }
-            return Ok(());
+            return Ok(true);
         }
         const BLOCK: u64 = 64 * 1024;
         let mut end = file.seek(SeekFrom::End(0))?;
@@ -176,7 +300,7 @@ impl DecisionLog {
             let mut tail = block.len();
             while let Some(nl) = memchr::memrchr(b'\n', &block[..tail]) {
                 if !line_of(&block[nl + 1..tail]) {
-                    return Ok(());
+                    return Ok(false);
                 }
                 tail = nl;
             }
@@ -184,9 +308,61 @@ impl DecisionLog {
             carry = block;
             end = start;
         }
-        line_of(&carry);
-        Ok(())
+        Ok(line_of(&carry))
     }
+}
+
+fn stem_and_ext(current: &Path) -> (&str, &str) {
+    let stem = current
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("decisions");
+    let ext = current
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("jsonl");
+    (stem, ext)
+}
+
+/// The segment of the log `current` whose first entry is `first_seq`:
+/// `<stem>.<first_seq, 20 digits>.<ext>` next to it (ADR 0097).
+pub fn segment_path(current: &Path, first_seq: u64) -> PathBuf {
+    let (stem, ext) = stem_and_ext(current);
+    current.with_file_name(format!("{stem}.{first_seq:020}.{ext}"))
+}
+
+/// The rotated segments of the log `current`, oldest first, as (first
+/// `seq`, path, size).
+fn segments(current: &Path) -> io::Result<Vec<(u64, PathBuf, u64)>> {
+    let (stem, ext) = stem_and_ext(current);
+    let dir = match current.parent() {
+        Some(d) if !d.as_os_str().is_empty() => d,
+        _ => Path::new("."),
+    };
+    let mut out = Vec::new();
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(out),
+        Err(e) => return Err(e),
+    };
+    for entry in entries {
+        let entry = entry?;
+        let name = entry.file_name();
+        let Some(seq) = name
+            .to_str()
+            .and_then(|n| n.strip_prefix(stem))
+            .and_then(|n| n.strip_prefix('.'))
+            .and_then(|n| n.strip_suffix(ext))
+            .and_then(|n| n.strip_suffix('.'))
+            .filter(|n| n.len() == 20)
+            .and_then(|n| n.parse::<u64>().ok())
+        else {
+            continue;
+        };
+        out.push((seq, entry.path(), entry.metadata()?.len()));
+    }
+    out.sort();
+    Ok(out)
 }
 
 /// A shared handle on the decision log.
