@@ -273,7 +273,7 @@ A key that is neither generic nor from the driver's address schema is `J0140`. `
 
 | Family | Address keys |
 |---|---|
-| `gpio` (expanders) | `line` (integer or name), `bias` (`as-is` \| `pull-up` \| `pull-down` \| `disabled`, default `as-is`), `active_low` (bool), `drive` (`push-pull` \| `open-drain` \| `open-source`), `edges` (`none` \| `rising` \| `falling` \| `both`, default `none`), `timestamp` (`kernel` \| `none`), `debounce` (duration); they are the per-signal keys of the manifest's `gpio` (ref/01 appendix A) |
+| `gpio` (expanders) | `line` (integer or name), `bias` (`as-is` \| `pull-up` \| `pull-down` \| `disabled`, default `as-is`), `active_low` (bool), `drive` (`push-pull` \| `open-drain` \| `open-source`), `edges` (`none` \| `rising` \| `falling` \| `both`, default `none`), `timestamp` (`kernel` \| `none`), `debounce` (duration); they are the per-signal keys of the manifest's `gpio` (ref/01 appendix A). In 1.0 the driver reads by poll over chardev v1 and refuses `edges`, `timestamp` and `debounce` in a point's address with `J0853` (ADR 0093) |
 | `revpi` | `var` (name of the piControl variable; in the declared form of ADR 0078, the signal's name by default) |
 | `mqtt` | `topic` (string), `json` (JSON pointer RFC 6901, optional), `qos` (0–1); the same as in the manifest (ref/01 appendix A) |
 | `opcua` | `node` (NodeId, `"ns=2;s=Pump.Speed"`), `attribute` (default `Value`), `sampling` (duration); the same as in the manifest |

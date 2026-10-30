@@ -206,7 +206,7 @@ The column gives the phase up to 1.0 (document 11) or, after it, the version (do
 |---|---|---|---|
 | `sim` | N | — | 0 |
 | `modbus-tcp`, `modbus-rtu` | N | `tokio-modbus` | 1 |
-| `gpio` (chardev v2), `i2c`, `spi` | N | `gpio-cdev`/`linux-embedded-hal` | 1 |
+| `gpio` (chardev v1 in 1.0, v2 with `edges`: ADR 0093), `i2c`, `spi` | N | `gpio-cdev`/`linux-embedded-hal` | 1 |
 | `sysfs` (LEDs and temperatures of any Linux board: `/sys/class/leds`, `/sys/class/thermal`) | N | — | 1 |
 | `revpi` (piControl: DIO, AIO, MIO, gateways) | N | ioctl on `/dev/piControl0` | 1 |
 | `esp32` (Joker Micro only: touch pads, Wi-Fi RSSI, uptime; ref/01 appendix A) | N | `esp-hal` | 2 |
