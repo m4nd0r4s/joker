@@ -13,8 +13,8 @@ use wasmtime::{Config, Engine, OptLevel};
 
 use crate::error::{HostError, codes};
 
-/// The wasmtime version this crate pins (`=48.0.7` in the workspace).
-pub const WASMTIME_VERSION: &str = "48.0.7";
+/// The wasmtime version this crate pins (`=48.0.8` in the workspace).
+pub const WASMTIME_VERSION: &str = "48.0.8";
 
 /// The identity of an engine for the AOT cache: wasmtime version, target
 /// triple and a digest of every setting that changes the compiled code.
@@ -22,7 +22,7 @@ pub const WASMTIME_VERSION: &str = "48.0.7";
 pub struct EngineId(String);
 
 impl EngineId {
-    /// The identity as a path segment (`wasmtime-48.0.7-aarch64-unknown-linux-gnu-…`).
+    /// The identity as a path segment (`wasmtime-48.0.8-aarch64-unknown-linux-gnu-…`).
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -196,7 +196,7 @@ mod tests {
         let cross = HostEngine::for_target(native.triple()).unwrap();
         assert_eq!(native.id(), cross.id());
         assert!(cross.is_native());
-        assert!(native.id().as_str().starts_with("wasmtime-48.0.7-"));
+        assert!(native.id().as_str().starts_with("wasmtime-48.0.8-"));
     }
 
     #[test]
