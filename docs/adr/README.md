@@ -95,6 +95,7 @@
 | [0095](0095-the-discovery-job-and-jk-discover.md) | The `discovery` job, its `DiscoveryResult`, and `jk discover sunspec://` |
 | [0096](0096-json-timestamps-in-agent-cddl.md) | The JSON form of `timestamp` in `agent.cddl`, and the `ota-begin` example of ref/07 §9.3 |
 | [0097](0097-the-manifest-model-of-joker-manifest.md) | The manifest model of `joker-manifest`: schema as data and a typed model (ref/01 §12) |
+| [0098](0098-the-world-window-the-version-endpoint-and-unstable-imports.md) | The WIT world window, `GET /v1/version`, `jk build --world`, and unstable imports in 1.0 |
 | [0099](0099-reserved-driver-surface-of-ref-06-3.md) | The reserved driver surface of ref/06 §3, `AdcRead`, and the 1.0 registry by features |
 
 Changing a decision = writing a new ADR that replaces it, and updating the affected documents in the same set of commits.
