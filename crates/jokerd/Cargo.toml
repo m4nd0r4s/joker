@@ -23,6 +23,7 @@ joker-driver-revpi = { path = "../joker-drivers/revpi" }
 joker-api = { path = "../joker-api" }
 joker-store = { path = "../joker-store" }
 joker-host.workspace = true
+joker-gpio-sys.workspace = true
 humantime = "2.3"
 memchr = "2.8"
 base64 = "0.22.1"

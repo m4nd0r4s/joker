@@ -20,6 +20,7 @@ pub mod doctor;
 pub mod drivers;
 pub mod expr_plan;
 pub mod generations;
+pub mod hardware;
 pub mod historian;
 pub mod io;
 pub mod load;

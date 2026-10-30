@@ -2852,3 +2852,233 @@ async fn the_doctor_runs_as_a_job_and_keeps_its_report() {
         .await;
     assert_eq!(refused.status, 400);
 }
+
+struct FixtureGpio;
+
+impl jokerd::hardware::Kernel for FixtureGpio {
+    fn chip(&self, path: &Path) -> std::io::Result<jokerd::hardware::Chip> {
+        assert!(path.ends_with("dev/gpiochip0"), "{}", path.display());
+        let mut lines: Vec<jokerd::hardware::Line> = (0..54)
+            .map(|i| jokerd::hardware::Line {
+                name: format!("GPIO{i}"),
+                ..Default::default()
+            })
+            .collect();
+        lines[47] = jokerd::hardware::Line {
+            name: "ACT".into(),
+            consumer: "ACT".into(),
+            used: true,
+        };
+        Ok(jokerd::hardware::Chip {
+            name: "gpiochip0".into(),
+            label: "pinctrl-bcm2835".into(),
+            lines,
+        })
+    }
+}
+
+/// The files of a Raspberry Pi Zero W below `root`, as ref/03 §2.3.7
+/// describes the board of the track.
+fn pi_zero_w(root: &Path) {
+    use std::os::unix::fs::symlink;
+    let write = |rel: &str, text: &str| {
+        let path = root.join(rel);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    };
+    write("proc/sys/kernel/arch", "armv6l\n");
+    write("proc/sys/kernel/osrelease", "6.12.25+rpt-rpi-v6\n");
+    write(
+        "proc/sys/kernel/version",
+        "#1 Raspbian 1:6.12.25-1+rpt1 (2025-04-30)\n",
+    );
+    write("proc/device-tree/model", "Raspberry Pi Zero W Rev 1.1\0");
+    write(
+        "proc/device-tree/compatible",
+        "raspberrypi,model-zero-w\0brcm,bcm2835\0",
+    );
+    write(
+        "proc/cpuinfo",
+        "processor\t: 0\nmodel name\t: ARMv6-compatible processor rev 7 (v6l)\n",
+    );
+    write(
+        "proc/meminfo",
+        "MemTotal:         437248 kB\nMemAvailable:     300000 kB\n",
+    );
+    write(
+        "proc/cmdline",
+        "console=serial0,115200 console=tty1 root=PARTUUID=1 rootwait\n",
+    );
+    write(
+        "proc/self/mounts",
+        "/dev/root / ext4 rw 0 0\nproc /proc proc rw 0 0\n",
+    );
+    write("sys/block/mmcblk0/device/type", "SD\n");
+    write("sys/block/mmcblk0/mmcblk0p2/partition", "2\n");
+    std::fs::create_dir_all(root.join("sys/class/block")).unwrap();
+    symlink(
+        root.join("sys/block/mmcblk0/mmcblk0p2"),
+        root.join("sys/class/block/mmcblk0p2"),
+    )
+    .unwrap();
+    std::fs::create_dir_all(root.join("dev/disk/by-partuuid")).unwrap();
+    symlink("../../mmcblk0p2", root.join("dev/disk/by-partuuid/1")).unwrap();
+    write(
+        "proc/net/fib_trie",
+        "Main:\n  +-- 0.0.0.0/0 3 0 5\n     |-- 0.0.0.0\n        /0 universe UNICAST\n     +-- 192.168.1.0/24 2 0 2\n        |-- 192.168.1.40\n           /32 host LOCAL\nLocal:\n  |-- 127.0.0.1\n     /32 host LOCAL\n  |-- 192.168.1.40\n     /32 host LOCAL\n",
+    );
+    write(
+        "proc/net/route",
+        "Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT\nwlan0\t00000000\t0101A8C0\t0003\t0\t0\t600\t00000000\t0\t0\t0\nwlan0\t0001A8C0\t00000000\t0001\t0\t0\t600\t00FFFFFF\t0\t0\t0\n",
+    );
+    write(
+        "proc/net/if_inet6",
+        "fe800000000000000000000000000001 03 40 20 80    wlan0\n",
+    );
+    write("sys/devices/system/cpu/online", "0\n");
+    write("sys/devices/system/cpu/possible", "0\n");
+    write(
+        "sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq",
+        "1000000\n",
+    );
+    write("dev/gpiochip0", "");
+    write("sys/class/leds/ACT/max_brightness", "1\n");
+    write("sys/class/leds/ACT/trigger", "none timer [actpwr] mmc0\n");
+    write("sys/class/thermal/thermal_zone0/type", "cpu-thermal\n");
+    write("sys/class/thermal/thermal_zone0/temp", "41224\n");
+    write("sys/class/watchdog/watchdog0/identity", "bcm2835-wdt\n");
+    write("sys/class/watchdog/watchdog0/timeout", "15\n");
+    write("sys/class/watchdog/watchdog0/min_timeout", "1\n");
+    write("sys/class/watchdog/watchdog0/max_timeout", "15\n");
+    write("sys/class/watchdog/watchdog0/nowayout", "0\n");
+    write("sys/class/watchdog/watchdog0/state", "inactive\n");
+    std::fs::create_dir_all(root.join("sys/devices/platform/soc/20201000.serial")).unwrap();
+    std::fs::create_dir_all(root.join("sys/bus/amba/drivers/uart-pl011")).unwrap();
+    symlink(
+        root.join("sys/bus/amba/drivers/uart-pl011"),
+        root.join("sys/devices/platform/soc/20201000.serial/driver"),
+    )
+    .unwrap();
+    write("sys/class/tty/ttyAMA0/type", "112\n");
+    symlink(
+        root.join("sys/devices/platform/soc/20201000.serial"),
+        root.join("sys/class/tty/ttyAMA0/device"),
+    )
+    .unwrap();
+    write("sys/class/tty/tty1/dev", "4:1\n");
+    write("sys/devices/usb1/1-1/idVendor", "10C4\n");
+    write("sys/devices/usb1/1-1/idProduct", "ea60\n");
+    write("sys/devices/usb1/1-1/serial", "0001\n");
+    write("sys/devices/usb1/1-1/busnum", "1\n");
+    write("sys/devices/usb1/1-1/product", "CP2102 USB to UART\n");
+    write("sys/devices/usb1/1-1/1-1:1.0/ttyUSB0/.keep", "");
+    std::fs::create_dir_all(root.join("sys/bus/usb-serial/drivers/cp210x")).unwrap();
+    symlink(
+        root.join("sys/bus/usb-serial/drivers/cp210x"),
+        root.join("sys/devices/usb1/1-1/1-1:1.0/ttyUSB0/driver"),
+    )
+    .unwrap();
+    write("sys/class/tty/ttyUSB0/type", "0x1\n");
+    symlink(
+        root.join("sys/devices/usb1/1-1/1-1:1.0/ttyUSB0"),
+        root.join("sys/class/tty/ttyUSB0/device"),
+    )
+    .unwrap();
+    std::fs::create_dir_all(root.join("sys/bus/usb/devices")).unwrap();
+    symlink(
+        root.join("sys/devices/usb1/1-1"),
+        root.join("sys/bus/usb/devices/1-1"),
+    )
+    .unwrap();
+    symlink("ttyAMA0", root.join("dev/serial0")).unwrap();
+    std::fs::create_dir_all(root.join("dev/serial/by-id")).unwrap();
+    symlink(
+        "../../ttyUSB0",
+        root.join("dev/serial/by-id/usb-Silicon_Labs_CP2102_0001-if00-port0"),
+    )
+    .unwrap();
+    write("sys/class/net/lo/type", "772\n");
+    write("sys/class/net/wlan0/type", "1\n");
+    write("sys/class/net/wlan0/address", "b8:27:eb:00:00:01\n");
+    write("sys/class/net/wlan0/operstate", "up\n");
+    write("sys/class/net/wlan0/wireless/.keep", "");
+    write("sys/devices/platform/soc/mmc/.keep", "");
+    symlink(
+        root.join("sys/devices/platform/soc/mmc"),
+        root.join("sys/class/net/wlan0/device"),
+    )
+    .unwrap();
+}
+
+#[test]
+fn the_hardware_inventory_of_a_pi_zero_w_follows_the_contract() {
+    let dir = tempfile::tempdir().unwrap();
+    pi_zero_w(dir.path());
+    let probe = jokerd::hardware::Probe {
+        root: dir.path(),
+        now_utc_ns: 1_700_000_000_000_000_000,
+        fallback_cpus: 8,
+    };
+    let body = jokerd::hardware::inventory(&probe, &FixtureGpio);
+    Contract::load().check("get", "/v1/node/hardware", 200, &body);
+    assert_eq!(body["arch"], json!("armv6"));
+    assert_eq!(body["machine"], json!("armv6l"));
+    assert_eq!(body["model"], json!("Raspberry Pi Zero W Rev 1.1"));
+    assert_eq!(
+        body["compatible"],
+        json!(["raspberrypi,model-zero-w", "brcm,bcm2835"])
+    );
+    assert_eq!(body["cpus"]["count"], json!(1));
+    assert_eq!(body["cpus"]["max_freq"], json!("1 GHz"));
+    assert_eq!(body["memory"]["total"], json!("427 MiB"));
+    assert_eq!(body["kernel"]["preempt_rt"], json!(false));
+    assert_eq!(body["cmdline"][0], json!("console=serial0,115200"));
+    assert_eq!(body["gpio_chips"][0]["label"], json!("pinctrl-bcm2835"));
+    assert_eq!(body["gpio_chips"][0]["lines"], json!(54));
+    assert_eq!(
+        body["gpio_chips"][0]["used"],
+        json!([{"offset": 47, "name": "ACT", "consumer": "ACT"}])
+    );
+    assert_eq!(body["leds"][0]["trigger"], json!("actpwr"));
+    assert_eq!(
+        body["leds"][0]["gpio"],
+        json!({"chip": "pinctrl-bcm2835", "offset": 47})
+    );
+    assert_eq!(body["thermal_zones"][0]["temp"], json!("41.224 °C"));
+    assert_eq!(body["watchdogs"][0]["device"], json!("/dev/watchdog0"));
+    assert_eq!(body["watchdogs"][0]["max_timeout"], json!("15s"));
+    let serial = body["serial"].as_array().unwrap();
+    assert_eq!(serial.len(), 2, "{serial:#?}");
+    assert_eq!(serial[0]["path"], json!("/dev/ttyAMA0"));
+    assert_eq!(serial[0]["aliases"], json!(["/dev/serial0"]));
+    assert_eq!(serial[0]["soc"], json!(true));
+    assert_eq!(serial[0]["driver"], json!("uart-pl011"));
+    assert_eq!(serial[1]["path"], json!("/dev/ttyUSB0"));
+    assert_eq!(serial[1]["soc"], json!(false));
+    assert_eq!(serial[1]["usb"]["vendor_id"], json!("10c4"));
+    assert_eq!(
+        serial[1]["aliases"],
+        json!(["/dev/serial/by-id/usb-Silicon_Labs_CP2102_0001-if00-port0"])
+    );
+    let net = body["net"].as_array().unwrap();
+    assert_eq!(net[0]["kind"], json!("loopback"));
+    assert_eq!(net[1]["kind"], json!("wifi"));
+    assert_eq!(body["usb"][0]["product"], json!("CP2102 USB to UART"));
+    assert_eq!(body["tpm"]["present"], json!(false));
+    assert_eq!(net[1]["addresses"], json!(["192.168.1.40", "fe80::1"]));
+    assert_eq!(net[0]["addresses"], json!(["127.0.0.1"]));
+    assert_eq!(
+        body["storage"],
+        json!({"device": "/dev/mmcblk0", "medium": "sd"})
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_node_serves_its_hardware_inventory() {
+    let f = start().await;
+    let r = f
+        .call("GET", "/v1/node/hardware", "/v1/node/hardware", None)
+        .await;
+    assert_eq!(r.status, 200);
+    assert!(r.json()["cpus"]["count"].as_u64().unwrap() >= 1);
+}

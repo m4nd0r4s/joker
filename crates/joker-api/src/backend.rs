@@ -225,6 +225,11 @@ pub trait Backend: Send + Sync + 'static {
     fn generation_manifest(&self, _selector: &str) -> Result<String> {
         Err(unavailable())
     }
+    /// `GET /v1/node/hardware` (ref/09 §5.2): the hardware inventory of
+    /// the node, with reads only.
+    fn node_hardware(&self) -> Result<Reply> {
+        Err(unavailable())
+    }
     /// `GET /v1/jobs/{job}` (ref/09 §5.17).
     fn job(&self, _id: &str) -> Result<Reply> {
         Err(unavailable())
