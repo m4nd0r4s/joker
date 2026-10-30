@@ -215,6 +215,31 @@ mod linux {
         Ok(super::c_name(&info.name))
     }
 
+    /// See [`super::line_info`].
+    ///
+    /// Sound: `chip` is a borrowed, open descriptor for the whole call, and
+    /// `info` is a local, fully-initialized value the kernel reads the
+    /// offset from and writes the rest into. The ioctl only reads the
+    /// line's state: it does not request the line.
+    #[allow(unsafe_code)]
+    pub(super) fn line_info(chip: BorrowedFd<'_>, offset: u32) -> std::io::Result<super::LineInfo> {
+        let mut info = GpioLineInfo {
+            line_offset: offset,
+            flags: 0,
+            name: [0; GPIO_MAX_NAME_SIZE],
+            consumer: [0; GPIO_MAX_NAME_SIZE],
+        };
+        let result = unsafe { libc::ioctl(chip.as_raw_fd(), GPIO_GET_LINEINFO_IOCTL, &mut info) };
+        if result < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(super::LineInfo {
+            name: super::c_name(&info.name),
+            consumer: super::c_name(&info.consumer),
+            used: info.flags & super::GPIOLINE_FLAG_KERNEL != 0,
+        })
+    }
+
     const GPIO_GET_LINEHANDLE_IOCTL: libc::Ioctl =
         iowr(0xB4, 0x03, core::mem::size_of::<GpioHandleRequest>());
     const GPIOHANDLE_GET_LINE_VALUES_IOCTL: libc::Ioctl =
@@ -327,6 +352,13 @@ mod other {
         Err(unsupported())
     }
 
+    pub(super) fn line_info(
+        _chip: BorrowedFd<'_>,
+        _offset: u32,
+    ) -> std::io::Result<super::LineInfo> {
+        Err(unsupported())
+    }
+
     pub(super) fn set_line_value(_handle: BorrowedFd<'_>, _value: bool) -> std::io::Result<()> {
         Err(unsupported())
     }
@@ -397,6 +429,29 @@ pub fn chip_info(chip: BorrowedFd<'_>) -> std::io::Result<ChipInfo> {
 #[cfg(unix)]
 pub fn line_name(chip: BorrowedFd<'_>, offset: u32) -> std::io::Result<String> {
     imp::line_name(chip, offset)
+}
+
+/// `GPIOLINE_FLAG_KERNEL` (`<linux/gpio.h>`): the line is requested by
+/// the kernel or by another process.
+pub const GPIOLINE_FLAG_KERNEL: u32 = 1 << 0;
+
+/// The state of one line (`struct gpioline_info`, `<linux/gpio.h>`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LineInfo {
+    /// The kernel's name of the line; empty when the device tree names none.
+    pub name: String,
+    /// Who holds the line (`ACT`, `leds-gpio`); empty when nobody does.
+    pub consumer: String,
+    /// Whether the kernel or another process has requested the line.
+    pub used: bool,
+}
+
+/// Reads the name, consumer and use of line `offset` of an open
+/// `gpiochip` fd, without requesting it. On a system other than Linux it
+/// fails with `Unsupported`.
+#[cfg(unix)]
+pub fn line_info(chip: BorrowedFd<'_>, offset: u32) -> std::io::Result<LineInfo> {
+    imp::line_info(chip, offset)
 }
 
 #[cfg(test)]
