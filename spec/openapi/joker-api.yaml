@@ -6948,6 +6948,52 @@ components:
           description: requests per second (default 10/s)
           type: string
         timeout: {$ref: '#/components/schemas/Duration'}
+    DiscoveryResult:
+      description: result of a discovery job (ADR 0095)
+      type: object
+      required: [uri, hits, misses]
+      properties:
+        uri: {type: string}
+        hits:
+          type: array
+          items:
+            type: object
+            required: [address, unit, identity, base, models, digest, profile_name, profile, lock]
+            properties:
+              address: {type: string, examples: ['192.168.10.30:502']}
+              unit: {type: integer, minimum: 0, maximum: 255}
+              identity:
+                type: object
+                properties:
+                  vendor: {type: string}
+                  model: {type: string}
+                  serial: {type: string}
+                  firmware: {type: string}
+              base: {type: integer, minimum: 0, maximum: 65535, description: address of the SunS marker}
+              models:
+                type: array
+                items:
+                  type: object
+                  required: [id, at, len, known, accepted]
+                  properties:
+                    id: {type: integer, minimum: 0, maximum: 65535}
+                    at: {type: integer, minimum: 0, maximum: 65535}
+                    len: {type: integer, minimum: 0, maximum: 65535}
+                    known: {type: boolean, description: the runtime has the model definition}
+                    accepted: {type: boolean}
+              digest: {type: string, pattern: '^sha256:[0-9a-f]{64}$', description: digest of the effective map (ADR 0077)}
+              profile_name: {type: string, examples: ['acme/pcs-125@1']}
+              profile: {type: string, description: suggested profile, TOML}
+              lock: {type: string, description: 'the [discovered.<device>] entry, TOML'}
+        misses:
+          type: array
+          items:
+            type: object
+            required: [code, message]
+            properties:
+              unit: {type: ['integer', 'null']}
+              code: {type: string, examples: [J0876]}
+              message: {type: string}
     ProfileTestRequest:
       type: object
       required: [profile, uri]
