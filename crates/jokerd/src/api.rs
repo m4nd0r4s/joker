@@ -1085,6 +1085,18 @@ impl Backend for Node {
         Ok(Reply::with_status(if failed { 503 } else { 200 }, body))
     }
 
+    fn node_hardware(&self) -> Result<Reply, Problem> {
+        let probe = crate::hardware::Probe {
+            root: Path::new("/"),
+            now_utc_ns: utc_now_ns(),
+            fallback_cpus: std::thread::available_parallelism().map_or(1, usize::from),
+        };
+        Ok(Reply::ok(crate::hardware::inventory(
+            &probe,
+            &crate::hardware::LiveKernel,
+        )))
+    }
+
     fn status(&self) -> Result<Reply, Problem> {
         let v = self.view();
         let now = self.now_mono();

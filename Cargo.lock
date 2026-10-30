@@ -1631,6 +1631,7 @@ dependencies = [
  "joker-driver-revpi",
  "joker-driver-sysfs",
  "joker-expr",
+ "joker-gpio-sys",
  "joker-hal",
  "joker-host",
  "joker-jkc",

@@ -688,6 +688,10 @@ async fn info(State(b): State<Shared>, ConnectInfo(peer): ConnectInfo<Peer>) -> 
     run_as(b, peer, move |b, who| b.info(who)).await
 }
 
+async fn node_hardware(State(b): State<Shared>) -> Response {
+    run(b, |b| b.node_hardware()).await
+}
+
 async fn status(State(b): State<Shared>, RawQuery(raw): RawQuery) -> Response {
     match parse_query(raw.as_deref(), &["instances"]) {
         Ok(_) => run(b, |b| b.status()).await,
@@ -1073,6 +1077,7 @@ pub fn router_with(backend: Arc<dyn Backend>, limits: ws::Limits) -> Router {
         .route("/v1/info", get(info))
         .route("/v1/health", get(health))
         .route("/v1/status", get(status))
+        .route("/v1/node/hardware", get(node_hardware))
         .route("/v1/groups", get(groups))
         .route("/v1/signals/{path}/lineage", get(lineage))
         .route("/v1/jobs/{job}", get(job))
