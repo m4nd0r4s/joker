@@ -2296,10 +2296,17 @@ async fn runtime_alarms_rise_and_clear_through_the_cycle_loop() {
             (json!("transition"), json!("normal")),
         ]
     );
-    let logged: Vec<Value> = decisions_from(f._dir.path(), 0)
-        .into_iter()
-        .filter(|e| e["record"] == "alarm" && e["id"] == "joker.output.pi.p_set.budget")
-        .collect();
+    let mut logged: Vec<Value> = Vec::new();
+    for _ in 0..200 {
+        logged = decisions_from(f._dir.path(), 0)
+            .into_iter()
+            .filter(|e| e["record"] == "alarm" && e["id"] == "joker.output.pi.p_set.budget")
+            .collect();
+        if logged.len() >= 3 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
     assert_eq!(logged.len(), 3, "{logged:#?}");
 }
 
