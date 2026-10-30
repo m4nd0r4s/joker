@@ -1061,6 +1061,10 @@ impl Backend for Node {
         Ok(Reply::ok(Value::Object(m)))
     }
 
+    fn version(&self) -> Result<Reply, Problem> {
+        Ok(Reply::ok(crate::wire::versions()))
+    }
+
     fn health(&self, query: &Query) -> Result<Reply, Problem> {
         let probe = one(query, "probe").unwrap_or_else(|| "full".into());
         if !["live", "ready", "full"].contains(&probe.as_str()) {
