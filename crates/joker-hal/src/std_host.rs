@@ -5,7 +5,7 @@
 //! that waits for the equipment never blocks the `io` thread.
 
 use core::future::Future;
-use core::task::{Context, Poll};
+use core::task::{Context, Poll, Waker};
 
 use std::boxed::Box;
 use std::collections::BTreeMap;
@@ -65,8 +65,43 @@ pub struct TokioHost {
     start: tokio::time::Instant,
     utc_start_ns: i64,
     quality: Arc<ClockQualityCell>,
-    sleeps: Mutex<BTreeMap<MonoNs, Pin<Box<tokio::time::Sleep>>>>,
+    sleeps: Mutex<Sleeps>,
     log: Option<LogSink>,
+}
+
+/// The sleeps a [`TokioHost`] is driving, one per waiting task and
+/// deadline. A tokio timer wakes only the last waker that polled it, so
+/// two tasks waiting for the same instant never share one: each sleep is
+/// keyed by its deadline and an id of its own, and is found again by the
+/// waker of the task that polls it.
+#[derive(Debug, Default)]
+struct Sleeps {
+    next: u64,
+    entries: BTreeMap<(MonoNs, u64), SleepEntry>,
+}
+
+/// One task's sleep and the waker it was last polled with.
+#[derive(Debug)]
+struct SleepEntry {
+    sleep: Pin<Box<tokio::time::Sleep>>,
+    waker: Waker,
+}
+
+impl Sleeps {
+    /// The key of the sleep until `at` that `waker`'s task polls, if any.
+    fn find(&self, at: MonoNs, waker: &Waker) -> Option<(MonoNs, u64)> {
+        self.entries
+            .range((at, 0)..=(at, u64::MAX))
+            .find(|(_, e)| e.waker.will_wake(waker))
+            .map(|(k, _)| *k)
+    }
+
+    /// A new key for a sleep until `at`.
+    fn key(&mut self, at: MonoNs) -> (MonoNs, u64) {
+        let id = self.next;
+        self.next = self.next.wrapping_add(1);
+        (at, id)
+    }
 }
 
 /// Where a [`TokioHost`] hands the log lines of the drivers it hosts.
@@ -114,7 +149,7 @@ impl TokioHost {
             start: tokio::time::Instant::from_std(origin),
             utc_start_ns: utc_now_ns.saturating_sub(elapsed_ns),
             quality,
-            sleeps: Mutex::new(BTreeMap::new()),
+            sleeps: Mutex::new(Sleeps::default()),
             log: None,
         }
     }
@@ -158,20 +193,25 @@ impl Host for TokioHost {
     fn poll_sleep(&self, at: MonoNs, cx: &mut Context<'_>) -> Poll<()> {
         let now = self.mono();
         let mut sleeps = self.sleeps.lock().unwrap_or_else(PoisonError::into_inner);
-        sleeps.retain(|&t, _| t.saturating_add(SLEEP_SWEEP_GRACE_NS) > now);
+        sleeps
+            .entries
+            .retain(|&(t, _), _| t.saturating_add(SLEEP_SWEEP_GRACE_NS) > now);
+        let found = sleeps.find(at, cx.waker());
         if at <= now {
-            sleeps.remove(&at);
+            if let Some(key) = found {
+                sleeps.entries.remove(&key);
+            }
             return Poll::Ready(());
         }
-        let start = self.start;
-        let sleep = sleeps.entry(at).or_insert_with(|| {
-            Box::pin(tokio::time::sleep_until(
-                start + std::time::Duration::from_nanos(at),
-            ))
+        let key = found.unwrap_or_else(|| sleeps.key(at));
+        let deadline = self.start + std::time::Duration::from_nanos(at);
+        let entry = sleeps.entries.entry(key).or_insert_with(|| SleepEntry {
+            sleep: Box::pin(tokio::time::sleep_until(deadline)),
+            waker: cx.waker().clone(),
         });
-        match sleep.as_mut().poll(cx) {
+        match entry.sleep.as_mut().poll(cx) {
             Poll::Ready(()) => {
-                sleeps.remove(&at);
+                sleeps.entries.remove(&key);
                 Poll::Ready(())
             }
             Poll::Pending => Poll::Pending,
@@ -772,6 +812,45 @@ mod tests {
             woken.0.load(std::sync::atomic::Ordering::SeqCst),
             "the first task's sleep was dropped before it fired"
         );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn two_tasks_sleeping_until_the_same_instant_are_both_woken() {
+        let host = TokioHost::new(ClockQuality::Unsynced);
+        let at = host.now().mono_ns + 20_000_000;
+        let flags: Vec<Arc<Flag>> = (0..2)
+            .map(|_| Arc::new(Flag(std::sync::atomic::AtomicBool::new(false))))
+            .collect();
+        for flag in &flags {
+            let waker = std::task::Waker::from(Arc::clone(flag));
+            let mut cx = Context::from_waker(&waker);
+            assert!(host.poll_sleep(at, &mut cx).is_pending());
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        for flag in &flags {
+            assert!(flag.0.load(std::sync::atomic::Ordering::SeqCst));
+        }
+        for flag in &flags {
+            let waker = std::task::Waker::from(Arc::clone(flag));
+            let mut cx = Context::from_waker(&waker);
+            assert!(host.poll_sleep(at, &mut cx).is_ready());
+        }
+        let sleeps = host.sleeps.lock().unwrap_or_else(PoisonError::into_inner);
+        assert!(sleeps.entries.is_empty());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_task_polling_its_sleep_again_reuses_it() {
+        let host = TokioHost::new(ClockQuality::Unsynced);
+        let at = host.now().mono_ns + 10_000_000_000;
+        let flag = Arc::new(Flag(std::sync::atomic::AtomicBool::new(false)));
+        let waker = std::task::Waker::from(Arc::clone(&flag));
+        let mut cx = Context::from_waker(&waker);
+        for _ in 0..3 {
+            assert!(host.poll_sleep(at, &mut cx).is_pending());
+        }
+        let sleeps = host.sleeps.lock().unwrap_or_else(PoisonError::into_inner);
+        assert_eq!(sleeps.entries.len(), 1);
     }
 
     #[tokio::test]
