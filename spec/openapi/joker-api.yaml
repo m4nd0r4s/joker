@@ -4548,7 +4548,7 @@ components:
           type: object
           properties:
             dropped:
-              description: drops of each internal queue, by queue name (decisions, write_results, trace, alarm_events, method_results, reset_results, trip_requests, confirmations, write_acks, logs)
+              description: drops of each internal queue, by queue name (decisions, write_results, trace, alarm_events, method_results, reset_results, trip_requests, confirmations, write_acks, causes, logs)
               type: object
               additionalProperties: {type: integer}
         ml:
@@ -5650,6 +5650,10 @@ components:
               value: {$ref: '#/components/schemas/Value'}
               quality: {$ref: '#/components/schemas/QualityCode'}
               reason: {$ref: '#/components/schemas/QualityReason'}
+        inputs_omitted:
+          description: signals the writer read beyond the 16 kept in `inputs` (ADR 0097)
+          type: integer
+          minimum: 1
         app:
           type: object
           properties:
