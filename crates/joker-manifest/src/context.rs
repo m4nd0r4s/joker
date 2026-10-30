@@ -19,6 +19,10 @@ pub struct Context {
     pub runtime: SchemaVersion,
     /// The drivers of this build and those declared in `[drivers]`, by name.
     pub drivers: BTreeMap<String, DriverInfo>,
+    /// The tier N drivers this runtime has but this build leaves out (its
+    /// `drv-*` Cargo features, ref/06 §3.8): a device of one is `J0850`,
+    /// not an unknown driver.
+    pub absent_drivers: BTreeSet<String>,
     /// The resolved profiles, by full reference (`"local/bench-esp32@1"`).
     pub profiles: BTreeMap<String, ProfileInfo>,
     /// The known boards, by name.
@@ -43,6 +47,7 @@ impl Default for Context {
         Self {
             runtime: SchemaVersion { major: 1, minor: 0 },
             drivers: BTreeMap::new(),
+            absent_drivers: BTreeSet::new(),
             profiles: BTreeMap::new(),
             boards: BTreeMap::new(),
             apps: BTreeMap::new(),

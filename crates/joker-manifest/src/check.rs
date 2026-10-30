@@ -291,6 +291,20 @@ impl Checker<'_> {
                     }
                     &permissive
                 }
+                None if self.context.absent_drivers.contains(bare) => {
+                    self.push(
+                        Diagnostic::new(
+                            "J0850",
+                            format!(
+                                "driver `{}` is not compiled into this runtime",
+                                driver_name.value
+                            ),
+                        )
+                        .at(driver_name.span)
+                        .help("build jokerd with the driver's `drv-*` feature (ref/06 §3.8)"),
+                    );
+                    continue;
+                }
                 None => {
                     let mut d =
                         Diagnostic::new("J0170", format!("unknown driver `{}`", driver_name.value))

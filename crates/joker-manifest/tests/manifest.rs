@@ -236,6 +236,7 @@ fn context() -> Context {
             ..AppInterface::default()
         },
     );
+    c.absent_drivers.insert("revpi".into());
     c
 }
 
@@ -575,6 +576,11 @@ fn cases() -> Vec<Case> {
             "J0170",
             one(format!("{BASE}[devices.a]\ndriver = \"nope\"\n")),
             "unknown driver",
+        ),
+        (
+            "J0850",
+            one(format!("{BASE}[devices.a]\ndriver = \"revpi\"\n")),
+            "driver left out of this build",
         ),
         (
             "J0171",
