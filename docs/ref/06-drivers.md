@@ -823,7 +823,7 @@ pub enum Link {
     I2c(I2cBus),          // embedded_hal_async::i2c::I2c, restricted to the instance's addresses
     Spi(SpiDevice),       // embedded_hal_async::spi::SpiDevice
     Can(CanSocket),       // filters set by the host
-    Gpio(GpioChip),       // tier N only: line requests (chardev v2 / embedded-hal)
+    Gpio(GpioChip),       // tier N only: line requests (chardev v1 in 1.0, ADR 0093 / embedded-hal)
     Paths(DevicePaths),   // tier N only: device nodes granted by the manifest (piControl, V4L2, raw socket)
 }
 ```
