@@ -4,7 +4,7 @@ Complete reference of a site's manifest: all the sections and keys, the exact gr
 
 It is **normative**. It sits above document 03, of which it is the closed form (ADR 0023). The semantics (arbiter, envelope, quality, expressions, units, paths) stay in document 16, and the common representation (versions, names, time, values, errors) in `ref/00`. Where this document and 03 diverge, this one prevails, and the divergence is listed in the findings (appendix C) so that 03 is corrected.
 
-The Rust types of the `joker-manifest` crate are written from this reference (§12), and the published JSON Schema is generated from them (document 16, §10).
+The `joker-manifest` crate is written from this reference (§12): its schema of the manifest as data and its typed model, and the published JSON Schema is generated from that schema (document 16, §10).
 
 ---
 
@@ -1969,201 +1969,61 @@ error[J0151]: number without a unit where a quantity or duration is required
 
 ## 12. Sketch of the Rust types (`joker-manifest`)
 
-Two phases: the layers are read as untyped `toml::Spanned` (so that the merge keeps the provenance), and the effective manifest is deserialized into the types below. The free tables are `BTreeMap` (invariant 9). The published JSON schema is generated from these types, with the `since` of each field.
+Three layers (ADR 0097). The layers of §7 are read as an untyped tree in which every key and value keeps its span (`value::Node`), so that the merge keeps the provenance. The merged tree is checked against the **schema as data** (`schema::Key`): every section, key, type, phase (1.0, 1.1, reserved) and target of §4–§6, which drives the generic validation of the sections, the reservation of the 1.1 keys (`J0290`), the target rules of a Joker Micro manifest (`J0145`, `J0720`) and the published JSON schema (`schema::json_schema`). The sections that the runtime consumes are then decoded into the **typed model** (`model::Manifest`); a 1.0 section without a typed decoder yet is kept, validated, in `Manifest::pending`, so a manifest that uses it is neither rejected nor silently trimmed. The free tables are `BTreeMap` (invariant 9). The block names the real types; their fields are in the crate's documentation.
 
 ```rust
 use std::collections::BTreeMap;
-use serde::Deserialize;
 
-/// Unknown keys are errors (J0140) except `x_*`, which are kept for tooling.
-#[derive(Deserialize, Default)]
-pub struct Ext(BTreeMap<String, toml::Value>); // custom Deserialize: rejects keys not starting with "x_"
+// value: the untyped, spanned tree of the layers.
+pub enum Value { String(String), Integer(i64), Float(f64), Bool(bool), Datetime(String), Array(Vec<Node>), Table(Table) }
+pub struct Node { pub value: Value, pub span: Span }
+pub struct Entry { pub key: Span, pub node: Node }
+pub type Table = BTreeMap<String, Entry>;
 
-#[derive(Deserialize)]
+// schema: the schema of §4–§6 as data.
+pub enum Phase { V1_0, V1_1, Reserved }
+pub enum Target { Any, Linux, LinuxSection, Micro }
+pub enum Ty { Text, Bool, Int(i64, i64), Duration, Quantity, Rate, Budget, Expr, Path, Selector, Level, Choice(&'static [&'static str]), Table(&'static [Key]), Map(KeyKind, &'static Ty), OneOf(&'static [Ty]), Any /* … */ }
+pub struct Key { pub name: &'static str, pub ty: Ty, pub required: bool, pub phase: Phase, pub target: Target }
+pub fn json_schema() -> String;
+
+// model: the typed effective manifest. Every value keeps its span.
+pub struct Spanned<T> { pub value: T, pub span: Span }
+pub enum Mode { Dev, Prod }
+pub struct SchemaVersion { pub major: u16, pub minor: u16 }
+
 pub struct Manifest {
     pub project: Project,
     pub target: Option<Target>,
-    #[serde(default)] pub resources: BTreeMap<ResourceClass, ResourceSpec>,
-    pub clock: Option<Clock>,
-    #[serde(default)] pub buses: BTreeMap<Name, Bus>,
-    #[serde(default)] pub drivers: BTreeMap<DriverName, DriverDecl>,
-    #[serde(default)] pub devices: BTreeMap<Name, Device>,
-    #[serde(default)] pub signals: BTreeMap<PathOrSelector, SignalTuning>,
-    #[serde(default)] pub outputs: BTreeMap<PathOrSelector, Envelope>,
-    #[serde(default)] pub cycles: BTreeMap<Name, CycleGroup>,
-    #[serde(default)] pub apps: BTreeMap<Name, App>,
-    #[serde(default)] pub instances: BTreeMap<Name, Instance>,
-    #[serde(default)] pub calc: BTreeMap<Name, Calc>,
-    #[serde(default)] pub alarms: BTreeMap<Name, Alarm>,
-    #[serde(default)] pub atomic: BTreeMap<Name, AtomicGroup>,
-    #[serde(default)] pub telemetry: Telemetry,
-    #[serde(default)] pub bridges: BTreeMap<Name, Bridge>,
-    #[serde(default)] pub security: Security,
-    pub link: Option<Link>,
-    // Reserved for 1.1 (J0290 on a 1.0 runtime).
-    #[serde(default)] pub models: BTreeMap<Name, Reserved<Model>>,
-    #[serde(default)] pub streams: BTreeMap<Path, Reserved<Stream>>,
-    #[serde(default)] pub pipelines: BTreeMap<Name, Reserved<Pipeline>>,
-    #[serde(default)] pub training: BTreeMap<Name, Reserved<Training>>,
-    #[serde(flatten)] pub ext: Ext,
+    pub buses: BTreeMap<String, Bus>,
+    pub devices: BTreeMap<String, Device>,
+    pub outputs: BTreeMap<String, Envelope>,
+    pub cycles: BTreeMap<String, Cycle>,
+    pub apps: BTreeMap<String, App>,
+    pub pending: BTreeMap<String, Node>,       // 1.0 sections without a typed decoder yet
+    pub extensions: BTreeMap<String, Node>,    // root `x_*` keys
 }
 
-#[derive(Deserialize)]
-pub struct Project {
-    pub name: DnsName,
-    pub joker: Option<SchemaVersion>,          // "MAJOR.MINOR"
-    #[serde(default = "Mode::prod")] pub mode: Mode,
-    #[serde(flatten)] pub ext: Ext,
-}
+pub struct Project { pub name: Option<Spanned<String>>, pub joker: Option<Spanned<SchemaVersion>>, pub mode: Mode }
+pub enum BusKind { Ethernet, Serial, Can, Ethercat, I2c, Spi }
+pub struct Bus { pub kind: Spanned<BusKind>, /* the keys of every kind, §5.6 */ }
+pub struct Device { pub driver: Option<Spanned<String>>, pub config: BTreeMap<String, Node>, /* §5.8 */ }
+pub enum SafeValue { Bool(bool), Integer(i64), Float(f64), Text(String), Relinquish }
+pub struct Envelope { pub safe: Option<Spanned<SafeValue>>, pub max_actuations: Option<Spanned<Budget>>, /* §5.10 */ }
+pub struct Budget { pub count: u32, pub window: Duration }
+pub struct Cycle { pub period: Option<Spanned<Duration>>, /* §5.11 */ }
+pub enum Band { Safety, Manual, Supervisor, Control, Optimizer, Schedule }
+pub struct Level { pub band: Band, pub priority: u8 }
+pub struct Writer { pub level: Level, pub lease: Option<Spanned<Duration>>, pub proposal: bool }
+pub enum Binding { Target(Spanned<String>), List(Vec<Spanned<String>>), Signal { /* … */ }, Each(Node) }
+pub struct App { pub writer: Option<Writer>, pub bind: BTreeMap<String, Spanned<Binding>>, /* §5.12 */ }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Mode { Dev, Prod }
-
-#[derive(Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum Bus {
-    Ethernet { iface: String },
-    Serial { port: FilePath, baud: u32, #[serde(default)] parity: Parity, #[serde(default = "one")] stop: u8,
-             #[serde(default = "eight")] data_bits: u8, turnaround: Option<Duration>,
-             #[serde(default)] duplex: Duplex },
-    Can { iface: String, bitrate: u32, #[serde(default)] fd: bool, data_bitrate: Option<u32> },
-    Ethercat { iface: String, cycle: Duration, #[serde(default)] dc: bool },
-    I2c { dev: FilePath },
-    Spi { dev: FilePath, #[serde(default)] mode: u8, speed: Option<Quantity> },
-}
-
-#[derive(Deserialize)]
-pub struct Device {
-    pub driver: DriverRef,                    // "modbus-tcp" | "w:<name>" | "x:<name>" | "extern" (MCU)
-    pub bus: Option<Name>,
-    pub profile: Option<ProfileRef>,
-    pub poll: Option<Duration>,
-    pub timeout: Option<Duration>,
-    pub retries: Option<u8>,
-    pub align: Option<Name>,
-    #[serde(default)] pub discover: bool,
-    pub fallback: Option<DeviceFallback>,
-    #[serde(default)] pub signals: BTreeMap<Name, SignalTuning>,
-    #[serde(default)] pub actions: BTreeMap<Name, ActionConfig>,
-    /// Driver-specific keys (appendix A), validated against the driver's published schema (ref/06).
-    #[serde(flatten)] pub driver_config: BTreeMap<String, toml::Value>,
-}
-
-#[derive(Deserialize)]
-pub struct Envelope {
-    pub safe: Option<Safe>,                   // None -> J0201 (kept optional to report, not to parse-fail)
-    #[serde(default)] pub safer: Safer,
-    pub safe_ramp: Option<Rate>,
-    pub interlock: Option<Expr>,
-    #[serde(default)] pub permit_uncertain: bool,
-    #[serde(default)] pub on_interlock: OnInterlock,
-    #[serde(default)] pub requires_good: Vec<PathOrSelector>,
-    pub grace: Option<Duration>,
-    pub range: Option<[Bound; 2]>,
-    #[serde(default)] pub on_range: OnRange,
-    pub rate: Option<Rate>,
-    pub deadband: Option<Quantity>,
-    pub min_interval: Option<Duration>,
-    pub max_actuations: Option<ActuationBudget>,
-    pub max_lease: Option<Duration>,
-    pub max_manual: Option<Duration>,
-    pub verify: Option<Verify>,
-    pub reset_when: Option<Expr>,
-    pub group: Option<Name>,
-    pub keepalive: Option<Duration>,
-    pub pulse: Option<Duration>,
-    pub accept_missing_fallback: Option<String>,
-    pub widen: Option<Widen>,                 // consumed by the merger; never in the effective manifest
-    pub schedule_depth: Option<Reserved<u16>>,
-    pub timed: Option<Reserved<bool>>,
-    pub on_late: Option<Reserved<OnLate>>,
-    pub late_margin: Option<Reserved<Duration>>,
-    #[serde(flatten)] pub ext: Ext,
-}
-
-#[derive(Deserialize)]
-#[serde(untagged)]
-pub enum Safe { Relinquish(RelinquishLit), Value(SignalValue) } // "relinquish" | bool | int | float | "0 kW" | "E.v"
-
-#[derive(Deserialize)]
-#[serde(untagged)]
-pub enum Bound { Const(Quantity), Expr(Expr) }   // a string that parses entirely as a quantity is Const
-
-#[derive(Deserialize)]
-pub struct App {
-    pub source: Option<OciRef>,
-    pub path: Option<FilePath>,
-    pub digest: Option<Digest>,
-    #[serde(default)] pub kind: AppKind,              // wasm | native | extern (MCU)
-    pub writer: Option<Writer>,
-    #[serde(default)] pub bind: BTreeMap<Name, Binding>,
-    #[serde(default)] pub params: BTreeMap<Name, ParamValue>,   // value | { value, runtime, persist } (MCU)
-    #[serde(default)] pub cycles: BTreeMap<Name, Name>,
-    pub period_tolerance: Option<Percent>,
-    pub resources: Option<AppResources>,
-    pub net: Option<Net>,
-    #[serde(default)] pub secrets: BTreeMap<Name, SecretRef>,   // local name -> "secret:<name>" (D6)
-    #[serde(default)] pub writes: Vec<PathOrSelector>,           // kind = "extern" only
-    #[serde(default)] pub reads: Vec<Selector>,                  // kind = "extern" only
-    #[serde(default)] pub requires_clock: ClockRequirement,
-    pub keep_previous: Option<Duration>,
-    pub crashloop: Option<Crashloop>,
-    pub shadow: Option<AppShadow>,
-    pub fallback: Option<Reserved<AppFallback>>,
-    #[serde(flatten)] pub ext: Ext,
-}
-
-#[derive(Deserialize)]
-pub struct Writer {
-    pub level: Option<Level>,                 // "control" | "control:10"
-    pub priority: Option<u8>,
-    pub lease: Option<Duration>,
-    #[serde(default)] pub kind: WriterKind,   // direct | proposal (1.1)
-}
-
-#[derive(Deserialize)]
-#[serde(untagged)]
-pub enum Binding {
-    Target(String),                           // path, instance, selector, "class:…", "model:…", "pipe:…"
-    List(Vec<String>),
-    Signal { signal: Path, #[serde(rename = "as")] as_: Option<AsConversion>, #[serde(default)] optional: bool },
-    Each { each: Selector, map: BTreeMap<Name, String> },
-}
-
-#[derive(Deserialize)]
-pub struct Instance {
-    pub class: ClassRef,
-    #[serde(default)] pub capabilities: Vec<Name>,
-    pub map: Option<BTreeMap<Name, MemberMapping>>,
-    pub implemented_by: Option<ImplementedBy>,
-    pub sim: Option<SimSpec>,                 // bool | table
-    #[serde(default)] pub actions: BTreeMap<Name, ActionConfig>,
-}
-
-#[derive(Deserialize)]
-#[serde(untagged)]
-pub enum ImplementedBy {
-    App(AppRef),                              // "app:<name>": one app instance
-    PerInstance { app: Name, #[serde(default)] bind: BTreeMap<Name, Binding>,
-                  #[serde(default)] params: BTreeMap<Name, SignalValue> },
-}
-
-/// A value that exists in the 1.0 schema but is rejected by a 1.0 runtime (J0290).
-#[derive(Deserialize)]
-#[serde(transparent)]
-pub struct Reserved<T>(pub T);
-
-// Value newtypes: each implements FromStr with the grammar of §3 and carries its span for diagnostics.
-pub struct Duration(u64);                     // ns
-pub struct Quantity { pub value: f64, pub unit: joker_units::Unit }
-pub struct Rate(Quantity);                    // unit/s after normalization
-pub struct ActuationBudget { pub count: u32, pub window: Duration }
-pub struct Level { pub band: Band, pub priority: Option<u8> }
-pub struct Expr(String);                      // compiled by joker-expr after the registry is built
-pub struct Path(String);
-pub struct Selector(String);
+// The entry point: layers, merge, schema, decoders, checks, canonical form and hash (§8.3).
+pub struct Report { pub diagnostics: Diagnostics, pub manifest: Option<Manifest>, pub hash: Option<String>, /* … */ }
+pub fn check(fs: &dyn FileSystem, entry: &Path, context: &Context) -> Report;
 ```
+
+Values that are expressions (`interlock`, `reset_when`, the bounds of `range`) stay text in the model and are compiled by `joker-expr` once the registry of paths is built (§3.7). A quantity, a rate or a value typed against a signal is checked against the schema and the registry, and converted when the generation is built.
 
 ---
 
