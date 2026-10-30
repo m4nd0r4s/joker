@@ -171,7 +171,11 @@ pub fn arch_triple(arch: &str) -> Option<&'static str> {
 pub fn target_triple(entry: &Entry, target: &str) -> Result<String, String> {
     let board = target.split('@').next().unwrap_or(target);
     let mut boards = jokerd::catalog::boards();
-    boards.extend(jokerd::catalog::boards_from_dir(root(entry)).0);
+    let (project, errors) = jokerd::catalog::boards_from_dir(root(entry));
+    if !errors.is_empty() {
+        return Err(errors.join("\n"));
+    }
+    boards.extend(project);
     match boards.get(board) {
         Some(info) => arch_triple(&info.arch)
             .map(str::to_owned)
@@ -299,6 +303,20 @@ mod tests {
             lock: dir.join("joker.lock"),
             from: "test",
         }
+    }
+
+    #[test]
+    fn a_broken_board_file_is_reported_not_skipped() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("boards")).unwrap();
+        std::fs::write(
+            dir.path().join("boards/bad.board.toml"),
+            "[board]\nname = \"bad\"\n",
+        )
+        .unwrap();
+        let e = entry(dir.path());
+        let err = target_triple(&e, "bad").unwrap_err();
+        assert!(err.contains("boards/bad.board.toml"), "{err}");
     }
 
     #[test]
