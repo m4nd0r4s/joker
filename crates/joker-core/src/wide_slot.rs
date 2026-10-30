@@ -291,8 +291,12 @@ mod tests {
         let mut last_seq = 0u64;
         let mut distinct = 0u32;
         let mut reads = 0u32;
-        while distinct < 2_000 && reads < 50_000_000 {
-            reads += 1;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        while distinct < 2_000 && std::time::Instant::now() < deadline {
+            reads = reads.wrapping_add(1);
+            if reads.is_multiple_of(1_024) {
+                thread::yield_now();
+            }
             let Ok(s) = slot.try_read() else {
                 continue;
             };
