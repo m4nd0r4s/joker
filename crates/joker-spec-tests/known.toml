@@ -277,22 +277,6 @@ check = "cddl"
 block = "bdedb7c312c7"
 reason = "ref/07 §6.7: ACK has an empty body, zero bytes, which has no diagnostic notation"
 
-[divergence.rust."ref/01 §12"]
-issue = "AUR-429"
-items = [
-  "ActuationBudget",
-  "Bound",
-  "Expr",
-  "Ext",
-  "ImplementedBy",
-  "Instance",
-  "Quantity",
-  "Rate",
-  "Reserved",
-  "Safe",
-  "Selector",
-]
-
 [divergence.rust."ref/04 §4"]
 issue = "AUR-284"
 items = [
