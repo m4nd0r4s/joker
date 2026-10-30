@@ -154,3 +154,12 @@ fn an_instance_without_a_task_number_keeps_no_causal_set() {
     let (_, log) = bench.tick(&mut instance, 0, Some(4.0), TASK_ECHO);
     assert!(log.causes.is_empty());
 }
+
+#[test]
+fn a_cycle_deadline_is_twice_the_wcet_with_a_floor_and_one_epoch_more() {
+    use joker_host::InstanceLimits;
+    assert_eq!(InstanceLimits::cycle_epochs(Some(5_000), 20_000_000), 3);
+    assert_eq!(InstanceLimits::cycle_epochs(Some(120_000), 20_000_000), 4);
+    assert_eq!(InstanceLimits::cycle_epochs(Some(150_000), 20_000_000), 4);
+    assert_eq!(InstanceLimits::cycle_epochs(None, 20_000_000), 81);
+}
