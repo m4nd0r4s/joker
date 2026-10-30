@@ -956,9 +956,15 @@ impl Node {
     }
 
     /// `jk decisions`.
-    pub fn decisions(&self, outputs: &[String], limit: u32) -> Result<u8, Failure> {
+    pub fn decisions(
+        &self,
+        outputs: &[String],
+        cause: Option<&str>,
+        limit: u32,
+    ) -> Result<u8, Failure> {
         let mut q = vec![format!("limit={limit}")];
-        q.extend(outputs.iter().map(|o| format!("output={o}")));
+        q.extend(outputs.iter().map(|o| format!("output={}", encode(o))));
+        q.extend(cause.map(|c| format!("cause={}", encode(c))));
         let d = checked(self.client.get(&format!("/v1/decisions?{}", q.join("&")))?)?.json();
         if self.json {
             print_json(&d);
@@ -977,6 +983,19 @@ impl Node {
                 e["active_level"].as_str().unwrap_or(""),
                 e["writer"]["writer"].as_str().unwrap_or("")
             );
+            for i in e["inputs"].as_array().into_iter().flatten() {
+                println!(
+                    "    <- {} = {} ({}, seq {})",
+                    i["path"].as_str().unwrap_or(""),
+                    i.get("value")
+                        .map_or_else(|| "-".to_owned(), ToString::to_string),
+                    i["quality"].as_str().unwrap_or(""),
+                    i["seq"]
+                );
+            }
+            if let Some(n) = e["inputs_omitted"].as_u64() {
+                println!("    <- and {n} more");
+            }
         }
         Ok(0)
     }

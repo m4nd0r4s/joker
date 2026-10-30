@@ -245,6 +245,7 @@ pub struct Log {
     pub writes: Vec<WriteResult>,
     pub outputs: Vec<OutputResult>,
     pub decisions: Vec<DecisionRecord>,
+    pub causes: Vec<Vec<SignalId>>,
 }
 
 impl CommitSink for Log {
@@ -257,9 +258,12 @@ impl CommitSink for Log {
     fn decision(&mut self, r: &DecisionRecord) {
         self.decisions.push(*r);
     }
+    fn causal(&mut self, _r: &DecisionRecord, inputs: &joker_core::image::CausalSet<'_>) {
+        self.causes.push(inputs.iter().map(|(s, _)| s).collect());
+    }
 }
 
-fn leak<T>(v: Vec<T>) -> &'static mut [T] {
+pub fn leak<T>(v: Vec<T>) -> &'static mut [T] {
     Box::leak(v.into_boxed_slice())
 }
 

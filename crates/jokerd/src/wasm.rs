@@ -570,6 +570,7 @@ impl CycleTask for WasmTask {
             return Err(TaskError(String::new()));
         }
         let tick = cx.tick();
+        instance.set_causal_task(cx.task());
         let (image, outputs) = cx.parts();
         let report = instance.run(self.task, image, outputs).map_err(host)?;
         let at_mono_ns = tick.map_or(0, |t| t.at.mono_ns);

@@ -66,7 +66,7 @@ fn light_blinks_and_every_change_is_recorded() {
     assert_eq!(exit.applied["pi.act_led"], Applied::Value(0));
 
     let mut output_records = Vec::new();
-    while let Some(r) = shared.decisions.pop() {
+    while let Some(r) = shared.decisions.pop().map(|q| q.record) {
         if r.kind == RecordKind::Output {
             output_records.push(r);
         }
@@ -83,6 +83,49 @@ fn light_blinks_and_every_change_is_recorded() {
     assert_eq!(chunks, 100);
     assert_eq!(shared.groups[0].ticks.get(), 100);
     assert_eq!(shared.groups[0].overruns.get(), 0);
+}
+
+#[test]
+fn every_write_record_carries_the_causal_set_of_its_task() {
+    let loaded = common::bench();
+    let plan = &loaded.plan;
+    let shared = Shared::new(plan);
+    let tasks = instantiate(plan, &loaded.manifest, &NativeTasks).unwrap();
+    let mut pacer = VirtualPacer::new(start());
+    run(
+        plan,
+        &shared,
+        tasks,
+        &mut pacer,
+        RunOptions {
+            max_ticks: Some(30),
+            ..RunOptions::default()
+        },
+    )
+    .unwrap();
+
+    let mut causes = std::collections::BTreeMap::new();
+    while let Some(c) = shared.causes.pop() {
+        causes.insert(c.id, c);
+    }
+    let mut writes = 0;
+    while let Some(q) = shared.decisions.pop() {
+        if let RecordKind::Write(_) = q.record.kind {
+            writes += 1;
+            assert_ne!(
+                q.causal, 0,
+                "write at tick {} has no causal set",
+                q.record.tick
+            );
+            let set = causes.remove(&q.causal).expect("its causal record");
+            assert_eq!(set.omitted, 0);
+        } else {
+            assert_eq!(q.causal, 0);
+        }
+    }
+    assert!(writes > 0);
+    assert!(causes.is_empty());
+    assert_eq!(shared.causes_dropped.get(), 0);
 }
 
 #[test]

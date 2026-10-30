@@ -253,6 +253,9 @@ enum Command {
         /// Only these outputs (selectors).
         #[arg(long)]
         output: Vec<String>,
+        /// Only the writes whose task read this signal (ADR 0097).
+        #[arg(long)]
+        cause: Option<String>,
         /// How many entries.
         #[arg(long, default_value_t = 20)]
         limit: u32,
@@ -665,7 +668,11 @@ fn run(cli: Cli) -> Result<u8, Failure> {
             level.as_deref(),
             takeover,
         ),
-        Command::Decisions { output, limit } => node()?.decisions(&output, limit),
+        Command::Decisions {
+            output,
+            cause,
+            limit,
+        } => node()?.decisions(&output, cause.as_deref(), limit),
         Command::Logs {
             app,
             source,

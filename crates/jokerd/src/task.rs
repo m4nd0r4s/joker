@@ -7,7 +7,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use joker_core::image::{ImageError, Intent, NO_TASK, ProcessImage, Proposal, RELINQUISH, Source};
+use joker_core::image::{ImageError, Intent, ProcessImage, Proposal, RELINQUISH, Source};
 use joker_core::{Outputs, Registry, Sample, SignalId, TickInfo, WriterId};
 use joker_manifest::context::AppInterface;
 use joker_manifest::model::App;
@@ -33,20 +33,24 @@ pub struct TaskContext<'a, 'img, 'out> {
     image: &'a mut ProcessImage<'img>,
     outputs: &'a Outputs<'out>,
     writer: WriterId,
+    task: u16,
     dropped: u64,
 }
 
 impl<'a, 'img, 'out> TaskContext<'a, 'img, 'out> {
-    /// A context for `writer` on a latched image.
+    /// A context for `writer` on a latched image, as cycle task number
+    /// `task` of its group (ADR 0043; `NO_TASK` keeps no causal set).
     pub fn new(
         image: &'a mut ProcessImage<'img>,
         outputs: &'a Outputs<'out>,
         writer: WriterId,
+        task: u16,
     ) -> Self {
         Self {
             image,
             outputs,
             writer,
+            task,
             dropped: 0,
         }
     }
@@ -62,8 +66,16 @@ impl<'a, 'img, 'out> TaskContext<'a, 'img, 'out> {
         self.image.tick()
     }
 
-    /// The latched sample of a signal the group reads.
-    pub fn read(&self, signal: SignalId) -> Option<Sample> {
+    /// The number of the task in its group, for the proposals and reads
+    /// a task stages itself.
+    pub fn task(&self) -> u16 {
+        self.task
+    }
+
+    /// The latched sample of a signal the group reads, marked as read by
+    /// this task (its causal set, ADR 0043).
+    pub fn read(&mut self, signal: SignalId) -> Option<Sample> {
+        self.image.mark_read_signal(self.task, signal);
         self.image.sample(signal).copied()
     }
 
@@ -92,7 +104,7 @@ impl<'a, 'img, 'out> TaskContext<'a, 'img, 'out> {
             ticket: 0,
             ttl_ns: 0,
             intent: Intent::Write,
-            task: NO_TASK,
+            task: self.task,
         });
         if result.is_err() {
             self.dropped += 1;

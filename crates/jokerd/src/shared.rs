@@ -9,9 +9,9 @@ use crossbeam_queue::ArrayQueue;
 use joker_core::alarm::{AlarmError, AlarmEvent};
 use joker_core::class::MethodResult;
 use joker_core::commit::{DecisionRecord, WriteResult};
-use joker_core::image::{MethodCall, Proposal};
+use joker_core::image::{CausalSet, MethodCall, Proposal};
 use joker_core::outcome::{Outcome, RejectReason};
-use joker_core::value::NO_TS_SRC;
+use joker_core::value::{NO_TS_SRC, Sample};
 use joker_core::{Quality, QualityCode, QualityReason, SignalId, Slot, ValueType, WideSlot};
 use joker_hal::{CommitBox, OutputBinding, RawEncoding, WriteKind, WriteStatus};
 
@@ -23,6 +23,10 @@ pub const INBOX_CAPACITY: usize = 256;
 pub const STAGING_CAPACITY: usize = 512;
 /// Capacity of the decision record queue.
 pub const DECISION_CAPACITY: usize = 16_384;
+/// Capacity of the queue of causal records (ADR 0097).
+pub const CAUSAL_CAPACITY: usize = 512;
+/// Inputs a causal record keeps (ADR 0097).
+pub const MAX_CAUSAL_INPUTS: usize = 16;
 /// Capacity of the write result queue (tickets of async writes).
 pub const RESULT_CAPACITY: usize = 4_096;
 /// Capacity of the queue of failed write acks from the real drivers.
@@ -324,6 +328,58 @@ pub struct DeviceStats {
     pub invalid_samples: Counter,
 }
 
+/// A decision record on its way to the decision log, with the number of
+/// its causal record in [`Shared::causes`] (0 when it has none).
+#[derive(Debug, Clone, Copy)]
+pub struct QueuedDecision {
+    /// The record.
+    pub record: DecisionRecord,
+    /// The number of its causal record, or 0.
+    pub causal: u64,
+}
+
+/// The causal set of one write, copied out of the image (ADR 0097): at
+/// most [`MAX_CAUSAL_INPUTS`] inputs in `SignalId` order, and how many
+/// more the task read.
+#[derive(Debug, Clone, Copy)]
+pub struct CausalRecord {
+    /// The number the decision record refers to.
+    pub id: u64,
+    /// The inputs kept.
+    pub inputs: [(SignalId, Sample); MAX_CAUSAL_INPUTS],
+    /// How many of `inputs` are filled.
+    pub len: u8,
+    /// Inputs read beyond the ones kept.
+    pub omitted: u32,
+}
+
+impl CausalRecord {
+    /// Copies a causal set, keeping the first [`MAX_CAUSAL_INPUTS`].
+    pub fn new(id: u64, set: &CausalSet<'_>) -> Self {
+        let mut record = Self {
+            id,
+            inputs: [(SignalId(0), Sample::INITIAL); MAX_CAUSAL_INPUTS],
+            len: 0,
+            omitted: 0,
+        };
+        for (signal, sample) in set.iter() {
+            match record.inputs.get_mut(usize::from(record.len)) {
+                Some(slot) => {
+                    *slot = (signal, *sample);
+                    record.len += 1;
+                }
+                None => record.omitted = record.omitted.saturating_add(1),
+            }
+        }
+        record
+    }
+
+    /// The inputs kept.
+    pub fn inputs(&self) -> &[(SignalId, Sample)] {
+        &self.inputs[..usize::from(self.len)]
+    }
+}
+
 /// A write a real driver did not confirm (ref/06 §2.9): what the decision
 /// log records next to the commit that produced it (AGENTS.md invariant 8).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -557,7 +613,13 @@ pub struct Shared {
     /// Reset resolutions dropped by a full queue.
     pub reset_results_dropped: Counter,
     /// Decision records for the decision log.
-    pub decisions: ArrayQueue<DecisionRecord>,
+    pub decisions: ArrayQueue<QueuedDecision>,
+    /// Causal sets of the queued write records (ADR 0097).
+    pub causes: ArrayQueue<CausalRecord>,
+    /// Causal records dropped by a full queue.
+    pub causes_dropped: Counter,
+    /// The number of the last causal record (they start at 1).
+    pub causal_ids: AtomicU64,
     /// Decision records dropped by a full queue.
     pub decisions_dropped: Counter,
     /// Results of proposals that carry a ticket.
@@ -884,6 +946,9 @@ impl Shared {
             reset_results: ArrayQueue::new(RESULT_CAPACITY),
             reset_results_dropped: Counter::default(),
             decisions: ArrayQueue::new(DECISION_CAPACITY),
+            causes: ArrayQueue::new(CAUSAL_CAPACITY),
+            causes_dropped: Counter::default(),
+            causal_ids: AtomicU64::new(0),
             decisions_dropped: Counter::default(),
             results: ArrayQueue::new(RESULT_CAPACITY),
             results_dropped: Counter::default(),

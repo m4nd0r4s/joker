@@ -584,3 +584,57 @@ fn a_panicking_group_is_named_and_does_not_stop_the_other() {
     assert!(exit.applied.contains_key("pcs.a"));
     assert!(!exit.applied.contains_key("pcs.b"));
 }
+
+/// Reads the LED and proposes its opposite: every write depends on one
+/// read.
+struct Toggle(joker_core::SignalId);
+
+impl CycleTask for Toggle {
+    fn run(&mut self, cx: &mut TaskContext<'_, '_, '_>) -> Result<(), TaskError> {
+        let on = cx.read(self.0).is_some_and(|s| s.transport_bits() != 0);
+        cx.propose(self.0, u64::from(!on))
+            .map_err(|e| TaskError(format!("{e:?}")))
+    }
+}
+
+#[test]
+fn a_write_record_carries_what_its_task_read() {
+    let loaded = common::bench();
+    let led = loaded.plan.id("pi.act_led").unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let tasks: Vec<GroupTasks> = vec![vec![(
+        joker_core::WriterId(0),
+        Box::new(Toggle(led)) as Box<dyn CycleTask>,
+    )]];
+    let pacer = Box::new(VirtualPacer::new(Instant {
+        mono_ns: 1_000 * MS,
+        utc_ns: 1_760_000_000_000_000_000,
+        clock: ClockQuality::Synced,
+    }));
+    let running = Running::start(
+        Arc::new(loaded.plan),
+        tasks,
+        pacer,
+        log(&dir),
+        start(Some(5)),
+    )
+    .unwrap();
+    running.join().unwrap();
+    let entries = DecisionLog::read_all(&dir.path().join("decisions.jsonl")).unwrap();
+    let writes: Vec<_> = entries.iter().filter(|e| e["record"] == "write").collect();
+    assert!(!writes.is_empty());
+    for w in &writes {
+        let inputs = w["inputs"].as_array().expect("inputs on a write record");
+        assert_eq!(inputs.len(), 1, "{w}");
+        assert_eq!(inputs[0]["path"], "pi.act_led");
+        assert!(inputs[0]["seq"].is_u64());
+        assert!(inputs[0]["quality"].is_string());
+        assert!(w.get("inputs_omitted").is_none());
+    }
+    assert!(
+        entries
+            .iter()
+            .filter(|e| e["record"] == "output")
+            .all(|e| e.get("inputs").is_none())
+    );
+}

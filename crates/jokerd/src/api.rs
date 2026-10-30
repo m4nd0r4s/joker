@@ -2620,12 +2620,15 @@ impl Backend for Node {
             .into_iter()
             .map(|g| (g.number, g.hash))
             .collect();
+        let aliases = self
+            .view()
+            .map(|v| v.plan.aliases.clone())
+            .unwrap_or_default();
+        let cause = one(query, "cause").map(|c| aliases.get(&c).cloned().unwrap_or(c));
         let exact = !outputs.is_empty() && outputs.iter().all(|s| !s.contains('*'));
-        let needles: Vec<Vec<u8>> = if exact {
-            let aliases = self
-                .view()
-                .map(|v| v.plan.aliases.clone())
-                .unwrap_or_default();
+        let needles: Vec<Vec<u8>> = if let Some(c) = &cause {
+            vec![format!("\"path\":{}", json!(c)).into_bytes()]
+        } else if exact {
             outputs
                 .iter()
                 .map(|s| {
@@ -2663,7 +2666,12 @@ impl Backend for Node {
                             .any(|o| d["outcome"]["outcome"] == *o.as_str()))
                     && (writers.is_empty()
                         || writers.iter().any(|w| d["writer"]["writer"] == *w.as_str()))
-                    && (kinds.is_empty() || kinds.iter().any(|k| d["kind"] == *k.as_str()));
+                    && (kinds.is_empty() || kinds.iter().any(|k| d["kind"] == *k.as_str()))
+                    && cause.as_ref().is_none_or(|c| {
+                        d["inputs"]
+                            .as_array()
+                            .is_some_and(|i| i.iter().any(|x| x["path"] == *c.as_str()))
+                    });
                 if wanted {
                     items.push((seq, d));
                 }
@@ -3407,6 +3415,11 @@ fn decision_json(e: &Value, hashes: &std::collections::BTreeMap<u64, String>) ->
     );
     if let Some(r) = e["previous"]["repeats"].as_u64() {
         m.insert("repeats".into(), json!(r));
+    }
+    for key in ["inputs", "inputs_omitted"] {
+        if let Some(v) = e.get(key) {
+            m.insert(key.into(), v.clone());
+        }
     }
     Some(Value::Object(m))
 }

@@ -10,7 +10,7 @@
 use core::fmt;
 use std::sync::Arc;
 
-use joker_core::image::RELINQUISH;
+use joker_core::image::{NO_TASK, RELINQUISH};
 use joker_core::registry::Direction;
 use joker_core::value::NO_TS_SRC;
 use joker_core::{
@@ -381,6 +381,7 @@ pub struct CycleInstance {
     error_code: String,
     error_message: String,
     app: String,
+    causal_task: u16,
 }
 
 impl fmt::Debug for CycleInstance {
@@ -641,7 +642,15 @@ impl CycleInstance {
             error_code: String::with_capacity(ERROR_CODE),
             error_message: String::with_capacity(ERROR_MESSAGE),
             app: meta.name.clone(),
+            causal_task: NO_TASK,
         })
+    }
+
+    /// Sets the number of this instance's task in its group: its
+    /// proposals carry it, and the ports packed for it are its reads, so
+    /// the image keeps its causal set (ADR 0043, ADR 0097).
+    pub fn set_causal_task(&mut self, task: u16) {
+        self.causal_task = task;
     }
 
     /// Runs cycle task `task` for the tick latched in `image` (step 4 of
@@ -710,8 +719,14 @@ impl CycleInstance {
             rejected: 0,
         };
         let writer = state.writer;
+        let task = self.causal_task;
+        for entry in state.ports.iter().filter(|e| e.bound) {
+            if let Some(port) = entry.snapshot {
+                image.mark_read(task, port);
+            }
+        }
         for proposal in &state.tick.dynamic {
-            stage(image, *proposal, &mut report);
+            stage(image, Proposal { task, ..*proposal }, &mut report);
         }
         for record in abi::records(bytes).into_iter().flatten().flatten() {
             match record {
@@ -740,6 +755,7 @@ impl CycleInstance {
                             signal,
                             value,
                             flags: if relinquish { RELINQUISH } else { 0 },
+                            task,
                             ..Proposal::EMPTY
                         },
                         &mut report,

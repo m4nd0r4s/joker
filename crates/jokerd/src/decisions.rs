@@ -9,6 +9,7 @@
 //! `write_ack` entries (ref/06 §2.9). Records that could not be queued are
 //! counted and written as a `gap`.
 
+use std::collections::BTreeMap;
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -20,13 +21,14 @@ use std::time::{Duration, Instant as StdInstant};
 use joker_core::commit::{Cause, DecisionRecord, Durability, RecordKind, Span};
 use joker_core::envelope::Applied;
 use joker_core::outcome::Outcome;
-use joker_core::{Level, ValueType, WriterId};
+use joker_core::value::Sample;
+use joker_core::{Level, SignalId, ValueType, WriterId};
 use serde_json::{Map, Value, json};
 
 use joker_hal::{WriteKind, WriteStatus};
 
 use crate::plan::Plan;
-use crate::shared::{Shared, WriteAckRecord};
+use crate::shared::{CAUSAL_CAPACITY, CausalRecord, Shared, WriteAckRecord};
 use crate::trips::TripTable;
 
 /// How often batch records are synced.
@@ -507,20 +509,13 @@ impl DecisionWriter {
             .name("svc/decisions".into())
             .stack_size(crate::shared::SERVICE_STACK)
             .spawn(move || {
-                let mut reported_drops = 0;
+                let mut state = DrainState::default();
                 loop {
                     let stopping = flag.load(Ordering::Acquire);
                     if let Some(w) = watch.as_mut() {
                         w.observe(&shared, utc_origin_ns, &log, generation);
                     }
-                    drain(
-                        &plan,
-                        &shared,
-                        &log,
-                        generation,
-                        utc_origin_ns,
-                        &mut reported_drops,
-                    )?;
+                    drain(&plan, &shared, &log, generation, utc_origin_ns, &mut state)?;
                     if stopping {
                         return lock(&log).sync();
                     }
@@ -543,6 +538,62 @@ impl DecisionWriter {
     }
 }
 
+/// What [`drain`] carries from one call to the next: the drops already
+/// reported, and the causal records that arrived before their decision
+/// record (ADR 0097).
+#[derive(Debug, Default)]
+pub struct DrainState {
+    reported_drops: u64,
+    causes: BTreeMap<u64, CausalRecord>,
+}
+
+impl DrainState {
+    fn cause(&mut self, shared: &Shared, id: u64) -> Option<CausalRecord> {
+        if let Some(c) = self.causes.remove(&id) {
+            return Some(c);
+        }
+        while let Some(c) = shared.causes.pop() {
+            if c.id == id {
+                return Some(c);
+            }
+            self.causes.insert(c.id, c);
+            if self.causes.len() > CAUSAL_CAPACITY {
+                self.causes.pop_first();
+            }
+        }
+        None
+    }
+}
+
+/// The `inputs` of a write record (ADR 0097): one object per signal read,
+/// with no value when the sample is `bad` or was never written.
+pub fn inputs_json(plan: &Plan, inputs: &[(SignalId, Sample)]) -> Value {
+    inputs
+        .iter()
+        .map(|(id, s)| {
+            let path = plan.path(*id).unwrap_or("");
+            let q = s.quality();
+            let mut m = Map::new();
+            m.insert("path".into(), json!(path));
+            m.insert("seq".into(), json!(s.seq()));
+            if !q.is_bad()
+                && s.seq() != 0
+                && let Some(signal) = plan.signal(path)
+            {
+                m.insert(
+                    "value".into(),
+                    crate::wire::value(signal, s.transport_bits()),
+                );
+            }
+            m.insert("quality".into(), json!(crate::wire::quality_name(q)));
+            if let Some(reason) = q.reason().name() {
+                m.insert("reason".into(), json!(reason));
+            }
+            Value::Object(m)
+        })
+        .collect()
+}
+
 /// Drains the queued records into the log once.
 pub fn drain(
     plan: &Plan,
@@ -550,12 +601,21 @@ pub fn drain(
     log: &SharedLog,
     generation: u64,
     utc_origin_ns: i64,
-    reported_drops: &mut u64,
+    state: &mut DrainState,
 ) -> io::Result<()> {
     let mut log = lock(log);
-    while let Some(r) = shared.decisions.pop() {
+    while let Some(q) = shared.decisions.pop() {
+        let r = q.record;
         let immediate = r.durability == Durability::Immediate;
         let mut entry = record_json(plan, generation, &r);
+        if q.causal != 0
+            && let Some(c) = state.cause(shared, q.causal)
+        {
+            entry.insert("inputs".into(), inputs_json(plan, c.inputs()));
+            if c.omitted > 0 {
+                entry.insert("inputs_omitted".into(), json!(c.omitted));
+            }
+        }
         entry.insert(
             "ts".into(),
             json!(crate::wire::timestamp(
@@ -576,13 +636,13 @@ pub fn drain(
         log.append(entry, immediate)?;
     }
     let dropped = shared.decisions_dropped.get() + shared.write_acks_dropped.get();
-    if dropped > *reported_drops {
+    if dropped > state.reported_drops {
         let mut m = Map::new();
         m.insert("gen".into(), json!(generation));
         m.insert("record".into(), json!("gap"));
-        m.insert("dropped".into(), json!(dropped - *reported_drops));
+        m.insert("dropped".into(), json!(dropped - state.reported_drops));
         log.append(m, true)?;
-        *reported_drops = dropped;
+        state.reported_drops = dropped;
     }
     Ok(())
 }

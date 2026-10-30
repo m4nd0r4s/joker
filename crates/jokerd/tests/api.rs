@@ -2859,3 +2859,54 @@ async fn the_doctor_runs_as_a_job_and_keeps_its_report() {
         .await;
     assert_eq!(refused.status, 400);
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_cause_filter_returns_the_writes_that_read_a_signal() {
+    let f = start().await;
+    let path = f._dir.path().join("decisions.jsonl");
+    let mut log = DecisionLog::open(&path).unwrap();
+    for (read, value) in [("meter.p_total", true), ("meter.q_total", false)] {
+        let mut entry = serde_json::Map::new();
+        for (k, v) in [
+            ("gen", json!(1)),
+            ("record", json!("write")),
+            ("writer", json!("app:light")),
+            ("output", json!("pi.act_led")),
+            ("tick", json!(9)),
+            ("applied", json!(value)),
+            ("outcome", json!("accepted")),
+            ("level", json!("control:12")),
+            ("cause", json!({"kind": "proposal", "writer": "app:light"})),
+            (
+                "inputs",
+                json!([{"path": read, "seq": 4, "value": 1.5, "quality": "good"}]),
+            ),
+            ("inputs_omitted", json!(3)),
+            ("ts", json!("2026-10-24T12:00:00.000000000Z")),
+        ] {
+            entry.insert(k.into(), v);
+        }
+        log.append(entry, true).unwrap();
+    }
+
+    let d = f
+        .call(
+            "GET",
+            "/v1/decisions",
+            "/v1/decisions?cause=meter.p_total",
+            None,
+        )
+        .await;
+    assert_eq!(d.status, 200);
+    let items = d.json()["items"].as_array().unwrap().clone();
+    assert_eq!(items.len(), 1, "{items:?}");
+    assert_eq!(items[0]["applied"], true);
+    assert_eq!(items[0]["inputs"][0]["path"], "meter.p_total");
+    assert_eq!(items[0]["inputs"][0]["seq"], 4);
+    assert_eq!(items[0]["inputs_omitted"], 3);
+
+    let none = f
+        .call("GET", "/v1/decisions", "/v1/decisions?cause=meter.f", None)
+        .await;
+    assert_eq!(none.json()["items"].as_array().unwrap().len(), 0);
+}

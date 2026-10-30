@@ -18,7 +18,7 @@ use joker_core::alarm::{AlarmCause, AlarmConfig, AlarmEvent, AlarmRuntime, Alarm
 use joker_core::class::{Classes, MethodResult};
 use joker_core::commit::{CommitSink, DecisionRecord, OutputResult, OutputState, WriteResult};
 use joker_core::envelope::Applied;
-use joker_core::image::{ImageStorage, MethodCall, ProcessImage, Proposal};
+use joker_core::image::{CausalSet, ImageStorage, MethodCall, NO_TASK, ProcessImage, Proposal};
 use joker_core::output::OutputConfig;
 use joker_core::slot::SeqExtender;
 use joker_core::trace::{SegmentWriter, TickRecord, TraceResult};
@@ -99,6 +99,26 @@ struct Sink<'s> {
     pending_resets: &'s mut Vec<(SignalId, u32)>,
     /// The trips of this group's alarms on outputs of other groups.
     edge: &'s [ForeignTrip],
+    /// The last decision record, held until the next call so that a causal
+    /// set that follows it is queued first (ADR 0097).
+    pending: Option<DecisionRecord>,
+}
+
+impl Sink<'_> {
+    fn queue(&mut self, causal: u64) {
+        if let Some(record) = self.pending.take() {
+            let queued = crate::shared::QueuedDecision { record, causal };
+            if self.shared.decisions.push(queued).is_err() {
+                self.shared.decisions_dropped.bump();
+            }
+        }
+    }
+}
+
+impl Drop for Sink<'_> {
+    fn drop(&mut self) {
+        self.queue(0);
+    }
 }
 
 impl CommitSink for Sink<'_> {
@@ -161,8 +181,21 @@ impl CommitSink for Sink<'_> {
     }
 
     fn decision(&mut self, record: &DecisionRecord) {
-        if self.shared.decisions.push(*record).is_err() {
-            self.shared.decisions_dropped.bump();
+        self.queue(0);
+        self.pending = Some(*record);
+    }
+
+    fn causal(&mut self, _record: &DecisionRecord, inputs: &CausalSet<'_>) {
+        if self.pending.is_none() {
+            return;
+        }
+        let id = self.shared.causal_ids.fetch_add(1, Ordering::Relaxed) + 1;
+        let causal = crate::shared::CausalRecord::new(id, inputs);
+        if self.shared.causes.push(causal).is_ok() {
+            self.queue(id);
+        } else {
+            self.shared.causes_dropped.bump();
+            self.queue(0);
         }
     }
 
@@ -242,6 +275,7 @@ struct GroupStore {
     extenders: Vec<SeqExtender>,
     proposals: Vec<Proposal>,
     method_buffer: Vec<MethodCall>,
+    reads: Vec<u64>,
 }
 
 struct GroupRun<'a> {
@@ -378,7 +412,8 @@ pub fn run(
     let mut stores: Vec<GroupStore> = configs
         .iter()
         .zip(&ports)
-        .map(|(configs, ports)| GroupStore {
+        .zip(&plan.groups)
+        .map(|((configs, ports), group)| GroupStore {
             states: vec![OutputState::EMPTY; configs.len()],
             intakes: vec![IntakeSlot::EMPTY; STAGING_CAPACITY],
             output_arena: vec![0u64; configs.iter().map(|c| c.state_words()).sum()],
@@ -395,6 +430,7 @@ pub fn run(
             extenders: vec![SeqExtender::for_slot(); ports.len()],
             proposals: vec![Proposal::EMPTY; STAGING_CAPACITY],
             method_buffer: vec![MethodCall::EMPTY; STAGING_CAPACITY],
+            reads: vec![0u64; group.tasks.len() * ports.len().div_ceil(64)],
         })
         .collect();
 
@@ -422,6 +458,7 @@ pub fn run(
             extenders,
             proposals,
             method_buffer,
+            reads,
         } = store;
         let mut outputs = Outputs::new(
             &registry,
@@ -478,6 +515,9 @@ pub fn run(
         )
         .map_err(|e| CycleError(format!("group `{}`: {e:?}", group.name)))?;
         image.set_method_buffer(method_buffer);
+        image
+            .set_read_sets(reads, group.tasks.len())
+            .map_err(|e| CycleError(format!("group `{}`: {e:?}", group.name)))?;
         for (writer, task) in &mut tasks {
             task.prepare(&Prepare {
                 registry: &registry,
@@ -767,6 +807,7 @@ fn tick(
         at_mono_ns: at.mono_ns,
         pending_resets: &mut g.pending_resets,
         edge: g.edge,
+        pending: None,
     };
     if let Some(commands) = shared.alarm_commands.get(g.index) {
         while let Some(c) = commands.pop() {
@@ -795,6 +836,7 @@ fn tick(
     {
         stats.task_errors.bump();
     }
+    drop(sink);
     for (i, (writer, task)) in g.tasks.iter_mut().enumerate() {
         let stopped = g
             .apps
@@ -805,7 +847,12 @@ fn tick(
             continue;
         }
         let begun = clock.mono_ns();
-        let mut cx = TaskContext::new(&mut g.image, &g.outputs, *writer);
+        let mut cx = TaskContext::new(
+            &mut g.image,
+            &g.outputs,
+            *writer,
+            u16::try_from(i).unwrap_or(NO_TASK),
+        );
         if task.run(&mut cx).is_err() {
             stats.task_errors.bump();
         }
@@ -823,6 +870,7 @@ fn tick(
         at_mono_ns: at.mono_ns,
         pending_resets: &mut g.pending_resets,
         edge: g.edge,
+        pending: None,
     };
     if g.classes
         .expand(&mut g.image, &shared.slots, &g.outputs, &mut sink)
@@ -836,6 +884,7 @@ fn tick(
     {
         stats.task_errors.bump();
     }
+    drop(sink);
     shared.apply_confirmations(g.index, at.mono_ns);
     g.verifier.check(g.index, &g.outputs, shared, at.mono_ns);
     for tx in g.commit_tx.iter_mut() {
