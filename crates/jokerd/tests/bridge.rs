@@ -237,6 +237,61 @@ cpu_temp = { thermal = "thermal_zone0" }
         assert_eq!(types, [("pi.act_led", "bool"), ("pi.cpu_temp", "f64")]);
     }
 
+    const GPIO_TOML: &str = r#"
+[project]
+name  = "bridge-test"
+joker = "1.0"
+mode  = "dev"
+
+[devices.io]
+driver = "gpio"
+poll   = "100ms"
+
+[devices.io.signals]
+"#;
+
+    #[test]
+    fn a_gpio_debounce_is_the_acquisition_stages_and_not_the_drivers() {
+        let joker_toml = format!(
+            "{GPIO_TOML}button = {{ line = 17, direction = \"input\", debounce = \"20ms\" }}\n"
+        );
+        let dir = project(&[("joker.toml", &joker_toml)]);
+        let loaded = load(&OsFileSystem, &dir.path().join("joker.toml"), &NativeTasks)
+            .unwrap_or_else(|e| panic!("{e}"));
+        let (context, _) = jokerd::catalog::context_for_project(&NativeTasks, dir.path());
+        let plan = jokerd::bridge::device_plan(
+            "io",
+            &loaded.manifest.devices["io"],
+            &loaded.manifest,
+            &context,
+            &loaded.report.paths,
+        )
+        .unwrap_or_else(|e| panic!("{e}"));
+        let point = &plan.points[0];
+        let addr = joker_hal::cbor::Cbor::new(&point.addr);
+        assert_eq!(addr.get("debounce").map(|v| v.is_some()), Ok(false));
+        assert_eq!(addr.get("line").map(|v| v.is_some()), Ok(true));
+        assert_eq!(
+            point.acquisition.debounce,
+            Some(joker_units::Duration::from_millis(20))
+        );
+    }
+
+    #[test]
+    fn gpio_edges_and_timestamp_are_reserved() {
+        for key in ["edges = \"both\"", "timestamp = \"kernel\""] {
+            let joker_toml =
+                format!("{GPIO_TOML}button = {{ line = 17, direction = \"input\", {key} }}\n");
+            let dir = project(&[("joker.toml", &joker_toml)]);
+            let error = load(&OsFileSystem, &dir.path().join("joker.toml"), &NativeTasks)
+                .err()
+                .unwrap_or_else(|| panic!("{key}: loaded"))
+                .to_string();
+            assert!(error.contains("J0807"), "{key}: {error}");
+            assert!(!error.contains("J0140"), "{key}: {error}");
+        }
+    }
+
     #[test]
     fn no_fallback_means_no_keepalive() {
         let dir = project(&[

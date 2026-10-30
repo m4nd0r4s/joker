@@ -92,6 +92,9 @@ pub fn drivers() -> BTreeMap<String, DriverInfo> {
             ]
             .into_iter()
             .collect(),
+            reserved_address: ["edges".to_owned(), "timestamp".to_owned()]
+                .into_iter()
+                .collect(),
             ..DriverInfo::default()
         },
     );
