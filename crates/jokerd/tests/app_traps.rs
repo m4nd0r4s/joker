@@ -158,4 +158,9 @@ fn a_trapping_app_is_reported_and_its_output_goes_safe() {
         .find(|e| e.msg == "about to trap")
         .unwrap_or_else(|| panic!("{lines:?}"));
     assert_eq!(line.level, jokerd::logs::LogLevel::Warn);
+    assert_eq!(
+        line.fields,
+        vec![("ticks".to_owned(), "11".to_owned())],
+        "{line:?}"
+    );
 }

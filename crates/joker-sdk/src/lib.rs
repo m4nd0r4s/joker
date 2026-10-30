@@ -22,6 +22,7 @@ extern crate std;
 
 mod error;
 mod io;
+pub mod log;
 mod runtime;
 mod time;
 mod value;
@@ -37,6 +38,7 @@ pub use value::{
 
 /// What an app file imports: `use joker::prelude::*;`.
 pub mod prelude {
+    pub use crate::log;
     pub use crate::{
         App, ClampKind, ClockQuality, CycleInput, CycleIo, CycleOutput, Duration, DurationExt,
         Error, Input, Instant, Level, MonoNanos, Output, Param, ParamHandle, PortValue, Quality,

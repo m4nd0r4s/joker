@@ -82,3 +82,46 @@ unsafe impl critical_section::Impl for SingleThread {
 
     unsafe fn release(_restore: critical_section::RawRestoreState) {}
 }
+
+/// The most fields [`log_record`] sends with one record.
+pub const MAX_LOG_FIELDS: usize = 8;
+
+/// Writes one record with `joker:runtime/log.log` without allocating, so a
+/// cycle task can log (ref/04 §4.11, §4.13). The bindings `wit-bindgen`
+/// generates allocate a buffer to lower a non-empty `fields` list; this
+/// calls the import with the canonical ABI directly, the list being a table
+/// of (pointer, length, pointer, length) entries on the stack. At most
+/// [`MAX_LOG_FIELDS`] fields are sent. Outside Wasm it does nothing.
+pub fn log_record(level: joker::runtime::log::Level, msg: &str, fields: &[(&str, &str)]) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        #[link(wasm_import_module = "joker:runtime/log@0.1.0")]
+        unsafe extern "C" {
+            #[link_name = "log"]
+            fn host_log(level: i32, msg: *const u8, msg_len: usize, fields: *const u32, len: usize);
+        }
+        let mut table = [[0u32; 4]; MAX_LOG_FIELDS];
+        let n = fields.len().min(MAX_LOG_FIELDS);
+        for (entry, (name, value)) in table.iter_mut().zip(fields.iter().take(n)) {
+            *entry = [
+                name.as_ptr() as u32,
+                name.len() as u32,
+                value.as_ptr() as u32,
+                value.len() as u32,
+            ];
+        }
+        unsafe {
+            host_log(
+                level as i32,
+                msg.as_ptr(),
+                msg.len(),
+                table.as_ptr().cast::<u32>(),
+                n,
+            )
+        };
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = (level, msg, fields);
+    }
+}
