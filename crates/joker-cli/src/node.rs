@@ -328,6 +328,48 @@ impl Node {
     /// its `.cwasm`; per profile or board, its file by its path in the
     /// project (`profiles/acme/pcs@1.profile.toml`), so the generation
     /// carries them (ref/10 §2.6.2).
+    /// Refuses, before anything is sent, an app whose WIT world the node
+    /// does not serve (ref/04 §2.8, ADR 0098): the node's `GET /v1/version`
+    /// says which world it serves, and the window decides. A node without
+    /// `GET /v1/version` is left to refuse at load.
+    fn check_worlds(&self, built: &[crate::apps::Built]) -> Result<(), Failure> {
+        let r = self.client.get("/v1/version")?;
+        if !r.ok() {
+            return Ok(());
+        }
+        let v = r.json();
+        let Some(served_text) = v["wit"]["current"].as_str() else {
+            return Ok(());
+        };
+        let Some(served) = joker_host::meta::parse_world(served_text) else {
+            return Ok(());
+        };
+        for app in built {
+            let Ok(meta) = joker_host::meta::read(&app.wasm) else {
+                continue;
+            };
+            let Some(world) = joker_host::meta::parse_world(&meta.world) else {
+                continue;
+            };
+            if let Err(code) = joker_host::component::window(served, world) {
+                return Err(Failure {
+                    message: format!(
+                        "error[{code}]: app `{}` is built for {}, and the node serves {served_text}: {}",
+                        app.name,
+                        meta.world,
+                        if code == "J-E0001" {
+                            "upgrade the node, or build the app with an older joker-sdk (jk build --world)"
+                        } else {
+                            "rebuild the app with a joker-sdk inside the node's window"
+                        }
+                    ),
+                    exit: 2,
+                });
+            }
+        }
+        Ok(())
+    }
+
     fn upload_artifacts(&self, entry: &Entry) -> Result<Vec<Value>, Failure> {
         let root = entry
             .manifest
@@ -346,6 +388,7 @@ impl Node {
                 crate::apps::build_all(entry, None).map_err(Failure::usage)?
             }
         };
+        self.check_worlds(&built)?;
         let mut files: Vec<(String, &'static str, &[u8])> = Vec::new();
         for app in &built {
             let name = format!("{}{}", jokerd::apps::APP_PREFIX, app.name);

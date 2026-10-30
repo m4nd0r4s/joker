@@ -79,6 +79,9 @@ enum Command {
         /// A board (`rpi3b-plus@1`) or a target triple (`aarch64-unknown-linux-gnu`).
         #[arg(long)]
         target: Option<String>,
+        /// The WIT world to build for (`joker:runtime@0.1.0`).
+        #[arg(long)]
+        world: Option<String>,
     },
     /// Send the manifest to the node as a new generation and activate it.
     Apply {
@@ -617,7 +620,9 @@ fn run(cli: Cli) -> Result<u8, Failure> {
             ConfigCommand::Show { origin } => local::config_show(origin),
         },
         Command::Dev { socket } => dev::run(&entry()?, &socket),
-        Command::Build { target } => apps::build_command(&entry()?, target.as_deref(), cli.json),
+        Command::Build { target, world } => {
+            apps::build_command(&entry()?, target.as_deref(), world.as_deref(), cli.json)
+        }
         Command::Apply {
             confirm,
             dry_run,

@@ -251,11 +251,56 @@ pub fn build_all(entry: &Entry, triple: Option<&str>) -> Result<Vec<Built>, Stri
 
 /// `jk build [--target <board|triple>]`: one line per app with the digest
 /// of its component and, with a target, where its `.cwasm` is.
+/// The world `jk build` generates: that of the `joker-sdk` it builds
+/// with (ref/04 §4.1).
+pub const SDK_WORLD: &str = joker_host::WORLD;
+
+/// `--world joker:runtime@<v>` of `jk build` (ADR 0098): the SDK generates
+/// one world, so any other is refused with how to get it; a world newer
+/// than `[project] joker` (`joker`, `"1.0"`) only warns.
+pub fn check_world(world: Option<&str>, joker: Option<&str>) -> Result<Option<String>, String> {
+    if let Some(w) = world
+        && w != SDK_WORLD
+    {
+        return Err(format!(
+            "--world {w}: this joker-sdk generates {SDK_WORLD} only; pin the joker-sdk minor that generates {w} (ref/04 §4.1)"
+        ));
+    }
+    let generated = joker_host::meta::parse_world(SDK_WORLD).unwrap_or_default();
+    let project = joker.and_then(|j| {
+        let (major, minor) = j.split_once('.')?;
+        Some((major.parse::<u64>().ok()?, minor.parse::<u64>().ok()?))
+    });
+    Ok(project
+        .filter(|p| (generated.0, generated.1) > *p)
+        .map(|(major, minor)| {
+            format!(
+                "warning: the apps are built for {SDK_WORLD}, newer than `[project] joker = \"{major}.{minor}\"`: a {major}.{minor} node refuses them (J-E0001)"
+            )
+        }))
+}
+
+fn project_joker(entry: &Entry) -> Option<String> {
+    let text = std::fs::read_to_string(&entry.manifest).ok()?;
+    let table: toml::Table = text.parse().ok()?;
+    table
+        .get("project")?
+        .get("joker")?
+        .as_str()
+        .map(str::to_owned)
+}
+
 pub fn build_command(
     entry: &Entry,
     target: Option<&str>,
+    world: Option<&str>,
     json: bool,
 ) -> Result<u8, crate::Failure> {
+    if let Some(warning) =
+        check_world(world, project_joker(entry).as_deref()).map_err(crate::Failure::usage)?
+    {
+        eprintln!("{warning}");
+    }
     let triple = target
         .map(|t| target_triple(entry, t))
         .transpose()
@@ -296,6 +341,18 @@ pub fn build_command(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_the_sdk_world_is_built_and_a_newer_one_warns() {
+        assert_eq!(check_world(Some(SDK_WORLD), Some("1.0")), Ok(None));
+        assert!(check_world(Some("joker:runtime@0.0.1"), None).is_err());
+        assert_eq!(check_world(None, None), Ok(None));
+        assert!(
+            check_world(None, Some("0.0"))
+                .unwrap()
+                .is_some_and(|w| w.contains("J-E0001"))
+        );
+    }
 
     fn entry(dir: &Path) -> Entry {
         Entry {
