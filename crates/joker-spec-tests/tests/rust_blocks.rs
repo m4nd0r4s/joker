@@ -211,6 +211,41 @@ fn strip_comments(text: &str) -> String {
     line.replace_all(&text, "").into_owned()
 }
 
+/// The text without the items gated on an `unstable-*` feature: an
+/// attribute and the item after it, up to its `;` or its closing brace.
+/// What a reserved item uses is reserved with it.
+fn without_unstable(text: &str) -> String {
+    let gate = Regex::new(r#"\#\[cfg\(feature\s*=\s*"unstable-[^"]*"\)\]"#).unwrap();
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(m) = gate.find(rest) {
+        out.push_str(&rest[..m.start()]);
+        let item = &rest[m.end()..];
+        let mut depth = 0usize;
+        let mut end = item.len();
+        for (i, c) in item.char_indices() {
+            match c {
+                '{' => depth += 1,
+                '}' if depth > 0 => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = i + 1;
+                        break;
+                    }
+                }
+                ';' if depth == 0 => {
+                    end = i + 1;
+                    break;
+                }
+                _ => {}
+            }
+        }
+        rest = &item[end..];
+    }
+    out.push_str(rest);
+    out
+}
+
 /// What a block declares (`Type`, `Type::member`) and what it uses from the
 /// SDK (`joker::item`).
 fn declared(text: &str) -> (BTreeSet<String>, BTreeSet<String>) {
@@ -296,9 +331,10 @@ fn declared(text: &str) -> (BTreeSet<String>, BTreeSet<String>) {
             stack.pop();
         }
     }
+    let stable = without_unstable(&text);
     let used = Regex::new(r"\b(joker|joker_client|joker_hal|joker_test)::(\w+)")
         .unwrap()
-        .captures_iter(&text)
+        .captures_iter(&stable)
         .map(|c| format!("{}::{}", &c[1], &c[2]))
         .collect();
     if text.contains("#[joker::") || text.contains("fn main(") {
@@ -327,6 +363,12 @@ fn the_reader_sees_declarations_and_uses() {
     .collect();
     assert_eq!(decl, expected);
     assert!(used.is_empty());
+    let (decl, used) = declared(
+        "#[cfg(feature = \"unstable-z\")]\npub const E: joker_hal::Entry = joker_hal::entry! { a: B };\n\
+         pub const F: joker_hal::Stable = 1;\n",
+    );
+    assert_eq!(decl, ["F".to_owned()].into_iter().collect());
+    assert_eq!(used, ["joker_hal::Stable".to_owned()].into_iter().collect());
     let (decl, used) = declared("#[joker::cycle(period = \"1s\")]\npub fn control() {}\n");
     assert!(decl.is_empty());
     assert_eq!(used, ["joker::cycle".to_owned()].into_iter().collect());

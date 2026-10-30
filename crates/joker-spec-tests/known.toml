@@ -448,24 +448,6 @@ items = [
   "joker::task",
 ]
 
-[divergence.rust."ref/06 §3"]
-issue = "AUR-430"
-items = [
-  "AdcRead",
-  "AdcRead::bits",
-  "AdcRead::read",
-  "CanFrames",
-  "CanFrames::receive",
-  "CanFrames::transmit",
-  "Cx::locked",
-  "Cx::spawn_blocking",
-  "MODBUS_TCP",
-  "Scanner",
-  "Scanner::scan",
-  "joker_hal::DriverEntry",
-  "joker_hal::driver_entry",
-]
-
 [divergence.rust."ref/08 §2"]
 issue = "AUR-315"
 items = [
