@@ -18,38 +18,51 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use joker_manifest::Context;
-use joker_manifest::context::Direction;
-use joker_manifest::context::{
-    BoardInfo, ClassInfo, DriverInfo, ProfileInfo, SignalInfo, SignalType,
-};
+use joker_manifest::context::{BoardInfo, ClassInfo, DriverInfo, ProfileInfo};
+#[cfg(any(feature = "drv-modbus", feature = "drv-i2c"))]
 use joker_manifest::model::BusKind;
-use joker_units::Unit;
 
 use crate::task::TaskProvider;
 
-fn signal(ty: SignalType, direction: Direction, unit: Option<&str>) -> SignalInfo {
-    let info = SignalInfo::new(ty, direction);
-    match unit.and_then(|u| Unit::parse(u).ok()) {
+#[cfg(feature = "drv-sysfs")]
+fn signal(
+    ty: joker_manifest::context::SignalType,
+    direction: joker_manifest::context::Direction,
+    unit: Option<&str>,
+) -> joker_manifest::context::SignalInfo {
+    let info = joker_manifest::context::SignalInfo::new(ty, direction);
+    match unit.and_then(|u| joker_units::Unit::parse(u).ok()) {
         Some(u) => info.with_unit(u),
         None => info,
     }
 }
 
-/// The M0 drivers.
+/// The drivers of this build: `sim`, and each driver whose `drv-*`
+/// feature is on (ref/06 §3.8, ADR 0099). A device of a driver outside the
+/// build is `J0850`.
 pub fn drivers() -> BTreeMap<String, DriverInfo> {
     let mut d = BTreeMap::new();
     d.insert("sim".to_owned(), DriverInfo::default());
+    #[cfg(feature = "drv-sysfs")]
     d.insert(
         "sysfs".to_owned(),
         DriverInfo {
             address: [
                 (
                     "led".to_owned(),
-                    Some(signal(SignalType::Bool, Direction::Output, None)),
+                    Some(signal(
+                        joker_manifest::context::SignalType::Bool,
+                        joker_manifest::context::Direction::Output,
+                        None,
+                    )),
                 ),
                 (
                     "thermal".to_owned(),
-                    Some(signal(SignalType::Float, Direction::Input, Some("°C"))),
+                    Some(signal(
+                        joker_manifest::context::SignalType::Float,
+                        joker_manifest::context::Direction::Input,
+                        Some("°C"),
+                    )),
                 ),
             ]
             .into_iter()
@@ -57,6 +70,7 @@ pub fn drivers() -> BTreeMap<String, DriverInfo> {
             ..DriverInfo::default()
         },
     );
+    #[cfg(feature = "drv-modbus")]
     d.insert(
         "modbus-rtu".to_owned(),
         DriverInfo {
@@ -67,6 +81,7 @@ pub fn drivers() -> BTreeMap<String, DriverInfo> {
             ..DriverInfo::default()
         },
     );
+    #[cfg(feature = "drv-modbus")]
     d.insert(
         "modbus-tcp".to_owned(),
         DriverInfo {
@@ -79,6 +94,7 @@ pub fn drivers() -> BTreeMap<String, DriverInfo> {
             ..DriverInfo::default()
         },
     );
+    #[cfg(feature = "drv-gpio")]
     d.insert(
         "gpio".to_owned(),
         DriverInfo {
@@ -98,6 +114,7 @@ pub fn drivers() -> BTreeMap<String, DriverInfo> {
             ..DriverInfo::default()
         },
     );
+    #[cfg(feature = "drv-revpi")]
     d.insert(
         "revpi".to_owned(),
         DriverInfo {
@@ -106,6 +123,7 @@ pub fn drivers() -> BTreeMap<String, DriverInfo> {
             ..DriverInfo::default()
         },
     );
+    #[cfg(feature = "drv-i2c")]
     d.insert(
         "i2c".to_owned(),
         DriverInfo {
@@ -208,6 +226,7 @@ pub fn context(tasks: &dyn TaskProvider) -> (Context, Vec<String>) {
     let (profiles, errors) = profiles();
     let context = Context {
         drivers: drivers(),
+        absent_drivers: absent_drivers().into_iter().map(str::to_owned).collect(),
         profiles,
         boards: boards(),
         apps: tasks.interfaces(),
@@ -215,6 +234,23 @@ pub fn context(tasks: &dyn TaskProvider) -> (Context, Vec<String>) {
         ..Context::default()
     };
     (context, errors)
+}
+
+/// The tier N drivers of this runtime that this build leaves out by its
+/// `drv-*` Cargo features (ref/06 §3.8): a device of one is `J0850`.
+pub fn absent_drivers() -> Vec<&'static str> {
+    [
+        ("sysfs", cfg!(feature = "drv-sysfs")),
+        ("modbus-rtu", cfg!(feature = "drv-modbus")),
+        ("modbus-tcp", cfg!(feature = "drv-modbus")),
+        ("gpio", cfg!(feature = "drv-gpio")),
+        ("i2c", cfg!(feature = "drv-i2c")),
+        ("revpi", cfg!(feature = "drv-revpi")),
+    ]
+    .into_iter()
+    .filter(|(_, built)| !built)
+    .map(|(name, _)| name)
+    .collect()
 }
 
 /// The profile and board files of a project or of a generation, by their

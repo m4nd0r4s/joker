@@ -8,6 +8,15 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[features]
+default = ["drv-sysfs", "drv-modbus", "drv-gpio", "drv-i2c", "drv-revpi"]
+minimal = ["drv-sysfs", "drv-modbus"]
+drv-sysfs = ["dep:joker-driver-sysfs"]
+drv-modbus = ["dep:joker-driver-modbus"]
+drv-gpio = ["dep:joker-driver-gpio"]
+drv-i2c = ["dep:joker-driver-i2c"]
+drv-revpi = ["dep:joker-driver-revpi"]
+
 [dependencies]
 joker-core = { workspace = true, features = ["alloc"] }
 joker-expr = { workspace = true, features = ["alloc"] }
@@ -15,11 +24,11 @@ joker-units = { workspace = true, features = ["alloc"] }
 joker-manifest = { path = "../joker-manifest" }
 joker-jkc = { path = "../joker-jkc" }
 joker-hal = { path = "../joker-hal", features = ["std", "plan"] }
-joker-driver-sysfs = { path = "../joker-drivers/sysfs" }
-joker-driver-modbus = { path = "../joker-drivers/modbus" }
-joker-driver-gpio = { path = "../joker-drivers/gpio" }
-joker-driver-i2c = { path = "../joker-drivers/i2c" }
-joker-driver-revpi = { path = "../joker-drivers/revpi" }
+joker-driver-sysfs = { path = "../joker-drivers/sysfs", optional = true }
+joker-driver-modbus = { path = "../joker-drivers/modbus", optional = true }
+joker-driver-gpio = { path = "../joker-drivers/gpio", optional = true }
+joker-driver-i2c = { path = "../joker-drivers/i2c", optional = true }
+joker-driver-revpi = { path = "../joker-drivers/revpi", optional = true }
 joker-api = { path = "../joker-api" }
 joker-store = { path = "../joker-store" }
 joker-host.workspace = true
@@ -40,6 +49,11 @@ nix = { version = "0.31", default-features = false, features = ["fs", "mman", "s
 thread-priority = "3.1.1"
 
 [dev-dependencies]
+joker-driver-sysfs = { path = "../joker-drivers/sysfs" }
+joker-driver-modbus = { path = "../joker-drivers/modbus" }
+joker-driver-gpio = { path = "../joker-drivers/gpio" }
+joker-driver-i2c = { path = "../joker-drivers/i2c" }
+joker-driver-revpi = { path = "../joker-drivers/revpi" }
 assert_no_alloc = { version = "1.1.2", default-features = false, features = ["warn_debug", "warn_release"] }
 jsonschema = { version = "0.33", default-features = false }
 yaml-rust2 = "0.10"

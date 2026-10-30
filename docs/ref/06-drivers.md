@@ -955,7 +955,7 @@ pub const MODBUS_TCP: joker_hal::DriverEntry = joker_hal::driver_entry! {
 
 | Cargo feature | Name in `jk runtime build --features` | Drivers |
 |---|---|---|
-| `drv-sim` | `sim` | `sim` (always present in `dev`) |
+| — | `sim` | `sim`: always built in, no feature (ADR 0100) |
 | `drv-modbus` | `modbus` | `modbus-tcp`, `modbus-rtu`, `sunspec` |
 | `drv-gpio`, `drv-i2c`, `drv-spi` | `gpio`, `i2c`, `spi` | `spi`: 1.0.x |
 | `drv-sysfs` | `sysfs` | LEDs and temperatures from `/sys/class` (05 §10) |
@@ -968,7 +968,9 @@ pub const MODBUS_TCP: joker_hal::DriverEntry = joker_hal::driver_entry! {
 | `drivers-wasm` | `wasm` | tier W host (§4); 1.2 |
 | `drivers-jdp` | `jdp` | tier X host (§5); 1.2 |
 
-- The versions in the last column are those of the 1.0 cut (document 26, §5; ADR 0035); a feature of a later version does not exist in a 1.0 build. The default build (`default`, the "full" one of 01 §21) includes `sim`, `sysfs`, `modbus`, `gpio`, `i2c`, `mqtt`, `joker-link` in 1.0, and adds `spi` and `revpi` when they ship (1.0.x) and `wasm` and `jdp` in 1.2. The `minimal` build (09 attack 12) only `sim`, `sysfs`, `modbus`, `mqtt`. Both have a binary size target, measured in CI (01 §21).
+- The versions in the last column are those of the 1.0 cut (document 26, §5; ADR 0035); a feature of a later version does not exist in a 1.0 build, and a feature exists in `jokerd` from the release that ships its driver. The default build (`default`, the "full" one of 01 §21) includes `sim`, `sysfs`, `modbus`, `gpio`, `i2c`, `mqtt`, `joker-link` in 1.0, and adds `spi` and `revpi` when they ship (1.0.x; `revpi` is in, ADR 0078) and `wasm` and `jdp` in 1.2. The `minimal` build (09 attack 12) only `sim`, `sysfs`, `modbus`, `mqtt`; it is the `jokerd` feature `minimal` with the default features off. Both have a binary size target, measured in CI (01 §21).
+- **Today** (ADR 0100): `jokerd` has `drv-sysfs`, `drv-modbus`, `drv-gpio`, `drv-i2c` and `drv-revpi`, all in `default`, and `minimal` = `drv-sysfs` + `drv-modbus`; `drv-mqtt` and `drv-joker-link` join both when their drivers ship. A feature turns on the driver crate, its catalog entry and its arm of the device dispatch.
+- **Wasm backends** (ADR 0100). `jokerd` carries only the Wasm backend of its own architecture: Cranelift for x86_64, aarch64 and riscv64, Pulley for 32-bit Arm (`compile_target` of `joker-host`). Only `jk`, which compiles AOT for other nodes, carries every backend (`joker-host` feature `all-arch`); the engine identity of ADR 0052 does not depend on it.
 - `jk runtime build --features ethercat,bacnet-ip` accepts driver names and maps them to the features; an unknown name is a usage error (exit code 1).
 - The binary embeds the **driver manifest** (name, version, protocols, capabilities, descriptor digest of each entry), exposed in `GET /v1/runtime/drivers` (ref/09) and reported to the Deck in the report (ref/10). The lock does not repeat it: N drivers are pinned by the runtime version (`runtime` of the lock), and on an MCU by the `features` of `[mcu.<d>]` (ref/02 §2.1.10). `jk check --node` and `jk apply` reject a device whose N driver is not in the node's runtime (`J0850`).
 - On Joker Micro, `jk build --target mcu` generates a static `enum` with the requested drivers (dispatch without `dyn`), from the same entries.

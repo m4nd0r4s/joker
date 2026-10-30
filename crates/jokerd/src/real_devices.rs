@@ -8,29 +8,66 @@
 //! and its signals read `bad(not_connected)`.
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(any(feature = "drv-gpio", feature = "drv-i2c"))]
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use joker_core::{Clock, ClockQuality, QualityReason};
+#[cfg(feature = "drv-gpio")]
 use joker_driver_gpio::{GpioDriver, GpioPlanner};
+#[cfg(feature = "drv-i2c")]
 use joker_driver_i2c::{I2cDriver, I2cPlanner};
+#[cfg(feature = "drv-modbus")]
 use joker_driver_modbus::{ModbusPlanner, ModbusRtu, ModbusTcp, ModbusTcpPlanner};
+#[cfg(feature = "drv-revpi")]
 use joker_driver_revpi::{RevPiDriver, RevPiPlanner};
+#[cfg(feature = "drv-sysfs")]
 use joker_driver_sysfs::{SysfsDriver, SysfsPlanner};
+#[cfg(any(feature = "drv-sysfs", feature = "drv-revpi"))]
 use joker_hal::link::DevicePaths;
-use joker_hal::std_host::{
-    ClockQualityCell, LinuxGpio, LinuxI2c, LogSink, SerialConfig, TokioHost, TokioSerial,
-    TokioTcpConnector,
-};
-use joker_hal::{Cbor, Direction, Driver, GpioChip, I2cBus, Link, OpenArgs, Planner};
+#[cfg(feature = "drv-gpio")]
+use joker_hal::std_host::LinuxGpio;
+use joker_hal::std_host::{ClockQualityCell, LinuxI2c, LogSink, TokioHost};
+#[cfg(feature = "drv-modbus")]
+use joker_hal::std_host::{SerialConfig, TokioSerial, TokioTcpConnector};
+use joker_hal::{Cbor, I2cBus};
+#[cfg(feature = "drv-gpio")]
+use joker_hal::{Direction, GpioChip};
+#[cfg(any(
+    feature = "drv-sysfs",
+    feature = "drv-modbus",
+    feature = "drv-gpio",
+    feature = "drv-i2c",
+    feature = "drv-revpi"
+))]
+use joker_hal::{Driver, Link, OpenArgs, Planner};
 use tokio::sync::watch;
 
+#[cfg(any(
+    feature = "drv-sysfs",
+    feature = "drv-modbus",
+    feature = "drv-gpio",
+    feature = "drv-i2c",
+    feature = "drv-revpi"
+))]
 use crate::bridge::{DevicePlan, owned_request};
 use crate::devices::{DeviceSet, Devices};
-use crate::drivers::{ActionCall, mark_bad, point_targets, run_driver};
+#[cfg(any(
+    feature = "drv-sysfs",
+    feature = "drv-modbus",
+    feature = "drv-gpio",
+    feature = "drv-i2c",
+    feature = "drv-revpi"
+))]
+use crate::drivers::run_driver;
+use crate::drivers::{ActionCall, mark_bad, point_targets};
 use crate::pacer::Monotonic;
 use crate::plan::Plan;
 use crate::shared::Shared;
+
+/// Where the `sysfs` driver finds `/sys` on a node.
+pub const SYSFS_ROOT: &str = "/sys";
 
 /// The default Modbus TCP port (ref/01 appendix A).
 pub const MODBUS_TCP_PORT: u16 = 502;
@@ -102,6 +139,7 @@ pub fn with_line(addr: &[u8], offset: u32) -> Result<Vec<u8>, String> {
 
 /// `device` with its gpio chip resolved to a chardev and every named line
 /// to its offset on that chip.
+#[cfg(feature = "drv-gpio")]
 fn resolve_gpio(plan: &Plan, mut device: DevicePlan) -> Result<(PathBuf, DevicePlan), String> {
     let board = plan.board_gpio.as_ref();
     let named = joker_driver_gpio::plan::chip_id(Cbor::new(&device.config))
@@ -172,6 +210,7 @@ pub fn modbus_tcp_address(config: &[u8]) -> Result<String, String> {
     Ok(format!("{host}:{port}"))
 }
 
+#[cfg(feature = "drv-sysfs")]
 #[allow(
     clippy::too_many_arguments,
     reason = "each parameter is a distinct, independently-sourced piece of one device's dispatch (plan, index, shared state, clock, stop signal, sysfs root, action channel); a wrapper struct would only rename this list, not shrink it, matching run_driver's own allow"
@@ -230,6 +269,7 @@ async fn run_sysfs(
     .await;
 }
 
+#[cfg(feature = "drv-modbus")]
 async fn run_modbus_rtu(
     device: DevicePlan,
     plan: Arc<Plan>,
@@ -293,6 +333,7 @@ async fn run_modbus_rtu(
     .await;
 }
 
+#[cfg(feature = "drv-modbus")]
 async fn run_modbus_tcp(
     device: DevicePlan,
     plan: Arc<Plan>,
@@ -339,8 +380,10 @@ async fn run_modbus_tcp(
 
 /// Where the `revpi` driver finds piControl: `/dev`, granting only
 /// `piControl0` (ADR 0078).
+#[cfg(feature = "drv-revpi")]
 pub const REVPI_DEV: &str = "/dev";
 
+#[cfg(feature = "drv-revpi")]
 async fn run_revpi(
     device: DevicePlan,
     plan: Arc<Plan>,
@@ -385,6 +428,7 @@ async fn run_revpi(
 /// (AGENTS.md invariant 5). A line has no state to hand back to, so
 /// `safe = "relinquish"` and an output without an envelope refuse the
 /// device instead of starting the line at an undeclared level.
+#[cfg(feature = "drv-gpio")]
 fn gpio_safe_level(plan: &Plan, path: &str) -> Result<bool, String> {
     let output = plan
         .outputs
@@ -395,6 +439,7 @@ fn gpio_safe_level(plan: &Plan, path: &str) -> Result<bool, String> {
 }
 
 /// A gpio output's `safe` as a logical level; see [`gpio_safe_level`].
+#[cfg(feature = "drv-gpio")]
 fn gpio_safe(safe: joker_core::SafeValue, path: &str) -> Result<bool, String> {
     match safe {
         joker_core::SafeValue::Value(0) => Ok(false),
@@ -408,6 +453,7 @@ fn gpio_safe(safe: joker_core::SafeValue, path: &str) -> Result<bool, String> {
     }
 }
 
+#[cfg(feature = "drv-gpio")]
 #[allow(
     clippy::too_many_arguments,
     reason = "each parameter is a distinct, independently-sourced piece of one device's dispatch; see run_sysfs's own allow"
@@ -518,6 +564,7 @@ pub fn linux_i2c() -> I2cOpener {
 }
 
 /// The `dev` of an `i2c` bus (ref/01 §5.6), from its CBOR parameters.
+#[cfg(feature = "drv-i2c")]
 fn i2c_dev(bus_params: &[u8]) -> Result<PathBuf, String> {
     Cbor::new(bus_params)
         .get("dev")
@@ -528,6 +575,7 @@ fn i2c_dev(bus_params: &[u8]) -> Result<PathBuf, String> {
         .ok_or_else(|| "the device's `i2c` bus has no `dev`".to_owned())
 }
 
+#[cfg(feature = "drv-i2c")]
 #[allow(
     clippy::too_many_arguments,
     reason = "each parameter is a distinct, independently-sourced piece of one device's dispatch; see run_sysfs's own allow"
@@ -610,6 +658,13 @@ fn stopped(
 /// its `open`) does not run: the failure is reported, the link is
 /// `stopped`, and every read point of the device turns
 /// `bad(config_error)`, instead of keeping the initial value silently.
+#[cfg(any(
+    feature = "drv-sysfs",
+    feature = "drv-modbus",
+    feature = "drv-gpio",
+    feature = "drv-i2c",
+    feature = "drv-revpi"
+))]
 fn setup_failed(
     shared: &Shared,
     plan: &Plan,
@@ -634,6 +689,16 @@ const ACTION_CHANNEL_CAPACITY: usize = crate::actions::QUEUE_DEPTH;
 /// Every real device as its real driver, on a tokio runtime.
 #[derive(Clone)]
 pub struct RealDevices {
+    #[cfg_attr(
+        not(any(
+            feature = "drv-sysfs",
+            feature = "drv-modbus",
+            feature = "drv-gpio",
+            feature = "drv-i2c",
+            feature = "drv-revpi"
+        )),
+        expect(dead_code, reason = "a build without drivers spawns no device task")
+    )]
     handle: tokio::runtime::Handle,
     sysfs_root: Arc<str>,
     clock: Arc<ClockQualityCell>,
@@ -653,7 +718,7 @@ impl std::fmt::Debug for RealDevices {
 impl RealDevices {
     /// Devices spawned on `handle`, with `sysfs`'s root at `/sys`.
     pub fn new(handle: tokio::runtime::Handle) -> Self {
-        Self::with_sysfs_root(handle, joker_driver_sysfs::SYSFS_ROOT)
+        Self::with_sysfs_root(handle, SYSFS_ROOT)
     }
 
     /// The same devices, stamping their instants with the quality
@@ -754,6 +819,7 @@ impl Devices for RealDevices {
             let name = device.name.clone();
             let (action_tx, action_rx) = tokio::sync::mpsc::channel(ACTION_CHANNEL_CAPACITY);
             let dispatched = match device.driver.as_str() {
+                #[cfg(feature = "drv-sysfs")]
                 "sysfs" => {
                     let root = Arc::clone(&self.sysfs_root);
                     self.handle.spawn(run_sysfs(
@@ -761,28 +827,33 @@ impl Devices for RealDevices {
                     ));
                     true
                 }
+                #[cfg(feature = "drv-modbus")]
                 "modbus-rtu" => {
                     self.handle.spawn(run_modbus_rtu(
                         device, plan, i, shared, host, stop, action_rx,
                     ));
                     true
                 }
+                #[cfg(feature = "drv-modbus")]
                 "modbus-tcp" => {
                     self.handle.spawn(run_modbus_tcp(
                         device, plan, i, shared, host, stop, action_rx,
                     ));
                     true
                 }
+                #[cfg(feature = "drv-gpio")]
                 "gpio" => {
                     self.handle
                         .spawn(run_gpio(device, plan, i, shared, host, stop, action_rx));
                     true
                 }
+                #[cfg(feature = "drv-revpi")]
                 "revpi" => {
                     self.handle
                         .spawn(run_revpi(device, plan, i, shared, host, stop, action_rx));
                     true
                 }
+                #[cfg(feature = "drv-i2c")]
                 "i2c" => {
                     let open = Arc::clone(&self.i2c);
                     self.handle.spawn(run_i2c(
@@ -796,6 +867,7 @@ impl Devices for RealDevices {
                         device.name
                     );
                     stopped(&shared, &plan, i, &host, QualityReason::NotConnected);
+                    drop((stop, action_rx));
                     false
                 }
             };
@@ -807,7 +879,7 @@ impl Devices for RealDevices {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "drv-gpio"))]
 mod tests {
     use super::gpio_safe;
     use joker_core::SafeValue;
