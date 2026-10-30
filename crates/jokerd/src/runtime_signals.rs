@@ -139,6 +139,7 @@ pub fn dropped(shared: &Shared, logs: Option<&crate::logs::LogRing>) -> Vec<(&'s
         ("trip_requests", shared.trip_requests_dropped.get()),
         ("confirmations", shared.confirmations_dropped.get()),
         ("write_acks", shared.write_acks_dropped.get()),
+        ("causes", shared.causes_dropped.get()),
     ];
     if let Some(logs) = logs {
         out.push(("logs", logs.dropped()));

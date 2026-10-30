@@ -73,6 +73,9 @@ fn shared(bindings: Vec<joker_hal::OutputBinding>, boxes: Vec<CommitBox>) -> Sha
         reset_results_dropped: Default::default(),
         decisions: crossbeam_queue::ArrayQueue::new(1),
         decisions_dropped: Default::default(),
+        causes: crossbeam_queue::ArrayQueue::new(jokerd::shared::CAUSAL_CAPACITY),
+        causes_dropped: Default::default(),
+        causal_ids: Default::default(),
         results: crossbeam_queue::ArrayQueue::new(1),
         results_dropped: Default::default(),
         trace_free: crossbeam_queue::ArrayQueue::new(1),
@@ -259,8 +262,8 @@ fn a_queued_write_ack_becomes_a_decision_log_entry_with_its_code() {
 
     let path = dir.path().join("decisions.jsonl");
     let log = Arc::new(std::sync::Mutex::new(DecisionLog::open(&path).unwrap()));
-    let mut reported = 0;
-    drain(&plan, &shared, &log, 3, 0, &mut reported).unwrap();
+    let mut state = jokerd::decisions::DrainState::default();
+    drain(&plan, &shared, &log, 3, 0, &mut state).unwrap();
     jokerd::decisions::lock(&log).sync().unwrap();
 
     let entries = DecisionLog::read_all(&path).unwrap();
