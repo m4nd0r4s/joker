@@ -8,6 +8,9 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[features]
+all-arch = ["wasmtime/all-arch"]
+
 [dependencies]
 joker-core = { workspace = true }
 wasmtime = { workspace = true }
@@ -15,6 +18,12 @@ wasmtime-wasi = { workspace = true }
 wasmparser = { workspace = true }
 sha2 = { workspace = true }
 rand_core = { workspace = true }
+
+[target.'cfg(target_arch = "arm")'.dependencies]
+wasmtime = { workspace = true, features = ["pulley"] }
+
+[dev-dependencies]
+wasmtime = { workspace = true, features = ["all-arch"] }
 
 [lints.rust]
 unsafe_code = "deny"

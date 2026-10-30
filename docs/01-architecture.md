@@ -462,7 +462,7 @@ Own metrics, exposed as `joker.*` signals (therefore recorded, alarmable and sen
 
 **Other boards.** The rows that name no board are figures of the reference class, CM4 and CM5 with an aarch64 build. Other boards, such as the Pi 3 B+ of the M0 bench or a 32-bit build, publish their measured figures in the errata of the phase and are held to them as regressions, not to this table (ADR 0087).
 
-**Binary size in CI.** The two builds (`minimal` and full) are measured on every commit with `cargo bloat --release --crates` for `aarch64-unknown-linux-gnu`; a build above the table's limit makes CI fail, with the crates that grew the most. Raising a limit is an explicit decision, in the same commit that justifies it. The builds and their limits are `xtask/size-limits.toml`, and the gate is `cargo xtask size`, which measures the stripped binary. Until `jokerd` has the Cargo features of ref/06 §3.8 (AUR-432), only the full build exists, and the file lists only it; the `minimal` build joins the gate with its features.
+**Binary size in CI.** The two builds (`minimal` and full) are measured on every commit with `cargo bloat --profile dist --crates` for `aarch64-unknown-linux-gnu`; a build above the table's limit makes CI fail, with the crates that grew the most. Raising a limit is an explicit decision, in the same commit that justifies it. The builds and their limits are `xtask/size-limits.toml`, and the gate is `cargo xtask size`, which measures the stripped binary. `dist` is the Cargo profile `jokerd` ships with: `release` with fat LTO and one codegen unit (ADR 0100). The `minimal` build is `jokerd` with `--no-default-features --features minimal` (ref/06 §3.8).
 
 ---
 

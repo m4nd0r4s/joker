@@ -7,3 +7,11 @@ bin = "jokerd"
 features = []
 no_default_features = false
 limit_mb = 30
+
+[[build]]
+name = "minimal"
+package = "jokerd"
+bin = "jokerd"
+features = ["minimal"]
+no_default_features = true
+limit_mb = 20

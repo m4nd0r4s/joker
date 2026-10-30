@@ -71,7 +71,7 @@ tasks:
   size --target TRIPLE [--limits FILE] [--build NAME]... [--json FILE]
        [--compare BASELINE.json] [--top N]
       Measures each build of the limits file (default:
-      xtask/size-limits.toml) with `cargo bloat --release --crates`, strips
+      xtask/size-limits.toml) with `cargo bloat --profile dist --crates`, strips
       the binary and exits 1 when one is above its limit, listing the
       largest crates and, with --compare, those that grew the most
       (default top: 15).
