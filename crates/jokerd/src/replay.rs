@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use joker_core::alarm::{AlarmRuntime, Alarms};
 use joker_core::class::Classes;
 use joker_core::commit::{CommitSink, OutputResult, OutputState};
-use joker_core::image::{ImageStorage, MethodCall, ProcessImage, Proposal, Source};
+use joker_core::image::{ImageStorage, MethodCall, NO_TASK, ProcessImage, Proposal, Source};
 use joker_core::slot::SeqExtender;
 use joker_core::trace::{
     Header, Item, Items, PROPOSAL_FLAG_ASYNC, RESULT_LEN, States, Ticks, TraceResult,
@@ -352,7 +352,7 @@ pub fn replay(
             )
             .map_err(|e| format!("tick {}: {e:?}", t.index))?;
         for (writer, task) in &mut groups[g] {
-            let mut cx = TaskContext::new(image, &outputs, *writer);
+            let mut cx = TaskContext::new(image, &outputs, *writer, NO_TASK);
             let _ = task.run(&mut cx);
         }
         results.clear();

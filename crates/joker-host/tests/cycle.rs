@@ -127,3 +127,30 @@ fn the_outcomes_are_identical_on_every_architecture() {
 }
 
 const GOLDEN: u64 = 0xe331_b313_19bb_a4f6;
+
+#[test]
+fn the_ports_packed_for_a_task_are_its_causal_set() {
+    let (engine, app) = setup();
+    let mut bench = Bench::new();
+    bench
+        .image
+        .set_read_sets(common::leak(vec![0u64; 1]), 1)
+        .unwrap();
+    let mut instance = bench.instance(&engine, &app);
+    instance.set_causal_task(0);
+    let (report, log) = bench.tick(&mut instance, 0, Some(4.0), TASK_ECHO);
+    assert_eq!(report.status, CycleStatus::Ok);
+    assert_eq!(log.causes.len(), 3, "{:?}", log.causes);
+    let mut bound = vec![bench.x, bench.y, bench.nan, bench.r];
+    bound.sort();
+    assert!(log.causes.iter().all(|c| *c == bound), "{:?}", log.causes);
+}
+
+#[test]
+fn an_instance_without_a_task_number_keeps_no_causal_set() {
+    let (engine, app) = setup();
+    let mut bench = Bench::new();
+    let mut instance = bench.instance(&engine, &app);
+    let (_, log) = bench.tick(&mut instance, 0, Some(4.0), TASK_ECHO);
+    assert!(log.causes.is_empty());
+}
