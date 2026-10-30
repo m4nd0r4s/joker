@@ -220,6 +220,11 @@ pub trait Backend: Send + Sync + 'static {
     fn signal_trace(&self, _path: &str) -> Result<Reply> {
         Err(unavailable())
     }
+    /// `GET /v1/generations/{gen}/manifest` (ref/09 §5.13): the effective
+    /// manifest the generation was created with, as TOML text.
+    fn generation_manifest(&self, _selector: &str) -> Result<String> {
+        Err(unavailable())
+    }
     /// `GET /v1/jobs/{job}` (ref/09 §5.17).
     fn job(&self, _id: &str) -> Result<Reply> {
         Err(unavailable())

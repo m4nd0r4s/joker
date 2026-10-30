@@ -1038,6 +1038,24 @@ async fn trace_file(State(b): State<Shared>, UrlPath(id): UrlPath<String>) -> Re
     .await
 }
 
+async fn generation_manifest(
+    State(b): State<Shared>,
+    UrlPath(selector): UrlPath<String>,
+) -> Response {
+    let backend = Arc::clone(&b);
+    let result = tokio::task::spawn_blocking(move || backend.generation_manifest(&selector))
+        .await
+        .unwrap_or_else(|_| Err(Problem::new("J-E1000", 500, "the handler panicked")));
+    match result {
+        Ok(text) => {
+            let mut headers = base_headers(b.as_ref(), &request_id());
+            headers.insert("content-type", HeaderValue::from_static("application/toml"));
+            (StatusCode::OK, headers, text).into_response()
+        }
+        Err(p) => problem_response(b.as_ref(), &p),
+    }
+}
+
 async fn not_found(State(b): State<Shared>) -> Response {
     problem(b, Problem::new("J-E1005", 404, "no such endpoint")).await
 }
@@ -1111,6 +1129,7 @@ pub fn router_with(backend: Arc<dyn Backend>, limits: ws::Limits) -> Router {
         .route("/v1/generations", get(generations).post(create_generation))
         .route("/v1/generations/rollback", post(rollback))
         .route("/v1/generations/{gen}", get(generation))
+        .route("/v1/generations/{gen}/manifest", get(generation_manifest))
         .route("/v1/generations/{gen}/activate", post(activate))
         .route("/v1/generations/{gen}/confirm", post(confirm))
         .route("/v1/traces", get(traces).post(create_trace))

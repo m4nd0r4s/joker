@@ -2857,6 +2857,15 @@ impl Backend for Node {
         Ok(r)
     }
 
+    fn generation_manifest(&self, selector: &str) -> Result<String, Problem> {
+        let g = self.resolve_generation(selector)?;
+        let c = lock_controller(&self.controller);
+        c.store()
+            .content(g.number)
+            .map(|(manifest, _)| manifest)
+            .map_err(|e| Problem::new("J-E1000", 500, e.to_string()))
+    }
+
     fn activate(
         &self,
         who: &Principal,
