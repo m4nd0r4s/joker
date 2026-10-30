@@ -1,6 +1,6 @@
 # joker-driver-gpio
 
-Digital lines of a Linux `gpiochip` (chardev v1 ABI), tier N (docs/05 §10). v1, not v2: the v2 ABI needs Linux 5.10+, newer than the bench board's kernel (4.19).
+Digital lines of a Linux `gpiochip` (chardev v1 ABI), tier N (docs/05 §10). v1, not v2 (ADR 0093): the v2 ABI needs Linux 5.10+, newer than the bench board's kernel (4.19), and only interrupt-driven reads need it.
 
 Address keys (ref/03 §2.2.5): `line` (integer), `active_low` (bool),
 `bias` (`as-is` | `pull-up` | `pull-down` | `disabled`), `drive`
@@ -28,9 +28,12 @@ first, then the kernel's own line names (kernels before 5.x name none on
 the Raspberry Pi); an unknown name is `J0828`. The steps of an action
 reach a line by its offset only.
 
-Not yet supported: `edges`
-(interrupt-driven push reads), `timestamp` and `debounce`. A point
-declaring any of these is a manifest error, not a silent no-op.
+Not yet supported (ADR 0093): `edges` (interrupt-driven push reads) and
+`timestamp`, which `jk check` refuses with `J0807` on a manifest signal.
+A `debounce` on a manifest signal is the acquisition stage's (every line
+is read by poll) and never reaches this driver. In a point's address,
+from a profile of the `gpio` family, all three are `J0853`, not a silent
+no-op.
 
 Device config: `chip` (string: `gpiochip<N>`, a path, a label such as
 `pinctrl-bcm2835`, or `"auto"`, the default, which takes the `[target]`

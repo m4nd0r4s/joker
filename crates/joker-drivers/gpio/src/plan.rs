@@ -8,8 +8,11 @@
 //! `bias` and `drive` go to the host in each line's [`GpioLineConfig`]
 //! ([`Address::line_config`]), which requests them from the kernel, and
 //! `drive` on an input is a manifest error; this crate's own logic only
-//! inverts on `active_low`. `edges`, `timestamp` and `debounce` are a
-//! manifest error here (push/interrupt-driven reads are not implemented).
+//! inverts on `active_low`. Every line is read by poll over chardev v1
+//! (ADR 0093): `edges`, `timestamp` and `debounce` in an address are
+//! `J0853` here. A manifest refuses the first two at check time
+//! (`J0807`), and its `debounce` is the acquisition stage's, which never
+//! reaches the address.
 
 use std::collections::BTreeMap;
 use std::vec::Vec;
@@ -65,7 +68,8 @@ pub struct Address<'a> {
 
 impl<'a> Address<'a> {
     /// Reads `{ line, active_low?, bias?, drive? }`. `edges`, `timestamp`
-    /// and `debounce` are a manifest error (`J0821`): not implemented.
+    /// and `debounce` are refused (`J0853` in [`check_point`]): no line is
+    /// read by its edges in 1.0 (ADR 0093).
     pub fn parse(addr: Cbor<'a>) -> Result<Self, &'static str> {
         let mut line = None;
         let mut active_low = false;

@@ -870,6 +870,7 @@ pub fn device_plan(
                 .iter()
                 .filter(|(k, _)| {
                     !joker_manifest::profile::GENERIC_SIGNAL_KEYS.contains(&k.as_str())
+                        && !joker_manifest::check::PROFILE_TUNING.contains(&k.as_str())
                 })
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect();
