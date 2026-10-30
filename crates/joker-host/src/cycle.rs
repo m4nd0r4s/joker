@@ -82,6 +82,18 @@ pub struct InstanceLimits {
     pub log_level: LogLevel,
 }
 
+impl InstanceLimits {
+    /// The epochs of a cycle call (ADR 0098):
+    /// `ceil(max(2 × wcet, 200 µs) / 100 µs) + 1`, where `wcet` is the
+    /// declared WCET or else 20% of the group's period.
+    pub fn cycle_epochs(wcet_ns: Option<u64>, period_ns: u64) -> u64 {
+        let epoch = crate::engine::EPOCH_PERIOD.as_nanos() as u64;
+        let wcet = wcet_ns.unwrap_or(period_ns / 5);
+        let budget = wcet.saturating_mul(2).max(2 * epoch);
+        budget.div_ceil(epoch) + 1
+    }
+}
+
 impl Default for InstanceLimits {
     fn default() -> Self {
         Self {

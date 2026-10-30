@@ -539,6 +539,23 @@ impl CycleTask for WasmTask {
             })
             .collect();
         let tasks = [self.task];
+        let wcet_ns = self
+            .component
+            .meta()
+            .tasks
+            .get(self.task as usize)
+            .and_then(|t| t.wcet_ns);
+        let limits = InstanceLimits {
+            cycle_deadline_epochs: InstanceLimits::cycle_epochs(wcet_ns, cx.image.period_ns()),
+            ..InstanceLimits::default()
+        };
+        if self.mode != RunMode::Replay {
+            self.engine
+                .start_epoch_ticker(|| {
+                    let _ = crate::resources::raise_priority(99);
+                })
+                .map_err(host)?;
+        }
         let instance = CycleInstance::new(
             &self.engine,
             &self.component,
@@ -553,7 +570,7 @@ impl CycleTask for WasmTask {
                 group: cx.group,
                 ports: &ports,
                 tasks: &tasks,
-                limits: InstanceLimits::default(),
+                limits,
             },
         )
         .map_err(host)?;

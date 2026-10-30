@@ -19,6 +19,6 @@ pub use cycle::{
     CycleInstance, CycleReport, CycleSetup, CycleStatus, InstanceLimits, LogLevel, LogRecord,
     PortBinding, PortSource, Rejection, RunMode,
 };
-pub use engine::{EngineId, HostEngine, WASMTIME_VERSION, host_triple};
+pub use engine::{EPOCH_PERIOD, EngineId, HostEngine, WASMTIME_VERSION, host_triple};
 pub use error::HostError;
 pub use meta::AppMeta;

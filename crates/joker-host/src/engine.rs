@@ -9,6 +9,10 @@
 use core::fmt;
 use core::hash::{Hash, Hasher};
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
+
 use wasmtime::{Config, Engine, OptLevel};
 
 use crate::error::{HostError, codes};
@@ -34,6 +38,9 @@ impl fmt::Display for EngineId {
     }
 }
 
+/// How often the epoch ticker advances the epoch (docs/01 §4, ADR 0098).
+pub const EPOCH_PERIOD: Duration = Duration::from_micros(100);
+
 /// The engine that compiles and runs app components.
 #[derive(Clone)]
 pub struct HostEngine {
@@ -41,6 +48,7 @@ pub struct HostEngine {
     triple: String,
     id: EngineId,
     native: bool,
+    ticking: Arc<AtomicBool>,
 }
 
 impl fmt::Debug for HostEngine {
@@ -96,6 +104,7 @@ impl HostEngine {
             triple: triple.to_owned(),
             id,
             native: false,
+            ticking: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -125,6 +134,38 @@ impl HostEngine {
     /// (docs/01 §4); deadlines are counted in these ticks.
     pub fn increment_epoch(&self) {
         self.engine.increment_epoch();
+    }
+
+    /// Starts the thread `rt/epoch` that advances the epoch every
+    /// [`EPOCH_PERIOD`] while this engine lives (ADR 0098); `setup` runs
+    /// first on that thread, to raise its priority. A second call does
+    /// nothing.
+    pub fn start_epoch_ticker(
+        &self,
+        setup: impl FnOnce() + Send + 'static,
+    ) -> Result<(), HostError> {
+        if self.ticking.swap(true, Ordering::AcqRel) {
+            return Ok(());
+        }
+        let weak = self.engine.weak();
+        let started = std::thread::Builder::new()
+            .name("rt/epoch".into())
+            .spawn(move || {
+                setup();
+                while let Some(engine) = weak.upgrade() {
+                    engine.increment_epoch();
+                    drop(engine);
+                    std::thread::sleep(EPOCH_PERIOD);
+                }
+            });
+        if let Err(e) = started {
+            self.ticking.store(false, Ordering::Release);
+            return Err(HostError::new(
+                codes::INIT_FAILED,
+                format!("cannot start the epoch ticker: {e}"),
+            ));
+        }
+        Ok(())
     }
 
     pub(crate) fn wasmtime(&self) -> &Engine {

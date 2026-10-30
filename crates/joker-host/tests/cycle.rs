@@ -127,3 +127,12 @@ fn the_outcomes_are_identical_on_every_architecture() {
 }
 
 const GOLDEN: u64 = 0xe331_b313_19bb_a4f6;
+
+#[test]
+fn a_cycle_deadline_is_twice_the_wcet_with_a_floor_and_one_epoch_more() {
+    use joker_host::InstanceLimits;
+    assert_eq!(InstanceLimits::cycle_epochs(Some(5_000), 20_000_000), 3);
+    assert_eq!(InstanceLimits::cycle_epochs(Some(120_000), 20_000_000), 4);
+    assert_eq!(InstanceLimits::cycle_epochs(Some(150_000), 20_000_000), 4);
+    assert_eq!(InstanceLimits::cycle_epochs(None, 20_000_000), 81);
+}

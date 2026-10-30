@@ -19,7 +19,7 @@ struct Count {
     ticks: u32,
 }
 
-#[joker::cycle(period = "20ms", wcet = "5us")]
+#[joker::cycle(period = "20ms", wcet = "2ms")]
 fn run(io: &mut CycleIo<Crash>, st: &mut Count) -> Result<()> {
     st.ticks += 1;
     if st.ticks > 10 {
