@@ -329,6 +329,24 @@ enum Command {
         #[command(subcommand)]
         command: ProfileCommand,
     },
+    /// Read-only discovery of equipment (`sunspec://<host>`), through the
+    /// node (docs/05 §7).
+    Discover {
+        /// The equipment URI (ref/03 §2.2.20).
+        uri: String,
+        /// The Modbus unit ids (`5`, `1..10`).
+        #[arg(long)]
+        unit: Option<String>,
+        /// Requests per second (default 10).
+        #[arg(long)]
+        rate: Option<String>,
+        /// How long the discovery may take (default 60s).
+        #[arg(long = "for", value_name = "DURATION")]
+        limit: Option<String>,
+        /// Write the suggested profile to this file.
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
     /// Board profile tooling (ref/03 §2.3, docs/07).
     Board {
         #[command(subcommand)]
@@ -712,6 +730,19 @@ fn run(cli: Cli) -> Result<u8, Failure> {
             tier,
         }),
         Command::Alarms { active } => node()?.alarms(active),
+        Command::Discover {
+            uri,
+            unit,
+            rate,
+            limit,
+            out,
+        } => node()?.discover(&node::DiscoverArgs {
+            uri,
+            unit,
+            rate,
+            timeout: limit,
+            out,
+        }),
         Command::Alarm { command } => match command {
             AlarmCommand::Ack { id, reason } => node()?.alarm_ack(&id, reason.as_deref()),
             AlarmCommand::Shelve { id, ttl, reason } => node()?.alarm_shelve(&id, &ttl, &reason),

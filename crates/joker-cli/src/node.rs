@@ -90,6 +90,88 @@ pub fn diff_files(entry: &Entry, file: &Path) -> Result<u8, Failure> {
     Ok(0)
 }
 
+/// The arguments of `jk discover`.
+#[derive(Debug, Clone, Default)]
+pub struct DiscoverArgs {
+    /// The equipment URI.
+    pub uri: String,
+    /// The Modbus unit ids.
+    pub unit: Option<String>,
+    /// Requests per second.
+    pub rate: Option<String>,
+    /// How long the discovery may take.
+    pub timeout: Option<String>,
+    /// Where to write the suggested profile.
+    pub out: Option<std::path::PathBuf>,
+}
+
+/// A `DiscoveryResult` (ADR 0095) as `jk discover` prints it.
+fn render_discovery(result: &Value, out: Option<&Path>) -> String {
+    let text = |v: &Value| v.as_str().unwrap_or("").to_owned();
+    let mut s = String::new();
+    for hit in result["hits"].as_array().into_iter().flatten() {
+        let id = &hit["identity"];
+        s += &format!(
+            "{} · unit {} · SunSpec marker at {}\n",
+            text(&hit["address"]),
+            hit["unit"],
+            hit["base"]
+        );
+        s += &format!(
+            "identity  {} {} · firmware {} · serial {}\n",
+            text(&id["vendor"]),
+            text(&id["model"]),
+            text(&id["firmware"]),
+            text(&id["serial"])
+        );
+        let models: Vec<String> = hit["models"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|m| {
+                let mut t = format!("{} @{} ({})", m["id"], m["at"], m["len"]);
+                if m["known"] != true {
+                    t.push_str(" unknown");
+                } else if m["accepted"] != true {
+                    t.push_str(" ignored");
+                }
+                t
+            })
+            .collect();
+        s += &format!("models    {}\n", models.join(", "));
+        s += &format!("map       {}\n", text(&hit["digest"]));
+        match out {
+            Some(p) => {
+                s += &format!(
+                    "profile   {} → {}\n",
+                    text(&hit["profile_name"]),
+                    p.display()
+                );
+            }
+            None => {
+                s += &format!(
+                    "profile   {} (write it with --out profiles/{}.profile.toml)\n",
+                    text(&hit["profile_name"]),
+                    text(&hit["profile_name"])
+                );
+            }
+        }
+        s += "lock      the entry to pin:\n";
+        for line in text(&hit["lock"]).lines() {
+            s += &format!("  {line}\n");
+        }
+    }
+    for miss in result["misses"].as_array().into_iter().flatten() {
+        s += &format!(
+            "unit {}: {} [{}]\n",
+            miss["unit"],
+            text(&miss["message"]),
+            text(&miss["code"])
+        );
+    }
+    s
+}
+
 impl Node {
     /// `jk diff [--against <generation>] --node`: the effective manifest of
     /// a generation of the node (`current` by default) against the
@@ -831,6 +913,64 @@ impl Node {
             println!("summary: {}", report["summary"].as_str().unwrap_or("?"));
         }
         Ok(if report["summary"] == "fail" { 6 } else { 0 })
+    }
+
+    /// `jk discover <uri>` (docs/05 §7, ADR 0095): starts the `discovery`
+    /// job, follows it, and prints what each unit answered, the
+    /// `[discovered.<device>]` entry to pin and the suggested profile;
+    /// `out` writes that profile, never over an existing file.
+    pub fn discover(&self, args: &DiscoverArgs) -> Result<u8, Failure> {
+        let mut body = json!({"uri": args.uri});
+        for (key, value) in [
+            ("unit", &args.unit),
+            ("rate", &args.rate),
+            ("timeout", &args.timeout),
+        ] {
+            if let Some(v) = value {
+                body[key] = json!(v);
+            }
+        }
+        if let Some(out) = &args.out
+            && out.exists()
+        {
+            return Err(Failure::usage(format!(
+                "{} already exists: jk discover never overwrites",
+                out.display()
+            )));
+        }
+        let job = checked(self.client.post("/v1/discovery", &body, &[])?)?.json();
+        let id = job["id"].as_str().unwrap_or_default().to_owned();
+        let result = loop {
+            let j = checked(self.client.get(&format!("/v1/jobs/{id}"))?)?.json();
+            match j["state"].as_str() {
+                Some("succeeded") => break j["result"].clone(),
+                Some("failed" | "cancelled") => {
+                    return Err(lost(format!("the discovery job ended {}", j["state"])));
+                }
+                _ => std::thread::sleep(std::time::Duration::from_millis(200)),
+            }
+        };
+        let hits = result["hits"].as_array().cloned().unwrap_or_default();
+        if let Some(out) = &args.out {
+            let [hit] = hits.as_slice() else {
+                return Err(Failure::usage(format!(
+                    "--out writes one profile, and {} unit(s) answered",
+                    hits.len()
+                )));
+            };
+            if let Some(parent) = out.parent().filter(|p| !p.as_os_str().is_empty()) {
+                std::fs::create_dir_all(parent).map_err(|e| Failure::usage(format!("{e}")))?;
+            }
+            std::fs::write(out, hit["profile"].as_str().unwrap_or_default())
+                .map_err(|e| Failure::usage(format!("writing {}: {e}", out.display())))?;
+        }
+        if self.json {
+            print_json(&result);
+        } else {
+            println!("{}", self.header()?);
+            print!("{}", render_discovery(&result, args.out.as_deref()));
+        }
+        Ok(if hits.is_empty() { 4 } else { 0 })
     }
 
     /// `jk trace <signal>` (ref/09 §9.1): the signal's lineage

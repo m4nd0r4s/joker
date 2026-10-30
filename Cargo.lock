@@ -1304,6 +1304,7 @@ dependencies = [
  "joker-api",
  "joker-client",
  "joker-core",
+ "joker-driver-modbus",
  "joker-host",
  "joker-jkc",
  "joker-manifest",
