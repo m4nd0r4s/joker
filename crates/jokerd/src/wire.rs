@@ -19,6 +19,32 @@ pub fn timestamp(utc_ns: i64) -> String {
     humantime::format_rfc3339_nanos(t).to_string()
 }
 
+/// The versions of every surface this build supports (`GET /v1/version`,
+/// ref/09 §5.1, ADR 0098). A surface this build does not carry (tier W
+/// drivers, JDP, Joker Link) lists nothing.
+pub fn versions() -> Value {
+    let runtime = joker_manifest::context::Context::default().runtime;
+    json!({
+        "runtime": env!("CARGO_PKG_VERSION"),
+        "api": {
+            "current": joker_api::server::API_VERSION,
+            "supported": [joker_api::server::API_VERSION],
+        },
+        "wit": {
+            "current": joker_host::WORLD,
+            "supported": joker_host::component::SUPPORTED_WORLDS,
+        },
+        "driver_wit": [],
+        "jdp": [],
+        "manifest": [format!("{}.{}", runtime.major, runtime.minor)],
+        "lock": [1],
+        "agent": "agent/1",
+        "link": {"supported": []},
+        "abi": {"major": joker_host::abi::ABI_VERSION, "minor": 0},
+        "trace": [1],
+    })
+}
+
 /// The current UTC time in ns.
 pub fn utc_now_ns() -> i64 {
     SystemTime::now()

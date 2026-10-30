@@ -89,6 +89,11 @@ pub trait Backend: Send + Sync + 'static {
     }
     /// `GET /v1/info`.
     fn info(&self, who: &Principal) -> Result<Reply>;
+    /// `GET /v1/version` (ref/09 §5.1): the versions of every surface this
+    /// node supports.
+    fn version(&self) -> Result<Reply> {
+        Err(unavailable())
+    }
     /// `GET /v1/health`.
     fn health(&self, query: &Query) -> Result<Reply>;
     /// `GET /v1/status`.

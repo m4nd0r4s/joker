@@ -3208,3 +3208,21 @@ async fn a_discovery_job_walks_a_sunspec_device() {
     let report = joker_manifest::profile::parse(Path::new("acme/pcs-125@1.profile.toml"), profile);
     assert!(report.profile.is_some(), "{}\n{profile}", report.render());
 }
+
+/// `GET /v1/version` (ref/09 §5.1, ADR 0098): the surfaces this build
+/// supports, with the world it serves.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_node_says_which_versions_it_supports() {
+    let f = start().await;
+    let r = f.call("GET", "/v1/version", "/v1/version", None).await;
+    assert_eq!(r.status, 200);
+    let v = r.json();
+    assert_eq!(v["wit"]["current"], json!(joker_host::WORLD));
+    assert!(
+        v["wit"]["supported"]
+            .as_array()
+            .unwrap()
+            .contains(&json!(joker_host::WORLD))
+    );
+    assert_eq!(v["manifest"], json!(["1.0"]));
+}
