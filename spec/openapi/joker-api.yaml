@@ -4774,6 +4774,16 @@ components:
             present: {type: boolean}
             version: {type: ['string', 'null'], examples: ['2.0']}
             device: {type: ['string', 'null'], examples: [/dev/tpmrm0]}
+        storage:
+          description: the disk the root file system is mounted from, and its medium (ADR 0092); null when the root device cannot be told
+          type: ['object', 'null']
+          required: [device, medium]
+          properties:
+            device: {type: string, examples: [/dev/mmcblk0]}
+            medium:
+              description: 'sd or emmc from /sys/block/<dev>/device/type (SD, MMC); ssd for NVMe and SATA; null when unknown'
+              type: ['string', 'null']
+              enum: [sd, emmc, ssd, null]
         unreadable:
           type: array
           items:
