@@ -1,6 +1,7 @@
 //! `cargo xtask size`: the binary size gate of `jokerd` (docs/01 §21,
 //! docs/13 §5, docs/26 §4 E6). Each build of `xtask/size-limits.toml` is
-//! measured with `cargo bloat --release --crates` for the target, its
+//! measured with `cargo bloat --profile dist --crates` for the target (the
+//! profile `jokerd` ships with: fat LTO, one codegen unit), its
 //! binary is stripped, and a build above its limit fails the gate with the
 //! crates that weigh the most, and those that grew the most when a
 //! baseline is given.
@@ -145,9 +146,13 @@ pub fn parse_bloat(json: &str) -> Result<Bloat, String> {
     Ok((file, text, crates))
 }
 
+/// The Cargo profile of the shipped binaries (the workspace `Cargo.toml`).
+pub const PROFILE: &str = "dist";
+
 fn cargo_args(build: &Build, target: &str) -> Vec<String> {
     let mut args = vec![
-        "--release".to_owned(),
+        "--profile".to_owned(),
+        PROFILE.to_owned(),
         "--target".to_owned(),
         target.to_owned(),
         "-p".to_owned(),
@@ -192,7 +197,7 @@ pub fn measure(build: &Build, target: &str) -> Result<Measure, String> {
         .find(|l| l.trim_start().starts_with('{'))
         .ok_or_else(|| format!("cargo bloat for {} printed no JSON", build.name))?;
     let (file, text, crates) = parse_bloat(json)?;
-    let binary = target_dir().join(target).join("release").join(&build.bin);
+    let binary = target_dir().join(target).join(PROFILE).join(&build.bin);
     let stripped = binary.with_file_name(format!("{}.{}.stripped", build.bin, build.name));
     let strip = std::env::var("STRIP").unwrap_or_else(|_| "strip".to_owned());
     let status = Command::new(&strip)
