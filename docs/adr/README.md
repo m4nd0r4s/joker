@@ -92,5 +92,6 @@
 | [0093](0093-the-linux-gpio-driver-on-chardev-v1.md) | The Linux `gpio` driver on chardev v1: `edges` and `timestamp` reserved (`J0807`), `debounce` by the acquisition stage |
 | [0094](0094-seeded-cddl-generation-and-signed-64-bit-integers.md) | Seeded CDDL generation in `joker-spec-tests`, and signed 64-bit integers in the CDDL files (amends ADR 0080 decision 3) |
 | [0096](0096-json-timestamps-in-agent-cddl.md) | The JSON form of `timestamp` in `agent.cddl`, and the `ota-begin` example of ref/07 §9.3 |
+| [0097](0097-the-manifest-model-of-joker-manifest.md) | The manifest model of `joker-manifest`: schema as data and a typed model (ref/01 §12) |
 
 Changing a decision = writing a new ADR that replaces it, and updating the affected documents in the same set of commits.
