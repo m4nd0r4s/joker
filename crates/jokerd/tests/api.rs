@@ -465,6 +465,10 @@ async fn meta_signals_and_values_follow_the_contract() {
     assert_eq!(m.json()["groups"][0]["group"], "main");
     assert!(m.json()["groups"][0]["ticks"].as_u64().unwrap() > 0);
     assert_eq!(m.json()["groups"][0]["consecutive_overruns"], 0);
+    assert!(
+        m.json().get("ml").is_some_and(serde_json::Value::is_null),
+        "ref/09 §5.2: `ml` is null in 1.0"
+    );
     #[cfg(target_os = "linux")]
     for field in ["disk_free", "memory_used"] {
         let text = m.json()["system"][field]
