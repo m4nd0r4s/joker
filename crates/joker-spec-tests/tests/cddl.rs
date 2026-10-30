@@ -4,8 +4,10 @@
 //! 0080).
 //!
 //! Every file must generate instances that validate back against it, which
-//! fails on an undefined, duplicated or unsatisfiable rule. Every example
-//! block of the references (`cbor-diag` everywhere, `json` where the
+//! fails on an undefined, duplicated or unsatisfiable rule. The generator of
+//! the tool is seeded with fixed seeds, one process per seed, so a run checks
+//! the same instances every time (ADR 0094). Every example block of the
+//! references (`cbor-diag` everywhere, `json` where the
 //! reference defines a CDDL encoding) is mapped in `known.toml` to its
 //! file and rule, or listed as an excerpt with the reason.
 
@@ -37,23 +39,95 @@ const EXAMPLE_DOCS: [&str; 4] = [
     "docs/ref/04-wit-and-rust-sdk.md",
 ];
 
+const SEEDS: [u64; 8] = [1, 2, 3, 4, 5, 6, 7, 8];
+
+const INSTANCES_PER_SEED: u32 = 5;
+
+const ROUND_TRIP: &str = r#"require "cddl"
+require "cbor-diagnostic"
+class << Random
+  alias_method :unseeded_new, :new
+  def new(seed = Kernel.rand(1 << 64)) = unseeded_new(seed)
+end
+module DistinctWildcardKeys
+  LITERAL = [:int, :text]
+  def generate1(where, inmap = false)
+    return super unless where[0] == :map
+    members = where[1..]
+    literal = members.filter_map { |m| m[0] == :member && m[3] && LITERAL.include?(m[3][0]) ? m[3][1] : nil }
+    pairs = members.flat_map do |m|
+      generated = super(m, true)
+      wildcard = m[0] == :member && m[3] && !LITERAL.include?(m[3][0])
+      wildcard ? generated.reject { |k, _| literal.include?(k) } : generated
+    end
+    Hash[pairs]
+  end
+end
+CDDL::Parser.prepend(DistinctWildcardKeys)
+file, seed, count = ARGV
+parser = CDDL::Parser.new(File.read(file, mode: "rb").force_encoding(Encoding::UTF_8))
+srand(Integer(seed))
+Integer(count).times do |i|
+  begin
+    instance = parser.generate
+  rescue => e
+    puts "instance #{i}: generation failed: #{e.message.lines.first}"
+    next
+  end
+  unless parser.validate(CBOR.decode(instance.to_cbor))
+    puts "instance #{i}: does not validate: #{instance.cbor_diagnostic}"
+  end
+end
+puts "done"
+"#;
+
 struct Tools {
     cddl: PathBuf,
     diag2cbor: PathBuf,
+    ruby: PathBuf,
 }
 
 fn tools() -> Option<Tools> {
     let cddl = common::which("cddl");
     let diag2cbor = common::which("diag2cbor.rb");
+    let ruby = common::which("ruby");
     if !common::tool("cddl (gem install cddl)", cddl.is_some())
         || !common::tool("diag2cbor.rb (gem install cbor-diag)", diag2cbor.is_some())
+        || !common::tool("ruby", ruby.is_some())
     {
         return None;
     }
     Some(Tools {
         cddl: cddl.unwrap(),
         diag2cbor: diag2cbor.unwrap(),
+        ruby: ruby.unwrap(),
     })
+}
+
+/// Generates instances of a CDDL file with the reference tool, its random
+/// generator seeded with `seed`, and validates each one back, after a CBOR
+/// round trip: the same seed checks the same instances. A wildcard member of
+/// a map (`* uint => any`) never draws a key that the map spells out, which
+/// the tool's generator does not avoid. Returns the problems.
+fn round_trip(tools: &Tools, cddl: &Path, seed: u64) -> Vec<String> {
+    let (ok, out) = common::run(
+        Command::new(&tools.ruby)
+            .env("RUBY_THREAD_VM_STACK_SIZE", "5000000")
+            .arg("-e")
+            .arg(ROUND_TRIP)
+            .arg(cddl)
+            .arg(seed.to_string())
+            .arg(INSTANCES_PER_SEED.to_string()),
+    );
+    let mut problems: Vec<String> = out
+        .lines()
+        .filter(|l| !l.starts_with("***") && !l.trim().is_empty() && *l != "done")
+        .map(str::to_owned)
+        .collect();
+    if !ok || !out.lines().any(|l| l == "done") {
+        problems.push(format!("the tool did not finish: {}", errors_of(&out)));
+    }
+    problems
 }
 
 fn errors_of(out: &str) -> String {
@@ -105,38 +179,29 @@ fn every_cddl_file_generates_instances_that_fit_it() {
     let Some(tools) = tools() else {
         return;
     };
-    let dir = common::scratch("cddl-generate");
-    let mut problems = Vec::new();
-    for file in FILES {
-        let path = common::root().join("spec/cddl").join(file);
-        let (ok, out) = common::run(
-            Command::new(&tools.cddl)
-                .arg(&path)
-                .arg("generate")
-                .arg("5"),
-        );
-        let instances: Vec<&str> = out
-            .lines()
-            .filter(|l| !l.starts_with("***") && !l.trim().is_empty())
+    let runs: Vec<(&str, u64)> = FILES
+        .iter()
+        .flat_map(|file| SEEDS.iter().map(move |seed| (*file, *seed)))
+        .collect();
+    let problems: Vec<String> = std::thread::scope(|scope| {
+        let handles: Vec<_> = runs
+            .iter()
+            .map(|(file, seed)| {
+                let tools = &tools;
+                scope.spawn(move || {
+                    let path = common::root().join("spec/cddl").join(file);
+                    round_trip(tools, &path, *seed)
+                        .into_iter()
+                        .map(|p| format!("{file}, seed {seed}, {p}"))
+                        .collect::<Vec<_>>()
+                })
+            })
             .collect();
-        if !ok || instances.is_empty() || instances.iter().any(|l| l.contains(".rb:")) {
-            problems.push(format!(
-                "{file}: generation failed: {}",
-                errors_of(&out).lines().next().unwrap_or("")
-            ));
-            continue;
-        }
-        for (i, instance) in instances.iter().enumerate() {
-            let checked = to_cbor(&tools, &dir, &format!("{file}.{i}"), instance)
-                .and_then(|cbor| validate(&tools, &path, &cbor));
-            if let Err(e) = checked {
-                problems.push(format!(
-                    "{file}: generated instance {i} does not validate: {}\n{instance}",
-                    e.lines().next().unwrap_or("")
-                ));
-            }
-        }
-    }
+        handles
+            .into_iter()
+            .flat_map(|h| h.join().unwrap())
+            .collect()
+    });
     assert!(problems.is_empty(), "{}", problems.join("\n\n"));
 }
 
