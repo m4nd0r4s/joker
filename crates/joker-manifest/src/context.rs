@@ -189,6 +189,10 @@ pub struct DriverInfo {
     /// The address keys of signals declared in the manifest, each with the
     /// signal it implies (a `thermal` zone is a temperature input).
     pub address: BTreeMap<String, Option<SignalInfo>>,
+    /// Address keys of the driver's family that this runtime does not
+    /// implement yet: a signal that declares one is refused with `J0807`
+    /// (ADR 0064), not read without it.
+    pub reserved_address: BTreeSet<String>,
     /// Whether the driver supports discovery.
     pub discover: bool,
     /// Whether the driver supports `safe = "relinquish"`.

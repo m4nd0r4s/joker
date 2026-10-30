@@ -19,8 +19,9 @@ use crate::source::{Sources, Span};
 use crate::value::{Node, Value};
 
 /// Keys a manifest may set on a signal that comes from a profile (ref/01
-/// §5.8.1, ref/03 §2.2.4).
-const PROFILE_TUNING: [&str; 11] = [
+/// §5.8.1, ref/03 §2.2.4): the signal's adjustments, which belong to the
+/// acquisition stage and never reach a driver's address (ADR 0093).
+pub const PROFILE_TUNING: [&str; 11] = [
     "alias",
     "max_age",
     "limits",
@@ -731,6 +732,16 @@ impl Checker<'_> {
                         Diagnostic::new(
                             "J0290",
                             format!("`{key}` is reserved for a later version"),
+                        )
+                        .at(node.span),
+                    );
+                    continue;
+                }
+                if driver.reserved_address.contains(key) {
+                    self.push(
+                        Diagnostic::new(
+                            "J0807",
+                            format!("`{key}` is not supported by this runtime yet"),
                         )
                         .at(node.span),
                     );
