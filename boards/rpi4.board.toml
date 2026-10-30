@@ -1,0 +1,47 @@
+schema = 1
+
+[board]
+name         = "rpi4"
+version      = "1.0.0"
+arch         = "aarch64"
+tier         = "2"
+vendor       = "Raspberry Pi"
+model        = "Raspberry Pi 4 Model B"
+description  = "Raspberry Pi 4 Model B with 4 GiB of RAM. The 1, 2 and 8 GiB units are variants: jk board new rpi4-8g --from rpi4, then change memory."
+docs         = "https://www.raspberrypi.com/documentation/computers/raspberry-pi.html"
+cpus         = 4
+memory       = "4 GiB"
+clock        = "1.8 GHz"
+storage      = "sd"
+kernel       = "preempt_rt"
+recommended  = { rt = [3], io = [2], bg = [0, 1] }
+boot_cmdline = ["isolcpus=3", "nohz_full=3", "rcu_nocbs=3"]
+
+[watchdog]
+device  = "/dev/watchdog0"
+timeout = "15s"
+
+[gpio]
+chip = "pinctrl-bcm2711"
+
+[io.act_led]
+driver    = "sysfs"
+led       = "ACT"
+direction = "output"
+
+[io.cpu_temp]
+driver  = "sysfs"
+thermal = "thermal_zone0"
+
+[i2c]
+"i2c1" = "/dev/i2c-1"
+
+[spi]
+"spi0" = "/dev/spidev0.0"
+
+[serial]
+"uart0" = "/dev/serial0"
+
+[net]
+"eth"  = "eth0"
+"wifi" = "wlan0"

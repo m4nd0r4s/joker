@@ -126,3 +126,28 @@ fn board_new_refuses_to_overwrite() {
     assert_eq!(code(&out), 1, "{}", text(&out));
     assert!(text(&out).contains("already exists"));
 }
+
+#[test]
+fn every_board_of_the_repository_passes_board_check() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut checked = Vec::new();
+    for entry in std::fs::read_dir(root.join("boards")).unwrap() {
+        let path = entry.unwrap().path();
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        let Some(board) = name.strip_suffix(".board.toml") else {
+            continue;
+        };
+        let out = jk(&root, &["board", "check", &format!("boards/{name}")]);
+        assert_eq!(code(&out), 0, "{name}: {}", text(&out));
+        let doc: toml::Table = std::fs::read_to_string(&path).unwrap().parse().unwrap();
+        assert_eq!(doc["board"]["name"].as_str(), Some(board), "{name}");
+        checked.push(board.to_owned());
+    }
+    checked.sort();
+    for board in ["cm4", "cm5", "rpi3b-plus", "rpi4", "rpi5", "x86-generic"] {
+        assert!(
+            checked.iter().any(|b| b == board),
+            "{board} missing: {checked:?}"
+        );
+    }
+}

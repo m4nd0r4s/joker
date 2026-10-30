@@ -1,0 +1,14 @@
+schema = 1
+
+[board]
+name         = "x86-generic"
+version      = "1.0.0"
+arch         = "x86_64"
+tier         = "2"
+description  = "A generic x86-64 machine with 4 cores, 8 GiB of RAM and an SSD. It promises no watchdog, GPIO, fixed IO or buses: a real unit is described with jk board probe --node <node>, or with jk board new <name> --from x86-generic."
+cpus         = 4
+memory       = "8 GiB"
+storage      = "ssd"
+kernel       = "preempt_rt"
+recommended  = { rt = [3], io = [2], bg = [0, 1] }
+boot_cmdline = ["isolcpus=3", "nohz_full=3", "rcu_nocbs=3"]
