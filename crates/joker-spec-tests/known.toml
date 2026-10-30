@@ -201,7 +201,7 @@ cddl = "joker-link.cddl"
 rule = "error"
 
 [[example]]
-block = "2eb32d05b97f"
+block = "3e4ec731faa5"
 section = "9.3"
 cddl = "joker-link.cddl"
 rule = "ota-begin"
@@ -276,19 +276,6 @@ rule = "report"
 check = "cddl"
 block = "bdedb7c312c7"
 reason = "ref/07 §6.7: ACK has an empty body, zero bytes, which has no diagnostic notation"
-
-[divergence.cddl."ref/07"]
-issue = "AUR-431"
-items = [
-  "2eb32d05b97f §9.3 (joker-link.cddl ota-begin): [\"BAD_CBOR\", [\"prim\", 6, 18, [\"array\", [\"member\", 1, 1, [\"te",
-]
-
-[divergence.cddl."ref/10"]
-issue = "AUR-431"
-items = [
-  "59fdd79051d2 §2.10.3 (agent.cddl report): [\"2026-09-24T10:00:00.120Z\", [\"prim\", 6, 0, [\"anno\", \"regexp",
-  "76b4f981a562 §2.6.7 (agent.cddl desired-state): [\"2026-09-24T09:00:00Z\", [\"prim\", 6, 0, [\"anno\", \"regexp\", [",
-]
 
 [divergence.rust."ref/01 §12"]
 issue = "AUR-429"

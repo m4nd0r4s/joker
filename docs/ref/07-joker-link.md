@@ -1514,18 +1514,25 @@ COSE_Sign1     d2 84 55 a2 01 27 04 50 68 89 4d 58 f1 8f 2c 34 d4 9e b2 f4 b1 10
 6. An `xfer` without traffic for 60 s expires on D (`J-E2408` on the next `data`).
 
 ```cbor-diag
-{1: 0, 2: 1, 3: 1, 4: 8192, 5: h'3c434f53455f5369676e313e', 6: 512}
+{1: 0, 2: 1, 3: 1, 4: 8192,
+ 5: h'd28455a20127045068894d58f18f2c34d49eb2f4b110e042a05899ac0101027061636d652f696f31362d72
+      7032333530036138041920000558209f1dcbc35c350d6027f98be0f5c8b43b42ca52b7604459c0c42be3
+      aa88913d470603070808582085378bbfa265d5109625f8c9e2e5e280e8e8e2af3497a4dfc8d74159b357
+      553f095820d1d9be4b6c268eef97fb159f5743637124413bd9a93a991d3ec8225bd33faae80b8201000c
+      488bb5bccf6eedea710d0158409bd8741baa97ce1667cfb12570f4cd84af9377d6d2cd5a7449a8a1d1e9
+      6ea616aec54e5722cf1a462703d9ebf8125162fd9041c8eca71e98517d4c9c155f960c',
+ 6: 512}
 ```
 
 ```
 header     22 11 9b 01 34 03 00 00 00 00 0d 00
-body       a6 01 00 02 01 03 01 04 19 20 00 05 4c 3c 43 4f 53 45 5f 53 69 67 6e 31
-           3e 06 19 02 00
+body       a6 01 00 02 01 03 01 04 19 20 00 05 58 f6 d2 84 55 a2 01 27 04 50 68 89
+           … 9c 15 5f 96 0c 06 19 02 00
 ```
 
-(12 B of header + 29 B of body = 41 B of message.)
+(12 B of header + 264 B of body = 276 B of message; the body is fragmented as §5.5 says when it does not fit in a frame.)
 
-(Key 5 carries the whole COSE_Sign1 of §9.1; abbreviated here.)
+(Key 5 carries the whole COSE_Sign1 of the test vector of §9.1, 246 B: the tagged `COSE_Sign1` as a byte string.)
 
 ```cbor-diag
 {1: 1, 2: 1, 6: 512, 7: 0, 8: 4}

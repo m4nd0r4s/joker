@@ -22,7 +22,7 @@ agent-message = desired-state / command / trust-bundle / floor-statement /
 
 ; ------------------------------------------------------------------ common types
 
-timestamp = int / tdate                 ; CBOR: s64 ns UTC since 1970; JSON: RFC 3339 with Z
+timestamp = int / tstr                  ; CBOR: s64 ns UTC since 1970; JSON: RFC 3339 with Z
 duration  = uint / tstr                 ; CBOR: ns; JSON: duration literal (ref/00, §3.1)
 digest    = bstr .size 32 / tstr        ; JSON: "sha256:" + 64 lowercase hex
 ulid      = bstr .size 16 / tstr        ; JSON: 26 Crockford base32 characters
