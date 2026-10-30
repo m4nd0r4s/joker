@@ -292,6 +292,58 @@ poll   = "100ms"
         }
     }
 
+    const SERIAL_PROFILE_TOML: &str = r#"
+schema = 1
+
+[profile]
+name    = "acme/pcs"
+version = "1.0.0"
+driver  = "modbus"
+
+[signals.serial]
+at   = 100
+fc   = 3
+type = "string"
+len  = 8
+"#;
+
+    fn load_error(manifest_tail: &str, profile: &str) -> String {
+        let joker_toml = format!("{JOKER_TOML}{manifest_tail}");
+        let dir = project(&[
+            ("joker.toml", &joker_toml),
+            ("profiles/acme/pcs@1.profile.toml", profile),
+        ]);
+        match load(&OsFileSystem, &dir.path().join("joker.toml"), &NativeTasks) {
+            Ok(loaded) => loaded.report.render(),
+            Err(e) => e.to_string(),
+        }
+    }
+
+    #[test]
+    fn a_string_point_takes_stuck_detect_and_refuses_deadband_and_debounce() {
+        let ok = load_error(
+            "\n[devices.pcs.signals]\nserial = { stuck_detect = \"10s\" }\n",
+            SERIAL_PROFILE_TOML,
+        );
+        assert!(!ok.contains("error"), "{ok}");
+        for adjustment in ["deadband = 1", "debounce = \"20ms\"", "limits = [0, 1]"] {
+            let error = load_error(
+                &format!("\n[devices.pcs.signals]\nserial = {{ {adjustment} }}\n"),
+                SERIAL_PROFILE_TOML,
+            );
+            assert!(error.contains("J0176"), "{adjustment}: {error}");
+        }
+    }
+
+    #[test]
+    fn a_string_point_with_an_encoding_is_refused_as_reserved() {
+        let profile = SERIAL_PROFILE_TOML.replace("len  = 8", "len  = 8\nencoding = \"utf8\"");
+        let dir = project(&[("profiles/acme/pcs@1.profile.toml", &profile)]);
+        let (context, errors) = jokerd::catalog::context_for_project(&NativeTasks, dir.path());
+        assert!(!context.profiles.contains_key("acme/pcs@1"));
+        assert!(errors.iter().any(|e| e.contains("J0807")), "{errors:?}");
+    }
+
     #[test]
     fn no_fallback_means_no_keepalive() {
         let dir = project(&[
