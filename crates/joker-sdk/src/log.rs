@@ -54,6 +54,20 @@ pub fn enabled(level: Level) -> bool {
     cfg!(target_family = "wasm") && host::enabled(level.host())
 }
 
+/// Makes a `panic!` write its message to the log at `error` before the
+/// trap (ref/04 §4.11), with where it happened as the field `at`. The hook
+/// formats like the macros, on the stack.
+pub(crate) fn install_panic_hook() {
+    #[cfg(target_family = "wasm")]
+    std::panic::set_hook(alloc::boxed::Box::new(|info| {
+        let message = info.payload_as_str().unwrap_or("panic");
+        match info.location() {
+            Some(at) => __emit(Level::Error, format_args!("{message}"), &[("at", at)]),
+            None => __emit(Level::Error, format_args!("{message}"), &[]),
+        }
+    }));
+}
+
 /// A fixed buffer that keeps what fits and drops the rest.
 #[derive(Debug)]
 pub struct Buffer {

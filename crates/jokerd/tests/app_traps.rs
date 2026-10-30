@@ -163,4 +163,16 @@ fn a_trapping_app_is_reported_and_its_output_goes_safe() {
         vec![("ticks".to_owned(), "11".to_owned())],
         "{line:?}"
     );
+    let panic = lines
+        .iter()
+        .find(|e| e.msg == "crashed at tick 11")
+        .unwrap_or_else(|| panic!("no panic line in {lines:?}"));
+    assert_eq!(panic.level, jokerd::logs::LogLevel::Error);
+    assert!(
+        panic
+            .fields
+            .iter()
+            .any(|(k, v)| k == "at" && v.contains("lib.rs")),
+        "{panic:?}"
+    );
 }

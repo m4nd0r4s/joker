@@ -1,7 +1,11 @@
 //! A cycle app that drives its output on for a few ticks and then traps,
 //! for the tests of the trap report and of the lease that takes its output
 //! to `safe` (docs/01 §9, ADR 0067), writing a `warn` log line first with
-//! `joker::log::warn!`, for the test of app lines in the node's log ring.
+//! `joker::log::warn!`, for the test of app lines in the node's log ring;
+//! the trap is a `panic!`, whose message the SDK logs at `error` first
+//! (ref/04 §4.11).
+
+#![allow(clippy::panic)]
 
 use joker::prelude::*;
 
@@ -24,7 +28,7 @@ fn run(io: &mut CycleIo<Crash>, st: &mut Count) -> Result<()> {
     st.ticks += 1;
     if st.ticks > 10 {
         log::warn!("about to trap"; ticks = st.ticks);
-        std::process::abort();
+        panic!("crashed at tick {}", st.ticks);
     }
     io.led.set(true);
     Ok(())

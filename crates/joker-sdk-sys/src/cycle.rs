@@ -262,6 +262,7 @@ mod wasm {
 
     fn guard() {
         match unsafe { (*state()).phase } {
+            Phase::Cycle if std::thread::panicking() => {}
             Phase::Cycle => alloc_trap(),
             Phase::Trapping => trap(),
             Phase::Setup | Phase::Ready => {}
@@ -270,7 +271,9 @@ mod wasm {
 
     /// The global allocator of a component: the system allocator, except
     /// that it traps with `J-E0903` inside `on-cycle` and never frees the
-    /// reserved buffers.
+    /// reserved buffers. A task that panics may allocate: std builds the
+    /// panic message before the hook that logs it (ref/04 §4.11), and the
+    /// instance traps right after.
     #[derive(Debug)]
     pub struct CycleAllocator;
 

@@ -105,6 +105,7 @@ fn check(cx: &InitContext, app: &AppEntry) -> core::result::Result<Vec<Layout>, 
 
 impl Guest for Runtime {
     fn init(cx: InitContext) -> core::result::Result<(), types::Error> {
+        crate::log::install_panic_hook();
         let mut apps = inventory::iter::<AppEntry>.into_iter();
         let (Some(app), None) = (apps.next(), apps.next()) else {
             return Err(error(
