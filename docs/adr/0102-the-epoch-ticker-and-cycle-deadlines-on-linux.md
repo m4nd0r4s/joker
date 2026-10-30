@@ -22,5 +22,5 @@ Three things are not written down:
 ## Consequences
 
 - A runaway app costs its group at most its deadline per tick, not the group.
-- The ticker wakes 10,000 times a second while Wasm apps run.
+- The ticker wakes 10,000 times a second while Wasm apps run. On the bench Pi 3 it takes about 13% of one core (16 s of CPU in 120 s, measured on generation 6 with `light`). A ticker that only runs while a call is in flight is the way to lower it, if that cost matters on a board.
 - An app whose declared WCET is far below what it takes on the board (`light` declares 5 µs) is interrupted if a call takes longer than its deadline. The deadline counts wall time, so a call that is preempted for longer than the deadline is also interrupted. `jk doctor --rt` and the WCET measured by group (`GET /v1/groups`) show both cases.
