@@ -9,6 +9,7 @@ Task 0a (docs/13 §4, ADR 0080) compiled the references for the first time. Thes
 | S-1 | `spec/cddl/agent.cddl`, ref/10 §2.1 | the rules `time` and `bytes` redefine the prelude of RFC 8610, so no CDDL tool accepts the file | renamed `timestamp` and `binary`, in the file and in the type column of ref/10; the encodings do not change |
 | S-2 | `spec/cddl/joker-link.cddl` | the rule `time` (the body of `TIME`) redefines the prelude | renamed `time-msg`; the message and its encoding do not change |
 | S-3 | generated manifest schema (`joker-manifest`) | the alternative forms of a key were `oneOf`, so a value valid in two forms (a quantity literal is also an expression) was rejected | `anyOf` |
+| S-4 | `spec/cddl/jdp.cddl` (`raw-value`, `raw-sample`) | a signed 64-bit integer was `int .size 8`, and RFC 8610 defines `.size` on unsigned integers only: the generator of the reference tool stopped when it reached the rule, so the generation check failed at random (AUR-437) | the range `int64`; the generation check is seeded (ADR 0094) |
 
 ## Recorded for triage
 
