@@ -250,7 +250,7 @@ raw-kind     = &(none: 0, boolean: 1, int: 2, uint: 3, float: 4, regs: 5, bytes:
 
 raw-value = [0]
           / [1, bool]
-          / [2, int .size 8]
+          / [2, int64]
           / [3, uint .size 8]
           / [4, float64]
           / [5, [* uint .size 2]]
@@ -259,11 +259,14 @@ raw-value = [0]
 
 raw-status = { 0 => quality-code, 1 => uint .size 1 }
 
+; A signed 64-bit integer (WIT s64). RFC 8610 defines `.size` on unsigned integers only.
+int64 = -9223372036854775808..9223372036854775807
+
 raw-sample = {
   0 => uint .size 4,                ; point
   1 => raw-value,
   2 => raw-status,
-  ? 3 => int .size 8,               ; ts-src, UTC ns
+  ? 3 => int64,                     ; ts-src, UTC ns
   ? 4 => uint .size 8,              ; ts-hw, monotonic ns
 }
 
