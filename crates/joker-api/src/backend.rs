@@ -4,9 +4,10 @@
 use serde_json::Value;
 
 use crate::model::{
-    AckRequest, ActivateRequest, AppOp, BulkResetRequest, DoctorRequest, GenerationProposal,
-    InvokeActionRequest, ManualWriteRequest, MethodCallRequest, MissingBlobsRequest, ReasonBody,
-    ReleaseRequest, ResetTripRequest, RollbackRequest, ShelveRequest, TraceRequest,
+    AckRequest, ActivateRequest, AppOp, BulkResetRequest, DiscoveryRequest, DoctorRequest,
+    GenerationProposal, InvokeActionRequest, ManualWriteRequest, MethodCallRequest,
+    MissingBlobsRequest, ReasonBody, ReleaseRequest, ResetTripRequest, RollbackRequest,
+    ShelveRequest, TraceRequest,
 };
 use crate::problem::Problem;
 
@@ -240,6 +241,10 @@ pub trait Backend: Send + Sync + 'static {
     }
     /// `POST /v1/doctor`: starts a `doctor` job (`jk doctor`).
     fn run_doctor(&self, _who: &Principal, _request: DoctorRequest) -> Result<Reply> {
+        Err(unavailable())
+    }
+    /// `POST /v1/discovery`: starts a `discovery` job (`jk discover`).
+    fn run_discovery(&self, _who: &Principal, _request: DiscoveryRequest) -> Result<Reply> {
         Err(unavailable())
     }
     /// `GET /v1/apps` (ref/09 §5.14).

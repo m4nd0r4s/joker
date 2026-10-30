@@ -201,6 +201,23 @@ pub struct RollbackRequest {
     pub reason: String,
 }
 
+/// `DiscoveryRequest` (ref/09 §5.17, `jk discover`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DiscoveryRequest {
+    /// The equipment URI (ref/03 §2.2.20).
+    pub uri: String,
+    /// The Modbus unit ids, `5` or `1..10`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unit: Option<String>,
+    /// Requests per second (default 10).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rate: Option<String>,
+    /// How long the whole discovery may take (default 60 s).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout: Option<String>,
+}
+
 /// `DoctorRequest` (ref/09 §5.17, `jk doctor`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

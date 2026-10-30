@@ -1438,6 +1438,61 @@ impl Backend for Node {
         })
     }
 
+    fn run_discovery(
+        &self,
+        who: &Principal,
+        req: joker_api::model::DiscoveryRequest,
+    ) -> Result<Reply, Problem> {
+        if self.role_of(who) < Role::Admin {
+            return Err(Problem::new(
+                "J-E1002",
+                403,
+                "`jk discover` requires the role `admin`",
+            ));
+        }
+        let fail = |r: crate::discovery::Refused| {
+            let status = if r.code == "J-E1708" { 400 } else { 422 };
+            Problem::new(r.code, status, r.message)
+        };
+        let target = crate::discovery::parse_uri(&req.uri, req.unit.as_deref()).map_err(fail)?;
+        let rate = crate::discovery::parse_rate(req.rate.as_deref()).map_err(fail)?;
+        let timeout = match &req.timeout {
+            Some(t) => wire::parse_duration(t).map_err(|e| {
+                bad("J-E1012", format!("`timeout`: {e}")).with("pointer", json!("/timeout"))
+            })?,
+            None => 60_000_000_000,
+        };
+        if self.jobs.running("discovery") {
+            return Err(Problem::new(
+                "J-E1705",
+                409,
+                "a discovery is already running on this node",
+            ));
+        }
+        let uri = req.uri.clone();
+        let job = self
+            .jobs
+            .start("discovery", &user(who), move || {
+                let now = timestamp(utc_now_ns());
+                Ok(crate::discovery::run(
+                    &uri,
+                    &target,
+                    rate,
+                    Duration::from_nanos(timeout),
+                    &now,
+                ))
+            })
+            .map_err(|e| {
+                Problem::new("J-E1000", 500, format!("cannot start the discovery: {e}"))
+            })?;
+        let location = format!("/v1/jobs/{}", job["id"].as_str().unwrap_or_default());
+        Ok(Reply {
+            status: 202,
+            headers: vec![("location", location)],
+            ..Reply::ok(job)
+        })
+    }
+
     fn apps(&self) -> Result<Reply, Problem> {
         let states = lock_controller(&self.controller).app_states();
         let items: Vec<Value> = states.iter().map(app_json).collect();
