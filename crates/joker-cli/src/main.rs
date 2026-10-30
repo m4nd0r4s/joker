@@ -4,12 +4,13 @@ mod apps;
 mod board;
 mod class;
 mod dev;
+mod local;
 mod node;
 mod profile;
 mod project;
 mod replay;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Duration;
 
@@ -45,8 +46,27 @@ enum Command {
         /// The project name (and folder).
         name: String,
     },
+    /// Turn the current directory into a project.
+    Init {
+        /// The project name; by default, the directory's.
+        #[arg(long)]
+        name: Option<String>,
+    },
     /// Check the manifest, its bindings, units and envelopes.
     Check,
+    /// The effective manifest after the overlays; with `--against` or
+    /// `--node`, what differs from another manifest or from a generation.
+    Diff {
+        /// A manifest file, or a generation of `--node` (`current`, a
+        /// number, `sha256:…`).
+        #[arg(long)]
+        against: Option<String>,
+    },
+    /// The client configuration (ref/02 §2.3).
+    Config {
+        #[command(subcommand)]
+        command: ConfigCommand,
+    },
     /// Run the manifest on a local runtime with simulated devices, reloading on every save.
     Dev {
         /// The socket of the local runtime.
@@ -159,11 +179,11 @@ enum Command {
         #[arg(long)]
         diff: bool,
     },
-    /// The arbiter state of an output: owning group, levels, active
-    /// level, last result (docs/07; `jk explain <key|code|pipeline>` is
-    /// not built yet — this only reads an output path).
+    /// The page of a code (`J0107`, `J-E1017`); otherwise the arbiter
+    /// state of an output on the node: owning group, levels, active level,
+    /// last result.
     Explain {
-        /// The output path.
+        /// A code, or an output path.
         target: String,
     },
     /// Ends a trip on an output (docs/16 E7).
@@ -321,6 +341,26 @@ enum Command {
 }
 
 #[derive(Debug, Subcommand)]
+enum ConfigCommand {
+    /// Sets a key of the user's config.toml, validated against ref/02 §2.3.2.
+    Set {
+        /// The key (`nodes.lab.address`).
+        key: String,
+        /// The value.
+        value: String,
+        /// Write the project's `.joker/config.toml` instead.
+        #[arg(long)]
+        project: bool,
+    },
+    /// The effective client configuration.
+    Show {
+        /// Also say which file each value comes from.
+        #[arg(long)]
+        origin: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
 enum ClassCommand {
     /// The available classes, with versions.
     List {
@@ -437,6 +477,11 @@ enum ProfileCommand {
         #[command(subcommand)]
         format: ImportFormat,
     },
+    /// Validates a profile without equipment.
+    Check {
+        /// The profile file.
+        file: PathBuf,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -517,7 +562,29 @@ fn run(cli: Cli) -> Result<u8, Failure> {
             println!("  cd {name}\n  jk dev --env sim");
             Ok(0)
         }
+        Command::Init { name } => local::init(Path::new("."), name.as_deref()),
         Command::Check => node::check(&entry()?, cli.json),
+        Command::Diff { against } => {
+            let entry = entry()?;
+            match against.as_deref() {
+                Some(file) if file.ends_with(".toml") || Path::new(file).is_file() => {
+                    node::diff_files(&entry, Path::new(file))
+                }
+                _ if cli.node.is_some() => node()?.diff(&entry, against.as_deref()),
+                Some(selector) => Err(Failure::usage(format!(
+                    "--against {selector}: a generation needs --node; a manifest is a .toml file"
+                ))),
+                None => node::print_effective(&entry),
+            }
+        }
+        Command::Config { command } => match command {
+            ConfigCommand::Set {
+                key,
+                value,
+                project,
+            } => local::config_set(&key, &value, project),
+            ConfigCommand::Show { origin } => local::config_show(origin),
+        },
         Command::Dev { socket } => dev::run(&entry()?, &socket),
         Command::Build { target } => apps::build_command(&entry()?, target.as_deref(), cli.json),
         Command::Apply {
@@ -561,7 +628,13 @@ fn run(cli: Cli) -> Result<u8, Failure> {
             level,
             force,
         } => node()?.release(&output, level.as_deref(), force),
-        Command::Explain { target } => node()?.explain(&target),
+        Command::Explain { target } => match local::explain_code(&target) {
+            Some(page) => {
+                print!("{page}");
+                Ok(0)
+            }
+            None => node()?.explain(&target),
+        },
         Command::Why { output } => node()?.why(&output),
         Command::Trace { signal } => node()?.trace(&signal),
         Command::Doctor {
@@ -672,6 +745,9 @@ fn run(cli: Cli) -> Result<u8, Failure> {
                         },
                 },
         } => profile::import_csv_command(&file, &name, &driver, out.as_deref(), modicon),
+        Command::Profile {
+            command: ProfileCommand::Check { file },
+        } => local::profile_check(&file),
         Command::Board {
             command: BoardCommand::Check { file },
         } => board::check(&file),
