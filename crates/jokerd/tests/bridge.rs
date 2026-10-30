@@ -259,6 +259,35 @@ cpu_temp = { thermal = "thermal_zone0" }
     }
 
     #[test]
+    fn a_profile_signal_without_a_type_stops_its_device_from_planning() {
+        let dir = project(&[
+            ("joker.toml", JOKER_TOML),
+            ("profiles/acme/pcs@1.profile.toml", PROFILE_TOML),
+        ]);
+        let loaded = load(&OsFileSystem, &dir.path().join("joker.toml"), &NativeTasks)
+            .unwrap_or_else(|e| panic!("{e}"));
+        let (mut context, _) = jokerd::catalog::context_for_project(&NativeTasks, dir.path());
+        let profile = context.profiles.values_mut().next().unwrap();
+        let (signal, info) = profile.signals.iter_mut().next().unwrap();
+        let signal = signal.clone();
+        info.type_name = None;
+        let error = jokerd::bridge::device_plan(
+            "pcs",
+            &loaded.manifest.devices["pcs"],
+            &loaded.manifest,
+            &context,
+            &loaded.report.paths,
+        )
+        .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains(&format!("pcs.{signal}: missing `type`")),
+            "{error}"
+        );
+    }
+
+    #[test]
     fn a_profile_backed_device_resolves_its_point_address_and_shape() {
         let dir = project(&[
             ("joker.toml", JOKER_TOML),

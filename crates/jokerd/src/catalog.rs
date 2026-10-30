@@ -131,14 +131,17 @@ const BENCH_ESP32_PROFILE: &str = include_str!("../profiles/local/bench-esp32@1.
 /// `std/button@1` (track part 7, §4); its `analog_in@1` needs the `scale`
 /// adapter, which this runtime does not run yet. The profile goes through
 /// the same parser as a project's own profile files, so every signal keeps
-/// its address and type.
-pub fn profiles() -> BTreeMap<String, ProfileInfo> {
-    let path = Path::new("profiles/local/bench-esp32@1.profile.toml");
-    joker_manifest::profile::parse(path, BENCH_ESP32_PROFILE)
-        .profile
-        .map(|p| ("local/bench-esp32@1".to_owned(), p))
-        .into_iter()
-        .collect()
+/// its address and type; a diagnostic of that parse is returned in the
+/// second element, as for a project's own file, never dropped.
+pub fn profiles() -> (BTreeMap<String, ProfileInfo>, Vec<String>) {
+    let files: CatalogFiles = [(
+        "profiles/local/bench-esp32@1.profile.toml".to_owned(),
+        BENCH_ESP32_PROFILE.to_owned(),
+    )]
+    .into_iter()
+    .collect();
+    let (profiles, _, _, errors) = parse_catalog(&files);
+    (profiles, errors)
 }
 
 /// The boards of the development bench (docs/23 §1): the Raspberry Pi 3 B+
@@ -196,16 +199,19 @@ pub fn contracts_for_files(
 }
 
 /// The context of the manifest checks: the M0 catalogue, the classes of
-/// `std/`, plus the apps the task providers can run.
-pub fn context(tasks: &dyn TaskProvider) -> Context {
-    Context {
+/// `std/`, plus the apps the task providers can run. A diagnostic of the
+/// M0 catalogue's own files is returned in the second element.
+pub fn context(tasks: &dyn TaskProvider) -> (Context, Vec<String>) {
+    let (profiles, errors) = profiles();
+    let context = Context {
         drivers: drivers(),
-        profiles: profiles(),
+        profiles,
         boards: boards(),
         apps: tasks.interfaces(),
         classes: std_classes(),
         ..Context::default()
-    }
+    };
+    (context, errors)
 }
 
 /// The profile and board files of a project or of a generation, by their
@@ -338,11 +344,12 @@ pub fn board_gpio(files: &CatalogFiles, name: &str) -> Option<joker_manifest::bo
 /// wins over the M0 catalogue on a name collision). Files that do not
 /// parse are reported in the second element and left out.
 pub fn context_for_files(tasks: &dyn TaskProvider, files: &CatalogFiles) -> (Context, Vec<String>) {
-    let mut context = context(tasks);
-    let (profiles, boards, classes, errors) = parse_catalog(files);
+    let (mut context, mut errors) = context(tasks);
+    let (profiles, boards, classes, file_errors) = parse_catalog(files);
     context.profiles.extend(profiles);
     context.boards.extend(boards);
     context.classes.extend(classes);
+    errors.extend(file_errors);
     (context, errors)
 }
 
@@ -483,7 +490,8 @@ mod tests {
 
     #[test]
     fn the_builtin_bench_profile_addresses_every_signal() {
-        let profiles = profiles();
+        let (profiles, errors) = profiles();
+        assert!(errors.is_empty(), "{errors:?}");
         let bench = &profiles["local/bench-esp32@1"];
         assert_eq!(bench.signals.len(), 7);
         for (name, info) in &bench.signals {

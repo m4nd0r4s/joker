@@ -831,7 +831,7 @@ pub fn device_plan(
     if let Some(profile) = profile {
         for (signal, info) in &profile.signals {
             let Some(type_name) = &info.type_name else {
-                continue;
+                return Err(err(format!("{name}.{signal}: missing `type`")));
             };
             let override_poll = device
                 .signals
