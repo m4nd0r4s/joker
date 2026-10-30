@@ -226,7 +226,13 @@ mod tests {
         let mut ok = 0u32;
         let mut extender = SeqExtender::for_slot();
         let mut last = 0;
-        for _ in 0..200_000 {
+        let mut reads = 0u32;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        while ok < 2_000 && std::time::Instant::now() < deadline {
+            reads = reads.wrapping_add(1);
+            if reads.is_multiple_of(1_024) {
+                thread::yield_now();
+            }
             if let Ok(s) = slot.read(4) {
                 if s.seq() == 0 {
                     assert_eq!(s, Sample::INITIAL);
@@ -245,7 +251,7 @@ mod tests {
         }
         stop.store(true, core::sync::atomic::Ordering::Relaxed);
         assert!(writer.join().is_ok());
-        assert!(ok > 0);
+        assert!(ok >= 2_000, "only {ok} whole samples were read");
     }
 
     #[test]
