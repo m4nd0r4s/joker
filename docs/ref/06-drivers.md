@@ -756,7 +756,8 @@ pub trait Driver: Sized + MaybeSend + 'static {
     }
 }
 
-/// Capability `scan`: runs in its own instance for `jk discover`.
+/// Capability `scan`: runs in its own instance for `jk discover`. Reserved (ADR 0099).
+#[cfg(feature = "unstable-scan")]
 pub trait Scanner: MaybeSend + 'static {
     fn scan(
         cx: &mut Cx<'_>,
@@ -805,9 +806,13 @@ impl Cx<'_> {
     pub fn cancelled(&self) -> bool;
     /// Device state fixed in joker.lock (identity, discovered map), for comparisons the driver
     /// needs itself (e.g. picking the SunSpec chain). The drift verdict is the core's.
+    /// Reserved (ADR 0099).
+    #[cfg(feature = "unstable-locked")]
     pub fn locked(&self, device: DeviceIx) -> Option<LockedDevice<'_>>;
     /// std only: runs a blocking closure on the blocking pool, bounded by the deadline.
+    /// Reserved (ADR 0099).
     #[cfg(feature = "std")]
+    #[cfg(feature = "unstable-blocking")]
     pub fn spawn_blocking<F, R>(&self, f: F) -> impl Future<Output = Result<R, BatchFailure>> + Send
     where
         F: FnOnce() -> R + Send + 'static,
@@ -832,7 +837,17 @@ The transports implement the traits of `embedded-io-async` and `embedded-hal-asy
 
 **`SerialIo`.** The `embedded-io-async` traits use `async fn` and are not object-safe, so a host cannot hide its port behind them. A serial line is therefore a `SerialPort` that boxes a `SerialIo`: a poll-based, object-safe trait that the host implements (tokio on Linux, a double in tests, Embassy later), and `SerialPort` implements `embedded_io_async::{Read, Write}` (0.7) on top of it, so drivers stay portable. The variant needs `alloc`. On Linux the port is opened in raw mode with `VMIN = 1, VTIME = 0`, and the modem lines (`dtr`, `rts`, ref/01 §5.6) go through `joker-serial-sys` (ADR 0047).
 
-**M0 subset (ADR 0047).** `joker-hal` implements in M0 the records of §3.2, the `Driver` trait of §3.3 with every method and its default, `Planner` (feature `plan`), `RtPart`, `RtCapable` and a minimal `RtIo`, the plan of §2.6 with its validation (`J0856`), and `Cx` with `now`, `deadline`, `sleep_until`, `report_link`, `progress`, `cancelled` and `log`. In M0, `Cx::log(level, message)` replaces the `Logger` accessor, and `Cx` also offers `until(at, future)` and `within(future)` (bounded by the call's deadline), so that a driver turns a silent equipment into `timeout` without a runtime of its own. Still M0 gaps, with their surface reserved as written here: `Cx::locked`, `Cx::spawn_blocking`, `Scanner`, `DriverEntry` and the registry by features (§3.8), the schema language of §2.3.1 (until then each driver's `plan` validates its keys, with the same codes), `AdcRead`, `CanFrames`, `RtChannel`, and the `Tcp`, `Udp`, `I2c`, `Spi`, `Can` and `Gpio` links.
+**M0 subset (ADR 0047).** `joker-hal` implements in M0 the records of §3.2, the `Driver` trait of §3.3 with every method and its default, `Planner` (feature `plan`), `RtPart`, `RtCapable` and a minimal `RtIo`, the plan of §2.6 with its validation (`J0856`), and `Cx` with `now`, `deadline`, `sleep_until`, `report_link`, `progress`, `cancelled` and `log`. In M0, `Cx::log(level, message)` replaces the `Logger` accessor, and `Cx` also offers `until(at, future)` and `within(future)` (bounded by the call's deadline), so that a driver turns a silent equipment into `timeout` without a runtime of its own. Still M0 gaps, with their surface reserved as written here: `Cx::locked`, `Cx::spawn_blocking`, `Scanner`, `DriverEntry` (§3.8), the schema language of §2.3.1 (until then each driver's `plan` validates its keys, with the same codes), `CanFrames`, `RtChannel`, and the `Udp`, `Spi` and `Can` links. `AdcRead` is in `joker-hal` (module `mcu`).
+
+**Reserved items in the blocks (ADR 0099).** An item of this section that `joker-hal` does not have yet is marked in its block with `#[cfg(feature = "unstable-<name>")]`, as the SDK does (ref/04 §4.15). The feature names are reserved; `joker-hal` 1.0 does not define them, and the item arrives with its implementation in a minor:
+
+| Feature | Items | Arrives |
+|---|---|---|
+| `unstable-scan` | `Scanner`, `Scanner::scan` | with the first catalog driver that scans (ADR 0095) |
+| `unstable-locked` | `Cx::locked` | with `[discovered.<d>]` handed to the drivers (ADR 0077 §8) |
+| `unstable-blocking` | `Cx::spawn_blocking` | with the first tier N driver over a blocking library |
+| `unstable-can` | `CanFrames` | 1.1, with CAN |
+| `unstable-driver-entry` | `DriverEntry`, `driver_entry!`, the `<DRIVER>` constants of the driver crates | 1.2, with the tier W and X hosts |
 
 ### 3.5 Thread contract
 
@@ -906,12 +921,13 @@ The two own traits have the shape of those of `embedded-hal-async`, so that they
 pub trait AdcRead {
     type Error: core::fmt::Debug;
     /// One conversion; raw code in 0..=(1 << bits) - 1. Scaling is the core's (ref/03 §3).
-    async fn read(&mut self) -> Result<u16, Self::Error>;
+    fn read(&mut self) -> impl Future<Output = Result<u16, Self::Error>>;
     /// Resolution in bits, as the board declares it (`[adc] bits`, ref/03 §2.3.3).
     fn bits(&self) -> u8;
 }
 
-/// joker-hal: async CAN frames (embedded-can only has blocking/nb).
+/// joker-hal: async CAN frames (embedded-can only has blocking/nb). Reserved for 1.1, with CAN.
+#[cfg(feature = "unstable-can")]
 pub trait CanFrames {
     type Error: core::fmt::Debug;
     type Frame: embedded_can::Frame;
@@ -925,7 +941,8 @@ pub trait CanFrames {
 Each driver crate exports an entry:
 
 ```rust
-// crates/joker-drivers/modbus/src/lib.rs
+// crates/joker-drivers/modbus/src/lib.rs — reserved (ADR 0099)
+#[cfg(feature = "unstable-driver-entry")]
 pub const MODBUS_TCP: joker_hal::DriverEntry = joker_hal::driver_entry! {
     planner: ModbusPlanner,
     driver: ModbusDriver,
@@ -934,7 +951,7 @@ pub const MODBUS_TCP: joker_hal::DriverEntry = joker_hal::driver_entry! {
 };
 ```
 
-`DriverEntry` holds the descriptor and type-erased function pointers (`plan` over CBOR, `open` that returns `Box<dyn ErasedDriver>` on Linux). `jokerd` has a registry module **generated by `build.rs`** from the Cargo features:
+`DriverEntry` holds the descriptor and type-erased function pointers (`plan` over CBOR, `open` that returns `Box<dyn ErasedDriver>` on Linux). **Reserved (ADR 0099):** `DriverEntry` and `driver_entry!` come with the hosts that need a uniform, type-erased dispatch (tier W and X, 1.2). In 1.0 each driver crate is an optional dependency of `jokerd` behind the Cargo feature below, and the feature gates the driver's entry in the catalog that `jk check --node` sees and its arm in the device dispatch; a driver outside the build is `J0850`. The Cargo features:
 
 | Cargo feature | Name in `jk runtime build --features` | Drivers |
 |---|---|---|

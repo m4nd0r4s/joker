@@ -15,6 +15,7 @@ pub mod driver;
 pub mod encode;
 pub mod interpreter;
 pub mod link;
+pub mod mcu;
 pub mod plan;
 pub mod rt;
 pub mod spec;
@@ -43,6 +44,7 @@ pub use link::{GpioBias, GpioDrive, GpioLineConfig, IoError, Link, SerialInfo, S
 pub use link::{
     GpioChip, GpioLines, I2cBus, I2cTransfers, TcpConnect, TcpEndpoint, TcpIo, TcpStream,
 };
+pub use mcu::AdcRead;
 pub use plan::{BatchHead, BatchSpec, PlanView};
 pub use rt::{RtCapable, RtIo, RtPart, RtStatus};
 pub use spec::{ActionSpec, BusKind, BusSpec, DeviceSpec, PlanRequest, PointSpec};
