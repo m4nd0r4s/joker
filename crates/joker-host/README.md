@@ -1,6 +1,6 @@
 # joker-host
 
-The Wasm host of Joker (docs/01 §9, ref/04): wasmtime `=48.0.7` (the LTS line, ADR 0055), the **cycle subset** of `joker:runtime@0.1.0` and the AOT cache.
+The Wasm host of Joker (docs/01 §9, ref/04): wasmtime `=48.0.8` (the LTS line, ADR 0055), the **cycle subset** of `joker:runtime@0.1.0` and the AOT cache.
 
 What `jokerd` calls:
 
