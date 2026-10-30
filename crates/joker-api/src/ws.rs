@@ -35,7 +35,7 @@ use std::time::Duration;
 use axum::Extension;
 use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{ConnectInfo, RawQuery, State};
-use axum::http::HeaderMap;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use futures_util::stream::SplitSink;
@@ -1310,7 +1310,10 @@ pub async fn ws_handler(
     ConnectInfo(peer): ConnectInfo<Peer>,
     ws: WebSocketUpgrade,
 ) -> Response {
-    let who = principal(peer);
+    let who = match tokio::task::spawn_blocking(move || principal(peer)).await {
+        Ok(who) => who,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
     ws.protocols(["joker.v1"])
         .max_message_size(MAX_CLIENT_MESSAGE)
         .on_upgrade(move |socket| handle_socket(socket, backend, engine, who))
@@ -1378,7 +1381,13 @@ async fn finish(
 async fn handle_socket(socket: WebSocket, backend: Shared, engine: Engine, who: Principal) {
     let _guard = ConnectionGuard::new(&engine.stats);
     let limits = engine.limits;
-    let role = role_with(&who, &backend.socket_roles());
+    let role = {
+        let b = Arc::clone(&backend);
+        let who = who.clone();
+        tokio::task::spawn_blocking(move || role_with(&who, &b.socket_roles()))
+            .await
+            .unwrap_or("viewer")
+    };
     let (mut session, rx, bytes) = Session::new(Arc::clone(&backend), &engine, who.clone(), role);
     let (sink, mut stream) = socket.split();
     let (close_tx, close_rx) = oneshot::channel::<Closing>();
@@ -1678,9 +1687,17 @@ pub async fn sse_handler(
         Ok(p) => p,
         Err(p) => return problem_response(&p),
     };
-    let who = principal(peer);
+    let resolver = Arc::clone(&backend);
+    let Ok((who, role)) = tokio::task::spawn_blocking(move || {
+        let who = principal(peer);
+        let role = role_with(&who, &resolver.socket_roles());
+        (who, role)
+    })
+    .await
+    else {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    };
     let limits = engine.limits;
-    let role = role_with(&who, &backend.socket_roles());
     let (mut session, rx, bytes) = Session::new(backend, &engine, who.clone(), role);
     let asked = last_event_id(&headers);
     let parked = asked

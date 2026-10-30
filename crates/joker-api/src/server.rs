@@ -349,28 +349,65 @@ async fn run_rendered<F>(backend: Shared, format: Format, history: bool, f: F) -
 where
     F: FnOnce(&dyn Backend) -> Result<Reply, Problem> + Send + 'static,
 {
-    let b = Arc::clone(&backend);
-    let result = tokio::task::spawn_blocking(move || f(b.as_ref()))
-        .await
-        .unwrap_or_else(|_| Err(Problem::new("J-E1000", 500, "the handler panicked")));
-    match result {
-        Ok(reply) => rendered(backend.as_ref(), reply, format, history),
-        Err(p) => problem_response(backend.as_ref(), &p),
-    }
+    blocking(backend, move |b| match f(b) {
+        Ok(reply) => rendered(b, reply, format, history),
+        Err(p) => problem_response(b, &p),
+    })
+    .await
 }
 
 async fn run<F>(backend: Shared, f: F) -> Response
 where
     F: FnOnce(&dyn Backend) -> Result<Reply, Problem> + Send + 'static,
 {
-    let b = Arc::clone(&backend);
-    let result = tokio::task::spawn_blocking(move || f(b.as_ref()))
+    blocking(backend, move |b| match f(b) {
+        Ok(reply) => reply_response(b, reply),
+        Err(p) => problem_response(b, &p),
+    })
+    .await
+}
+
+/// [`run`] for a request made by `peer`: the peer's [`Principal`] is
+/// resolved off the async workers too, since naming a uid goes through
+/// the system's user database.
+async fn run_as<F>(backend: Shared, peer: Peer, f: F) -> Response
+where
+    F: FnOnce(&dyn Backend, &Principal) -> Result<Reply, Problem> + Send + 'static,
+{
+    run(backend, move |b| f(b, &principal(peer))).await
+}
+
+/// The problem response of `p`, built off the async workers.
+async fn problem(backend: Shared, p: Problem) -> Response {
+    blocking(backend, move |b| problem_response(b, &p)).await
+}
+
+/// Runs `f` on the blocking pool and returns its response. Every call
+/// into the backend, the headers of a response included, may block (a
+/// lock, a file, the user database), so none runs on an async worker. A
+/// panic in `f` is `J-E1000`, without the headers the backend gives.
+async fn blocking<F>(backend: Shared, f: F) -> Response
+where
+    F: FnOnce(&dyn Backend) -> Response + Send + 'static,
+{
+    tokio::task::spawn_blocking(move || f(backend.as_ref()))
         .await
-        .unwrap_or_else(|_| Err(Problem::new("J-E1000", 500, "the handler panicked")));
-    match result {
-        Ok(reply) => reply_response(backend.as_ref(), reply),
-        Err(p) => problem_response(backend.as_ref(), &p),
+        .unwrap_or_else(|_| panicked())
+}
+
+/// The `J-E1000` of a handler that panicked: the backend is not asked
+/// for its headers again.
+fn panicked() -> Response {
+    let id = request_id();
+    let problem = Problem::new("J-E1000", 500, "the handler panicked");
+    let mut headers = HeaderMap::new();
+    if let Ok(v) = HeaderValue::from_str(&id) {
+        headers.insert("joker-request-id", v);
     }
+    headers.insert("joker-api-version", HeaderValue::from_static(API_VERSION));
+    headers.insert("content-type", HeaderValue::from_static(PROBLEM_JSON));
+    let body = problem.body(Some(&id)).to_string();
+    (StatusCode::INTERNAL_SERVER_ERROR, headers, body).into_response()
 }
 
 /// Parses a query string strictly: every name must be in `allowed`
@@ -423,7 +460,7 @@ macro_rules! get_query {
         async fn $name(State(b): State<Shared>, RawQuery(raw): RawQuery) -> Response {
             match parse_query(raw.as_deref(), &[$($allowed),*]) {
                 Ok(q) => run(b, move |b| b.$method(&q)).await,
-                Err(p) => problem_response(b.as_ref(), &p),
+                Err(p) => problem(b, p).await,
             }
         }
     };
@@ -483,7 +520,7 @@ async fn history(State(b): State<Shared>, RawQuery(raw): RawQuery, headers: Head
     let format = format_of(&headers, true);
     match parse_query(raw.as_deref(), &HISTORY_PARAMS) {
         Ok(q) => run_rendered(b, format, true, move |b| b.history(&q)).await,
-        Err(p) => problem_response(b.as_ref(), &p),
+        Err(p) => problem(b, p).await,
     }
 }
 
@@ -494,7 +531,7 @@ async fn history_query(State(b): State<Shared>, headers: HeaderMap, body: Bytes)
             let q = req.to_query();
             run_rendered(b, format, true, move |b| b.history(&q)).await
         }
-        Err(p) => problem_response(b.as_ref(), &p),
+        Err(p) => problem(b, p).await,
     }
 }
 
@@ -505,7 +542,7 @@ async fn events(State(b): State<Shared>, RawQuery(raw): RawQuery, headers: Heade
         &["sel", "from", "to", "since", "order", "limit", "cursor"],
     ) {
         Ok(q) => run_rendered(b, format, false, move |b| b.events(&q)).await,
-        Err(p) => problem_response(b.as_ref(), &p),
+        Err(p) => problem(b, p).await,
     }
 }
 
@@ -522,7 +559,7 @@ async fn alarm_events(
         ],
     ) {
         Ok(q) => run_rendered(b, format, false, move |b| b.alarm_events(&q)).await,
-        Err(p) => problem_response(b.as_ref(), &p),
+        Err(p) => problem(b, p).await,
     }
 }
 
@@ -552,11 +589,8 @@ async fn run_doctor(
     body: Bytes,
 ) -> Response {
     match decode(&body) {
-        Ok(req) => {
-            let who = principal(peer);
-            run(b, move |b| b.run_doctor(&who, req)).await
-        }
-        Err(p) => problem_response(b.as_ref(), &p),
+        Ok(req) => run_as(b, peer, move |b, who| b.run_doctor(who, req)).await,
+        Err(p) => problem(b, p).await,
     }
 }
 
@@ -576,11 +610,8 @@ async fn app_lifecycle(
     body: Bytes,
 ) -> Response {
     match decode(&body) {
-        Ok(req) => {
-            let who = principal(peer);
-            run(b, move |b| b.app_lifecycle(&who, &name, op, req)).await
-        }
-        Err(p) => problem_response(b.as_ref(), &p),
+        Ok(req) => run_as(b, peer, move |b, who| b.app_lifecycle(who, &name, op, req)).await,
+        Err(p) => problem(b, p).await,
     }
 }
 
@@ -622,11 +653,8 @@ async fn ack_alarm(
     body: Bytes,
 ) -> Response {
     match decode(&body) {
-        Ok(req) => {
-            let who = principal(peer);
-            run(b, move |b| b.ack_alarm(&who, &id, req)).await
-        }
-        Err(p) => problem_response(b.as_ref(), &p),
+        Ok(req) => run_as(b, peer, move |b, who| b.ack_alarm(who, &id, req)).await,
+        Err(p) => problem(b, p).await,
     }
 }
 
@@ -637,11 +665,8 @@ async fn shelve_alarm(
     body: Bytes,
 ) -> Response {
     match decode(&body) {
-        Ok(req) => {
-            let who = principal(peer);
-            run(b, move |b| b.shelve_alarm(&who, &id, req)).await
-        }
-        Err(p) => problem_response(b.as_ref(), &p),
+        Ok(req) => run_as(b, peer, move |b, who| b.shelve_alarm(who, &id, req)).await,
+        Err(p) => problem(b, p).await,
     }
 }
 
@@ -652,25 +677,21 @@ async fn unshelve_alarm(
     body: Bytes,
 ) -> Response {
     match decode(&body) {
-        Ok(req) => {
-            let who = principal(peer);
-            run(b, move |b| b.unshelve_alarm(&who, &id, req)).await
-        }
-        Err(p) => problem_response(b.as_ref(), &p),
+        Ok(req) => run_as(b, peer, move |b, who| b.unshelve_alarm(who, &id, req)).await,
+        Err(p) => problem(b, p).await,
     }
 }
 get_query!(trips, trips, ["sel"]);
 get_query!(actions, actions, ["target"]);
 
 async fn info(State(b): State<Shared>, ConnectInfo(peer): ConnectInfo<Peer>) -> Response {
-    let who = principal(peer);
-    run(b, move |b| b.info(&who)).await
+    run_as(b, peer, move |b, who| b.info(who)).await
 }
 
 async fn status(State(b): State<Shared>, RawQuery(raw): RawQuery) -> Response {
     match parse_query(raw.as_deref(), &["instances"]) {
         Ok(_) => run(b, |b| b.status()).await,
-        Err(p) => problem_response(b.as_ref(), &p),
+        Err(p) => problem(b, p).await,
     }
 }
 
@@ -689,25 +710,23 @@ async fn metrics(State(b): State<Shared>, Extension(engine): Extension<ws::Engin
 /// Prometheus text exposition format.
 async fn prometheus(State(b): State<Shared>, Extension(engine): Extension<ws::Engine>) -> Response {
     let stats = Arc::clone(&engine.stats);
-    let backend = Arc::clone(&b);
-    let result = tokio::task::spawn_blocking(move || {
-        backend
+    blocking(b, move |b| {
+        match b
             .metrics()
             .map(|r| crate::prometheus::render(&ws::with_api(r.body, &stats)))
+        {
+            Ok(text) => {
+                let mut headers = base_headers(b, &request_id());
+                headers.insert(
+                    "content-type",
+                    HeaderValue::from_static(crate::prometheus::CONTENT_TYPE),
+                );
+                (StatusCode::OK, headers, text).into_response()
+            }
+            Err(p) => problem_response(b, &p),
+        }
     })
     .await
-    .unwrap_or_else(|_| Err(Problem::new("J-E1000", 500, "the handler panicked")));
-    match result {
-        Ok(text) => {
-            let mut headers = base_headers(b.as_ref(), &request_id());
-            headers.insert(
-                "content-type",
-                HeaderValue::from_static(crate::prometheus::CONTENT_TYPE),
-            );
-            (StatusCode::OK, headers, text).into_response()
-        }
-        Err(p) => problem_response(b.as_ref(), &p),
-    }
 }
 
 async fn signal(State(b): State<Shared>, UrlPath(path): UrlPath<String>) -> Response {
@@ -725,11 +744,8 @@ async fn manual_write(
     body: Bytes,
 ) -> Response {
     match decode(&body) {
-        Ok(req) => {
-            let who = principal(peer);
-            run(b, move |b| b.manual_write(&who, &path, req)).await
-        }
-        Err(p) => problem_response(b.as_ref(), &p),
+        Ok(req) => run_as(b, peer, move |b, who| b.manual_write(who, &path, req)).await,
+        Err(p) => problem(b, p).await,
     }
 }
 
@@ -740,11 +756,8 @@ async fn release(
     body: Bytes,
 ) -> Response {
     match decode(&body) {
-        Ok(req) => {
-            let who = principal(peer);
-            run(b, move |b| b.release(&who, &path, req)).await
-        }
-        Err(p) => problem_response(b.as_ref(), &p),
+        Ok(req) => run_as(b, peer, move |b, who| b.release(who, &path, req)).await,
+        Err(p) => problem(b, p).await,
     }
 }
 
@@ -755,11 +768,8 @@ async fn reset_trip(
     body: Bytes,
 ) -> Response {
     match decode(&body) {
-        Ok(req) => {
-            let who = principal(peer);
-            run(b, move |b| b.reset_trip(&who, &path, req)).await
-        }
-        Err(p) => problem_response(b.as_ref(), &p),
+        Ok(req) => run_as(b, peer, move |b, who| b.reset_trip(who, &path, req)).await,
+        Err(p) => problem(b, p).await,
     }
 }
 
@@ -773,11 +783,8 @@ async fn reset_trips(
     body: Bytes,
 ) -> Response {
     match decode(&body) {
-        Ok(req) => {
-            let who = principal(peer);
-            run(b, move |b| b.reset_trips(&who, req)).await
-        }
-        Err(p) => problem_response(b.as_ref(), &p),
+        Ok(req) => run_as(b, peer, move |b, who| b.reset_trips(who, req)).await,
+        Err(p) => problem(b, p).await,
     }
 }
 
@@ -789,10 +796,12 @@ async fn call_method(
 ) -> Response {
     match decode(&body) {
         Ok(req) => {
-            let who = principal(peer);
-            run(b, move |b| b.call_method(&who, &instance, &method, req)).await
+            run_as(b, peer, move |b, who| {
+                b.call_method(who, &instance, &method, req)
+            })
+            .await
         }
-        Err(p) => problem_response(b.as_ref(), &p),
+        Err(p) => problem(b, p).await,
     }
 }
 
@@ -805,20 +814,20 @@ async fn invoke_action(
 ) -> Response {
     let key = header(&headers, "idempotency-key").map(str::to_owned);
     if key.is_none() {
-        return problem_response(
-            b.as_ref(),
-            &Problem::new("J-E1023", 400, "`Idempotency-Key` is required"),
-        );
+        return problem(
+            b,
+            Problem::new("J-E1023", 400, "`Idempotency-Key` is required"),
+        )
+        .await;
     }
     match decode(&body) {
         Ok(req) => {
-            let who = principal(peer);
-            run(b, move |b| {
-                b.invoke_action(&who, &target, &action, key.as_deref(), req)
+            run_as(b, peer, move |b, who| {
+                b.invoke_action(who, &target, &action, key.as_deref(), req)
             })
             .await
         }
-        Err(p) => problem_response(b.as_ref(), &p),
+        Err(p) => problem(b, p).await,
     }
 }
 
@@ -828,7 +837,7 @@ async fn invocations(State(b): State<Shared>, RawQuery(raw): RawQuery) -> Respon
         &["target", "state", "since", "from", "to", "limit", "cursor"],
     ) {
         Ok(q) => run(b, move |b| b.invocations(&q)).await,
-        Err(p) => problem_response(b.as_ref(), &p),
+        Err(p) => problem(b, p).await,
     }
 }
 
@@ -843,11 +852,8 @@ async fn cancel_invocation(
     body: Bytes,
 ) -> Response {
     match decode(&body) {
-        Ok(req) => {
-            let who = principal(peer);
-            run(b, move |b| b.cancel_invocation(&who, &id, req)).await
-        }
-        Err(p) => problem_response(b.as_ref(), &p),
+        Ok(req) => run_as(b, peer, move |b, who| b.cancel_invocation(who, &id, req)).await,
+        Err(p) => problem(b, p).await,
     }
 }
 
@@ -859,15 +865,17 @@ async fn create_generation(
 ) -> Response {
     let q = match parse_query(raw.as_deref(), &["dry_run"]) {
         Ok(q) => q,
-        Err(p) => return problem_response(b.as_ref(), &p),
+        Err(p) => return problem(b, p).await,
     };
     let dry_run = q.iter().any(|(k, v)| k == "dry_run" && v == "true");
     match decode(&body) {
         Ok(req) => {
-            let who = principal(peer);
-            run(b, move |b| b.create_generation(&who, req, dry_run)).await
+            run_as(b, peer, move |b, who| {
+                b.create_generation(who, req, dry_run)
+            })
+            .await
         }
-        Err(p) => problem_response(b.as_ref(), &p),
+        Err(p) => problem(b, p).await,
     }
 }
 
@@ -880,21 +888,23 @@ pub const MAX_BODY: usize = 16 << 20;
 async fn missing_blobs(State(b): State<Shared>, body: Bytes) -> Response {
     match decode(&body) {
         Ok(req) => run(b, move |b| b.missing_blobs(req)).await,
-        Err(p) => problem_response(b.as_ref(), &p),
+        Err(p) => problem(b, p).await,
     }
 }
 
 async fn blob_head(State(b): State<Shared>, UrlPath(digest): UrlPath<String>) -> Response {
-    let backend = Arc::clone(&b);
-    let result = tokio::task::spawn_blocking(move || backend.has_blob(&digest))
-        .await
-        .unwrap_or_else(|_| Err(Problem::new("J-E1000", 500, "the handler panicked")));
-    let headers = base_headers(b.as_ref(), &request_id());
-    match result {
-        Ok(true) => (StatusCode::OK, headers).into_response(),
-        Ok(false) => (StatusCode::NOT_FOUND, headers).into_response(),
-        Err(p) => problem_response(b.as_ref(), &p),
-    }
+    blocking(b, move |b| match b.has_blob(&digest) {
+        Ok(found) => {
+            let status = if found {
+                StatusCode::OK
+            } else {
+                StatusCode::NOT_FOUND
+            };
+            (status, base_headers(b, &request_id())).into_response()
+        }
+        Err(p) => problem_response(b, &p),
+    })
+    .await
 }
 
 async fn upload_blob(
@@ -905,31 +915,32 @@ async fn upload_blob(
 ) -> Response {
     let q = match parse_query(raw.as_deref(), &["digest", "kind"]) {
         Ok(q) => q,
-        Err(p) => return problem_response(b.as_ref(), &p),
+        Err(p) => return problem(b, p).await,
     };
     let value = |name: &str| q.iter().find(|(k, _)| k == name).map(|(_, v)| v.clone());
     let Some(digest) = value("digest") else {
-        return problem_response(
-            b.as_ref(),
-            &Problem::new(
+        return problem(
+            b,
+            Problem::new(
                 "J-E1012",
                 400,
                 "this node takes monolithic uploads: `?digest=` with the bytes (at most 8 MiB)",
             )
             .with("pointer", serde_json::json!("/digest")),
-        );
+        )
+        .await;
     };
     if body.len() > MAX_UPLOAD {
-        return problem_response(
-            b.as_ref(),
-            &Problem::new("J-E1606", 413, "a monolithic upload carries at most 8 MiB"),
-        );
+        return problem(
+            b,
+            Problem::new("J-E1606", 413, "a monolithic upload carries at most 8 MiB"),
+        )
+        .await;
     }
     let kind = value("kind");
-    let who = principal(peer);
     let location = format!("/v1/blobs/{digest}");
-    let mut response = run(b, move |b| {
-        b.upload_blob(&who, &digest, kind.as_deref(), &body)
+    let mut response = run_as(b, peer, move |b, who| {
+        b.upload_blob(who, &digest, kind.as_deref(), &body)
     })
     .await;
     if response.status() == StatusCode::CREATED
@@ -954,10 +965,12 @@ async fn activate(
     let if_match = header(&headers, "if-match").map(|s| s.trim_matches('"').to_owned());
     match decode(&body) {
         Ok(req) => {
-            let who = principal(peer);
-            run(b, move |b| b.activate(&who, &sel, if_match.as_deref(), req)).await
+            run_as(b, peer, move |b, who| {
+                b.activate(who, &sel, if_match.as_deref(), req)
+            })
+            .await
         }
-        Err(p) => problem_response(b.as_ref(), &p),
+        Err(p) => problem(b, p).await,
     }
 }
 
@@ -968,11 +981,8 @@ async fn confirm(
     body: Bytes,
 ) -> Response {
     match decode(&body) {
-        Ok(req) => {
-            let who = principal(peer);
-            run(b, move |b| b.confirm(&who, &sel, req)).await
-        }
-        Err(p) => problem_response(b.as_ref(), &p),
+        Ok(req) => run_as(b, peer, move |b, who| b.confirm(who, &sel, req)).await,
+        Err(p) => problem(b, p).await,
     }
 }
 
@@ -985,10 +995,12 @@ async fn rollback(
     let if_match = header(&headers, "if-match").map(|s| s.trim_matches('"').to_owned());
     match decode(&body) {
         Ok(req) => {
-            let who = principal(peer);
-            run(b, move |b| b.rollback(&who, if_match.as_deref(), req)).await
+            run_as(b, peer, move |b, who| {
+                b.rollback(who, if_match.as_deref(), req)
+            })
+            .await
         }
-        Err(p) => problem_response(b.as_ref(), &p),
+        Err(p) => problem(b, p).await,
     }
 }
 
@@ -1002,11 +1014,8 @@ async fn create_trace(
     body: Bytes,
 ) -> Response {
     match decode(&body) {
-        Ok(req) => {
-            let who = principal(peer);
-            run(b, move |b| b.create_trace(&who, req)).await
-        }
-        Err(p) => problem_response(b.as_ref(), &p),
+        Ok(req) => run_as(b, peer, move |b, who| b.create_trace(who, req)).await,
+        Err(p) => problem(b, p).await,
     }
 }
 
@@ -1015,28 +1024,22 @@ async fn trace(State(b): State<Shared>, UrlPath(id): UrlPath<String>) -> Respons
 }
 
 async fn trace_file(State(b): State<Shared>, UrlPath(id): UrlPath<String>) -> Response {
-    let backend = Arc::clone(&b);
-    let result = tokio::task::spawn_blocking(move || backend.trace_file(&id))
-        .await
-        .unwrap_or_else(|_| Err(Problem::new("J-E1000", 500, "the handler panicked")));
-    match result {
+    blocking(b, move |b| match b.trace_file(&id) {
         Ok(bytes) => {
-            let mut headers = base_headers(b.as_ref(), &request_id());
+            let mut headers = base_headers(b, &request_id());
             headers.insert(
                 "content-type",
                 HeaderValue::from_static("application/vnd.joker.trace.v1"),
             );
             (StatusCode::OK, headers, Body::from(bytes)).into_response()
         }
-        Err(p) => problem_response(b.as_ref(), &p),
-    }
+        Err(p) => problem_response(b, &p),
+    })
+    .await
 }
 
 async fn not_found(State(b): State<Shared>) -> Response {
-    problem_response(
-        b.as_ref(),
-        &Problem::new("J-E1005", 404, "no such endpoint"),
-    )
+    problem(b, Problem::new("J-E1005", 404, "no such endpoint")).await
 }
 
 /// The router of the M0 subset.
