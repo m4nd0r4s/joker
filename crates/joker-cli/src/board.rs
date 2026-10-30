@@ -8,10 +8,9 @@ use joker_manifest::board::{
 
 use crate::Failure;
 
-/// `jk board check <file>`. Local checks only (`J0800`–`J0849`): the
-/// `--node` confirmation of docs/07 (architecture, CPUs, peripherals and
-/// paths actually present) needs a hardware-inventory endpoint that does
-/// not exist yet.
+/// `jk board check <file>`: the local checks (`J0800`–`J0849`). With
+/// `--node`, `Node::board_check` then confirms the file against the
+/// node's hardware inventory (ref/03 §2.3.7).
 pub fn check(file: &Path) -> Result<u8, Failure> {
     let text = std::fs::read_to_string(file).map_err(|e| Failure::usage(format!("{e}")))?;
     let report = parse(file, &text);
