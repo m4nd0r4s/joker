@@ -94,7 +94,14 @@ fn svc_metrics_writes_the_counters_and_marks_what_it_cannot_read() {
     assert_eq!(good("joker.runtime.dropped"), 7);
     assert_eq!(good("joker.node.boot_count"), 7);
     assert_eq!(good("joker.output.pi.led.accepted"), 0);
+    #[cfg(target_os = "linux")]
     assert!(good("joker.system.disk_free_bytes") > 0);
+    #[cfg(not(target_os = "linux"))]
+    assert_eq!(
+        read(&plan, &shared, "joker.system.disk_free_bytes").1,
+        QualityCode::Bad,
+        "disk space is read only on Linux"
+    );
     assert!(f64::from_bits(good("joker.node.uptime")) >= 0.0);
     assert_eq!(
         read(&plan, &shared, "joker.group.calc.ticks"),
