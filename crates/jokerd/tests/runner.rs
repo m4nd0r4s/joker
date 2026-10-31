@@ -477,6 +477,7 @@ fn two_group_tasks(plan: &jokerd::plan::Plan, slow_task: Box<dyn CycleTask>) -> 
 }
 
 /// The thread names of this process, from `/proc/self/task/*/comm`.
+#[cfg(target_os = "linux")]
 fn thread_names() -> Vec<String> {
     std::fs::read_dir("/proc/self/task")
         .map(|tasks| {
@@ -509,9 +510,12 @@ fn a_hung_group_does_not_stop_the_other_group() {
     .unwrap();
     let shared = Arc::clone(&running.shared);
     std::thread::sleep(Duration::from_millis(250));
-    let names = thread_names();
-    assert!(names.iter().any(|n| n == "rt/fast"), "{names:?}");
-    assert!(names.iter().any(|n| n == "rt/slow"), "{names:?}");
+    #[cfg(target_os = "linux")]
+    {
+        let names = thread_names();
+        assert!(names.iter().any(|n| n == "rt/fast"), "{names:?}");
+        assert!(names.iter().any(|n| n == "rt/slow"), "{names:?}");
+    }
     let before = shared.groups[fast].ticks.get();
     std::thread::sleep(Duration::from_millis(200));
     let after = shared.groups[fast].ticks.get();
