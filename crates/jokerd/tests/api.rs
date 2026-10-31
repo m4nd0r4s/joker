@@ -853,6 +853,18 @@ async fn generations_follow_the_contract() {
     assert_eq!(created.status, 201);
     assert_eq!(created.json()["gen"], 2);
     assert_eq!(created.json()["state"], "pending");
+    let plan = &created.json()["plan"];
+    assert_eq!(plan["base"]["gen"], 1, "{plan}");
+    assert_eq!(plan["disruption"], "hot", "{plan}");
+    assert_eq!(plan["requires_confirm"], false);
+    assert!(
+        plan["changes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c["kind"] == "app_params" && c["target"] == "apps.light"),
+        "{plan}"
+    );
 
     let no_match = f
         .call(
@@ -2858,4 +2870,28 @@ async fn the_doctor_runs_as_a_job_and_keeps_its_report() {
         )
         .await;
     assert_eq!(refused.status, 400);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_generation_that_changes_the_api_names_the_reason() {
+    let f = start().await;
+    let target = format!(
+        "{}\n[security.api]\nlisten = [\"tcp:127.0.0.1:18443\"]\n",
+        effective()
+    );
+    let created = f
+        .call(
+            "POST",
+            "/v1/generations",
+            "/v1/generations",
+            Some(
+                json!({"manifest": {"content": target}, "lock": {"content": ""}, "artifacts": []}),
+            ),
+        )
+        .await;
+    assert_eq!(created.status, 201, "{}", created.json());
+    let plan = &created.json()["plan"];
+    assert_eq!(plan["confirm_reasons"], json!(["api"]), "{plan}");
+    assert_eq!(plan["requires_confirm"], false, "{plan}");
+    assert_eq!(plan["changes"][0]["kind"], "api", "{plan}");
 }

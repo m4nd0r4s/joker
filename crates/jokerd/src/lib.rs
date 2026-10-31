@@ -19,6 +19,7 @@ pub mod devices;
 pub mod doctor;
 pub mod drivers;
 pub mod expr_plan;
+pub mod gen_plan;
 pub mod generations;
 pub mod historian;
 pub mod io;

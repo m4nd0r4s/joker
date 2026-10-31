@@ -290,6 +290,21 @@ impl Node {
         clock
     }
 
+    fn plan_of(&self, g: &Generation) -> crate::gen_plan::GenPlan {
+        let c = lock_controller(&self.controller);
+        let base = c
+            .current()
+            .map(|(n, _, _)| n)
+            .filter(|n| *n != g.number)
+            .and_then(|n| c.store().content(n).ok().map(|(m, _)| m));
+        let target = c
+            .store()
+            .content(g.number)
+            .map(|(m, _)| m)
+            .unwrap_or_default();
+        crate::gen_plan::GenPlan::new(base.as_deref(), &target)
+    }
+
     fn generation_json(&self, g: &Generation) -> Value {
         let c = lock_controller(&self.controller);
         let activations: Vec<Activation> = c
@@ -337,6 +352,23 @@ impl Node {
         }
         if g.state == GenState::Discarded {
             m.insert("discard_reason".into(), json!("superseded"));
+        }
+        let base = match c.current() {
+            Some((n, _, _)) if n != g.number => Some(n),
+            _ => activations.last().and_then(|a| a.from),
+        };
+        let base = base.and_then(|n| c.store().get(n).ok());
+        let base_manifest = base
+            .as_ref()
+            .and_then(|b| c.store().content(b.number).ok().map(|(m, _)| m));
+        if let (Some(b), Some(base_manifest), Ok((manifest, _))) =
+            (base.as_ref(), base_manifest, c.store().content(g.number))
+        {
+            let plan = crate::gen_plan::GenPlan::new(Some(&base_manifest), &manifest);
+            m.insert(
+                "plan".into(),
+                plan.json((b.number, b.hash.as_str()), &g.hash),
+            );
         }
         m.insert(
             "activations".into(),
@@ -2882,6 +2914,13 @@ impl Backend for Node {
             .transpose()
             .map_err(|e| bad("J-E1012", e).with("pointer", json!("/confirm_window")))?
             .map(Duration::from_nanos);
+        if window.is_none() && self.plan_of(&g).requires_confirm() {
+            return Err(Problem::new(
+                "J-E1610",
+                422,
+                "the generation requires a confirmation window (ADR 0015)",
+            ));
+        }
         let switched = lock_controller(&self.controller)
             .activate(g.number, window, Some(user(who)))
             .map_err(problem)?;
