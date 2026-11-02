@@ -14,5 +14,8 @@ joker-sdk-sys.workspace = true
 joker-core = { workspace = true, features = ["alloc"] }
 joker-host.workspace = true
 
+[dev-dependencies]
+joker-sdk-fixture-peak-shaver = { path = "../joker-sdk/fixtures/peak_shaver" }
+
 [lints]
 workspace = true

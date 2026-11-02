@@ -1624,6 +1624,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "joker-sdk-fixture-peak-shaver"
+version = "1.4.2"
+dependencies = [
+ "joker-sdk",
+]
+
+[[package]]
 name = "joker-sdk-fixture-probe"
 version = "0.1.0"
 dependencies = [
@@ -1693,6 +1700,7 @@ dependencies = [
  "joker-core",
  "joker-host",
  "joker-sdk",
+ "joker-sdk-fixture-peak-shaver",
  "joker-sdk-sys",
 ]
 

@@ -218,3 +218,52 @@ fn allocating_in_a_cycle_task_traps_with_j_e0903() {
         )]
     );
 }
+
+#[test]
+fn the_parity_app_carries_its_ports_tasks_and_schemas_in_joker_meta() {
+    let wasm = guest("joker-sdk-fixture-peak-shaver");
+    let meta = joker_host::meta::read(&wasm).unwrap();
+    assert_eq!(
+        (meta.name.as_str(), meta.version.as_str()),
+        ("peak_shaver", "1.4.2")
+    );
+    let ports: Vec<(&str, PortKind)> = meta
+        .ports
+        .iter()
+        .map(|p| (p.name.as_str(), p.kind))
+        .collect();
+    assert_eq!(
+        ports,
+        [
+            ("grid_power", PortKind::Input),
+            ("soc", PortKind::Input),
+            ("battery", PortKind::Output),
+            ("limit", PortKind::Param),
+            ("reserve", PortKind::Param),
+            ("plan", PortKind::Internal),
+            ("plan_stale", PortKind::Alarm),
+            ("low_soc", PortKind::EventOut),
+        ]
+    );
+    assert_eq!(meta.ports[5].ty, Some(ValueType::Record));
+    let tasks: Vec<(&str, TaskKind)> = meta
+        .tasks
+        .iter()
+        .map(|t| (t.name.as_str(), t.kind))
+        .collect();
+    assert_eq!(
+        tasks,
+        [
+            ("control", TaskKind::Cycle),
+            ("replan", TaskKind::Async),
+            ("watch_soc", TaskKind::Async),
+        ]
+    );
+    assert_eq!(
+        (meta.tasks[0].period_ns, meta.tasks[0].wcet_ns),
+        (Some(200_000_000), Some(40_000))
+    );
+    let engine = HostEngine::native().unwrap();
+    let app = AppComponent::compile(&engine, &wasm, RuntimeMode::Prod).unwrap();
+    assert_eq!(app.meta().tasks.len(), 3);
+}
