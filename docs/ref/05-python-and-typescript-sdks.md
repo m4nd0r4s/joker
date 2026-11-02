@@ -1710,7 +1710,7 @@ async fn replan(io: &TaskIo<PeakShaver>) -> Result<()> {
 
 #[joker::task(on = "soc")]
 async fn watch_soc(io: &TaskIo<PeakShaver>, s: Sample<f64>) -> Result<()> {
-    if let Ok(v) = s.get() {
+    if let Some(&v) = s.good() {
         if v < 0.05 { io.low_soc.emit(LowSoc { soc: v }); }
     }
     Ok(())
@@ -1856,7 +1856,7 @@ class PeakShaver(App):
 | history | `.history(now - 24.h(), now, 15.mins()).await?` | `await .history({ start: now.minus("24h"), end: now, step: "15m" })` | `await .history(now - "24h", now, step="15m")` |
 | only the good ones | `hist.iter().filter_map(\|s\| s.good().copied())` | `hist.values()` | `hist.values()` |
 | trigger on change | `#[joker::task(on = "soc")]` | `task.on("soc", …)` | `@task.on("soc")` |
-| sample of the trigger | `s.get()` | `s.isGood()`, `s.value` | `s.is_good()`, `s.value` |
+| sample of the trigger | `s.good()` | `s.isGood()`, `s.value` | `s.is_good()`, `s.value` |
 
 **The same app with the model, in 1.1** (reserved; in v1 the `Model` port is not bound, the component is rejected in `prod` with `J-E0003`, and in `dev` `infer` raises `UnavailableError` with `J-E0601`):
 
@@ -2570,7 +2570,7 @@ All of them were accepted in the integration of the round (document 22, §7), wi
 | A2 | 04 §4.2 | `from joker import …`; `def control(self, io)`; `sum(v for v in h) / len(h)` over samples; `io.log` | `from joker_sdk import …`; `class Tank(App)`; `def control(self)` with `self.level.get()`; `h.mean()`; `log.info` | accepted and applied (document 22, §7) |
 | A3 | 04 §3.1, §3.3 | the port is called `grid`, and the `bind` of 03 §8 and of example 01 §3 binds `grid_power` (`J0121`/`J0110` in `jk check`) | rename the port to `grid_power` in 04 | accepted and applied (document 22, §7) |
 | A4 | 04 §3.2 | `plan.limit_kw.min(io.limit.get())` with `get_or_default()`: before the first `replan` (up to 15 min) or with the plan expired, the limit is 0 kW and the battery discharges to cover all the import | `let limit = if stale { io.limit.get() } else { plan.limit_kw.min(io.limit.get()) };` (as in §20.1) | accepted and applied (document 22, §7) |
-| A5 | 04 §3.3 | `watch_soc` uses `s.value` without looking at the quality | `if let Ok(v) = s.get() { … }` | accepted and applied (document 22, §7) |
+| A5 | 04 §3.3 | `watch_soc` uses `s.value` without looking at the quality | `if let Some(&v) = s.good() { … }` | accepted and applied (document 22, §7) |
 | A6 | 14 §9.1 | the lead is chosen again in every tick by the lowest hour count: with close hours, the pumps swap the lead while the pump is running; `rotate_every` is not used | choose the lead at the start of each demand (as in §20.2) or use `rotate_every` | accepted and applied (document 22, §7) |
 | A7 | 14 §6.6 | `@joker/classes/std` contradicts 17 §6 (`@joker/classes-std`); `from joker.classes.std`; `(self, io)`; `cycle("10ms")` below the tier 2 minimum | `@joker/classes-std`; `from joker_classes.std`; `def control(self)`; `"100ms"` in TS and `"500ms"` in Python, with the note of §14.3 | accepted and applied (document 22, §7) |
 | A8 | 17 §3.2 | nothing prevents a member called `name`, `index`, `health`, `read`, `raw` or `has`, which collides with the API of the generated handles | reserve these names (new code in the `JC` range, of 17) | resolved: ref/00 §2 |
