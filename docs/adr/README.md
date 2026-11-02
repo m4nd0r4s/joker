@@ -102,6 +102,7 @@
 | [0102](0102-the-epoch-ticker-and-cycle-deadlines-on-linux.md) | The epoch ticker (`rt/epoch`, 100 µs, `SCHED_FIFO` 99) and the deadline of a Wasm cycle call (declared WCET, else 20% of the period) |
 | [0103](0103-the-plan-of-a-generation.md) | How the plan of a generation classifies its changes (kind, effect, disruption) and when it requires a confirmation window |
 | [0104](0104-decision-reports-and-local-times-in-jk.md) | Decision reports of `jk decisions` (`--report csv\|pdf`, `--out`, the whole selection, a PDF built by `jk` with `pdf-writer`) and the local times of `--since`, `--from` and `--to` |
+| [0105](0105-the-storage-write-load-projection.md) | The storage write-load projection of `jk check` (bytes per day and fsyncs per hour by source) and what `sd`, `emmc` and `ssd` withstand (`J0381`) |
 | [0107](0107-the-instance-pool-hot-swap-and-method-records-of-the-host.md) | The instance pool of the host (32 or 16 slots, 16 MiB per memory on 32-bit), the hot swap of an app's instances off the cycle thread, and method records in the cycle subset |
 | [0108](0108-cycle-deadlines-on-the-first-call-and-without-real-time-scheduling.md) | Cycle deadlines on the first call of an instance and on a node without real-time scheduling: one group period (amends ADR 0102) |
 

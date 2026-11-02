@@ -316,7 +316,7 @@ Target: 200 k samples/s of ingestion on a CM4 with eMMC, with 1–2 bytes per co
 
 The on-disk layout, the checkpoints that bound the WAL, the aggregate rules (a `Bad` sample only counts; the dominant quality is the most frequent code, the worse one on a tie), the order of retention by size and the critical disk are in ADR 0081.
 
-**The storage medium matters.** The board declares `storage = "sd" | "emmc" | "ssd"` (`ref/03` §2.3.1). `jk check` projects the write load of the manifest (historian, decision log, `kv`, continuous trace, and the number of fsyncs) and `jk doctor` measures it on the node; above what the medium can take, the warning `J0381` says how much and where it comes from. An SD card is the most fragile case, and it is the bench's (document 23).
+**The storage medium matters.** The board declares `storage = "sd" | "emmc" | "ssd"` (`ref/03` §2.3.1). `jk check` projects the write load of the manifest (historian, decision log, `kv`, continuous trace, and the number of fsyncs) and `jk doctor` measures it on the node; above what the medium can take, the warning `J0381` says how much and where it comes from (the projection and the limits of each medium: ADR 0105). An SD card is the most fragile case, and it is the bench's (document 23).
 
 ---
 

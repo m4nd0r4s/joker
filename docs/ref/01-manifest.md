@@ -1717,7 +1717,7 @@ doc      = "01 §8"
 | `J0360` | error | resource class without CPUs, or with CPUs overlapping `rt` (except on a board with `cpus = 1`, where it is a note, §5.4) | `resources` | 03 §15 |
 | `J0370` | error | bus overloaded | `buses`, `devices` | 05 §5 |
 | `J0380` | error | estimated memory above 70% of the board's RAM | the whole manifest | 03 §15 |
-| `J0381` | warning | projected write load above what the board's `storage` withstands (also in `jk doctor`, measured) | `[telemetry]`, `[apps.*] kv`, `trace` | `ref/03` §2.3.1, 01 §12 |
+| `J0381` | warning | projected write load above what the board's `storage` withstands (also in `jk doctor`, measured); the projection and the limits per class are in ADR 0105 | `[telemetry]`, `[outputs]`, `trace` | `ref/03` §2.3.1, 01 §12, ADR 0105 |
 
 Referred to, from other ranges: `J0401` (drift against the lock), `J0501`, `J0502`, `J0510` (ML, 1.1), `J0601`–`J0604`, `J0610`, `J0620`, `J0630`, `J0650`–`J0656` (classes and instances), `J0710`, `J0720`, `J0721` (Joker Micro).
 
