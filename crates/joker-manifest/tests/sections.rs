@@ -448,7 +448,7 @@ fn every_1_1_case_reports_its_code() {
 
 #[test]
 fn every_ref01_code_is_emitted_or_deferred() {
-    let deferred: [(&str, &str); 7] = [
+    let deferred: [(&str, &str); 6] = [
         (
             "J0260",
             "reserved: data classes are not implemented yet (ADR 0079)",
@@ -456,10 +456,6 @@ fn every_ref01_code_is_emitted_or_deferred() {
         (
             "J0261",
             "reserved: data classes are not implemented yet (ADR 0079)",
-        ),
-        (
-            "J0381",
-            "storage write load: no endurance model yet (ADR 0048)",
         ),
         ("J0185", "needs the node vault (`jk check --node`)"),
         ("J0292", "needs the node trust bundle (`jk check --node`)"),

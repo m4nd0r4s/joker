@@ -389,6 +389,8 @@ pub struct BoardInfo {
     pub cpus: Option<u32>,
     /// The RAM, in bytes (`memory`, ref/03 §2.3.1).
     pub memory: Option<u64>,
+    /// The storage medium (`storage`, ref/03 §2.3.1): `sd`, `emmc` or `ssd`.
+    pub storage: Option<String>,
     /// The runtime has no Wasm engine for the board's architecture
     /// (neither Cranelift nor Pulley, docs/01 §22).
     pub no_wasm: bool,

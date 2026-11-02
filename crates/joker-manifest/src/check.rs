@@ -117,6 +117,7 @@ pub fn check(
     checker.app_and_device_rules();
     checker.admission();
     checker.memory_estimate();
+    checker.storage_load();
     checker.bus_budget();
     checker.paths
 }

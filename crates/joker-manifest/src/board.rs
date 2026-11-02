@@ -224,12 +224,17 @@ fn load(table: &Table, diagnostics: &mut Diagnostics) -> Option<BoardInfo> {
         .get("memory")
         .and_then(|e| e.node.as_str())
         .and_then(iec_bytes);
+    let storage = board
+        .get("storage")
+        .and_then(|e| e.node.as_str())
+        .map(str::to_owned);
     Some(BoardInfo {
         majors: vec![major],
         arch: arch.to_owned(),
         micro,
         cpus,
         memory,
+        storage,
         no_wasm: no_wasm_arch(arch),
     })
 }

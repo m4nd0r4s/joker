@@ -176,6 +176,7 @@ pub fn boards() -> BTreeMap<String, BoardInfo> {
             arch: "aarch64".into(),
             cpus: Some(4),
             memory: Some(1 << 30),
+            storage: Some("sd".into()),
             ..BoardInfo::default()
         },
     );
@@ -186,6 +187,7 @@ pub fn boards() -> BTreeMap<String, BoardInfo> {
             arch: "armv6".into(),
             cpus: Some(1),
             memory: Some(512 << 20),
+            storage: Some("sd".into()),
             ..BoardInfo::default()
         },
     );

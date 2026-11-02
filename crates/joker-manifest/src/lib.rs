@@ -25,6 +25,7 @@ pub mod profile;
 pub mod schema;
 mod sections;
 pub mod source;
+pub mod storage;
 pub mod tighten;
 pub mod value;
 
