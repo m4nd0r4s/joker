@@ -5,6 +5,11 @@
 //! section, for the manifest checks. A task gets its cycle instance in
 //! [`CycleTask::prepare`], before the first tick of its group, and runs
 //! `on-cycle` in step 4 of every tick.
+//!
+//! An app swaps its instances without missing a tick (docs/01 §9, ADR
+//! 0107): [`warm_app`] creates the new instances and runs their `init` off
+//! the cycle thread while the old ones keep serving, and [`swap_in`] hands
+//! them to their groups, which swap each one in between two ticks.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -13,17 +18,21 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use crossbeam_queue::ArrayQueue;
 
-use joker_core::ValueType;
+use joker_core::image::ImageStorage;
+use joker_core::slot::SeqExtender;
+use joker_core::{GroupId, ProcessImage, Proposal, Sample, SignalId, ValueType};
 use joker_host::meta::{MetaPort, PortKind as MetaKind, TaskKind};
 use joker_host::{
     AppComponent, AppMeta, CycleInstance, CycleSetup, CycleStatus, HostEngine, InstanceLimits,
-    PortBinding, PortSource, RunMode, RuntimeMode,
+    PoolConfig, PortBinding, PortSource, RunMode, RuntimeMode,
 };
 use joker_manifest::context::{AppInterface, Param, Port, PortKind, SignalType};
-use joker_manifest::model::App;
+use joker_manifest::model::{App, Manifest};
 use joker_manifest::value::Value;
 use joker_units::{Duration, Literal, Unit};
 
+use crate::plan::Plan;
+use crate::shared::{Shared, TaskSwap};
 use crate::task::{CycleTask, Prepare, TaskContext, TaskError, TaskProvider, TaskSpec};
 
 /// A trap of a Wasm cycle task, as the cycle thread saw it (docs/01 §9).
@@ -239,10 +248,11 @@ fn host(e: joker_host::HostError) -> TaskError {
 }
 
 impl WasmTasks {
-    /// No apps yet, on an engine for this machine.
+    /// No apps yet, on an engine for this machine with the default
+    /// instance pool (ADR 0107).
     pub fn new(mode: RunMode) -> Result<Self, TaskError> {
         Ok(Self::with_engine(
-            Arc::new(HostEngine::native().map_err(host)?),
+            Arc::new(HostEngine::pooled(PoolConfig::default()).map_err(host)?),
             mode,
         ))
     }
@@ -256,6 +266,11 @@ impl WasmTasks {
             traps: Arc::default(),
             logs: Arc::default(),
         }
+    }
+
+    /// The engine its apps run on.
+    pub fn engine(&self) -> &HostEngine {
+        &self.engine
     }
 
     /// Reports the traps of its tasks to `traps`.
@@ -468,6 +483,7 @@ impl TaskProvider for WasmTasks {
             ports.push((binding, format!("app.{}.{}", spec.app, p.name)));
         }
         Ok(Box::new(WasmTask {
+            warm: None,
             engine: Arc::clone(&self.engine),
             component: Arc::clone(component),
             mode: self.mode,
@@ -497,6 +513,7 @@ struct WasmTask {
     task: u32,
     ports: Vec<(Binding, String)>,
     instance: Option<CycleInstance>,
+    warm: Option<Layout>,
     app: Arc<str>,
     task_name: Arc<str>,
     traps: Arc<Traps>,
@@ -512,8 +529,36 @@ impl fmt::Debug for WasmTask {
     }
 }
 
+/// The image an instance was prepared for: its group, its period and its
+/// ports, which stay fixed for the generation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Layout {
+    group: GroupId,
+    period_ns: u64,
+    ports: Vec<SignalId>,
+}
+
+impl Layout {
+    fn of(image: &ProcessImage<'_>) -> Self {
+        Self {
+            group: image.group(),
+            period_ns: image.period_ns(),
+            ports: image.ports().to_vec(),
+        }
+    }
+
+    fn fits(&self, image: &ProcessImage<'_>) -> bool {
+        self.group == image.group()
+            && self.period_ns == image.period_ns()
+            && self.ports.as_slice() == image.ports()
+    }
+}
+
 impl CycleTask for WasmTask {
     fn prepare(&mut self, cx: &Prepare<'_, '_, '_>) -> Result<(), TaskError> {
+        if self.instance.is_some() && self.warm.as_ref().is_some_and(|w| w.fits(cx.image)) {
+            return Ok(());
+        }
         let names: Vec<String> = self
             .ports
             .iter()
@@ -582,6 +627,7 @@ impl CycleTask for WasmTask {
         )
         .map_err(host)?;
         self.instance = Some(instance);
+        self.warm = Some(Layout::of(cx.image));
         Ok(())
     }
 
@@ -617,4 +663,138 @@ impl CycleTask for WasmTask {
             }
         }
     }
+}
+
+/// One cycle task of an app whose instance was created, and its `init` run,
+/// off the cycle thread: what [`swap_in`] hands to the task's group.
+pub struct WarmTask {
+    group: usize,
+    index: usize,
+    task: Box<dyn CycleTask>,
+}
+
+impl fmt::Debug for WarmTask {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("WarmTask")
+            .field("group", &self.group)
+            .field("index", &self.index)
+            .finish_non_exhaustive()
+    }
+}
+
+impl WarmTask {
+    /// The index of the task's group in the plan.
+    pub fn group(&self) -> usize {
+        self.group
+    }
+
+    /// The task's position in its group's task order.
+    pub fn index(&self) -> usize {
+        self.index
+    }
+}
+
+/// Creates the instances of every cycle task of `app`, as `provider` and
+/// `manifest` give them, and prepares each for its group of `plan`, here
+/// and not on the cycle thread (docs/01 §9, ADR 0107). The groups keep
+/// running the instances they have. `plan` is the plan that runs: the new
+/// instances must fit its groups, so an app whose ports, bindings or groups
+/// change needs a new plan instead.
+///
+/// The first half of a hot swap; [`swap_in`] is the second. An `Err`
+/// (an `init` that fails, a full pool) leaves the running instances alone.
+pub fn warm_app(
+    plan: &Plan,
+    manifest: &Manifest,
+    provider: &dyn TaskProvider,
+    app: &str,
+) -> Result<Vec<WarmTask>, TaskError> {
+    let fresh = crate::load::instantiate_app(plan, manifest, provider, app)
+        .map_err(|e| TaskError(e.to_string()))?;
+    let tables = plan.tables().map_err(|e| TaskError(e.to_string()))?;
+    let registry = tables.registry.as_registry();
+    let generation_hash = crate::trace_ring::digest_bytes(&plan.manifest_hash);
+    let mut warm = Vec::with_capacity(fresh.len());
+    for (g, index, mut task) in fresh {
+        let group = plan
+            .groups
+            .get(g)
+            .ok_or_else(|| TaskError(format!("no group {g} in the plan")))?;
+        let writer = group
+            .tasks
+            .get(index)
+            .map(|t| t.writer)
+            .ok_or_else(|| TaskError(format!("no task {index} in group `{}`", group.name)))?;
+        let ports: Vec<SignalId> = group.ports.iter().filter_map(|p| plan.id(p)).collect();
+        let mut snapshot = vec![Sample::INITIAL; ports.len()];
+        let mut extenders = vec![SeqExtender::for_slot(); ports.len()];
+        let mut proposals = [Proposal::EMPTY; 1];
+        let image = ProcessImage::new(
+            GroupId(u32::try_from(g).map_err(|_| TaskError("too many groups".into()))?),
+            group.period_ns,
+            ImageStorage {
+                ports: &ports,
+                snapshot: &mut snapshot,
+                extenders: &mut extenders,
+                proposals: &mut proposals,
+            },
+        )
+        .map_err(|e| TaskError(format!("group `{}`: {e:?}", group.name)))?;
+        task.prepare(&Prepare {
+            registry: &registry,
+            image: &image,
+            group: &group.name,
+            writer,
+            generation_hash,
+        })
+        .map_err(|e| TaskError(format!("app `{app}` in group `{}`: {e}", group.name)))?;
+        warm.push(WarmTask {
+            group: g,
+            index,
+            task,
+        });
+    }
+    Ok(warm)
+}
+
+/// Hands warm tasks to their groups: each group swaps its own in between
+/// two ticks, so that one tick runs the old instance and the next the new
+/// one, and retires the old one (docs/01 §9, ADR 0107). The retired
+/// instances of earlier swaps are dropped first, here, which frees their
+/// pool slots. Returns how many tasks were handed over; nothing is handed
+/// over when a group's queue has no room for all of its tasks.
+pub fn swap_in(shared: &Shared, warm: Vec<WarmTask>) -> Result<usize, TaskError> {
+    drop_retired(shared);
+    for (g, queue) in shared.task_swaps.iter().enumerate() {
+        let wanted = warm.iter().filter(|w| w.group == g).count();
+        if queue.capacity() - queue.len() < wanted {
+            return Err(TaskError(format!(
+                "group {g} is still swapping in an earlier instance"
+            )));
+        }
+    }
+    let count = warm.len();
+    for w in warm {
+        let queue = shared
+            .task_swaps
+            .get(w.group)
+            .ok_or_else(|| TaskError(format!("no group {} in the running plan", w.group)))?;
+        queue
+            .push(TaskSwap {
+                index: w.index,
+                task: w.task,
+            })
+            .map_err(|_| TaskError(format!("group {} is full of swaps", w.group)))?;
+    }
+    Ok(count)
+}
+
+/// Drops the instances the groups retired after a swap, outside the cycle
+/// thread, and returns how many. Their pool slots are free afterwards.
+pub fn drop_retired(shared: &Shared) -> usize {
+    let mut n = 0;
+    while shared.retired_tasks.pop().is_some() {
+        n += 1;
+    }
+    n
 }

@@ -134,7 +134,10 @@ pub struct Prepare<'a, 'r, 'img> {
 pub trait CycleTask: Send {
     /// Prepares the task for its group, before the first tick and outside
     /// the tick path, so it may allocate (a Wasm task creates its cycle
-    /// instance here).
+    /// instance here). A task swapped into a running group is prepared off
+    /// the cycle thread, against an image with its group's layout, and then
+    /// once more by the group when it swaps it in: that second call must
+    /// return at once when the layout is the same (ADR 0107).
     fn prepare(&mut self, _cx: &Prepare<'_, '_, '_>) -> Result<(), TaskError> {
         Ok(())
     }

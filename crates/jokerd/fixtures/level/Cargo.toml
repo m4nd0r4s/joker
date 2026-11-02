@@ -1,0 +1,18 @@
+[package]
+name = "jokerd-fixture-level"
+description = "Test app of jokerd: writes its parameter to its output every tick (the hot swap of ADR 0107)"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+joker.workspace = true
+
+[lints]
+workspace = true

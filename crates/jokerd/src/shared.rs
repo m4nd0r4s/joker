@@ -115,11 +115,13 @@ pub struct TripRequest {
 }
 
 /// A fresh instance of one cycle task, to swap in between two ticks of its
-/// group (`POST /v1/apps/{app}/restart`, ref/09 §5.14).
+/// group (`POST /v1/apps/{app}/restart`, ref/09 §5.14; a hot swap, ADR
+/// 0107).
 pub struct TaskSwap {
     /// The task's position in its group's task order.
     pub index: usize,
-    /// The new instance, not yet prepared.
+    /// The new instance, already prepared off the cycle thread
+    /// (`crate::wasm::warm_app`) or prepared by the group when it swaps.
     pub task: Box<dyn crate::task::CycleTask>,
 }
 

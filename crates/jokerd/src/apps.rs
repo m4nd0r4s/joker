@@ -87,10 +87,10 @@ struct AppFiles<'a> {
 
 impl NodeApps {
     /// The apps of the state directory `state_dir`, on this machine's
-    /// engine.
+    /// engine, whose instance pool is reserved here (ADR 0107).
     pub fn open(state_dir: &Path) -> Result<Self, HostError> {
         Ok(Self::with_engine(
-            Arc::new(HostEngine::native()?),
+            Arc::new(HostEngine::pooled(joker_host::PoolConfig::default())?),
             state_dir,
         ))
     }

@@ -415,28 +415,16 @@ impl Controller {
     }
 
     /// Restarts an app of the running generation (ref/09 §5.14): fresh
-    /// instances of its cycle tasks, built here, swapped in by each group
-    /// between two ticks. Returns how many tasks were queued.
+    /// instances of its cycle tasks, built and initialized here while the
+    /// old ones serve, swapped in by each group between two ticks (ADR
+    /// 0107). Returns how many tasks were queued.
     pub fn app_restart(&mut self, app: &str) -> Result<usize, ControlError> {
         let (a, _) = self.active_app(app)?;
-        while a.running.shared.retired_tasks.pop().is_some() {}
-        let fresh =
-            crate::load::instantiate_app(&a.running.plan, &a.manifest, a.provider.as_ref(), app)
-                .map_err(|e| validation(&e))?;
-        let count = fresh.len();
-        for (g, index, task) in fresh {
-            let queue = a.running.shared.task_swaps.get(g).ok_or_else(|| {
-                ControlError::new("J-E1501", 409, "the generation changed during the restart")
-            })?;
-            if queue.push(crate::shared::TaskSwap { index, task }).is_err() {
-                return Err(ControlError::new(
-                    "J-E1501",
-                    409,
-                    "a restart of this app is still being applied",
-                ));
-            }
-        }
-        Ok(count)
+        crate::wasm::drop_retired(&a.running.shared);
+        let warm = crate::wasm::warm_app(&a.running.plan, &a.manifest, a.provider.as_ref(), app)
+            .map_err(|e| ControlError::new("J-E0909", 409, e.0))?;
+        crate::wasm::swap_in(&a.running.shared, warm)
+            .map_err(|e| ControlError::new("J-E1501", 409, e.0))
     }
 
     /// The node's historian (ADR 0081).
@@ -828,6 +816,9 @@ impl Controller {
     /// rollback when one happened.
     pub fn poll(&mut self) -> Result<Option<Switched>, ControlError> {
         self.log_traps();
+        if let Some(a) = &self.active {
+            crate::wasm::drop_retired(&a.running.shared);
+        }
         let expired = self
             .confirming
             .as_ref()
