@@ -100,5 +100,6 @@
 | [0100](0100-jokerd-cargo-features-and-the-minimal-build.md) | The Cargo features of `jokerd`, its Wasm backends, the `dist` profile and the `minimal` build |
 | [0101](0101-causal-inputs-and-decision-log-rotation.md) | Causal inputs in the decision log (at most 16 per write, `inputs_omitted`, the `cause` filter), and its rotation (64 MiB segments, 1 GiB kept) |
 | [0102](0102-the-epoch-ticker-and-cycle-deadlines-on-linux.md) | The epoch ticker (`rt/epoch`, 100 µs, `SCHED_FIFO` 99) and the deadline of a Wasm cycle call (declared WCET, else 20% of the period) |
+| [0108](0108-cycle-deadlines-on-the-first-call-and-without-real-time-scheduling.md) | Cycle deadlines on the first call of an instance and on a node without real-time scheduling: one group period (amends ADR 0102) |
 
 Changing a decision = writing a new ADR that replaces it, and updating the affected documents in the same set of commits.

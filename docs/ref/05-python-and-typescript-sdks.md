@@ -1624,7 +1624,7 @@ The build is reproducible: the same sources, the same dependencies (pinned by th
 | default `wcet` | declared | 20% of the period | 20% of the period | until there is a measurement in the lock |
 | maximum `wcet` | admission | 50% of the period | 50% of the period | `J-E0854` |
 | admission with measurement | p99.9 | measured **maximum** | measured **maximum** | `jk bench` runs ≥ 10,000 ticks and records `p999` and `max` in the lock's `[wcet]`; tier 2 admission uses `max` (D15, ref/02 §2.1.13) |
-| epoch deadline | `max(2 × wcet, 200 µs)` (01 §4) | same | same | host |
+| epoch deadline | `max(2 × wcet, 200 µs)` (01 §4; one period on the first call and without `SCHED_FIFO`, ADR 0108) | same | same | host |
 | default `memory.max` (cycle / async) | 16 / 64 MiB (01 §9) | **64 / 64 MiB** | **128 / 128 MiB** | the SDK puts the suggestion in `joker:meta`; the manifest's `[apps.<a>] resources.memory` wins; it enters `J0380` |
 | component size (`.wasm`) | 0.1–2 MB | target 8–12 MB, maximum 32 MB | target 15–30 MB, maximum 64 MB | `J-E0860` |
 | cold start (from the cached `.cwasm` to the end of `init`), p95 on a CM4 | < 10 ms | **≤ 100 ms** | **≤ 300 ms** | target; pre-initialization and the *copy-on-write* memories of pooling make it possible |
