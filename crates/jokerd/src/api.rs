@@ -2710,6 +2710,7 @@ impl Backend for Node {
             .unwrap_or(100)
             .clamp(1, 1000);
         let asc = one(query, "order").is_some_and(|o| o == "asc");
+        let (from_ns, to_ns) = crate::queries::range(query, utc_now_ns(), None)?;
         let cursor = one(query, "cursor")
             .map(|c| {
                 c.parse::<u64>()
@@ -2762,7 +2763,9 @@ impl Backend for Node {
                     return true;
                 };
                 let out = d["output"].as_str().unwrap_or("");
-                let wanted = (outputs.is_empty() || outputs.iter().any(|s| wire::matches(s, out)))
+                let ts = d["ts"].as_str().map_or(0, ts_ns);
+                let wanted = (from_ns..=to_ns).contains(&ts)
+                    && (outputs.is_empty() || outputs.iter().any(|s| wire::matches(s, out)))
                     && (outcomes.is_empty()
                         || outcomes
                             .iter()
@@ -3444,6 +3447,14 @@ fn trace_json(e: &TraceEntry) -> Value {
 
 /// The `id`, `ts` and `generation` of a decision-log entry, common to
 /// every kind of `Decision`.
+/// The UTC nanoseconds of an RFC 3339 timestamp, 0 when it does not parse.
+fn ts_ns(text: &str) -> i64 {
+    humantime::parse_rfc3339(text)
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |d| i64::try_from(d.as_nanos()).unwrap_or(i64::MAX))
+}
+
 fn decision_head(
     e: &Value,
     hashes: &std::collections::BTreeMap<u64, String>,

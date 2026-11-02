@@ -232,6 +232,17 @@ enum Format {
     Csv,
 }
 
+/// Which bulky list a reply is, for its `text/csv` and NDJSON forms.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Bulk {
+    /// A `HistoryResponse` (ref/09 §5.5).
+    History,
+    /// A page of `Decision` (ref/09 §5.7).
+    Decisions,
+    /// A page of `items` without a CSV form.
+    Items,
+}
+
 fn format_of(headers: &HeaderMap, csv: bool) -> Format {
     let accept = header(headers, "accept").unwrap_or("");
     if accept.contains("application/x-ndjson") {
@@ -303,7 +314,62 @@ pub fn history_csv(body: &Value) -> String {
     out
 }
 
-fn rendered(backend: &dyn Backend, reply: Reply, format: Format, history: bool) -> Response {
+/// The columns of a `Decision` as `text/csv` (ref/09 §5.7).
+pub const DECISION_COLUMNS: [&str; 14] = [
+    "ts",
+    "output",
+    "kind",
+    "writer",
+    "level",
+    "proposed",
+    "outcome",
+    "reason",
+    "applied",
+    "active_level",
+    "repeats",
+    "last_ts",
+    "principal",
+    "request_id",
+];
+
+/// A page of `Decision` as `text/csv` (ref/09 §5.7): one line per item,
+/// in [`DECISION_COLUMNS`] order, after the header line.
+pub fn decisions_csv(body: &Value) -> String {
+    let mut out = DECISION_COLUMNS.join(",");
+    out.push('\n');
+    for d in body["items"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
+        let outcome = d["outcome"]["outcome"]
+            .as_str()
+            .or_else(|| d["ack"]["status"].as_str())
+            .map_or(Value::Null, |o| Value::String(o.to_owned()));
+        let reason = match &d["outcome"]["reason"] {
+            Value::Null => d["ack"]["code"].clone(),
+            r => r.clone(),
+        };
+        let cells = [
+            &d["ts"],
+            &d["output"],
+            &d["kind"],
+            &d["writer"]["writer"],
+            &d["writer"]["level"],
+            &d["proposed"],
+            &outcome,
+            &reason,
+            &d["applied"],
+            &d["active_level"],
+            &d["repeats"],
+            &d["last_ts"],
+            &d["manual"]["principal"],
+            &d["manual"]["request_id"],
+        ];
+        let row: Vec<String> = cells.iter().map(|v| csv_field(v)).collect();
+        out.push_str(&row.join(","));
+        out.push('\n');
+    }
+    out
+}
+
+fn rendered(backend: &dyn Backend, reply: Reply, format: Format, bulk: Bulk) -> Response {
     if format == Format::Json || reply.status != 200 {
         return reply_response(backend, reply);
     }
@@ -312,14 +378,18 @@ fn rendered(backend: &dyn Backend, reply: Reply, format: Format, history: bool) 
     let body = match format {
         Format::Csv => {
             headers.insert("content-type", HeaderValue::from_static("text/csv"));
-            history_csv(&reply.body)
+            if bulk == Bulk::History {
+                history_csv(&reply.body)
+            } else {
+                decisions_csv(&reply.body)
+            }
         }
         _ => {
             headers.insert(
                 "content-type",
                 HeaderValue::from_static("application/x-ndjson"),
             );
-            let items = if history {
+            let items = if bulk == Bulk::History {
                 history_lines(&reply.body)
             } else {
                 reply.body["items"].as_array().cloned().unwrap_or_default()
@@ -345,12 +415,12 @@ fn rendered(backend: &dyn Backend, reply: Reply, format: Format, history: bool) 
     (StatusCode::OK, headers, body).into_response()
 }
 
-async fn run_rendered<F>(backend: Shared, format: Format, history: bool, f: F) -> Response
+async fn run_rendered<F>(backend: Shared, format: Format, bulk: Bulk, f: F) -> Response
 where
     F: FnOnce(&dyn Backend) -> Result<Reply, Problem> + Send + 'static,
 {
     blocking(backend, move |b| match f(b) {
-        Ok(reply) => rendered(b, reply, format, history),
+        Ok(reply) => rendered(b, reply, format, bulk),
         Err(p) => problem_response(b, &p),
     })
     .await
@@ -490,14 +560,23 @@ get_query!(
     ["sel", "tripped", "manual", "limit", "cursor"]
 );
 get_query!(manual, manual, ["sel"]);
-get_query!(
-    decisions,
-    decisions,
-    [
-        "output", "cause", "writer", "outcome", "kind", "from", "to", "since", "order", "limit",
-        "cursor"
-    ]
-);
+async fn decisions(
+    State(b): State<Shared>,
+    RawQuery(raw): RawQuery,
+    headers: HeaderMap,
+) -> Response {
+    let format = format_of(&headers, true);
+    match parse_query(
+        raw.as_deref(),
+        &[
+            "output", "cause", "writer", "outcome", "kind", "from", "to", "since", "order",
+            "limit", "cursor",
+        ],
+    ) {
+        Ok(q) => run_rendered(b, format, Bulk::Decisions, move |b| b.decisions(&q)).await,
+        Err(p) => problem(b, p).await,
+    }
+}
 get_query!(
     logs,
     logs,
@@ -519,7 +598,7 @@ const HISTORY_PARAMS: [&str; 10] = [
 async fn history(State(b): State<Shared>, RawQuery(raw): RawQuery, headers: HeaderMap) -> Response {
     let format = format_of(&headers, true);
     match parse_query(raw.as_deref(), &HISTORY_PARAMS) {
-        Ok(q) => run_rendered(b, format, true, move |b| b.history(&q)).await,
+        Ok(q) => run_rendered(b, format, Bulk::History, move |b| b.history(&q)).await,
         Err(p) => problem(b, p).await,
     }
 }
@@ -529,7 +608,7 @@ async fn history_query(State(b): State<Shared>, headers: HeaderMap, body: Bytes)
     match decode::<HistoryQuery>(&body) {
         Ok(req) => {
             let q = req.to_query();
-            run_rendered(b, format, true, move |b| b.history(&q)).await
+            run_rendered(b, format, Bulk::History, move |b| b.history(&q)).await
         }
         Err(p) => problem(b, p).await,
     }
@@ -541,7 +620,7 @@ async fn events(State(b): State<Shared>, RawQuery(raw): RawQuery, headers: Heade
         raw.as_deref(),
         &["sel", "from", "to", "since", "order", "limit", "cursor"],
     ) {
-        Ok(q) => run_rendered(b, format, false, move |b| b.events(&q)).await,
+        Ok(q) => run_rendered(b, format, Bulk::Items, move |b| b.events(&q)).await,
         Err(p) => problem(b, p).await,
     }
 }
@@ -558,7 +637,7 @@ async fn alarm_events(
             "sel", "severity", "from", "to", "since", "order", "limit", "cursor",
         ],
     ) {
-        Ok(q) => run_rendered(b, format, false, move |b| b.alarm_events(&q)).await,
+        Ok(q) => run_rendered(b, format, Bulk::Items, move |b| b.alarm_events(&q)).await,
         Err(p) => problem(b, p).await,
     }
 }

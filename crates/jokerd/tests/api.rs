@@ -808,6 +808,82 @@ async fn a_device_write_ack_is_served_as_a_decision() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn decisions_honour_the_range_and_serve_csv_and_ndjson() {
+    let f = start().await;
+    let path = f._dir.path().join("decisions.jsonl");
+    let mut log = DecisionLog::open(&path).unwrap();
+    for (tick, ts, applied) in [
+        (1, "2026-09-24T02:59:00.000000000Z", false),
+        (2, "2026-09-24T03:10:00.000000000Z", true),
+        (3, "2026-09-24T03:40:00.000000000Z", false),
+    ] {
+        let mut entry = serde_json::Map::new();
+        for (k, v) in [
+            ("gen", json!(1)),
+            ("record", json!("output")),
+            ("output", json!("pi.act_led")),
+            ("tick", json!(tick)),
+            ("applied", json!(applied)),
+            ("outcome", json!("accepted")),
+            ("level", json!("control:12")),
+            ("cause", json!({"kind": "proposal"})),
+            ("at_mono_ns", json!(tick)),
+            ("ts", json!(ts)),
+        ] {
+            entry.insert(k.into(), v);
+        }
+        log.append(entry, true).unwrap();
+    }
+    let range = "/v1/decisions?output=pi.act_led&from=2026-09-24T03:00:00Z&to=2026-09-24T03:30:00Z&order=asc";
+    let d = f.call("GET", "/v1/decisions", range, None).await;
+    assert_eq!(d.status, 200, "{}", d.json());
+    let items = d.json()["items"].as_array().unwrap().clone();
+    assert_eq!(items.len(), 1, "{items:?}");
+    assert_eq!(items[0]["ts"], "2026-09-24T03:10:00.000000000Z");
+    let both = f
+        .http
+        .send(
+            "GET",
+            "/v1/decisions?since=1h&from=2026-09-24T03:00:00Z",
+            &[],
+            None,
+        )
+        .await;
+    assert_eq!(both.json()["code"], "J-E1034");
+
+    let csv = f
+        .http
+        .send("GET", range, &[("accept", "text/csv")], None)
+        .await;
+    assert_eq!(csv.status, 200);
+    assert_eq!(csv.header("content-type"), Some("text/csv"));
+    let text = String::from_utf8_lossy(&csv.body).to_string();
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(
+        lines[0],
+        "ts,output,kind,writer,level,proposed,outcome,reason,applied,active_level,repeats,last_ts,principal,request_id"
+    );
+    assert_eq!(
+        lines[1],
+        "2026-09-24T03:10:00.000000000Z,pi.act_led,proposal,,,,accepted,,true,control:12,,,,"
+    );
+    assert_eq!(lines.len(), 2, "{text}");
+
+    let all = "/v1/decisions?output=pi.act_led&limit=2";
+    let ndjson = f
+        .http
+        .send("GET", all, &[("accept", "application/x-ndjson")], None)
+        .await;
+    assert_eq!(ndjson.header("content-type"), Some("application/x-ndjson"));
+    assert_eq!(String::from_utf8_lossy(&ndjson.body).lines().count(), 2);
+    assert!(
+        ndjson
+            .header("link")
+            .is_some_and(|l| l.contains("rel=\"next\""))
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn generations_follow_the_contract() {
     let f = start().await;
     let list = f
