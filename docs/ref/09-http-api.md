@@ -1186,7 +1186,7 @@ The validation J-codes (J01xx–J07xx) appear inside `J-E1601` and, on their own
 | `jk write <output> <value> --ttl [--level] --reason [--takeover]` | node | `POST /v1/outputs/{path}/preview` → confirmation → `POST /v1/outputs/{path}/manual` (`If-Match`; `--takeover` is the `takeover` field) |
 | `jk release <output> [--level]` | node | `POST /v1/outputs/{path}/release` |
 | `jk trace <signal>` | node | `GET /v1/signals/{path}/lineage`, `GET /v1/ws` (`signal_trace`) |
-| `jk decisions […] [--report pdf\|csv]` | node (+ local for PDF) | `GET /v1/decisions` (`text/csv` for reports) |
+| `jk decisions […] [--report pdf\|csv] [--out <file>]` | node (+ local for PDF) | `GET /v1/decisions` (`text/csv` for reports, every page with `order=asc`; ADR 0104) |
 | `jk alarms [--active]` | node | `GET /v1/alarms[?state=active]`, `GET /v1/alarm-events` |
 | `jk alarm ack <id>` | node | `POST /v1/alarms/{id}/ack` |
 | `jk alarm shelve <id> <ttl> "<reason>"` | node | `POST /v1/alarms/{id}/shelve` |
