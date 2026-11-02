@@ -63,12 +63,25 @@ const SURFACES: [(&str, &[&str]); 5] = [
 struct Index {
     names: BTreeSet<String>,
     members: BTreeSet<(String, String)>,
+    aliases: BTreeMap<String, String>,
 }
 
 impl Index {
     fn has(&self, item: &str) -> bool {
         match item.split_once("::") {
-            Some((ty, member)) => self.members.contains(&(ty.to_owned(), member.to_owned())),
+            Some((ty, member)) => {
+                let mut ty = ty.to_owned();
+                for _ in 0..8 {
+                    if self.members.contains(&(ty.clone(), member.to_owned())) {
+                        return true;
+                    }
+                    match self.aliases.get(&ty) {
+                        Some(target) => ty = target.clone(),
+                        None => return false,
+                    }
+                }
+                false
+            }
             None => self.names.contains(item),
         }
     }
@@ -107,6 +120,9 @@ impl Index {
             }
             Item::Type(i) => {
                 self.names.insert(i.ident.to_string());
+                if let Some(target) = type_name(&i.ty) {
+                    self.aliases.insert(i.ident.to_string(), target);
+                }
             }
             Item::Const(i) => {
                 self.names.insert(i.ident.to_string());
@@ -372,6 +388,21 @@ fn the_reader_sees_declarations_and_uses() {
     let (decl, used) = declared("#[joker::cycle(period = \"1s\")]\npub fn control() {}\n");
     assert!(decl.is_empty());
     assert_eq!(used, ["joker::cycle".to_owned()].into_iter().collect());
+}
+
+#[test]
+fn the_index_follows_type_aliases() {
+    let file: syn::File = syn::parse_quote! {
+        pub struct Handle<V>(V);
+        impl<V> Handle<V> { pub fn get(&self) {} }
+        pub type CycleHandle = Handle<Cycle>;
+        pub type Again = CycleHandle;
+    };
+    let mut index = Index::default();
+    index.add_items(&file.items);
+    assert!(index.has("CycleHandle::get"));
+    assert!(index.has("Again::get"));
+    assert!(!index.has("CycleHandle::set"));
 }
 
 #[test]
