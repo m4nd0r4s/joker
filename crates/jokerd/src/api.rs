@@ -24,7 +24,7 @@ use crate::blobs::{Blobs, PutError, parse_digest};
 use crate::control::ControlError;
 use crate::daemon::{SharedController, lock_controller};
 use crate::decisions::{DecisionLog, SharedLog, StateWriteFailure, lock};
-use crate::generations::{Activation, GenArtifact, GenState, Generation, Origin};
+use crate::generations::{Activation, GenArtifact, GenState, Generation};
 use crate::manual::{ManualTable, Occupant, TicketBook};
 use crate::pacer::Monotonic;
 use crate::plan::{OutputPlan, Plan, SignalPlan};
@@ -318,11 +318,7 @@ impl Node {
         m.insert("gen".into(), json!(g.number));
         m.insert("hash".into(), json!(g.hash));
         m.insert("state".into(), json!(g.state.name()));
-        let origin = activations.last().map_or(Origin::Local, |a| a.origin);
-        m.insert(
-            "origin".into(),
-            serde_json::to_value(origin).unwrap_or(json!("local")),
-        );
+        m.insert("origin".into(), json!("local"));
         m.insert("created_at".into(), json!(timestamp(g.created_utc_ns)));
         m.insert(
             "created_by".into(),
@@ -384,6 +380,7 @@ impl Node {
             Value::Array(
                 activations
                     .iter()
+                    .rev()
                     .map(|a| {
                         let mut x = Map::new();
                         x.insert("at".into(), json!(timestamp(a.at_utc_ns)));

@@ -47,6 +47,20 @@ pub struct Change {
     pub target: String,
     /// What it does.
     pub effect: Effect,
+    /// The leaf keys it changes, each with its value before and after
+    /// (`None` where the key is absent), in key order.
+    pub fields: Vec<Field>,
+}
+
+/// One leaf key of a change (`PlanChange.fields`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Field {
+    /// The full key (`apps.light.params.half_period`).
+    pub key: String,
+    /// Its value in the base, rendered.
+    pub from: Option<String>,
+    /// Its value in the target, rendered.
+    pub to: Option<String>,
 }
 
 /// The plan of a generation against the one it replaces.
@@ -101,6 +115,25 @@ impl GenPlan {
             kind,
             target,
             effect,
+            fields: Vec::new(),
+        });
+    }
+
+    fn push_diff(
+        &mut self,
+        kind: &'static str,
+        target: String,
+        effect: Effect,
+        from: Option<&Toml>,
+        to: Option<&Toml>,
+    ) {
+        let mut fields = Vec::new();
+        leaves(&target, from, to, &mut fields);
+        self.changes.push(Change {
+            kind,
+            target,
+            effect,
+            fields,
         });
     }
 
@@ -156,9 +189,16 @@ impl GenPlan {
             }),
             "security" => {
                 for part in ["api", "roles"] {
-                    if child(from, part) != child(to, part) {
+                    let (a, b) = (child(from, part), child(to, part));
+                    if a != b {
                         self.reason("api");
-                        self.push("api", format!("security.{part}"), Effect::Reload);
+                        self.push_diff(
+                            "api",
+                            format!("security.{part}"),
+                            Effect::Reload,
+                            a.as_ref(),
+                            b.as_ref(),
+                        );
                     }
                 }
                 if rest(from, &["api", "roles"]) != rest(to, &["api", "roles"]) {
@@ -168,12 +208,19 @@ impl GenPlan {
             }
             "net" => {
                 self.reason("network");
-                self.push("network", "net".into(), Effect::Reload);
+                self.push_diff("network", "net".into(), Effect::Reload, from, to);
             }
             "telemetry" => {
-                if child(from, "uplink") != child(to, "uplink") {
+                let (a, b) = (child(from, "uplink"), child(to, "uplink"));
+                if a != b {
                     self.reason("uplinks");
-                    self.push("uplink", "telemetry.uplink".into(), Effect::Reload);
+                    self.push_diff(
+                        "uplink",
+                        "telemetry.uplink".into(),
+                        Effect::Reload,
+                        a.as_ref(),
+                        b.as_ref(),
+                    );
                 }
                 if rest(from, &["uplink"]) != rest(to, &["uplink"]) {
                     self.push("telemetry", "telemetry".into(), Effect::Reload);
@@ -189,13 +236,13 @@ impl GenPlan {
                 (_, None) => vec![("instance_remove", name, Effect::Reload)],
                 _ => vec![("instance_change", name, Effect::Reload)],
             }),
-            "calc" => self.push("calc", key.into(), Effect::Reload),
+            "calc" => self.push_diff("calc", key.into(), Effect::Reload, from, to),
             "bridges" => self.entries(key, from, to, |name, _, _| {
                 vec![("bridge", name, Effect::Reload)]
             }),
-            "clock" => self.push("clock", key.into(), Effect::Reload),
-            "resources" => self.push("resources", key.into(), Effect::Restart),
-            _ => self.push("other", key.into(), Effect::Reload),
+            "clock" => self.push_diff("clock", key.into(), Effect::Reload, from, to),
+            "resources" => self.push_diff("resources", key.into(), Effect::Restart, from, to),
+            _ => self.push_diff("other", segment(key), Effect::Reload, from, to),
         }
     }
 
@@ -216,8 +263,8 @@ impl GenPlan {
             if x == y {
                 continue;
             }
-            for (kind, target, effect) in classify(format!("{section}.{name}"), x, y) {
-                self.push(kind, target, effect);
+            for (kind, target, effect) in classify(format!("{section}.{}", segment(name)), x, y) {
+                self.push_diff(kind, target, effect, x, y);
             }
         }
     }
@@ -248,7 +295,27 @@ impl GenPlan {
         let changes: Vec<Value> = self
             .changes
             .iter()
-            .map(|c| json!({"kind": c.kind, "target": c.target, "effect": c.effect.name()}))
+            .map(|c| {
+                let mut change =
+                    json!({"kind": c.kind, "target": c.target, "effect": c.effect.name()});
+                if !c.fields.is_empty() {
+                    change["fields"] = c
+                        .fields
+                        .iter()
+                        .map(|f| {
+                            let mut field = json!({"key": f.key});
+                            if let Some(from) = &f.from {
+                                field["from"] = json!(from);
+                            }
+                            if let Some(to) = &f.to {
+                                field["to"] = json!(to);
+                            }
+                            field
+                        })
+                        .collect();
+                }
+                change
+            })
             .collect();
         json!({
             "base": {"gen": base.0, "hash": base.1},
@@ -259,6 +326,78 @@ impl GenPlan {
             "changes": changes,
         })
     }
+}
+
+/// A key segment as it is written in a dotted key: quoted when it is not
+/// a bare key (`outputs."pcs.p_set"`).
+fn segment(name: &str) -> String {
+    let bare = !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+    if bare {
+        name.to_owned()
+    } else {
+        format!("{name:?}")
+    }
+}
+
+/// A value as a plan shows it: a string without its quotes, anything else
+/// as TOML.
+fn render(value: &Toml) -> String {
+    match value {
+        Toml::String(s) => s.clone(),
+        other => inline(other),
+    }
+}
+
+/// A value as inline TOML.
+fn inline(value: &Toml) -> String {
+    match value {
+        Toml::String(s) => format!("{s:?}"),
+        Toml::Integer(i) => i.to_string(),
+        Toml::Float(f) => f.to_string(),
+        Toml::Boolean(b) => b.to_string(),
+        Toml::Datetime(d) => d.to_string(),
+        Toml::Array(items) => format!(
+            "[{}]",
+            items.iter().map(inline).collect::<Vec<_>>().join(", ")
+        ),
+        Toml::Table(t) => format!(
+            "{{ {} }}",
+            t.iter()
+                .map(|(k, v)| format!("{} = {}", segment(k), inline(v)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
+}
+
+/// The leaf keys under `key` whose value differs between `from` and `to`,
+/// in key order; a table on both sides is walked, anything else is a leaf.
+fn leaves(key: &str, from: Option<&Toml>, to: Option<&Toml>, out: &mut Vec<Field>) {
+    if from == to {
+        return;
+    }
+    if let (Some(Toml::Table(a)), Some(Toml::Table(b))) = (from, to) {
+        let mut names: Vec<&String> = a.keys().chain(b.keys()).collect();
+        names.sort();
+        names.dedup();
+        for name in names {
+            leaves(
+                &format!("{key}.{}", segment(name)),
+                a.get(name),
+                b.get(name),
+                out,
+            );
+        }
+        return;
+    }
+    out.push(Field {
+        key: key.to_owned(),
+        from: from.map(render),
+        to: to.map(render),
+    });
 }
 
 fn child(section: Option<&Toml>, key: &str) -> Option<Toml> {
@@ -331,8 +470,13 @@ period = "100ms"
             plan.changes,
             vec![Change {
                 kind: "envelope",
-                target: "outputs.pcs.p_set".into(),
+                target: "outputs.\"pcs.p_set\"".into(),
                 effect: Effect::Hot,
+                fields: vec![Field {
+                    key: "outputs.\"pcs.p_set\".range".into(),
+                    from: Some("[\"-100 kW\", \"100 kW\"]".into()),
+                    to: Some("[\"-100 kW\", \"80 kW\"]".into()),
+                }],
             }]
         );
         assert_eq!(plan.disruption(), "hot");
@@ -354,6 +498,14 @@ period = "100ms"
         let params = GenPlan::new(Some(BASE), &with("400 kW", "300 kW"));
         assert_eq!(params.changes[0].kind, "app_params");
         assert_eq!(params.changes[0].effect, Effect::Hot);
+        assert_eq!(
+            params.changes[0].fields,
+            vec![Field {
+                key: "apps.shaver.params.limit".into(),
+                from: Some("400 kW".into()),
+                to: Some("300 kW".into()),
+            }]
+        );
         let path = GenPlan::new(Some(BASE), &with("apps/shaver\"", "apps/shaver2\""));
         assert_eq!(path.changes[0].kind, "app_update");
     }

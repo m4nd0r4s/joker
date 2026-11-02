@@ -181,7 +181,7 @@ fn the_light_app_runs_under_the_jokerd_binary_and_replays_identically() {
     };
     let gens = on_node(&["--json", "generations"]);
     let v: serde_json::Value = serde_json::from_slice(&gens.stdout).unwrap();
-    assert_eq!(v["items"][0]["origin"], "boot", "{v}");
+    assert_eq!(v["items"][0]["activations"][0]["origin"], "boot", "{v}");
     assert_eq!(v["items"][0]["state"], "confirmed", "{v}");
     std::thread::sleep(Duration::from_secs(2));
     let rebooted = tmp.path().join("boot.jktrace");

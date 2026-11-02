@@ -1021,7 +1021,7 @@ async fn generations_follow_the_contract() {
         .iter()
         .map(|a| a["origin"].clone())
         .collect();
-    assert_eq!(origins, vec![json!("local"), json!("rollback")]);
+    assert_eq!(origins, vec![json!("rollback"), json!("local")]);
 
     let again = f
         .call_with(
