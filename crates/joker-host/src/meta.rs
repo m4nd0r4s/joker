@@ -85,6 +85,24 @@ pub struct MetaPort {
     pub default: Option<f64>,
 }
 
+/// A device of the app (key 8): a handle of a class instance the app binds.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MetaDevice {
+    /// Field name.
+    pub name: String,
+    /// The class (`std/pump@1`, `local:Zone`).
+    pub class: String,
+    /// A `Many<T>` device.
+    pub many: bool,
+    /// May stay unbound.
+    pub optional: bool,
+    /// Number of members (key 6).
+    pub members: usize,
+    /// The names of its methods (key 7); the index is the method of a
+    /// `METHOD` record (ref/04 §3.3).
+    pub methods: Vec<String>,
+}
+
 /// Kind of an app task (`task-kind` of the CDDL).
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum TaskKind {
@@ -128,8 +146,9 @@ pub struct AppMeta {
     pub ports: Vec<MetaPort>,
     /// Tasks (key 7); the index is the task id of `on-cycle`.
     pub tasks: Vec<MetaTask>,
-    /// Number of devices (key 8).
-    pub devices: usize,
+    /// Devices (key 8), in declaration order: the index is the instance of
+    /// a `METHOD` record.
+    pub devices: Vec<MetaDevice>,
     /// The app implements a class (key 9).
     pub implements: bool,
     /// Unstable features used (key 10).
@@ -313,7 +332,10 @@ fn parse(meta: &Item) -> Result<AppMeta, HostError> {
         .iter()
         .map(parse_task)
         .collect::<Result<Vec<_>, _>>()?;
-    let devices = list(8)?.len();
+    let devices = list(8)?
+        .iter()
+        .map(parse_device)
+        .collect::<Result<Vec<_>, _>>()?;
     let features = list(10)?
         .iter()
         .map(|f| {
@@ -369,6 +391,30 @@ fn parse_port(item: &Item) -> Result<MetaPort, HostError> {
         kind,
         ty,
         default,
+    })
+}
+
+fn parse_device(item: &Item) -> Result<MetaDevice, HostError> {
+    let name = text(item, 0, "device name")?;
+    let class = text(item, 1, "device class")?;
+    let methods = item
+        .get(7)
+        .and_then(Item::as_array)
+        .ok_or_else(|| invalid(format!("device {name}: methods (key 7) missing")))?
+        .iter()
+        .map(|m| text(m, 0, "method name"))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(MetaDevice {
+        many: item.get(4).is_some(),
+        optional: flag(item, 8),
+        members: item
+            .get(6)
+            .and_then(Item::as_array)
+            .ok_or_else(|| invalid(format!("device {name}: members (key 6) missing")))?
+            .len(),
+        name,
+        class,
+        methods,
     })
 }
 

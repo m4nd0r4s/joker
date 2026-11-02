@@ -230,6 +230,88 @@ fn f16_to_f64(h: u16) -> f64 {
     sign * magnitude
 }
 
+/// Reads the head of a CBOR item at `at`: major type and argument. Only
+/// definite lengths.
+fn head(bytes: &[u8], at: &mut usize) -> Option<(u8, u64)> {
+    let first = *bytes.get(*at)?;
+    *at += 1;
+    let info = first & 0x1f;
+    let n = match info {
+        0..=23 => return Some((first >> 5, u64::from(info))),
+        24 => 1,
+        25 => 2,
+        26 => 4,
+        27 => 8,
+        _ => return None,
+    };
+    let raw = bytes.get(*at..*at + n)?;
+    *at += n;
+    let mut word = [0u8; 8];
+    word[8 - n..].copy_from_slice(raw);
+    Some((first >> 5, u64::from_be_bytes(word)))
+}
+
+fn half(bits: u16) -> f64 {
+    let sign = if bits & 0x8000 != 0 { -1.0 } else { 1.0 };
+    let exp = i32::from((bits >> 10) & 0x1f);
+    let frac = f64::from(bits & 0x3ff);
+    sign * match exp {
+        0 => frac * 2f64.powi(-24),
+        31 if frac == 0.0 => f64::INFINITY,
+        31 => f64::NAN,
+        _ => (1.0 + frac / 1024.0) * 2f64.powi(exp - 15),
+    }
+}
+
+/// Decodes the arguments of a method record (ref/04 §3.3, §4.10): a map
+/// with the keys `0..params.len()` in order, each value in the type of its
+/// parameter, into `out` as value bits (ref/00 §4.1). No arguments may also
+/// be an empty blob. `None` when the blob is not that: the call is refused
+/// with `J-E0504`. Does not allocate.
+pub(crate) fn method_args(
+    bytes: &[u8],
+    params: &[joker_core::ValueType],
+    out: &mut [u64],
+) -> Option<usize> {
+    use joker_core::ValueType as T;
+    if bytes.is_empty() && params.is_empty() {
+        return Some(0);
+    }
+    if params.len() > out.len() {
+        return None;
+    }
+    let mut at = 0usize;
+    let (major, n) = head(bytes, &mut at)?;
+    if major != 5 || n != params.len() as u64 {
+        return None;
+    }
+    for (i, (ty, slot)) in params.iter().zip(out.iter_mut()).enumerate() {
+        if head(bytes, &mut at)? != (0, i as u64) {
+            return None;
+        }
+        let first = *bytes.get(at)?;
+        let (major, arg) = head(bytes, &mut at)?;
+        let float = match (major, first & 0x1f) {
+            (7, 25) => Some(half(arg as u16)),
+            (7, 26) => Some(f64::from(f32::from_bits(arg as u32))),
+            (7, 27) => Some(f64::from_bits(arg)),
+            _ => None,
+        };
+        *slot = match (ty, major, arg) {
+            (T::Bool, 7, 20) => 0,
+            (T::Bool, 7, 21) => 1,
+            (T::I64, 0, v) if i64::try_from(v).is_ok() => v,
+            (T::I64, 1, v) if i64::try_from(v).is_ok() => (-1 - v as i64) as u64,
+            (T::U64 | T::Bits | T::Enum, 0, v) => v,
+            (T::F64 | T::F32, 0, v) => (v as f64).to_bits(),
+            (T::F64 | T::F32, 1, v) => (-1.0 - v as f64).to_bits(),
+            (T::F64 | T::F32, 7, _) => float.filter(|f| f.is_finite())?.to_bits(),
+            _ => return None,
+        };
+    }
+    (at == bytes.len()).then_some(params.len())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -258,6 +340,49 @@ mod tests {
         assert_eq!(f16_to_f64(0x0001), 2f64.powi(-24));
         let items = decode_sequence(&[0xfa, 0x41, 0x20, 0x00, 0x00]).unwrap();
         assert_eq!(items[0], Item::Float(10.0));
+    }
+
+    #[test]
+    fn method_arguments_decode_into_value_bits() {
+        use joker_core::ValueType as T;
+        let mut out = [0u64; 8];
+        let args = [0xa3, 0x00, 0xf9, 0x3e, 0x00, 0x01, 0x38, 0x09, 0x02, 0xf5];
+        let n = method_args(&args, &[T::F64, T::I64, T::Bool], &mut out);
+        assert_eq!(n, Some(3));
+        assert_eq!(f64::from_bits(out[0]), 1.5);
+        assert_eq!(out[1] as i64, -10);
+        assert_eq!(out[2], 1);
+        let double = [
+            0xa1, 0x00, 0xfb, 0x40, 0x09, 0x21, 0xfb, 0x54, 0x44, 0x2d, 0x18,
+        ];
+        assert_eq!(method_args(&double, &[T::F64], &mut out), Some(1));
+        assert_eq!(f64::from_bits(out[0]), core::f64::consts::PI);
+        assert_eq!(
+            method_args(&[0xa1, 0x00, 0x18, 0x2a], &[T::F64], &mut out),
+            Some(1)
+        );
+        assert_eq!(f64::from_bits(out[0]), 42.0);
+        assert_eq!(method_args(&[], &[], &mut out), Some(0));
+        assert_eq!(method_args(&[0xa0], &[], &mut out), Some(0));
+    }
+
+    #[test]
+    fn method_arguments_that_do_not_fit_are_refused() {
+        use joker_core::ValueType as T;
+        let mut out = [0u64; 8];
+        assert_eq!(method_args(&[0xa1, 0x00, 0xf5], &[T::F64], &mut out), None);
+        assert_eq!(method_args(&[0xa1, 0x01, 0x01], &[T::U64], &mut out), None);
+        assert_eq!(method_args(&[0xa0], &[T::U64], &mut out), None);
+        assert_eq!(method_args(&[0xa1, 0x00, 0x20], &[T::U64], &mut out), None);
+        assert_eq!(
+            method_args(&[0xa1, 0x00, 0xf9, 0x7c, 0x00], &[T::F64], &mut out),
+            None
+        );
+        assert_eq!(
+            method_args(&[0xa1, 0x00, 0x01, 0x00], &[T::U64], &mut out),
+            None
+        );
+        assert_eq!(method_args(&[0x81, 0x01], &[T::U64], &mut out), None);
     }
 
     #[test]

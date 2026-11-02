@@ -19,8 +19,9 @@ let report = cycle.run(task, &mut image, &outputs)?;         // one on-cycle cal
 - NaN canonicalization is on and relaxed SIMD off: the same component gives the same bits on x86_64 and aarch64 (the `cycle` test checks one recorded digest on both).
 - A node's engine takes every instance from a pool reserved when it is created (`PoolConfig`, ADR 0107): 32 slots on 64-bit nodes, 16 on 32-bit ones, where each linear memory reserves 16 MiB. An instance past the pool is `J-E0909`; `HostEngine::pool_usage` reports the slots in use.
 - Two instances of an app can live at once: the caller creates the new one, `init` included, while the old one keeps serving, and swaps them between two ticks (`jokerd::wasm::warm_app` and `swap_in`).
+- `METHOD` records and `cycle-io.call` of the devices bound in `CycleSetup::devices` are staged as core method calls (`ProcessImage::stage_method`), with their CBOR arguments decoded in each parameter's type; arguments that do not fit are `J-E0504`, without a trap.
 - A trap poisons the instance (`CycleInstance::is_poisoned`): the caller drops it and creates a new one, which counts toward the crashloop. A malformed proposal buffer (`J-E0907`) drops the app's proposals of the tick without poisoning.
-- Not served yet by the cycle subset: the async instance (components that import `async func`s are refused with `J-E0601`), class devices and implementations, wide values (`string`, `bytes`, records), unit conversion between a port and its signal, forwarding of guest stdout/stderr to the log.
+- Not served yet by the cycle subset: the async instance (components that import `async func`s are refused with `J-E0601`), `Many` devices, the members of a device, implementations, wide values (`string`, `bytes`, records), unit conversion between a port and its signal, forwarding of guest stdout/stderr to the log.
 
 ## Testing
 

@@ -33,6 +33,8 @@ pub mod codes {
     pub const WRONG_TYPE: &str = "J-E0104";
     /// Proposal buffer full; later proposals dropped.
     pub const BUFFER_FULL: &str = "J-E0203";
+    /// Method arguments that do not fit the method (ref/04 §2.3, §7).
+    pub const METHOD_ARGS: &str = "J-E0504";
     /// Feature not available in this runtime.
     pub const NOT_AVAILABLE: &str = "J-E0601";
     /// Async API called from the cycle instance.

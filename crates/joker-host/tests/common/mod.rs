@@ -149,6 +149,30 @@ impl C {
 /// The canonical `joker:meta` of the echo fixture, with `world` and
 /// `features` overridable.
 pub fn echo_meta(world: &str, features: &[&str]) -> C {
+    echo_meta_with(world, features, Vec::new())
+}
+
+/// The device `lamp` of class `local:Lamp`, with one method `set`.
+pub fn lamp() -> C {
+    C::M(vec![
+        (0, t("lamp")),
+        (1, t("local:Lamp")),
+        (6, C::A(vec![])),
+        (7, C::A(vec![C::M(vec![(0, t("set"))])])),
+    ])
+}
+
+/// The echo component with the device `lamp`.
+pub fn echo_with_lamp() -> Vec<u8> {
+    with_section(
+        echo_raw(),
+        "joker:meta",
+        &echo_meta_with("joker:runtime@0.1.0", &[], vec![lamp()]).bytes(),
+    )
+}
+
+/// [`echo_meta`] with `devices`.
+pub fn echo_meta_with(world: &str, features: &[&str], devices: Vec<C>) -> C {
     let port = |name: &str, kind: u64, ty: u64, unit: &str| {
         C::M(vec![
             (0, t(name)),
@@ -190,9 +214,15 @@ pub fn echo_meta(world: &str, features: &[&str]) -> C {
         ),
         (
             7,
-            C::A(["bad", "echo", "empty", "panic", "spin"].map(task).to_vec()),
+            C::A(
+                [
+                    "bad", "echo", "empty", "panic", "spin", "stray", "tell", "tell_io",
+                ]
+                .map(task)
+                .to_vec(),
+            ),
         ),
-        (8, C::A(vec![])),
+        (8, C::A(devices)),
         (10, C::A(features.iter().map(|f| t(f)).collect())),
         (11, C::A(vec![])),
     ])
@@ -238,6 +268,9 @@ pub const TASK_ECHO: u32 = 1;
 pub const TASK_EMPTY: u32 = 2;
 pub const TASK_PANIC: u32 = 3;
 pub const TASK_SPIN: u32 = 4;
+pub const TASK_STRAY: u32 = 5;
+pub const TASK_TELL: u32 = 6;
+pub const TASK_TELL_IO: u32 = 7;
 pub const GAIN: f64 = 1.5;
 
 #[derive(Default)]
@@ -386,6 +419,16 @@ impl Bench {
         app: &joker_host::AppComponent,
         limits: InstanceLimits,
     ) -> Result<CycleInstance, joker_host::HostError> {
+        self.try_instance_with(engine, app, limits, &[])
+    }
+
+    pub fn try_instance_with(
+        &self,
+        engine: &joker_host::HostEngine,
+        app: &joker_host::AppComponent,
+        limits: InstanceLimits,
+        devices: &[joker_host::DeviceBinding<'_>],
+    ) -> Result<CycleInstance, joker_host::HostError> {
         let ports = [
             PortBinding {
                 source: PortSource::Signal(self.x),
@@ -421,7 +464,17 @@ impl Bench {
                 writer: WriterId(0),
                 group: "main",
                 ports: &ports,
-                tasks: &[TASK_BAD, TASK_ECHO, TASK_EMPTY, TASK_PANIC, TASK_SPIN],
+                devices,
+                tasks: &[
+                    TASK_BAD,
+                    TASK_ECHO,
+                    TASK_EMPTY,
+                    TASK_PANIC,
+                    TASK_SPIN,
+                    TASK_STRAY,
+                    TASK_TELL,
+                    TASK_TELL_IO,
+                ],
                 limits,
             },
         )
@@ -436,6 +489,24 @@ impl Bench {
         x: Option<f64>,
         task: u32,
     ) -> (CycleReport, Log) {
+        let report = self.run(instance, k, x, task);
+        let mut log = Log::default();
+        self.outputs
+            .commit(&self.image, self.slots, &mut log)
+            .unwrap();
+        self.image.end_tick().unwrap();
+        (report, log)
+    }
+
+    /// The first half of [`Bench::tick`]: the group latches and the app
+    /// runs, and the tick stays open.
+    pub fn run(
+        &mut self,
+        instance: &mut CycleInstance,
+        k: u64,
+        x: Option<f64>,
+        task: u32,
+    ) -> CycleReport {
         let quality = match x {
             Some(_) => Quality::GOOD,
             None => Quality::new(QualityCode::Bad, QualityReason::CommFailure),
@@ -459,13 +530,7 @@ impl Bench {
                 &self.registry,
             )
             .unwrap();
-        let report = instance.run(task, &mut self.image, &self.outputs).unwrap();
-        let mut log = Log::default();
-        self.outputs
-            .commit(&self.image, self.slots, &mut log)
-            .unwrap();
-        self.image.end_tick().unwrap();
-        (report, log)
+        instance.run(task, &mut self.image, &self.outputs).unwrap()
     }
 
     pub fn applied(&self, signal: SignalId) -> u64 {

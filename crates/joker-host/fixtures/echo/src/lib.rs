@@ -5,7 +5,11 @@
 //!
 //! Ports, in `joker:meta` order: `x` (input, f64 kW), `gain` (param, f64),
 //! `y` (output, f64 kW), `nan` (output, u64) and `r` (output, u64). Tasks, in
-//! name order: `bad`, `echo`, `empty`, `panic` and `spin`.
+//! name order: `bad`, `echo`, `empty`, `panic`, `spin`, `stray`, `tell` and
+//! `tell_io`. The last three call method 0 of device 0 (`lamp`) with the
+//! input as its argument: `tell` with `METHOD` records, one with arguments
+//! that do not fit; `tell_io` through `cycle-io.call`; `stray` on a device
+//! that does not exist.
 //!
 //! The cycle tasks write into the reserved proposal buffer and do not
 //! allocate: the global allocator of `joker-sdk-sys` traps with `J-E0903`
@@ -76,6 +80,16 @@ impl<'a> Buffer<'a> {
         self.push(&r);
     }
 
+    fn method(&mut self, instance: u32, method: u16, args: &[u8]) {
+        let mut r = [0u8; 10 + 16];
+        r[0] = 2;
+        r[2..6].copy_from_slice(&instance.to_le_bytes());
+        r[6..8].copy_from_slice(&method.to_le_bytes());
+        r[8..10].copy_from_slice(&(args.len() as u16).to_le_bytes());
+        r[10..10 + args.len()].copy_from_slice(args);
+        self.push(&r[..10 + args.len()]);
+    }
+
     fn note(&mut self, port: u32) {
         let mut r = [6u8; 6];
         r[1] = 0;
@@ -121,6 +135,21 @@ fn echo(image: &[u8], out: &mut CycleOut<'_>) {
     }
 }
 
+fn level_args(image: &[u8]) -> [u8; 11] {
+    let mut args = [0u8; 11];
+    args[..3].copy_from_slice(&[0xa1, 0x00, 0xfb]);
+    args[3..].copy_from_slice(&f64::from_bits(u64_at(image, 64)).to_be_bytes());
+    args
+}
+
+fn tell(image: &[u8], out: &mut CycleOut<'_>, instance: u32) {
+    let mut buffer = Buffer::new(out.proposals());
+    buffer.method(instance, 0, &level_args(image));
+    buffer.method(instance, 0, &[0xa1, 0x00, 0xf5]);
+    let len = buffer.finish();
+    out.set_len(len);
+}
+
 impl CycleGuest for Echo {
     fn on_cycle(task: u32, image: &[u8], out: &mut CycleOut<'_>) {
         match task {
@@ -131,12 +160,15 @@ impl CycleGuest for Echo {
             1 => echo(image, out),
             2 => {}
             3 => std::process::abort(),
-            _ => {
+            4 => {
                 let mut n = u32_at(image, 4);
                 loop {
                     n = core::hint::black_box(n.wrapping_add(1));
                 }
             }
+            5 => tell(image, out, 1),
+            6 => tell(image, out, 0),
+            _ => cycle_io::call(0, 0, &level_args(image)),
         }
     }
 }

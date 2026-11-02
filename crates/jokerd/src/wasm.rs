@@ -621,6 +621,7 @@ impl CycleTask for WasmTask {
                 writer: cx.writer,
                 group: cx.group,
                 ports: &ports,
+                devices: &[],
                 tasks: &tasks,
                 limits,
             },

@@ -10,7 +10,7 @@
 use core::fmt;
 use std::sync::Arc;
 
-use joker_core::image::{NO_TASK, RELINQUISH};
+use joker_core::image::{MAX_METHOD_ARGS, MethodCall, NO_TASK, RELINQUISH};
 use joker_core::registry::Direction;
 use joker_core::value::NO_TS_SRC;
 use joker_core::{
@@ -26,6 +26,7 @@ use crate::abi::{
     self, Header, Record, ResultEntry, SampleEntry, image_flags, record_flags, result_flags,
     sample_flags,
 };
+use crate::cbor;
 use crate::component::{AppComponent, WORLD};
 use crate::engine::HostEngine;
 use crate::error::{HostError, HostTrap, codes, trap};
@@ -65,6 +66,31 @@ pub struct PortBinding<'a> {
     pub source: PortSource,
     /// Resolved name shown to the app (the signal path, or the parameter path).
     pub name: &'a str,
+}
+
+/// The binding of one device of the app (`joker:meta` key 8, in its
+/// order): the class instance its handle reaches and how its methods map
+/// to the instance's (ref/04 §2.6.2, §3.3; ADR 0107).
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct DeviceBinding<'a> {
+    /// The bound instance's name (`init-context.instances`).
+    pub name: &'a str,
+    /// The class version of the instance.
+    pub class_version: &'a str,
+    /// The instance's number in the core, where its method records expand.
+    pub instance: u32,
+    /// One per method of the device, in `joker:meta` order.
+    pub methods: &'a [MethodBinding<'a>],
+}
+
+/// How one method of a device maps to a method of its instance.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct MethodBinding<'a> {
+    /// The method's number in the instance (its position in the class).
+    pub method: u16,
+    /// The type of each parameter, in order; the arguments arrive in each
+    /// parameter's declared unit.
+    pub params: &'a [ValueType],
 }
 
 /// Limits of a cycle instance.
@@ -137,6 +163,8 @@ pub struct CycleSetup<'a> {
     pub group: &'a str,
     /// One binding per `joker:meta` port.
     pub ports: &'a [PortBinding<'a>],
+    /// One binding per `joker:meta` device.
+    pub devices: &'a [DeviceBinding<'a>],
     /// The cycle tasks that run in this group, as `joker:meta` task indices.
     pub tasks: &'a [u32],
     /// Limits.
@@ -244,6 +272,7 @@ const LOG_RATE: u32 = 100;
 const ERROR_MESSAGE: usize = 256;
 const ERROR_CODE: usize = 16;
 const NOTES: usize = 256;
+const METHODS: usize = 64;
 
 #[derive(Copy, Clone, Debug)]
 struct LogEntry {
@@ -319,12 +348,25 @@ struct PortEntry {
     bound: bool,
 }
 
+/// A method of a bound device, as the host stages its calls.
+struct MethodEntry {
+    method: u16,
+    params: Vec<ValueType>,
+}
+
+/// A bound device: the core instance and its methods.
+struct DeviceEntry {
+    instance: u32,
+    methods: Vec<MethodEntry>,
+}
+
 /// What `on-cycle` sees through `cycle-io` during one call.
 struct Tick {
     header: Header,
     samples: Vec<Sample>,
     results: Vec<ResultEntry>,
     dynamic: Vec<Proposal>,
+    methods: Vec<MethodCall>,
     dynamic_dropped: u32,
     pending: Vec<Option<u64>>,
     notes: Vec<u32>,
@@ -338,6 +380,7 @@ pub(crate) struct CycleState {
     rng: Arc<Xoshiro>,
     writer: WriterId,
     ports: Vec<PortEntry>,
+    devices: Vec<DeviceEntry>,
     tick: Tick,
     log: LogRing,
     guest_trap: Option<&'static str>,
@@ -436,12 +479,13 @@ impl CycleInstance {
         setup: &CycleSetup<'_>,
     ) -> Result<Self, HostError> {
         let meta = component.meta();
-        if meta.devices != 0 || meta.implements {
+        if meta.implements {
             return Err(HostError::new(
                 codes::NOT_AVAILABLE,
-                "class devices and implementations are not served by the cycle subset",
+                "implementations are not served by the cycle subset",
             ));
         }
+        let (devices, instances) = devices(meta, setup.devices)?;
         if setup.ports.len() != meta.ports.len() {
             return Err(layout(format!(
                 "{} bindings for {} ports",
@@ -590,11 +634,13 @@ impl CycleInstance {
             rng: generator,
             writer: setup.writer,
             ports,
+            devices,
             tick: Tick {
                 header: Header::default(),
                 samples: vec![Sample::INITIAL; n_slots as usize],
                 results: vec![ResultEntry::default(); n_outcomes as usize],
                 dynamic: Vec::with_capacity(dynamic_capacity),
+                methods: Vec::with_capacity(METHODS),
                 dynamic_dropped: 0,
                 pending: vec![None; n_outcomes as usize],
                 notes: Vec::with_capacity(NOTES),
@@ -627,7 +673,7 @@ impl CycleInstance {
             generation_hash: setup.generation_hash.to_vec(),
             seed,
             ports: bindings,
-            instances: Vec::new(),
+            instances,
             tasks: task_bindings,
             implements: None,
             cycle_abi: abi::ABI_VERSION,
@@ -745,7 +791,7 @@ impl CycleInstance {
         }
         let bytes = self.proposals.as_slice();
         let state = self.store.data();
-        if validate(bytes, &state.ports).is_err() {
+        if validate(bytes, &state.ports, &state.devices).is_err() {
             return Ok(self.trapped(codes::MALFORMED));
         }
         let mut report = CycleReport {
@@ -763,6 +809,9 @@ impl CycleInstance {
         }
         for proposal in &state.tick.dynamic {
             stage(image, Proposal { task, ..*proposal }, &mut report);
+        }
+        for call in &state.tick.methods {
+            stage_method(image, MethodCall { task, ..*call }, &mut report);
         }
         for record in abi::records(bytes).into_iter().flatten().flatten() {
             match record {
@@ -800,6 +849,20 @@ impl CycleInstance {
                 Record::Note { port } if self.notes.len() < self.notes.capacity() => {
                     self.notes.push(port);
                 }
+                Record::Method {
+                    instance,
+                    method,
+                    args,
+                } => match method_call(&state.devices, writer, instance, method, args) {
+                    Some(call) => stage_method(image, MethodCall { task, ..call }, &mut report),
+                    None if self.rejections.len() < self.rejections.capacity() => {
+                        self.rejections.push(Rejection {
+                            port: instance,
+                            code: codes::METHOD_ARGS,
+                        });
+                    }
+                    None => report.dropped += 1,
+                },
                 _ => {}
             }
         }
@@ -892,6 +955,7 @@ impl CycleInstance {
         let state = self.store.data_mut();
         state.tick.header = header;
         state.tick.dynamic.clear();
+        state.tick.methods.clear();
         state.tick.dynamic_dropped = 0;
         state.tick.notes.clear();
         state.tick.rejections.clear();
@@ -1029,7 +1093,105 @@ fn stage(image: &mut ProcessImage<'_>, proposal: Proposal, report: &mut CycleRep
     }
 }
 
-fn validate(bytes: &[u8], ports: &[PortEntry]) -> Result<(), abi::AbiError> {
+fn stage_method(image: &mut ProcessImage<'_>, call: MethodCall, report: &mut CycleReport) {
+    match image.stage_method(call) {
+        Ok(()) => report.staged += 1,
+        Err(_) => report.dropped += 1,
+    }
+}
+
+/// The core method call of a `METHOD` record of `writer`, with its
+/// arguments decoded; `None` when they do not fit the method (`J-E0504`).
+/// The record was validated: the device and the method exist.
+fn method_call(
+    devices: &[DeviceEntry],
+    writer: WriterId,
+    instance: u32,
+    method: u16,
+    args: &[u8],
+) -> Option<MethodCall> {
+    let device = devices.get(instance as usize)?;
+    let entry = device.methods.get(usize::from(method))?;
+    let mut call = MethodCall {
+        writer,
+        instance: device.instance,
+        method: entry.method,
+        source: joker_core::image::Source::Cycle,
+        ..MethodCall::EMPTY
+    };
+    let n = cbor::method_args(args, &entry.params, &mut call.args)?;
+    call.n_args = u8::try_from(n).ok()?;
+    Some(call)
+}
+
+/// The bound devices of an app and their `init-context.instances`, from
+/// its `joker:meta` and the bindings of the generation. The cycle subset
+/// serves a device's methods; a `Many` device is not served, and the
+/// members of a device have no ports in the port table yet (ADR 0107).
+fn devices(
+    meta: &crate::meta::AppMeta,
+    bindings: &[DeviceBinding<'_>],
+) -> Result<(Vec<DeviceEntry>, Vec<wit::InstanceBinding>), HostError> {
+    if bindings.len() != meta.devices.len() {
+        return Err(layout(format!(
+            "{} device bindings for {} devices",
+            bindings.len(),
+            meta.devices.len()
+        )));
+    }
+    let mut devices = Vec::with_capacity(bindings.len());
+    let mut instances = Vec::with_capacity(bindings.len());
+    for (i, (device, binding)) in meta.devices.iter().zip(bindings).enumerate() {
+        if device.many {
+            return Err(HostError::new(
+                codes::NOT_AVAILABLE,
+                format!(
+                    "device {}: Many devices are not served by the cycle subset",
+                    device.name
+                ),
+            ));
+        }
+        if binding.methods.len() != device.methods.len() {
+            return Err(layout(format!(
+                "device {}: {} method bindings for {} methods",
+                device.name,
+                binding.methods.len(),
+                device.methods.len()
+            )));
+        }
+        let mut methods = Vec::with_capacity(binding.methods.len());
+        for m in binding.methods {
+            if m.params.len() > MAX_METHOD_ARGS {
+                return Err(layout(format!(
+                    "device {}: a method has more than {MAX_METHOD_ARGS} parameters",
+                    device.name
+                )));
+            }
+            methods.push(MethodEntry {
+                method: m.method,
+                params: m.params.to_vec(),
+            });
+        }
+        devices.push(DeviceEntry {
+            instance: binding.instance,
+            methods,
+        });
+        instances.push(wit::InstanceBinding {
+            device: u32::try_from(i).map_err(|_| layout("too many devices"))?,
+            elem: 0,
+            name: binding.name.to_owned(),
+            class_version: binding.class_version.to_owned(),
+            capabilities: Vec::new(),
+        });
+    }
+    Ok((devices, instances))
+}
+
+fn validate(
+    bytes: &[u8],
+    ports: &[PortEntry],
+    devices: &[DeviceEntry],
+) -> Result<(), abi::AbiError> {
     for record in abi::records(bytes)? {
         let ok = match record? {
             Record::Write { port, at, .. } => {
@@ -1039,10 +1201,12 @@ fn validate(bytes: &[u8], ports: &[PortEntry]) -> Result<(), abi::AbiError> {
                         .is_some_and(|p| p.kind == PortKind::Output)
             }
             Record::Note { port } => ports.get(port as usize).is_some_and(|p| p.slot.is_some()),
-            Record::Method { .. }
-            | Record::Publish { .. }
-            | Record::CounterAdd { .. }
-            | Record::Emit { .. } => false,
+            Record::Method {
+                instance, method, ..
+            } => devices
+                .get(instance as usize)
+                .is_some_and(|d| d.methods.get(usize::from(method)).is_some()),
+            Record::Publish { .. } | Record::CounterAdd { .. } | Record::Emit { .. } => false,
         };
         if !ok {
             return Err(abi::AbiError::Flags(0));
@@ -1340,8 +1504,43 @@ fn linker(engine: &HostEngine, component: &AppComponent) -> Result<Linker<CycleS
             |cx: StoreContextMut<'_, CycleState>, (): ()| Ok((cx.data().rng.next_u64(),)),
         )
         .map_err(fail)?;
-        for name in [
+        io.func_wrap(
             "call",
+            |mut cx: StoreContextMut<'_, CycleState>, (inst, m, args): (u32, u16, WasmList<u8>)| {
+                let call = {
+                    let state = cx.data();
+                    let entry = state
+                        .devices
+                        .get(inst as usize)
+                        .and_then(|d| d.methods.get(usize::from(m)));
+                    if entry.is_none() {
+                        return Err(trap(codes::MALFORMED, "no such device or method"));
+                    }
+                    let bytes = args.as_le_slice(&cx);
+                    if bytes.len() > abi::MAX_ARGS {
+                        return Err(trap(codes::MALFORMED, "method arguments too long"));
+                    }
+                    method_call(&state.devices, state.writer, inst, m, bytes)
+                };
+                let state = cx.data_mut();
+                match call {
+                    Some(call) if state.tick.methods.len() < state.tick.methods.capacity() => {
+                        state.tick.methods.push(call);
+                    }
+                    Some(_) => state.tick.dynamic_dropped += 1,
+                    None if state.tick.rejections.len() < state.tick.rejections.capacity() => {
+                        state.tick.rejections.push(Rejection {
+                            port: inst,
+                            code: codes::METHOD_ARGS,
+                        });
+                    }
+                    None => state.tick.dynamic_dropped += 1,
+                }
+                Ok(())
+            },
+        )
+        .map_err(fail)?;
+        for name in [
             "publish",
             "counter-add",
             "emit",

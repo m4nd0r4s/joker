@@ -16,8 +16,8 @@ mod wit;
 pub use aot::AotCache;
 pub use component::{AppComponent, RuntimeMode, WORLD};
 pub use cycle::{
-    CycleInstance, CycleReport, CycleSetup, CycleStatus, InstanceLimits, LogLevel, LogRecord,
-    PortBinding, PortSource, Rejection, RunMode,
+    CycleInstance, CycleReport, CycleSetup, CycleStatus, DeviceBinding, InstanceLimits, LogLevel,
+    LogRecord, MethodBinding, PortBinding, PortSource, Rejection, RunMode,
 };
 pub use engine::{
     EPOCH_PERIOD, EngineId, HostEngine, MEMORY_RESERVATION_32, PoolConfig, PoolUsage,

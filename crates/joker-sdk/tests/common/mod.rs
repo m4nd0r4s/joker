@@ -183,6 +183,7 @@ impl Bench {
                 writer: WriterId(0),
                 group: "main",
                 ports,
+                devices: &[],
                 tasks,
                 limits: InstanceLimits::default(),
             },
