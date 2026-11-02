@@ -122,7 +122,30 @@ fn part_one_and_two() {
     let gens = n(&["--json", "generations"]);
     let v: serde_json::Value = serde_json::from_slice(&gens.stdout).unwrap();
     assert_eq!(v["items"].as_array().unwrap().len(), 2);
-    assert_eq!(code(&n(&["rollback"])), 0);
+    let table = n(&["generations"]);
+    assert_eq!(code(&table), 0, "{}", text(&table));
+    let rows: Vec<String> = text(&table).lines().map(str::to_owned).collect();
+    assert!(rows[0].starts_with("gen  state"), "{}", text(&table));
+    assert!(
+        rows[1].starts_with("  2  confirmed    local"),
+        "{}",
+        text(&table)
+    );
+    let back = n(&["rollback"]);
+    assert_eq!(code(&back), 0, "{}", text(&back));
+    assert!(
+        text(&back).contains("generation 1 reactivated (sha256:")
+            && text(&back).contains("· origin rollback"),
+        "{}",
+        text(&back)
+    );
+    let after = n(&["generations"]);
+    assert!(
+        text(&after).contains("  2  rolled_back  local")
+            && text(&after).contains("  1  confirmed    rollback"),
+        "{}",
+        text(&after)
+    );
     let decisions = n(&["decisions", "--limit", "3"]);
     assert_eq!(code(&decisions), 0);
     assert!(text(&decisions).contains("pi.act_led"));

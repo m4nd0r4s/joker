@@ -474,6 +474,9 @@ impl Node {
         if let Some(t) = to {
             body["to"] = json!(t);
         }
+        if !self.json {
+            println!("{}", self.header()?);
+        }
         let g = checked(self.client.post(
             "/v1/generations/rollback",
             &body,
@@ -483,11 +486,7 @@ impl Node {
         if self.json {
             print_json(&g);
         } else {
-            println!(
-                "generation {} reactivated ({})",
-                g["gen"],
-                g["state"].as_str().unwrap_or("?")
-            );
+            println!("{}", rollback_line(&g));
         }
         Ok(0)
     }
@@ -499,15 +498,7 @@ impl Node {
             print_json(&list);
             return Ok(0);
         }
-        for g in list["items"].as_array().cloned().unwrap_or_default() {
-            println!(
-                "{:>4}  {:<11}  {}  {}",
-                g["gen"],
-                g["state"].as_str().unwrap_or(""),
-                &g["hash"].as_str().unwrap_or("")[..19.min(g["hash"].as_str().unwrap_or("").len())],
-                g["message"].as_str().unwrap_or("")
-            );
-        }
+        print!("{}", generations_table(&list));
         Ok(0)
     }
 
@@ -1666,6 +1657,123 @@ fn parse_args(pairs: &[String]) -> Result<Value, Failure> {
 /// person can follow, not the 100 ms default of a program (ref/09 §6.5).
 const WATCH_INTERVAL: &str = "1s";
 
+/// A hash as the tables show it: the algorithm and four hex digits.
+fn short_hash(hash: &str) -> String {
+    match hash.split_once(':') {
+        Some((alg, hex)) => format!("{alg}:{}…", hex.get(..4).unwrap_or(hex)),
+        None => hash.to_owned(),
+    }
+}
+
+/// An RFC 3339 instant as `YYYY-MM-DD HH:MM:SS` (UTC).
+fn short_time(ts: &str) -> String {
+    ts.get(..19).unwrap_or(ts).replace('T', " ")
+}
+
+/// The line `jk rollback` prints for the reactivated generation.
+fn rollback_line(g: &Value) -> String {
+    let origin = g["activations"][0]["origin"].as_str().unwrap_or("rollback");
+    let mut line = format!(
+        "generation {} reactivated ({}) · origin {origin}",
+        g["gen"],
+        short_hash(g["hash"].as_str().unwrap_or(""))
+    );
+    if g["state"] == "confirming" {
+        line.push_str(&format!(
+            " · confirm before {}",
+            g["confirm_deadline"].as_str().unwrap_or("the deadline")
+        ));
+    }
+    line
+}
+
+/// The changes a generation made when it was last activated, or would
+/// make (a `pending` one), as `~ key from → to` lines: the fields of its
+/// plan when the plan is against the generation that activation left.
+fn plan_lines(g: &Value) -> Vec<String> {
+    let plan = &g["plan"];
+    let last = &g["activations"][0];
+    let made_here = if last.is_null() {
+        true
+    } else {
+        !last["from"].is_null() && last["from"]["gen"] == plan["base"]["gen"]
+    };
+    if plan.is_null() || !made_here {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for change in plan["changes"].as_array().into_iter().flatten() {
+        let fields = change["fields"].as_array().cloned().unwrap_or_default();
+        if fields.is_empty() {
+            out.push(format!(
+                "~ {} ({})",
+                change["target"].as_str().unwrap_or("?"),
+                change["kind"].as_str().unwrap_or("?")
+            ));
+        }
+        for f in fields {
+            let key = f["key"].as_str().unwrap_or("?");
+            out.push(match (f["from"].as_str(), f["to"].as_str()) {
+                (Some(a), Some(b)) => format!("~ {key} {a} → {b}"),
+                (None, Some(b)) => format!("+ {key} {b}"),
+                (Some(a), None) => format!("- {key} {a}"),
+                (None, None) => format!("~ {key}"),
+            });
+        }
+    }
+    out
+}
+
+/// The table of `jk generations` (docs/07, track part 2): newest first,
+/// one row per generation with its last activation's origin, principal
+/// and instant, and the changes it made.
+fn generations_table(list: &Value) -> String {
+    let mut out = format!(
+        "{:>3}  {:<11}  {:<8} {:<15} {:<21} {}\n",
+        "gen", "state", "origin", "who", "when", "hash"
+    );
+    let mut items = list["items"].as_array().cloned().unwrap_or_default();
+    items.reverse();
+    for g in items {
+        let last = &g["activations"][0];
+        let (origin, who, when) = if last.is_null() {
+            (
+                g["origin"].as_str().unwrap_or("local"),
+                g["created_by"].as_str().unwrap_or(""),
+                g["created_at"].as_str().unwrap_or(""),
+            )
+        } else {
+            (
+                last["origin"].as_str().unwrap_or(""),
+                last["by"]
+                    .as_str()
+                    .or(g["created_by"].as_str())
+                    .unwrap_or(""),
+                last["at"].as_str().unwrap_or(""),
+            )
+        };
+        let row = format!(
+            "{:>3}  {:<11}  {:<8} {:<15} {:<21} {}",
+            g["gen"].to_string(),
+            g["state"].as_str().unwrap_or(""),
+            origin,
+            who,
+            short_time(when),
+            short_hash(g["hash"].as_str().unwrap_or(""))
+        );
+        let mut changes = plan_lines(&g).into_iter();
+        match changes.next() {
+            Some(first) => out.push_str(&format!("{row}   {first}\n")),
+            None => out.push_str(&format!("{}\n", row.trim_end())),
+        }
+        let indent = " ".repeat(row.chars().count() + 3);
+        for more in changes {
+            out.push_str(&format!("{indent}{more}\n"));
+        }
+    }
+    out
+}
+
 fn lost(message: String) -> Failure {
     Failure { message, exit: 4 }
 }
@@ -2194,6 +2302,48 @@ mod tests {
         );
         assert!(
             alarm_lines(&serde_json::json!({"active": 0, "unacked": 0, "items": []})).is_empty()
+        );
+    }
+
+    #[test]
+    fn generations_show_newest_first_with_the_changes_each_made() {
+        let list = json!({"items": [
+            {"gen": 1, "hash": "sha256:3b0c1234", "state": "confirmed", "origin": "local",
+             "created_by": "cert:admin-dl", "created_at": "2026-09-25T10:24:50Z",
+             "plan": {"base": {"gen": 2}, "changes": [{"kind": "app_params", "target": "apps.light",
+                "fields": [{"key": "apps.light.params.half_period", "from": "250 ms", "to": "500 ms"}]}]},
+             "activations": [{"at": "2026-09-25T10:24:52.123Z", "origin": "local", "by": "cert:admin-dl"}]},
+            {"gen": 2, "hash": "sha256:9e41abcd", "state": "confirmed", "origin": "local",
+             "created_by": "cert:admin-dl", "created_at": "2026-09-25T10:31:00Z",
+             "plan": {"base": {"gen": 1}, "changes": [{"kind": "app_params", "target": "apps.light",
+                "fields": [{"key": "apps.light.params.half_period", "from": "500 ms", "to": "250 ms"}]}]},
+             "activations": [{"at": "2026-09-25T10:31:07Z", "origin": "local", "by": "cert:admin-dl",
+                "from": {"gen": 1, "hash": "sha256:3b0c1234"}}]}
+        ], "next_cursor": null});
+        let table = generations_table(&list);
+        let lines: Vec<&str> = table.lines().collect();
+        assert_eq!(lines.len(), 3, "{table}");
+        assert!(lines[0].starts_with("gen  state"), "{table}");
+        assert!(
+            lines[1].starts_with(
+                "  2  confirmed    local    cert:admin-dl   2026-09-25 10:31:07   sha256:9e41…"
+            ),
+            "{table}"
+        );
+        assert!(
+            lines[1].ends_with("~ apps.light.params.half_period 500 ms → 250 ms"),
+            "{table}"
+        );
+        assert!(lines[2].ends_with("sha256:3b0c…"), "{table}");
+    }
+
+    #[test]
+    fn a_rollback_names_the_generation_its_hash_and_origin() {
+        let g = json!({"gen": 1, "hash": "sha256:3b0c1234", "state": "confirmed",
+            "activations": [{"origin": "rollback"}, {"origin": "local"}]});
+        assert_eq!(
+            rollback_line(&g),
+            "generation 1 reactivated (sha256:3b0c…) · origin rollback"
         );
     }
 
