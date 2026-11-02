@@ -1,0 +1,5 @@
+error: J-E0719: cycle state `Window<'_>` must be 'static
+  --> tests/ui/e0719_state_not_static.rs:15:44
+   |
+15 | fn blink(io: &mut CycleIo<Probe>, st: &mut Window<'_>) -> Result<()> {
+   |                                            ^^^^^^

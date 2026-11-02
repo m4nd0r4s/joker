@@ -1,0 +1,5 @@
+error: J-E0712: expected `async fn(&TaskIo<App>) -> Result<()>`, with the argument of the trigger (`s: Sample<T>`, `c: Change`, `e: E` or `d: Delivery<E>`) and `st: &Shared<S>` after it
+  --> tests/ui/e0712_task_signature.rs:10:1
+   |
+10 | fn blink(io: &TaskIo<Probe>) -> Result<()> {
+   | ^^

@@ -1,0 +1,21 @@
+error[E0277]: J-E0701: `changed` is only available in cycle tasks (CycleIo)
+  --> tests/ui/e0701_changed_in_task.rs:11:21
+   |
+11 |     let _ = io.grid.changed();
+   |                     ^^^^^^^ an async task reads the current slot, not the latch of a tick
+   |
+   = help: the trait `CycleApi<changed>` is not implemented for `Task`
+   = note: the latch facts of a tick (changed, pending) exist only inside a cycle task
+help: the trait `CycleApi<A>` is implemented for `joker::view::Cycle`
+  --> src/view.rs
+   |
+   | impl<A> CycleApi<A> for Cycle {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `InputHandle::<'a, T, V>::changed`
+  --> src/handles.rs
+   |
+   |     pub fn changed(&self) -> bool
+   |            ------- required by a bound in this associated function
+   |     where
+   |         V: CycleApi<api::changed>,
+   |            ^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `InputHandle::<'a, T, V>::changed`

@@ -1,0 +1,5 @@
+error: J-E0718: `#[model]` is reserved for v1.1; enable the `unstable-ml` feature
+ --> tests/ui/e0718_unstable_api.rs:5:5
+  |
+5 |     #[model(inputs = "f32[1,96,4]", outputs = "f32[1,96]")]
+  |     ^

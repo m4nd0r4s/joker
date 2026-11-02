@@ -1,0 +1,5 @@
+error: J-E0706: default 6000 is outside range 0..5000
+ --> tests/ui/e0706_default_outside_range.rs:3:55
+  |
+3 |     #[param(unit = "kW", range = "0..5000", default = 6000.0)]
+  |                                                       ^^^^^^

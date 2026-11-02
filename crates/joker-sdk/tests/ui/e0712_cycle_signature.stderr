@@ -1,0 +1,5 @@
+error: J-E0712: expected `fn(&mut CycleIo<App>, &mut State) -> Result<()>` or `fn(&mut CycleIo<App>) -> Result<()>`
+  --> tests/ui/e0712_cycle_signature.rs:10:1
+   |
+10 | fn blink(io: &CycleIo<Probe>) -> Result<()> {
+   | ^^

@@ -1,0 +1,5 @@
+error: J0109: unit `furlong` is not in the v1 catalog
+ --> tests/ui/j0109_unit_outside_the_catalog.rs:3:20
+  |
+3 |     #[input(unit = "furlong")]
+  |                    ^^^^^^^^^

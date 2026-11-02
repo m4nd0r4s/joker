@@ -1,0 +1,5 @@
+error: J-E0714: cycle task `blink`: wcet is above the period
+ --> tests/ui/e0714_wcet_above_period.rs:9:40
+  |
+9 | #[joker::cycle(period = "20ms", wcet = "30ms")]
+  |                                        ^^^^^^

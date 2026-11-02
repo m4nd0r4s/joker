@@ -1,0 +1,5 @@
+error[E0080]: evaluation panicked: J-E0713: `on = "charge"`: the app has no port `charge` with a sample
+ --> tests/ui/e0713_unknown_port.rs:9:1
+  |
+9 | #[joker::task(on = "charge")]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ evaluation of `_` failed here

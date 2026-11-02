@@ -1,0 +1,5 @@
+error: J-E0721: field `name`: `String` is not a record field type; use BoundedString<N>
+ --> tests/ui/e0721_record_field.rs:4:11
+  |
+4 |     name: String,
+  |           ^^^^^^

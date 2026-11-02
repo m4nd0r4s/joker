@@ -1,0 +1,5 @@
+error: J-E0720: field `history` of `Ctl` cannot be persisted
+ --> tests/ui/e0720_persist_field.rs:5:14
+  |
+5 |     history: Vec<f64>,
+  |              ^^^

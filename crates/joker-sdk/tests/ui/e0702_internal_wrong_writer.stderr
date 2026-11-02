@@ -1,0 +1,22 @@
+error[E0277]: J-E0702: this internal is written by the AsyncWriter domain; declare #[internal(writer = "…")] to change it
+  --> tests/ui/e0702_internal_wrong_writer.rs:16:13
+   |
+16 |     io.plan.set(Plan { limit: 1.0 });
+   |             ^^^ `set` from a view that is not the declared writer
+   |
+   = note: an Internal<T> has exactly one writer domain: "async" (the default) or "cycle"
+help: the trait `Writes<AsyncWriter>` is not implemented for `joker::view::Cycle`
+      but trait `Writes<CycleWriter>` is implemented for it
+  --> src/view.rs
+   |
+   | impl Writes<CycleWriter> for Cycle {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for that trait implementation, expected `CycleWriter`, found `AsyncWriter`
+note: required by a bound in `InternalHandle::<'a, T, V, W>::set`
+  --> src/handles.rs
+   |
+   |     pub fn set(&self, v: T)
+   |            --- required by a bound in this associated function
+   |     where
+   |         V: Writes<W>,
+   |            ^^^^^^^^^ required by this bound in `InternalHandle::<'a, T, V, W>::set`

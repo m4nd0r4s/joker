@@ -1,0 +1,21 @@
+error[E0277]: J-E0701: `history` is only available in async tasks (TaskIo)
+  --> tests/ui/e0701_history_in_cycle.rs:12:21
+   |
+12 |     let _ = io.grid.history(now - 1.h(), now, 15.mins());
+   |                     ^^^^^^^ cycle tasks cannot wait for a commit or for the historian
+   |
+   = help: the trait `AsyncApi<history>` is not implemented for `joker::view::Cycle`
+   = note: a cycle task that needs this publishes an event; an async task acts on it (doc 02 §8)
+help: the trait `AsyncApi<A>` is implemented for `Task`
+  --> src/view.rs
+   |
+   | impl<A> AsyncApi<A> for Task {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `InputHandle::<'a, T, V>::history`
+  --> src/handles.rs
+   |
+   |     pub async fn history(&self, from: Instant, to: Instant, step: Duration) -> Result<History<T>>
+   |                  ------- required by a bound in this associated function
+   |     where
+   |         V: AsyncApi<api::history>,
+   |            ^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `InputHandle::<'a, T, V>::history`

@@ -1,0 +1,46 @@
+error[E0277]: J-E0721: `Opaque` is not a record field type
+ --> tests/ui/e0721_not_a_field_type.rs:6:12
+  |
+6 |     extra: Opaque,
+  |            ^^^^^^ not a record field type
+  |
+help: the trait `joker::Field` is not implemented for `Opaque`
+ --> tests/ui/e0721_not_a_field_type.rs:1:1
+  |
+1 | pub struct Opaque;
+  | ^^^^^^^^^^^^^^^^^
+  = note: a field is a scalar, Instant, MonoNanos, UtcNanos, UtcSeconds, Duration, Quality, an enum or record with a joker derive, Option<T>, BoundedVec<T, N <= 64> or BoundedString<N <= 1024>
+  = help: the following other types implement trait `joker::Field`:
+            ()
+            Bits<N>
+            BoundedBytes<N>
+            BoundedString<N>
+            BoundedVec<T, N>
+            Duration
+            MonoNanos
+            Option<T>
+          and $N others
+
+error[E0277]: J-E0721: `Opaque` is not a record field type
+ --> tests/ui/e0721_not_a_field_type.rs:3:10
+  |
+3 | #[derive(joker::Record)]
+  |          ^^^^^^^^^^^^^ not a record field type
+  |
+help: the trait `joker::Field` is not implemented for `Opaque`
+ --> tests/ui/e0721_not_a_field_type.rs:1:1
+  |
+1 | pub struct Opaque;
+  | ^^^^^^^^^^^^^^^^^
+  = note: a field is a scalar, Instant, MonoNanos, UtcNanos, UtcSeconds, Duration, Quality, an enum or record with a joker derive, Option<T>, BoundedVec<T, N <= 64> or BoundedString<N <= 1024>
+  = help: the following other types implement trait `joker::Field`:
+            ()
+            Bits<N>
+            BoundedBytes<N>
+            BoundedString<N>
+            BoundedVec<T, N>
+            Duration
+            MonoNanos
+            Option<T>
+          and $N others
+  = note: this error originates in the derive macro `joker::Record` (in Nightly builds, run with -Z macro-backtrace for more info)

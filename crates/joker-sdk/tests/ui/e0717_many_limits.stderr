@@ -1,0 +1,5 @@
+error: J-E0717: Many<_, 8, 2>: expected 0 <= MIN <= MAX <= 1024
+ --> tests/ui/e0717_many_limits.rs:7:12
+  |
+7 |     pumps: Many<Pump, 8, 2>,
+  |            ^^^^

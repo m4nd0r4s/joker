@@ -1,0 +1,5 @@
+error: J-E0703: numeric port `temp` needs a unit; use unit = "1" for a dimensionless value
+ --> tests/ui/e0703_numeric_without_unit.rs:4:5
+  |
+4 |     temp: joker::Input<f64>,
+  |     ^^^^

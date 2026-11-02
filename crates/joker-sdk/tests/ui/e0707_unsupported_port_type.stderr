@@ -1,0 +1,5 @@
+error: J-E0707: `i32` is not a port type; use i64
+ --> tests/ui/e0707_unsupported_port_type.rs:4:25
+  |
+4 |     count: joker::Input<i32>,
+  |                         ^^^

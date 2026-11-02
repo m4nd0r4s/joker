@@ -1,0 +1,5 @@
+error: J-E0705: invalid duration `200 parsecs`; expected e.g. "200ms", "1.5s", "90m"
+ --> tests/ui/e0705_invalid_duration.rs:9:25
+  |
+9 | #[joker::cycle(period = "200 parsecs")]
+  |                         ^^^^^^^^^^^^^

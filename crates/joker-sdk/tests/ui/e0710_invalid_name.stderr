@@ -1,0 +1,7 @@
+error: J-E0710: app name `Joker-Probe` must match [a-z][a-z0-9_]{0,31} and not start with "joker"
+ --> tests/ui/e0710_invalid_name.rs:1:1
+  |
+1 | #[joker::app(name = "Joker-Probe", version = "0.1.0")]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `joker::app` (in Nightly builds, run with -Z macro-backtrace for more info)

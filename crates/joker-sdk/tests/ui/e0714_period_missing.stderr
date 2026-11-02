@@ -1,0 +1,7 @@
+error: J-E0714: cycle task `blink` needs period = "…"
+ --> tests/ui/e0714_period_missing.rs:9:1
+  |
+9 | #[joker::cycle(wcet = "5us")]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `joker::cycle` (in Nightly builds, run with -Z macro-backtrace for more info)

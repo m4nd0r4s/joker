@@ -1,0 +1,5 @@
+error: J-E0709: port name `now` is reserved
+ --> tests/ui/e0709_reserved_name.rs:4:5
+  |
+4 |     now: joker::Input<f64>,
+  |     ^^^

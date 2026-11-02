@@ -1,0 +1,5 @@
+error[E0080]: evaluation panicked: J-E0708: internal record `Big` may encode to more than 64 bytes; the limit is 64
+  --> tests/ui/e0708_internal_too_large.rs:14:1
+   |
+14 | #[joker::app(name = "probe", version = "0.1.0")]
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ evaluation of `_` failed here

@@ -1,0 +1,11 @@
+error[E0428]: the name `J_E0711_a_crate_holds_exactly_one_joker_app` is defined multiple times
+ --> tests/ui/e0711_two_apps.rs:7:1
+  |
+1 | #[joker::app(name = "one", version = "0.1.0")]
+  | ---------------------------------------------- previous definition of the type `J_E0711_a_crate_holds_exactly_one_joker_app` here
+...
+7 | #[joker::app(name = "two", version = "0.1.0")]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `J_E0711_a_crate_holds_exactly_one_joker_app` redefined here
+  |
+  = note: `J_E0711_a_crate_holds_exactly_one_joker_app` must be defined only once in the type namespace of this module
+  = note: this error originates in the attribute macro `joker::app` (in Nightly builds, run with -Z macro-backtrace for more info)

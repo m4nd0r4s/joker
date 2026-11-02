@@ -1,0 +1,5 @@
+error: J-E0713: a task needs exactly one trigger: every, on, on_event, at or startup
+ --> tests/ui/e0713_two_triggers.rs:9:29
+  |
+9 | #[joker::task(every = "1m", on = "soc")]
+  |                             ^^

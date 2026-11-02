@@ -1,0 +1,5 @@
+error[E0080]: evaluation panicked: J-E0711: a crate holds exactly one #[joker::app], at the crate root
+ --> tests/ui/e0711_app_outside_the_root.rs:2:5
+  |
+2 |     #[joker::app(name = "probe", version = "0.1.0")]
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ evaluation of `inner::_` failed here
