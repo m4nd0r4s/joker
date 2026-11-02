@@ -2,9 +2,25 @@
 //! shortest integer heads, the smallest float that keeps the value, and map
 //! keys in ascending order (the callers write them so).
 
+use proc_macro2::TokenStream;
+use quote::quote;
+
+/// One byte of an encoded item: a literal, or a constant expression the
+/// compiler evaluates (a `u8` below 24, so one CBOR byte).
+#[derive(Clone, Debug)]
+pub enum Part {
+    /// A literal byte.
+    Byte(u8),
+    /// A constant expression of type `u8`.
+    Expr(String),
+}
+
 /// A CBOR item.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Cbor {
+    /// An unsigned integer below 24 given by a constant expression, such as
+    /// `<T as ::joker::Field>::TYPE`.
+    Small(String),
     /// Unsigned integer.
     Uint(u64),
     /// Text.
@@ -19,7 +35,13 @@ pub enum Cbor {
     Map(Vec<(u64, Cbor)>),
 }
 
-fn head(out: &mut Vec<u8>, major: u8, n: u64) {
+fn head(out: &mut Vec<Part>, major: u8, n: u64) {
+    let mut bytes = Vec::new();
+    head_bytes(&mut bytes, major, n);
+    out.extend(bytes.into_iter().map(Part::Byte));
+}
+
+fn head_bytes(out: &mut Vec<u8>, major: u8, n: u64) {
     let m = major << 5;
     if n < 24 {
         out.push(m | n as u8);
@@ -35,6 +57,13 @@ fn head(out: &mut Vec<u8>, major: u8, n: u64) {
         out.push(m | 27);
         out.extend_from_slice(&n.to_be_bytes());
     }
+}
+
+/// The bytes the head of an item with argument `n` takes.
+pub fn header_len(n: u64) -> usize {
+    let mut out = Vec::new();
+    head_bytes(&mut out, 0, n);
+    out.len()
 }
 
 fn f16_bits(v: f64) -> Option<u16> {
@@ -68,26 +97,28 @@ fn f16_bits(v: f64) -> Option<u16> {
 
 impl Cbor {
     /// Encodes the item.
-    pub fn encode(&self, out: &mut Vec<u8>) {
+    pub fn encode(&self, out: &mut Vec<Part>) {
+        let bytes = |out: &mut Vec<Part>, b: &[u8]| out.extend(b.iter().map(|&b| Part::Byte(b)));
         match self {
+            Cbor::Small(e) => out.push(Part::Expr(e.clone())),
             Cbor::Uint(n) => head(out, 0, *n),
             Cbor::Text(s) => {
                 head(out, 3, s.len() as u64);
-                out.extend_from_slice(s.as_bytes());
+                bytes(out, s.as_bytes());
             }
             Cbor::Float(v) => {
                 if let Some(h) = f16_bits(*v) {
-                    out.push(0xf9);
-                    out.extend_from_slice(&h.to_be_bytes());
+                    out.push(Part::Byte(0xf9));
+                    bytes(out, &h.to_be_bytes());
                 } else if f64::from(*v as f32) == *v {
-                    out.push(0xfa);
-                    out.extend_from_slice(&(*v as f32).to_be_bytes());
+                    out.push(Part::Byte(0xfa));
+                    bytes(out, &(*v as f32).to_be_bytes());
                 } else {
-                    out.push(0xfb);
-                    out.extend_from_slice(&v.to_be_bytes());
+                    out.push(Part::Byte(0xfb));
+                    bytes(out, &v.to_be_bytes());
                 }
             }
-            Cbor::Bool(b) => out.push(if *b { 0xf5 } else { 0xf4 }),
+            Cbor::Bool(b) => out.push(Part::Byte(if *b { 0xf5 } else { 0xf4 })),
             Cbor::Array(items) => {
                 head(out, 4, items.len() as u64);
                 for item in items {
@@ -104,12 +135,35 @@ impl Cbor {
         }
     }
 
-    /// The encoded bytes.
-    pub fn to_bytes(&self) -> Vec<u8> {
+    /// The encoded parts.
+    pub fn to_parts(&self) -> Vec<Part> {
         let mut out = Vec::new();
         self.encode(&mut out);
         out
     }
+
+    /// The encoded bytes, when there is no constant expression.
+    #[cfg(test)]
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.to_parts()
+            .into_iter()
+            .map(|p| match p {
+                Part::Byte(b) => b,
+                Part::Expr(_) => 0,
+            })
+            .collect()
+    }
+}
+
+/// The tokens of the parts, as the elements of a `[u8; N]` initializer.
+pub fn part_tokens(parts: &[Part]) -> Vec<TokenStream> {
+    parts
+        .iter()
+        .map(|p| match p {
+            Part::Byte(b) => quote!(#b),
+            Part::Expr(e) => e.parse().unwrap_or_else(|_| quote!(0u8)),
+        })
+        .collect()
 }
 
 #[cfg(test)]

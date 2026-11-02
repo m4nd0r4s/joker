@@ -1,6 +1,6 @@
-//! The cycle view of an app (ref/04 §4.4–§4.6): declaration types, the
-//! `CycleIo` view, and the port handles that read the packed image and write
-//! the proposal buffer (ref/04 §3).
+//! The views of an app (ref/04 §4.4–§4.5): the declaration types, the
+//! `CycleIo` view over the packed image and the proposal buffer (ref/04 §3),
+//! and the `TaskIo` view over the `async-io` host.
 
 use alloc::boxed::Box;
 use core::any::Any;
@@ -9,24 +9,30 @@ use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 use core::time::Duration;
 
-use crate::error::{Code, Error, QualityError, Result};
+use crate::cbor::Writer;
+use crate::error::{Code, Error, Result};
+use crate::host::{self, TaskHost};
 use crate::time::{ClockQuality, Instant, MonoNanos, UtcNanos};
-use crate::value::{Level, PortValue, Quality, Sample, WriteOutcome};
+use crate::value::{Quality, QualityReason, Sample};
 
 /// What `#[joker::app]` implements for the app struct. Not implemented by
 /// hand.
 pub trait App: 'static {
     /// The cycle view: one handle per port.
     type Cycle<'a>;
+    /// The async view: one handle per port.
+    type Task<'a>;
     /// The app name.
     const NAME: &'static str;
     /// The ports, in declaration order (the port table of ref/04 §2.6.2).
     const PORTS: &'static [PortDecl];
     /// Builds the cycle view over one call's image and buffer.
     fn cycle_view<'a>(cx: &'a CycleCx<'a>) -> Self::Cycle<'a>;
+    /// Builds the async view of one task run.
+    fn task_view(cx: TaskCx) -> Self::Task<'static>;
 }
 
-/// A port kind of the M0 SDK.
+/// The kind of a port (`port-kind` of `joker:meta`).
 #[doc(hidden)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum PortKind {
@@ -36,6 +42,26 @@ pub enum PortKind {
     Output,
     /// `#[param]`.
     Param,
+    /// `#[internal]`.
+    Internal,
+    /// `#[publish]` of a `Published<T>`.
+    Published,
+    /// `#[publish]` of a `Counter`.
+    Counter,
+    /// `#[output(event)]`.
+    EventOut,
+    /// `#[alarm]`.
+    Alarm,
+}
+
+impl PortKind {
+    /// True when the port has a sample in the cycle image (ref/04 §3.2).
+    pub const fn has_sample(self) -> bool {
+        matches!(
+            self,
+            Self::Input | Self::Output | Self::Param | Self::Internal | Self::Alarm
+        )
+    }
 }
 
 /// A port as the macro declares it.
@@ -46,21 +72,107 @@ pub struct PortDecl {
     pub name: &'static str,
     /// Kind.
     pub kind: PortKind,
-    /// Signal type code.
+    /// Signal type code; 9 for a record.
     pub ty: u8,
 }
 
-/// An input port of type `T` (a declaration: the app never builds it).
-#[derive(Debug)]
-pub struct Input<T>(PhantomData<T>);
+/// The index of the port `name` of kind in `kinds`, at compile time: the
+/// check of `on = "…"` (`J-E0713`).
+#[doc(hidden)]
+pub const fn port_index(ports: &[PortDecl], name: &str, kinds: &[PortKind]) -> Option<usize> {
+    let mut i = 0;
+    while i < ports.len() {
+        if str_eq(ports[i].name, name) {
+            let mut k = 0;
+            while k < kinds.len() {
+                if kinds[k] as u8 == ports[i].kind as u8 {
+                    return Some(i);
+                }
+                k += 1;
+            }
+            return None;
+        }
+        i += 1;
+    }
+    None
+}
 
-/// An output port of type `T`.
-#[derive(Debug)]
-pub struct Output<T>(PhantomData<T>);
+const fn str_eq(a: &str, b: &str) -> bool {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut i = 0;
+    while i < a.len() {
+        if a[i] != b[i] {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
 
-/// A parameter of type `T`.
-#[derive(Debug)]
-pub struct Param<T>(PhantomData<T>);
+/// True when `path` (a `module_path!()`) is the root of its crate: the check
+/// of `J-E0711`.
+#[doc(hidden)]
+pub const fn is_crate_root(path: &str) -> bool {
+    let b = path.as_bytes();
+    let mut i = 0;
+    while i + 1 < b.len() {
+        if b[i] == b':' && b[i + 1] == b':' {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
+
+macro_rules! declaration {
+    ($(#[$doc:meta])* $name:ident < $($p:ident),* >) => {
+        $(#[$doc])*
+        #[derive(Debug)]
+        pub struct $name<$($p),*>(PhantomData<($($p,)*)>);
+    };
+    ($(#[$doc:meta])* $name:ident) => {
+        $(#[$doc])*
+        #[derive(Debug)]
+        pub struct $name;
+    };
+}
+
+declaration!(
+    /// An input port of type `T` (a declaration: the app never builds it).
+    Input<T>
+);
+declaration!(
+    /// An output port of type `T`.
+    Output<T>
+);
+declaration!(
+    /// A parameter of type `T`.
+    Param<T>
+);
+declaration!(
+    /// A record shared between the two instances of the app, with one
+    /// declared writer (docs/04 §3.4).
+    Internal<T>
+);
+declaration!(
+    /// A signal the app publishes, at `app.<app>.<field>`.
+    Published<T>
+);
+declaration!(
+    /// A counter the app publishes.
+    Counter
+);
+declaration!(
+    /// An alarm of the app, with the id `app.<app>.<field>`.
+    Alarm
+);
+declaration!(
+    /// An event the app emits.
+    EventOutput<E>
+);
 
 /// Where a port is in the image, from `init-context.ports`.
 #[doc(hidden)]
@@ -74,17 +186,23 @@ pub struct Layout {
     pub bound: bool,
 }
 
-const HEADER: usize = 64;
-const ENTRY: usize = 24;
+pub(crate) const HEADER: usize = 64;
+pub(crate) const ENTRY: usize = 24;
 const HEADER_LEN: usize = 8;
 const WRITE: u8 = 1;
+const PUBLISH: u8 = 3;
+const COUNTER_ADD: u8 = 4;
+const EMIT: u8 = 5;
 const NOTE: u8 = 6;
-const RELINQUISH: u8 = 1;
-const UNBOUND: u16 = 1 << 4;
-const CHANGED: u16 = 1 << 3;
+pub(crate) const RELINQUISH: u8 = 1;
+const INLINE: u8 = 1 << 1;
+const WIDE: u16 = 1;
+pub(crate) const UNBOUND: u16 = 1 << 4;
+pub(crate) const CHANGED: u16 = 1 << 3;
 const HAS_TS_SRC: u16 = 1 << 2;
 const HAS_TS_HW: u16 = 1 << 1;
-const MINE_ACTIVE: u8 = 1;
+pub(crate) const MINE_ACTIVE: u8 = 1;
+const EVENT_MAX: usize = 8 * 1024;
 
 fn u16_at(b: &[u8], at: usize) -> u16 {
     match b.get(at..at + 2) {
@@ -143,38 +261,99 @@ impl<'a> ProposalBuffer<'a> {
         b
     }
 
-    fn push(&mut self, record: &[u8]) {
-        let end = self.len + record.len();
+    fn push_parts(&mut self, parts: &[&[u8]]) -> bool {
+        let n: usize = parts.iter().map(|p| p.len()).sum();
+        let end = self.len + n;
         if self.full || end > self.bytes.len() || self.records == u16::MAX {
             self.full = true;
-            return;
+            return false;
         }
-        if let Some(dst) = self.bytes.get_mut(self.len..end) {
-            dst.copy_from_slice(record);
-            self.len = end;
-            self.records += 1;
+        let mut at = self.len;
+        for p in parts {
+            if let Some(dst) = self.bytes.get_mut(at..at + p.len()) {
+                dst.copy_from_slice(p);
+            }
+            at += p.len();
         }
+        self.len = end;
+        self.records += 1;
+        true
     }
 
-    fn write(&mut self, port: u32, flags: u8, value: u64) {
+    fn head(kind: u8, flags: u8, port: u32, value: u64) -> [u8; 14] {
         let mut r = [0u8; 14];
-        r[0] = WRITE;
+        r[0] = kind;
         r[1] = flags;
         r[2..6].copy_from_slice(&port.to_le_bytes());
         r[6..14].copy_from_slice(&value.to_le_bytes());
-        self.push(&r);
-        if !self.full
+        r
+    }
+
+    pub(crate) fn write(&mut self, port: u32, flags: u8, value: u64) {
+        let r = Self::head(WRITE, flags, port, value);
+        if self.push_parts(&[&r])
             && let Some(p) = self.pending.get_mut(port as usize)
         {
             *p = (flags & RELINQUISH == 0).then_some(value);
         }
     }
 
-    fn note(&mut self, port: u32) {
+    pub(crate) fn publish(&mut self, port: u32, value: u64) {
+        let r = Self::head(PUBLISH, 0, port, value);
+        self.push_parts(&[&r]);
+    }
+
+    pub(crate) fn publish_inline(&mut self, port: u32, data: &[u8]) {
+        let r = Self::head(PUBLISH, INLINE, port, data.len() as u64);
+        self.push_parts(&[&r, data]);
+    }
+
+    pub(crate) fn counter_add(&mut self, port: u32, delta: u64) {
+        let r = Self::head(COUNTER_ADD, 0, port, delta);
+        self.push_parts(&[&r]);
+    }
+
+    pub(crate) fn note(&mut self, port: u32) {
         let mut r = [0u8; 6];
         r[0] = NOTE;
         r[2..6].copy_from_slice(&port.to_le_bytes());
-        self.push(&r);
+        self.push_parts(&[&r]);
+    }
+
+    /// An `EMIT` record whose payload `encode` writes in place, without a
+    /// copy on the heap.
+    pub(crate) fn emit_with(&mut self, port: u32, encode: impl FnOnce(&mut Writer<'_>)) {
+        let start = self.len;
+        let body = start + 8;
+        if self.full || self.records == u16::MAX || body > self.bytes.len() {
+            self.full = true;
+            return;
+        }
+        let end = self.bytes.len().min(body + EVENT_MAX);
+        let written = match self.bytes.get_mut(body..end) {
+            Some(room) => {
+                let mut w = Writer::new(room);
+                encode(&mut w);
+                w.finish()
+            }
+            None => None,
+        };
+        let Some(n) = written else {
+            self.full = true;
+            return;
+        };
+        if let Some(h) = self.bytes.get_mut(start..body) {
+            h[0] = EMIT;
+            h[1] = 0;
+            h[2..6].copy_from_slice(&port.to_le_bytes());
+            h[6..8].copy_from_slice(&(n as u16).to_le_bytes());
+        }
+        self.len = body + n;
+        self.records += 1;
+    }
+
+    pub(crate) fn pending(&self, port: u32) -> Option<u64> {
+        self.pending.get(port as usize).copied().flatten()
     }
 
     /// True when a record did not fit (`J-E0203`).
@@ -201,15 +380,27 @@ pub struct CycleCx<'a> {
     layout: &'a [Layout],
     n_slots: usize,
     task: &'static str,
-    buffer: RefCell<ProposalBuffer<'a>>,
+    pub(crate) buffer: RefCell<ProposalBuffer<'a>>,
 }
 
-struct Raw {
-    value: u64,
-    quality: Quality,
-    flags: u16,
-    seq: u32,
-    ts_acq: u64,
+/// One sample entry of the image, or the sample of an async read.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Raw {
+    pub value: u64,
+    pub quality: Quality,
+    pub flags: u16,
+    pub seq: u64,
+    pub ts_acq: u64,
+}
+
+impl Raw {
+    pub(crate) const UNBOUND: Raw = Raw {
+        value: 0,
+        quality: Quality::bad(QualityReason::NotConnected),
+        flags: UNBOUND,
+        seq: 0,
+        ts_acq: 0,
+    };
 }
 
 impl<'a> CycleCx<'a> {
@@ -237,20 +428,14 @@ impl<'a> CycleCx<'a> {
         (buffer.finish(), buffer.is_full())
     }
 
-    fn layout(&self, port: u32) -> Layout {
+    pub(crate) fn layout(&self, port: u32) -> Layout {
         self.layout.get(port as usize).copied().unwrap_or_default()
     }
 
-    fn raw(&self, port: u32) -> Raw {
+    pub(crate) fn raw(&self, port: u32) -> Raw {
         let l = self.layout(port);
         let Some(slot) = l.slot.filter(|_| l.bound) else {
-            return Raw {
-                value: 0,
-                quality: Quality::bad(crate::value::QualityReason::NotConnected),
-                flags: UNBOUND,
-                seq: 0,
-                ts_acq: 0,
-            };
+            return Raw::UNBOUND;
         };
         let at = HEADER + ENTRY * slot as usize;
         Raw {
@@ -260,12 +445,22 @@ impl<'a> CycleCx<'a> {
                 self.image.get(at + 9).copied().unwrap_or(0),
             ),
             flags: u16_at(self.image, at + 10),
-            seq: u32_at(self.image, at + 12),
+            seq: u64::from(u32_at(self.image, at + 12)),
             ts_acq: u64_at(self.image, at + 16),
         }
     }
 
-    fn sample<T: PortValue>(&self, port: u32) -> Sample<T> {
+    /// The bytes of a wide value (`string`, `bytes`, `Internal<T>`).
+    pub(crate) fn wide(&self, raw: &Raw) -> Option<&'a [u8]> {
+        if raw.flags & WIDE == 0 {
+            return None;
+        }
+        let off = (raw.value & 0xffff_ffff) as usize;
+        let len = (raw.value >> 32) as usize;
+        self.image.get(off..off.checked_add(len)?)
+    }
+
+    pub(crate) fn sample<T>(&self, port: u32, value: impl FnOnce(&Raw) -> T) -> Sample<T> {
         let raw = self.raw(port);
         let (ts_src, ts_hw) = if raw.flags & (HAS_TS_SRC | HAS_TS_HW) != 0 {
             let s = crate::runtime::read(port);
@@ -274,16 +469,16 @@ impl<'a> CycleCx<'a> {
             (None, None)
         };
         Sample {
-            value: T::from_bits(raw.value),
+            value: value(&raw),
             quality: raw.quality,
             ts_src,
             ts_hw,
             ts_acq: MonoNanos(raw.ts_acq),
-            seq: u64::from(raw.seq),
+            seq: raw.seq,
         }
     }
 
-    fn result(&self, port: u32) -> Option<(u8, u8, u8, u8, u64, u64)> {
+    pub(crate) fn result(&self, port: u32) -> Option<(u8, u8, u8, u8, u64, u64)> {
         let o = self.layout(port).outcome?;
         let at = HEADER + ENTRY * (self.n_slots + o as usize);
         let e = self.image.get(at..at + ENTRY)?;
@@ -295,6 +490,86 @@ impl<'a> CycleCx<'a> {
     }
 }
 
+/// One run of an async task: the host and the port layout of the async
+/// instance, all of it `'static`, so that the async view needs no lifetime.
+#[doc(hidden)]
+#[derive(Clone, Copy)]
+pub struct TaskCx {
+    pub(crate) host: &'static dyn TaskHost,
+    layout: &'static [Layout],
+    task: &'static str,
+}
+
+impl core::fmt::Debug for TaskCx {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("TaskCx")
+            .field("task", &self.task)
+            .finish_non_exhaustive()
+    }
+}
+
+impl TaskCx {
+    /// A run of `task` over the layout of the async instance.
+    pub fn new(layout: &'static [Layout], task: &'static str) -> Self {
+        Self {
+            host: host::host(),
+            layout,
+            task,
+        }
+    }
+
+    pub(crate) fn bound(&self, port: u32) -> bool {
+        self.layout.get(port as usize).is_some_and(|l| l.bound)
+    }
+
+    /// The async view of `A` for this run.
+    pub fn io<A: App>(self) -> TaskIo<A> {
+        TaskIo {
+            cx: self,
+            view: A::task_view(self),
+        }
+    }
+}
+
+/// Where a handle reads and writes: the call of a cycle task or the run of
+/// an async task.
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug)]
+pub enum Src<'a> {
+    /// A cycle task.
+    Cycle(&'a CycleCx<'a>),
+    /// An async task.
+    Task(TaskCx),
+}
+
+impl<'a> Src<'a> {
+    pub(crate) fn raw(self, port: u32) -> Raw {
+        match self {
+            Src::Cycle(cx) => cx.raw(port),
+            Src::Task(cx) => {
+                if !cx.bound(port) {
+                    return Raw::UNBOUND;
+                }
+                let s = cx.host.read(port);
+                Raw {
+                    value: host::bits(&s.value),
+                    quality: host::quality(&s.quality),
+                    flags: 0,
+                    seq: s.seq,
+                    ts_acq: s.ts_acq,
+                }
+            }
+        }
+    }
+
+    pub(crate) fn bound(self, port: u32) -> bool {
+        match self {
+            Src::Cycle(cx) => cx.layout(port).bound,
+            Src::Task(cx) => cx.bound(port),
+        }
+    }
+}
+
 /// The initial state of a stateful cycle task, created at `init`, where
 /// allocation is allowed.
 #[doc(hidden)]
@@ -302,30 +577,30 @@ pub fn new_state<S: Default + Send + 'static>() -> Option<Box<dyn Any + Send>> {
     Some(Box::new(S::default()))
 }
 
-/// The context a cycle task runs in.
+/// The call of one cycle task.
 #[doc(hidden)]
-pub struct TaskCx<'a> {
+pub struct CycleRun<'a> {
     cx: &'a CycleCx<'a>,
     state: &'a mut Option<Box<dyn Any + Send>>,
 }
 
-impl core::fmt::Debug for TaskCx<'_> {
+impl core::fmt::Debug for CycleRun<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("TaskCx")
+        f.debug_struct("CycleRun")
             .field("task", &self.cx.task)
             .finish_non_exhaustive()
     }
 }
 
-impl<'a> TaskCx<'a> {
-    /// A context over `cx`, with the task's state slot.
+impl<'a> CycleRun<'a> {
+    /// A call over `cx`, with the task's state slot.
     pub fn new(cx: &'a CycleCx<'a>, state: &'a mut Option<Box<dyn Any + Send>>) -> Self {
         Self { cx, state }
     }
 
-    /// Runs a task with state `S`, created by [`new_state`] at `init`: a
-    /// cycle task cannot allocate it (ref/04 §4.13).
-    pub fn run<A: App, S: Default + Send + 'static>(
+    /// Runs a task with state `S`, created at `init`: a cycle task cannot
+    /// allocate it (ref/04 §4.13).
+    pub fn run<A: App, S: Send + 'static>(
         &mut self,
         f: fn(&mut CycleIo<'_, A>, &mut S) -> Result<()>,
     ) -> Result<()> {
@@ -434,336 +709,80 @@ impl<'a, A: App> CycleIo<'a, A> {
     }
 }
 
-/// An input in the cycle view.
-#[derive(Debug, Clone, Copy)]
-pub struct CycleInput<'a, T> {
-    cx: &'a CycleCx<'a>,
-    port: u32,
-    name: &'static str,
-    _t: PhantomData<T>,
+/// The view of an async task (ref/04 §4.5), shared by the tasks of the app.
+/// It has no lifetime parameter, so that `async fn f(io: &TaskIo<App>)`
+/// compiles (ADR 0106).
+pub struct TaskIo<A: App> {
+    cx: TaskCx,
+    view: A::Task<'static>,
 }
 
-impl<'a, T: PortValue> CycleInput<'a, T> {
-    #[doc(hidden)]
-    pub fn __new(cx: &'a CycleCx<'a>, port: u32, name: &'static str) -> Self {
-        Self {
-            cx,
-            port,
-            name,
-            _t: PhantomData,
-        }
-    }
-
-    fn refused(&self, quality: Quality) -> QualityError {
-        QualityError {
-            port: self.name,
-            quality,
-        }
-    }
-
-    /// The value if the sample is `Good`; otherwise `Err` (docs/16 §3.1).
-    pub fn get(&self) -> Result<T, QualityError> {
-        let raw = self.cx.raw(self.port);
-        if raw.quality.is_good() {
-            Ok(T::from_bits(raw.value))
-        } else {
-            Err(self.refused(raw.quality))
-        }
-    }
-
-    /// The value if the sample is `Good` or `Uncertain`; `Err` when `Bad`.
-    pub fn get_uncertain(&self) -> Result<T, QualityError> {
-        let raw = self.cx.raw(self.port);
-        if raw.quality.is_bad() {
-            Err(self.refused(raw.quality))
-        } else {
-            Ok(T::from_bits(raw.value))
-        }
-    }
-
-    /// The value if `Good`; otherwise `default`, and the substitution is
-    /// recorded in the trace (a `NOTE` record).
-    pub fn get_or(&self, default: T) -> T {
-        match self.get() {
-            Ok(v) => v,
-            Err(_) => {
-                self.cx.buffer.borrow_mut().note(self.port);
-                default
-            }
-        }
-    }
-
-    /// The complete sample.
-    pub fn sample(&self) -> Sample<T> {
-        self.cx.sample(self.port)
-    }
-
-    /// False for an optional port left unbound.
-    pub fn is_bound(&self) -> bool {
-        self.cx.layout(self.port).bound
-    }
-
-    /// The sequence number changed since the previous latch of this group.
-    pub fn changed(&self) -> bool {
-        self.cx.raw(self.port).flags & CHANGED != 0
+impl<A: App> core::fmt::Debug for TaskIo<A> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("TaskIo")
+            .field("app", &A::NAME)
+            .field("task", &self.cx.task)
+            .finish_non_exhaustive()
     }
 }
 
-/// An output in the cycle view.
-#[derive(Debug, Clone, Copy)]
-pub struct CycleOutput<'a, T> {
-    cx: &'a CycleCx<'a>,
-    port: u32,
-    name: &'static str,
-    _t: PhantomData<T>,
-}
-
-impl<'a, T: PortValue> CycleOutput<'a, T> {
-    #[doc(hidden)]
-    pub fn __new(cx: &'a CycleCx<'a>, port: u32, name: &'static str) -> Self {
-        Self {
-            cx,
-            port,
-            name,
-            _t: PhantomData,
-        }
-    }
-
-    /// Proposes `v` (renews the lease, docs/16 A2).
-    pub fn set(&self, v: T) {
-        self.cx.buffer.borrow_mut().write(self.port, 0, v.to_bits());
-    }
-
-    /// Releases this writer's level now.
-    pub fn relinquish(&self) {
-        self.cx.buffer.borrow_mut().write(self.port, RELINQUISH, 0);
-    }
-
-    /// The latest value this task proposed in this tick.
-    pub fn pending(&self) -> Option<T> {
-        self.cx
-            .buffer
-            .borrow()
-            .pending
-            .get(self.port as usize)
-            .copied()
-            .flatten()
-            .map(T::from_bits)
-    }
-
-    /// The outcome of this writer's proposal in the owner group's latest
-    /// commit; `None` if it had none.
-    pub fn last_outcome(&self) -> Option<WriteOutcome<T>> {
-        let (code, detail, _, _, applied, _) = self.cx.result(self.port)?;
-        WriteOutcome::from_entry(code, detail, applied)
-    }
-
-    /// The applied value, if its sample is `Good`.
-    pub fn get(&self) -> Result<T, QualityError> {
-        let raw = self.cx.raw(self.port);
-        if raw.quality.is_good() {
-            Ok(T::from_bits(raw.value))
-        } else {
-            Err(QualityError {
-                port: self.name,
-                quality: raw.quality,
-            })
-        }
-    }
-
-    /// The sample of the applied value.
-    pub fn sample(&self) -> Sample<T> {
-        self.cx.sample(self.port)
-    }
-
-    /// This writer's active proposal (`mine()`, docs/17 §11).
-    pub fn mine(&self) -> Option<T> {
-        let (_, _, _, flags, _, mine) = self.cx.result(self.port)?;
-        (flags & MINE_ACTIVE != 0).then(|| T::from_bits(mine))
-    }
-
-    /// The level that won the last commit; `None` when the output is at
-    /// `safe`.
-    pub fn winner(&self) -> Option<Level> {
-        let (_, _, winner, _, _, _) = self.cx.result(self.port)?;
-        Level::new(winner)
-    }
-
-    /// False for an optional port left unbound.
-    pub fn is_bound(&self) -> bool {
-        self.cx.layout(self.port).bound
+impl<A: App> Deref for TaskIo<A> {
+    type Target = A::Task<'static>;
+    fn deref(&self) -> &Self::Target {
+        &self.view
     }
 }
 
-/// A parameter in the cycle view.
-#[derive(Debug, Clone, Copy)]
-pub struct ParamHandle<'a, T> {
-    cx: &'a CycleCx<'a>,
-    port: u32,
-    _t: PhantomData<T>,
-}
-
-impl<'a, T: PortValue> ParamHandle<'a, T> {
-    #[doc(hidden)]
-    pub fn __new(cx: &'a CycleCx<'a>, port: u32, _name: &'static str) -> Self {
-        Self {
-            cx,
-            port,
-            _t: PhantomData,
-        }
+impl<A: App> TaskIo<A> {
+    /// The current instant.
+    pub fn now(&self) -> Instant {
+        host::instant(&self.cx.host.now())
     }
 
-    /// The current value: a parameter always has one.
-    pub fn get(&self) -> T {
-        T::from_bits(self.cx.raw(self.port).value)
+    /// Waits for `d`.
+    pub async fn sleep(&self, d: Duration) {
+        let until = self.now().mono + d;
+        self.cx.host.sleep_until(until.0).await;
+    }
+
+    /// Waits until the monotonic instant `t` (right away if it passed).
+    pub async fn sleep_until(&self, t: MonoNanos) {
+        self.cx.host.sleep_until(t.0).await;
+    }
+
+    /// A number of the instance's deterministic generator (ref/04 §2.7).
+    pub fn random(&self) -> u64 {
+        self.cx.host.random()
+    }
+
+    /// The task name.
+    pub fn task(&self) -> &'static str {
+        self.cx.task
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::value::{QualityCode, QualityReason};
-    use alloc::vec::Vec;
-
-    fn image(samples: &[(u64, u8, u8, u16)], results: &[(u8, u8, u8, u8, u64, u64)]) -> Vec<u8> {
-        let mut b = alloc::vec![0u8; HEADER + ENTRY * (samples.len() + results.len())];
-        b[0] = 1;
-        b[1] = 64;
-        b[2] = 1;
-        b[32..40].copy_from_slice(&20_000_000u64.to_le_bytes());
-        b[44..48].copy_from_slice(&(samples.len() as u32).to_le_bytes());
-        for (i, &(v, c, r, f)) in samples.iter().enumerate() {
-            let at = HEADER + ENTRY * i;
-            b[at..at + 8].copy_from_slice(&v.to_le_bytes());
-            b[at + 8] = c;
-            b[at + 9] = r;
-            b[at + 10..at + 12].copy_from_slice(&f.to_le_bytes());
-            b[at + 12] = 7;
-        }
-        for (i, &(o, d, w, f, a, m)) in results.iter().enumerate() {
-            let at = HEADER + ENTRY * (samples.len() + i);
-            b[at] = o;
-            b[at + 1] = d;
-            b[at + 2] = w;
-            b[at + 3] = f;
-            b[at + 8..at + 16].copy_from_slice(&a.to_le_bytes());
-            b[at + 16..at + 24].copy_from_slice(&m.to_le_bytes());
-        }
-        b
-    }
-
-    const LAYOUT: [Layout; 3] = [
-        Layout {
-            slot: Some(0),
-            outcome: None,
-            bound: true,
-        },
-        Layout {
-            slot: Some(1),
-            outcome: Some(0),
-            bound: true,
-        },
-        Layout {
-            slot: Some(2),
-            outcome: None,
-            bound: false,
-        },
-    ];
 
     #[test]
-    fn reads_follow_the_quality() {
-        let img = image(
-            &[
-                (21.5f64.to_bits(), 1, 9, CHANGED),
-                (1, 0, 0, 0),
-                (0, 2, 16, UNBOUND),
-            ],
-            &[(2, 0, 12, MINE_ACTIVE, 1, 1)],
-        );
-        let mut bytes = [0u8; 1024];
-        let mut pending = [None; 3];
-        let cx = CycleCx::new(
-            &img,
-            &LAYOUT,
-            "t",
-            ProposalBuffer::new(&mut bytes, &mut pending),
-        );
-        let t: CycleInput<'_, f64> = CycleInput::__new(&cx, 0, "temp");
-        assert_eq!(
-            t.get().unwrap_err().quality,
-            Quality::uncertain(QualityReason::Initial)
-        );
-        assert_eq!(t.get_uncertain(), Ok(21.5));
-        assert_eq!(t.get_or(0.0), 0.0);
-        assert!(t.changed());
-        assert_eq!(t.sample().seq, 7);
-        let off: CycleInput<'_, f64> = CycleInput::__new(&cx, 2, "spare");
-        assert!(!off.is_bound());
-        assert_eq!(off.get().unwrap_err().quality.code, QualityCode::Bad);
-        let led: CycleOutput<'_, bool> = CycleOutput::__new(&cx, 1, "led");
-        assert_eq!(led.get(), Ok(true));
-        assert_eq!(led.winner().map(Level::get), Some(12));
-        assert_eq!(led.mine(), Some(true));
-        assert!(matches!(
-            led.last_outcome(),
-            Some(WriteOutcome::Clamped { applied: true, .. })
-        ));
-        assert_eq!(led.pending(), None);
-        led.set(false);
-        assert_eq!(led.pending(), Some(false));
-        led.relinquish();
-        assert_eq!(led.pending(), None);
-        let (len, full) = cx.finish();
-        assert!(!full);
-        let out = &bytes[..len];
-        assert_eq!(&out[..8], &[1, 0, 3, 0, 42, 0, 0, 0]);
-        assert_eq!(&out[8..14], &[NOTE, 0, 0, 0, 0, 0]);
-        assert_eq!(out[14], WRITE);
-        assert_eq!(out[28..30], [WRITE, RELINQUISH]);
-    }
-
-    #[test]
-    fn a_full_buffer_drops_and_says_so() {
-        let img = image(&[(0, 0, 0, 0)], &[]);
-        let layout = [Layout {
-            slot: Some(0),
-            outcome: Some(0),
-            bound: true,
-        }];
-        let mut bytes = [0u8; 8 + 14 * 2];
-        let mut pending = [None; 1];
-        let cx = CycleCx::new(
-            &img,
-            &layout,
-            "t",
-            ProposalBuffer::new(&mut bytes, &mut pending),
-        );
-        let o: CycleOutput<'_, u64> = CycleOutput::__new(&cx, 0, "o");
-        o.set(1);
-        o.set(2);
-        o.set(3);
-        assert_eq!(cx.finish(), (36, true));
-        assert_eq!(&bytes[..8], &[1, 0, 2, 0, 36, 0, 0, 0]);
-    }
-
-    #[test]
-    fn a_buffer_without_room_for_its_header_holds_nothing() {
-        let img = image(&[(0, 0, 0, 0)], &[]);
-        let layout = [Layout {
-            slot: Some(0),
-            outcome: Some(0),
-            bound: true,
-        }];
-        let mut pending = [None; 1];
-        let cx = CycleCx::new(
-            &img,
-            &layout,
-            "t",
-            ProposalBuffer::new(&mut [], &mut pending),
-        );
-        let o: CycleOutput<'_, u64> = CycleOutput::__new(&cx, 0, "o");
-        o.set(1);
-        assert_eq!(o.pending(), None);
-        assert_eq!(cx.finish(), (0, true));
+    fn compile_time_lookups() {
+        const PORTS: &[PortDecl] = &[
+            PortDecl {
+                name: "soc",
+                kind: PortKind::Input,
+                ty: 3,
+            },
+            PortDecl {
+                name: "battery",
+                kind: PortKind::Output,
+                ty: 3,
+            },
+        ];
+        assert_eq!(port_index(PORTS, "battery", &[PortKind::Output]), Some(1));
+        assert_eq!(port_index(PORTS, "battery", &[PortKind::Input]), None);
+        assert_eq!(port_index(PORTS, "x", &[PortKind::Input]), None);
+        assert!(is_crate_root("peak_shaver"));
+        assert!(!is_crate_root("peak_shaver::inner"));
     }
 }

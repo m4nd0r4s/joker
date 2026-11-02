@@ -1627,6 +1627,7 @@ dependencies = [
 name = "joker-sdk-macros"
 version = "0.0.0"
 dependencies = [
+ "joker-units",
  "proc-macro2",
  "quote",
  "syn 2.0.119",

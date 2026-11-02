@@ -5,12 +5,21 @@ use core::num::NonZeroU8;
 
 use crate::time::{Instant, MonoNanos, UtcNanos};
 
-mod sealed {
+#[doc(hidden)]
+pub mod sealed {
+    /// Only the SDK and its derives implement [`super::PortValue`].
     pub trait Sealed {}
 }
 
-/// A type a scalar port can carry: `bool`, `i64`, `u64`, `f64`, `f32`.
-pub trait PortValue: Copy + PartialEq + fmt::Debug + Default + 'static + sealed::Sealed {
+/// A type a scalar port can carry: `bool`, `i64`, `u64`, `f64`, `f32`,
+/// `Bits<N>` and the enums with `#[derive(joker::Enum)]`. Any other is
+/// `J-E0707`.
+#[diagnostic::on_unimplemented(
+    message = "J-E0707: `{Self}` is not a port type",
+    label = "not a port type",
+    note = "a scalar port carries bool, i64, u64, f64, f32, Bits<N> or an enum with #[derive(joker::Enum)]"
+)]
+pub trait PortValue: Copy + PartialEq + fmt::Debug + 'static + sealed::Sealed {
     /// The signal type code (ref/00 §6).
     const TYPE: u8;
     /// The value from its bits (ref/00 §4.1).
@@ -60,6 +69,17 @@ impl PortValue for f64 {
     }
     fn to_bits(self) -> u64 {
         f64::to_bits(self)
+    }
+}
+
+impl<const N: usize> sealed::Sealed for crate::bounded::Bits<N> {}
+impl<const N: usize> PortValue for crate::bounded::Bits<N> {
+    const TYPE: u8 = 6;
+    fn from_bits(bits: u64) -> Self {
+        crate::bounded::Bits::new(bits)
+    }
+    fn to_bits(self) -> u64 {
+        self.bits()
     }
 }
 
@@ -268,6 +288,115 @@ impl fmt::Display for Quality {
     }
 }
 
+/// The state of an alarm (ref/00 §6, `alarm_state`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum AlarmState {
+    /// Inactive and acknowledged.
+    Normal,
+    /// Active, not acknowledged.
+    ActiveUnacked,
+    /// Active, acknowledged.
+    ActiveAcked,
+    /// Returned to normal, not acknowledged.
+    RtnUnacked,
+    /// Not known.
+    Unknown,
+}
+
+impl AlarmState {
+    pub(crate) fn from_code(code: u64) -> Self {
+        match code {
+            0 => Self::Normal,
+            1 => Self::ActiveUnacked,
+            2 => Self::ActiveAcked,
+            3 => Self::RtnUnacked,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+/// A value of any scalar or short wide type (ref/04 §4.7).
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Value {
+    /// `bool`.
+    Bool(bool),
+    /// `i64`.
+    I64(i64),
+    /// `u64`, an enum or `bits`.
+    U64(u64),
+    /// `f64` or `f32`.
+    F64(f64),
+    /// `string`.
+    Text(crate::bounded::BoundedString<64>),
+    /// `bytes`.
+    Bytes(crate::bounded::BoundedBytes<64>),
+}
+
+impl Value {
+    /// The value of a port of signal type `ty` from its bits.
+    pub fn from_bits(ty: u8, bits: u64) -> Self {
+        match ty {
+            0 => Value::Bool(bits != 0),
+            1 => Value::I64(bits as i64),
+            3 | 4 => Value::F64(f64::from_bits(bits)),
+            _ => Value::U64(bits),
+        }
+    }
+
+    /// The bits of a scalar value; 0 for text and bytes.
+    pub fn to_bits(&self) -> u64 {
+        match self {
+            Value::Bool(b) => u64::from(*b),
+            Value::I64(i) => *i as u64,
+            Value::U64(u) => *u,
+            Value::F64(f) => f.to_bits(),
+            Value::Text(_) | Value::Bytes(_) => 0,
+        }
+    }
+
+    /// The value as a `T`, when its type is that of `T`.
+    pub fn get<T: PortValue>(&self) -> Option<T> {
+        let same = matches!(
+            (self, T::TYPE),
+            (Value::Bool(_), 0)
+                | (Value::I64(_), 1)
+                | (Value::U64(_), 2 | 5 | 6)
+                | (Value::F64(_), 3 | 4)
+        );
+        same.then(|| T::from_bits(self.to_bits()))
+    }
+}
+
+impl<T: PortValue> From<T> for Value {
+    fn from(v: T) -> Self {
+        Value::from_bits(T::TYPE, v.to_bits())
+    }
+}
+
+impl PartialEq<f64> for Value {
+    fn eq(&self, other: &f64) -> bool {
+        matches!(self, Value::F64(v) if v == other)
+    }
+}
+
+impl PartialEq<bool> for Value {
+    fn eq(&self, other: &bool) -> bool {
+        matches!(self, Value::Bool(v) if v == other)
+    }
+}
+
+impl PartialEq<i64> for Value {
+    fn eq(&self, other: &i64) -> bool {
+        matches!(self, Value::I64(v) if v == other)
+    }
+}
+
+impl PartialEq<u64> for Value {
+    fn eq(&self, other: &u64) -> bool {
+        matches!(self, Value::U64(v) if v == other)
+    }
+}
+
 /// A complete sample of a port.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Sample<T> {
@@ -350,7 +479,7 @@ pub enum RejectReason {
 }
 
 impl RejectReason {
-    fn from_u8(code: u8) -> Self {
+    pub(crate) fn from_u8(code: u8) -> Self {
         match code {
             1 => Self::WrongType,
             2 => Self::Interlock,
@@ -444,6 +573,18 @@ impl<T: PortValue> WriteOutcome<T> {
     /// True for `Accepted` and `Clamped`.
     pub fn is_applied(&self) -> bool {
         matches!(self, Self::Accepted | Self::Clamped { .. })
+    }
+
+    /// The outcome if applied; otherwise `Err(J-E0204)`.
+    pub fn require_applied(self) -> crate::error::Result<Self> {
+        if self.is_applied() {
+            Ok(self)
+        } else {
+            Err(crate::error::Error::new(
+                crate::error::Code::from_static("J-E0204"),
+                format_args!("the write was not applied (outcome {})", self.code()),
+            ))
+        }
     }
 }
 

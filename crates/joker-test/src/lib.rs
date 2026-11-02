@@ -17,11 +17,18 @@
 //! assert!(h.output("led").toggles_every(500.ms()));
 //! ```
 //!
-//! The harness serves the cycle subset of the SDK: inputs, outputs and
-//! parameters of scalar types, cycle tasks of one group, constant `range`
-//! and `rate` envelopes, one writer level and its lease. Running the real
-//! `.wasm` component (`jk test`), async tasks, devices, events and actions
-//! come with the SDK features they test.
+//! The async tasks run in the same process too, through `run-task`: after
+//! each tick the harness fires their triggers (`startup`, `every` with its
+//! deterministic jitter, `on` a change) and polls them until they all wait;
+//! their proposals and `publish`es enter the next tick (docs/01 §4, step
+//! 2), and `history()` reads the series given with [`Harness::history`].
+//!
+//! The harness serves inputs, outputs and parameters of scalar types,
+//! `Internal<T>`, alarms and output events, cycle tasks of one group,
+//! constant `range` and `rate` envelopes, one writer level and its lease.
+//! Running the real `.wasm` component (`jk test`), devices, input events,
+//! mailboxes, published signals, counters and actions come with the SDK
+//! features they test.
 
 #![allow(
     clippy::panic,
@@ -29,12 +36,15 @@
     reason = "a harness reports a misuse of the test by failing it, with the reason"
 )]
 
+mod events;
 mod harness;
+mod host;
 mod series;
 mod time;
 mod trace;
 mod value;
 
+pub use events::{AlarmTrace, EventTrace};
 pub use harness::{Envelope, Harness, TaskError};
 pub use series::Series;
 pub use trace::{Observed, OutputTrace};
@@ -42,7 +52,9 @@ pub use value::Value;
 
 /// What a test imports: `use joker_test::prelude::*;`.
 pub mod prelude {
-    pub use crate::{Envelope, Harness, Observed, OutputTrace, Series, TaskError, Value};
+    pub use crate::{
+        AlarmTrace, Envelope, EventTrace, Harness, Observed, OutputTrace, Series, TaskError, Value,
+    };
     pub use joker::QualityReason::*;
     pub use joker::{ClockQuality, Duration, DurationExt, Quality, QualityReason};
 }
