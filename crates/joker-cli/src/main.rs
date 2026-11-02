@@ -10,6 +10,8 @@ mod node;
 mod profile;
 mod project;
 mod replay;
+mod report;
+mod times;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -260,9 +262,25 @@ enum Command {
         /// Only the writes whose task read this signal (ADR 0101).
         #[arg(long)]
         cause: Option<String>,
-        /// How many entries.
+        /// The last duration (`1h`), or a start like `--from`.
+        #[arg(long)]
+        since: Option<String>,
+        /// Start: RFC 3339, `now`, `-<duration>`, or a local
+        /// `YYYY-MM-DD HH:MM[:SS]` or `HH:MM[:SS]` (ADR 0104).
+        #[arg(long)]
+        from: Option<String>,
+        /// End, in the forms of `--from`; a time of day takes the start's date.
+        #[arg(long)]
+        to: Option<String>,
+        /// How many entries (not with `--report`, which covers them all).
         #[arg(long, default_value_t = 20)]
         limit: u32,
+        /// A compliance report of the whole selection: `csv` or `pdf`.
+        #[arg(long, value_parser = ["csv", "pdf"])]
+        report: Option<String>,
+        /// Write the report to this file (required for `pdf`).
+        #[arg(long)]
+        out: Option<PathBuf>,
     },
     /// Queries the historian (ref/09 §5.5).
     History {
@@ -707,8 +725,40 @@ fn run(cli: Cli) -> Result<u8, Failure> {
         Command::Decisions {
             output,
             cause,
+            since,
+            from,
+            to,
             limit,
-        } => node()?.decisions(&output, cause.as_deref(), limit),
+            report,
+            out,
+        } => {
+            let (tz, today) = times::local();
+            let range = times::range(since.as_deref(), from.as_deref(), to.as_deref(), &tz, today)
+                .map_err(Failure::usage)?;
+            let args = node::DecisionsArgs {
+                outputs: output,
+                cause,
+                range,
+                limit,
+            };
+            match report.as_deref() {
+                None => node()?.decisions(&args),
+                Some(format) => {
+                    if let Some(out) = &out
+                        && out.exists()
+                    {
+                        return Err(Failure::usage(format!(
+                            "{}: exists, not overwritten",
+                            out.display()
+                        )));
+                    }
+                    if format == "pdf" && out.is_none() {
+                        return Err(Failure::usage("--report pdf needs --out <file>"));
+                    }
+                    node()?.decisions_report(&args, format == "pdf", out.as_deref())
+                }
+            }
+        }
         Command::Logs {
             app,
             source,

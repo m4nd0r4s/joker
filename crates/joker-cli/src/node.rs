@@ -1219,15 +1219,9 @@ impl Node {
     }
 
     /// `jk decisions`.
-    pub fn decisions(
-        &self,
-        outputs: &[String],
-        cause: Option<&str>,
-        limit: u32,
-    ) -> Result<u8, Failure> {
-        let mut q = vec![format!("limit={limit}")];
-        q.extend(outputs.iter().map(|o| format!("output={}", encode(o))));
-        q.extend(cause.map(|c| format!("cause={}", encode(c))));
+    pub fn decisions(&self, args: &DecisionsArgs) -> Result<u8, Failure> {
+        let mut q = args.query();
+        q.push(format!("limit={}", args.limit));
         let d = checked(self.client.get(&format!("/v1/decisions?{}", q.join("&")))?)?.json();
         if self.json {
             print_json(&d);
@@ -1258,6 +1252,71 @@ impl Node {
             }
             if let Some(n) = e["inputs_omitted"].as_u64() {
                 println!("    <- and {n} more");
+            }
+        }
+        Ok(0)
+    }
+
+    /// `jk decisions --report` (ADR 0104): every page of the selection as
+    /// the node's `text/csv`, oldest first, joined under one header; as is,
+    /// or as the PDF `jk` builds from it, to `out` or standard output.
+    pub fn decisions_report(
+        &self,
+        args: &DecisionsArgs,
+        pdf: bool,
+        out: Option<&Path>,
+    ) -> Result<u8, Failure> {
+        let mut base = args.query();
+        base.push("order=asc".into());
+        base.push("limit=1000".into());
+        let mut csv = String::new();
+        let mut cursor: Option<String> = None;
+        loop {
+            let mut q = base.clone();
+            q.extend(cursor.as_ref().map(|c| format!("cursor={}", encode(c))));
+            let page = checked(self.client.send(
+                "GET",
+                &format!("/v1/decisions?{}", q.join("&")),
+                &[("accept", "text/csv")],
+                None,
+            )?)?;
+            let text = String::from_utf8_lossy(&page.body).into_owned();
+            if csv.is_empty() {
+                csv.push_str(&text);
+            } else if let Some((_, rest)) = text.split_once('\n') {
+                csv.push_str(rest);
+            }
+            cursor = page.header("link").and_then(next_cursor);
+            if cursor.is_none() {
+                break;
+            }
+        }
+        let bytes = if pdf {
+            let meta = crate::report::Meta {
+                node: self.client.target().to_string(),
+                filters: args.query().join(" "),
+                made: jiff::Timestamp::now()
+                    .round(jiff::Unit::Second)
+                    .map_or_else(|_| jiff::Timestamp::now().to_string(), |t| t.to_string()),
+            };
+            crate::report::pdf(&csv, &meta)
+        } else {
+            csv.into_bytes()
+        };
+        match out {
+            Some(path) => {
+                let mut f = std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(path)
+                    .map_err(|e| Failure::usage(format!("{}: {e}", path.display())))?;
+                std::io::Write::write_all(&mut f, &bytes)
+                    .map_err(|e| Failure::usage(format!("{}: {e}", path.display())))?;
+                eprintln!("wrote {}", path.display());
+            }
+            None => {
+                std::io::Write::write_all(&mut std::io::stdout(), &bytes)
+                    .map_err(|e| Failure::usage(e.to_string()))?;
             }
         }
         Ok(0)
@@ -2065,6 +2124,49 @@ fn alarm_lines(alarms: &Value) -> Vec<String> {
         lines.push(line);
     }
     lines
+}
+
+/// The filters of `jk decisions`.
+#[derive(Debug, Clone)]
+pub struct DecisionsArgs {
+    /// Output selectors.
+    pub outputs: Vec<String>,
+    /// The signal of `cause`.
+    pub cause: Option<String>,
+    /// The time range.
+    pub range: crate::times::Range,
+    /// How many entries, without `--report`.
+    pub limit: u32,
+}
+
+impl DecisionsArgs {
+    /// The query parameters of the filters, encoded.
+    fn query(&self) -> Vec<String> {
+        let mut q: Vec<String> = self
+            .outputs
+            .iter()
+            .map(|o| format!("output={}", encode(o)))
+            .collect();
+        q.extend(self.cause.iter().map(|c| format!("cause={}", encode(c))));
+        q.extend(
+            self.range
+                .params()
+                .into_iter()
+                .map(|(k, v)| format!("{k}={}", encode(&v))),
+        );
+        q
+    }
+}
+
+/// The cursor of a `Link: <?cursor=…>; rel="next"` header (ref/09 §3.5).
+fn next_cursor(link: &str) -> Option<String> {
+    if !link.contains("rel=\"next\"") {
+        return None;
+    }
+    let start = link.find("cursor=")? + "cursor=".len();
+    let rest = &link[start..];
+    let end = rest.find(['>', '&']).unwrap_or(rest.len());
+    Some(rest[..end].to_owned())
 }
 
 #[cfg(test)]
