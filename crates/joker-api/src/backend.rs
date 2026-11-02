@@ -231,6 +231,16 @@ pub trait Backend: Send + Sync + 'static {
     fn generation_manifest(&self, _selector: &str) -> Result<String> {
         Err(unavailable())
     }
+    /// `GET /v1/generations/{gen}/lock` (ref/09 §5.13): the lock the
+    /// generation was created with, as TOML text.
+    fn generation_lock(&self, _selector: &str) -> Result<String> {
+        Err(unavailable())
+    }
+    /// `DELETE /v1/generations/{gen}` (ref/09 §5.13): discards a `pending`
+    /// generation (`discarded`, `discard_reason = deleted`); answers 204.
+    fn discard_generation(&self, _who: &Principal, _selector: &str) -> Result<Reply> {
+        Err(unavailable())
+    }
     /// `GET /v1/node/hardware` (ref/09 §5.2): the hardware inventory of
     /// the node, with reads only.
     fn node_hardware(&self) -> Result<Reply> {

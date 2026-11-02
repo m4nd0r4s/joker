@@ -221,6 +221,10 @@ fn reply_response(backend: &dyn Backend, reply: Reply) -> Response {
         }
     }
     let status = StatusCode::from_u16(reply.status).unwrap_or(StatusCode::OK);
+    if status == StatusCode::NO_CONTENT {
+        headers.remove("content-type");
+        return (status, headers).into_response();
+    }
     (status, headers, reply.body.to_string()).into_response()
 }
 
@@ -1056,6 +1060,29 @@ async fn generation(State(b): State<Shared>, UrlPath(sel): UrlPath<String>) -> R
     run(b, move |b| b.generation(&sel)).await
 }
 
+async fn discard_generation(
+    State(b): State<Shared>,
+    ConnectInfo(peer): ConnectInfo<Peer>,
+    UrlPath(sel): UrlPath<String>,
+) -> Response {
+    run_as(b, peer, move |b, who| b.discard_generation(who, &sel)).await
+}
+
+async fn generation_lock(State(b): State<Shared>, UrlPath(selector): UrlPath<String>) -> Response {
+    let backend = Arc::clone(&b);
+    let result = tokio::task::spawn_blocking(move || backend.generation_lock(&selector))
+        .await
+        .unwrap_or_else(|_| Err(Problem::new("J-E1000", 500, "the handler panicked")));
+    match result {
+        Ok(text) => {
+            let mut headers = base_headers(b.as_ref(), &request_id());
+            headers.insert("content-type", HeaderValue::from_static("application/toml"));
+            (StatusCode::OK, headers, text).into_response()
+        }
+        Err(p) => problem_response(b.as_ref(), &p),
+    }
+}
+
 async fn activate(
     State(b): State<Shared>,
     ConnectInfo(peer): ConnectInfo<Peer>,
@@ -1232,8 +1259,12 @@ pub fn router_with(backend: Arc<dyn Backend>, limits: ws::Limits) -> Router {
         )
         .route("/v1/generations", get(generations).post(create_generation))
         .route("/v1/generations/rollback", post(rollback))
-        .route("/v1/generations/{gen}", get(generation))
+        .route(
+            "/v1/generations/{gen}",
+            get(generation).delete(discard_generation),
+        )
         .route("/v1/generations/{gen}/manifest", get(generation_manifest))
+        .route("/v1/generations/{gen}/lock", get(generation_lock))
         .route("/v1/generations/{gen}/activate", post(activate))
         .route("/v1/generations/{gen}/confirm", post(confirm))
         .route("/v1/traces", get(traces).post(create_trace))

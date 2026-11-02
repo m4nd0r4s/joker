@@ -1022,6 +1022,60 @@ async fn generations_follow_the_contract() {
         .map(|a| a["origin"].clone())
         .collect();
     assert_eq!(origins, vec![json!("local"), json!("rollback")]);
+
+    let again = f
+        .call_with(
+            "POST",
+            "/v1/generations/rollback",
+            "/v1/generations/rollback",
+            &[("if-match", back.json()["hash"].as_str().unwrap())],
+            Some(json!({"to": "2", "reason": "try it again", "confirm_window": "1m"})),
+        )
+        .await;
+    assert_eq!(again.status, 200, "{}", again.json());
+    assert_eq!(again.json()["gen"], 2);
+    assert_eq!(again.json()["hash"], h2.as_str());
+    assert_eq!(again.json()["state"], "confirming");
+    assert!(again.json()["confirm_deadline"].is_string());
+    let confirmed = f
+        .call(
+            "POST",
+            "/v1/generations/{gen}/confirm",
+            "/v1/generations/confirming/confirm",
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!(confirmed.json()["state"], "confirmed");
+
+    let pending = f
+        .call(
+            "POST",
+            "/v1/generations",
+            "/v1/generations",
+            Some(json!({"manifest": {"content": effective().replace("500 ms", "125 ms")}, "lock": {"content": "version = 1\n"}, "artifacts": []})),
+        )
+        .await;
+    assert_eq!(pending.status, 201, "{}", pending.json());
+    let lock = f
+        .http
+        .send("GET", "/v1/generations/3/lock", &[], None)
+        .await;
+    assert_eq!(lock.status, 200);
+    assert_eq!(lock.header("content-type"), Some("application/toml"));
+    assert_eq!(lock.body, b"version = 1\n");
+    let deleted = f.http.send("DELETE", "/v1/generations/3", &[], None).await;
+    assert_eq!(deleted.status, 204);
+    assert!(deleted.body.is_empty());
+    let gone = f
+        .call("GET", "/v1/generations/{gen}", "/v1/generations/3", None)
+        .await;
+    assert_eq!(gone.json()["state"], "discarded");
+    assert_eq!(gone.json()["discard_reason"], "deleted");
+    let twice = f.http.send("DELETE", "/v1/generations/3", &[], None).await;
+    assert_eq!(
+        (twice.status, twice.json()["code"].clone()),
+        (409, json!("J-E1612"))
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

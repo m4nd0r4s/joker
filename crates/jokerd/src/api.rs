@@ -357,7 +357,10 @@ impl Node {
             );
         }
         if g.state == GenState::Discarded {
-            m.insert("discard_reason".into(), json!("superseded"));
+            m.insert(
+                "discard_reason".into(),
+                json!(g.discard_reason.as_deref().unwrap_or("superseded")),
+            );
         }
         let base = match c.current() {
             Some((n, _, _)) if n != g.number => Some(n),
@@ -2984,6 +2987,23 @@ impl Backend for Node {
             .content(g.number)
             .map(|(manifest, _)| manifest)
             .map_err(|e| Problem::new("J-E1000", 500, e.to_string()))
+    }
+
+    fn generation_lock(&self, selector: &str) -> Result<String, Problem> {
+        let g = self.resolve_generation(selector)?;
+        let c = lock_controller(&self.controller);
+        c.store()
+            .content(g.number)
+            .map(|(_, lock)| lock)
+            .map_err(|e| Problem::new("J-E1000", 500, e.to_string()))
+    }
+
+    fn discard_generation(&self, _who: &Principal, selector: &str) -> Result<Reply, Problem> {
+        let g = self.resolve_generation(selector)?;
+        lock_controller(&self.controller)
+            .discard(g.number)
+            .map_err(problem)?;
+        Ok(Reply::with_status(204, Value::Null))
     }
 
     fn activate(

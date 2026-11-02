@@ -435,3 +435,46 @@ fn a_rollback_with_a_window_waits_for_confirm_and_rolls_back_in_turn() {
         ]
     );
 }
+
+#[test]
+fn a_pending_generation_is_discarded_when_deleted_superseded_or_expired() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = Arc::new(Mutex::new(
+        DecisionLog::open(&dir.path().join("decisions.jsonl")).unwrap(),
+    ));
+    let clock = Monotonic::start();
+    let mut c = Controller::new(
+        dir.path(),
+        log,
+        Arc::new(NativeTasks),
+        Arc::new(NoDevices),
+        Box::new(move || Box::new(SystemPacer::new(clock, joker_core::ClockQuality::Unsynced))),
+        Config {
+            pending_ttl: Duration::from_millis(50),
+            ..Config::default()
+        },
+    )
+    .unwrap();
+    let reason = |c: &Controller, n: u64| {
+        let g = c.store().get(n).unwrap();
+        (g.state, g.discard_reason)
+    };
+
+    c.propose(&effective(""), "", None, false).unwrap();
+    c.propose(&effective(WRONG_PORT), "", None, false).unwrap();
+    assert_eq!(
+        reason(&c, 1),
+        (GenState::Discarded, Some("superseded".into()))
+    );
+    c.discard(2).unwrap();
+    assert_eq!(reason(&c, 2), (GenState::Discarded, Some("deleted".into())));
+    assert_eq!(c.discard(2).unwrap_err().code, "J-E1612");
+
+    c.propose(&effective(""), "", None, false).unwrap();
+    c.poll().unwrap();
+    assert_eq!(reason(&c, 3).0, GenState::Pending);
+    std::thread::sleep(Duration::from_millis(80));
+    c.poll().unwrap();
+    assert_eq!(reason(&c, 3), (GenState::Discarded, Some("expired".into())));
+    assert_eq!(c.activate(3, None, None).unwrap_err().code, "J-E1612");
+}

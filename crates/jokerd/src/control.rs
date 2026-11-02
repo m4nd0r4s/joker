@@ -95,6 +95,9 @@ pub struct Config {
     /// no project: a generation has only the profiles and boards it
     /// carries, never those of the daemon's working directory.
     pub project_root: std::path::PathBuf,
+    /// How long a `pending` generation waits for its activation before
+    /// it is `discarded` as `expired` (1 h, ref/09 §5.13).
+    pub pending_ttl: Duration,
 }
 
 impl Default for Config {
@@ -106,6 +109,7 @@ impl Default for Config {
             utc_origin_ns: 0,
             clock: Arc::default(),
             project_root: std::path::PathBuf::new(),
+            pending_ttl: Duration::from_secs(3600),
         }
     }
 }
@@ -669,13 +673,12 @@ impl Controller {
                 created_by,
                 failure: None,
                 confirm_window_ns: None,
+                discard_reason: None,
             });
         }
         for g in self.store.list().map_err(ControlError::io)? {
             if g.state == GenState::Pending {
-                self.store
-                    .set_state(g.number, GenState::Discarded, Some("superseded".into()))
-                    .map_err(ControlError::io)?;
+                self.discard_as(g, "superseded")?;
             }
         }
         let g = self
@@ -747,6 +750,42 @@ impl Controller {
             generation: g,
             from,
         })
+    }
+
+    /// Discards a `pending` generation that was never activated
+    /// (`DELETE /v1/generations/{gen}`, `discard_reason = deleted`); any
+    /// other state is `J-E1612`.
+    pub fn discard(&mut self, number: u64) -> Result<Generation, ControlError> {
+        let g = self.get(number)?;
+        if g.state != GenState::Pending {
+            return Err(ControlError::new(
+                "J-E1612",
+                409,
+                format!("generation {number} is {}, not pending", g.state),
+            ));
+        }
+        self.discard_as(g, "deleted")
+    }
+
+    fn discard_as(&self, mut g: Generation, reason: &str) -> Result<Generation, ControlError> {
+        g.state = GenState::Discarded;
+        g.discard_reason = Some(reason.to_owned());
+        self.store.save(&g).map_err(ControlError::io)?;
+        self.log_generation(g.number, "discarded", None, Some(reason));
+        Ok(g)
+    }
+
+    /// Discards every `pending` generation created more than
+    /// [`Config::pending_ttl`] before `now_utc_ns` (`discard_reason =
+    /// expired`, ref/09 §5.13).
+    fn expire_pending(&self, now_utc_ns: i64) -> Result<(), ControlError> {
+        let ttl = i64::try_from(self.config.pending_ttl.as_nanos()).unwrap_or(i64::MAX);
+        for g in self.store.list().map_err(ControlError::io)? {
+            if g.state == GenState::Pending && now_utc_ns.saturating_sub(g.created_utc_ns) > ttl {
+                self.discard_as(g, "expired")?;
+            }
+        }
+        Ok(())
     }
 
     /// Confirms the generation in `confirming`.
@@ -844,6 +883,7 @@ impl Controller {
         if let Some(a) = &self.active {
             crate::wasm::drop_retired(&a.running.shared);
         }
+        self.expire_pending(utc_now_ns())?;
         let expired = self
             .confirming
             .as_ref()

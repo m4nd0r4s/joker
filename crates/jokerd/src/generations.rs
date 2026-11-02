@@ -86,6 +86,9 @@ pub struct Generation {
     pub failure: Option<String>,
     /// The confirmation window of its last activation, in ns.
     pub confirm_window_ns: Option<u64>,
+    /// Why it was discarded (`deleted`, `superseded`, `expired`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub discard_reason: Option<String>,
 }
 
 /// One activation.
@@ -212,6 +215,7 @@ impl Store {
             created_by,
             failure: None,
             confirm_window_ns: None,
+            discard_reason: None,
         };
         self.save(&g)?;
         Ok(g)
