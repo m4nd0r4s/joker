@@ -11,12 +11,12 @@ use std::time::Duration;
 
 use common::{Bench, GAIN, TASK_BAD, TASK_ECHO, TASK_EMPTY, TASK_PANIC, TASK_SPIN};
 use joker_core::Outcome;
-use joker_host::{AppComponent, CycleStatus, HostEngine, InstanceLimits, RuntimeMode};
+use joker_host::{AppComponent, CycleStatus, HostEngine, InstanceLimits, PoolConfig, RuntimeMode};
 
 const CANONICAL_NAN: u64 = 0x7ff8_0000_0000_0000;
 
 fn setup() -> (HostEngine, AppComponent) {
-    let engine = HostEngine::native().unwrap();
+    let engine = HostEngine::pooled(PoolConfig::default()).unwrap();
     let app = AppComponent::compile(&engine, &common::echo(), RuntimeMode::Prod).unwrap();
     (engine, app)
 }

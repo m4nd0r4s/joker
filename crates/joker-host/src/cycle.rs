@@ -649,6 +649,7 @@ impl CycleInstance {
                 ));
             }
         }
+        engine.count_instance();
         Ok(Self {
             store,
             on_cycle,

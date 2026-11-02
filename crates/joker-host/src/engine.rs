@@ -10,10 +10,10 @@ use core::fmt;
 use core::hash::{Hash, Hasher};
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
-use wasmtime::{Config, Engine, OptLevel};
+use wasmtime::{Config, Engine, InstanceAllocationStrategy, OptLevel, PoolingAllocationConfig};
 
 use crate::error::{HostError, codes};
 
@@ -41,6 +41,101 @@ impl fmt::Display for EngineId {
 /// How often the epoch ticker advances the epoch (docs/01 §4, ADR 0102).
 pub const EPOCH_PERIOD: Duration = Duration::from_micros(100);
 
+/// The linear memory reserved for each instance on a 32-bit node: the
+/// default cycle `memory.max` of a Rust app (docs/01 §9, ADR 0107). It is
+/// part of the engine identity, so a node and the laptop that compiles for
+/// it use the same value.
+pub const MEMORY_RESERVATION_32: u64 = 16 * 1024 * 1024;
+
+/// Core instances a component may hold in a pool slot: the app's module and
+/// the shim modules the component model adds.
+const CORE_INSTANCES_PER_COMPONENT: u32 = 8;
+
+/// Linear memories a component may hold in a pool slot.
+const MEMORIES_PER_COMPONENT: u32 = 2;
+
+/// Tables a component may hold in a pool slot.
+const TABLES_PER_COMPONENT: u32 = 4;
+
+/// Elements of one pooled table.
+const TABLE_ELEMENTS: usize = 10_000;
+
+/// The size of the instance pool of a node's engine (docs/01 §9, ADR
+/// 0107): how many app instances can live at once, each with its linear
+/// memory and its tables reserved when the engine is created. A generation
+/// switch of an app holds two instances of each of its tasks for a moment
+/// (the old one serving and the new one warming up), so the default leaves
+/// room for that.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct PoolConfig {
+    /// Component instances alive at once.
+    pub instances: u32,
+}
+
+impl Default for PoolConfig {
+    fn default() -> Self {
+        Self {
+            instances: if cfg!(target_pointer_width = "32") {
+                16
+            } else {
+                32
+            },
+        }
+    }
+}
+
+impl PoolConfig {
+    /// The linear memories of the pool.
+    pub fn memories(&self) -> u32 {
+        self.instances
+    }
+
+    /// The tables of the pool.
+    pub fn tables(&self) -> u32 {
+        self.instances.saturating_mul(2)
+    }
+
+    /// The address space the pool reserves for linear memories and tables
+    /// on an engine whose memories reserve `reservation` bytes with a
+    /// `guard` after each: reserved, not resident (ADR 0107).
+    pub fn reserved_bytes(&self, reservation: u64, guard: u64) -> u64 {
+        let memories = u64::from(self.memories()) * (reservation + guard) + guard;
+        let tables = u64::from(self.tables()) * (TABLE_ELEMENTS as u64) * 8;
+        memories + tables
+    }
+
+    fn allocation(&self, max_memory_size: u64) -> PoolingAllocationConfig {
+        let mut pool = PoolingAllocationConfig::new();
+        pool.total_component_instances(self.instances)
+            .total_core_instances(self.instances.saturating_mul(CORE_INSTANCES_PER_COMPONENT))
+            .max_core_instances_per_component(CORE_INSTANCES_PER_COMPONENT)
+            .total_memories(self.memories())
+            .max_memories_per_component(MEMORIES_PER_COMPONENT)
+            .max_memories_per_module(1)
+            .max_memory_size(usize::try_from(max_memory_size).unwrap_or(usize::MAX))
+            .total_tables(self.tables())
+            .max_tables_per_component(TABLES_PER_COMPONENT)
+            .max_tables_per_module(2)
+            .table_elements(TABLE_ELEMENTS)
+            .total_stacks(0)
+            .max_unused_warm_slots(0);
+        pool
+    }
+}
+
+/// What the pool of an engine holds now.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct PoolUsage {
+    /// Component instances alive.
+    pub instances: u64,
+    /// Linear memories in use.
+    pub memories: usize,
+    /// Component instances the pool holds at most.
+    pub capacity: u32,
+    /// Address space reserved for memories and tables, bytes.
+    pub reserved_bytes: u64,
+}
+
 /// The engine that compiles and runs app components.
 #[derive(Clone)]
 pub struct HostEngine {
@@ -48,7 +143,9 @@ pub struct HostEngine {
     triple: String,
     id: EngineId,
     native: bool,
+    pool: Option<PoolConfig>,
     ticking: Arc<AtomicBool>,
+    created: Arc<AtomicU64>,
 }
 
 impl fmt::Debug for HostEngine {
@@ -64,7 +161,17 @@ impl HostEngine {
     /// The engine of this machine, which can compile and run components.
     pub fn native() -> Result<Self, HostError> {
         let triple = host_triple()?;
-        let mut engine = Self::build(&triple)?;
+        let mut engine = Self::build(&triple, None)?;
+        engine.native = true;
+        Ok(engine)
+    }
+
+    /// The engine of a node: [`HostEngine::native`], with every instance
+    /// taken from a pool reserved here, at startup (docs/01 §9, ADR 0107).
+    /// Instantiating past the pool fails with `J-E0909`.
+    pub fn pooled(pool: PoolConfig) -> Result<Self, HostError> {
+        let triple = host_triple()?;
+        let mut engine = Self::build(&triple, Some(pool))?;
         engine.native = true;
         Ok(engine)
     }
@@ -72,16 +179,27 @@ impl HostEngine {
     /// A cross engine for `triple` (`aarch64-unknown-linux-gnu`): it only
     /// precompiles, unless `triple` is this machine's.
     pub fn for_target(triple: &str) -> Result<Self, HostError> {
-        let mut engine = Self::build(triple)?;
+        let mut engine = Self::build(triple, None)?;
         engine.native = host_triple().is_ok_and(|h| h == triple);
         Ok(engine)
     }
 
-    fn build(triple: &str) -> Result<Self, HostError> {
+    fn build(triple: &str, pool: Option<PoolConfig>) -> Result<Self, HostError> {
         let mut config = Config::new();
+        let target = compile_target(triple);
         config
-            .target(compile_target(triple))
+            .target(target)
             .map_err(|e| HostError::new(codes::AOT_UNAVAILABLE, format!("target {triple}: {e}")))?;
+        let (reservation, guard) = memory_layout(target);
+        if let Some((reservation, guard)) = reservation.zip(guard) {
+            config
+                .memory_reservation(reservation)
+                .memory_guard_size(guard);
+        }
+        if let Some(pool) = pool {
+            let max = reservation.unwrap_or(DEFAULT_RESERVATION_64);
+            config.allocation_strategy(InstanceAllocationStrategy::Pooling(pool.allocation(max)));
+        }
         config
             .wasm_component_model(true)
             .wasm_component_model_async(true)
@@ -104,7 +222,34 @@ impl HostEngine {
             triple: triple.to_owned(),
             id,
             native: false,
+            pool,
             ticking: Arc::new(AtomicBool::new(false)),
+            created: Arc::new(AtomicU64::new(0)),
+        })
+    }
+
+    /// The cycle instances created on this engine so far, `init` included.
+    pub fn instances_created(&self) -> u64 {
+        self.created.load(Ordering::Relaxed)
+    }
+
+    pub(crate) fn count_instance(&self) {
+        self.created.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// What the instance pool holds now; `None` on an engine without one.
+    pub fn pool_usage(&self) -> Option<PoolUsage> {
+        let pool = self.pool?;
+        let metrics = self.engine.pooling_allocator_metrics()?;
+        let (reservation, guard) = memory_layout(compile_target(&self.triple));
+        Some(PoolUsage {
+            instances: metrics.component_instances(),
+            memories: metrics.memories(),
+            capacity: pool.instances,
+            reserved_bytes: pool.reserved_bytes(
+                reservation.unwrap_or(DEFAULT_RESERVATION_64),
+                guard.unwrap_or(DEFAULT_GUARD_64),
+            ),
         })
     }
 
@@ -170,6 +315,27 @@ impl HostEngine {
 
     pub(crate) fn wasmtime(&self) -> &Engine {
         &self.engine
+    }
+}
+
+/// wasmtime's linear memory reservation on 64-bit targets: 4 GiB, so that
+/// Cranelift needs no bounds checks.
+const DEFAULT_RESERVATION_64: u64 = 1 << 32;
+
+/// wasmtime's guard after each linear memory on 64-bit targets.
+const DEFAULT_GUARD_64: u64 = 32 << 20;
+
+/// The guard after each linear memory on 32-bit targets: wasmtime's.
+const GUARD_32: u64 = 64 << 10;
+
+/// The linear memory reservation and guard of a compilation target, when
+/// they differ from wasmtime's: on 32-bit targets, [`MEMORY_RESERVATION_32`]
+/// (docs/01 §9, ADR 0107).
+fn memory_layout(target: &str) -> (Option<u64>, Option<u64>) {
+    if target == "pulley32" {
+        (Some(MEMORY_RESERVATION_32), Some(GUARD_32))
+    } else {
+        (None, None)
     }
 }
 
