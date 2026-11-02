@@ -2,7 +2,9 @@
 //! Modbus TCP servers on loopback: a generation that changes only an
 //! envelope keeps the driver's connection (the server sees no new
 //! connection and the device's reconnect counter stays at zero), while a
-//! generation that changes the device's address restarts that driver.
+//! generation that changes the device's address restarts that driver; a
+//! generation whose driver never reaches `up` is rolled back when its
+//! window ends, reactivating the previous one (ref/09 §5.13).
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -14,6 +16,7 @@ use joker_core::QualityCode;
 use jokerd::catalog::CatalogFiles;
 use jokerd::control::{Config, Controller};
 use jokerd::decisions::DecisionLog;
+use jokerd::generations::{GenState, Origin};
 use jokerd::native::NativeTasks;
 use jokerd::pacer::{Monotonic, SystemPacer};
 use jokerd::real_devices::RealDevices;
@@ -234,5 +237,88 @@ fn an_envelope_change_keeps_the_connection_and_an_address_change_restarts_the_dr
         "the driver on the old address was stopped"
     );
     assert_eq!(a.accepted.load(Ordering::SeqCst), 1);
+    c.shutdown();
+}
+
+#[test]
+fn a_generation_that_breaks_the_bus_is_rolled_back_after_its_window() {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    let (port, server) = server(&runtime);
+    let closed = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let dir = tempfile::tempdir().unwrap();
+    let mut c = controller(dir.path(), &runtime);
+
+    let good = apply(&mut c, &manifest(port, 100));
+    let good_hash = c.store().get(good).unwrap().hash;
+    wait_until("the first reading", || reading(&c).0 == QualityCode::Good);
+
+    let broken = c
+        .propose_files(&manifest(closed, 100), "", &files(), None, false, None)
+        .unwrap()
+        .number;
+    let switched = c
+        .activate(broken, Some(Duration::from_millis(400)), None)
+        .unwrap();
+    assert_eq!(switched.generation.state, GenState::Confirming);
+    assert_eq!(c.unhealthy(), ["pcs"]);
+
+    let start = Instant::now();
+    let rolled = loop {
+        if let Some(s) = c.poll().unwrap() {
+            break s;
+        }
+        assert!(start.elapsed() < Duration::from_secs(5), "no rollback");
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    assert!(start.elapsed() >= Duration::from_millis(300));
+    assert_eq!(rolled.from, Some(broken));
+    assert_eq!(rolled.generation.number, good);
+    assert_eq!(rolled.generation.hash, good_hash);
+    assert_eq!(rolled.generation.state, GenState::Confirmed);
+
+    let left = c.store().get(broken).unwrap();
+    assert_eq!(left.state, GenState::RolledBack);
+    let failure = left.failure.unwrap();
+    assert!(
+        failure.starts_with(jokerd::control::HEALTH) && failure.contains("`pcs`"),
+        "{failure}"
+    );
+    let history: Vec<(u64, Origin, Option<u64>)> = c
+        .store()
+        .activations()
+        .unwrap()
+        .iter()
+        .map(|a| (a.number, a.origin, a.from))
+        .collect();
+    assert_eq!(
+        history,
+        [
+            (good, Origin::Local, None),
+            (broken, Origin::Local, Some(good)),
+            (good, Origin::Rollback, Some(broken)),
+        ]
+    );
+    let rolled_back: Vec<u64> = c
+        .store()
+        .list()
+        .unwrap()
+        .iter()
+        .filter(|g| g.state == GenState::RolledBack)
+        .map(|g| g.number)
+        .collect();
+    assert_eq!(rolled_back, [broken]);
+    wait_until("the reading back on the reactivated generation", || {
+        c.current().unwrap().0 == good
+            && reading(&c).0 == QualityCode::Good
+            && server.accepted.load(Ordering::SeqCst) == 2
+    });
     c.shutdown();
 }

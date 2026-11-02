@@ -341,14 +341,20 @@ impl Node {
             m.insert("confirm_deadline".into(), json!(timestamp(deadline)));
         }
         if let Some(f) = &g.failure {
-            let reason = if f.contains("window") {
+            let reason = if f.starts_with(crate::control::HEALTH) {
+                "health"
+            } else if f.contains("window") {
                 "window"
             } else if g.state == GenState::RolledBack {
                 "rollback"
             } else {
                 "activation"
             };
-            m.insert("failure".into(), json!({"reason": reason, "detail": f}));
+            let detail = f.strip_prefix(crate::control::HEALTH).unwrap_or(f);
+            m.insert(
+                "failure".into(),
+                json!({"reason": reason, "detail": detail}),
+            );
         }
         if g.state == GenState::Discarded {
             m.insert("discard_reason".into(), json!("superseded"));
@@ -3044,8 +3050,15 @@ impl Backend for Node {
             None | Some("previous") => None,
             Some(sel) => Some(self.resolve_generation(sel)?.number),
         };
+        let window = req
+            .confirm_window
+            .as_deref()
+            .map(parse_duration)
+            .transpose()
+            .map_err(|e| bad("J-E1012", e).with("pointer", json!("/confirm_window")))?
+            .map(Duration::from_nanos);
         let switched = lock_controller(&self.controller)
-            .rollback(to, Some(user(who)), Some(req.reason))
+            .rollback_with(to, window, Some(user(who)), Some(req.reason))
             .map_err(problem)?;
         Ok(Reply::ok(self.generation_json(&switched.generation)))
     }

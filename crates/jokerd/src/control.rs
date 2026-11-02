@@ -31,6 +31,10 @@ use crate::runner::{Running, Start, StartContext};
 use crate::task::{Providers, TaskProvider};
 use crate::trace_ring::digest_bytes;
 
+/// How the `failure` of a generation rolled back by its health starts
+/// (ref/09 §5.13, `failure.reason = health`).
+pub const HEALTH: &str = "health: ";
+
 /// The name of the effective manifest inside a generation.
 pub const EFFECTIVE: &str = "joker.toml";
 
@@ -123,6 +127,9 @@ struct Confirming {
     number: u64,
     previous: Option<u64>,
     deadline: StdInstant,
+    /// The devices this activation started or restarted, by name: each
+    /// must reach `up` within the window (ref/09 §5.13, health).
+    fresh: Vec<String>,
 }
 
 /// The generation controller of a node.
@@ -698,15 +705,7 @@ impl Controller {
                 "a generation is waiting for confirmation",
             ));
         }
-        if let Some(w) = window
-            && (w < self.config.min_window || w > self.config.max_window)
-        {
-            return Err(ControlError::new(
-                "J-E1623",
-                400,
-                "confirmation window outside 30s–24h",
-            ));
-        }
+        self.check_window(window)?;
         let g = self.get(number)?;
         if g.state != GenState::Pending {
             return Err(ControlError::new(
@@ -716,6 +715,7 @@ impl Controller {
             ));
         }
         let from = self.active.as_ref().map(|a| a.number);
+        let before = self.active_devices();
         match self.switch(number, Origin::Local, principal, None) {
             Ok(()) => {}
             Err(e) => {
@@ -739,6 +739,7 @@ impl Controller {
                 number,
                 previous: from,
                 deadline: StdInstant::now() + w,
+                fresh: self.fresh_devices(&before),
             });
         }
         self.log_generation(number, g.state.name(), from, None);
@@ -782,6 +783,20 @@ impl Controller {
         principal: Option<String>,
         reason: Option<String>,
     ) -> Result<Switched, ControlError> {
+        self.rollback_with(to, None, principal, reason)
+    }
+
+    /// [`Controller::rollback`], with a confirmation window: the
+    /// reactivated generation goes to `confirming` instead of `confirmed`,
+    /// and the window rolls it back in turn (ref/09 §5.13).
+    pub fn rollback_with(
+        &mut self,
+        to: Option<u64>,
+        window: Option<Duration>,
+        principal: Option<String>,
+        reason: Option<String>,
+    ) -> Result<Switched, ControlError> {
+        self.check_window(window)?;
         let current = self.active.as_ref().map(|a| a.number);
         let target = match to {
             Some(t) => t,
@@ -793,6 +808,7 @@ impl Controller {
                 .ok_or_else(|| ControlError::new("J-E1613", 404, "no previous generation"))?,
         };
         self.get(target)?;
+        let before = self.active_devices();
         self.switch(target, Origin::Rollback, principal, reason.clone())?;
         if let Some(cur) = current {
             self.store
@@ -800,12 +816,21 @@ impl Controller {
                 .map_err(ControlError::io)?;
             self.log_generation(cur, "rolled_back", Some(cur), reason.as_deref());
         }
-        self.confirming = None;
-        let g = self
-            .store
-            .set_state(target, GenState::Confirmed, None)
-            .map_err(ControlError::io)?;
-        self.log_generation(target, "confirmed", current, Some("rollback"));
+        self.confirming = window.map(|w| Confirming {
+            number: target,
+            previous: current,
+            deadline: StdInstant::now() + w,
+            fresh: self.fresh_devices(&before),
+        });
+        let mut g = self.get(target)?;
+        g.state = if window.is_some() {
+            GenState::Confirming
+        } else {
+            GenState::Confirmed
+        };
+        g.confirm_window_ns = window.map(|w| u64::try_from(w.as_nanos()).unwrap_or(u64::MAX));
+        self.store.save(&g).map_err(ControlError::io)?;
+        self.log_generation(target, g.state.name(), current, Some("rollback"));
         Ok(Switched {
             generation: g,
             from: current,
@@ -824,9 +849,13 @@ impl Controller {
             .as_ref()
             .is_some_and(|c| StdInstant::now() >= c.deadline);
         if expired {
-            return self
-                .rollback(None, None, Some("confirmation window expired".into()))
-                .map(Some);
+            let reason = match self.unhealthy().first() {
+                Some(device) => format!(
+                    "{HEALTH}device `{device}` did not reach `up` within the confirmation window"
+                ),
+                None => "confirmation window expired".to_owned(),
+            };
+            return self.rollback(None, None, Some(reason)).map(Some);
         }
         if let Some(a) = &self.active
             && !a.running.is_running()
@@ -871,6 +900,55 @@ impl Controller {
             let _ = a.running.stop();
         }
         self.historian.stop();
+    }
+
+    fn check_window(&self, window: Option<Duration>) -> Result<(), ControlError> {
+        match window {
+            Some(w) if w < self.config.min_window || w > self.config.max_window => Err(
+                ControlError::new("J-E1623", 400, "confirmation window outside 30s–24h"),
+            ),
+            _ => Ok(()),
+        }
+    }
+
+    /// The real devices of the running generation, with their plans.
+    fn active_devices(&self) -> Vec<crate::bridge::DevicePlan> {
+        self.active
+            .as_ref()
+            .map(|a| a.running.plan.devices.clone())
+            .unwrap_or_default()
+    }
+
+    /// The devices of the running generation that were not running, with
+    /// the same plan, in `before`: those the swap started or restarted.
+    fn fresh_devices(&self, before: &[crate::bridge::DevicePlan]) -> Vec<String> {
+        self.active_devices()
+            .into_iter()
+            .filter(|d| !before.contains(d))
+            .map(|d| d.name)
+            .collect()
+    }
+
+    /// The devices the generation in `confirming` started or restarted
+    /// that have not connected once (ref/09 §5.13: a new driver that does
+    /// not reach `up` within the window rolls the generation back).
+    pub fn unhealthy(&self) -> Vec<String> {
+        let (Some(c), Some(a)) = (&self.confirming, &self.active) else {
+            return Vec::new();
+        };
+        c.fresh
+            .iter()
+            .filter(|name| {
+                a.running
+                    .plan
+                    .devices
+                    .iter()
+                    .position(|d| &d.name == *name)
+                    .and_then(|i| a.running.shared.devices.get(i))
+                    .is_none_or(|stats| stats.connects.get() == 0)
+            })
+            .cloned()
+            .collect()
     }
 
     fn get(&self, number: u64) -> Result<Generation, ControlError> {

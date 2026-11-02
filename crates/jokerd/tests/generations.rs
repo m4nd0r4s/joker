@@ -98,7 +98,7 @@ fn an_unconfirmed_generation_is_rolled_back() {
     assert_eq!(c.store().get(2).unwrap().state, GenState::RolledBack);
     assert_eq!(
         c.store().get(2).unwrap().failure.as_deref(),
-        Some("confirmation window expired")
+        Some("health: device `esp` did not reach `up` within the confirmation window")
     );
     assert_eq!(c.store().get(1).unwrap().state, GenState::Confirmed);
     let origins: Vec<(u64, Origin)> = c
@@ -383,4 +383,55 @@ fn a_project_root_lends_its_files_to_the_generation_once() {
     std::fs::write(project.path().join(PCS_PATH), "not a profile").unwrap();
     c.activate(g.number, None, None)
         .expect("the generation runs with the profile it was proposed with");
+}
+
+#[test]
+fn a_rollback_with_a_window_waits_for_confirm_and_rolls_back_in_turn() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut c = controller(dir.path());
+    c.propose(&effective(""), "", None, false).unwrap();
+    c.activate(1, None, None).unwrap();
+    c.propose(&effective(WRONG_PORT), "", None, false).unwrap();
+    c.activate(2, None, None).unwrap();
+    let hash_1 = c.store().get(1).unwrap().hash;
+
+    assert_eq!(
+        c.rollback_with(Some(1), Some(Duration::from_millis(10)), None, None)
+            .unwrap_err()
+            .code,
+        "J-E1623"
+    );
+    let back = c
+        .rollback_with(
+            Some(1),
+            Some(Duration::from_millis(300)),
+            Some("unix:dl".into()),
+            Some("bad wiring".into()),
+        )
+        .unwrap();
+    assert_eq!(back.generation.number, 1);
+    assert_eq!(back.generation.hash, hash_1);
+    assert_eq!(back.generation.state, GenState::Confirming);
+    assert_eq!(c.store().get(2).unwrap().state, GenState::RolledBack);
+    assert_eq!(c.confirming().map(|(n, _)| n), Some(1));
+
+    assert!(wait_for_rollback(&mut c, Duration::from_secs(3)));
+    assert_eq!(c.current().unwrap().0, 2);
+    assert_eq!(c.store().get(1).unwrap().state, GenState::RolledBack);
+    let origins: Vec<(u64, Origin)> = c
+        .store()
+        .activations()
+        .unwrap()
+        .iter()
+        .map(|a| (a.number, a.origin))
+        .collect();
+    assert_eq!(
+        origins,
+        [
+            (1, Origin::Local),
+            (2, Origin::Local),
+            (1, Origin::Rollback),
+            (2, Origin::Rollback),
+        ]
+    );
 }
