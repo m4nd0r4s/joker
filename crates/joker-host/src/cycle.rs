@@ -78,6 +78,10 @@ pub struct InstanceLimits {
     /// Epoch ticks allowed for one `on-cycle` call (`max(wcet × 2, 200 µs)`,
     /// docs/01 §4).
     pub cycle_deadline_epochs: u64,
+    /// Epoch ticks allowed for the first `on-cycle` call of the instance
+    /// when they exceed `cycle_deadline_epochs` (one group period,
+    /// ADR 0108).
+    pub first_cycle_deadline_epochs: u64,
     /// Lowest log level kept (`log.enabled`).
     pub log_level: LogLevel,
 }
@@ -92,6 +96,15 @@ impl InstanceLimits {
         let budget = wcet.saturating_mul(2).max(2 * epoch);
         budget.div_ceil(epoch) + 1
     }
+
+    /// The epochs of one group period (ADR 0108):
+    /// `ceil(max(period, 200 µs) / 100 µs) + 1`, given to the first call of
+    /// an instance and to every call on a node without real-time
+    /// scheduling.
+    pub fn period_epochs(period_ns: u64) -> u64 {
+        let epoch = crate::engine::EPOCH_PERIOD.as_nanos() as u64;
+        period_ns.max(2 * epoch).div_ceil(epoch) + 1
+    }
 }
 
 impl Default for InstanceLimits {
@@ -100,6 +113,7 @@ impl Default for InstanceLimits {
             memory_max: 16 * 1024 * 1024,
             init_deadline_epochs: 10_000,
             cycle_deadline_epochs: 2,
+            first_cycle_deadline_epochs: 2,
             log_level: LogLevel::Info,
         }
     }
@@ -382,6 +396,7 @@ pub struct CycleInstance {
     n_slots: usize,
     proposal_capacity: usize,
     deadline: u64,
+    first_deadline: u64,
     mode: RunMode,
     first: bool,
     poisoned: bool,
@@ -643,6 +658,10 @@ impl CycleInstance {
             n_slots: n_slots as usize,
             proposal_capacity,
             deadline: setup.limits.cycle_deadline_epochs,
+            first_deadline: setup
+                .limits
+                .first_cycle_deadline_epochs
+                .max(setup.limits.cycle_deadline_epochs),
             mode: setup.mode,
             first: true,
             poisoned: false,
@@ -692,7 +711,11 @@ impl CycleInstance {
         self.rejections.clear();
         self.error_code.clear();
         self.error_message.clear();
-        self.store.set_epoch_deadline(self.deadline);
+        self.store.set_epoch_deadline(if self.first {
+            self.first_deadline
+        } else {
+            self.deadline
+        });
         self.store.data_mut().guest_trap = None;
         let image_bytes = core::mem::take(&mut self.image);
         let on_cycle: TypedFunc<(u32, &[u8]), (wit::CycleResult,)> = self.on_cycle;

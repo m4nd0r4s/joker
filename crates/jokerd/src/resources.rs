@@ -81,6 +81,38 @@ pub fn raise_priority(_priority: u8) -> Result<(), String> {
     Ok(())
 }
 
+/// Whether this process may run threads `SCHED_FIFO`: `CAP_SYS_NICE` in
+/// its effective capabilities, or an `RLIMIT_RTPRIO` that is not zero
+/// (ADR 0108).
+#[cfg(target_os = "linux")]
+pub fn realtime_allowed() -> bool {
+    let status = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
+    let limits = std::fs::read_to_string("/proc/self/limits").unwrap_or_default();
+    realtime_allowed_by(&status, &limits)
+}
+
+/// Never outside Linux: the node has no `SCHED_FIFO` there (ADR 0108).
+#[cfg(not(target_os = "linux"))]
+pub fn realtime_allowed() -> bool {
+    false
+}
+
+/// [`realtime_allowed`] from the text of `/proc/self/status` and
+/// `/proc/self/limits`.
+pub fn realtime_allowed_by(status: &str, limits: &str) -> bool {
+    let nice = status
+        .lines()
+        .find_map(|l| l.strip_prefix("CapEff:"))
+        .and_then(|hex| u64::from_str_radix(hex.trim(), 16).ok())
+        .is_some_and(|caps| caps & (1 << 23) != 0);
+    let rtprio = limits
+        .lines()
+        .find_map(|l| l.strip_prefix("Max realtime priority"))
+        .and_then(|rest| rest.split_whitespace().next())
+        .is_some_and(|soft| soft == "unlimited" || soft.parse::<u64>().is_ok_and(|p| p > 0));
+    nice || rtprio
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;
@@ -155,5 +187,20 @@ act_led = { type = "bool", direction = "output" }
     #[test]
     fn pinning_to_an_out_of_range_cpu_fails() {
         assert!(pin_current_thread(&[usize::MAX]).is_err());
+    }
+
+    const LIMITS: &str = "Limit                     Soft Limit           Hard Limit           Units\nMax realtime priority     RTPRIO               RTPRIO\n";
+
+    #[test]
+    fn real_time_needs_cap_sys_nice_or_an_rtprio_limit() {
+        let none = LIMITS.replace("RTPRIO", "0");
+        assert!(!realtime_allowed_by("CapEff:\t0000000000000000\n", &none));
+        assert!(realtime_allowed_by("CapEff:\t0000000000800000\n", &none));
+        assert!(realtime_allowed_by("CapEff:\t000001ffffffffff\n", &none));
+        let some = LIMITS.replace("RTPRIO", "99");
+        assert!(realtime_allowed_by("CapEff:\t0000000000000000\n", &some));
+        let unlimited = LIMITS.replace("RTPRIO", "unlimited");
+        assert!(realtime_allowed_by("", &unlimited));
+        assert!(!realtime_allowed_by("", ""));
     }
 }

@@ -163,3 +163,12 @@ fn a_cycle_deadline_is_twice_the_wcet_with_a_floor_and_one_epoch_more() {
     assert_eq!(InstanceLimits::cycle_epochs(Some(150_000), 20_000_000), 4);
     assert_eq!(InstanceLimits::cycle_epochs(None, 20_000_000), 81);
 }
+
+#[test]
+fn a_first_call_deadline_is_one_period_with_a_floor_and_one_epoch_more() {
+    use joker_host::InstanceLimits;
+    assert_eq!(InstanceLimits::period_epochs(1_000_000), 11);
+    assert_eq!(InstanceLimits::period_epochs(20_000_000), 201);
+    assert_eq!(InstanceLimits::period_epochs(150_000), 3);
+    assert_eq!(InstanceLimits::period_epochs(0), 3);
+}

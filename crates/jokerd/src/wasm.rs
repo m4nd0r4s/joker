@@ -545,8 +545,15 @@ impl CycleTask for WasmTask {
             .tasks
             .get(self.task as usize)
             .and_then(|t| t.wcet_ns);
+        let period_ns = cx.image.period_ns();
+        let whole_period = InstanceLimits::period_epochs(period_ns);
         let limits = InstanceLimits {
-            cycle_deadline_epochs: InstanceLimits::cycle_epochs(wcet_ns, cx.image.period_ns()),
+            cycle_deadline_epochs: if crate::resources::realtime_allowed() {
+                InstanceLimits::cycle_epochs(wcet_ns, period_ns)
+            } else {
+                whole_period
+            },
+            first_cycle_deadline_epochs: whole_period,
             ..InstanceLimits::default()
         };
         if self.mode != RunMode::Replay {
