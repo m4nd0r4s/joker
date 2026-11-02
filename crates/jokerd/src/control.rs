@@ -22,7 +22,6 @@ use crate::decisions::{SharedLog, lock};
 use crate::devices::{DeviceSet, Devices};
 use crate::generations::{
     Activation, DescriptorArtifact, GenArtifact, GenState, Generation, Origin, Store,
-    descriptor_hash,
 };
 use crate::load::{LoadError, Loaded, instantiate, load_with};
 use crate::pacer::Pacer;
@@ -285,6 +284,12 @@ pub fn generation_hash(loaded: &Loaded, lock: &str) -> String {
 /// artifacts it refers to. A `.cwasm` is derived from its `.wasm` and stays
 /// out of the descriptor, as it stays out of the lock (ADR 0067).
 pub fn generation_hash_with(loaded: &Loaded, lock: &str, artifacts: &[GenArtifact]) -> String {
+    crate::generations::hash_of(&generation_descriptor(loaded, lock, artifacts))
+}
+
+/// The descriptor of an effective manifest, its lock and the artifacts it
+/// refers to (ref/10 §2.6.2), whose SHA-256 is the generation hash.
+pub fn generation_descriptor(loaded: &Loaded, lock: &str, artifacts: &[GenArtifact]) -> Vec<u8> {
     let artifacts: Vec<DescriptorArtifact> = artifacts
         .iter()
         .filter(|a| a.kind != APP_CWASM)
@@ -301,7 +306,7 @@ pub fn generation_hash_with(loaded: &Loaded, lock: &str, artifacts: &[GenArtifac
         .effective
         .as_ref()
         .map(joker_manifest::effective::cbor);
-    descriptor_hash(
+    crate::generations::descriptor(
         canon.as_deref().unwrap_or(&[0xA0]),
         lock_digest(lock),
         &artifacts,
@@ -662,7 +667,8 @@ impl Controller {
         let files = catalog_of(&self.blobs, artifacts)?;
         let tasks = self.provider(manifest, artifacts)?;
         let loaded = loaded_of(manifest, tasks.as_ref(), &files)?;
-        let hash = generation_hash_with(&loaded, lock, artifacts);
+        let descriptor = generation_descriptor(&loaded, lock, artifacts);
+        let hash = crate::generations::hash_of(&descriptor);
         if dry_run {
             return Ok(Generation {
                 number: 0,
@@ -683,7 +689,7 @@ impl Controller {
         }
         let g = self
             .store
-            .create(&hash, manifest, lock, message, created_by)
+            .create(&hash, &descriptor, manifest, lock, message, created_by)
             .map_err(ControlError::io)?;
         if !artifacts.is_empty() {
             self.store
@@ -746,6 +752,7 @@ impl Controller {
             });
         }
         self.log_generation(number, g.state.name(), from, None);
+        self.mark(&g)?;
         Ok(Switched {
             generation: g,
             from,
@@ -811,6 +818,7 @@ impl Controller {
             .set_state(number, GenState::Confirmed, None)
             .map_err(ControlError::io)?;
         self.log_generation(number, "confirmed", None, None);
+        self.mark(&g)?;
         Ok(g)
     }
 
@@ -870,6 +878,7 @@ impl Controller {
         g.confirm_window_ns = window.map(|w| u64::try_from(w.as_nanos()).unwrap_or(u64::MAX));
         self.store.save(&g).map_err(ControlError::io)?;
         self.log_generation(target, g.state.name(), current, Some("rollback"));
+        self.mark(&g)?;
         Ok(Switched {
             generation: g,
             from: current,
@@ -930,6 +939,7 @@ impl Controller {
             return Ok(None);
         };
         self.switch(g.number, Origin::Boot, None, None)?;
+        self.mark(&g)?;
         Ok(Some(g))
     }
 
@@ -940,6 +950,14 @@ impl Controller {
             let _ = a.running.stop();
         }
         self.historian.stop();
+    }
+
+    /// Points `current` at `g`, the generation running now, and
+    /// `confirmed` at it when it is confirmed (ref/02 §2.2.4).
+    fn mark(&self, g: &Generation) -> Result<(), ControlError> {
+        self.store
+            .mark(g.number, g.state == GenState::Confirmed)
+            .map_err(ControlError::io)
     }
 
     fn check_window(&self, window: Option<Duration>) -> Result<(), ControlError> {

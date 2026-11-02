@@ -3,7 +3,10 @@
 //!
 //! A generation is the effective manifest and its lock, identified by the
 //! hash of its descriptor (ref/10 §2.6.2) and numbered by creation. Each
-//! lives in `<state>/generations/<number>/`; the history of activations is an
+//! lives in `<state>/generations/<number>/`, with its descriptor
+//! (`generation.cbor`), its effective manifest (`manifest.toml`) and its
+//! lock (ref/02 §2.2.4); `current` and `confirmed` link to the generation
+//! running and the last confirmed one, and the history of activations is an
 //! append-only `activations.jsonl` next to them. A rollback reactivates a
 //! stored generation with the same number and hash.
 
@@ -115,7 +118,11 @@ pub struct Store {
     dir: PathBuf,
 }
 
-const MANIFEST: &str = "joker.toml";
+const MANIFEST: &str = "manifest.toml";
+const OLD_MANIFEST: &str = "joker.toml";
+const DESCRIPTOR: &str = "generation.cbor";
+const CURRENT: &str = "current";
+const CONFIRMED: &str = "confirmed";
 const LOCK: &str = "joker.lock";
 const META: &str = "generation.json";
 const ACTIVATIONS: &str = "activations.jsonl";
@@ -186,16 +193,68 @@ impl Store {
     /// The manifest and lock of a generation.
     pub fn content(&self, number: u64) -> io::Result<(String, String)> {
         let dir = self.gen_dir(number);
+        let manifest = match fs::read_to_string(dir.join(MANIFEST)) {
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                fs::read_to_string(dir.join(OLD_MANIFEST))?
+            }
+            other => other?,
+        };
         Ok((
-            fs::read_to_string(dir.join(MANIFEST))?,
+            manifest,
             fs::read_to_string(dir.join(LOCK)).unwrap_or_default(),
         ))
     }
 
-    /// Stores a new `pending` generation and returns it.
+    /// The descriptor of a generation (`generation.cbor`, the
+    /// `joker.config.v1+cbor` of ref/10 §2.6.2), whose SHA-256 is its
+    /// hash; none for a generation stored before the store kept it.
+    pub fn descriptor(&self, number: u64) -> io::Result<Option<Vec<u8>>> {
+        match fs::read(self.gen_dir(number).join(DESCRIPTOR)) {
+            Ok(bytes) => Ok(Some(bytes)),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Points `current` at the generation running now and, when it is
+    /// confirmed, `confirmed` at it too (ref/02 §2.2.4).
+    pub fn mark(&self, current: u64, confirmed: bool) -> io::Result<()> {
+        self.link(CURRENT, current)?;
+        if confirmed {
+            self.link(CONFIRMED, current)?;
+        }
+        Ok(())
+    }
+
+    /// The generation `current` or `confirmed` points at.
+    pub fn marked(&self, name: &str) -> Option<u64> {
+        fs::read_link(self.dir.join(name))
+            .ok()?
+            .to_str()?
+            .parse()
+            .ok()
+    }
+
+    #[cfg(unix)]
+    fn link(&self, name: &str, number: u64) -> io::Result<()> {
+        let tmp = self.dir.join(format!(".{name}.tmp"));
+        let _ = fs::remove_file(&tmp);
+        std::os::unix::fs::symlink(number.to_string(), &tmp)?;
+        fs::rename(&tmp, self.dir.join(name))?;
+        fs::File::open(&self.dir)?.sync_all()
+    }
+
+    #[cfg(not(unix))]
+    fn link(&self, name: &str, number: u64) -> io::Result<()> {
+        write_synced(&self.dir.join(name), number.to_string().as_bytes())
+    }
+
+    /// Stores a new `pending` generation, with its descriptor, and
+    /// returns it.
     pub fn create(
         &self,
         hash: &str,
+        descriptor: &[u8],
         manifest: &str,
         lock: &str,
         message: Option<String>,
@@ -204,6 +263,7 @@ impl Store {
         let number = self.list()?.last().map_or(1, |g| g.number + 1);
         let dir = self.gen_dir(number);
         fs::create_dir_all(&dir)?;
+        write_synced(&dir.join(DESCRIPTOR), descriptor)?;
         write_synced(&dir.join(MANIFEST), manifest.as_bytes())?;
         write_synced(&dir.join(LOCK), lock.as_bytes())?;
         let g = Generation {
@@ -317,6 +377,22 @@ pub fn descriptor_hash(
     artifacts: &[DescriptorArtifact],
     dev: bool,
 ) -> String {
+    hash_of(&descriptor(manifest_cbor, lock_digest, artifacts, dev))
+}
+
+/// The `sha256:<hex>` of a descriptor's bytes.
+pub fn hash_of(descriptor: &[u8]) -> String {
+    format!("sha256:{}", hex(&Sha256::digest(descriptor)))
+}
+
+/// The deterministic CBOR of a generation descriptor (ref/10 §2.6.2),
+/// stored as `generation.cbor` (ref/02 §2.2.4).
+pub fn descriptor(
+    manifest_cbor: &[u8],
+    lock_digest: [u8; 32],
+    artifacts: &[DescriptorArtifact],
+    dev: bool,
+) -> Vec<u8> {
     let mut c = Vec::new();
     c.push(0xA7);
     uint(&mut c, 0, 1);
@@ -344,7 +420,7 @@ pub fn descriptor_hash(
     }
     uint(&mut c, 0, 7);
     uint(&mut c, 0, u64::from(!dev));
-    format!("sha256:{}", hex(&Sha256::digest(&c)))
+    c
 }
 
 fn uint(out: &mut Vec<u8>, major: u8, n: u64) {

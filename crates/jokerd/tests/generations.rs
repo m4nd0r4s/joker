@@ -478,3 +478,42 @@ fn a_pending_generation_is_discarded_when_deleted_superseded_or_expired() {
     assert_eq!(reason(&c, 3), (GenState::Discarded, Some("expired".into())));
     assert_eq!(c.activate(3, None, None).unwrap_err().code, "J-E1612");
 }
+
+#[test]
+fn the_store_keeps_the_layout_of_the_node() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut c = controller(dir.path());
+    let g1 = c.propose(&effective(""), "", None, false).unwrap();
+    c.activate(1, None, None).unwrap();
+    let gens = dir.path().join("generations");
+    let descriptor = std::fs::read(gens.join("1/generation.cbor")).unwrap();
+    assert_eq!(jokerd::generations::hash_of(&descriptor), g1.hash);
+    assert_eq!(
+        std::fs::read_to_string(gens.join("1/manifest.toml")).unwrap(),
+        effective("")
+    );
+    assert!(!gens.join("1/joker.toml").exists());
+    assert_eq!(c.store().marked("current"), Some(1));
+    assert_eq!(c.store().marked("confirmed"), Some(1));
+
+    c.propose(&effective(WRONG_PORT), "", None, false).unwrap();
+    c.activate(2, Some(Duration::from_secs(60)), None).unwrap();
+    assert_eq!(c.store().marked("current"), Some(2));
+    assert_eq!(c.store().marked("confirmed"), Some(1));
+    c.confirm(None).unwrap();
+    assert_eq!(c.store().marked("confirmed"), Some(2));
+    c.rollback(None, None, Some("back".into())).unwrap();
+    assert_eq!(c.store().marked("current"), Some(1));
+    assert_eq!(c.store().marked("confirmed"), Some(1));
+}
+
+#[test]
+fn a_generation_stored_with_the_old_manifest_name_still_activates() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut c = controller(dir.path());
+    c.propose(&effective(""), "", None, false).unwrap();
+    let one = dir.path().join("generations/1");
+    std::fs::rename(one.join("manifest.toml"), one.join("joker.toml")).unwrap();
+    c.activate(1, None, None).unwrap();
+    assert_eq!(c.current().unwrap().0, 1);
+}
