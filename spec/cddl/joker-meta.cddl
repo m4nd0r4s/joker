@@ -51,8 +51,8 @@ joker-meta = {
   11: [* schema],               ; merged form: sorted by name, deduplicated
   ? 12: clock-requirement,      ; #[joker::app(requires_clock = …)]
   ? 13: [+ secret-decl],        ; #[joker::app(secrets = […], optional_secrets = […])]
-  ? 14: state-info,             ; #[joker::state(persist)]
-  ? 15: has-on-params,          ; default false
+  ? 14: state-info,             ; informational; not written by the Rust SDK (ADR 0106)
+  ? 15: has-on-params,          ; informational; absence means unknown (ADR 0106)
   ? 16: limits,
   ? 17: doc,                    ; first paragraph of the app struct doc comment
 }
@@ -329,8 +329,9 @@ field = {
   ? 6: quantity,
 }
 
-field-type = signal-type / 10 / 11 / 12 / 13 / 14 / 15
-; signal types 0..8, record 9, list 10, instant 11, quality 12, mono-ns 13, utc-ns 14, duration-ns 15
+field-type = signal-type / 10 / 11 / 12 / 13 / 14 / 15 / 16
+; signal types 0..8, record 9, list 10, instant 11, quality 12, mono-ns 13, utc-ns 14, duration-ns 15,
+; utc-seconds 16 (ADR 0106)
 
 enum-schema = {
   0: 1,
@@ -351,6 +352,7 @@ joker-state = {
   1: semver,                    ; app version that exported it
   2: uint,                      ; state schema version (state-info key 0)
   3: 0 / 1,                     ; instance kind: cycle 0, async 1
-  4: { * ident => bstr },       ; per task name: CBOR of the task state (PerInstance fields are
-                                ; maps instance name -> state, ref/04 §4.12)
+  4: { * ident => bstr },       ; per task name: CBOR map of the task state keyed by field name
+                                ; (ADR 0106); PerInstance fields are maps instance name -> state
+                                ; (ref/04 §4.12)
 }

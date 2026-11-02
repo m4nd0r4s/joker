@@ -475,7 +475,7 @@ With `backend-native`, the macro `#[joker::app]` generates `impl NativeApp` inst
 | `optional_secrets` | list of names | no | `[]` | same, without error if not bound |
 | `proposal_buffer` | size (`"16 KiB"`) | no | `"16 KiB"` | 1 KiB – 1 MiB |
 
-The doc comment of the struct goes to `joker:meta` (key 17). The macro generates: `impl joker::App for <App>`, the views `CycleIo<'_, App>` and `TaskIo<'_, App>` (§4.5), the module `classes` with the local classes (if `build.rs` generated them), the exports of the world and the metadata fragment. A second `#[joker::app]` in the crate, or one outside the root, is `J-E0711`. The generated items have the visibility of the struct.
+The doc comment of the struct goes to `joker:meta` (key 17). The macro generates: `impl joker::App for <App>`, the views `CycleIo<'_, App>` and `TaskIo<App>` (§4.5), the module `classes` with the local classes (if `build.rs` generated them), the exports of the world and the metadata fragment. A second `#[joker::app]` in the crate, or one outside the root, is `J-E0711`. The generated items have the visibility of the struct.
 
 The fields of the struct have a declaration type (§4.4) and **one** port attribute:
 
@@ -638,9 +638,9 @@ impl<'a, A: App> CycleIo<'a, A> {
     pub fn random(&self) -> u64;
 }
 
-pub struct TaskIo<'a, A: App> { /* … */ }
-impl<'a, A: App> core::ops::Deref for TaskIo<'a, A> { type Target = A::Task<'a>; }
-impl<'a, A: App> TaskIo<'a, A> {
+pub struct TaskIo<A: App> { /* … */ }
+impl<A: App> core::ops::Deref for TaskIo<A> { type Target = A::Task<'static>; }
+impl<A: App> TaskIo<A> {
     pub fn now(&self) -> Instant;
     pub async fn sleep(&self, d: Duration);
     pub async fn sleep_until(&self, t: MonoNanos);
@@ -652,7 +652,7 @@ impl<'a, A: App> TaskIo<'a, A> {
 }
 ```
 
-The cycle view is received as `&mut CycleIo<A>`; the async one as `&TaskIo<A>`, because several async tasks of the same app share it. All proposal operations take `&self` (the buffer is interior), which avoids borrow conflicts between handles.
+The cycle view is received as `&mut CycleIo<A>`; the async one as `&TaskIo<A>`, because several async tasks of the same app share it. `TaskIo` has no lifetime parameter, so that `async fn f(io: &TaskIo<App>)` compiles (an `async fn` cannot elide the lifetime of a path, `E0726`): the async view lives as long as the async instance (ADR 0106). All proposal operations take `&self` (the buffer is interior), which avoids borrow conflicts between handles.
 
 ### 4.6 Port handles
 
@@ -1100,6 +1100,7 @@ They format into a 1 KiB buffer on the stack (without allocation; truncated) and
 
 - The state of a cycle task (`st`) lives in the memory of the cycle instance and starts at `Default` or at the `init` of the task. It survives between ticks and traps of other tasks of the app, but not a trap that recreates the instance (crashloop, 01 §9).
 - Without `#[joker::state(persist)]`, a new version starts with the initial state. With it, the hot swap does `export-state` on the old version and `migrate` on the new one, with the `joker-state` blob of the CDDL (§5): version, app version, schema version, instance kind and one CBOR per task.
+- The CBOR of a task state is a map keyed by **field name** (text keys, in field order), each value encoded as its record field (§4.10); records elsewhere keep their keys by position. `export-state` returns an empty list when no task state is persisted, and `migrate` with an empty list does nothing (ADR 0106).
 - The default migration matches the fields by name; the missing ones stay at `Default` and the extra ones are ignored. A custom migration:
 
 ```rust
@@ -1234,6 +1235,8 @@ The readers (`jokerd`, `jk inspect`, `jk check`, the agent) look first at compon
 ### 5.2 Fragments
 
 Each macro emits its fragment (`meta-fragment`), and the linker joins the sections with the same name. The section is therefore a **CBOR sequence** (RFC 8742) of fragments: one `app-fragment` (from `#[joker::app]`), one `task-fragment` per task and one `schema-fragment` per type with a derive.
+
+Keys 14 (`state-info`) and 15 (`has-on-params`) are informational: no fragment of the Rust SDK carries them, because `#[joker::state]` and `#[joker::on_params]` sit on items that `#[joker::app]` cannot see. A reader infers nothing from their absence; the host always calls `on-params` and `export-state` (ADR 0106).
 
 ### 5.3 Merging
 
