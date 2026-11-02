@@ -895,7 +895,7 @@ async fn pause(
     reason = "each parameter is a distinct, independently-sourced piece (the driver, the clock, the plan request/view, a deadline, the slot targets, the shared commit channel, which device, and the stop condition); a wrapper struct would only rename this list, not shrink it"
 )]
 pub async fn run_driver<D: Driver>(
-    mut driver: D,
+    driver: D,
     host: &dyn Host,
     request: PlanRequest<'_>,
     plan: PlanView<'_>,
@@ -904,84 +904,240 @@ pub async fn run_driver<D: Driver>(
     shared: &Arc<Shared>,
     device_index: usize,
     fallback_keepalive_ns: Option<u64>,
-    mut action_rx: tokio::sync::mpsc::Receiver<ActionCall>,
+    action_rx: tokio::sync::mpsc::Receiver<ActionCall>,
     mut stop: impl FnMut() -> bool,
 ) {
-    let bindings = shared
-        .commit_bindings
-        .get(device_index)
-        .map_or(&[][..], Vec::as_slice);
-    let boxes = shared
-        .commit_boxes
-        .get(device_index)
-        .map_or(&[][..], Vec::as_slice);
-    let mut rx_state = vec![RxState::default(); bindings.len()];
-    let Ok(mut rx) = CommitRx::new(bindings, boxes, &mut rx_state) else {
-        mark_bad(
-            shared,
-            targets,
-            QualityReason::ConfigError,
-            host.now().mono_ns,
-        );
+    let first = Binding {
+        shared: Arc::clone(shared),
+        device_index,
+        targets: targets.to_vec(),
+    };
+    run_driver_bound(
+        driver,
+        host,
+        request,
+        plan,
+        timeout_ns,
+        fallback_keepalive_ns,
+        action_rx,
+        first,
+        move || {
+            if stop() { Next::Stop } else { Next::Run }
+        },
+    )
+    .await;
+}
+
+/// The slots one running driver reads into and writes from: those of
+/// one generation, its device's index in that generation's plan, and the
+/// targets of its read points there.
+#[derive(Debug, Clone)]
+pub struct Binding {
+    /// The shared state of the generation.
+    pub shared: Arc<Shared>,
+    /// The device's index in that generation's `plan.devices`.
+    pub device_index: usize,
+    /// Its read points in that generation ([`point_targets`]).
+    pub targets: Vec<PointTarget>,
+}
+
+impl Binding {
+    /// The binding of `plan.devices[device_index]` over `shared`.
+    pub fn of(plan: &Plan, shared: &Arc<Shared>, device_index: usize) -> Self {
+        Self {
+            shared: Arc::clone(shared),
+            device_index,
+            targets: point_targets(plan, device_index),
+        }
+    }
+}
+
+/// What a running driver does next, polled between its calls.
+#[derive(Debug)]
+pub enum Next {
+    /// Keep running on the same binding.
+    Run,
+    /// Disconnect and end.
+    Stop,
+    /// Move to another generation's slots without disconnecting (the
+    /// minimal diff of docs/01 §15, ADR 0103): the device's plan did not
+    /// change, so its connection is kept.
+    Move(Binding),
+}
+
+struct Control<F> {
+    next: F,
+    pending: Option<Binding>,
+    stopped: bool,
+}
+
+impl<F: FnMut() -> Next> Control<F> {
+    fn halted(&mut self) -> bool {
+        if self.stopped || self.pending.is_some() {
+            return true;
+        }
+        match (self.next)() {
+            Next::Run => false,
+            Next::Stop => {
+                self.stopped = true;
+                true
+            }
+            Next::Move(b) => {
+                self.pending = Some(b);
+                true
+            }
+        }
+    }
+}
+
+/// Carries the counters of a device across a move, so that a kept driver
+/// counts on from where it was (`joker.device.<d>.*`, ADR 0090).
+fn carry_stats(from: &Binding, to: &Binding) {
+    let (Some(old), Some(new)) = (
+        from.shared.devices.get(from.device_index),
+        to.shared.devices.get(to.device_index),
+    ) else {
         return;
     };
-    let mut backoff = Backoff::new(host.now().mono_ns ^ (device_index as u64) << 32);
+    new.reconnects.add(old.reconnects.get());
+    new.connects.add(old.connects.get());
+    new.dropped_samples.add(old.dropped_samples.get());
+    new.invalid_samples.add(old.invalid_samples.get());
+}
+
+/// [`run_driver`] over a binding that `next` may move to another
+/// generation's slots (docs/01 §15): the connection is kept across the
+/// move, the writes are drained from the new generation's commit boxes
+/// and resent (`resync`), and the reads land in its slots from the next
+/// poll, which is due at once. `next` returning [`Next::Stop`] ends the
+/// driver.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the pieces of run_driver, with the binding and its control in place of the slot targets, the shared state, the device and the stop condition"
+)]
+pub async fn run_driver_bound<D: Driver>(
+    mut driver: D,
+    host: &dyn Host,
+    request: PlanRequest<'_>,
+    plan: PlanView<'_>,
+    timeout_ns: u64,
+    fallback_keepalive_ns: Option<u64>,
+    mut action_rx: tokio::sync::mpsc::Receiver<ActionCall>,
+    first: Binding,
+    next: impl FnMut() -> Next,
+) {
+    let mut control = Control {
+        next,
+        pending: None,
+        stopped: false,
+    };
+    let mut backoff = Backoff::new(host.now().mono_ns ^ (first.device_index as u64) << 32);
     let mut actions_open = true;
     let mut connected_before = false;
-    publish_link(shared, device_index, LinkState::Connecting);
-    while !stop() {
-        let deadline = host.now().mono_ns + timeout_ns;
-        let mut cx = Cx::new(host, deadline);
-        let mut connect_sink = ();
-        let mut out = ConnectOut::new(&mut connect_sink);
-        let connected = driver.connect(&mut cx, &mut out).await.is_ok();
-        if connected {
-            if connected_before && let Some(stats) = shared.devices.get(device_index) {
-                stats.reconnects.bump();
-            }
-            connected_before = true;
-            backoff.reset();
-            rx.resync();
-            let ended = serve(
-                &mut driver,
-                host,
-                &request,
-                plan,
-                timeout_ns,
-                targets,
+    let mut connected = false;
+    let mut binding = first;
+    loop {
+        let shared = &binding.shared;
+        let device_index = binding.device_index;
+        let targets = binding.targets.as_slice();
+        let bindings = shared
+            .commit_bindings
+            .get(device_index)
+            .map_or(&[][..], Vec::as_slice);
+        let boxes = shared
+            .commit_boxes
+            .get(device_index)
+            .map_or(&[][..], Vec::as_slice);
+        let mut rx_state = vec![RxState::default(); bindings.len()];
+        let Ok(mut rx) = CommitRx::new(bindings, boxes, &mut rx_state) else {
+            mark_bad(
                 shared,
-                device_index,
-                fallback_keepalive_ns,
-                &mut rx,
-                &mut action_rx,
-                &mut actions_open,
-                &mut stop,
-            )
-            .await;
-            if matches!(ended, Ended::Stopped) {
+                targets,
+                QualityReason::ConfigError,
+                host.now().mono_ns,
+            );
+            break;
+        };
+        publish_link(
+            shared,
+            device_index,
+            if connected {
+                LinkState::Up
+            } else {
+                LinkState::Connecting
+            },
+        );
+        while !control.halted() {
+            if !connected {
+                let deadline = host.now().mono_ns + timeout_ns;
+                let mut cx = Cx::new(host, deadline);
+                let mut connect_sink = ();
+                let mut out = ConnectOut::new(&mut connect_sink);
+                connected = driver.connect(&mut cx, &mut out).await.is_ok();
+                if connected && let Some(stats) = shared.devices.get(device_index) {
+                    stats.connects.bump();
+                    if connected_before {
+                        stats.reconnects.bump();
+                    }
+                }
+                if connected {
+                    connected_before = true;
+                    backoff.reset();
+                }
+            }
+            if connected {
+                rx.resync();
+                let ended = serve(
+                    &mut driver,
+                    host,
+                    &request,
+                    plan,
+                    timeout_ns,
+                    targets,
+                    shared,
+                    device_index,
+                    fallback_keepalive_ns,
+                    &mut rx,
+                    &mut action_rx,
+                    &mut actions_open,
+                    &mut || control.halted(),
+                )
+                .await;
+                if matches!(ended, Ended::Stopped) {
+                    break;
+                }
+                let mut cx = Cx::new(host, host.now().mono_ns + timeout_ns);
+                driver.disconnect(&mut cx).await;
+                connected = false;
+            }
+            publish_link(shared, device_index, LinkState::Down);
+            mark_bad(
+                shared,
+                targets,
+                QualityReason::CommFailure,
+                host.now().mono_ns,
+            );
+            let delay = backoff.next_delay_ns();
+            eprintln!(
+                "warning: device `{}`: link down, connecting again in {} ms",
+                request.devices.first().map_or("?", |d| d.name),
+                delay / 1_000_000
+            );
+            let until = host.now().mono_ns + delay;
+            if pause(host, until, &mut action_rx, &mut actions_open, &mut || {
+                control.halted()
+            })
+            .await
+            {
                 break;
             }
-            let mut cx = Cx::new(host, host.now().mono_ns + timeout_ns);
-            driver.disconnect(&mut cx).await;
+            publish_link(shared, device_index, LinkState::Connecting);
         }
-        publish_link(shared, device_index, LinkState::Down);
-        mark_bad(
-            shared,
-            targets,
-            QualityReason::CommFailure,
-            host.now().mono_ns,
-        );
-        let delay = backoff.next_delay_ns();
-        eprintln!(
-            "warning: device `{}`: link down, connecting again in {} ms",
-            request.devices.first().map_or("?", |d| d.name),
-            delay / 1_000_000
-        );
-        let until = host.now().mono_ns + delay;
-        if pause(host, until, &mut action_rx, &mut actions_open, &mut stop).await {
+        let Some(moved) = control.pending.take() else {
             break;
-        }
-        publish_link(shared, device_index, LinkState::Connecting);
+        };
+        carry_stats(&binding, &moved);
+        binding = moved;
     }
     let mut cx = Cx::new(host, host.now().mono_ns + timeout_ns);
     driver.disconnect(&mut cx).await;

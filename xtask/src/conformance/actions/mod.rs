@@ -598,6 +598,10 @@ impl DeviceSet for DoubleSet {
     fn action_sender(&self, device: &str) -> Option<tokio::sync::mpsc::Sender<ActionCall>> {
         self.senders.get(device).cloned()
     }
+
+    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any + Send> {
+        self
+    }
 }
 
 fn read_plan(request: &PlanRequest<'_>) -> joker_hal::plan::Plan {

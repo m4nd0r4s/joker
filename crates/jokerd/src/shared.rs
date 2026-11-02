@@ -324,6 +324,10 @@ pub struct DeviceStats {
     pub link: Counter,
     /// Successful `connect` calls after the first one.
     pub reconnects: Counter,
+    /// Successful `connect` calls, the first one included: nonzero once
+    /// the driver has reached `up` (the health of a confirmation window,
+    /// ref/09 §5.13).
+    pub connects: Counter,
     /// Samples the device's sample ring refused.
     pub dropped_samples: Counter,
     /// Samples that broke the rules of ref/06 §2.8 (`J0869`).

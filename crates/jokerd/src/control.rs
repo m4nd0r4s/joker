@@ -915,15 +915,18 @@ impl Controller {
         let tasks = instantiate(&loaded.plan, &loaded.manifest, provider.as_ref())
             .map_err(|e| validation(&e))?;
         let from = self.active.as_ref().map(|a| a.number);
-        let inherit = match self.active.take() {
+        let (inherit, mut previous_devices) = match self.active.take() {
             Some(a) => {
-                a.devices.stop();
-                a.running
-                    .stop()
-                    .map_err(|e| ControlError::new("J-E1000", 500, e.0))?
-                    .applied
+                let applied = a.running.stop().map(|exit| exit.applied);
+                match applied {
+                    Ok(applied) => (applied, Some(a.devices)),
+                    Err(e) => {
+                        a.devices.stop();
+                        return Err(ControlError::new("J-E1000", 500, e.0));
+                    }
+                }
             }
-            None => Default::default(),
+            None => (Default::default(), None),
         };
         self.clock_policy = crate::clock::ClockPolicy::of(&loaded.manifest);
         self.refresh_clock_for(Some(number));
@@ -958,9 +961,17 @@ impl Controller {
                 state_dir: Some(self.state_dir.clone()),
             },
         )
-        .map_err(|e| ControlError::new("J-E1000", 500, e.0))?;
+        .map_err(|e| {
+            if let Some(d) = previous_devices.take() {
+                d.stop();
+            }
+            ControlError::new("J-E1000", 500, e.0)
+        })?;
         self.persistent.started(&self.log, number, utc_now_ns());
-        let devices = self.devices.start(&plan, &running.shared);
+        let devices = match previous_devices.take() {
+            Some(previous) => self.devices.swap(previous, &plan, &running.shared),
+            None => self.devices.start(&plan, &running.shared),
+        };
         self.permit_state.clear();
         self.active = Some(Active {
             number,
@@ -1293,6 +1304,10 @@ mod action_tests {
             device: &str,
         ) -> Option<tokio::sync::mpsc::Sender<crate::drivers::ActionCall>> {
             (device == "pcs").then(|| self.0.clone())
+        }
+
+        fn into_any(self: Box<Self>) -> Box<dyn std::any::Any + Send> {
+            self
         }
     }
 

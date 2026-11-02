@@ -44,6 +44,7 @@ use joker_hal::{Direction, GpioChip};
 use joker_hal::{Driver, Link, OpenArgs, Planner};
 use tokio::sync::watch;
 
+use crate::bridge::DevicePlan;
 #[cfg(any(
     feature = "drv-sysfs",
     feature = "drv-modbus",
@@ -51,7 +52,7 @@ use tokio::sync::watch;
     feature = "drv-i2c",
     feature = "drv-revpi"
 ))]
-use crate::bridge::{DevicePlan, owned_request};
+use crate::bridge::owned_request;
 use crate::devices::{DeviceSet, Devices};
 #[cfg(any(
     feature = "drv-sysfs",
@@ -60,8 +61,8 @@ use crate::devices::{DeviceSet, Devices};
     feature = "drv-i2c",
     feature = "drv-revpi"
 ))]
-use crate::drivers::run_driver;
-use crate::drivers::{ActionCall, mark_bad, point_targets};
+use crate::drivers::run_driver_bound;
+use crate::drivers::{ActionCall, Binding, Next, mark_bad, point_targets};
 use crate::pacer::Monotonic;
 use crate::plan::Plan;
 use crate::shared::Shared;
@@ -221,7 +222,7 @@ async fn run_sysfs(
     device_index: usize,
     shared: Arc<Shared>,
     host: Arc<TokioHost>,
-    mut stop: watch::Receiver<bool>,
+    orders: Orders,
     sysfs_root: Arc<str>,
     action_rx: tokio::sync::mpsc::Receiver<ActionCall>,
 ) {
@@ -252,19 +253,17 @@ async fn run_sysfs(
         Ok(d) => d,
         Err(e) => return setup_failed(&shared, &plan, device_index, &host, format!("open: {e:?}")),
     };
-    let targets = point_targets(&plan, device_index);
-    run_driver(
+    let first = Binding::of(&plan, &shared, device_index);
+    run_driver_bound(
         driver,
         &*host,
         views.request(),
         hal_plan.view(),
         device.timeout_ns,
-        &targets,
-        &shared,
-        device_index,
         device.fallback_keepalive_ns,
         action_rx,
-        move || *stop.borrow_and_update(),
+        first,
+        orders.next(),
     )
     .await;
 }
@@ -276,7 +275,7 @@ async fn run_modbus_rtu(
     device_index: usize,
     shared: Arc<Shared>,
     host: Arc<TokioHost>,
-    mut stop: watch::Receiver<bool>,
+    orders: Orders,
     action_rx: tokio::sync::mpsc::Receiver<ActionCall>,
 ) {
     let owned = owned_request(&device);
@@ -316,19 +315,17 @@ async fn run_modbus_rtu(
         Ok(d) => d,
         Err(e) => return setup_failed(&shared, &plan, device_index, &host, format!("open: {e:?}")),
     };
-    let targets = point_targets(&plan, device_index);
-    run_driver(
+    let first = Binding::of(&plan, &shared, device_index);
+    run_driver_bound(
         driver,
         &*host,
         views.request(),
         hal_plan.view(),
         device.timeout_ns,
-        &targets,
-        &shared,
-        device_index,
         device.fallback_keepalive_ns,
         action_rx,
-        move || *stop.borrow_and_update(),
+        first,
+        orders.next(),
     )
     .await;
 }
@@ -340,7 +337,7 @@ async fn run_modbus_tcp(
     device_index: usize,
     shared: Arc<Shared>,
     host: Arc<TokioHost>,
-    mut stop: watch::Receiver<bool>,
+    orders: Orders,
     action_rx: tokio::sync::mpsc::Receiver<ActionCall>,
 ) {
     let owned = owned_request(&device);
@@ -361,19 +358,17 @@ async fn run_modbus_tcp(
         Ok(d) => d,
         Err(e) => return setup_failed(&shared, &plan, device_index, &host, format!("open: {e:?}")),
     };
-    let targets = point_targets(&plan, device_index);
-    run_driver(
+    let first = Binding::of(&plan, &shared, device_index);
+    run_driver_bound(
         driver,
         &*host,
         views.request(),
         hal_plan.view(),
         device.timeout_ns,
-        &targets,
-        &shared,
-        device_index,
         device.fallback_keepalive_ns,
         action_rx,
-        move || *stop.borrow_and_update(),
+        first,
+        orders.next(),
     )
     .await;
 }
@@ -390,7 +385,7 @@ async fn run_revpi(
     device_index: usize,
     shared: Arc<Shared>,
     host: Arc<TokioHost>,
-    mut stop: watch::Receiver<bool>,
+    orders: Orders,
     action_rx: tokio::sync::mpsc::Receiver<ActionCall>,
 ) {
     let owned = owned_request(&device);
@@ -407,19 +402,17 @@ async fn run_revpi(
         Ok(d) => d,
         Err(e) => return setup_failed(&shared, &plan, device_index, &host, format!("open: {e:?}")),
     };
-    let targets = point_targets(&plan, device_index);
-    run_driver(
+    let first = Binding::of(&plan, &shared, device_index);
+    run_driver_bound(
         driver,
         &*host,
         views.request(),
         hal_plan.view(),
         device.timeout_ns,
-        &targets,
-        &shared,
-        device_index,
         device.fallback_keepalive_ns,
         action_rx,
-        move || *stop.borrow_and_update(),
+        first,
+        orders.next(),
     )
     .await;
 }
@@ -464,7 +457,7 @@ async fn run_gpio(
     device_index: usize,
     shared: Arc<Shared>,
     host: Arc<TokioHost>,
-    mut stop: watch::Receiver<bool>,
+    orders: Orders,
     action_rx: tokio::sync::mpsc::Receiver<ActionCall>,
 ) {
     let (chip, device) = match resolve_gpio(&plan, device) {
@@ -537,19 +530,17 @@ async fn run_gpio(
         Ok(d) => d,
         Err(e) => return setup_failed(&shared, &plan, device_index, &host, format!("open: {e:?}")),
     };
-    let targets = point_targets(&plan, device_index);
-    run_driver(
+    let first = Binding::of(&plan, &shared, device_index);
+    run_driver_bound(
         driver,
         &*host,
         views.request(),
         hal_plan.view(),
         device.timeout_ns,
-        &targets,
-        &shared,
-        device_index,
         device.fallback_keepalive_ns,
         action_rx,
-        move || *stop.borrow_and_update(),
+        first,
+        orders.next(),
     )
     .await;
 }
@@ -586,7 +577,7 @@ async fn run_i2c(
     device_index: usize,
     shared: Arc<Shared>,
     host: Arc<TokioHost>,
-    mut stop: watch::Receiver<bool>,
+    orders: Orders,
     open_bus: I2cOpener,
     action_rx: tokio::sync::mpsc::Receiver<ActionCall>,
 ) {
@@ -619,19 +610,17 @@ async fn run_i2c(
         Ok(d) => d,
         Err(e) => return setup_failed(&shared, &plan, device_index, &host, format!("open: {e:?}")),
     };
-    let targets = point_targets(&plan, device_index);
-    run_driver(
+    let first = Binding::of(&plan, &shared, device_index);
+    run_driver_bound(
         driver,
         &*host,
         views.request(),
         hal_plan.view(),
         device.timeout_ns,
-        &targets,
-        &shared,
-        device_index,
         device.fallback_keepalive_ns,
         action_rx,
-        move || *stop.borrow_and_update(),
+        first,
+        orders.next(),
     )
     .await;
 }
@@ -788,94 +777,187 @@ impl RealDevices {
     }
 }
 
-struct RealSet {
+/// What the io task of one real device obeys: stop, or move to the next
+/// generation's slots without reconnecting.
+struct Orders {
+    stop: watch::Receiver<bool>,
+    moves: tokio::sync::mpsc::UnboundedReceiver<Binding>,
+}
+
+impl Orders {
+    #[cfg_attr(
+        not(any(
+            feature = "drv-sysfs",
+            feature = "drv-modbus",
+            feature = "drv-gpio",
+            feature = "drv-i2c",
+            feature = "drv-revpi"
+        )),
+        expect(dead_code, reason = "a build without drivers spawns no device task")
+    )]
+    fn next(mut self) -> impl FnMut() -> Next {
+        move || {
+            if *self.stop.borrow_and_update() {
+                Next::Stop
+            } else {
+                self.moves.try_recv().map_or(Next::Run, Next::Move)
+            }
+        }
+    }
+}
+
+/// One dispatched device of a [`RealSet`].
+struct Dispatched {
+    plan: DevicePlan,
     stop: watch::Sender<bool>,
-    /// Every dispatched device's action-invocation channel, by name
-    /// (AUR-405): the registry `Controller::invoke_action` looks up to
-    /// find where to send an `ActionCall` for a given device.
-    actions: BTreeMap<String, tokio::sync::mpsc::Sender<ActionCall>>,
+    moves: tokio::sync::mpsc::UnboundedSender<Binding>,
+    actions: tokio::sync::mpsc::Sender<ActionCall>,
+}
+
+struct RealSet {
+    /// Every dispatched device, by name: its plan, how to stop or move it,
+    /// and its action-invocation channel (AUR-405), the registry
+    /// `Controller::invoke_action` looks up to find where to send an
+    /// `ActionCall` for a given device.
+    devices: BTreeMap<String, Dispatched>,
 }
 
 impl DeviceSet for RealSet {
     fn stop(self: Box<Self>) {
-        let _ = self.stop.send(true);
+        for d in self.devices.values() {
+            let _ = d.stop.send(true);
+        }
     }
 
     fn action_sender(&self, device: &str) -> Option<tokio::sync::mpsc::Sender<ActionCall>> {
-        self.actions.get(device).cloned()
+        self.devices.get(device).map(|d| d.actions.clone())
+    }
+
+    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any + Send> {
+        self
+    }
+}
+
+impl RealDevices {
+    /// Dispatches `plan.devices[i]` over `shared`: its io task when its
+    /// driver has a real adapter, else its signals read
+    /// `bad(not_connected)` and it is not dispatched.
+    fn dispatch(&self, plan: &Arc<Plan>, shared: &Arc<Shared>, i: usize) -> Option<Dispatched> {
+        let device = plan.devices.get(i)?.clone();
+        let host = self.host(&device.name);
+        let (stop_tx, stop) = watch::channel(false);
+        let (moves_tx, moves) = tokio::sync::mpsc::unbounded_channel();
+        let orders = Orders { stop, moves };
+        let (action_tx, action_rx) = tokio::sync::mpsc::channel(ACTION_CHANNEL_CAPACITY);
+        let running = Dispatched {
+            plan: device.clone(),
+            stop: stop_tx,
+            moves: moves_tx,
+            actions: action_tx,
+        };
+        let plan = Arc::clone(plan);
+        let shared = Arc::clone(shared);
+        let dispatched = match device.driver.as_str() {
+            #[cfg(feature = "drv-sysfs")]
+            "sysfs" => {
+                let root = Arc::clone(&self.sysfs_root);
+                self.handle.spawn(run_sysfs(
+                    device, plan, i, shared, host, orders, root, action_rx,
+                ));
+                true
+            }
+            #[cfg(feature = "drv-modbus")]
+            "modbus-rtu" => {
+                self.handle.spawn(run_modbus_rtu(
+                    device, plan, i, shared, host, orders, action_rx,
+                ));
+                true
+            }
+            #[cfg(feature = "drv-modbus")]
+            "modbus-tcp" => {
+                self.handle.spawn(run_modbus_tcp(
+                    device, plan, i, shared, host, orders, action_rx,
+                ));
+                true
+            }
+            #[cfg(feature = "drv-gpio")]
+            "gpio" => {
+                self.handle
+                    .spawn(run_gpio(device, plan, i, shared, host, orders, action_rx));
+                true
+            }
+            #[cfg(feature = "drv-revpi")]
+            "revpi" => {
+                self.handle
+                    .spawn(run_revpi(device, plan, i, shared, host, orders, action_rx));
+                true
+            }
+            #[cfg(feature = "drv-i2c")]
+            "i2c" => {
+                let open = Arc::clone(&self.i2c);
+                self.handle.spawn(run_i2c(
+                    device, plan, i, shared, host, orders, open, action_rx,
+                ));
+                true
+            }
+            other => {
+                eprintln!(
+                    "warning: device `{}`: driver `{other}` has no real adapter yet; its signals read bad(not_connected)",
+                    device.name
+                );
+                stopped(&shared, &plan, i, &host, QualityReason::NotConnected);
+                drop((orders, action_rx));
+                false
+            }
+        };
+        dispatched.then_some(running)
     }
 }
 
 impl Devices for RealDevices {
     fn start(&self, plan: &Arc<Plan>, shared: &Arc<Shared>) -> Box<dyn DeviceSet> {
-        let (tx, rx) = watch::channel(false);
-        let mut actions = BTreeMap::new();
+        let devices = (0..plan.devices.len())
+            .filter_map(|i| {
+                let running = self.dispatch(plan, shared, i)?;
+                Some((plan.devices.get(i)?.name.clone(), running))
+            })
+            .collect();
+        Box::new(RealSet { devices })
+    }
+
+    /// Keeps every device whose [`DevicePlan`] did not change and whose
+    /// io task still runs, moving it to `shared` without reconnecting
+    /// (docs/01 §15, ADR 0103: an envelope never restarts a driver);
+    /// stops the others and dispatches the new or changed ones.
+    fn swap(
+        &self,
+        previous: Box<dyn DeviceSet>,
+        plan: &Arc<Plan>,
+        shared: &Arc<Shared>,
+    ) -> Box<dyn DeviceSet> {
+        let mut old = match previous.into_any().downcast::<RealSet>() {
+            Ok(set) => set.devices,
+            Err(_) => return self.start(plan, shared),
+        };
+        let mut devices = BTreeMap::new();
         for (i, device) in plan.devices.iter().enumerate() {
-            let plan = Arc::clone(plan);
-            let shared = Arc::clone(shared);
-            let host = self.host(&device.name);
-            let stop = rx.clone();
-            let device = device.clone();
-            let name = device.name.clone();
-            let (action_tx, action_rx) = tokio::sync::mpsc::channel(ACTION_CHANNEL_CAPACITY);
-            let dispatched = match device.driver.as_str() {
-                #[cfg(feature = "drv-sysfs")]
-                "sysfs" => {
-                    let root = Arc::clone(&self.sysfs_root);
-                    self.handle.spawn(run_sysfs(
-                        device, plan, i, shared, host, stop, root, action_rx,
-                    ));
-                    true
+            if let Some(running) = old.remove(&device.name) {
+                if running.plan == *device
+                    && running.moves.send(Binding::of(plan, shared, i)).is_ok()
+                {
+                    devices.insert(device.name.clone(), running);
+                    continue;
                 }
-                #[cfg(feature = "drv-modbus")]
-                "modbus-rtu" => {
-                    self.handle.spawn(run_modbus_rtu(
-                        device, plan, i, shared, host, stop, action_rx,
-                    ));
-                    true
-                }
-                #[cfg(feature = "drv-modbus")]
-                "modbus-tcp" => {
-                    self.handle.spawn(run_modbus_tcp(
-                        device, plan, i, shared, host, stop, action_rx,
-                    ));
-                    true
-                }
-                #[cfg(feature = "drv-gpio")]
-                "gpio" => {
-                    self.handle
-                        .spawn(run_gpio(device, plan, i, shared, host, stop, action_rx));
-                    true
-                }
-                #[cfg(feature = "drv-revpi")]
-                "revpi" => {
-                    self.handle
-                        .spawn(run_revpi(device, plan, i, shared, host, stop, action_rx));
-                    true
-                }
-                #[cfg(feature = "drv-i2c")]
-                "i2c" => {
-                    let open = Arc::clone(&self.i2c);
-                    self.handle.spawn(run_i2c(
-                        device, plan, i, shared, host, stop, open, action_rx,
-                    ));
-                    true
-                }
-                other => {
-                    eprintln!(
-                        "warning: device `{}`: driver `{other}` has no real adapter yet; its signals read bad(not_connected)",
-                        device.name
-                    );
-                    stopped(&shared, &plan, i, &host, QualityReason::NotConnected);
-                    drop((stop, action_rx));
-                    false
-                }
-            };
-            if dispatched {
-                actions.insert(name, action_tx);
+                let _ = running.stop.send(true);
+            }
+            if let Some(running) = self.dispatch(plan, shared, i) {
+                devices.insert(device.name.clone(), running);
             }
         }
-        Box::new(RealSet { stop: tx, actions })
+        for running in old.values() {
+            let _ = running.stop.send(true);
+        }
+        Box::new(RealSet { devices })
     }
 }
 

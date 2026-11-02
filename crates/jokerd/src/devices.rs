@@ -1,5 +1,6 @@
 //! Starting and stopping the devices of a generation (the `io` domain).
 
+use std::any::Any;
 use std::collections::BTreeSet;
 use std::fmt;
 use std::sync::Arc;
@@ -23,6 +24,10 @@ pub trait DeviceSet: Send {
     fn action_sender(&self, _device: &str) -> Option<tokio::sync::mpsc::Sender<ActionCall>> {
         None
     }
+
+    /// The set as `Any`, for the [`Devices`] that started it to take it
+    /// back in [`Devices::swap`].
+    fn into_any(self: Box<Self>) -> Box<dyn Any + Send>;
 }
 
 /// Starts the devices of a generation. The driver crates provide one
@@ -30,6 +35,20 @@ pub trait DeviceSet: Send {
 pub trait Devices: Send + Sync {
     /// Starts every device of `plan` over the slots of `shared`.
     fn start(&self, plan: &Arc<Plan>, shared: &Arc<Shared>) -> Box<dyn DeviceSet>;
+
+    /// Hands the devices of the running generation (`previous`, a set
+    /// this same [`Devices`] started) to the next one, over its `plan` and
+    /// `shared` (docs/01 §15, ADR 0103). By default every device restarts;
+    /// an implementation keeps those whose plan did not change.
+    fn swap(
+        &self,
+        previous: Box<dyn DeviceSet>,
+        plan: &Arc<Plan>,
+        shared: &Arc<Shared>,
+    ) -> Box<dyn DeviceSet> {
+        previous.stop();
+        self.start(plan, shared)
+    }
 }
 
 /// No devices at all.
@@ -38,6 +57,10 @@ pub struct NoDevices;
 
 impl DeviceSet for NoDevices {
     fn stop(self: Box<Self>) {}
+
+    fn into_any(self: Box<Self>) -> Box<dyn Any + Send> {
+        self
+    }
 }
 
 impl Devices for NoDevices {
@@ -66,6 +89,10 @@ impl DeviceSet for CombinedSet {
             .action_sender(device)
             .or_else(|| self.1.action_sender(device))
     }
+
+    fn into_any(self: Box<Self>) -> Box<dyn Any + Send> {
+        self
+    }
 }
 
 impl<A: Devices, B: Devices> Devices for Combined<A, B> {
@@ -74,6 +101,24 @@ impl<A: Devices, B: Devices> Devices for Combined<A, B> {
             self.0.start(plan, shared),
             self.1.start(plan, shared),
         ))
+    }
+
+    fn swap(
+        &self,
+        previous: Box<dyn DeviceSet>,
+        plan: &Arc<Plan>,
+        shared: &Arc<Shared>,
+    ) -> Box<dyn DeviceSet> {
+        match previous.into_any().downcast::<CombinedSet>() {
+            Ok(halves) => {
+                let CombinedSet(a, b) = *halves;
+                Box::new(CombinedSet(
+                    self.0.swap(a, plan, shared),
+                    self.1.swap(b, plan, shared),
+                ))
+            }
+            Err(_) => self.start(plan, shared),
+        }
     }
 }
 
@@ -112,6 +157,10 @@ impl DeviceSet for SimSet {
     fn stop(self: Box<Self>) {
         let _ = self.stop.send(true);
     }
+
+    fn into_any(self: Box<Self>) -> Box<dyn Any + Send> {
+        self
+    }
 }
 
 impl Devices for SimDevices {
@@ -142,6 +191,10 @@ mod tests {
 
         fn action_sender(&self, _device: &str) -> Option<tokio::sync::mpsc::Sender<ActionCall>> {
             self.0.clone()
+        }
+
+        fn into_any(self: Box<Self>) -> Box<dyn Any + Send> {
+            self
         }
     }
 
