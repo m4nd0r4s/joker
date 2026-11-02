@@ -38,4 +38,5 @@ Document 01 §15 says what the minimal diff must achieve: an envelope swaps with
 ## Consequences
 
 - `GET /v1/generations/{gen}` and the answer to `POST /v1/generations` carry the plan.
-- The classification states what the swap is meant to do. A swap that restarts more than its plan says (today the node swaps every group at once) is a gap in the swap, not in the plan. The hot swap of envelopes and parameters is AUR-270's next step.
+- The classification states what the swap is meant to do. A swap that restarts more than its plan says is a gap in the swap, not in the plan.
+- **Drivers (AUR-270).** The swap keeps every device whose resolved plan did not change: its driver moves to the new generation's slots without reconnecting, so an envelope, an alarm or an app parameter never restarts a driver, and an address restarts only that driver. The cycle groups still stop after their current tick and start again together, inheriting the applied values (docs/16 A8); the swap of only the affected groups, and of only the affected apps, is still a gap.
