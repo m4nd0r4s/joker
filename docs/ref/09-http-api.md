@@ -708,7 +708,7 @@ App shadow (M16) is **1.1** (document 26, §5; ADR 0035): the `/v1/shadows/**` o
 | GET | `/v1/apps`, `/v1/apps/{app}` | viewer | | version, digest, WIT world, SDK, state (the `app_state` of ref/00 §6: `starting`, `running`, `crashloop`, `stopped`, `failed`, `shadow`, `updating`), cycle and async instances (state, group, memory, tasks with WCET and overruns), writer, traps, restarts, backoff, shadow, implemented instances, `meta` (`joker:meta` in JSON) (`App`) |
 | POST | `/v1/apps/{app}/start` | operator | M | starts a stopped app |
 | POST | `/v1/apps/{app}/stop` | operator | M | stops; `reason` required. Its cycle tasks skip their ticks and its outputs follow their leases, until a start, the next generation or the next start of `jokerd` (ADR 0091) |
-| POST | `/v1/apps/{app}/restart` | operator | M | recreates the two instances; takes it out of `crashloop`. Each group swaps the fresh cycle instances in between two of its ticks (ADR 0091) |
+| POST | `/v1/apps/{app}/restart` | operator | M | recreates the two instances; takes it out of `crashloop`. The fresh cycle instances are created and initialized outside the cycle while the old ones serve, and each group swaps them in between two of its ticks (ADR 0091, ADR 0107); an `init` that fails is `J-E0909` (409), and the old instances keep running |
 | GET | `/v1/apps/{app}/kv` | admin | | lists keys (`prefix`) or reads one (`key`; value in base64); **there is no write** |
 | GET | `/v1/shadows` | viewer | | active and recent shadows |
 | POST | `/v1/shadows` | admin | M | `ShadowStartRequest`: `target` (`app:<name>`), `candidate` (artifact), `until`, `promote`, `reason`; `If-Match` |

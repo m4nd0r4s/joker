@@ -30,6 +30,7 @@ AUR-259 builds the node operation commands of ref/09 §9.1. Two of them meet gap
 6. **Restart.** `POST /v1/apps/{app}/restart` builds fresh instances of the app's cycle tasks outside the cycle. Each owner group swaps them in between two of its ticks and prepares them like the instances of a first tick.
    - The old instances are handed back and dropped outside the cycle.
    - An instance that does not prepare is dropped, and the old one keeps running (`task_errors` counts it).
+   - Amended by ADR 0107: the fresh instances are also prepared (created, `init` run) outside the cycle, and a restart whose `init` fails answers `J-E0909`.
    - A restart does not start a stopped app.
 7. **What `GET /v1/apps` reports.** The state is `running` or `stopped`: `jokerd` 1.0 reaches no other state of `app_state`. `version` and `digest` are given when the node knows them (`digest` from the app's artifact in the generation) and left out otherwise. The OpenAPI `App` requires `name` and `state` only.
 8. **Decision log.** Each lifecycle command is an `app` record, immediate (`fsync`), with:
