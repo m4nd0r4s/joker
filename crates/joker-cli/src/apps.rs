@@ -385,6 +385,10 @@ mod tests {
             "aarch64-unknown-linux-gnu"
         );
         assert_eq!(
+            target_triple(&e, "rpi3b-plus-32@1").unwrap(),
+            "armv7-unknown-linux-gnueabihf"
+        );
+        assert_eq!(
             target_triple(&e, "x86_64-unknown-linux-gnu").unwrap(),
             "x86_64-unknown-linux-gnu"
         );

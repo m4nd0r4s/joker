@@ -166,7 +166,8 @@ pub fn profiles() -> (BTreeMap<String, ProfileInfo>, Vec<String>) {
 }
 
 /// The boards of the development bench (docs/23 §1): the Raspberry Pi 3 B+
-/// of M0 and the Pi Zero W.
+/// of M0, on a 64-bit system (`rpi3b-plus`) or a 32-bit one
+/// (`rpi3b-plus-32`), and the Pi Zero W.
 pub fn boards() -> BTreeMap<String, BoardInfo> {
     let mut b = BTreeMap::new();
     b.insert(
@@ -174,6 +175,17 @@ pub fn boards() -> BTreeMap<String, BoardInfo> {
         BoardInfo {
             majors: vec![1],
             arch: "aarch64".into(),
+            cpus: Some(4),
+            memory: Some(1 << 30),
+            storage: Some("sd".into()),
+            ..BoardInfo::default()
+        },
+    );
+    b.insert(
+        "rpi3b-plus-32".to_owned(),
+        BoardInfo {
+            majors: vec![1],
+            arch: "armv7".into(),
             cpus: Some(4),
             memory: Some(1 << 30),
             storage: Some("sd".into()),
