@@ -58,6 +58,12 @@ pub const TRACE_MIN_BUFFERS: u64 = 4;
 /// touched more than 32 KiB. `rt/cycle` keeps the default: Wasm runs on
 /// its stack.
 pub const SERVICE_STACK: usize = 512 * 1024;
+/// Stack of the `io` threads, the tokio workers and blocking pool that
+/// serve the API, the devices and generation activation (which parses the
+/// manifest and loads the compiled apps). Locked like the service stacks,
+/// so the 2 MiB default cost 2 MiB of RAM per thread; activation needs more
+/// room than the service loops, hence twice their stack.
+pub const IO_STACK: usize = 1024 * 1024;
 /// Alarm transitions in flight to the alarm journal (ADR 0082).
 pub const ALARM_EVENT_CAPACITY: usize = 4_096;
 /// Operator commands on alarms waiting for a tick, and their replies.

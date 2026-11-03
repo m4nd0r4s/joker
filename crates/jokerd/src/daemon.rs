@@ -208,6 +208,7 @@ pub fn run(options: Options, tasks: Arc<dyn TaskProvider>) -> Result<(), String>
     let logs = Arc::new(crate::logs::LogRing::default());
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .thread_name("io")
+        .thread_stack_size(crate::shared::IO_STACK)
         .enable_all()
         .build()
         .map_err(|e| format!("tokio: {e}"))?;
