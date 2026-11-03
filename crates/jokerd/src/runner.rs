@@ -169,7 +169,11 @@ impl Running {
         start: Start,
         context: StartContext,
     ) -> Result<Self, CycleError> {
-        let shared = Arc::new(Shared::new(&plan));
+        let trace_buffers = match pacer.monotonic() {
+            Some(_) => crate::shared::trace_buffer_count(&plan),
+            None => crate::shared::TRACE_BUFFERS,
+        };
+        let shared = Arc::new(Shared::with_trace_buffers(&plan, trace_buffers));
         stage_restored(&plan, &shared, &context.restore.manual, &log, &start)?;
         let supervisor = match pacer.monotonic() {
             Some(clock) => Some(

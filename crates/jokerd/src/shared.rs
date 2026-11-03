@@ -42,8 +42,14 @@ pub const TRIP_CAPACITY: usize = 16;
 pub const TASK_SWAP_CAPACITY: usize = 64;
 /// State exports in flight (apps per request).
 pub const EXPORT_CAPACITY: usize = 256;
-/// Trace buffers in flight between the cycle thread and the trace ring.
+/// Most trace buffers in flight between the cycle thread and the trace ring.
 pub const TRACE_BUFFERS: usize = 512;
+/// How far `svc/trace`, which drains the trace pool every 5 ms, may fall
+/// behind before a tick's trace is dropped: each group gets buffers for
+/// this many nanoseconds of its ticks.
+pub const TRACE_SLACK_NS: u64 = 100_000_000;
+/// Fewest trace buffers a group gets.
+pub const TRACE_MIN_BUFFERS: u64 = 4;
 /// Stack of the service threads (`rt/supervisor`, `svc/*`). The daemon
 /// locks its memory with `mlockall(MCL_CURRENT | MCL_FUTURE)` (docs/09,
 /// attack 5), which makes every page of a thread's stack resident: the 2 MiB
@@ -894,8 +900,17 @@ impl Shared {
         self.wide_slots.get(index as usize)
     }
 
-    /// Allocates everything a plan needs, before the first tick.
+    /// Allocates everything a plan needs, before the first tick, with the
+    /// trace pool of a virtual clock ([`TRACE_BUFFERS`]).
     pub fn new(plan: &Plan) -> Self {
+        Self::with_trace_buffers(plan, TRACE_BUFFERS)
+    }
+
+    /// [`Shared::new`] with `trace_buffers` in the trace pool:
+    /// [`trace_buffer_count`] on a real clock, where `svc/trace` drains the
+    /// pool as the ticks come; [`TRACE_BUFFERS`] on a virtual clock, whose
+    /// ticks come faster than any drain.
+    pub fn with_trace_buffers(plan: &Plan, trace_buffers: usize) -> Self {
         let slots: Box<[Slot]> = (0..plan.signals.len()).map(|_| Slot::new()).collect();
         let mut wide_index: Vec<Option<u32>> = Vec::with_capacity(plan.signals.len());
         let mut wide_count: u32 = 0;
@@ -925,9 +940,10 @@ impl Shared {
                     .unwrap_or(u32::MAX)
             })
             .collect();
-        let trace_free = ArrayQueue::new(TRACE_BUFFERS);
+        let trace_buffers = trace_buffers.clamp(1, TRACE_BUFFERS);
+        let trace_free = ArrayQueue::new(trace_buffers);
         let trace_len = trace_buffer_len(plan);
-        for _ in 0..TRACE_BUFFERS {
+        for _ in 0..trace_buffers {
             let _ = trace_free.push(Vec::with_capacity(trace_len));
         }
         let (commit_bindings, commit_boxes, stages) = commit_channels(plan);
@@ -959,7 +975,7 @@ impl Shared {
             results: ArrayQueue::new(RESULT_CAPACITY),
             results_dropped: Counter::default(),
             trace_free,
-            trace_filled: ArrayQueue::new(TRACE_BUFFERS),
+            trace_filled: ArrayQueue::new(trace_buffers),
             trace_dropped: Counter::default(),
             outputs: output_ids.iter().map(|_| OutputStatus::new()).collect(),
             trip_since: output_ids.iter().map(|_| AtomicU64::new(0)).collect(),
@@ -1069,6 +1085,26 @@ impl Shared {
     pub fn stop_requested(&self) -> bool {
         self.stop.load(Ordering::Acquire)
     }
+}
+
+/// The trace buffers a plan keeps in flight: every group's ticks over
+/// [`TRACE_SLACK_NS`], at least [`TRACE_MIN_BUFFERS`] a group, at most
+/// [`TRACE_BUFFERS`]. The daemon locks its memory, so each buffer, sized for
+/// the largest tick, is resident; with no free buffer a tick's trace is
+/// dropped and counted.
+pub fn trace_buffer_count(plan: &Plan) -> usize {
+    let wanted: u64 = plan
+        .groups
+        .iter()
+        .map(|g| {
+            TRACE_SLACK_NS
+                .div_ceil(g.period_ns.max(1))
+                .max(TRACE_MIN_BUFFERS)
+        })
+        .sum();
+    usize::try_from(wanted)
+        .unwrap_or(TRACE_BUFFERS)
+        .clamp(1, TRACE_BUFFERS)
 }
 
 /// The largest one-tick segment of any group of a plan.

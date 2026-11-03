@@ -303,6 +303,29 @@ mod tests {
     }
 
     #[test]
+    fn a_real_clock_pool_covers_the_slack_of_each_group_and_no_more() {
+        let plan = plan();
+        let expected: usize = plan
+            .groups
+            .iter()
+            .map(|g| match g.period_ns {
+                20_000_000 => 5,
+                _ => 4,
+            })
+            .sum();
+        assert!(plan.groups.iter().any(|g| g.period_ns == 20_000_000));
+        let count = crate::shared::trace_buffer_count(&plan);
+        assert_eq!(count, expected);
+        let shared = Shared::with_trace_buffers(&plan, count);
+        assert_eq!(shared.trace_free.len(), expected);
+        assert_eq!(shared.trace_filled.capacity(), expected);
+        assert_eq!(
+            Shared::new(&plan).trace_free.len(),
+            crate::shared::TRACE_BUFFERS
+        );
+    }
+
+    #[test]
     fn ticks_older_than_the_retention_leave_the_ring() {
         let plan = plan();
         let shared = Shared::new(&plan);
