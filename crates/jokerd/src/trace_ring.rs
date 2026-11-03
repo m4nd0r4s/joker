@@ -56,11 +56,13 @@ impl TraceRing {
     /// buffer the cycle thread filled, sized for the largest possible tick,
     /// goes straight back to the pool: a tick is a few hundred bytes, the
     /// buffer is kilobytes, and the ring holds every tick of the retention.
+    /// A buffer goes back at its full length, so the cycle thread writes
+    /// into it without filling it first.
     pub fn absorb(&mut self, shared: &Shared, buffer_len: usize) {
         while let Some(chunk) = shared.trace_filled.pop() {
             let newest = chunk.at_mono_ns;
             let Some(ring) = self.groups.get_mut(chunk.group as usize) else {
-                let _ = shared.trace_free.push(chunk.segment);
+                let _ = shared.trace_free.push(full(chunk.segment));
                 continue;
             };
             let TraceChunk {
@@ -75,7 +77,7 @@ impl TraceRing {
                 at_mono_ns,
                 segment: segment.as_slice().to_vec(),
             });
-            let _ = shared.trace_free.push(segment);
+            let _ = shared.trace_free.push(full(segment));
             while ring
                 .front()
                 .is_some_and(|c| newest.saturating_sub(c.at_mono_ns) > self.retention_ns)
@@ -84,11 +86,7 @@ impl TraceRing {
             }
         }
         while !shared.trace_free.is_full() {
-            if shared
-                .trace_free
-                .push(Vec::with_capacity(buffer_len))
-                .is_err()
-            {
+            if shared.trace_free.push(vec![0; buffer_len]).is_err() {
                 break;
             }
         }
@@ -238,6 +236,12 @@ pub fn digest_bytes(digest: &str) -> [u8; 32] {
     out
 }
 
+/// `buffer` at its full capacity, as the pool keeps it.
+fn full(mut buffer: Vec<u8>) -> Vec<u8> {
+    buffer.resize(buffer.capacity(), 0);
+    buffer
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
@@ -299,6 +303,11 @@ mod tests {
         assert!(shared.trace_free.is_full());
         while let Some(buffer) = shared.trace_free.pop() {
             assert!(buffer.capacity() >= len);
+            assert_eq!(
+                buffer.len(),
+                buffer.capacity(),
+                "the pool keeps buffers full"
+            );
         }
     }
 

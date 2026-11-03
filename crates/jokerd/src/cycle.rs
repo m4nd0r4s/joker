@@ -974,8 +974,9 @@ fn trace(g: &mut GroupRun<'_>, index: u64, at: joker_core::Instant, shared: &Sha
         return;
     };
     let capacity = buf.capacity();
-    buf.clear();
-    buf.resize(capacity, 0);
+    if buf.len() < capacity {
+        buf.resize(capacity, 0);
+    }
     let record = TickRecord {
         index,
         at,

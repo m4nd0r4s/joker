@@ -950,7 +950,7 @@ impl Shared {
         let trace_free = ArrayQueue::new(trace_buffers);
         let trace_len = trace_buffer_len(plan);
         for _ in 0..trace_buffers {
-            let _ = trace_free.push(Vec::with_capacity(trace_len));
+            let _ = trace_free.push(vec![0; trace_len]);
         }
         let (commit_bindings, commit_boxes, stages) = commit_channels(plan);
         Self {
