@@ -634,7 +634,7 @@ The prediction uses the same functions of the core over the current values, outs
 
 An upload session expires 1 h after the last chunk (`J-E1604`). The blobs that none of the 10 stored generations uses are deleted.
 
-**Artifact types** (`kind`): those of the single table of ref/00 §7.1 (D13), in the short form: `joker.config.v1+cbor`, `joker.manifest.v1+toml`, `joker.lock.v1+toml`, `joker.provenance.v1+json`, `joker.app.v1+wasm`, `joker.app.v1+cwasm` (optional AOT; without it the node compiles), `joker.driver.v1+wasm`, `joker.driver.v1+tar`, `joker.profile.v1+toml`, `joker.board.v1+toml`, `joker.sim.v1+toml`, `joker.class.v1+jkc`, `joker.class.contract.v1+json`, `joker.class.conformance.v1+toml`, `joker.micro-firmware.v1`, `joker.generation.v1`, `joker.secrets.v1`, `joker.key.v1+pem`, `joker.runtime.v1`, `joker.trace.v1`. `joker.model.v1+jkm` is reserved for 1.1 (`J-E1017`). A `kind` outside the table is `J-E1012`.
+**Artifact types** (`kind`): those of the single table of ref/00 §7.1 (D13), in the short form: `joker.config.v1+cbor`, `joker.manifest.v1+toml`, `joker.lock.v1+toml`, `joker.provenance.v1+json`, `joker.app.v1+wasm`, `joker.app.v1+cwasm` (optional AOT; without it a `dev` node built with `compiler` compiles, and any other node refuses the app with `J-E0010`, ADR 0109), `joker.driver.v1+wasm`, `joker.driver.v1+tar`, `joker.profile.v1+toml`, `joker.board.v1+toml`, `joker.sim.v1+toml`, `joker.class.v1+jkc`, `joker.class.contract.v1+json`, `joker.class.conformance.v1+toml`, `joker.micro-firmware.v1`, `joker.generation.v1`, `joker.secrets.v1`, `joker.key.v1+pem`, `joker.runtime.v1`, `joker.trace.v1`. `joker.model.v1+jkm` is reserved for 1.1 (`J-E1017`). A `kind` outside the table is `J-E1012`.
 
 **Generations:**
 

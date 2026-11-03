@@ -1465,7 +1465,7 @@ Range of this document: `J-E0001`–`J-E0799` and `J-E0900`–`J-E0999`. All of 
 | `J-E0007` | error | app name in joker:meta does not match the manifest | also `jk check` |
 | `J-E0008` | error | init-context rejected by the SDK (layout mismatch) | §2.6.2 |
 | `J-E0009` | error | component is not a valid Wasm component or failed to compile | ADR 0052 |
-| `J-E0010` | error | no usable AOT artifact for this engine and component | `prod` without `.cwasm`; ADR 0052 |
+| `J-E0010` | error | no usable AOT artifact for this engine and component | `prod` without `.cwasm`, or any mode on a `jokerd` built without `compiler`; ADR 0052, ADR 0109 |
 | `J-E0011` | error | app refused the new parameters | §4.3.4 |
 | `J-E0050` | error | the app returned an error | `Error::app` |
 | `J-E0101` | error | value unavailable: quality is not Good | `get()` |

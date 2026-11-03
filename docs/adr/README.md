@@ -106,5 +106,6 @@
 | [0106](0106-the-complete-rust-sdk-gaps.md) | The gaps that completing the Rust SDK found in ref/04: `TaskIo` without a lifetime, field type 16 (`utc-seconds`), persisted state keyed by field name, informational meta keys 14 and 15 |
 | [0107](0107-the-instance-pool-hot-swap-and-method-records-of-the-host.md) | The instance pool of the host (32 or 16 slots, 16 MiB per memory on 32-bit), the hot swap of an app's instances off the cycle thread, and method records in the cycle subset |
 | [0108](0108-cycle-deadlines-on-the-first-call-and-without-real-time-scheduling.md) | Cycle deadlines on the first call of an instance and on a node without real-time scheduling: one group period (amends ADR 0102) |
+| [0109](0109-the-compiler-feature-of-jokerd-and-an-engine-identity-without-a-compiler.md) | The `compiler` feature of `jokerd`, off by default, and an engine identity that does not need a compiler (amends ADR 0052, 0067, 0100) |
 
 Changing a decision = writing a new ADR that replaces it, and updating the affected documents in the same set of commits.
