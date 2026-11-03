@@ -13,7 +13,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
-use wasmtime::{Config, Engine, InstanceAllocationStrategy, OptLevel, PoolingAllocationConfig};
+#[cfg(feature = "compiler")]
+use wasmtime::OptLevel;
+use wasmtime::{Config, Engine, InstanceAllocationStrategy, PoolingAllocationConfig};
 
 use crate::error::{HostError, codes};
 
@@ -204,15 +206,17 @@ impl HostEngine {
             .wasm_component_model(true)
             .wasm_component_model_async(true)
             .wasm_relaxed_simd(false)
+            .epoch_interruption(true);
+        #[cfg(feature = "compiler")]
+        config
             .cranelift_nan_canonicalization(true)
             .cranelift_opt_level(OptLevel::Speed)
-            .epoch_interruption(true)
             .parallel_compilation(true);
         let engine = Engine::new(&config).map_err(|e| {
             HostError::new(codes::AOT_UNAVAILABLE, format!("engine for {triple}: {e}"))
         })?;
         let mut hasher = Fnv1a::default();
-        engine.precompile_compatibility_hash().hash(&mut hasher);
+        hasher.write(settings(target, reservation, guard).as_bytes());
         let id = EngineId(format!(
             "wasmtime-{WASMTIME_VERSION}-{triple}-{:016x}",
             hasher.finish()
@@ -269,10 +273,23 @@ impl HostEngine {
     }
 
     /// Compiles a component to a `.cwasm` for this engine's target.
+    /// Without the `compiler` feature it fails with `J-E0010` (ADR 0109).
     pub fn precompile(&self, wasm: &[u8]) -> Result<Vec<u8>, HostError> {
-        self.engine
+        #[cfg(feature = "compiler")]
+        return self
+            .engine
             .precompile_component(wasm)
-            .map_err(|e| HostError::new(codes::COMPONENT_INVALID, format!("{e}")))
+            .map_err(|e| HostError::new(codes::COMPONENT_INVALID, format!("{e}")));
+        #[cfg(not(feature = "compiler"))]
+        {
+            let _ = wasm;
+            Err(no_compiler())
+        }
+    }
+
+    /// True when this build can compile components (feature `compiler`).
+    pub fn can_compile(&self) -> bool {
+        cfg!(feature = "compiler")
     }
 
     /// Advances the epoch by one. The supervisor calls this every 100 µs
@@ -331,6 +348,28 @@ const GUARD_32: u64 = 64 << 10;
 /// The linear memory reservation and guard of a compilation target, when
 /// they differ from wasmtime's: on 32-bit targets, [`MEMORY_RESERVATION_32`]
 /// (docs/01 §9, ADR 0107).
+/// What the engine identity digests (ADR 0109): every setting this crate
+/// gives wasmtime that changes the compiled code, as fixed text. It does not
+/// depend on whether the build has a compiler, so a node without one and
+/// the laptop that compiles for it have the same identity.
+fn settings(target: &str, reservation: Option<u64>, guard: Option<u64>) -> String {
+    format!(
+        "target={target};memory-reservation={reservation:?};memory-guard={guard:?};\
+         component-model;component-model-async;relaxed-simd=off;\
+         nan-canonicalization;opt-level=speed;epoch-interruption"
+    )
+}
+
+/// The error of a build without the `compiler` feature asked to compile.
+#[cfg(not(feature = "compiler"))]
+pub(crate) fn no_compiler() -> HostError {
+    HostError::new(
+        codes::AOT_UNAVAILABLE,
+        "this build of the runtime has no compiler (feature `compiler`): \
+         the app needs a .cwasm precompiled by jk",
+    )
+}
+
 fn memory_layout(target: &str) -> (Option<u64>, Option<u64>) {
     if target == "pulley32" {
         (Some(MEMORY_RESERVATION_32), Some(GUARD_32))
@@ -424,8 +463,24 @@ mod tests {
             let engine = HostEngine::for_target(triple).unwrap();
             assert!(engine.id().as_str().contains(triple));
             assert!(!engine.is_native());
+            #[cfg(feature = "compiler")]
             engine.precompile(empty_component).unwrap();
+            #[cfg(not(feature = "compiler"))]
+            assert_eq!(
+                engine.precompile(empty_component).unwrap_err().code(),
+                codes::AOT_UNAVAILABLE
+            );
         }
+    }
+
+    #[test]
+    fn the_identity_does_not_depend_on_the_compiler() {
+        let pi = HostEngine::for_target("arm-unknown-linux-musleabihf").unwrap();
+        assert_eq!(
+            pi.id().as_str(),
+            "wasmtime-48.0.8-arm-unknown-linux-musleabihf-3180e7308214de33"
+        );
+        assert_eq!(pi.can_compile(), cfg!(feature = "compiler"));
     }
 
     #[test]

@@ -12,7 +12,7 @@ publish.workspace = true
 joker.workspace = true
 joker-sdk-sys.workspace = true
 joker-core = { workspace = true, features = ["alloc"] }
-joker-host.workspace = true
+joker-host = { workspace = true, features = ["compiler"] }
 
 [dev-dependencies]
 joker-sdk-fixture-peak-shaver = { path = "../joker-sdk/fixtures/peak_shaver" }

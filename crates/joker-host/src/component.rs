@@ -71,11 +71,20 @@ impl fmt::Debug for AppComponent {
 impl AppComponent {
     /// Compiles a component with the engine (JIT). Only for `dev` and tests:
     /// production loads AOT artifacts through [`crate::AotCache`].
+    /// Without the `compiler` feature it fails with `J-E0010` (ADR 0109).
     pub fn compile(engine: &HostEngine, wasm: &[u8], mode: RuntimeMode) -> Result<Self, HostError> {
         let meta = meta::read(wasm)?;
-        let component = Component::new(engine.wasmtime(), wasm)
-            .map_err(|e| HostError::new(codes::COMPONENT_INVALID, format!("{e}")))?;
-        Self::checked(engine, component, meta, digest(wasm), mode)
+        #[cfg(feature = "compiler")]
+        {
+            let component = Component::new(engine.wasmtime(), wasm)
+                .map_err(|e| HostError::new(codes::COMPONENT_INVALID, format!("{e}")))?;
+            Self::checked(engine, component, meta, digest(wasm), mode)
+        }
+        #[cfg(not(feature = "compiler"))]
+        {
+            let _ = (engine, meta, mode);
+            Err(crate::engine::no_compiler())
+        }
     }
 
     pub(crate) fn checked(

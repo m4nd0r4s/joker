@@ -9,7 +9,8 @@ repository.workspace = true
 publish.workspace = true
 
 [features]
-all-arch = ["wasmtime/all-arch"]
+compiler = ["wasmtime/cranelift", "wasmtime/parallel-compilation"]
+all-arch = ["compiler", "wasmtime/all-arch"]
 
 [dependencies]
 joker-core = { workspace = true }
@@ -24,6 +25,26 @@ wasmtime = { workspace = true, features = ["pulley"] }
 
 [dev-dependencies]
 wasmtime = { workspace = true, features = ["all-arch"] }
+
+[[test]]
+name = "aot"
+required-features = ["compiler"]
+
+[[test]]
+name = "cycle"
+required-features = ["compiler"]
+
+[[test]]
+name = "methods"
+required-features = ["compiler"]
+
+[[test]]
+name = "overhead"
+required-features = ["compiler"]
+
+[[test]]
+name = "pool"
+required-features = ["compiler"]
 
 [lints.rust]
 unsafe_code = "deny"

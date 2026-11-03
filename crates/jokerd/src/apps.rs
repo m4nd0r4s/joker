@@ -5,8 +5,9 @@
 //!
 //! A `.cwasm` that the node's engine accepts is installed in the cache; one
 //! built for another engine is left out. In `prod` an app with nothing in
-//! the cache is refused (`J-E0010`); in `dev` the node compiles it once and
-//! fills the cache (ADR 0052).
+//! the cache is refused (`J-E0010`); in `dev` a node built with the
+//! `compiler` feature compiles it once and fills the cache (ADR 0052), and
+//! one without refuses it too (ADR 0109).
 
 use std::collections::BTreeMap;
 use std::fmt;
